@@ -434,15 +434,20 @@ const phenoEdit = {
 };
 
 function renderPhenotype() {
-  // Seed working copy from sample payload
+  // Seed working copy from sample payload. Panels persist as {name, weight}
+  // dicts; legacy server payloads where it was a flat list of strings are
+  // upgraded to weight=1.
   phenoEdit.hpo = (state.data.patient_phenotype || []).map(r => ({
     phenotype: r.phenotype || "",
     label:     r.label || "",
     weight:    Number.isFinite(Number(r.weight)) ? Number(r.weight) : 1,
   }));
-  phenoEdit.panels = Array.isArray(state.data.selected_panels)
-    ? state.data.selected_panels.slice()
+  const rawPanels = Array.isArray(state.data.selected_panels)
+    ? state.data.selected_panels
     : [];
+  phenoEdit.panels = rawPanels.map(p => typeof p === "string"
+    ? { name: p, weight: 1 }
+    : { name: p.name, weight: Number(p.weight) || 1 });
 
   renderHpoChips();
   renderPanelChips();
@@ -455,10 +460,6 @@ function renderPhenotype() {
 function renderHpoChips() {
   const ul = document.getElementById("phenotype-list");
   ul.innerHTML = "";
-  if (!phenoEdit.hpo.length) {
-    ul.innerHTML = '<li class="muted">（尚未加入 HPO）</li>';
-    return;
-  }
   phenoEdit.hpo.forEach((row, idx) => {
     const li = document.createElement("li");
     li.className = "chip chip-hpo";
@@ -476,15 +477,14 @@ function renderHpoChips() {
 function renderPanelChips() {
   const ul = document.getElementById("panel-chips");
   ul.innerHTML = "";
-  if (!phenoEdit.panels.length) {
-    ul.innerHTML = '<li class="muted">（無 panel）</li>';
-    return;
-  }
-  phenoEdit.panels.forEach((name, idx) => {
+  phenoEdit.panels.forEach((row, idx) => {
     const li = document.createElement("li");
     li.className = "chip chip-panel";
     li.innerHTML = `
-      <span class="chip-label">${escapeHtml(name)}</span>
+      <span class="chip-label">${escapeHtml(row.name)}</span>
+      <select class="chip-weight" data-panel-idx="${idx}" title="Weight">
+        ${[1,2,3,4,5].map(n => `<option value="${n}" ${n===row.weight?"selected":""}>w=${n}</option>`).join("")}
+      </select>
       <button class="chip-remove" data-panel-idx="${idx}" type="button" title="移除">×</button>`;
     ul.appendChild(li);
   });
@@ -558,7 +558,7 @@ async function _runPanelSearch(q) {
   if (!dropdown) return;
   const opts = await loadPanelOptions();
   const ql = (q || "").trim().toLowerCase();
-  const picked = new Set(phenoEdit.panels);
+  const picked = new Set(phenoEdit.panels.map(p => p.name));
   const matches = opts
     .filter(p => !picked.has(p.name) && (!ql || p.name.toLowerCase().includes(ql)))
     .slice(0, 30);
@@ -626,8 +626,8 @@ document.addEventListener("mousedown", ev => {
 function addHpo(id, label) {
   if (!id) return;
   if (phenoEdit.hpo.some(r => r.phenotype === id)) return;
-  const w = Number(document.getElementById("hpo-weight").value) || 1;
-  phenoEdit.hpo.push({ phenotype: id, label: label || id, weight: w });
+  // Default weight = 1; user adjusts via the chip's own select.
+  phenoEdit.hpo.push({ phenotype: id, label: label || id, weight: 1 });
   renderHpoChips();
 }
 
@@ -643,14 +643,20 @@ function setHpoWeight(idx, weight) {
 }
 
 function addPanel(name) {
-  if (!name || phenoEdit.panels.includes(name)) return;
-  phenoEdit.panels.push(name);
+  if (!name || phenoEdit.panels.some(p => p.name === name)) return;
+  phenoEdit.panels.push({ name, weight: 1 });
   renderPanelChips();
 }
 
 function removePanel(idx) {
   phenoEdit.panels.splice(idx, 1);
   renderPanelChips();
+}
+
+function setPanelWeight(idx, weight) {
+  if (phenoEdit.panels[idx]) {
+    phenoEdit.panels[idx].weight = Number(weight) || 1;
+  }
 }
 
 async function apiPost(path, body) {
@@ -3089,6 +3095,8 @@ function setupPhenotypeEvents() {
   card.addEventListener("change", ev => {
     if (ev.target.matches(".chip-weight[data-idx]")) {
       setHpoWeight(Number(ev.target.dataset.idx), ev.target.value);
+    } else if (ev.target.matches(".chip-weight[data-panel-idx]")) {
+      setPanelWeight(Number(ev.target.dataset.panelIdx), ev.target.value);
     }
   });
 }

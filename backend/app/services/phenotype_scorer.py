@@ -119,8 +119,7 @@ def gene_count(hpo_id: str) -> int:
 
 def compute_pheno_score(
     hpo_terms: list[dict] | list[tuple[str, float]],
-    panel_names: Iterable[str] = (),
-    panel_weight: float = 1.0,
+    panels: Iterable = (),
 ) -> dict[str, float]:
     """Return {gene_symbol: pheno_score} for genes with score > 0.
 
@@ -128,8 +127,10 @@ def compute_pheno_score(
         [{"phenotype": "HP:0001250", "weight": 2}, ...]   (dict form)
         [("HP:0001250", 2), ...]                          (tuple form)
 
-    Each selected panel contributes a weight of `panel_weight` (default
-    1.0) under the synthetic hpo_id == panel_name.
+    `panels` accepts mixed:
+        ["HIE", "Marfan_panel"]                              (legacy strings → weight 1)
+        [{"name": "HIE", "weight": 2}, ...]                  (preferred)
+        [("HIE", 2), ...]                                    (tuple)
     """
     if not _LOADED:
         load()
@@ -145,10 +146,19 @@ def compute_pheno_score(
             hid, w = entry[0], float(entry[1])
         if hid:
             pairs.append((hid, w))
-    for panel in panel_names or []:
-        p = (panel or "").strip()
-        if p and p in _PANEL_TO_GENES:
-            pairs.append((p, panel_weight))
+    for entry in panels or []:
+        if isinstance(entry, dict):
+            name = (entry.get("name") or "").strip()
+            try:
+                w = float(entry.get("weight", 1) or 1)
+            except (TypeError, ValueError):
+                w = 1.0
+        elif isinstance(entry, str):
+            name, w = entry.strip(), 1.0
+        else:
+            name, w = entry[0], float(entry[1])
+        if name and name in _PANEL_TO_GENES:
+            pairs.append((name, w))
 
     total_weight = sum(w for _, w in pairs)
     if total_weight <= 0 or not pairs:
