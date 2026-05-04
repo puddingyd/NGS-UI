@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .config import FRONTEND_DIR
-from .routers import phenotype, samples
+from .routers import jobs, phenotype, samples
 from .services import hpo_ontology, phenotype_scorer
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
@@ -18,6 +18,7 @@ def _warm_caches():
 
 app.include_router(samples.router)
 app.include_router(phenotype.router)
+app.include_router(jobs.router)
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

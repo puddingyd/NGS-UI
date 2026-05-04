@@ -455,6 +455,29 @@ function renderPhenotype() {
   document.getElementById("phenotype-hint").textContent  = "";
   document.getElementById("phenotype-top10").classList.add("hidden");
   document.getElementById("phenotype-card").classList.remove("hidden");
+  // If there's a queued/running job for this sample, pick up polling.
+  _resumeJobPollingIfAny();
+}
+
+async function _resumeJobPollingIfAny() {
+  if (!state.currentLIS) return;
+  clearInterval(_jobPollTimer);
+  _setJobStatus("");
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  try {
+    const jobs = await apiFetch(`/samples/${encodeURIComponent(sid)}/jobs`) || [];
+    const live = jobs.find(j => j.status === "queued" || j.status === "running");
+    if (live) {
+      _activeJobId = live.job_id;
+      _setJobStatus(`${live.status}${live.step ? " · " + live.step : ""}`, true);
+      _startJobPolling(sid, live.job_id);
+    } else if (jobs.length) {
+      const last = jobs[0];
+      const t = (last.finished_at || last.updated_at || "").slice(11, 19);
+      _setJobStatus(`上次：${last.status}${t ? " @ " + t : ""}`);
+    }
+  } catch (e) { /* ignore */ }
 }
 
 function renderHpoChips() {
@@ -667,6 +690,67 @@ async function apiPost(path, body) {
   });
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
   return await resp.json();
+}
+
+// ---- Phase C: Exomiser/LIRICAL rerun --------------------------------
+
+let _jobPollTimer = null;
+let _activeJobId  = null;
+
+function _setJobStatus(text, busy = false) {
+  const el = document.getElementById("job-status");
+  if (el) el.textContent = text || "";
+  const btn = document.getElementById("btn-rerun-tools");
+  if (btn) btn.disabled = !!busy;
+}
+
+async function rerunExomiserLirical() {
+  if (!state.currentLIS) return;
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  // Save the latest HPO/panel edits first so the worker reads the
+  // current values from sample_metadata.json. Skips the variant
+  // refresh that recomputePhenoScore() does — we'll get the full
+  // refresh after the rerun finishes.
+  _setJobStatus("送出工作中…", true);
+  try {
+    await apiPost(`/samples/${encodeURIComponent(sid)}/phenotype`, {
+      hpo:    phenoEdit.hpo,
+      panels: phenoEdit.panels,
+    });
+    const job = await apiPost(`/samples/${encodeURIComponent(sid)}/jobs/exomiser_lirical`, {});
+    _activeJobId = job.job_id;
+    _setJobStatus(`已排入：${job.job_id}`, true);
+    _startJobPolling(sid, job.job_id);
+  } catch (e) {
+    _setJobStatus("排入失敗：" + e.message, false);
+  }
+}
+
+function _startJobPolling(sid, jobId) {
+  clearInterval(_jobPollTimer);
+  _jobPollTimer = setInterval(async () => {
+    try {
+      const j = await apiFetch(`/jobs/${encodeURIComponent(jobId)}`);
+      if (!j) return;
+      const status = j.status || j.rq_status || "?";
+      const step   = j.step ? ` · ${j.step}` : "";
+      _setJobStatus(`${status}${step}`, status === "queued" || status === "running");
+      if (status === "succeeded" || status === "failed") {
+        clearInterval(_jobPollTimer);
+        if (status === "succeeded") {
+          _setJobStatus(`完成 · Exomiser ${j.n_exomiser_variants ?? 0} / LIRICAL ${j.n_lirical_variants ?? 0} variants`, false);
+          // Reload sample so cards pick up the new score columns.
+          await loadSample(state.currentLIS);
+          renderAll();
+        } else {
+          _setJobStatus(`失敗 (${j.step || ""}) — 看 analysis_files/rerun.log`, false);
+        }
+      }
+    } catch (e) {
+      // Network blip — keep polling.
+    }
+  }, 5000);
 }
 
 async function recomputePhenoScore() {
@@ -3089,6 +3173,8 @@ function setupPhenotypeEvents() {
       removePanel(Number(btn.dataset.panelIdx));
     } else if (btn.matches("#btn-recompute")) {
       recomputePhenoScore();
+    } else if (btn.matches("#btn-rerun-tools")) {
+      rerunExomiserLirical();
     }
   });
 

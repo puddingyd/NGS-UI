@@ -5,4 +5,6 @@ venv/
 node_modules/
 .DS_Store
 data/reports/*.json
+data/jobs/*.json
 !data/reports/.gitkeep
+!data/jobs/.gitkeep

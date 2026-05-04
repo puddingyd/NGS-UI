@@ -23,6 +23,31 @@ def _read_json_or(path: Path, default):
         return default
 
 
+def _read_tsv_dict(path: Path, key_col: str = "VARIANT_ID") -> dict[str, dict]:
+    """Read a tiny sidecar TSV into {key: row_dict}. Returns {} if absent."""
+    if not path.exists():
+        return {}
+    import csv as _csv
+    out: dict[str, dict] = {}
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = _csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            k = (row.get(key_col) or "").strip()
+            if k:
+                out[k] = row
+    return out
+
+
+def _to_num(s):
+    if s in (None, ""):
+        return None
+    try:
+        f = float(s)
+        return int(f) if f.is_integer() else f
+    except (TypeError, ValueError):
+        return s
+
+
 def list_index() -> list[dict]:
     """Return the sample list for the top-bar combobox.
 
@@ -68,6 +93,25 @@ def load_sample(sample_id: str) -> dict | None:
         variants, categories = load_snv_tsv(snv_tsv)
     else:
         variants, categories = {}, {t: [] for t in TIERS}
+
+    # Join per-variant Exomiser / LIRICAL scores from the sidecar TSVs that
+    # the rerun worker writes. Either may be absent (not run yet); cards
+    # silently omit those rows when the field is None.
+    exo = _read_tsv_dict(sub / "exomiser_results.tsv")
+    lir = _read_tsv_dict(sub / "lirical_results.tsv")
+    for vid, v in variants.items():
+        e = exo.get(vid)
+        if e:
+            v["total_score_exomiser_variant"] = _to_num(e.get("EXOMISER_GENE_COMBINED_SCORE"))
+            v["pheno_score_exomiser"]         = _to_num(e.get("EXOMISER_GENE_PHENO_SCORE"))
+            v["rank_exomiser_variant"]        = _to_num(e.get("EXOMISER_RANK"))
+            v["exomiser_variant_score"]       = _to_num(e.get("EXOMISER_VARIANT_SCORE"))
+        l = lir.get(vid)
+        if l:
+            v["lirical_variant_score"] = _to_num(l.get("LIRICAL_VARIANT_SCORE"))
+            v["rank_lirical_variant"]  = _to_num(l.get("RANK_LIRICAL_VARIANT"))
+            v["lirical_disease_name"]  = l.get("DISEASE_NAME") or ""
+            v["lirical_disease_curie"] = l.get("DISEASE_CURIE") or ""
 
     meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
     qc = _read_json_or(sub / "qc_summary.json", {}) or {}
