@@ -23,7 +23,12 @@ router = APIRouter(prefix="/api", tags=["phenotype"])
 
 @router.get("/hpo/search")
 def hpo_search(q: str = Query(""), limit: int = Query(20, ge=1, le=100)):
-    return hpo_ontology.search(q, limit=limit)
+    results = hpo_ontology.search(q, limit=limit)
+    # Annotate with the per-term gene count from phenotype_to_genes.txt so
+    # the picker can show "Seizure (84 genes)" without a second round-trip.
+    for r in results:
+        r["gene_count"] = phenotype_scorer.gene_count(r["hpo_id"])
+    return results
 
 
 @router.get("/hpo/{hpo_id:path}")

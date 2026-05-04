@@ -110,6 +110,13 @@ def list_panels() -> list[dict]:
     ]
 
 
+def gene_count(hpo_id: str) -> int:
+    """Number of distinct genes annotated to this HPO term (or panel name)."""
+    if not _LOADED:
+        load()
+    return len(_HPO_TO_GENES.get(hpo_id, ()))
+
+
 def compute_pheno_score(
     hpo_terms: list[dict] | list[tuple[str, float]],
     panel_names: Iterable[str] = (),

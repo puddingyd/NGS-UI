@@ -533,12 +533,19 @@ async function _runHpoSearch(q) {
     if (!Array.isArray(list) || !list.length) {
       dropdown.innerHTML = '<li class="muted" style="padding:6px 10px">（無結果）</li>';
     } else {
-      dropdown.innerHTML = list.map(t => `
+      dropdown.innerHTML = list.map(t => {
+        // "12 genes" for an annotated HPO; nothing when 0 (the dim grey
+        // ones are HPOs without any gene annotation, e.g. parent terms).
+        const gc = Number.isFinite(Number(t.gene_count)) && t.gene_count > 0
+          ? `${t.gene_count} genes`
+          : "";
+        return `
         <li class="combobox-option" data-id="${escapeAttr(t.hpo_id)}" data-name="${escapeAttr(t.name)}">
           <span class="opt-lis">${escapeHtml(t.hpo_id)}</span>
           <span class="opt-name">${escapeHtml(t.name)}</span>
-          <span class="opt-mrn">${escapeHtml((t.synonyms || []).slice(0,2).join(" • "))}</span>
-        </li>`).join("");
+          <span class="opt-mrn">${escapeHtml(gc)}</span>
+        </li>`;
+      }).join("");
     }
     _hpoOpen();
   } catch (e) {
