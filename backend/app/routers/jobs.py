@@ -10,12 +10,13 @@ the JSON sidecar in data/jobs/.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth import current_user
 from ..config import REDIS_URL, TERTIARY_OUTPUT_ROOT
 from ..services import job_store
 
-router = APIRouter(prefix="/api", tags=["jobs"])
+router = APIRouter(prefix="/api", tags=["jobs"], dependencies=[Depends(current_user)])
 
 
 def _rq_status(job_id: str) -> dict:

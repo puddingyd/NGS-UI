@@ -34,12 +34,19 @@ const COPY_ICON_SVG =
 
 // ---------- Backend fetch ------------------------------------------
 
+// All requests carry the session cookie; same-origin so credentials
+// flow automatically, but spelling it out keeps the intent obvious.
 async function apiFetch(path, init = {}) {
   const resp = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
+    credentials: "same-origin",
     headers: { "Accept": "application/json", ...(init.headers || {}) },
     ...init,
   });
+  if (resp.status === 401) {
+    showLoginModal();
+    throw new Error("not authenticated");
+  }
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
   return await resp.json();
@@ -48,9 +55,11 @@ async function apiFetch(path, init = {}) {
 async function apiPut(path, body) {
   const resp = await fetch(`${API_BASE}${path}`, {
     method: "PUT",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (resp.status === 401) { showLoginModal(); throw new Error("not authenticated"); }
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
   return await resp.json();
 }
@@ -741,11 +750,86 @@ function setPanelWeight(idx, weight) {
 async function apiPost(path, body) {
   const resp = await fetch(`${API_BASE}${path}`, {
     method: "POST",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (resp.status === 401) { showLoginModal(); throw new Error("not authenticated"); }
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
   return await resp.json();
+}
+
+// ---------- Auth flow ----------------------------------------------
+
+function showLoginModal(msg) {
+  const m = document.getElementById("login-modal");
+  if (!m) return;
+  const err = document.getElementById("login-error");
+  if (msg) { err.textContent = msg; err.classList.remove("hidden"); }
+  else     { err.classList.add("hidden"); }
+  m.classList.remove("hidden");
+  document.getElementById("login-username").focus();
+}
+function hideLoginModal() {
+  document.getElementById("login-modal")?.classList.add("hidden");
+}
+
+function setLoggedInUser(username) {
+  const span = document.getElementById("topbar-user");
+  const btn  = document.getElementById("btn-logout");
+  if (span) { span.textContent = username; span.hidden = !username; }
+  if (btn)  btn.hidden = !username;
+}
+
+async function handleLogin(ev) {
+  ev?.preventDefault();
+  const u = document.getElementById("login-username").value.trim();
+  const p = document.getElementById("login-password").value;
+  try {
+    const me = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: u, password: p }),
+    }).then(async r => {
+      if (r.status === 401) throw new Error("帳號或密碼錯誤");
+      if (!r.ok) throw new Error(`登入失敗 (${r.status})`);
+      return r.json();
+    });
+    document.getElementById("login-password").value = "";
+    hideLoginModal();
+    setLoggedInUser(me.username);
+    await bootAfterAuth();
+  } catch (e) {
+    showLoginModal(e.message);
+  }
+}
+
+// Download diagnostic DOCX. Streams from the backend so the user
+// just sees a normal browser save dialog. Filename comes from the
+// Content-Disposition header (RFC 5987 UTF-8 encoded).
+async function exportDiagnosticDocx() {
+  if (!state.currentLIS) return;
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  try {
+    const resp = await fetch(`${API_BASE}/samples/${encodeURIComponent(sid)}/report.docx`, {
+      credentials: "same-origin",
+    });
+    if (resp.status === 401) { showLoginModal(); return; }
+    if (!resp.ok) throw new Error(`匯出失敗 (${resp.status})`);
+    const blob = await resp.blob();
+    downloadBlob(blob, `${sid}_diagnosis.docx`);
+  } catch (e) {
+    alert("匯出失敗：" + e.message);
+  }
+}
+
+async function handleLogout() {
+  await apiPost("/auth/logout", {}).catch(() => {});
+  setLoggedInUser("");
+  // Easiest reset: full reload returns to a clean state with the modal up.
+  location.reload();
 }
 
 // ---- Phase C: Exomiser/LIRICAL rerun --------------------------------
@@ -1663,9 +1747,12 @@ document.addEventListener("click", ev => {
     saveChanges();
   } else if (t.matches("#btn-close-bottom")) {
     collapseCandidateSections();
-  } else if (t.matches(".btn-export-html, .btn-export-clinical, .btn-export-screening")) {
-    // Export buttons land in a later phase (Phase 7 — DOCX, 細明體).
-    alert("匯出功能尚未實作（Phase 7）。");
+  } else if (t.matches(".btn-export-clinical")) {
+    exportDiagnosticDocx();
+  } else if (t.matches(".btn-export-html, .btn-export-screening")) {
+    // Other export targets (analysis HTML / screening PDF) are not yet
+    // ported from the legacy GitHub-Pages tool.
+    alert("此匯出格式尚未實作。");
   } else if (t.closest(".clinical-header")) {
     toggleCollapsibleCard(t.closest(".clinical-header"));
   } else if (t.closest(".btn-copy")) {
@@ -3221,7 +3308,23 @@ async function bootAfterAuth() {
   setupHpoSearchInput();
   setupPanelSearchInput();
   setupPhenotypeEvents();
-  await bootAfterAuth();
+
+  // Wire login form + logout button.
+  document.getElementById("login-form")?.addEventListener("submit", handleLogin);
+  document.getElementById("btn-logout")?.addEventListener("click", handleLogout);
+
+  // Probe /auth/me; show login modal if no session, otherwise boot the
+  // sample index. /auth/me bypasses the global 401 handler because we
+  // explicitly catch the failure here.
+  try {
+    const me = await fetch(`${API_BASE}/auth/me`, { credentials: "same-origin" })
+      .then(r => r.ok ? r.json() : null);
+    if (!me) { showLoginModal(); return; }
+    setLoggedInUser(me.username);
+    await bootAfterAuth();
+  } catch (e) {
+    showLoginModal(`啟動失敗：${e.message}`);
+  }
 })();
 
 // Click + change events for the phenotype editor (delegated so chips

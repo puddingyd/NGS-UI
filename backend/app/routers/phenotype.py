@@ -13,12 +13,13 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ..auth import current_user
 from ..config import TERTIARY_OUTPUT_ROOT
 from ..services import hpo_ontology, phenotype_scorer
 
-router = APIRouter(prefix="/api", tags=["phenotype"])
+router = APIRouter(prefix="/api", tags=["phenotype"], dependencies=[Depends(current_user)])
 
 
 @router.get("/hpo/search")

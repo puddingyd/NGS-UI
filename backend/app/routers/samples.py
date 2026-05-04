@@ -1,13 +1,26 @@
-from fastapi import APIRouter, HTTPException
+from urllib.parse import quote
 
-from ..services import report_store, sample_loader
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
-router = APIRouter(prefix="/api", tags=["samples"])
+from ..auth import current_user
+from ..services import docx_export, report_store, sample_loader
+
+router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
 
 
-@router.get("/healthz")
-def healthz():
-    return {"ok": True}
+@router.get("/samples/{sample_id}/report.docx")
+def get_report_docx(sample_id: str):
+    try:
+        blob = docx_export.build_diagnosis_docx(sample_id)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    fname = quote(f"{sample_id}_diagnosis.docx")
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"},
+    )
 
 
 @router.get("/samples")
