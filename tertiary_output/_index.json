@@ -1,0 +1,15 @@
+[
+  {
+    "sample_id": "26WE0064",
+    "lis_id": "26WE0064",
+    "name": "孫亮葇",
+    "mrn": "23293706",
+    "test_type": "WES",
+    "category": "MCA",
+    "run_date": "2026-04-18",
+    "tags": [],
+    "yield": 1,
+    "has_completed": true,
+    "tertiary_dir": "26WE0064"
+  }
+]

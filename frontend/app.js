@@ -1,0 +1,2766 @@
+// ------------------------------------------------------------------
+// NGS 三級分析 web tool
+// Reads tertiary-output TSV/JSON from this server (no GitHub access).
+// ------------------------------------------------------------------
+
+const API_BASE = "/api";
+
+// ---------- State ---------------------------------------------------
+
+const state = {
+  index:        null,      // [{LIS_ID, Name, MRN, Test, Category}]
+  options:      null,      // { category_options: [...] }
+  data:         null,      // variants JSON payload
+  reports:      null,      // { status, edits, panels, category, updated_at }
+  currentLIS:   null,
+  dirty:        false,
+};
+
+// Tracks blocks the user has manually toggled (by host id).
+// If a block id is in this set, we respect its wasOpen dataset;
+// otherwise we use defaultOpen from the section def.
+const toggledBlocks = new Set();
+
+// lucide-react `Copy` icon, vertically mirrored so the foreground square
+// sits top-right and the back outline at bottom-left (the orientation the
+// claude.ai code-block button uses).
+const COPY_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" '
+  + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+  + 'stroke-linejoin="round" aria-hidden="true">'
+  + '<rect width="14" height="14" x="8" y="2" rx="2" ry="2"/>'
+  + '<path d="M4 8c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2"/>'
+  + '</svg>';
+
+// ---------- Backend fetch ------------------------------------------
+
+async function apiFetch(path, init = {}) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    headers: { "Accept": "application/json", ...(init.headers || {}) },
+    ...init,
+  });
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
+  return await resp.json();
+}
+
+async function apiPut(path, body) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
+  return await resp.json();
+}
+
+// ---------- Sample loading -----------------------------------------
+
+async function loadIndex() {
+  // Backend returns one entry per sample with keys
+  // {sample_id, lis_id, name, mrn, test_type, category, ...}.
+  // The combobox / matchSamples below expect the legacy upper-case keys
+  // (LIS_ID / Name / MRN / Test / Category), so map both shapes here.
+  const data = await apiFetch("/samples");
+  const list = Array.isArray(data) ? data : [];
+  state.index = list.map(r => ({
+    LIS_ID:    r.lis_id || r.sample_id || r.LIS_ID || "",
+    Name:      r.name || r.Name || "",
+    MRN:       r.mrn || r.MRN || "",
+    Test:      r.test_type || r.Test || "",
+    Category:  r.category || r.Category || "",
+    Tag:       (r.tags || []).join(",") || r.Tag || "",
+    sample_id: r.sample_id || r.lis_id || r.LIS_ID || "",
+  }));
+  const opts = await apiFetch("/options").catch(() => null);
+  state.options = opts && typeof opts === "object"
+    ? opts
+    : { category_options: [], tag_suggestions: [] };
+}
+
+function matchSamples(q) {
+  if (!state.index) return [];
+  const s = (q || "").trim().toLowerCase();
+  if (!s) return state.index.slice(0, 50);
+  return state.index.filter(r => {
+    return ["LIS_ID", "Name", "MRN"].some(k => {
+      const v = (r[k] || "").toString().toLowerCase();
+      return v && v.includes(s);
+    });
+  }).slice(0, 50);
+}
+
+function resolveLIS(query) {
+  if (!state.index) return null;
+  const s = (query || "").trim();
+  if (!s) return null;
+  // Exact match on LIS_ID first, then MRN, then single-hit Name
+  const hitLis = state.index.find(r => (r.LIS_ID || "").trim() === s);
+  if (hitLis) return hitLis;
+  const hitMrn = state.index.find(r => (r.MRN || "").trim() === s);
+  if (hitMrn) return hitMrn;
+  const hitNames = state.index.filter(r => (r.Name || "").trim() === s);
+  if (hitNames.length === 1) return hitNames[0];
+  if (hitNames.length > 1) throw new Error(`找到 ${hitNames.length} 筆同名樣本，請改用 LIS_ID 或病歷號`);
+  // Fallback: single partial match across fields
+  const partial = matchSamples(s);
+  if (partial.length === 1) return partial[0];
+  return null;
+}
+
+async function loadSample(LIS_ID) {
+  // The combobox carries the row's `sample_id` (which equals LIS_ID for
+  // legacy samples). Look it up so we use the directory name the backend
+  // wants on the URL path.
+  const row = (state.index || []).find(r => r.LIS_ID === LIS_ID);
+  const sid = row?.sample_id || LIS_ID;
+  const data = await apiFetch(`/samples/${encodeURIComponent(sid)}`);
+  if (!data) throw new Error(`找不到 sample ${sid}`);
+  const reports = await apiFetch(`/samples/${encodeURIComponent(sid)}/report`) || {
+    status: {}, edits: {}, panels: {}, clinical_description: "", comment: "",
+    category: null, yield: 0, updated_at: null,
+  };
+  if (reports.clinical_description == null) reports.clinical_description = "";
+  if (reports.comment == null)               reports.comment = "";
+  if (!Array.isArray(reports.tags))          reports.tags = [];
+  if (!Array.isArray(reports.manual_variants)) reports.manual_variants = [];
+  state.data       = data;
+  state.reports    = reports;
+  state.currentLIS = LIS_ID;
+  state.dirty      = false;
+  // Reset manual-toggle tracking between samples so defaultOpen applies fresh.
+  toggledBlocks.clear();
+}
+
+// ---------- Formatting helpers --------------------------------------
+
+const CLINVAR_ABBREV = {
+  "Pathogenic": "P",
+  "Likely_pathogenic": "LP",
+  "Pathogenic/Likely_pathogenic": "P/LP",
+  "Uncertain_significance": "VUS",
+  "Benign": "B",
+  "Likely_benign": "LB",
+  "Benign/Likely_benign": "B/LB",
+  "Conflicting_classifications_of_pathogenicity": "Conflict",
+};
+
+function formatClinvar(sig, conf, stars) {
+  if (!sig) return "—";
+  const starTxt = (stars != null && stars !== "") ? `(${stars}★)` : "";
+  if (String(sig).startsWith("Conflicting") && conf) {
+    const parts = String(conf).split(/[,|]/).map(p => p.trim().replace(/^_/, ""));
+    const out = parts.map(p => {
+      const m = p.match(/^(.+?)\((\d+)\)$/);
+      if (!m) return p;
+      return (CLINVAR_ABBREV[m[1]] || m[1]) + "(" + m[2] + ")";
+    });
+    return out.join("|") + starTxt;
+  }
+  return (CLINVAR_ABBREV[sig] || sig) + starTxt;
+}
+
+// Map any ClinVar / ACMG classification string (canonical, abbreviated,
+// with or without underscores) to one of the five color buckets. Returns
+// null when the text doesn't match any known classification — in that
+// case no background color is applied (e.g. conflicting calls, blanks,
+// free-form user notes). P/LP → P (red), B/LB → B (dark green).
+const SIG_CLASSES = ["sig-p", "sig-lp", "sig-vus", "sig-lb", "sig-b"];
+function classifySignificance(text) {
+  if (text == null) return null;
+  const t = String(text).trim().toLowerCase().replace(/_/g, " ");
+  switch (t) {
+    case "pathogenic":                        case "p":     return "sig-p";
+    case "pathogenic/likely pathogenic":      case "p/lp":  return "sig-p";
+    case "likely pathogenic":                 case "lp":    return "sig-lp";
+    case "uncertain significance":            case "vus":   return "sig-vus";
+    case "likely benign":                     case "lb":    return "sig-lb";
+    case "benign":                            case "b":     return "sig-b";
+    case "benign/likely benign":              case "b/lb":  return "sig-b";
+    default:                                                return null;
+  }
+}
+
+// Numeric classifiers for in-silico tools. Cutoffs are the ClinGen-recommended
+// calibrations:
+//   AlphaMissense / MetaRNN — Pejaver V et al, AJHG 2022 (PMID 36413997),
+//   the same calibration the R script uses for its ps grading.
+//   SpliceAI — Walker LC et al, AJHG 2023 (PMID 37352859), ClinGen SVI
+//   Splicing Subgroup recommendations.
+// Each entry holds the four boundary scores; classifyByThresholds() walks
+// them top-down and returns the first matching sig-* class.
+const TOOL_CUTOFFS = {
+  alphamissense: { p: 0.990, lp: 0.792, vus: 0.170, lb: 0.071 },
+  metarnn:       { p: 0.939, lp: 0.748, vus: 0.267, lb: 0.108 },
+  // SpliceAI is a splice-impact probability, not a pathogenicity score —
+  // a low value just means "no predicted splice change", not "benign", so
+  // anything below the VUS threshold stays uncoloured (no lb / no implicit B).
+  spliceai:      { p: 0.800, lp: 0.500, vus: 0.200 },
+};
+function classifyByThresholds(score, cutoffs) {
+  if (score == null || score === "") return null;
+  const x = Number(score);
+  if (!Number.isFinite(x)) return null;
+  if (cutoffs.p   != null && x >= cutoffs.p)   return "sig-p";
+  if (cutoffs.lp  != null && x >= cutoffs.lp)  return "sig-lp";
+  if (cutoffs.vus != null && x >= cutoffs.vus) return "sig-vus";
+  if (cutoffs.lb  != null && x >= cutoffs.lb)  return "sig-lb";
+  // Below all configured thresholds. Tools that have an `lb` cutoff
+  // (real pathogenicity scores) get the dark-green B chip; tools that
+  // omit `lb` (e.g. SpliceAI) leave low-end scores uncoloured.
+  return cutoffs.lb == null ? null : "sig-b";
+}
+
+// LoGoFunc emits strings like "GOF (0.123)*", "LOF (0.456)", or "Neutral (...)".
+// A trailing star means probability > class-specific cutoff (deeper red);
+// no star but class is GOF / LOF gives a lighter red. Neutral / NA is uncoloured.
+function classifyLoGoFunc(text) {
+  if (text == null || text === "" || text === "—") return null;
+  const s = String(text).trim();
+  const m = s.match(/^(GOF|LOF|Neutral)/i);
+  if (!m) return null;
+  if (m[1].toUpperCase() === "NEUTRAL") return null;
+  return s.endsWith("*") ? "sig-p" : "sig-lp";
+}
+
+// MaxEntScan diff cutoffs from the Pejaver-style PS3 calibration the
+// R script uses internally: |diff| ≥ 7.65 strong / 5.96 moderate /
+// 4.24 supporting; below that no colour.
+function classifyMaxEntScan(score) {
+  if (score == null || score === "") return null;
+  const x = Math.abs(Number(score));
+  if (!Number.isFinite(x)) return null;
+  if (x >= 7.65) return "sig-p";
+  if (x >= 5.96) return "sig-lp";
+  if (x >= 4.24) return "sig-vus";
+  return null;
+}
+
+// PDIVAS cutoffs: ≥ 0.5 high-confidence pathogenic intronic, ≥ 0.082
+// (paper default) supporting; below that no colour.
+// Source: Kurosawa R et al, BMC Genomics 2023.
+function classifyPDIVAS(score) {
+  if (score == null || score === "") return null;
+  const x = Number(score);
+  if (!Number.isFinite(x)) return null;
+  if (x >= 0.5)   return "sig-p";
+  if (x >= 0.082) return "sig-lp";
+  return null;
+}
+
+// in_silico_prediction comes through as "<n_pathogenic> - <n_vus> - <n_benign>".
+// Render each count as a coloured chip so the direction reads at a glance.
+function fmtInSilico(text) {
+  if (text == null || text === "") return "—";
+  const m = String(text).match(/^\s*(\d+)\s*-\s*(\d+)\s*-\s*(\d+)\s*$/);
+  if (!m) return escapeHtml(String(text));
+  return `<span class="sig-p">${m[1]}</span> - `
+       + `<span class="sig-vus">${m[2]}</span> - `
+       + `<span class="sig-b">${m[3]}</span>`;
+}
+
+function formatClinvarDate(d) {  if (!d) return "";
+  const s = String(d);
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return s;
+}
+
+function fmtNum(v, digits = 3) {
+  if (v == null || v === "") return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return n.toFixed(digits).replace(/\.?0+$/, "");
+}
+
+function fmtInt(v) {
+  if (v == null || v === "") return "—";
+  return Math.round(Number(v)).toString();
+}
+
+function fmtTxt(v) {
+  if (v == null || v === "") return "—";
+  return String(v);
+}
+
+// "21,18 (0.46)" — AD with VAF in parens. Either half falls back to a dash
+// if the underlying field is missing, so a partially populated sample still
+// renders cleanly.
+function fmtAdVaf(ad, vaf) {
+  const adPart  = (ad == null || ad === "") ? "—" : String(ad);
+  const vafPart = (vaf == null || vaf === "" || !Number.isFinite(Number(vaf)))
+    ? "—"
+    : fmtNum(vaf);
+  return `${adPart} (${vafPart})`;
+}
+
+function variantUrls(v) {
+  const tag = `${v.CHROM}-${v.POS}-${v.REF}-${v.ALT}`;
+  // Route Varsome / Franklin / GeneBe to the matching genome build so
+  // hg19 samples don't land on an hg38 coordinate page. Build info
+  // comes from the R webdata writer (state.data.genome_build); falls
+  // back to hg38 for older samples that predate the field.
+  const build = state.data?.genome_build === "hg19" ? "hg19" : "hg38";
+  return {
+    varsome:  `https://varsome.com/variant/${build}/${tag}`,
+    franklin: `https://franklin.genoox.com/clinical-db/variant/snp/${tag}-${build}`,
+    genebe:   `https://genebe.net/variant/${build}/${tag}`,
+    omim:     v.OMIM_id ? `https://www.omim.org/entry/${v.OMIM_id}` : null,
+  };
+}
+
+// ---------- Render: sample header / phenotype ----------------------
+
+function renderSampleMeta() {
+  const m = state.data.meta || {};
+  document.getElementById("m-lis").textContent       = m.LIS_ID || "—";
+  document.getElementById("m-name").textContent      = m.Name || "—";
+  document.getElementById("m-mrn").textContent       = m.MRN || "—";
+  document.getElementById("m-test").textContent      = m.Test || "—";
+  document.getElementById("m-generated").textContent = state.data.generated_at || "—";
+
+  const sel = document.getElementById("m-category");
+  const opts = (state.options && state.options.category_options) || [];
+  const current = state.reports.category ?? m.Category ?? "";
+  const all = Array.from(new Set(["", ...opts, current].filter(x => x !== undefined && x !== null)));
+  sel.innerHTML = all.map(o => {
+    const label = o === "" ? "—" : o;
+    return `<option value="${escapeAttr(o)}" ${o === current ? "selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
+
+  document.getElementById("sample-card").classList.remove("hidden");
+}
+
+// Generic renderer for collapsible free-text cards (Clinical presentation,
+// Comment). Both default to collapsed; user-toggled state is remembered
+// across re-renders via toggledBlocks.
+function renderCollapsibleCard(cardId, headerId, bodyId, taId, value) {
+  const card   = document.getElementById(cardId);
+  const header = document.getElementById(headerId);
+  const body   = document.getElementById(bodyId);
+  const ta     = document.getElementById(taId);
+
+  ta.value = value || "";
+  const open = toggledBlocks.has(cardId)
+    ? card.dataset.wasOpen === "1"
+    : false;
+  card.dataset.wasOpen = open ? "1" : "0";
+  header.classList.toggle("open", open);
+  body.classList.toggle("open", open);
+  card.classList.remove("hidden");
+}
+
+function renderClinicalDescription() {
+  renderCollapsibleCard("clinical-card", "clinical-header", "clinical-body",
+                        "clinical-text", state.reports.clinical_description);
+}
+
+function renderComment() {
+  renderCollapsibleCard("comment-card", "comment-header", "comment-body",
+                        "comment-text", state.reports.comment);
+  renderTagPicker();
+}
+
+// Known tag suggestions = tags pulled from the Tag column of every loaded
+// NGS_list row, plus anything the user has added during this session.
+const sessionTags = new Set();
+function getAllKnownTags() {
+  const set = new Set(sessionTags);
+  if (Array.isArray(state.index)) {
+    for (const r of state.index) {
+      const raw = r.Tag ?? r.tag ?? "";
+      if (!raw) continue;
+      String(raw).split(/[,;]\s*/).forEach(t => {
+        const v = t.trim();
+        if (v) set.add(v);
+      });
+    }
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function renderTagPicker() {
+  const wrap = document.getElementById("tag-picker");
+  if (!wrap) return;
+  const tags = state.reports.tags || [];
+  // Track selected ones in sessionTags so they remain auto-completable
+  // when the user moves between samples without saving in between.
+  tags.forEach(t => sessionTags.add(t));
+  const dlOpts = getAllKnownTags()
+    .filter(t => !tags.includes(t))
+    .map(t => `<option value="${escapeAttr(t)}"></option>`)
+    .join("");
+  wrap.innerHTML = `
+    <div class="tag-label">Tag</div>
+    <div class="tag-chips">
+      ${tags.map(t => `
+        <span class="tag-chip">${escapeHtml(t)}<button class="tag-remove" data-tag="${escapeAttr(t)}" type="button" title="移除">×</button></span>
+      `).join("")}
+      <input class="tag-input" list="tag-options-dl" placeholder="新增…" autocomplete="off" />
+    </div>
+    <datalist id="tag-options-dl">${dlOpts}</datalist>
+  `;
+}
+
+function addTag(value) {
+  const v = String(value || "").trim();
+  if (!v) return;
+  if (!Array.isArray(state.reports.tags)) state.reports.tags = [];
+  if (state.reports.tags.includes(v)) return;
+  state.reports.tags.push(v);
+  sessionTags.add(v);
+  state.dirty = true;
+  renderTagPicker();
+  updateSaveHint();
+}
+
+function removeTag(value) {
+  if (!Array.isArray(state.reports.tags)) return;
+  state.reports.tags = state.reports.tags.filter(x => x !== value);
+  state.dirty = true;
+  renderTagPicker();
+  updateSaveHint();
+}
+
+function renderPhenotype() {
+  const ul = document.getElementById("phenotype-list");
+  ul.innerHTML = "";
+  const ph = state.data.patient_phenotype || [];
+  if (!ph.length) {
+    ul.innerHTML = '<li class="muted">（無）</li>';
+  } else {
+    for (const row of ph) {
+      const li = document.createElement("li");
+      const weight = row.weight != null ? `<span class="weight">w=${row.weight}</span>` : "";
+      const code = row.phenotype || "";
+      const label = row.label || "";
+      // HPO: "Seizure (HP:0001250)" / panel or plain text: just the name
+      let main;
+      if (/^HP:/.test(code)) {
+        main = label
+          ? `${escapeHtml(label)} <span class="hpo-id">(${escapeHtml(code)})</span>`
+          : escapeHtml(code);
+      } else {
+        main = escapeHtml(label || code);
+      }
+      li.innerHTML = `${main}${weight}`;
+      ul.appendChild(li);
+    }
+  }
+  document.getElementById("phenotype-card").classList.remove("hidden");
+}
+
+// ---------- Render: variant card -----------------------------------
+
+function statusOptions(kind) {
+  // kind: "candidate" (causative/other/candidate/diagnostic/pathogenic → 1/2/0/X)
+  //       "panel"     (ACMG SF / Proactive / Carrier → V/0/X)
+  // "0" = reviewed but kept on the page (surfaces nowhere in Report).
+  if (kind === "panel") return ["", "V", "0", "X"];
+  return ["", "1", "2", "0", "X"];
+}
+
+function getStatus(id) {
+  return (state.reports.status && state.reports.status[id]) || "";
+}
+
+function setStatus(id, val) {
+  state.reports.status = state.reports.status || {};
+  if (val) state.reports.status[id] = val;
+  else     delete state.reports.status[id];
+  state.dirty = true;
+  renderAll();
+}
+
+// Panel-specific status (per panel category, so V in proactive doesn't surface in carrier)
+function getPanelStatus(id, panel) {
+  const m = state.reports.panels && state.reports.panels[id];
+  return (m && m[panel]) || "";
+}
+
+function setPanelStatus(id, panel, val) {
+  state.reports.panels = state.reports.panels || {};
+  state.reports.panels[id] = state.reports.panels[id] || {};
+  if (val) state.reports.panels[id][panel] = val;
+  else     delete state.reports.panels[id][panel];
+  if (Object.keys(state.reports.panels[id]).length === 0) {
+    delete state.reports.panels[id];
+  }
+  state.dirty = true;
+  renderAll();
+}
+
+function getEdit(id, field) {
+  const e = (state.reports.edits && state.reports.edits[id]) || {};
+  return e[field];
+}
+
+function setEdit(id, field, val) {
+  state.reports.edits = state.reports.edits || {};
+  state.reports.edits[id] = state.reports.edits[id] || {};
+  state.reports.edits[id][field] = val;
+  state.dirty = true;
+}
+
+function renderVariantCard(v, id, dropdownKind, opts = {}) {
+  const isPanel    = dropdownKind === "panel";
+  const panelKey   = isPanel ? (opts.category || "") : "";
+  const panelAttr  = isPanel ? `data-panel="${escapeAttr(panelKey)}"` : "";
+  const curStatus  = isPanel ? getPanelStatus(id, panelKey) : getStatus(id);
+  const options    = statusOptions(dropdownKind);
+  const idxTxt     = opts.index ? `#${opts.index}` : "";
+
+  if (!v) {
+    // Marked variant no longer present in current variants payload
+    const card = document.createElement("div");
+    card.className = "variant-card missing";
+    card.innerHTML = `
+      <div class="variant-head">
+        ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
+        <span class="muted">⚠️ 此 variant 在最新分析結果中不存在</span>
+        <span class="hgvs">${escapeHtml(id)}</span>
+        <select class="status-select" data-id="${escapeAttr(id)}" ${panelAttr}>
+          ${options.map(s => `<option value="${s}" ${s===curStatus?"selected":""}>${s||"—"}</option>`).join("")}
+        </select>
+      </div>`;
+    return card;
+  }
+
+  const urls = variantUrls(v);
+  const card = document.createElement("div");
+  card.className = "variant-card";
+
+  const links = [
+    `<a href="${urls.varsome}"  target="_blank" rel="noopener">Varsome</a>`,
+    `<a href="${urls.franklin}" target="_blank" rel="noopener">Franklin</a>`,
+    `<a href="${urls.genebe}"   target="_blank" rel="noopener">GeneBe</a>`,
+    urls.omim ? `<a href="${urls.omim}"     target="_blank" rel="noopener">OMIM</a>` : "",
+  ].join("");
+
+  const editAcmgClass = getEdit(id, "ACMG_classification") ?? v.ACMG_classification ?? "";
+  const editAcmgCrit  = getEdit(id, "ACMG_criteria")       ?? v.ACMG_criteria       ?? "";
+  const editAcmgScore = getEdit(id, "ACMG_score")          ?? (v.ACMG_score ?? "");
+  const editComment   = getEdit(id, "comment")             ?? "";
+
+  const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
+  const clinvarLabel = clinvarDate ? `ClinVar (${escapeHtml(clinvarDate)})` : "ClinVar";
+
+  // Extras shown only when the user clicks the "More" button. Each row is
+  // pushed only when the underlying field is present in the webdata, so a
+  // sample with none of these fields has the More button hidden too.
+  const extras = [];
+  if (v.in_silico_prediction != null && v.in_silico_prediction !== "") {
+    extras.push({ key: "In silico prediction",
+                  html: fmtInSilico(v.in_silico_prediction) });
+  }
+  if (v.LoGoFunc != null && v.LoGoFunc !== "" && v.LoGoFunc !== "NA") {
+    extras.push({ key: "LoGoFunc", text: String(v.LoGoFunc),
+                  cls: classifyLoGoFunc(v.LoGoFunc) });
+  }
+  if (v.MaxEntScan_diff != null && v.MaxEntScan_diff !== "") {
+    extras.push({ key: "MaxEntScan", text: fmtNum(v.MaxEntScan_diff),
+                  cls: classifyMaxEntScan(v.MaxEntScan_diff) });
+  }
+  if (v.PDIVAS_score != null && v.PDIVAS_score !== "") {
+    extras.push({ key: "PDIVAS", text: fmtNum(v.PDIVAS_score),
+                  cls: classifyPDIVAS(v.PDIVAS_score) });
+  }
+  const extrasHtml = extras.map(x => {
+    const valHtml = x.html != null ? x.html : escapeHtml(x.text);
+    return `<span class="k">${escapeHtml(x.key)}</span>`
+         + `<span class="v ${x.cls || ''}">${valHtml}</span>`;
+  }).join("");
+
+  // Exomiser / LIRICAL per-variant results — sit under Total / Variant /
+  // Pheno score in the first info-grid column. Toggled by the same More
+  // button as the AlphaMissense extras. Both scores are integer 0-100
+  // (Exomiser combined score × 100; LIRICAL compositeLR clamped to
+  // [-10, 10] then linearly mapped to [0, 100]).
+  const fmtScoreRank = (score, rank) => {
+    const hasS = score != null && score !== "" && Number.isFinite(Number(score));
+    const hasR = rank  != null && rank  !== "" && Number.isFinite(Number(rank));
+    if (!hasS && !hasR) return "—";
+    const s = hasS ? fmtInt(score) : "—";
+    return hasR ? `${s} (${Number(rank)})` : s;
+  };
+  // Exomiser + LIRICAL rows are always emitted (even when both score
+  // and rank are missing — fmtScoreRank renders "—") so the user
+  // always sees the two reference labels rather than a row vanishing.
+  const scoreExtras = [
+    { key: "Exomiser",
+      text: fmtScoreRank(v.total_score_exomiser_variant, v.rank_exomiser_variant) },
+    { key: "LIRICAL",
+      text: fmtScoreRank(v.lirical_variant_score, v.rank_lirical_variant) },
+  ];
+  const scoreExtrasHtml = scoreExtras.map(x =>
+    `<span class="k">${escapeHtml(x.key)}</span><span class="v">${escapeHtml(x.text)}</span>`
+  ).join("");
+
+  card.innerHTML = `
+    <div class="variant-head">
+      ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
+      <select class="status-select" data-id="${escapeAttr(id)}" ${panelAttr}>
+        ${options.map(s => `<option value="${s}" ${s===curStatus?"selected":""}>${s||"—"}</option>`).join("")}
+      </select>
+      <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(v.HGVS || id)}<button class="btn-copy" data-copy="${escapeAttr(v.HGVS || id)}" title="複製 HGVS">${COPY_ICON_SVG}</button> <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
+      <span class="ext-links">${links}</span>
+    </div>
+    <div class="comment-row">
+      <label>Comment:
+        <input class="variant-comment" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editComment)}" />
+      </label>
+    </div>
+    <div class="info-grid">
+      <div>
+        <span class="k">Total score</span><span class="v">${fmtInt(v.total_score)}</span>
+        <span class="k">Variant score</span><span class="v">${fmtInt(v.geno_score)}</span>
+        <span class="k">Pheno score</span><span class="v">${fmtInt(v.pheno_score)}</span>
+        ${scoreExtras.length ? `<div class="more-extras hidden">${scoreExtrasHtml}</div>` : ""}
+      </div>
+      <div>
+        <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
+        <span class="k">Read depth (VAF)</span><span class="v">${fmtAdVaf(v.AD, v.alt_af)}</span>
+        <span class="k">Exon / Intron</span><span class="v">${fmtTxt(v.exon_or_intron)}</span>
+      </div>
+      <div>
+        <span class="k">${clinvarLabel}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
+        <span class="k">ACMG</span>
+        <span class="acmg-class-row">
+          <input class="acmg-class ${classifySignificance(editAcmgClass) || ""}" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgClass)}" />
+          <span class="acmg-paren">(</span>
+          <input class="acmg-score" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgScore)}" />
+          <span class="acmg-paren">)</span>
+        </span>
+        <textarea class="acmg-crit" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(editAcmgCrit)}</textarea>
+      </div>
+      <div>
+        <span class="k">AlphaMissense</span><span class="v ${classifyByThresholds(v.AlphaMissense_score, TOOL_CUTOFFS.alphamissense) || ''}">${fmtNum(v.AlphaMissense_score)}</span>
+        <span class="k">MetaRNN</span><span class="v ${classifyByThresholds(v.MetaRNN_score, TOOL_CUTOFFS.metarnn) || ''}">${fmtNum(v.MetaRNN_score)}</span>
+        <span class="k">SpliceAI</span><span class="v ${classifyByThresholds(v.SpliceAI_score, TOOL_CUTOFFS.spliceai) || ''}">${fmtNum(v.SpliceAI_score)}</span>
+        ${extras.length ? `<div class="more-extras hidden">${extrasHtml}</div>` : ""}
+      </div>
+      <div>
+        <span class="k">AF</span><span class="v">${fmtNum(v.AF, 5)}</span>
+        <span class="k">AF_eas</span><span class="v">${fmtNum(v.AF_eas, 5)}</span>
+        ${Number.isFinite(Number(v.TaiwanBioBank))
+          ? `<span class="k">TWB</span><span class="v">${fmtNum(v.TaiwanBioBank, 5)}</span>`
+          : ""}
+      </div>
+    </div>
+    ${(extras.length || scoreExtras.length) ? `<button class="btn-more" type="button">▾ More</button>` : ""}
+    ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
+  `;
+
+  return card;
+}
+
+// Manual variant cards live in state.reports.manual_variants instead of
+// state.data.variants — they have no upstream call, just three free-text
+// fields the user fills in (typically for CNVs that the SNV pipeline
+// doesn't touch). Sync targets:
+//   position → Causative_variant or Other_variant cell in xlsx
+//   disease  → appended into the Disease cell
+//   comment  → kept on the report JSON only (helps the user, not exported)
+function renderManualVariantCard(m) {
+  const card = document.createElement("div");
+  card.className = "variant-card variant-card-manual";
+  card.dataset.mid = m.id;
+  const pos = m.position || "";
+  card.innerHTML = `
+    <div class="manual-row manual-row-pos">
+      <input class="manual-position" data-mid="${escapeAttr(m.id)}"
+             placeholder="點位（如 chr2:123456-654321 del）"
+             value="${escapeAttr(pos)}" />
+      <button class="btn-copy" data-copy="${escapeAttr(pos)}" title="複製點位">${COPY_ICON_SVG}</button>
+      <a class="btn-link" href="https://www.deciphergenomics.org/" target="_blank" rel="noopener">Decipher</a>
+      <button class="btn-remove-manual" data-mid="${escapeAttr(m.id)}" title="刪除這個 variant" type="button">×</button>
+    </div>
+    <div class="manual-row">
+      <label>Comment:
+        <input class="manual-comment" data-mid="${escapeAttr(m.id)}"
+               placeholder="備註"
+               value="${escapeAttr(m.comment || "")}" />
+      </label>
+    </div>
+    <div class="manual-row">
+      <label>Disease:
+        <input class="manual-disease" data-mid="${escapeAttr(m.id)}"
+               placeholder="疾病名稱（可包含遺傳模式 e.g. (AD)）"
+               value="${escapeAttr(m.disease || "")}" />
+      </label>
+    </div>
+  `;
+  return card;
+}
+
+function addManualVariant(status) {
+  if (!Array.isArray(state.reports.manual_variants)) state.reports.manual_variants = [];
+  const id = "m_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+  state.reports.manual_variants.push({
+    id, status, position: "", comment: "", disease: "",
+  });
+  state.dirty = true;
+  renderAll();
+}
+
+function removeManualVariant(mid) {
+  if (!Array.isArray(state.reports.manual_variants)) return;
+  state.reports.manual_variants = state.reports.manual_variants.filter(m => m.id !== mid);
+  state.dirty = true;
+  renderAll();
+}
+
+function updateManualVariant(mid, field, value) {
+  const m = (state.reports.manual_variants || []).find(x => x.id === mid);
+  if (!m) return;
+  m[field] = value;
+  state.dirty = true;
+}
+
+function renderDiseaseList(v, id, withCheckbox) {
+  const rows = [];
+  const picked = (getEdit(id, "report_diseases") || {});
+  for (let i = 1; i <= 5; i++) {
+    const d = v[`Disease${i}`];
+    if (!d || d === "NA") continue;
+    const summary = (String(d).split("\n")[0] || "").slice(0, 120);
+    const checked = picked[i] ? "checked" : "";
+    const checkbox = withCheckbox
+      ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${i}" ${checked} title="報告要發這個疾病" />`
+      : "";
+    rows.push(`
+      <details class="disease-row">
+        <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}</span></summary>
+        <div class="disease-detail">${escapeHtml(String(d))}</div>
+      </details>`);
+  }
+  if (!rows.length) return "";
+  return `<div class="disease-list">${rows.join("")}</div>`;
+}
+
+// ---------- Render: sections ---------------------------------------
+
+const REPORT_SECTION_DEFS = [
+  { el: "sec-causative", title: "Causative variants", match: id => getStatus(id) === "1", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "1" },
+  { el: "sec-other",     title: "Other variants",     match: id => getStatus(id) === "2", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "2" },
+  { el: "sec-acmg-sf",   title: "ACMG SF",            category: "acmg_sf",   dropdown: "panel", diseaseCheckbox: true },
+  { el: "sec-proactive", title: "Proactive",          category: "proactive", dropdown: "panel", diseaseCheckbox: true },
+  { el: "sec-carrier",   title: "Carrier screening",  category: "carrier",   dropdown: "panel", diseaseCheckbox: true },
+];
+
+// Tier sections per 三級輸出計畫.md §2.3. Backend categorises each variant
+// into 1A / 1B / 2 / 3 / 4 / 5 based on ClinVar / LOFTEE / ACMG points.
+const CANDIDATE_SECTION_DEFS = [
+  { el: "cat-tier-1a", title: "1A — ClinVar P/LP ≥ 1★",        category: "1A", dropdown: "candidate", tier: "1A", defaultOpen: true },
+  { el: "cat-tier-1b", title: "1B — Frameshift / Nonsense (LOFTEE HC)", category: "1B", dropdown: "candidate", tier: "1B", defaultOpen: true },
+  { el: "cat-tier-2",  title: "2 — ClinVar P/LP 0★",          category: "2",  dropdown: "candidate", tier: "2"  },
+  { el: "cat-tier-3",  title: "3 — ClinVar Conflicting (含 P)", category: "3",  dropdown: "candidate", tier: "3"  },
+  { el: "cat-tier-4",  title: "4 — ACMG points > 0",           category: "4",  dropdown: "candidate", tier: "4"  },
+  { el: "cat-tier-5",  title: "5 — VUS",                       category: "5",  dropdown: "candidate", tier: "5"  },
+  { el: "cat-acmg-sf-c",   title: "ACMG SF",          category: "acmg_sf",   dropdown: "panel" },
+  { el: "cat-proactive-c", title: "Proactive",        category: "proactive", dropdown: "panel" },
+  { el: "cat-carrier-c",   title: "Carrier screening", category: "carrier",  dropdown: "panel" },
+];
+
+function idsForReportSection(def) {
+  const known         = Object.keys(state.data.variants || {});
+  const reported      = Object.keys(state.reports.status || {});
+  const panelReported = Object.keys(state.reports.panels || {});
+  const all = Array.from(new Set([...known, ...reported, ...panelReported]));
+
+  if (def.match) {
+    // Causative / Other report sections sort by total_score desc so the
+    // most-likely-causative variants land at the top of the report.
+    return all.filter(def.match).sort((a, b) => {
+      const sa = Number(state.data.variants[a]?.total_score);
+      const sb = Number(state.data.variants[b]?.total_score);
+      const va = Number.isFinite(sa) ? sa : -Infinity;
+      const vb = Number.isFinite(sb) ? sb : -Infinity;
+      return vb - va;
+    });
+  }
+  if (def.category) {
+    const inCat = new Set(state.data.categories?.[def.category] || []);
+    return all.filter(id => inCat.has(id) && getPanelStatus(id, def.category) === "V");
+  }
+  return [];
+}
+
+function idsForCandidateSection(def) {
+  return state.data.categories?.[def.category] || [];
+}
+
+function renderBlock(def, ids, openKey) {
+  const host = document.getElementById(def.el);
+  host.innerHTML = "";
+  host.dataset.openKey = openKey;
+
+  const isPanel = def.dropdown === "panel" && !!def.category;
+  // Skip X-marked variants — panel sections use panel-specific X, others use global
+  const visibleIds = ids.filter(id => isPanel
+    ? getPanelStatus(id, def.category) !== "X"
+    : getStatus(id) !== "X");
+  const wasOpen = toggledBlocks.has(def.el)
+    ? host.dataset.wasOpen === "1"
+    : !!def.defaultOpen;
+  host.dataset.wasOpen = wasOpen ? "1" : "0";
+
+  const header = document.createElement("div");
+  header.className = "block-header" + (wasOpen ? " open" : "");
+  header.innerHTML = `
+    <span><span class="arrow"></span><span class="title">${escapeHtml(def.title)}</span></span>
+    <span class="count">${visibleIds.length}</span>`;
+  host.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "block-body" + (wasOpen ? " open" : "");
+  const manuals = def.manualStatus
+    ? (state.reports.manual_variants || []).filter(m => m.status === def.manualStatus)
+    : [];
+  if (!visibleIds.length && !manuals.length && !def.manualStatus) {
+    body.innerHTML = `<div class="muted">（無符合點位）</div>`;
+  } else {
+    visibleIds.forEach((id, i) => {
+      const v = state.data.variants[id] || null;
+      body.appendChild(renderVariantCard(v, id, def.dropdown, {
+        category: def.category,
+        index: i + 1,
+        diseaseCheckbox: !!def.diseaseCheckbox,
+      }));
+    });
+    manuals.forEach(m => body.appendChild(renderManualVariantCard(m)));
+    if (def.manualStatus) {
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn-add-manual";
+      addBtn.dataset.status = def.manualStatus;
+      addBtn.textContent = "＋ 新增 variant";
+      body.appendChild(addBtn);
+    }
+    if (!visibleIds.length && !manuals.length) {
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "（無符合點位）";
+      body.insertBefore(empty, body.firstChild);
+    }
+  }
+  host.appendChild(body);
+
+  header.addEventListener("click", () => {
+    const open = body.classList.toggle("open");
+    header.classList.toggle("open", open);
+    host.dataset.wasOpen = open ? "1" : "0";
+    toggledBlocks.add(def.el);
+  });
+}
+
+function renderReportSections() {
+  for (const def of REPORT_SECTION_DEFS) {
+    renderBlock(def, idsForReportSection(def), def.el);
+  }
+  renderPharmcatBlock("sec-pharmcat");
+  document.getElementById("report-sections").classList.remove("hidden");
+}
+
+function renderCandidateSections() {
+  for (const def of CANDIDATE_SECTION_DEFS) {
+    renderBlock(def, idsForCandidateSection(def), def.el);
+  }
+  renderPharmcatBlock("cat-pharmcat-c");
+  document.getElementById("category-sections").classList.remove("hidden");
+}
+
+function renderPharmcatBlock(hostId) {
+  const host = document.getElementById(hostId);
+  host.innerHTML = "";
+  host.style.display = "";
+
+  const pc = state.data?.pharmcat;
+  const genes = pc?.genes ? Object.values(pc.genes) : [];
+  genes.sort((a, b) => String(a.gene || "").localeCompare(String(b.gene || "")));
+
+  // Mark the block as data-bearing so the CSS only paints the gray header
+  // background when PharmCAT actually returned something.
+  host.classList.toggle("has-data", genes.length > 0);
+
+  const wasOpen = toggledBlocks.has(hostId)
+    ? host.dataset.wasOpen === "1"
+    : false;
+  host.dataset.wasOpen = wasOpen ? "1" : "0";
+
+  const header = document.createElement("div");
+  header.className = "block-header" + (wasOpen ? " open" : "");
+  header.innerHTML = `
+    <span><span class="arrow"></span><span class="title">Pharmacogenomics</span></span>
+    <span class="count">${genes.length}</span>`;
+  host.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "block-body" + (wasOpen ? " open" : "");
+  if (!genes.length) {
+    body.innerHTML = `<div class="muted">尚無 PharmCAT 結果。</div>`;
+  } else {
+    body.innerHTML = renderPharmcatBody(pc, genes);
+  }
+  host.appendChild(body);
+
+  header.addEventListener("click", () => {
+    const open = body.classList.toggle("open");
+    header.classList.toggle("open", open);
+    host.dataset.wasOpen = open ? "1" : "0";
+    toggledBlocks.add(hostId);
+  });
+}
+
+// PharmCAT genes are split into "Clinically actionable" (the call carries a
+// drug-relevant signal) and "Routine" (the call is benign / reference / a
+// negative HLA screen / Uncertain Susceptibility / etc.).
+//
+// Phenotype-based vetoes run BEFORE the drug-rec presence check so that
+// e.g. RYR1 (Uncertain Susceptibility) and HLA-B (only *15:02/*57:01/*58:01
+// negative) stay in Routine even though PharmCAT lists them as implicated
+// for desflurane / allopurinol / etc.
+function isPharmcatActionable(gene, recsByGene) {
+  const phenotype = String(gene.phenotype || "").trim().toLowerCase();
+  const a1 = String(gene.allele1_function || "").trim().toLowerCase();
+  const a2 = String(gene.allele2_function || "").trim().toLowerCase();
+  const sym = String(gene.gene || "");
+
+  // Vetoes — never actionable regardless of drug rec presence.
+  if (phenotype.includes("uncertain susceptibility")) return false;
+  if (sym.startsWith("HLA") && !/\bpositive\b/.test(phenotype)) return false;
+  if (phenotype.includes("metabolizer") &&
+      (phenotype.includes("normal metabolizer") ||
+       phenotype.includes("indeterminate") ||
+       phenotype.includes("unknown"))) return false;
+  // G6PD writes the phenotype as bare "Normal" rather than "Normal Metabolizer";
+  // every CPIC drug rec for G6PD Normal is "No reason to avoid based on G6PD
+  // status" so it stays in Routine alongside the other Normal Metabolizers.
+  if (phenotype === "normal") return false;
+  if (phenotype.includes("function") && phenotype.includes("normal function")) return false;
+  if (sym === "CFTR" && /non-respons/.test(phenotype)) return false;
+  if (sym === "MT-RNR1" && !/increased risk/.test(phenotype)) return false;
+
+  // Positive signals.
+  if ((recsByGene[gene.gene] || []).length > 0) return true;
+  if (phenotype.includes("metabolizer")) return true;        // already filtered Normal/Indet/Unk above
+  if (phenotype.includes("function"))    return true;        // already filtered Normal function
+  if (sym.startsWith("HLA"))             return true;        // contains "positive"
+  if (sym === "MT-RNR1")                 return true;        // contains "increased risk"
+  if (sym === "CFTR")                    return /respons/.test(phenotype);
+  if (sym === "VKORC1") {
+    return /\baa\b/.test(phenotype)
+        || /coumarin sensitivity/.test(a1)
+        || /coumarin sensitivity/.test(a2);
+  }
+  if (phenotype.includes("susceptibility")) return true;     // already filtered Uncertain
+  return false;
+}
+
+function renderPharmcatBody(pc, genes) {
+  const recs = Array.isArray(pc.recommendations) ? pc.recommendations : [];
+  const recsByGene = {};
+  for (const r of recs) {
+    // Older webdata writes implicated as a bare string when there's exactly
+    // one gene (jsonlite auto_unbox); normalise so for…of doesn't iterate
+    // characters of "CYP3A5".
+    const imp = Array.isArray(r.implicated)
+      ? r.implicated
+      : (r.implicated ? [r.implicated] : []);
+    for (const g of imp) {
+      if (!recsByGene[g]) recsByGene[g] = [];
+      recsByGene[g].push(r);
+    }
+  }
+
+  const actionable = [];
+  const routine = [];
+  for (const g of genes) {
+    if (isPharmcatActionable(g, recsByGene)) actionable.push(g);
+    else routine.push(g);
+  }
+
+  const ts = pc.timestamp
+    ? `<div class="muted pharmcat-ts">Generated ${escapeHtml(pc.timestamp)}</div>`
+    : "";
+
+  const actionableHtml = actionable.length
+    ? `<div class="pgx-section">
+         <h4 class="pgx-heading">Clinically actionable</h4>
+         ${actionable.map(g => renderPharmcatActionableGene(g, recsByGene[g.gene] || [])).join("")}
+       </div>`
+    : "";
+
+  const routineHtml = routine.length
+    ? `<div class="pgx-section pgx-routine">
+         <h4 class="pgx-heading">Routine (no special action)</h4>
+         ${renderPharmcatRoutine(routine)}
+       </div>`
+    : "";
+
+  const empty = !actionable.length && !routine.length
+    ? `<div class="muted">尚無 PharmCAT 結果。</div>`
+    : "";
+
+  return `${ts}${actionableHtml}${routineHtml}${empty}`;
+}
+
+function renderPharmcatActionableGene(g, recs) {
+  const heading = `${escapeHtml(g.gene || "")} — `
+    + `${escapeHtml(displayPhenotype(g))}`
+    + (g.label && g.label !== g.phenotype
+        ? ` <span class="muted">(${escapeHtml(g.label)})</span>`
+        : "");
+  // PharmCAT's drugRecommendation text is already valid HTML (with <ul>,
+  // <li>, <a>, &quot;, &gt;, …); pass it straight to innerHTML. Source label
+  // and drug name are plain strings so they still get escapeHtml.
+  const recItems = recs.map(r => {
+    const items = (r.items || []).map(it => {
+      const src = it.source ? ` <span class="muted">(${escapeHtml(it.source)})</span>` : "";
+      return `<div class="pgx-rec-item">${it.text || ""}${src}</div>`;
+    }).join("");
+    return `<div class="pgx-rec">
+              <div class="pgx-drug">${escapeHtml(r.drug)}</div>
+              ${items}
+            </div>`;
+  }).join("");
+  const recsBlock = recs.length
+    ? `<div class="pgx-recs">${recItems}</div>`
+    : `<div class="muted">No drug-level recommendation in PharmCAT report.</div>`;
+  return `<div class="pgx-gene">
+            <div class="pgx-gene-head">${heading}</div>
+            ${recsBlock}
+            ${renderPharmcatGeneDetails(g)}
+          </div>`;
+}
+
+// "n/a" / empty phenotype gets replaced with the allele's clinical-function
+// label (so IFNL3 reads "Favorable response allele" instead of "n/a"); G6PD's
+// "Normal" is rewritten to "Normal Metabolizer" so it merges into the same
+// routine bucket as the CYPs.
+function displayPhenotype(g) {
+  const raw = String(g.phenotype || "").trim();
+  const lower = raw.toLowerCase();
+  if (!raw || lower === "n/a" || lower === "—") {
+    const fn = (g.allele1_function || g.allele2_function || "").trim();
+    if (fn) return fn;
+    if (g.label) return g.label;  // CYP4F2 etc.: show diplotype if nothing else
+  }
+  if (lower === "normal") return "Normal Metabolizer";
+  return raw || "—";
+}
+
+// HLA rows always get their own line because the diplotype label differs per
+// gene; everything else is grouped by displayPhenotype, so e.g. RYR1 and
+// CACNA1S (both Uncertain Susceptibility) collapse into a single row.
+function renderPharmcatRoutine(genes) {
+  const groups   = new Map();   // key (lowercased label) → { label, items }
+  const hlaRows  = [];
+
+  for (const g of genes) {
+    const sym = String(g.gene || "");
+    const label = displayPhenotype(g);
+    if (sym.startsWith("HLA")) {
+      hlaRows.push({ gene: sym, dip: g.label || "—", phenotype: g.phenotype || "" });
+      continue;
+    }
+    const key = label.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { label, items: [] });
+    groups.get(key).items.push({ gene: sym, dip: g.label || "" });
+  }
+
+  const order = key => {
+    if (key.includes("normal metabolizer")) return 0;
+    if (key.includes("uncertain"))          return 1;
+    return 2;
+  };
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    const oa = order(a), ob = order(b);
+    return oa !== ob ? oa - ob : a.localeCompare(b);
+  });
+
+  const groupRows = sortedKeys.map(key => {
+    const { label, items } = groups.get(key);
+    const list = items.map(it => {
+      const dip = it.dip
+        ? ` <span class="muted">(${escapeHtml(it.dip)})</span>`
+        : "";
+      return `${escapeHtml(it.gene)}${dip}`;
+    }).join(", ");
+    return `<div class="pgx-routine-row"><strong>${escapeHtml(label)}:</strong> ${list}</div>`;
+  }).join("");
+
+  const hlaHtml = hlaRows.map(h => {
+    const ph = h.phenotype
+      ? ` <span class="muted">(${escapeHtml(h.phenotype)})</span>`
+      : "";
+    return `<div class="pgx-routine-row"><strong>${escapeHtml(h.gene)}</strong> — ${escapeHtml(h.dip)}${ph}</div>`;
+  }).join("");
+
+  return `${groupRows}${hlaHtml}`;
+}
+
+function renderPharmcatGeneDetails(g) {
+  // Re-uses the per-gene allele / variant detail block from the prior
+  // implementation, now nested inside <details> for actionable genes.
+  const fnLine = (name, fn) => {
+    if (!name && !fn) return "";
+    const left  = name ? escapeHtml(name) : "—";
+    const right = fn   ? ` <span class="muted">(${escapeHtml(fn)})</span>` : "";
+    return `<div>${left}${right}</div>`;
+  };
+  const vrows = (g.variants || []).map(v => `
+    <tr>
+      <td>${escapeHtml(v.rsid || "—")}</td>
+      <td>${escapeHtml(v.chr || "")}:${escapeHtml(String(v.pos ?? ""))}</td>
+      <td>${escapeHtml(v.call || "")}</td>
+      <td>${escapeHtml(v.alleles || "")}</td>
+    </tr>`).join("");
+  const uncalled = (g.uncalled && g.uncalled.length)
+    ? `<div class="muted">Uncalled: ${g.uncalled.map(escapeHtml).join(", ")}</div>`
+    : "";
+  const variants = vrows
+    ? `<table class="pharmcat-variants"><thead><tr><th>rsID</th><th>Position</th><th>Call</th><th>Alleles</th></tr></thead><tbody>${vrows}</tbody></table>`
+    : "";
+  return `<details class="pgx-detail"><summary>詳細</summary>
+            <div class="pharmcat-alleles">
+              ${fnLine(g.allele1_name, g.allele1_function)}
+              ${fnLine(g.allele2_name, g.allele2_function)}
+            </div>
+            ${uncalled}
+            ${variants}
+          </details>`;
+}
+
+function renderAll() {
+  if (!state.data) return;
+  renderSampleMeta();
+  renderClinicalDescription();
+  renderPhenotype();
+  renderComment();
+  renderReportSections();
+  renderCandidateSections();
+  updateSaveHint();
+}
+
+function updateSaveHint() {
+  const hint = state.dirty ? "有未儲存變更" : "無變更";
+  document.getElementById("save-hint-top").textContent = hint;
+  document.getElementById("save-hint-bottom").textContent = hint;
+}
+
+// ---------- Event wiring -------------------------------------------
+
+document.addEventListener("click", ev => {
+  const t = ev.target;
+  if (t.matches("#btn-save-top, #btn-save-bottom")) {
+    saveChanges();
+  } else if (t.matches("#btn-close-bottom")) {
+    collapseCandidateSections();
+  } else if (t.matches(".btn-export-html, .btn-export-clinical, .btn-export-screening")) {
+    // Export buttons land in a later phase (Phase 7 — DOCX, 細明體).
+    alert("匯出功能尚未實作（Phase 7）。");
+  } else if (t.closest(".clinical-header")) {
+    toggleCollapsibleCard(t.closest(".clinical-header"));
+  } else if (t.closest(".btn-copy")) {
+    ev.stopPropagation();
+    copyToClipboard(t.closest(".btn-copy"));
+  } else if (t.matches(".btn-more")) {
+    ev.stopPropagation();
+    toggleVariantExtras(t);
+  } else if (t.matches(".tag-remove")) {
+    ev.stopPropagation();
+    removeTag(t.dataset.tag);
+  } else if (t.matches(".btn-add-manual")) {
+    ev.stopPropagation();
+    addManualVariant(t.dataset.status);
+  } else if (t.matches(".btn-remove-manual")) {
+    ev.stopPropagation();
+    removeManualVariant(t.dataset.mid);
+  } else if (t.matches(".disease-pick")) {
+    // Don't let clicking the checkbox also toggle its <details> container.
+    ev.stopPropagation();
+  }
+});
+
+function copyToClipboard(btn) {
+  const text = btn.dataset.copy || "";
+  if (!text) return;
+  // Save the SVG icon as innerHTML so we can restore it after the
+  // brief ✓ / ✗ flash; textContent would strip the child <svg>.
+  const orig = btn.innerHTML;
+  const flash = (mark, ms) => {
+    btn.textContent = mark;
+    setTimeout(() => { btn.innerHTML = orig; }, ms);
+  };
+  navigator.clipboard.writeText(text)
+    .then(() => flash("✓", 900))
+    .catch(() => flash("✗", 1200));
+}
+
+function toggleVariantExtras(btn) {
+  const card = btn.closest(".variant-card");
+  if (!card) return;
+  // A card may have multiple .more-extras blocks (e.g. one under the
+  // Total/Variant/Pheno column for Exomiser+LIRICAL, another under the
+  // AlphaMissense column for LoGoFunc / MaxEntScan / PDIVAS). The single
+  // More button toggles them in lockstep.
+  const blocks = card.querySelectorAll(".more-extras");
+  if (!blocks.length) return;
+  const willHide = !blocks[0].classList.contains("hidden");
+  blocks.forEach(b => b.classList.toggle("hidden", willHide));
+  btn.textContent = willHide ? "▾ More" : "▴ Less";
+}
+
+document.addEventListener("change", ev => {
+  const t = ev.target;
+  if (t.matches(".status-select")) {
+    const panel = t.dataset.panel;
+    if (panel) setPanelStatus(t.dataset.id, panel, t.value);
+    else       setStatus(t.dataset.id, t.value);
+  } else if (t.matches("#m-category")) {
+    state.reports.category = t.value || null;
+    state.dirty = true;
+    updateSaveHint();
+  } else if (t.matches(".acmg-class")) {
+    setEdit(t.dataset.id, "ACMG_classification", t.value);
+    updateSaveHint();
+    // Re-apply significance color to match the edited value
+    t.classList.remove(...SIG_CLASSES);
+    const cls = classifySignificance(t.value);
+    if (cls) t.classList.add(cls);
+  } else if (t.matches(".acmg-score")) {
+    setEdit(t.dataset.id, "ACMG_score", t.value);
+    updateSaveHint();
+  } else if (t.matches(".acmg-crit")) {
+    setEdit(t.dataset.id, "ACMG_criteria", t.value);
+    updateSaveHint();
+  } else if (t.matches(".variant-comment")) {
+    setEdit(t.dataset.id, "comment", t.value);
+    updateSaveHint();
+  } else if (t.matches(".disease-pick")) {
+    const picked = { ...(getEdit(t.dataset.id, "report_diseases") || {}) };
+    const idx = t.dataset.idx;
+    if (t.checked) picked[idx] = true;
+    else           delete picked[idx];
+    setEdit(t.dataset.id, "report_diseases", picked);
+    updateSaveHint();
+  }
+});
+
+document.addEventListener("input", ev => {
+  const t = ev.target;
+  if (t.matches("#clinical-text")) {
+    state.reports.clinical_description = t.value;
+    state.dirty = true;
+    updateSaveHint();
+  } else if (t.matches("#comment-text")) {
+    state.reports.comment = t.value;
+    state.dirty = true;
+    updateSaveHint();
+  } else if (t.matches(".manual-position")) {
+    updateManualVariant(t.dataset.mid, "position", t.value);
+    // Keep the adjacent 📋 button copying the latest position string.
+    const btn = t.parentElement?.querySelector(".btn-copy");
+    if (btn) btn.dataset.copy = t.value;
+    updateSaveHint();
+  } else if (t.matches(".manual-comment")) {
+    updateManualVariant(t.dataset.mid, "comment", t.value);
+    updateSaveHint();
+  } else if (t.matches(".manual-disease")) {
+    updateManualVariant(t.dataset.mid, "disease", t.value);
+    updateSaveHint();
+  }
+});
+
+// Tag input: Enter or comma commits the typed value and clears the field;
+// picking a datalist suggestion fires 'change' which we commit too.
+document.addEventListener("keydown", ev => {
+  if (!ev.target.matches(".tag-input")) return;
+  if (ev.key === "Enter" || ev.key === ",") {
+    ev.preventDefault();
+    const v = ev.target.value;
+    ev.target.value = "";
+    addTag(v);
+    setTimeout(() => {
+      const fresh = document.querySelector(".tag-input");
+      if (fresh) fresh.focus();
+    }, 0);
+  } else if (ev.key === "Escape") {
+    ev.target.value = "";
+  }
+});
+document.addEventListener("change", ev => {
+  if (ev.target.matches(".tag-input")) {
+    const v = ev.target.value;
+    ev.target.value = "";
+    addTag(v);
+  }
+});
+
+// Toggle any collapsible header (Clinical presentation, Comment, …).
+// Body element is always the next sibling of the header by convention,
+// and the .card section wraps both — that's where wasOpen lives.
+function toggleCollapsibleCard(header) {
+  const card = header.closest(".card");
+  const body = header.nextElementSibling;
+  if (!card || !body) return;
+  const open = !(card.dataset.wasOpen === "1");
+  card.dataset.wasOpen = open ? "1" : "0";
+  header.classList.toggle("open", open);
+  body.classList.toggle("open", open);
+  toggledBlocks.add(card.id);
+}
+
+function collapseCandidateSections() {
+  const host = document.getElementById("category-sections");
+  host.querySelectorAll(".cat-block").forEach(block => {
+    block.dataset.wasOpen = "0";
+    toggledBlocks.add(block.id);
+    block.querySelector(".block-header")?.classList.remove("open");
+    block.querySelector(".block-body")?.classList.remove("open");
+  });
+}
+
+// ---------- Save: write reports JSON to GitHub via Contents API ----
+
+async function ghGetSha(path) {
+  const token = getToken();
+  if (!token) throw new Error("No GitHub token");
+  const url = `${API_BASE}/contents/${encodePath(path)}?ref=${encodeURIComponent(BRANCH)}`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `token ${token}`, Accept: "application/vnd.github+json" },
+    cache: "no-store",
+  });
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on GET ${path}`);
+  const j = await resp.json();
+  return j.sha || null;
+}
+
+function toBase64Utf8(s) {
+  // Chunked to avoid blowing the call-stack on large HTML payloads.
+  const bytes = new TextEncoder().encode(s);
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+async function ghPutContent(path, text, message) {
+  const token = getToken();
+  if (!token) throw new Error("No GitHub token");
+  const b64 = toBase64Utf8(text);
+
+  const put = async (sha) => {
+    const body = { message, content: b64, branch: BRANCH };
+    if (sha) body.sha = sha;
+    return fetch(`${API_BASE}/contents/${encodePath(path)}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  };
+
+  let sha = await ghGetSha(path);
+  let resp = await put(sha);
+  // Conflict: refresh sha once and retry
+  if (resp.status === 409 || resp.status === 422) {
+    sha  = await ghGetSha(path);
+    resp = await put(sha);
+  }
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(`${resp.status} ${resp.statusText}: ${txt}`);
+  }
+  return resp.json();
+}
+
+// Same Contents API push but accepts already-base64'd content (so binary
+// payloads like a PDF can go up without going through toBase64Utf8).
+async function ghPutBinary(path, base64Content, message) {
+  const token = getToken();
+  if (!token) throw new Error("No GitHub token");
+  const put = async (sha) => {
+    const body = { message, content: base64Content, branch: BRANCH };
+    if (sha) body.sha = sha;
+    return fetch(`${API_BASE}/contents/${encodePath(path)}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  };
+  let sha = await ghGetSha(path);
+  let resp = await put(sha);
+  if (resp.status === 409 || resp.status === 422) {
+    sha  = await ghGetSha(path);
+    resp = await put(sha);
+  }
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(`${resp.status} ${resp.statusText}: ${txt}`);
+  }
+  return resp.json();
+}
+
+async function ghPutJSON(path, obj, message) {
+  return ghPutContent(path, JSON.stringify(obj, null, 2), message);
+}
+
+function encodePath(p) {
+  return p.split("/").map(encodeURIComponent).join("/");
+}
+
+async function saveChanges() {
+  if (!state.currentLIS) return;
+  const btnTop = document.getElementById("btn-save-top");
+  const btnBot = document.getElementById("btn-save-bottom");
+  const setBusy = b => { btnTop.disabled = b; btnBot.disabled = b; };
+  const hint = msg => {
+    document.getElementById("save-hint-top").textContent = msg;
+    document.getElementById("save-hint-bottom").textContent = msg;
+  };
+
+  setBusy(true);
+  hint("儲存中…");
+  try {
+    const statuses = state.reports.status || {};
+    const hasAutoCausative = Object.values(statuses).some(v => v === "1");
+    const hasManualCausative = (state.reports.manual_variants || []).some(
+      m => m.status === "1" && (m.position || "").trim() !== ""
+    );
+    state.reports.yield = (hasAutoCausative || hasManualCausative) ? 1 : 0;
+    const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+    const sid = row?.sample_id || state.currentLIS;
+    await apiPut(`/samples/${encodeURIComponent(sid)}/report`, state.reports);
+    state.dirty = false;
+    hint(`已儲存 (${new Date().toLocaleTimeString()})`);
+  } catch (e) {
+    hint("");
+    alert("儲存失敗：" + e.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ---------- Export: static analysis HTML → GitHub ------------------
+
+async function exportAnalysisHTML() {
+  if (!state.currentLIS) return;
+  const btns = document.querySelectorAll(".btn-export-html");
+  const setBusy = b => btns.forEach(x => { x.disabled = b; });
+  const hint = msg => {
+    document.getElementById("save-hint-top").textContent    = msg;
+    document.getElementById("save-hint-bottom").textContent = msg;
+  };
+
+  setBusy(true);
+  hint("產生匯出檔…");
+  try {
+    // 1) Inline CSS (fetch current stylesheet)
+    let css = "";
+    try {
+      const cssResp = await fetch("./style.css", { cache: "no-store" });
+      if (cssResp.ok) css = await cssResp.text();
+    } catch {/* ignore — export still works, just unstyled */}
+
+    // 2) Clone the main app area and freeze interactive widgets
+    const orig  = document.getElementById("app");
+    const clone = orig.cloneNode(true);
+    freezeForExport(orig, clone);
+
+    // 3) Wrap in a self-contained HTML document
+    const meta = state.data?.meta || {};
+    const title = `VCF Analysis — ${meta.LIS_ID || state.currentLIS}`;
+    const html = buildExportHTML({ css, bodyInner: clone.outerHTML, title, meta });
+
+    // 4) Trigger a local download (always-on per the user's preference)
+    //    and push the same content to GitHub. Local download is fired
+    //    first so the user sees immediate feedback even if the network
+    //    push later fails.
+    const fname = `${state.currentLIS}.html`;
+    downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), fname);
+    const path = `output/analysis_html/${fname}`;
+    await ghPutContent(path, html, `export: analysis HTML for ${state.currentLIS}`);
+    hint(`已下載 + 匯出 → ${path}`);
+  } catch (e) {
+    hint("");
+    alert("匯出失敗：" + e.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function freezeForExport(orig, clone) {
+  // cloneNode() copies markup, not live input state — snapshot values from
+  // the ORIGINAL DOM in document order, then apply by index to the clone.
+  const origControls  = Array.from(orig.querySelectorAll("input, select, textarea"));
+  const cloneControls = Array.from(clone.querySelectorAll("input, select, textarea"));
+  const values = origControls.map(el => {
+    if (el.tagName === "INPUT" && el.type === "checkbox") {
+      return { kind: "checkbox", checked: el.checked };
+    }
+    if (el.tagName === "SELECT") {
+      const opt = el.options[el.selectedIndex];
+      return { kind: "select", text: opt ? (opt.textContent || opt.value || "") : "" };
+    }
+    return { kind: "text", value: el.value };
+  });
+
+  // Mirror the live page's default expansion: only Causative / Other are open.
+  // The rest stay collapsed but remain clickable in the export thanks to the
+  // small toggle script inlined by buildExportHTML().
+  ["sec-causative", "sec-other"].forEach(id => {
+    const host = clone.querySelector("#" + id);
+    if (!host) return;
+    host.querySelector(".block-header")?.classList.add("open");
+    host.querySelector(".block-body")?.classList.add("open");
+  });
+
+  // Remove the search UI and all save-rows — no interactive controls in export.
+  clone.querySelectorAll(".save-row").forEach(el => el.remove());
+  clone.querySelectorAll("#q-lis, #q-lis-dropdown, #search-status").forEach(el => el.remove());
+  // If the first card is the (id-less) search card, drop it.
+  const firstCard = clone.querySelector(".card");
+  if (firstCard && !firstCard.id) firstCard.remove();
+
+  // Freeze form controls to static spans/divs, using the snapshotted values.
+  cloneControls.forEach((el, i) => {
+    const v   = values[i];
+    const tag = el.tagName;
+    let replacement;
+    if (v.kind === "checkbox") {
+      replacement = document.createElement("span");
+      replacement.textContent = v.checked ? "☑" : "☐";
+    } else if (v.kind === "select") {
+      replacement = document.createElement("span");
+      replacement.textContent = (v.text || "").trim() || "—";
+    } else if (tag === "TEXTAREA") {
+      replacement = document.createElement("div");
+      replacement.textContent = v.value || "";
+    } else {
+      replacement = document.createElement("span");
+      replacement.textContent = v.value || "—";
+    }
+    replacement.className = `export-static ${el.className || ""}`.trim();
+    if (tag === "TEXTAREA") replacement.classList.add("export-multiline");
+    el.replaceWith(replacement);
+  });
+}
+
+function buildExportHTML({ css, bodyInner, title, meta }) {
+  const exportCss = `
+/* --- Export-only overrides --- */
+body { background: #fff; }
+.topbar { background: #1f2328; color: #fff; padding: 12px 20px; }
+.topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.export-static {
+  display: inline-block;
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font: inherit;
+  color: inherit;
+  min-width: 0;
+  vertical-align: baseline;
+}
+.export-static.export-multiline {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.export-static.status-select { font-weight: 600; }
+.export-static.acmg-crit { white-space: pre-wrap; display: block; }
+.export-static.variant-comment,
+.export-static.acmg-class,
+.export-static.acmg-score { font-family: ui-monospace, monospace; }
+.export-banner {
+  text-align: center;
+  color: #6a737d;
+  font-size: 12px;
+  padding: 12px 0;
+  border-top: 1px solid #d0d7de;
+  margin-top: 24px;
+}
+`;
+  const exportedAt = new Date().toISOString();
+  const headerLine = [meta.LIS_ID, meta.Name, meta.MRN].filter(Boolean).map(escapeHtml).join(" — ");
+  return `<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+<style>${css}
+${exportCss}
+</style>
+</head>
+<body>
+<header class="topbar"><h1>VCF Analysis${headerLine ? " — " + headerLine : ""}</h1></header>
+${bodyInner}
+<div class="export-banner">Exported ${escapeHtml(exportedAt)} · static snapshot</div>
+<script>
+// Click-to-toggle for collapsed sections (no other interactivity in the export).
+document.addEventListener("click", function (e) {
+  var h = e.target.closest(".block-header, .clinical-header");
+  if (!h) return;
+  var body = h.nextElementSibling;
+  h.classList.toggle("open");
+  if (body) body.classList.toggle("open");
+});
+</script>
+</body>
+</html>`;
+}
+
+// ---------- Export: clinical (TXT) + screening (PDF) reports -------
+//
+// Two more buttons in the save-row produce per-sample reports:
+//   - Clinical TXT (the "診斷報告"), pushed to output/clinical_reports/
+//   - Screening PDF (the "健檢報告"), pushed to output/screening_reports/
+// Both follow the same "fetch state → render → ghPutContent" shape as
+// exportAnalysisHTML above. Helpers are defined below; the main entry
+// points are exportClinicalReport() and exportScreeningReport().
+
+// VEP Consequence → 中文 + 報告解釋句. Fallback below for unknown terms.
+const CONSEQUENCE_CH = {
+  stop_gained:                     { label: "無義突變 (Nonsense)",
+    explain: "此變異會形成過早的終止密碼子，使蛋白質轉譯提前終止，通常導致蛋白質功能喪失。" },
+  missense_variant:                { label: "誤義突變 (Missense)",
+    explain: "此變異使密碼子改變為不同的胺基酸，可能影響蛋白質的結構穩定性、功能或相互作用。" },
+  frameshift_variant:              { label: "移碼突變 (Frameshift)",
+    explain: "此變異改變了開放閱讀框，使下游胺基酸序列完全錯亂並通常產生過早的終止密碼子，常導致蛋白質功能喪失。" },
+  stop_lost:                       { label: "終止密碼子失去 (Stop loss)",
+    explain: "此變異使原本的終止密碼子消失，導致蛋白質轉譯延長，可能影響蛋白質功能。" },
+  start_lost:                      { label: "起始密碼子失去 (Start loss)",
+    explain: "此變異使蛋白質的起始密碼子消失，可能導致蛋白質無法正常轉譯。" },
+  inframe_insertion:               { label: "框內插入 (Inframe insertion)",
+    explain: "此變異在不改變閱讀框的前提下插入若干胺基酸，可能影響蛋白質結構或功能。" },
+  inframe_deletion:                { label: "框內缺失 (Inframe deletion)",
+    explain: "此變異在不改變閱讀框的前提下缺失若干胺基酸，可能影響蛋白質結構或功能。" },
+  splice_donor_variant:            { label: "剪接供體位點變異 (Splice donor)",
+    explain: "此變異位於 intron 的 5' 剪接位點，可能導致 intron 無法正確剪除，影響蛋白質序列。" },
+  splice_acceptor_variant:         { label: "剪接受體位點變異 (Splice acceptor)",
+    explain: "此變異位於 intron 的 3' 剪接位點，可能導致 intron 無法正確剪除，影響蛋白質序列。" },
+  splice_region_variant:           { label: "剪接區變異 (Splice region)",
+    explain: "此變異位於剪接位點附近，可能影響 intron 剪除的準確度。" },
+  splice_donor_5th_base_variant:   { label: "剪接供體第 5 鹼基變異",
+    explain: "此變異位於剪接供體下游第 5 個位置，可能干擾正常的剪接過程。" },
+  splice_donor_region_variant:     { label: "剪接供體區變異",
+    explain: "此變異位於剪接供體位點附近，可能影響剪接準確度。" },
+  splice_polypyrimidine_tract_variant: { label: "聚嘧啶區變異 (Polypyrimidine tract)",
+    explain: "此變異位於剪接受體上游的聚嘧啶區，可能影響剪接效率。" },
+  protein_altering_variant:        { label: "蛋白質改變變異",
+    explain: "此變異會造成蛋白質序列改變（非單純胺基酸取代），可能影響蛋白質功能。" },
+  synonymous_variant:              { label: "同義變異 (Synonymous)",
+    explain: "此變異不改變胺基酸序列，通常不影響蛋白質功能。" },
+  intron_variant:                  { label: "內含子變異 (Intronic)",
+    explain: "此變異位於內含子區，通常不影響蛋白質序列，但若靠近剪接位點仍可能干擾剪接。" },
+  "5_prime_UTR_variant":           { label: "5' 非轉譯區變異",
+    explain: "此變異位於基因 5' 非轉譯區，可能影響轉錄或轉譯效率。" },
+  "3_prime_UTR_variant":           { label: "3' 非轉譯區變異",
+    explain: "此變異位於基因 3' 非轉譯區，可能影響 mRNA 穩定性或轉譯調控。" },
+  upstream_gene_variant:           { label: "上游基因區變異",
+    explain: "此變異位於基因上游，可能影響轉錄調控。" },
+  downstream_gene_variant:         { label: "下游基因區變異",
+    explain: "此變異位於基因下游，臨床意義通常不明確。" },
+  intergenic_variant:              { label: "基因間變異 (Intergenic)",
+    explain: "此變異位於基因間區，臨床意義通常不明確。" },
+  non_coding_transcript_exon_variant: { label: "非編碼轉錄本外顯子變異",
+    explain: "此變異位於非編碼轉錄本的外顯子區，臨床意義通常不明確。" },
+  mature_miRNA_variant:            { label: "成熟 miRNA 變異",
+    explain: "此變異位於成熟 miRNA 序列，可能影響其調控功能。" },
+  coding_sequence_variant:         { label: "編碼序列變異",
+    explain: "此變異位於編碼序列，但具體影響需個別評估。" },
+  TF_binding_site_variant:         { label: "轉錄因子結合位點變異",
+    explain: "此變異位於轉錄因子結合位點，可能影響基因表達調控。" },
+  regulatory_region_variant:       { label: "調控區域變異",
+    explain: "此變異位於調控區域，可能影響基因表達。" },
+};
+
+// ACMG / ClinVar 5-tier classifier → 中文 (used in the "此為...之變異位點" sentence).
+const ACMG_CH = {
+  "Pathogenic":             "致病性",
+  "Likely pathogenic":      "可能致病性",
+  "Uncertain significance": "不確定意義",
+  "Likely benign":          "可能良性",
+  "Benign":                 "良性",
+  "Conflicting":            "意義分歧",
+};
+
+// OMIM inheritance code → 中文. Codes appear inside parens in Disease text.
+const INHERITANCE_LABELS = {
+  AD:  "體染色體顯性遺傳",
+  AR:  "體染色體隱性遺傳",
+  XLD: "性染色體顯性遺傳",
+  XLR: "性染色體隱性遺傳",
+  XL:  "性染色體遺傳",
+  YL:  "Y 染色體遺傳",
+  MT:  "粒線體遺傳",
+  DD:  "雙等位基因顯性遺傳",
+  IC:  "細胞質遺傳",
+};
+
+const ZYG_CH = { het: "Heterozygous", hom: "Homozygous", hemi: "Hemizygous" };
+
+// East-Asian-aware visual width — Chinese / Japanese / Korean glyphs occupy
+// 2 monospace cells each, ASCII / Latin take 1.
+function visualWidth(s) {
+  let w = 0;
+  for (const ch of String(s || "")) {
+    const c = ch.codePointAt(0);
+    if (c >= 0x1100 && (
+      c <= 0x115F ||
+      (c >= 0x2E80 && c <= 0x9FFF) ||
+      (c >= 0xA000 && c <= 0xA4CF) ||
+      (c >= 0xAC00 && c <= 0xD7A3) ||
+      (c >= 0xF900 && c <= 0xFAFF) ||
+      (c >= 0xFE30 && c <= 0xFE4F) ||
+      (c >= 0xFF00 && c <= 0xFF60) ||
+      (c >= 0xFFE0 && c <= 0xFFE6)
+    )) w += 2;
+    else w += 1;
+  }
+  return w;
+}
+function padToWidth(s, target) {
+  return s + " ".repeat(Math.max(0, target - visualWidth(s)));
+}
+function chunkByWidth(s, target) {
+  const out = [];
+  let line = "", w = 0;
+  for (const ch of String(s || "")) {
+    const cw = visualWidth(ch);
+    if (w + cw > target && line) { out.push(line); line = ""; w = 0; }
+    line += ch; w += cw;
+  }
+  if (line) out.push(line);
+  if (!out.length) out.push("");
+  return out;
+}
+
+// Build a fixed-width ASCII table with === separators. Long cells wrap onto
+// successive lines within the same column; rows are joined with a single
+// " " between columns and one leading space.
+function formatVariantTable(rows) {
+  const header = ["基因", "結構", "核苷酸", "基因型", "ClinVar", "ACMG&AMP指引"];
+  const widths = [8, 8, 30, 14, 14, 14];
+  const totalW = widths.reduce((a, b) => a + b, 0) + widths.length; // +N joiner spaces
+  const sep = "=".repeat(totalW);
+  const renderLine = cells => " " + cells.map((c, i) => padToWidth(c, widths[i])).join(" ");
+  const out = [sep, renderLine(header), sep];
+  for (const row of rows) {
+    const cellLines = row.map((c, i) => chunkByWidth(String(c == null ? "" : c), widths[i]));
+    const maxL = Math.max(...cellLines.map(c => c.length || 1));
+    for (let li = 0; li < maxL; li++) {
+      out.push(renderLine(cellLines.map(c => c[li] || "")));
+    }
+  }
+  out.push(sep);
+  return out.join("\n");
+}
+
+// Disease helpers ---------------------------------------------------
+
+// Which Disease{i} did the user tick on this variant card? First ticked,
+// or fall back to Disease1 if nothing ticked.
+function pickedDiseaseSlot(id, v) {
+  const picked = (state.reports?.edits?.[id]?.report_diseases) || {};
+  const idxs = Object.keys(picked).filter(k => picked[k]).map(Number)
+    .filter(n => Number.isFinite(n)).sort((a, b) => a - b);
+  for (const i of idxs) {
+    const d = v[`Disease${i}`];
+    if (d && d !== "NA") return { idx: i, text: d };
+  }
+  for (let i = 1; i <= 5; i++) {
+    const d = v[`Disease${i}`];
+    if (d && d !== "NA") return { idx: i, text: d };
+  }
+  return { idx: 1, text: "" };
+}
+
+// Disease text format: "<Name> (INH) [: description]" or "<Name>, somatic"
+// — extract a clean disease name + the inheritance code(s). Allows
+// comma + whitespace inside the parens so "(AR, DD)" parses as
+// inheritance="AR, DD" instead of falling through to a verbatim suffix.
+function diseaseInfo(text) {
+  if (!text) return { name: "", inheritance: "" };
+  const firstLine = String(text).split("\n")[0].trim();
+  const inhMatch = firstLine.match(/\(([A-Z][A-Z?\/,\s]*)\)/);
+  const inh = inhMatch ? inhMatch[1].trim() : "";
+  let name = firstLine;
+  if (inhMatch) name = name.slice(0, firstLine.indexOf(inhMatch[0]));
+  name = name.replace(/[:,;]+\s*$/, "").trim();
+  return { name, inheritance: inh };
+}
+function inheritanceCH(code) {
+  if (!code) return "遺傳模式未明確";
+  // Compound codes like "AD/AR" or "AR, DD" — translate each, join with "或".
+  const parts = code.split(/[\/,]/).map(s => s.trim()).filter(Boolean);
+  const labels = parts.map(p => INHERITANCE_LABELS[p] || p);
+  return labels.join("或");
+}
+
+// HGVS = "<gene>:<transcript>:<cdna>[:<protein>]" — split into pieces.
+function parseHGVS(hgvs) {
+  const parts = String(hgvs || "").split(":");
+  return {
+    gene:       parts[0] || "",
+    transcript: parts[1] || "",
+    cdna:       parts[2] || "",
+    protein:    parts[3] || "",
+  };
+}
+function hgvsCellText(v) {
+  const h = parseHGVS(v.HGVS);
+  return h.protein ? `${h.cdna}(${h.protein})` : h.cdna;
+}
+
+// ACMG / ClinVar text helpers ---------------------------------------
+
+function acmgClassCH(cls) {
+  if (!cls) return "";
+  return ACMG_CH[cls] || cls;
+}
+function consequenceEntry(consequence) {
+  // VEP can emit multiple terms joined with "&" or ","; pick the first known.
+  const terms = String(consequence || "").split(/[&,]/).map(s => s.trim());
+  for (const t of terms) {
+    if (CONSEQUENCE_CH[t]) return { term: t, ...CONSEQUENCE_CH[t] };
+  }
+  const first = terms[0] || "";
+  return {
+    term: first,
+    label: first ? `${first} 變異` : "未分類變異",
+    explain: "此變異的功能影響需個別評估。",
+  };
+}
+
+// gnomAD AF — pick the first numeric available across the field-name
+// variants emitted by hg38 / hg19 pipelines.
+function variantGnomadAF(v) {
+  for (const k of ["gnomad41_genome_AF", "gnomad41_exome_AF", "AF"]) {
+    const x = parseFloat(v[k]);
+    if (!isNaN(x)) return x;
+  }
+  return null;
+}
+function gnomadAFText(v) {
+  const af = variantGnomadAF(v);
+  if (af == null || af === 0) {
+    return "該變異位點在族群資料庫 gnomAD 中未報導過發生率，顯示其為罕見變異位點。";
+  }
+  // Plain-decimal percent rendering. Pick precision from the magnitude of the
+  // value (rather than fixed 2-sig-figs) so very small AFs don't fall into
+  // scientific notation — e.g. 7e-7 → "0.00007%" not "7.0e-5%".
+  const pct = af * 100;
+  let pretty;
+  if (pct >= 1) {
+    pretty = pct.toFixed(2).replace(/\.?0+$/, "");
+  } else {
+    const expo = Math.floor(Math.log10(pct));   // pct=7e-5 → expo=-5
+    const decimals = Math.max(2, -expo + 1);    // expo=-5 → 6 decimals
+    pretty = pct.toFixed(decimals).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  if (af < 0.001) {
+    return `該變異位點在族群資料庫 gnomAD 中報導過發生率為 ${pretty}%，顯示其為罕見變異位點。`;
+  }
+  return `該變異位點在族群資料庫 gnomAD 中報導過發生率為 ${pretty}%。`;
+}
+
+function variantClinSig(v) {
+  // ClinVar exports use underscores in CLNSIG values (e.g. "Likely_pathogenic",
+  // "Pathogenic/Likely_pathogenic"). Render with spaces in the report.
+  const raw = v.CLNSIG || v.CLINSIG || v.CLNSIGn || "";
+  return String(raw).replace(/_/g, " ");
+}
+function clinvarText(v) {
+  const sig = variantClinSig(v);
+  if (!sig) return "此變異位點未在疾病資料庫 (ClinVar) 中報導。";
+  return `在疾病資料庫 (ClinVar) 中此變異位點被報導為「${sig}」。`;
+}
+function acmgGuidelineText(v) {
+  const cls = v.ACMG_classification;
+  if (!cls) return "目前無 ACMG 評測。";
+  return `根據美國醫學遺傳學暨基因體學學會 (American College of Medical Genetics and Genomics) 與分子病理學學會 (Association for Molecular Pathology) 於 2015 年發表之準則，評測此變異位點為「${cls}」。`;
+}
+
+// ymd -> "2025年05月04日"
+function ymdToCnDate(ymd) {
+  const s = String(ymd || "");
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (!m) return s;
+  return `${m[1]}年${m[2]}月${m[3]}日`;
+}
+function todayYmd() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+}
+
+// Patient phenotype list (二、檢驗套組) — render HPO rows as
+// "Name (HP:id)" and panel rows as just the panel name.
+function phenotypeSummaryCH(list) {
+  const out = [];
+  for (const r of list || []) {
+    const ph    = (r.phenotype || "").trim();
+    const label = (r.label || r.hpo_name || "").trim() || ph;
+    if (ph.startsWith("HP:")) {
+      out.push(label !== ph ? `${label} (${ph})` : ph);
+    } else if (label) {
+      out.push(label);
+    }
+  }
+  return out.join("、") || "—";
+}
+
+// Word-wrap a paragraph at a target visual width with a fixed indent.
+// Visual-width based (not whitespace-tokenised) so Chinese sentences wrap
+// at the right column even when they contain no spaces.
+function wrapText(text, target, indent) {
+  const pad = " ".repeat(indent);
+  const lines = [];
+  let cur = "", w = 0;
+  for (const ch of String(text || "")) {
+    const cw = visualWidth(ch);
+    if (w + cw > target && cur) {
+      lines.push(pad + cur);
+      cur = ""; w = 0;
+    }
+    cur += ch; w += cw;
+  }
+  if (cur) lines.push(pad + cur);
+  return lines;
+}
+
+// Render the per-variant block: title line, ASCII table, the two numbered
+// remarks, then the descriptive paragraph. `kind` is "causative" or "other"
+// (it only changes the second remark sentence).
+function renderVariantBlock(vid, v, kind) {
+  const out = [];
+  const h = parseHGVS(v.HGVS);
+  const gene = v.gene_symbol || h.gene || "";
+  const transcript = h.transcript || "—";
+
+  // Title
+  out.push("    " + (transcript ? `${gene} (${transcript})` : gene));
+
+  // Table
+  const tableText = formatVariantTable([[
+    gene,
+    v.exon_or_intron || "—",
+    hgvsCellText(v),
+    ZYG_CH[v.zygosity] || v.zygosity || "—",
+    variantClinSig(v) || "—",
+    v.ACMG_classification || "—",
+  ]]);
+  for (const ln of tableText.split("\n")) out.push("    " + ln);
+
+  // Numbered remarks (use the user-picked Disease for inheritance + name)
+  const dis = pickedDiseaseSlot(vid, v);
+  const info = diseaseInfo(dis.text);
+  const inhTxt = inheritanceCH(info.inheritance);
+  const acmgTxt = acmgClassCH(v.ACMG_classification) || "—";
+  const tail = kind === "causative"
+    ? "與臨床症狀相關"
+    : "無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷";
+  out.push(`    1. ${gene}為${info.name || "—"}的致病基因之一，其遺傳模式屬於${inhTxt}。`);
+  out.push(`    2. 此為${acmgTxt}之變異位點，${tail}。`);
+
+  // Descriptive paragraph
+  const cons = consequenceEntry(v.Consequence);
+  const cdna = h.cdna || "";
+  const prot = h.protein ? ` (${h.protein})` : "";
+  const paragraph = [
+    `在個案之檢體中，檢測到 1 個位於基因 ${gene} 的變異位點。`,
+    `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
+    gnomadAFText(v),
+    clinvarText(v),
+    acmgGuidelineText(v),
+    "此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。建議比對臨床表徵並進行父母親與家族成員之變異位點檢測，以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或相關資料庫更新，可能影響變異位點 ACMG 判讀結果。",
+  ].join("");
+  out.push("");
+  out.push(...wrapText(paragraph, 76, 4));
+  return out;
+}
+
+// Whole-document builder. Returns a TXT string. Pulls everything from
+// state.data + state.reports (already loaded for the current sample).
+function buildClinicalTXT() {
+  const data = state.data || {};
+  const meta = data.meta || {};
+  const isWGS = String(meta.Test || "").toUpperCase() === "WGS";
+  const build = data.genome_build || "hg38";
+  const clinvarDate = ymdToCnDate(data.clinvar_date) || "—";
+
+  const statusMap = state.reports?.status || {};
+  const causIds  = Object.keys(statusMap).filter(id => statusMap[id] === "1");
+  const otherIds = Object.keys(statusMap).filter(id => statusMap[id] === "2");
+
+  const lines = [];
+  lines.push(`一、檢驗項目: 次世代定序${isWGS ? "全基因組" : "全外顯子"}定序檢測`);
+  lines.push("");
+  lines.push(`二、檢驗套組: ${phenotypeSummaryCH(data.patient_phenotype)}`);
+  lines.push("");
+  lines.push("三、檢測結果");
+  lines.push("  檢體說明:");
+  lines.push("    檢體類別：血液");
+  lines.push("  綜合說明:");
+  lines.push("");
+  lines.push("    第一類：與臨床症狀相關基因之已知致病性變異位點");
+  if (!causIds.length) {
+    lines.push("    未找到與臨床症狀相關基因之已知致病性變異位點。");
+  } else {
+    for (const vid of causIds) {
+      const v = data.variants?.[vid];
+      if (!v) continue;
+      lines.push("");
+      lines.push(...renderVariantBlock(vid, v, "causative"));
+    }
+  }
+  lines.push("");
+  lines.push("    第二類：其他變異位點");
+  if (!otherIds.length) {
+    lines.push("    未找到其他變異位點。");
+  } else {
+    for (const vid of otherIds) {
+      const v = data.variants?.[vid];
+      if (!v) continue;
+      lines.push("");
+      lines.push(...renderVariantBlock(vid, v, "other"));
+    }
+  }
+
+  lines.push("");
+  lines.push("四、檢測方法說明");
+  lines.push(`  1. 本次檢測使用次世代定序儀分析 (Illumina ${isWGS ? "NovaSeq X Plus" : "NextSeq 2000"})。`);
+  lines.push("  2. 本次檢測變異位點的錯誤率 ≦ 0.1% (Phred-scaled Q score ≧ 30)。");
+  lines.push(`  3. 本次檢測平均定序深度 ≧ ${isWGS ? "27.5X" : "50X"}。`);
+  lines.push(...wrapText(
+    "4. 本檢測僅能檢測出基因內單一核苷酸 (single nucleotide)、小片段的缺失或插入 (small indel)、大片段缺失 (deletion) 及擴增 (duplication)，無法檢測出轉位 (translocation)、倒轉 (inversion) 或其他複雜性結構變異 (complex structural variation)、組織特異性的鑲嵌 (tissue-specific mosaicism)、串聯重複 (tandem repeat) 以及未定序區域 (例如 promoter、intron)。",
+    74, 2));
+  lines.push(...wrapText("5. 本檢測報告僅供醫療專業人員參考，需配合其他相關臨床資料與家族成員之相關檢驗。", 74, 2));
+  lines.push("  6. 目前次世代定序分子遺傳診斷皆屬研究性質。");
+
+  lines.push("");
+  lines.push("五、檢測結果注釋");
+  lines.push(`  1. 本檢測結果比對參考序列為人類 ${build} 版本。`);
+  lines.push(...wrapText(
+    `2. ClinVar 及 ACMG&AMP 指引: 引用 ClinVar 資料庫截至 ${clinvarDate} 更新的註解，及美國醫學遺傳學暨基因體學學會 (ACMG) 與分子病理學學會 (AMP) 2015 年頒佈的指引，並且主要列入致病 (Pathogenic) 及可能致病 (Likely pathogenic) 變異；其他類別變異經醫師判斷認為與疾病相關時亦可列入。`,
+    74, 2));
+  lines.push("  3. 參考資料:");
+  lines.push("     a. 疾病資料庫: OMIM、ClinVar");
+  lines.push(`     b. 族群資料庫: gnomAD (v4.1${isWGS ? " genome" : " exome"})`);
+  lines.push("     c. 序列資料庫: RefSeqGene");
+  lines.push("  4. 本次檢測基因包括:");
+  const phenoGenes = (data.pheno_genes || []).slice().sort();
+  if (phenoGenes.length) {
+    lines.push(...wrapText(phenoGenes.join(", "), 74, 5));
+  } else {
+    lines.push("     —");
+  }
+
+  return lines.join("\n");
+}
+
+async function exportClinicalReport() {
+  if (!state.currentLIS) return;
+  const btns = document.querySelectorAll(".btn-export-clinical");
+  const setBusy = b => btns.forEach(x => { x.disabled = b; });
+  const hint = msg => {
+    document.getElementById("save-hint-top").textContent    = msg;
+    document.getElementById("save-hint-bottom").textContent = msg;
+  };
+
+  setBusy(true);
+  hint("產生診斷報告…");
+  try {
+    const txt = buildClinicalTXT();
+    const meta = state.data?.meta || {};
+    const lis = state.currentLIS;
+    const mrn = meta.MRN || "MRN";
+    const fname = `${lis}_${mrn}_clinical_${todayYmd()}.txt`;
+    downloadBlob(new Blob([txt], { type: "text/plain;charset=utf-8" }), fname);
+    const path = `output/clinical_reports/${fname}`;
+    await ghPutContent(path, txt, `export: clinical TXT for ${lis}`);
+    hint(`已下載 + 匯出 → ${path}`);
+  } catch (e) {
+    hint("");
+    alert("匯出失敗：" + e.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// Chinese-font loader for jsPDF. Fetches both Regular and Bold variants of
+// Noto Sans TC, base64-encodes them in chunks (avoids the call-stack blowup
+// when spreading a 5 MB byte array into String.fromCharCode), caches once
+// per page lifetime. Bold is used for headings and KV labels; Regular for
+// body / paragraphs. CDN paths get reorganised over time, so each chain
+// has multiple fallbacks ordered by likelihood-of-success.
+const PDF_FONT_NAME = "NotoSansTC";
+const PDF_FONT_REGULAR_SOURCES = [
+  "./fonts/NotoSansTC-Regular.ttf",
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/static/NotoSansTC-Regular.ttf",
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf",
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf",
+  "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-tc@4.5.13/files/noto-sans-tc-traditional-400-normal.ttf",
+  "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/SubsetOTF/TC/NotoSansCJKtc-Regular.otf",
+];
+const PDF_FONT_BOLD_SOURCES = [
+  "./fonts/NotoSansTC-Bold.ttf",
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/static/NotoSansTC-Bold.ttf",
+  "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf",
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/static/NotoSansTC-Bold.ttf",
+  "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-tc@4.5.13/files/noto-sans-tc-traditional-700-normal.ttf",
+  "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/SubsetOTF/TC/NotoSansCJKtc-Bold.otf",
+];
+let _pdfFontRegular = null, _pdfFontBold = null;
+async function _fetchFontB64(sources) {
+  const tried = [];
+  for (const url of sources) {
+    try {
+      const r = await fetch(url, { cache: "force-cache" });
+      if (!r.ok) {
+        tried.push(`${url} → ${r.status}`);
+        console.warn(`[font] ${url} → ${r.status} ${r.statusText}`);
+        continue;
+      }
+      const buf = new Uint8Array(await r.arrayBuffer());
+      let bin = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < buf.length; i += CHUNK) {
+        bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK));
+      }
+      console.info(`[font] loaded ${url} (${(buf.length / 1024 / 1024).toFixed(1)} MB)`);
+      return btoa(bin);
+    } catch (e) {
+      tried.push(`${url} → ${e.message}`);
+      console.warn(`[font] ${url} → ${e.message}`);
+    }
+  }
+  throw new Error("無法下載中文字型，所有來源都失敗：\n" + tried.join("\n"));
+}
+async function loadPdfFonts() {
+  if (!_pdfFontRegular) _pdfFontRegular = await _fetchFontB64(PDF_FONT_REGULAR_SOURCES);
+  if (!_pdfFontBold)    _pdfFontBold    = await _fetchFontB64(PDF_FONT_BOLD_SOURCES);
+  return { regular: _pdfFontRegular, bold: _pdfFontBold };
+}
+
+// Gene-panel files (uploaded to docs/ alongside this app). One gene per
+// line; rendered as a comma-joined list at the end of the PDF in small
+// type. Cached after the first fetch.
+const PANEL_FILES = [
+  { title: "重大疾病風險篩檢基因清單", url: "./ACMG_SF_v3.3.txt" },
+  { title: "主動性篩檢基因清單",       url: "./proactive.txt" },
+  { title: "帶因者篩檢基因清單",       url: "./carrier_mackenzie_1300+.txt" },
+];
+let _panelCache = null;
+async function loadGenePanels() {
+  if (_panelCache) return _panelCache;
+  const out = [];
+  for (const p of PANEL_FILES) {
+    try {
+      const r = await fetch(p.url, { cache: "force-cache" });
+      if (!r.ok) { out.push({ title: p.title, genes: [] }); continue; }
+      const txt = await r.text();
+      const genes = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      out.push({ title: p.title, genes });
+    } catch {
+      out.push({ title: p.title, genes: [] });
+    }
+  }
+  _panelCache = out;
+  return out;
+}
+
+// Char-by-char text wrapper. jsPDF's built-in splitTextToSize does word-wrap,
+// which on Chinese-with-embedded-English text breaks early at the CJK→Latin
+// boundary (e.g. "剪接供體位點變異" then linefeed then "(Splice donor)"
+// instead of breaking inside the line). Wrapping per glyph eliminates that
+// awkwardness and also preserves whitespace (jsPDF was eating spaces around
+// CJK boundaries).
+function pdfWrapText(doc, text, maxWidth) {
+  const lines = [];
+  let cur = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\n") { lines.push(cur); cur = ""; continue; }
+    const tentative = cur + ch;
+    if (doc.getTextWidth(tentative) > maxWidth) {
+      if (cur) { lines.push(cur); cur = ch; }
+      else     { lines.push(ch);  cur = "";  }
+    } else {
+      cur = tentative;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// Minimal layout helper around a jsPDF doc. Tracks a y cursor, auto-
+// page-breaks. Bold/Regular variants of NotoSansTC are pre-registered;
+// helpers default to Bold so the body text reads "thicker" (the user
+// specifically asked for less-thin output).
+function makePdfWriter(doc) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 16;
+  const w = { doc, y: margin, pageW, pageH, margin };
+  const ensureSpace = need => {
+    if (w.y + need > pageH - margin) { doc.addPage(); w.y = margin; }
+  };
+
+  w.heading = (text, level = 1) => {
+    const sz = level === 1 ? 20 : level === 2 ? 14 : 12;
+    if (level !== 1 && w.y > margin + 4) w.y += 4;
+    ensureSpace(sz + 4);
+    doc.setFont(PDF_FONT_NAME, "bold");
+    doc.setFontSize(sz);
+    doc.setTextColor(level === 1 ? 30 : 70, level === 1 ? 30 : 70, level === 1 ? 30 : 70);
+    doc.text(text, margin, w.y + sz * 0.7);
+    w.y += sz * 0.95 + 1;
+    if (level === 2) {
+      doc.setDrawColor(160, 160, 160);
+      doc.setLineWidth(0.4);
+      doc.line(margin, w.y, pageW - margin, w.y);
+      w.y += 4;
+    } else if (level === 1) {
+      w.y += 1;
+      doc.setDrawColor(60, 60, 60);
+      doc.setLineWidth(0.7);
+      doc.line(margin, w.y, pageW - margin, w.y);
+      w.y += 6;
+    }
+    doc.setTextColor(20, 20, 20);
+  };
+
+  // Body paragraph. Defaults to Bold body — user asked for thicker text.
+  // opts.weight = "regular" | "bold"
+  w.para = (text, opts = {}) => {
+    const sz = opts.size || 10.5;
+    const indent = opts.indent || 0;
+    const weight = opts.weight === "regular" ? "normal" : "bold";
+    doc.setFont(PDF_FONT_NAME, weight);
+    doc.setFontSize(sz);
+    doc.setTextColor(opts.color || 20, opts.color || 20, opts.color || 20);
+    const lineH = sz * 0.55 + 1.8;
+    const maxW = pageW - 2 * margin - indent;
+    const lines = pdfWrapText(doc, String(text || ""), maxW);
+    for (const ln of lines) {
+      ensureSpace(lineH + 1);
+      doc.text(ln, margin + indent, w.y + lineH * 0.7);
+      w.y += lineH;
+    }
+  };
+
+  w.gap = (h = 4) => { w.y += h; };
+
+  // Two-column key/value row. Label in subtle gray, value bold.
+  w.kv = (key, val, opts = {}) => {
+    const sz = opts.size || 10.5;
+    doc.setFontSize(sz);
+    const lineH = sz * 0.55 + 2.2;
+    const labelW = opts.labelWidth || 26;
+    const maxValW = pageW - 2 * margin - labelW;
+    doc.setFont(PDF_FONT_NAME, "bold");
+    const lines = pdfWrapText(doc, String(val || ""), maxValW);
+    ensureSpace(lineH * lines.length);
+    doc.setTextColor(110, 110, 110);
+    doc.text(key, margin, w.y + lineH * 0.7);
+    doc.setTextColor(20, 20, 20);
+    doc.text(lines, margin + labelW, w.y + lineH * 0.7);
+    w.y += lineH * lines.length;
+  };
+
+  // Subheading inside a section (e.g. variant gene + transcript title).
+  w.subheading = (text, opts = {}) => {
+    const sz = opts.size || 12;
+    ensureSpace(sz + 4);
+    doc.setFont(PDF_FONT_NAME, "bold");
+    doc.setFontSize(sz);
+    doc.setTextColor(30, 30, 30);
+    doc.text(text, margin, w.y + sz * 0.7);
+    w.y += sz * 0.85 + 2;
+  };
+
+  return w;
+}
+
+// Per-variant entry in the screening PDF — mirrors the clinical TXT
+// report's structure: gene + transcript title, KV block with the table
+// columns, two numbered remarks, then the descriptive paragraph.
+function pdfWriteVariant(w, vid, v, kind) {
+  const h = parseHGVS(v.HGVS);
+  const gene = v.gene_symbol || h.gene || "";
+  const transcript = h.transcript || "";
+  const dis = pickedDiseaseSlot(vid, v);
+  const info = diseaseInfo(dis.text);
+  const inhTxt = inheritanceCH(info.inheritance);
+  const acmgTxt = acmgClassCH(v.ACMG_classification) || "—";
+
+  // Variant title — gene + transcript + HGVS (cdna+protein) all on the
+  // subheading row, so the table doesn't need a separate "HGVS" line.
+  const titleParts = [gene];
+  if (transcript) titleParts.push(transcript);
+  const hgvsTxt = hgvsCellText(v);
+  if (hgvsTxt) titleParts.push(hgvsTxt);
+  w.subheading(titleParts.join(" "));
+
+  // KV info block (the diagnostic-report table cells, just rendered as
+  // labelled rows since proportional Chinese kills ASCII alignment). HGVS
+  // already lives in the title above, so it's deliberately not repeated.
+  w.kv("結構",   v.exon_or_intron || "—");
+  w.kv("基因型", ZYG_CH[v.zygosity] || v.zygosity || "—");
+  w.kv("ClinVar", variantClinSig(v) || "—");
+  w.kv("ACMG",   v.ACMG_classification || "—");
+  w.gap(2);
+
+  // The two clinical-style remarks. Second sentence mirrors the
+  // 致病性 / 不確定意義 / etc. mapping; recommendation tail is the
+  // standard "建議比對臨床表徵" line.
+  const tail = kind === "causative"
+    ? "與臨床症狀相關"
+    : "建議比對臨床表徵";
+  w.para(`1. ${gene}為${info.name || "—"}的致病基因之一，其遺傳模式屬於${inhTxt}。`, { indent: 4 });
+  w.para(`2. 此為${acmgTxt}之變異位點，${tail}。`, { indent: 4 });
+  w.gap(2);
+
+  // Descriptive paragraph — same composition as the clinical TXT block.
+  const cons = consequenceEntry(v.Consequence);
+  const cdna = h.cdna || "";
+  const prot = h.protein ? ` (${h.protein})` : "";
+  const para = [
+    `在個案之檢體中，檢測到 1 個位於基因 ${gene} 的變異位點。`,
+    `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
+    gnomadAFText(v),
+    clinvarText(v),
+    acmgGuidelineText(v),
+    "此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。建議比對臨床表徵並進行父母親與家族成員之變異位點檢測，以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或相關資料庫更新，可能影響變異位點 ACMG 判讀結果。",
+  ].join("");
+  w.para(para, { indent: 4 });
+  w.gap(8);
+}
+
+// Only the variants the user has marked V on the candidate card (which
+// promotes them into the Report area's panel section) end up in the PDF.
+// pickedDiseaseSlot() inside pdfWriteVariant already falls back to Disease1
+// when no Disease checkbox is ticked.
+function pdfWriteSection(w, title, ids, dataVariants, panelKey) {
+  w.heading(title, 2);
+  const filtered = (ids || []).filter(id =>
+    dataVariants?.[id] && getPanelStatus(id, panelKey) === "V"
+  );
+  if (!filtered.length) {
+    w.para("（未偵測到致病性之變異位點）", { indent: 4, weight: "regular" });
+    w.gap(4);
+    return;
+  }
+  for (const id of filtered) {
+    pdfWriteVariant(w, id, dataVariants[id]);
+  }
+}
+
+// Pharmacogenomics block — paste only the Actionable / Routine summaries,
+// no per-gene details (mirrors the toggle the user keeps closed in the UI).
+function pdfWritePharmacogenomics(w, pc) {
+  w.heading("藥物基因體學", 2);
+  if (!pc || !pc.genes) {
+    w.para("（無 PharmCAT 結果）", { indent: 4 });
+    w.gap(4);
+    return;
+  }
+  // Build the same actionable/routine split the web UI uses.
+  const recs = Array.isArray(pc.recommendations) ? pc.recommendations : [];
+  const recsByGene = {};
+  for (const r of recs) {
+    const imp = Array.isArray(r.implicated)
+      ? r.implicated
+      : (r.implicated ? [r.implicated] : []);
+    for (const g of imp) {
+      if (!recsByGene[g]) recsByGene[g] = [];
+      recsByGene[g].push(r);
+    }
+  }
+  const allGenes = Object.values(pc.genes);
+  allGenes.sort((a, b) => String(a.gene || "").localeCompare(String(b.gene || "")));
+  const actionable = [], routine = [];
+  for (const g of allGenes) {
+    if (isPharmcatActionable(g, recsByGene)) actionable.push(g);
+    else routine.push(g);
+  }
+
+  // Actionable
+  w.doc.setFont(PDF_FONT_NAME, "bold");
+  w.doc.setFontSize(12);
+  w.doc.setTextColor(180, 50, 50);
+  if (w.y + 14 > w.pageH - w.margin) { w.doc.addPage(); w.y = w.margin; }
+  w.doc.text("與用藥相關", w.margin, w.y + 12 * 0.7);
+  w.y += 12 * 0.7 + 4;
+  w.doc.setTextColor(20, 20, 20);
+
+  for (const g of actionable) {
+    const dispPheno = displayPhenotype(g);
+    const labelSuffix = (g.label && g.label !== g.phenotype) ? `  (${g.label})` : "";
+    w.para(`${g.gene} — ${dispPheno}${labelSuffix}`, { size: 10 });
+    const recsList = recsByGene[g.gene] || [];
+    if (!recsList.length) {
+      w.para("（PharmCAT 報告中尚無藥物層級建議）", { size: 9, indent: 6 });
+    } else {
+      for (const r of recsList) {
+        w.doc.setFont(PDF_FONT_NAME, "normal");
+        w.doc.setFontSize(10);
+        const dh = 10 * 0.55 + 2;
+        if (w.y + dh > w.pageH - w.margin) { w.doc.addPage(); w.y = w.margin; }
+        w.doc.setTextColor(70, 70, 70);
+        w.doc.text("• " + r.drug, w.margin + 6, w.y + dh * 0.7);
+        w.doc.setTextColor(20, 20, 20);
+        w.y += dh;
+        for (const it of (r.items || [])) {
+          // Strip HTML tags from the rec text for the PDF (jsPDF can't render them).
+          const txt = String(it.text || "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<")
+            .replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+          if (!txt) continue;
+          w.para(`(${it.source || ""}) ${txt}`, { size: 9, indent: 14 });
+        }
+      }
+    }
+    w.gap(2);
+  }
+  if (!actionable.length) w.para("（無）", { size: 9, indent: 6 });
+  w.gap(4);
+
+  // Routine — collapse same-phenotype groups, HLA per-row, just like the UI.
+  w.doc.setFont(PDF_FONT_NAME, "bold");
+  w.doc.setFontSize(12);
+  w.doc.setTextColor(60, 90, 60);
+  if (w.y + 14 > w.pageH - w.margin) { w.doc.addPage(); w.y = w.margin; }
+  w.doc.text("標準處方", w.margin, w.y + 12 * 0.7);
+  w.y += 12 * 0.7 + 4;
+  w.doc.setTextColor(20, 20, 20);
+
+  const groups = new Map();
+  const hlaRows = [];
+  for (const g of routine) {
+    const sym = String(g.gene || "");
+    const label = displayPhenotype(g);
+    if (sym.startsWith("HLA")) {
+      hlaRows.push({ gene: sym, dip: g.label || "—", phenotype: g.phenotype || "" });
+      continue;
+    }
+    const key = label.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { label, items: [] });
+    groups.get(key).items.push({ gene: sym, dip: g.label || "" });
+  }
+  const order = key => key.includes("normal metabolizer") ? 0 : key.includes("uncertain") ? 1 : 2;
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    const oa = order(a), ob = order(b);
+    return oa !== ob ? oa - ob : a.localeCompare(b);
+  });
+  for (const key of sortedKeys) {
+    const { label, items } = groups.get(key);
+    const list = items.map(it => it.dip ? `${it.gene} (${it.dip})` : it.gene).join(", ");
+    w.para(`${label}: ${list}`, { size: 10, indent: 4 });
+  }
+  for (const h of hlaRows) {
+    const ph = h.phenotype ? `  (${h.phenotype})` : "";
+    w.para(`${h.gene} — ${h.dip}${ph}`, { size: 10, indent: 4 });
+  }
+  if (!groups.size && !hlaRows.length) w.para("（無）", { size: 9, indent: 6 });
+  w.gap(4);
+}
+
+async function buildScreeningPDF() {
+  const fonts  = await loadPdfFonts();
+  const panels = await loadGenePanels();
+
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    throw new Error("jsPDF library not loaded");
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  doc.addFileToVFS(`${PDF_FONT_NAME}-Regular.ttf`, fonts.regular);
+  doc.addFont(`${PDF_FONT_NAME}-Regular.ttf`, PDF_FONT_NAME, "normal");
+  doc.addFileToVFS(`${PDF_FONT_NAME}-Bold.ttf`, fonts.bold);
+  doc.addFont(`${PDF_FONT_NAME}-Bold.ttf`, PDF_FONT_NAME, "bold");
+  doc.setFont(PDF_FONT_NAME, "normal");
+
+  const data = state.data || {};
+  const meta = data.meta || {};
+  const cats = data.categories || {};
+  const w = makePdfWriter(doc);
+
+  // Title band
+  w.heading("全基因組基因篩檢報告", 1);
+  w.kv("檢體編號", meta.LIS_ID || state.currentLIS || "");
+  w.kv("姓名",     meta.Name || "");
+  w.kv("病歷號",   meta.MRN || "");
+  w.kv("檢驗項目", meta.Test ? `次世代定序${meta.Test === "WGS" ? "全基因組" : "全外顯子"}定序檢測` : "");
+  w.kv("產生日期", todayYmd().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"));
+  w.gap(6);
+
+  pdfWriteSection(w, "重大疾病風險篩檢（美國遺傳醫學會 ACMG 次要發現基因）", cats.acmg_sf,   data.variants, "acmg_sf");
+  pdfWriteSection(w, "主動性篩檢",                                          cats.proactive, data.variants, "proactive");
+  pdfWriteSection(w, "帶因者篩檢",                                          cats.carrier,   data.variants, "carrier");
+  pdfWritePharmacogenomics(w, data.pharmcat);
+
+  // 檢測方法說明 — fixed wording for the screening report (assumes WGS,
+  // since that's what's used for screening). Numbered list rendered with
+  // a hanging indent so wrapped lines align under the text, not the
+  // number.
+  w.heading("檢測方法說明", 2);
+  const methodLines = [
+    "1. 本次檢測使用次世代定序儀分析 (Illumina NovaSeq X Plus)。",
+    "2. 本次檢測變異位點的錯誤率 ≦ 0.1% (Phred-scaled Q score ≧ 30)。",
+    "3. 本次檢測平均定序深度 ≧ 27.5X。",
+    "4. 本檢測僅能檢測出基因內單一核苷酸 (single nucleotide)、小片段的缺失或插入 (small indel)，無法檢測出拷貝數變異 (copy number variants)、轉位 (translocation)、倒轉 (inversion) 或其他複雜性結構變異 (complex structural variation)、組織特異性的鑲嵌 (tissue-specific mosaicism)、串聯重複 (tandem repeat) 以及未定序區域 (例如 promoter、intron)。",
+    "5. 本檢測報告僅供醫療專業人員參考，需配合其他相關臨床資料與家族成員之相關檢驗。",
+    "6. 目前次世代定序分子遺傳診斷皆屬研究性質。",
+  ];
+  for (const ln of methodLines) w.para(ln, { indent: 4 });
+  w.gap(4);
+
+  // 檢測結果注釋 — ClinVar date is dynamic (state.data.clinvar_date),
+  // formatted via the same helper the clinical TXT uses; everything else
+  // is fixed for the screening report.
+  const clinvarDate = ymdToCnDate(data.clinvar_date) || "—";
+  w.heading("檢測結果注釋", 2);
+  const noteLines = [
+    "1. 本檢測結果比對參考序列為人類 hg38 版本。",
+    `2. ClinVar 及 ACMG&AMP 指引: 引用 ClinVar 資料庫截至 ${clinvarDate} 更新的註解，及美國醫學遺傳學暨基因體學學會 (ACMG) 與分子病理學學會 (AMP) 2015 年頒佈的指引，並且主要列入致病 (Pathogenic) 及可能致病 (Likely pathogenic) 變異；其他類別變異經醫師判斷認為與疾病相關時亦可列入。`,
+    "3. 參考資料:",
+    "     a. 疾病資料庫: OMIM、ClinVar",
+    "     b. 族群資料庫: gnomAD (v4.1 genome)",
+    "     c. 序列資料庫: RefSeqGene",
+  ];
+  for (const ln of noteLines) w.para(ln, { indent: 4 });
+  w.gap(4);
+
+  // Gene panel listings appended at the end, deliberately small font so
+  // they don't dominate the report. Each panel = heading + comma-joined
+  // gene list wrapped to page width.
+  if (panels.length) {
+    w.heading("檢測基因清單", 2);
+    for (const p of panels) {
+      doc.setFont(PDF_FONT_NAME, "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+      if (w.y + 12 > w.pageH - w.margin) { doc.addPage(); w.y = w.margin; }
+      doc.text(`${p.title}（${p.genes.length} 個基因）`, w.margin, w.y + 7);
+      w.y += 9;
+      doc.setTextColor(20, 20, 20);
+      w.para(p.genes.length ? p.genes.join(", ") : "—",
+             { size: 7.5, indent: 2, weight: "regular" });
+      w.gap(3);
+    }
+  }
+
+  return doc;
+}
+
+async function exportScreeningReport() {
+  if (!state.currentLIS) return;
+  const btns = document.querySelectorAll(".btn-export-screening");
+  const setBusy = b => btns.forEach(x => { x.disabled = b; });
+  const hint = msg => {
+    document.getElementById("save-hint-top").textContent    = msg;
+    document.getElementById("save-hint-bottom").textContent = msg;
+  };
+  setBusy(true);
+  hint("產生健檢報告 PDF…");
+  try {
+    const doc = await buildScreeningPDF();
+    const meta = state.data?.meta || {};
+    const lis = state.currentLIS;
+    const mrn = meta.MRN || "MRN";
+    const fname = `${lis}_${mrn}_screening_${todayYmd()}.pdf`;
+    // Local download first (jsPDF gives us a Blob directly), then push the
+    // same bytes to GitHub via the base64 content path.
+    downloadBlob(doc.output("blob"), fname);
+    const dataUri = doc.output("datauristring");
+    const b64 = dataUri.split(",", 2)[1] || "";
+    const path = `output/screening_reports/${fname}`;
+    await ghPutBinary(path, b64, `export: screening PDF for ${lis}`);
+    hint(`已下載 + 匯出 → ${path}`);
+  } catch (e) {
+    hint("");
+    alert("匯出失敗：" + e.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ---------- Boot ----------------------------------------------------
+
+async function loadByRow(row) {
+  const st = document.getElementById("search-status");
+  try {
+    st.textContent = `載入中: ${row.LIS_ID} / ${row.Name || "?"}`;
+    await loadSample(row.LIS_ID);
+    st.textContent = `已載入: ${row.LIS_ID}`;
+    renderAll();
+  } catch (e) {
+    st.textContent = "錯誤: " + e.message;
+  }
+}
+
+document.getElementById("btn-load").addEventListener("click", async () => {
+  const q  = document.getElementById("q-lis").value;
+  const st = document.getElementById("search-status");
+  st.textContent = "查詢中...";
+  let row;
+  try { row = resolveLIS(q); }
+  catch (e) { st.textContent = e.message; return; }
+  if (!row) { st.textContent = "找不到對應樣本（請從下拉選單選擇）"; return; }
+  await loadByRow(row);
+});
+
+// ---------- LIS_ID combobox typeahead ------------------------------
+
+function setupCombobox() {
+  const input = document.getElementById("q-lis");
+  const list  = document.getElementById("q-lis-dropdown");
+  let activeIdx = -1;
+
+  function renderOptions(rows) {
+    list.innerHTML = "";
+    activeIdx = -1;
+    if (!rows.length) {
+      list.classList.add("hidden");
+      return;
+    }
+    rows.forEach((r, i) => {
+      const li = document.createElement("li");
+      li.className = "combobox-option";
+      li.dataset.idx = i;
+      li.innerHTML = `
+        <span class="opt-lis">${escapeHtml(r.LIS_ID || "")}</span>
+        <span class="opt-name">${escapeHtml(maskName(r.Name || ""))}</span>
+        <span class="opt-mrn">${escapeHtml(maskMrn(r.MRN || ""))}</span>`;
+      li.addEventListener("mousedown", ev => {
+        ev.preventDefault();
+        pick(r);
+      });
+      list.appendChild(li);
+    });
+    list.classList.remove("hidden");
+  }
+
+  function currentRows() {
+    return matchSamples(input.value);
+  }
+
+  async function pick(row) {
+    input.value = row.LIS_ID || "";
+    list.classList.add("hidden");
+    await loadByRow(row);
+  }
+
+  input.addEventListener("focus", () => renderOptions(currentRows()));
+  input.addEventListener("input", () => renderOptions(currentRows()));
+  input.addEventListener("blur", () => {
+    // Slight delay to let click land first
+    setTimeout(() => list.classList.add("hidden"), 120);
+  });
+  input.addEventListener("keydown", ev => {
+    const opts = Array.from(list.querySelectorAll(".combobox-option"));
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      activeIdx = Math.min(opts.length - 1, activeIdx + 1);
+      opts.forEach((el, i) => el.classList.toggle("active", i === activeIdx));
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      activeIdx = Math.max(0, activeIdx - 1);
+      opts.forEach((el, i) => el.classList.toggle("active", i === activeIdx));
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      const rows = currentRows();
+      if (activeIdx >= 0 && rows[activeIdx]) {
+        pick(rows[activeIdx]);
+      } else {
+        document.getElementById("btn-load").click();
+      }
+    } else if (ev.key === "Escape") {
+      list.classList.add("hidden");
+    }
+  });
+}
+
+async function bootAfterAuth() {
+  try {
+    await loadIndex();
+    const n = state.index ? state.index.length : 0;
+    document.getElementById("search-status").textContent =
+      n ? `索引已載入：${n} 筆樣本` : "索引為空";
+  } catch (e) {
+    document.getElementById("search-status").textContent = "載入索引失敗: " + e.message;
+  }
+}
+
+(async function boot() {
+  setupCombobox();
+  await bootAfterAuth();
+})();
+
+// ---------- tiny utils ---------------------------------------------
+
+// PII masking for the sample-picker dropdown — display only, never
+// persisted. Search (matchSamples) still runs against the raw values
+// so users can type the real name / MRN to find a patient.
+//   maskName("張中民") → "張O民"
+//   maskName("李華")   → "李O"
+//   maskMrn("12345678") → "12X45X78"
+// Array.from() iterates by code point so any surrogate-pair characters
+// don't end up half-masked.
+function maskName(s) {
+  if (!s) return "";
+  const chars = Array.from(s);
+  if (chars.length < 2) return s;
+  chars[1] = "O";
+  return chars.join("");
+}
+function maskMrn(s) {
+  if (!s) return "";
+  const chars = Array.from(s);
+  if (chars.length > 2) chars[2] = "X";
+  if (chars.length > 4) chars[4] = "X";
+  return chars.join("");
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+// Trigger a browser download for a Blob via a programmatic <a download>.
+// Always called from a user-gesture chain (button click → async export
+// → here), so popup blockers leave it alone. The actual save path is
+// whatever the browser is configured to use (typically ~/Downloads);
+// we don't get to pick that.
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Defer revoke so the download has a chance to start.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

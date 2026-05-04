@@ -1,0 +1,22 @@
+{
+  "sample_id": "26WE0064",
+  "lis_id": "26WE0064",
+  "name": "孫亮葇",
+  "mrn": "23293706",
+  "test_type": "WES",
+  "category": "MCA",
+  "genome_build": "hg19",
+  "run_date": "2026-04-18",
+  "hpo": [
+    { "phenotype": "HP:0000453", "label": "Choanal atresia",         "weight": 2 },
+    { "phenotype": "HP:0010307", "label": "Stridor",                 "weight": 1 },
+    { "phenotype": "HP:0001631", "label": "Atrial septal defect",    "weight": 1 },
+    { "phenotype": "HP:0000589", "label": "Coloboma",                "weight": 2 },
+    { "phenotype": "HP:0008551", "label": "Microtia",                "weight": 2 },
+    { "phenotype": "HP:0001561", "label": "Polyhydramnios",          "weight": 1 },
+    { "phenotype": "HP:0011968", "label": "Feeding difficulties",    "weight": 1 },
+    { "phenotype": "HP:0002015", "label": "Dysphagia",               "weight": 1 },
+    { "phenotype": "HP:0005403", "label": "Decreased total T cell count", "weight": 1 },
+    { "phenotype": "HP:0002721", "label": "Immunodeficiency",        "weight": 1 }
+  ]
+}
