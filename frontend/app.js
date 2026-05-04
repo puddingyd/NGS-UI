@@ -306,7 +306,7 @@ function variantUrls(v) {
     varsome:  `https://varsome.com/variant/${build}/${tag}`,
     franklin: `https://franklin.genoox.com/clinical-db/variant/snp/${tag}-${build}`,
     genebe:   `https://genebe.net/variant/${build}/${tag}`,
-    omim:     v.OMIM_id ? `https://www.omim.org/entry/${v.OMIM_id}` : null,
+    omim:     v.OMIM_link || (v.OMIM_id ? `https://www.omim.org/entry/${v.OMIM_id}` : null),
   };
 }
 
@@ -530,6 +530,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const urls = variantUrls(v);
   const card = document.createElement("div");
   card.className = "variant-card";
+  card.dataset.inPanel = v.in_panel ? "true" : "false";
 
   const links = [
     `<a href="${urls.varsome}"  target="_blank" rel="noopener">Varsome</a>`,
@@ -961,6 +962,18 @@ function renderCandidateSections() {
   }
   renderPharmcatBlock("cat-pharmcat-c");
   document.getElementById("category-sections").classList.remove("hidden");
+  updateInPanelCount();
+}
+
+// Tally how many of the currently-loaded SNV variants flagged the in_panel
+// bit, then render that next to the "In panel only" toggle so the user
+// can tell at a glance whether the filter is doing anything useful.
+function updateInPanelCount() {
+  const variants = state.data?.variants || {};
+  const total = Object.keys(variants).length;
+  const inPanel = Object.values(variants).filter(v => v.in_panel).length;
+  const el = document.getElementById("in-panel-count");
+  if (el) el.textContent = total ? `(${inPanel} / ${total})` : "";
 }
 
 function renderPharmcatBlock(hostId) {
@@ -2804,8 +2817,22 @@ async function bootAfterAuth() {
 
 (async function boot() {
   setupCombobox();
+  setupInPanelFilter();
   await bootAfterAuth();
 })();
+
+// "In panel only" toggle: pure presentational filter that hides variant
+// cards whose data-in-panel attribute is "false". Re-render is not
+// needed because cards are tagged at render time; flipping the checkbox
+// just toggles a class on #category-sections that drives a CSS rule.
+function setupInPanelFilter() {
+  const cb = document.getElementById("filter-in-panel-only");
+  if (!cb) return;
+  cb.addEventListener("change", () => {
+    document.getElementById("category-sections")
+      .classList.toggle("filter-in-panel-only", cb.checked);
+  });
+}
 
 // ---------- tiny utils ---------------------------------------------
 

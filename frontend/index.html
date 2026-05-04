@@ -92,7 +92,14 @@
 
     <!-- Candidate category buttons -->
     <section id="category-sections" class="category-sections hidden">
-      <h2>分析</h2>
+      <div class="section-header">
+        <h2>分析</h2>
+        <label class="filter-toggle">
+          <input id="filter-in-panel-only" type="checkbox" />
+          <span>In panel only</span>
+          <span id="in-panel-count" class="muted"></span>
+        </label>
+      </div>
       <div id="cat-tier-1a" class="cat-block tier-1a" data-tier="1A"></div>
       <div id="cat-tier-1b" class="cat-block tier-1b" data-tier="1B"></div>
       <div id="cat-tier-2"  class="cat-block tier-2"  data-tier="2"></div>
