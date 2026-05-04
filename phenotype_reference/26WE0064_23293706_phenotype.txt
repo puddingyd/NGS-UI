@@ -1,0 +1,11 @@
+phenotype	hpo_name	weight
+HP:0000453	Choanal atresia	2
+HP:0010307	Stridor	1
+HP:0001631	Atrial septal defect	1
+HP:0000589	Coloboma	2
+HP:0008551	Microtia	2
+HP:0001561	Polyhydramnios	1
+HP:0011968	Feeding difficulties	1
+HP:0002015	Dysphagia	1
+HP:0005403	Decreased total T cell count	1
+HP:0002721	Immunodeficiency	1
