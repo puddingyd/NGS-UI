@@ -143,6 +143,16 @@ def load_sample(sample_id: str) -> dict | None:
             v["lirical_disease_name"]  = l.get("DISEASE_NAME") or ""
             v["lirical_disease_curie"] = l.get("DISEASE_CURIE") or ""
 
+    # Re-sort each tier by total_score desc now that pheno_score is
+    # joined. Adapter only had ACMG_POINTS available; here we have the
+    # full composite total = variant + pheno. Tie-break by id so the
+    # ordering is stable across reloads.
+    def _ts(vid: str) -> float:
+        ts = variants.get(vid, {}).get("total_score")
+        return float(ts) if isinstance(ts, (int, float)) else float("-inf")
+    for t, ids in categories.items():
+        categories[t] = sorted(ids, key=lambda i: (-_ts(i), i))
+
     meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
     qc = _read_json_or(sub / "qc_summary.json", {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}

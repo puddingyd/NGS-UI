@@ -3343,6 +3343,9 @@ function setupPhenotypeEvents() {
 function setupInPanelFilter() {
   const cb = document.getElementById("filter-in-panel-only");
   if (!cb) return;
+  // Apply once at boot so the initial render honours the checked default.
+  document.getElementById("category-sections")
+    ?.classList.toggle("filter-in-panel-only", cb.checked);
   cb.addEventListener("change", () => {
     document.getElementById("category-sections")
       .classList.toggle("filter-in-panel-only", cb.checked);
