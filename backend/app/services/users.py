@@ -52,8 +52,6 @@ def _conn() -> sqlite3.Connection:
 def create_user(username: str, password: str) -> dict:
     if not username or not password:
         raise ValueError("username + password required")
-    if len(password) < 8:
-        raise ValueError("password must be at least 8 characters")
     h = _hash(password)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with _conn() as c:
