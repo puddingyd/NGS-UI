@@ -854,26 +854,47 @@ function _setJobStatus(text, busy = false) {
   if (btn) btn.disabled = !!busy;
 }
 
-async function rerunExomiserLirical() {
+// 「開始分析」: instant in-house pheno_score + queued Exomiser/LIRICAL.
+// The phenotype POST returns immediately so the cards' IN_PANEL badges
+// flip right away; the Exomiser/LIRICAL job runs in the background and
+// the polling loop refreshes the sample once it lands.
+async function startAnalysis() {
   if (!state.currentLIS) return;
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sid = row?.sample_id || state.currentLIS;
-  // Save the latest HPO/panel edits first so the worker reads the
-  // current values from sample_metadata.json. Skips the variant
-  // refresh that recomputePhenoScore() does — we'll get the full
-  // refresh after the rerun finishes.
+  const hint = document.getElementById("phenotype-hint");
   _setJobStatus("送出工作中…", true);
+  hint.textContent = "計算中…";
   try {
-    await apiPost(`/samples/${encodeURIComponent(sid)}/phenotype`, {
+    const result = await apiPost(`/samples/${encodeURIComponent(sid)}/phenotype`, {
       hpo:    phenoEdit.hpo,
       panels: phenoEdit.panels,
     });
+    document.getElementById("phenotype-stats").textContent =
+      `${result.n_hpo} HPO + ${result.n_panels} panels → ${result.n_in_panel_genes} genes in panel · top ${(result.top_score ?? 0).toFixed(0)}`;
+    const top10El = document.getElementById("phenotype-top10");
+    const top10Ul = document.getElementById("phenotype-top10-list");
+    top10Ul.innerHTML = (result.top10 || []).map(x =>
+      `<li><span class="mane-tx">${escapeHtml(x.gene)}</span> &nbsp; ${x.score.toFixed(2)}</li>`
+    ).join("");
+    top10El.classList.toggle("hidden", !(result.top10 && result.top10.length));
+    hint.textContent = `已重算 (${new Date().toLocaleTimeString()})`;
+    // Refresh so cards see the freshly written IN_PANEL flag right
+    // away, before the slower Exomiser job finishes.
+    await loadSample(state.currentLIS);
+    renderAll();
+  } catch (e) {
+    hint.textContent = "失敗：" + e.message;
+    _setJobStatus("失敗", false);
+    return;
+  }
+  try {
     const job = await apiPost(`/samples/${encodeURIComponent(sid)}/jobs/exomiser_lirical`, {});
     _activeJobId = job.job_id;
     _setJobStatus(`已排入：${job.job_id}`, true);
     _startJobPolling(sid, job.job_id);
   } catch (e) {
-    _setJobStatus("排入失敗：" + e.message, false);
+    _setJobStatus("Exomiser 排入失敗：" + e.message, false);
   }
 }
 
@@ -902,37 +923,6 @@ function _startJobPolling(sid, jobId) {
       // Network blip — keep polling.
     }
   }, 5000);
-}
-
-async function recomputePhenoScore() {
-  if (!state.currentLIS) return;
-  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
-  const sid = row?.sample_id || state.currentLIS;
-  const hint = document.getElementById("phenotype-hint");
-  const btn  = document.getElementById("btn-recompute");
-  btn.disabled = true; hint.textContent = "計算中…";
-  try {
-    const result = await apiPost(`/samples/${encodeURIComponent(sid)}/phenotype`, {
-      hpo:    phenoEdit.hpo,
-      panels: phenoEdit.panels,
-    });
-    document.getElementById("phenotype-stats").textContent =
-      `${result.n_hpo} HPO + ${result.n_panels} panels → ${result.n_in_panel_genes} genes in panel · top ${(result.top_score ?? 0).toFixed(0)}`;
-    const top10El  = document.getElementById("phenotype-top10");
-    const top10Ul  = document.getElementById("phenotype-top10-list");
-    top10Ul.innerHTML = (result.top10 || []).map(x =>
-      `<li><span class="mane-tx">${escapeHtml(x.gene)}</span> &nbsp; ${x.score.toFixed(2)}</li>`
-    ).join("");
-    top10El.classList.toggle("hidden", !(result.top10 && result.top10.length));
-    hint.textContent = `已重算 (${new Date().toLocaleTimeString()})`;
-    // Refresh the sample so variant cards see the updated IN_PANEL flag.
-    await loadSample(state.currentLIS);
-    renderAll();
-  } catch (e) {
-    hint.textContent = "失敗：" + e.message;
-  } finally {
-    btn.disabled = false;
-  }
 }
 
 // ---------- Render: variant card -----------------------------------
@@ -1083,30 +1073,22 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
          + `<span class="v ${x.cls || ''}">${valHtml}</span>`;
   }).join("");
 
-  // Exomiser / LIRICAL per-variant results — sit under Total / Variant /
-  // Pheno score in the first info-grid column. Toggled by the same More
-  // button as the AlphaMissense extras. Both scores are integer 0-100
-  // (Exomiser combined score × 100; LIRICAL compositeLR clamped to
-  // [-10, 10] then linearly mapped to [0, 100]).
+  // Score line: total (variant + pheno). Variant score is ACMG_POINTS
+  // clamped to [-10, 10] then mapped to 0–100 (in backend); pheno
+  // score is the in-house gene-level score (0–100). Total = sum, may
+  // exceed 100 by design — the parens make it clear it's a composition.
+  const _hasNum = x => x !== null && x !== undefined && x !== "" && Number.isFinite(Number(x));
+  const _i = x => _hasNum(x) ? fmtInt(x) : "—";
+  const scoreLine = (() => {
+    const t = v.total_score, g = v.geno_score, p = v.pheno_score;
+    if (![t, g, p].some(_hasNum)) return "—";
+    return `${_i(t)} (${_i(g)} + ${_i(p)})`;
+  })();
   const fmtScoreRank = (score, rank) => {
-    const hasS = score != null && score !== "" && Number.isFinite(Number(score));
-    const hasR = rank  != null && rank  !== "" && Number.isFinite(Number(rank));
-    if (!hasS && !hasR) return "—";
-    const s = hasS ? fmtInt(score) : "—";
-    return hasR ? `${s} (${Number(rank)})` : s;
+    if (!_hasNum(score) && !_hasNum(rank)) return "—";
+    const s = _hasNum(score) ? fmtInt(score) : "—";
+    return _hasNum(rank) ? `${s} (rank ${Number(rank)})` : s;
   };
-  // Exomiser + LIRICAL rows are always emitted (even when both score
-  // and rank are missing — fmtScoreRank renders "—") so the user
-  // always sees the two reference labels rather than a row vanishing.
-  const scoreExtras = [
-    { key: "Exomiser",
-      text: fmtScoreRank(v.total_score_exomiser_variant, v.rank_exomiser_variant) },
-    { key: "LIRICAL",
-      text: fmtScoreRank(v.lirical_variant_score, v.rank_lirical_variant) },
-  ];
-  const scoreExtrasHtml = scoreExtras.map(x =>
-    `<span class="k">${escapeHtml(x.key)}</span><span class="v">${escapeHtml(x.text)}</span>`
-  ).join("");
 
   card.innerHTML = `
     <div class="variant-head">
@@ -1125,10 +1107,9 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     </div>
     <div class="info-grid">
       <div>
-        <span class="k">Total score</span><span class="v">${fmtInt(v.total_score)}</span>
-        <span class="k">Variant score</span><span class="v">${fmtInt(v.geno_score)}</span>
-        <span class="k">Pheno score</span><span class="v">${fmtInt(v.pheno_score)}</span>
-        ${scoreExtras.length ? `<div class="more-extras hidden">${scoreExtrasHtml}</div>` : ""}
+        <span class="k">Score</span><span class="v">${escapeHtml(scoreLine)}</span>
+        <span class="k">Exomiser</span><span class="v">${escapeHtml(fmtScoreRank(v.total_score_exomiser_variant, v.rank_exomiser_variant))}</span>
+        <span class="k">LIRICAL</span><span class="v">${escapeHtml(fmtScoreRank(v.lirical_variant_score, v.rank_lirical_variant))}</span>
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
@@ -1160,7 +1141,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           : ""}
       </div>
     </div>
-    ${(extras.length || scoreExtras.length) ? `<button class="btn-more" type="button">▾ More</button>` : ""}
+    ${extras.length ? `<button class="btn-more" type="button">▾ More</button>` : ""}
     ${renderManeAll(v)}
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
@@ -3341,10 +3322,8 @@ function setupPhenotypeEvents() {
     } else if (btn.matches(".chip-remove[data-panel-idx]")) {
       ev.stopPropagation();
       removePanel(Number(btn.dataset.panelIdx));
-    } else if (btn.matches("#btn-recompute")) {
-      recomputePhenoScore();
-    } else if (btn.matches("#btn-rerun-tools")) {
-      rerunExomiserLirical();
+    } else if (btn.matches("#btn-start-analysis")) {
+      startAnalysis();
     }
   });
 

@@ -124,8 +124,7 @@
       </div>
 
       <div class="phenotype-actions">
-        <button id="btn-recompute" class="btn btn-primary">⚡ 重新計算 in-house pheno_score</button>
-        <button id="btn-rerun-tools" class="btn" title="在 server 上重跑 Exomiser + LIRICAL，視 sample 大小 5–30 分">▶ 重跑 Exomiser + LIRICAL</button>
+        <button id="btn-start-analysis" class="btn btn-primary" title="即時計算 in-house pheno_score，並在 server 上重跑 Exomiser + LIRICAL">▶ 開始分析</button>
         <span id="job-status" class="muted"></span>
         <span id="phenotype-hint" class="muted"></span>
       </div>
@@ -161,9 +160,7 @@
       <div id="sec-pharmcat"   class="report-block" data-kind="pharmcat"></div>
       <div class="save-row">
         <button id="btn-save-top" class="btn btn-primary">💾 儲存變更</button>
-        <button class="btn btn-export-html" title="產生靜態 HTML 並推到 output/analysis_html/">📄 匯出分析 HTML</button>
-        <button class="btn btn-export-clinical" title="產生診斷報告 TXT 並推到 output/clinical_reports/">📋 匯出診斷報告</button>
-        <button class="btn btn-export-screening" title="產生健檢報告 PDF 並推到 output/screening_reports/">🧬 匯出健檢報告</button>
+        <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
         <span id="save-hint-top" class="muted"></span>
       </div>
     </section>
@@ -189,13 +186,14 @@
       <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
       <div id="cat-pharmcat-c" class="cat-block" data-category="pharmcat"></div>
       <div class="save-row">
-        <button id="btn-close-bottom" class="btn">✕ Close</button>
         <button id="btn-save-bottom" class="btn btn-primary">💾 儲存變更</button>
-        <button class="btn btn-export-html" title="產生靜態 HTML 並推到 output/analysis_html/">📄 匯出分析 HTML</button>
-        <button class="btn btn-export-clinical" title="產生診斷報告 TXT 並推到 output/clinical_reports/">📋 匯出診斷報告</button>
-        <button class="btn btn-export-screening" title="產生健檢報告 PDF 並推到 output/screening_reports/">🧬 匯出健檢報告</button>
+        <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
         <span id="save-hint-bottom" class="muted"></span>
       </div>
+
+      <!-- Floating Close: collapses every analysis section. Position
+           is fixed to the right margin so it follows scroll. -->
+      <button id="btn-close-bottom" class="btn btn-floating-close" title="收起所有分析區塊">✕ Close</button>
     </section>
 
   </main>

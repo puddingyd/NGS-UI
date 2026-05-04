@@ -79,6 +79,22 @@ def classify_tier(row: dict) -> str:
     return "5"
 
 
+def _acmg_to_geno_score(acmg_points) -> int | None:
+    """Linear-map ACMG_POINTS (clamped to [-10, 10]) onto 0-100.
+
+    Mirrors the LIRICAL compositeLR-to-pheno-score transform so the
+    variant card's "Score" line speaks one consistent 0-100 scale.
+    """
+    if acmg_points is None:
+        return None
+    try:
+        x = float(acmg_points)
+    except (TypeError, ValueError):
+        return None
+    x = max(-10.0, min(10.0, x))
+    return int(round((x + 10.0) / 20.0 * 100.0))
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -144,6 +160,8 @@ def _row_to_variant(row: dict) -> dict:
         "ACMG_criteria": (row.get("ACMG_EVIDENCE") or "").replace("|", ","),
         "ACMG_score": _to_num(row.get("ACMG_POINTS")),
         "ACMG_classification": row.get("ACMG_CLASS", ""),
+        # Variant score for the "Score" pill: ACMG_POINTS rescaled 0-100.
+        "geno_score": _acmg_to_geno_score(_to_num(row.get("ACMG_POINTS"))),
         "phase_group": row.get("PHASE_GROUP", ""),
         "phase_result": row.get("PHASE_RESULT", ""),
         "in_roh": _to_bool(row.get("IN_ROH", "")),

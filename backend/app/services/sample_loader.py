@@ -112,16 +112,30 @@ def load_sample(sample_id: str) -> dict | None:
                     pheno_by_gene[gene] = float(row.get("pheno_score") or 0)
                 except ValueError:
                     pass
+    def _scale_to_100(s):
+        n = _to_num(s)
+        if not isinstance(n, (int, float)):
+            return None
+        return int(round(n * 100))
+
     for vid, v in variants.items():
         gene = v.get("gene_symbol", "")
         if gene and gene in pheno_by_gene:
             v["pheno_score"] = round(pheno_by_gene[gene], 2)
+        # Total = variant + pheno; either missing → treat as 0 in the
+        # sum but only emit a total when at least one component exists.
+        gs = v.get("geno_score")
+        ps = v.get("pheno_score")
+        if gs is not None or ps is not None:
+            v["total_score"] = (gs or 0) + (ps or 0)
         e = exo.get(vid)
         if e:
-            v["total_score_exomiser_variant"] = _to_num(e.get("EXOMISER_GENE_COMBINED_SCORE"))
-            v["pheno_score_exomiser"]         = _to_num(e.get("EXOMISER_GENE_PHENO_SCORE"))
+            # Exomiser writes 0–1 floats; rescale to the 0–100 grid the
+            # other scores live on so the card has one consistent unit.
+            v["total_score_exomiser_variant"] = _scale_to_100(e.get("EXOMISER_GENE_COMBINED_SCORE"))
+            v["pheno_score_exomiser"]         = _scale_to_100(e.get("EXOMISER_GENE_PHENO_SCORE"))
+            v["exomiser_variant_score"]       = _scale_to_100(e.get("EXOMISER_VARIANT_SCORE"))
             v["rank_exomiser_variant"]        = _to_num(e.get("EXOMISER_RANK"))
-            v["exomiser_variant_score"]       = _to_num(e.get("EXOMISER_VARIANT_SCORE"))
         l = lir.get(vid)
         if l:
             v["lirical_variant_score"] = _to_num(l.get("LIRICAL_VARIANT_SCORE"))
