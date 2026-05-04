@@ -423,32 +423,237 @@ function removeTag(value) {
   updateSaveHint();
 }
 
+// ---------- Phenotype + panel editor (Phase A/B) ------------------
+
+// Editable working copy. We don't mutate state.data.patient_phenotype
+// directly so a "reload sample" cleanly resets the form to whatever
+// the server currently has on disk.
+const phenoEdit = {
+  hpo:    [],   // [{phenotype, label, weight}]
+  panels: [],   // [panel_name]
+};
+
 function renderPhenotype() {
+  // Seed working copy from sample payload
+  phenoEdit.hpo = (state.data.patient_phenotype || []).map(r => ({
+    phenotype: r.phenotype || "",
+    label:     r.label || "",
+    weight:    Number.isFinite(Number(r.weight)) ? Number(r.weight) : 1,
+  }));
+  phenoEdit.panels = Array.isArray(state.data.selected_panels)
+    ? state.data.selected_panels.slice()
+    : [];
+
+  renderHpoChips();
+  renderPanelChips();
+  document.getElementById("phenotype-stats").textContent = "";
+  document.getElementById("phenotype-hint").textContent  = "";
+  document.getElementById("phenotype-top10").classList.add("hidden");
+  document.getElementById("phenotype-card").classList.remove("hidden");
+}
+
+function renderHpoChips() {
   const ul = document.getElementById("phenotype-list");
   ul.innerHTML = "";
-  const ph = state.data.patient_phenotype || [];
-  if (!ph.length) {
-    ul.innerHTML = '<li class="muted">（無）</li>';
-  } else {
-    for (const row of ph) {
-      const li = document.createElement("li");
-      const weight = row.weight != null ? `<span class="weight">w=${row.weight}</span>` : "";
-      const code = row.phenotype || "";
-      const label = row.label || "";
-      // HPO: "Seizure (HP:0001250)" / panel or plain text: just the name
-      let main;
-      if (/^HP:/.test(code)) {
-        main = label
-          ? `${escapeHtml(label)} <span class="hpo-id">(${escapeHtml(code)})</span>`
-          : escapeHtml(code);
-      } else {
-        main = escapeHtml(label || code);
-      }
-      li.innerHTML = `${main}${weight}`;
-      ul.appendChild(li);
-    }
+  if (!phenoEdit.hpo.length) {
+    ul.innerHTML = '<li class="muted">（尚未加入 HPO）</li>';
+    return;
   }
-  document.getElementById("phenotype-card").classList.remove("hidden");
+  phenoEdit.hpo.forEach((row, idx) => {
+    const li = document.createElement("li");
+    li.className = "chip chip-hpo";
+    li.innerHTML = `
+      <span class="chip-label">${escapeHtml(row.label || row.phenotype)}</span>
+      <span class="chip-id">${escapeHtml(row.phenotype)}</span>
+      <select class="chip-weight" data-idx="${idx}" title="Weight">
+        ${[1,2,3,4,5].map(n => `<option value="${n}" ${n===row.weight?"selected":""}>w=${n}</option>`).join("")}
+      </select>
+      <button class="chip-remove" data-idx="${idx}" type="button" title="移除">×</button>`;
+    ul.appendChild(li);
+  });
+}
+
+function renderPanelChips() {
+  const ul = document.getElementById("panel-chips");
+  ul.innerHTML = "";
+  if (!phenoEdit.panels.length) {
+    ul.innerHTML = '<li class="muted">（無 panel）</li>';
+    return;
+  }
+  phenoEdit.panels.forEach((name, idx) => {
+    const li = document.createElement("li");
+    li.className = "chip chip-panel";
+    li.innerHTML = `
+      <span class="chip-label">${escapeHtml(name)}</span>
+      <button class="chip-remove" data-panel-idx="${idx}" type="button" title="移除">×</button>`;
+    ul.appendChild(li);
+  });
+}
+
+// Cached panel list from /api/panels — fetched once per session.
+let _panelOptions = null;
+async function loadPanelOptions() {
+  if (_panelOptions) return _panelOptions;
+  _panelOptions = await apiFetch("/panels") || [];
+  return _panelOptions;
+}
+
+// HPO typeahead: 200 ms debounce, 20 results.
+let _hpoSearchAbort = null;
+let _hpoSearchTimer = null;
+function setupHpoSearchInput() {
+  const input    = document.getElementById("hpo-search");
+  const dropdown = document.getElementById("hpo-search-dropdown");
+  if (!input || !dropdown) return;
+
+  const close = () => dropdown.classList.add("hidden");
+  const open  = () => dropdown.classList.remove("hidden");
+
+  input.addEventListener("input", () => {
+    clearTimeout(_hpoSearchTimer);
+    if (_hpoSearchAbort) _hpoSearchAbort.abort();
+    const q = input.value.trim();
+    if (!q) { close(); return; }
+    _hpoSearchTimer = setTimeout(async () => {
+      _hpoSearchAbort = new AbortController();
+      try {
+        const url = `/hpo/search?q=${encodeURIComponent(q)}&limit=20`;
+        const resp = await fetch(`${API_BASE}${url}`, { signal: _hpoSearchAbort.signal });
+        if (!resp.ok) { close(); return; }
+        const list = await resp.json();
+        if (!Array.isArray(list) || !list.length) {
+          dropdown.innerHTML = '<li class="muted">（無結果）</li>';
+        } else {
+          dropdown.innerHTML = list.map(t => `
+            <li class="combobox-option" data-id="${escapeAttr(t.hpo_id)}" data-name="${escapeAttr(t.name)}">
+              <span class="opt-lis">${escapeHtml(t.hpo_id)}</span>
+              <span class="opt-name">${escapeHtml(t.name)}</span>
+              <span class="opt-mrn">${escapeHtml((t.synonyms || []).slice(0,2).join(" • "))}</span>
+            </li>
+          `).join("");
+        }
+        open();
+      } catch (e) { /* aborted */ }
+    }, 200);
+  });
+
+  input.addEventListener("blur", () => setTimeout(close, 150));
+
+  dropdown.addEventListener("mousedown", ev => {
+    const opt = ev.target.closest(".combobox-option");
+    if (!opt) return;
+    ev.preventDefault();
+    addHpo(opt.dataset.id, opt.dataset.name);
+    input.value = ""; close();
+  });
+}
+
+function setupPanelSearchInput() {
+  const input    = document.getElementById("panel-search");
+  const dropdown = document.getElementById("panel-search-dropdown");
+  if (!input || !dropdown) return;
+
+  const close = () => dropdown.classList.add("hidden");
+  const open  = () => dropdown.classList.remove("hidden");
+
+  input.addEventListener("input", async () => {
+    const opts = await loadPanelOptions();
+    const q = input.value.trim().toLowerCase();
+    const picked = new Set(phenoEdit.panels);
+    const matches = opts
+      .filter(p => !picked.has(p.name)
+                && (!q || p.name.toLowerCase().includes(q)))
+      .slice(0, 30);
+    if (!matches.length) { close(); return; }
+    dropdown.innerHTML = matches.map(p => `
+      <li class="combobox-option" data-name="${escapeAttr(p.name)}">
+        <span class="opt-lis">${escapeHtml(p.name)}</span>
+        <span class="opt-name">${p.gene_count} genes</span>
+        <span class="opt-mrn"></span>
+      </li>`).join("");
+    open();
+  });
+  input.addEventListener("focus", () => input.dispatchEvent(new Event("input")));
+  input.addEventListener("blur",  () => setTimeout(close, 150));
+
+  dropdown.addEventListener("mousedown", ev => {
+    const opt = ev.target.closest(".combobox-option");
+    if (!opt) return;
+    ev.preventDefault();
+    addPanel(opt.dataset.name);
+    input.value = ""; close();
+  });
+}
+
+function addHpo(id, label) {
+  if (!id) return;
+  if (phenoEdit.hpo.some(r => r.phenotype === id)) return;
+  const w = Number(document.getElementById("hpo-weight").value) || 1;
+  phenoEdit.hpo.push({ phenotype: id, label: label || id, weight: w });
+  renderHpoChips();
+}
+
+function removeHpo(idx) {
+  phenoEdit.hpo.splice(idx, 1);
+  renderHpoChips();
+}
+
+function setHpoWeight(idx, weight) {
+  if (phenoEdit.hpo[idx]) {
+    phenoEdit.hpo[idx].weight = Number(weight) || 1;
+  }
+}
+
+function addPanel(name) {
+  if (!name || phenoEdit.panels.includes(name)) return;
+  phenoEdit.panels.push(name);
+  renderPanelChips();
+}
+
+function removePanel(idx) {
+  phenoEdit.panels.splice(idx, 1);
+  renderPanelChips();
+}
+
+async function apiPost(path, body) {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
+  return await resp.json();
+}
+
+async function recomputePhenoScore() {
+  if (!state.currentLIS) return;
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  const hint = document.getElementById("phenotype-hint");
+  const btn  = document.getElementById("btn-recompute");
+  btn.disabled = true; hint.textContent = "計算中…";
+  try {
+    const result = await apiPost(`/samples/${encodeURIComponent(sid)}/phenotype`, {
+      hpo:    phenoEdit.hpo,
+      panels: phenoEdit.panels,
+    });
+    document.getElementById("phenotype-stats").textContent =
+      `${result.n_hpo} HPO + ${result.n_panels} panels → ${result.n_in_panel_genes} genes in panel · top ${(result.top_score ?? 0).toFixed(0)}`;
+    const top10El  = document.getElementById("phenotype-top10");
+    const top10Ul  = document.getElementById("phenotype-top10-list");
+    top10Ul.innerHTML = (result.top10 || []).map(x =>
+      `<li><span class="mane-tx">${escapeHtml(x.gene)}</span> &nbsp; ${x.score.toFixed(2)}</li>`
+    ).join("");
+    top10El.classList.toggle("hidden", !(result.top10 && result.top10.length));
+    hint.textContent = `已重算 (${new Date().toLocaleTimeString()})；TSV 更新 ${result.tsv_rows_updated} 列`;
+    // Refresh the sample so variant cards see the updated IN_PANEL flag.
+    await loadSample(state.currentLIS);
+    renderAll();
+  } catch (e) {
+    hint.textContent = "失敗：" + e.message;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- Render: variant card -----------------------------------
@@ -2818,8 +3023,37 @@ async function bootAfterAuth() {
 (async function boot() {
   setupCombobox();
   setupInPanelFilter();
+  setupHpoSearchInput();
+  setupPanelSearchInput();
+  setupPhenotypeEvents();
   await bootAfterAuth();
 })();
+
+// Click + change events for the phenotype editor (delegated so chips
+// added by re-render still respond).
+function setupPhenotypeEvents() {
+  const card = document.getElementById("phenotype-card");
+  if (!card) return;
+
+  card.addEventListener("click", ev => {
+    const btn = ev.target;
+    if (btn.matches(".chip-remove[data-idx]")) {
+      ev.stopPropagation();
+      removeHpo(Number(btn.dataset.idx));
+    } else if (btn.matches(".chip-remove[data-panel-idx]")) {
+      ev.stopPropagation();
+      removePanel(Number(btn.dataset.panelIdx));
+    } else if (btn.matches("#btn-recompute")) {
+      recomputePhenoScore();
+    }
+  });
+
+  card.addEventListener("change", ev => {
+    if (ev.target.matches(".chip-weight[data-idx]")) {
+      setHpoWeight(Number(ev.target.dataset.idx), ev.target.value);
+    }
+  });
+}
 
 // "In panel only" toggle: pure presentational filter that hides variant
 // cards whose data-in-panel attribute is "false". Re-render is not

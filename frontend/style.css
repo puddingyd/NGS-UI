@@ -769,3 +769,129 @@ html, body {
 #category-sections.filter-in-panel-only .variant-card[data-in-panel="false"] {
   display: none;
 }
+
+/* ---- Phase A/B: phenotype + panel editor ----------------------- */
+
+.phenotype-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.phenotype-header h2 { margin: 0; font-size: 16px; }
+#phenotype-stats { font-family: ui-monospace, monospace; font-size: 12px; }
+
+.phenotype-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+.phenotype-label {
+  font-size: 12px;
+  color: var(--muted);
+  padding-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.phenotype-chips {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: #f6f8fa;
+}
+.chip-hpo   { background: #eff6ff; border-color: #bfdbfe; }
+.chip-panel { background: #f3e8ff; border-color: #d8b4fe; }
+.chip-label { font-weight: 500; }
+.chip-id {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.chip-weight {
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+.chip-weight:hover { background: rgba(0,0,0,0.05); }
+.chip-remove {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  color: var(--muted);
+}
+.chip-remove:hover { color: var(--danger); }
+
+.hpo-add {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+.hpo-add input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.hpo-add select {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+}
+.hpo-add .combobox-dropdown {
+  top: 32px;
+  left: 0;
+  right: 0;
+}
+
+.phenotype-row .combobox-option {
+  grid-template-columns: 0.6fr 1.4fr 1fr;
+}
+
+.phenotype-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+#phenotype-hint { font-size: 12px; }
+
+.phenotype-top10 {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #f9fafb;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.phenotype-top10 summary { cursor: pointer; color: var(--muted); user-select: none; }
+.phenotype-top10 ol { margin: 4px 0 0 20px; padding: 0; }
+.phenotype-top10 li { padding: 1px 0; }

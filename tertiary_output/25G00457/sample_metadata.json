@@ -9,11 +9,32 @@
   "run_date": "2025-12-01",
   "vcf_path": "/home/n102968/vcf/25G00457.vcf.gz",
   "hpo": [
-    { "phenotype": "HP:0012759", "label": "Neurodevelopmental abnormality",        "weight": 1 },
-    { "phenotype": "HP:0007018", "label": "Attention deficit hyperactivity disorder", "weight": 1 },
-    { "phenotype": "HP:0000729", "label": "Autistic behavior",                    "weight": 1 },
-    { "phenotype": "HP:0001249", "label": "Intellectual disability",              "weight": 1 },
-    { "phenotype": "HP:0001999", "label": "Abnormal facial shape",                "weight": 1 }
+    {
+      "phenotype": "HP:0012759",
+      "label": "Neurodevelopmental abnormality",
+      "weight": 1
+    },
+    {
+      "phenotype": "HP:0007018",
+      "label": "Attention deficit hyperactivity disorder",
+      "weight": 1
+    },
+    {
+      "phenotype": "HP:0000729",
+      "label": "Autistic behavior",
+      "weight": 1
+    },
+    {
+      "phenotype": "HP:0001249",
+      "label": "Intellectual disability",
+      "weight": 1
+    },
+    {
+      "phenotype": "HP:0001999",
+      "label": "Abnormal facial shape",
+      "weight": 1
+    }
   ],
-  "selected_panels": []
+  "selected_panels": [],
+  "phenotype_updated_at": "2026-05-04T12:21:59+00:00"
 }

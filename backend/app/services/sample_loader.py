@@ -97,6 +97,8 @@ def load_sample(sample_id: str) -> dict | None:
         "genome_build":      meta.get("genome_build", "hg38"),
         "generated_at":      meta.get("run_date") or datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "patient_phenotype": norm_phenotype,
+        "selected_panels":   meta.get("selected_panels", []) or [],
+        "vcf_path":          meta.get("vcf_path", ""),
         "qc_summary":        qc,
         "roh_summary":       roh,
         "variants":          variants,

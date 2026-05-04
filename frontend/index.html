@@ -52,10 +52,48 @@
       </div>
     </section>
 
-    <!-- Patient phenotype -->
+    <!-- Patient phenotype + panels (editable) -->
     <section id="phenotype-card" class="card hidden">
-      <h2>Patient phenotype</h2>
-      <ul id="phenotype-list" class="phenotype-list"></ul>
+      <div class="phenotype-header">
+        <h2>Patient phenotype</h2>
+        <span id="phenotype-stats" class="muted"></span>
+      </div>
+
+      <div class="phenotype-row">
+        <label class="phenotype-label">HPO terms</label>
+        <ul id="phenotype-list" class="phenotype-chips"></ul>
+        <div class="hpo-add">
+          <input id="hpo-search" type="text" placeholder="輸入 HPO 名稱或 HP:ID 搜尋…" autocomplete="off" />
+          <select id="hpo-weight" title="Weight">
+            <option value="1">w=1</option>
+            <option value="2">w=2</option>
+            <option value="3">w=3</option>
+            <option value="4">w=4</option>
+            <option value="5">w=5</option>
+          </select>
+          <ul id="hpo-search-dropdown" class="combobox-dropdown hidden"></ul>
+        </div>
+      </div>
+
+      <div class="phenotype-row">
+        <label class="phenotype-label">Custom panels</label>
+        <ul id="panel-chips" class="phenotype-chips"></ul>
+        <div class="hpo-add">
+          <input id="panel-search" type="text" placeholder="輸入 panel 名稱搜尋（69 個可用）…" autocomplete="off" />
+          <ul id="panel-search-dropdown" class="combobox-dropdown hidden"></ul>
+        </div>
+      </div>
+
+      <div class="phenotype-actions">
+        <button id="btn-recompute" class="btn btn-primary">⚡ 重新計算 in-house pheno_score</button>
+        <button id="btn-rerun-tools" class="btn" disabled title="Phase C 才會啟用，會在 server 上重跑 Exomiser + LIRICAL（5–30 分）">▶ 重跑 Exomiser + LIRICAL</button>
+        <span id="phenotype-hint" class="muted"></span>
+      </div>
+
+      <details id="phenotype-top10" class="phenotype-top10 hidden">
+        <summary>Top 10 phenotype-matched genes</summary>
+        <ol id="phenotype-top10-list"></ol>
+      </details>
     </section>
 
     <!-- Comment (free-text; syncs to NGS_list.xlsx Comment column) +
