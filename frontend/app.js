@@ -773,7 +773,7 @@ async function recomputePhenoScore() {
       `<li><span class="mane-tx">${escapeHtml(x.gene)}</span> &nbsp; ${x.score.toFixed(2)}</li>`
     ).join("");
     top10El.classList.toggle("hidden", !(result.top10 && result.top10.length));
-    hint.textContent = `已重算 (${new Date().toLocaleTimeString()})；TSV 更新 ${result.tsv_rows_updated} 列`;
+    hint.textContent = `已重算 (${new Date().toLocaleTimeString()})`;
     // Refresh the sample so variant cards see the updated IN_PANEL flag.
     await loadSample(state.currentLIS);
     renderAll();

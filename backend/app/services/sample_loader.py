@@ -99,7 +99,23 @@ def load_sample(sample_id: str) -> dict | None:
     # silently omit those rows when the field is None.
     exo = _read_tsv_dict(sub / "exomiser_results.tsv")
     lir = _read_tsv_dict(sub / "lirical_results.tsv")
+    # In-house pheno_score is gene-level (one row per gene_symbol), so
+    # build a quick lookup and assign by GENE per variant.
+    pheno_by_gene: dict[str, float] = {}
+    pheno_path = sub / "pheno_score.tsv"
+    if pheno_path.exists():
+        import csv as _csv
+        with pheno_path.open("r", encoding="utf-8", newline="") as f:
+            for row in _csv.DictReader(f, delimiter="\t"):
+                gene = (row.get("gene_symbol") or "").strip()
+                try:
+                    pheno_by_gene[gene] = float(row.get("pheno_score") or 0)
+                except ValueError:
+                    pass
     for vid, v in variants.items():
+        gene = v.get("gene_symbol", "")
+        if gene and gene in pheno_by_gene:
+            v["pheno_score"] = round(pheno_by_gene[gene], 2)
         e = exo.get(vid)
         if e:
             v["total_score_exomiser_variant"] = _to_num(e.get("EXOMISER_GENE_COMBINED_SCORE"))
