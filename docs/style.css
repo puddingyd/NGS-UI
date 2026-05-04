@@ -1,0 +1,670 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #1f2328;
+  --muted: #656d76;
+  --border: #d0d7de;
+  --card-bg: #ffffff;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+  --danger: #cf222e;
+  --warn-bg: #fff8c5;
+  --warn-border: #d4a72c;
+  --hit-diag: #dafbe1;
+  --hit-patho: #ffebe9;
+  --hit-panel: #ddf4ff;
+  --chip-bg: #eaeef2;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  /* iOS/Android auto-inflates small text in narrow <details> blocks; lock it */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #24292f;
+  color: #fff;
+}
+.topbar h1 { font-size: 16px; margin: 0; }
+
+.container { max-width: 1200px; margin: 16px auto; padding: 0 16px 64px; }
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.card h2 { font-size: 16px; margin: 0 0 12px; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); font-size: 12px; }
+.error { color: var(--danger); font-size: 13px; margin: 8px 0; }
+
+/* Buttons */
+.btn {
+  border: 1px solid var(--border);
+  background: #f6f8fa;
+  color: var(--fg);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+.btn:hover { background: #eaeef2; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-ghost { background: transparent; border-color: #4b5058; color: #fff; }
+.btn-ghost:hover { background: #3f464f; }
+.btn-link { padding: 2px 8px; font-size: 12px; }
+
+/* Search */
+.search-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+.search-row label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--muted);
+}
+.search-row input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+/* Combobox */
+.combobox-wrap { position: relative; }
+.combobox-dropdown {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 20;
+}
+.combobox-option {
+  display: grid;
+  grid-template-columns: 1.2fr 1.5fr 1fr;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.combobox-option:hover, .combobox-option.active {
+  background: #eaeef2;
+}
+.combobox-option .opt-lis { font-family: ui-monospace, monospace; font-weight: 600; }
+.combobox-option .opt-name { color: var(--fg); }
+.combobox-option .opt-mrn { color: var(--muted); font-family: ui-monospace, monospace; }
+
+/* Sample meta */
+.sample-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.sample-meta > div { display: flex; flex-direction: column; }
+.sample-meta .label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.sample-meta > div > span:last-child { font-size: 14px; font-weight: 500; }
+.sample-meta .meta-select {
+  margin-top: 2px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  background: #fff;
+}
+
+/* Phenotype chips */
+.phenotype-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.phenotype-list li {
+  background: var(--chip-bg);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+.phenotype-list .weight { color: var(--muted); margin-left: 6px; }
+.phenotype-list .hpo-id { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; }
+
+/* Comment row in variant card */
+.comment-row {
+  margin-bottom: 8px;
+}
+.comment-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.comment-row input {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+/* Report / category blocks */
+.report-block, .cat-block {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+.block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: #f6f8fa;
+  user-select: none;
+}
+.block-header:hover { background: #eaeef2; }
+.block-header .title { font-weight: 600; font-size: 14px; }
+.block-header .count { background: var(--chip-bg); padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.block-body { padding: 8px 12px; display: none; }
+.block-body.open { display: block; }
+.block-header .arrow::before { content: "▸"; margin-right: 6px; transition: transform 0.15s; display: inline-block; }
+.block-header.open .arrow::before { transform: rotate(90deg); }
+
+/* Clinical description card (same collapsible feel as block-header) */
+#clinical-card,
+#comment-card { padding: 0; overflow: hidden; }
+.clinical-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: #f6f8fa;
+  user-select: none;
+}
+.clinical-header:hover { background: #eaeef2; }
+.clinical-header .title { font-weight: bold; font-size: 16px; }
+.clinical-header .arrow::before {
+  content: "▸"; margin-right: 6px; transition: transform 0.15s; display: inline-block;
+}
+.clinical-header.open .arrow::before { transform: rotate(90deg); }
+.clinical-body { padding: 8px 12px; display: none; }
+.clinical-body.open { display: block; }
+#clinical-text,
+#comment-text {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+/* Comment card body lays out textarea + tag picker side-by-side. */
+.comment-row-flex { display: flex; gap: 12px; align-items: stretch; }
+.comment-row-flex textarea { flex: 1 1 auto; min-width: 0; }
+.tag-picker {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tag-picker .tag-label { font-size: 11px; color: var(--muted); }
+.tag-picker .tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  min-height: 56px;
+  background: #fff;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: #e0e7ff;
+  color: #1e3a8a;
+  border-radius: 12px;
+  font-size: 12px;
+  padding: 2px 4px 2px 8px;
+}
+.tag-remove {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #1e3a8a;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  margin-left: 2px;
+}
+.tag-remove:hover { color: #b91c1c; }
+.tag-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  flex: 1 1 80px;
+  min-width: 60px;
+  padding: 2px 4px;
+}
+@media (max-width: 720px) {
+  .comment-row-flex { flex-direction: column; }
+  .tag-picker { flex-basis: auto; }
+}
+
+/* Variant cards */
+.variant-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.variant-card.missing { background: var(--warn-bg); border-color: var(--warn-border); }
+.variant-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.variant-head .card-idx {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 28px;
+  text-align: right;
+}
+.variant-head .hgvs { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 600; font-size: 13px; flex: 1; }
+.variant-head .variant-tag { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+.variant-head .clinvar-upgrade-arrow { color: #c0392b; font-weight: 700; margin-right: 2px; cursor: help; }
+.clinvar-old { color: var(--muted); font-size: 11px; margin-left: 4px; cursor: help; }
+.variant-head select { padding: 4px 6px; border-radius: 4px; border: 1px solid var(--border); font-size: 12px; }
+.variant-head .ext-links { display: flex; gap: 4px; }
+.variant-head .ext-links a {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #f6f8fa;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--fg);
+}
+.variant-head .ext-links a:hover { background: #eaeef2; }
+
+/* Manual variant cards (CNVs / hand-typed entries the SNV pipeline misses). */
+.variant-card-manual {
+  border-style: dashed;
+  background: #fcfdff;
+}
+.variant-card-manual .manual-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.variant-card-manual .manual-row label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.variant-card-manual input[type="text"],
+.variant-card-manual .manual-row input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.variant-card-manual .manual-position {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+}
+.btn-link {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #f6f8fa;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--fg);
+}
+.btn-link:hover { background: #eaeef2; }
+.btn-remove-manual {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 6px;
+  color: var(--muted);
+}
+.btn-remove-manual:hover { background: #fee; color: #b91c1c; border-color: #fcc; }
+.btn-add-manual {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px;
+  background: #f6f8fa;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.btn-add-manual:hover { background: #eaeef2; color: var(--fg); }
+
+/* Inline copy buttons next to HGVS / chr-pos-ref-alt tag. */
+.btn-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  margin-left: 4px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--muted);
+  vertical-align: -3px;
+}
+.btn-copy svg { display: block; }
+.btn-copy:hover { background: #eaeef2; color: var(--fg); }
+
+/* Per-variant 'More' toggle + the extras subgrid it controls. */
+.btn-more {
+  margin-top: 6px;
+  font-size: 12px;
+  padding: 2px 8px;
+  background: #f6f8fa;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.btn-more:hover { background: #eaeef2; color: var(--fg); }
+.more-extras { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.more-extras.hidden { display: none; }
+
+/* Info table */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.info-grid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.info-grid .k { color: var(--muted); font-size: 11px; }
+.info-grid .v { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+.info-grid input, .info-grid textarea {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.acmg-class-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.acmg-class-row .acmg-class { flex: 1; min-width: 0; }
+.acmg-class-row .acmg-paren { color: var(--muted); }
+.acmg-class-row .acmg-score { width: 3em; flex: none; text-align: center; font-family: ui-monospace, monospace; }
+
+/* ClinVar / ACMG classification colour chips — applied to the ClinVar
+   value span and the ACMG_classification input via classifySignificance().
+   Pathogenic = red, Likely pathogenic = orange, VUS = yellow,
+   Likely benign = light green, Benign = dark green. Anything else
+   (Conflicting, blank, free-text) is left uncolored. */
+.sig-p   { background: #ef9a9a; }
+.sig-lp  { background: #ffcdd2; }
+.sig-vus { background: #fff4a3; }
+.sig-lb  { background: #dcedc8; }
+.sig-b   { background: #a5d6a7; }
+.info-grid .v.sig-p,
+.info-grid .v.sig-lp,
+.info-grid .v.sig-vus,
+.info-grid .v.sig-lb,
+.info-grid .v.sig-b {
+  padding: 0 4px;
+  border-radius: 3px;
+  width: fit-content;
+}
+
+@media (max-width: 720px) {
+  .info-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Disease expander */
+.disease-list { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
+.disease-row { margin-bottom: 4px; }
+.disease-row summary {
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #f6f8fa;
+  font-size: 12px;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.disease-row summary::before { content: "▸"; display: inline-block; transition: transform 0.15s; }
+.disease-row[open] summary::before { transform: rotate(90deg); }
+.disease-row summary:hover { background: #eaeef2; }
+.disease-row .disease-pick {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--hit-patho, #d33);
+}
+.disease-row .disease-summary-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.disease-row .disease-detail {
+  padding: 6px 10px;
+  background: #fff8dc;
+  border-left: 3px solid var(--warn-border);
+  margin: 4px 0 0 12px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  max-width: 100%;
+  word-break: break-word;
+}
+
+/* Save row */
+.save-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+/* Modal */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-card {
+  background: #fff;
+  padding: 20px 24px;
+  border-radius: 8px;
+  max-width: 500px;
+  width: 90%;
+}
+.modal-card h2 { margin-top: 0; }
+.modal-card input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+.modal-actions { margin-top: 16px; text-align: right; }
+
+/* Category-specific hit background hints */
+.report-block[data-status="1"] .block-header { background: var(--hit-patho); }
+.report-block[data-status="2"] .block-header { background: var(--hit-panel); }
+.report-block[data-kind="panel"] .block-header,
+.report-block[data-kind="pharmcat"].has-data .block-header { background: #e5e7eb; }
+
+/* PharmCAT table */
+.pharmcat-ts { margin-bottom: 6px; }
+.pharmcat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pharmcat-table th,
+.pharmcat-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.pharmcat-table th {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--muted);
+  background: #f6f8fa;
+}
+.pharmcat-row .pharmcat-gene { font-weight: 600; font-family: ui-monospace, monospace; }
+.pharmcat-detail-row > td { padding: 4px 8px 10px; background: #fafbfc; }
+.pharmcat-detail-row summary {
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #f6f8fa;
+  font-size: 12px;
+  list-style: none;
+  display: inline-block;
+}
+.pharmcat-detail-row summary::before { content: "▸ "; display: inline-block; transition: transform 0.15s; }
+.pharmcat-detail-row details[open] summary::before { transform: rotate(90deg); }
+.pharmcat-alleles { margin: 6px 0 4px; font-size: 12px; }
+.pharmcat-variants {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-top: 6px;
+}
+.pharmcat-variants th,
+.pharmcat-variants td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+  font-family: ui-monospace, monospace;
+}
+.pharmcat-variants th { color: var(--muted); font-weight: 500; }
+
+/* New 2-section pharmacogenomics layout: Clinically actionable on top,
+   Routine condensed below. */
+.pgx-section { margin-top: 8px; }
+.pgx-heading {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+.pgx-section:first-of-type .pgx-heading { margin-top: 0; }
+.pgx-gene {
+  border-left: 3px solid #ef9a9a;
+  padding: 4px 10px;
+  margin-bottom: 8px;
+  background: #fff8f8;
+  border-radius: 0 4px 4px 0;
+}
+.pgx-gene-head {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.pgx-recs { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 6px; }
+.pgx-rec  { font-size: 12px; padding: 2px 0; }
+.pgx-drug { font-weight: 600; font-family: ui-monospace, monospace; }
+.pgx-rec-item { padding-left: 10px; }
+.pgx-rec-item ul,
+.pgx-rec-item ol { margin: 2px 0 2px 18px; padding: 0; }
+.pgx-rec-item li { margin: 1px 0; }
+.pgx-rec-item a { color: var(--accent, #2563eb); }
+.pgx-detail { margin-top: 4px; font-size: 12px; }
+.pgx-detail summary { cursor: pointer; color: var(--muted); }
+.pgx-routine .pgx-routine-row {
+  padding: 2px 0;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+@media (max-width: 720px) {
+  .pharmcat-table th,
+  .pharmcat-table td { padding: 4px 5px; font-size: 12px; }
+  .pharmcat-variants { font-size: 10px; }
+}

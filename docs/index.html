@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VCF Analysis — Report Tool</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>VCF Analysis</h1>
+    <div class="topbar-actions">
+      <button id="btn-reset-token" class="btn btn-ghost" title="清除並重新輸入 GitHub token">🔑 Reset token</button>
+    </div>
+  </header>
+
+  <!-- PAT modal -->
+  <div id="token-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>GitHub Personal Access Token</h2>
+      <p>此網頁工具要讀 private repo，需要一張 fine-grained PAT（權限：<code>Contents: Read &amp; Write</code>）。</p>
+      <p>Token 只會存在你瀏覽器的 <code>localStorage</code>，不會送到任何第三方伺服器。</p>
+      <input id="token-input" type="password" placeholder="ghp_xxxxxxxxxxxx..." autocomplete="off" />
+      <div id="token-error" class="error hidden"></div>
+      <div class="modal-actions">
+        <button id="token-save" class="btn btn-primary">儲存並驗證</button>
+      </div>
+    </div>
+  </div>
+
+  <main id="app" class="container">
+
+    <!-- Search -->
+    <section class="card">
+      <div class="search-row">
+        <label class="combobox-wrap">
+          檢體編號 (LIS_ID / 姓名 / 病歷號)
+          <input id="q-lis" type="text" autocomplete="off" placeholder="輸入以搜尋…" />
+          <ul id="q-lis-dropdown" class="combobox-dropdown hidden"></ul>
+        </label>
+        <button id="btn-load" class="btn btn-primary">Load</button>
+      </div>
+      <div id="search-status" class="muted"></div>
+    </section>
+
+    <!-- Sample info -->
+    <section id="sample-card" class="card hidden">
+      <div class="sample-meta">
+        <div><span class="label">LIS_ID</span><span id="m-lis"></span></div>
+        <div><span class="label">Name</span><span id="m-name"></span></div>
+        <div><span class="label">MRN</span><span id="m-mrn"></span></div>
+        <div><span class="label">Test</span><span id="m-test"></span></div>
+        <div>
+          <span class="label">Category</span>
+          <select id="m-category" class="meta-select"></select>
+        </div>
+        <div><span class="label">Generated</span><span id="m-generated"></span></div>
+      </div>
+    </section>
+
+    <!-- Clinical presentation (free-text) -->
+    <section id="clinical-card" class="card hidden">
+      <div id="clinical-header" class="clinical-header">
+        <span><span class="arrow"></span><span class="title">Clinical presentation</span></span>
+      </div>
+      <div id="clinical-body" class="clinical-body">
+        <textarea id="clinical-text" rows="5" placeholder="病患的 clinical presentation..."></textarea>
+      </div>
+    </section>
+
+    <!-- Patient phenotype -->
+    <section id="phenotype-card" class="card hidden">
+      <h2>Patient phenotype</h2>
+      <ul id="phenotype-list" class="phenotype-list"></ul>
+    </section>
+
+    <!-- Comment (free-text; syncs to NGS_list.xlsx Comment column) +
+         Tag picker (multi-select, syncs to NGS_list.xlsx Tag column) -->
+    <section id="comment-card" class="card hidden">
+      <div id="comment-header" class="clinical-header">
+        <span><span class="arrow"></span><span class="title">Comment</span></span>
+      </div>
+      <div id="comment-body" class="clinical-body">
+        <div class="comment-row-flex">
+          <textarea id="comment-text" rows="3" placeholder="備註"></textarea>
+          <div id="tag-picker" class="tag-picker"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Report sections (marked variants) -->
+    <section id="report-sections" class="report-sections hidden">
+      <h2>Report</h2>
+      <div id="sec-causative"  class="report-block" data-kind="report"   data-status="1"></div>
+      <div id="sec-other"      class="report-block" data-kind="report"   data-status="2"></div>
+      <div id="sec-acmg-sf"    class="report-block" data-kind="panel"    data-category="acmg_sf"></div>
+      <div id="sec-proactive"  class="report-block" data-kind="panel"    data-category="proactive"></div>
+      <div id="sec-carrier"    class="report-block" data-kind="panel"    data-category="carrier"></div>
+      <div id="sec-pharmcat"   class="report-block" data-kind="pharmcat"></div>
+      <div class="save-row">
+        <button id="btn-save-top" class="btn btn-primary">💾 儲存變更</button>
+        <button class="btn btn-export-html" title="產生靜態 HTML 並推到 output/analysis_html/">📄 匯出分析 HTML</button>
+        <button class="btn btn-export-clinical" title="產生診斷報告 TXT 並推到 output/clinical_reports/">📋 匯出診斷報告</button>
+        <button class="btn btn-export-screening" title="產生健檢報告 PDF 並推到 output/screening_reports/">🧬 匯出健檢報告</button>
+        <span id="save-hint-top" class="muted"></span>
+      </div>
+    </section>
+
+    <!-- Candidate category buttons -->
+    <section id="category-sections" class="category-sections hidden">
+      <h2>分析</h2>
+      <div id="cat-candidate"  class="cat-block" data-category="candidate"></div>
+      <div id="cat-diagnostic" class="cat-block" data-category="diagnostic"></div>
+      <div id="cat-pathogenic" class="cat-block" data-category="pathogenic"></div>
+      <div id="cat-clinvar-upgraded" class="cat-block" data-category="clinvar_upgraded"></div>
+      <div id="cat-acmg-sf-c"  class="cat-block" data-category="acmg_sf"></div>
+      <div id="cat-proactive-c" class="cat-block" data-category="proactive"></div>
+      <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
+      <div id="cat-pharmcat-c" class="cat-block" data-category="pharmcat"></div>
+      <div class="save-row">
+        <button id="btn-close-bottom" class="btn">✕ Close</button>
+        <button id="btn-save-bottom" class="btn btn-primary">💾 儲存變更</button>
+        <button class="btn btn-export-html" title="產生靜態 HTML 並推到 output/analysis_html/">📄 匯出分析 HTML</button>
+        <button class="btn btn-export-clinical" title="產生診斷報告 TXT 並推到 output/clinical_reports/">📋 匯出診斷報告</button>
+        <button class="btn btn-export-screening" title="產生健檢報告 PDF 並推到 output/screening_reports/">🧬 匯出健檢報告</button>
+        <span id="save-hint-bottom" class="muted"></span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- jsPDF (used by exportScreeningReport — Chinese font fetched on demand) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
