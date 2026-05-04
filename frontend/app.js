@@ -498,92 +498,123 @@ async function loadPanelOptions() {
   return _panelOptions;
 }
 
-// HPO typeahead: 200 ms debounce, 20 results.
+// HPO + panel typeaheads use delegated listeners on `document` so they
+// keep working even if the phenotype-card is re-rendered. Per-element
+// addEventListener was racing the legacy global handlers; delegated
+// dispatch sidesteps it entirely.
 let _hpoSearchAbort = null;
 let _hpoSearchTimer = null;
+
+function _hpoOpen()  { document.getElementById("hpo-search-dropdown")?.classList.remove("hidden"); }
+function _hpoClose() { document.getElementById("hpo-search-dropdown")?.classList.add("hidden"); }
+function _panelOpen()  { document.getElementById("panel-search-dropdown")?.classList.remove("hidden"); }
+function _panelClose() { document.getElementById("panel-search-dropdown")?.classList.add("hidden"); }
+
 function setupHpoSearchInput() {
-  const input    = document.getElementById("hpo-search");
-  const dropdown = document.getElementById("hpo-search-dropdown");
-  if (!input || !dropdown) return;
-
-  const close = () => dropdown.classList.add("hidden");
-  const open  = () => dropdown.classList.remove("hidden");
-
-  input.addEventListener("input", () => {
-    clearTimeout(_hpoSearchTimer);
-    if (_hpoSearchAbort) _hpoSearchAbort.abort();
-    const q = input.value.trim();
-    if (!q) { close(); return; }
-    _hpoSearchTimer = setTimeout(async () => {
-      _hpoSearchAbort = new AbortController();
-      try {
-        const url = `/hpo/search?q=${encodeURIComponent(q)}&limit=20`;
-        const resp = await fetch(`${API_BASE}${url}`, { signal: _hpoSearchAbort.signal });
-        if (!resp.ok) { close(); return; }
-        const list = await resp.json();
-        if (!Array.isArray(list) || !list.length) {
-          dropdown.innerHTML = '<li class="muted">（無結果）</li>';
-        } else {
-          dropdown.innerHTML = list.map(t => `
-            <li class="combobox-option" data-id="${escapeAttr(t.hpo_id)}" data-name="${escapeAttr(t.name)}">
-              <span class="opt-lis">${escapeHtml(t.hpo_id)}</span>
-              <span class="opt-name">${escapeHtml(t.name)}</span>
-              <span class="opt-mrn">${escapeHtml((t.synonyms || []).slice(0,2).join(" • "))}</span>
-            </li>
-          `).join("");
-        }
-        open();
-      } catch (e) { /* aborted */ }
-    }, 200);
-  });
-
-  input.addEventListener("blur", () => setTimeout(close, 150));
-
-  dropdown.addEventListener("mousedown", ev => {
-    const opt = ev.target.closest(".combobox-option");
-    if (!opt) return;
-    ev.preventDefault();
-    addHpo(opt.dataset.id, opt.dataset.name);
-    input.value = ""; close();
-  });
+  // No-op now; kept so boot() doesn't throw if the call site is still here.
+  // Real work lives in the document-level handler at the bottom of this
+  // file (search for "Phase B delegated typeahead").
 }
 
 function setupPanelSearchInput() {
-  const input    = document.getElementById("panel-search");
+  // No-op; see setupHpoSearchInput().
+}
+
+async function _runHpoSearch(q) {
+  const dropdown = document.getElementById("hpo-search-dropdown");
+  if (!dropdown) return;
+  if (_hpoSearchAbort) _hpoSearchAbort.abort();
+  _hpoSearchAbort = new AbortController();
+  try {
+    const url  = `${API_BASE}/hpo/search?q=${encodeURIComponent(q)}&limit=20`;
+    const resp = await fetch(url, { signal: _hpoSearchAbort.signal });
+    if (!resp.ok) { _hpoClose(); return; }
+    const list = await resp.json();
+    if (!Array.isArray(list) || !list.length) {
+      dropdown.innerHTML = '<li class="muted" style="padding:6px 10px">（無結果）</li>';
+    } else {
+      dropdown.innerHTML = list.map(t => `
+        <li class="combobox-option" data-id="${escapeAttr(t.hpo_id)}" data-name="${escapeAttr(t.name)}">
+          <span class="opt-lis">${escapeHtml(t.hpo_id)}</span>
+          <span class="opt-name">${escapeHtml(t.name)}</span>
+          <span class="opt-mrn">${escapeHtml((t.synonyms || []).slice(0,2).join(" • "))}</span>
+        </li>`).join("");
+    }
+    _hpoOpen();
+  } catch (e) {
+    if (e.name !== "AbortError") console.error("HPO search failed", e);
+  }
+}
+
+async function _runPanelSearch(q) {
   const dropdown = document.getElementById("panel-search-dropdown");
-  if (!input || !dropdown) return;
-
-  const close = () => dropdown.classList.add("hidden");
-  const open  = () => dropdown.classList.remove("hidden");
-
-  input.addEventListener("input", async () => {
-    const opts = await loadPanelOptions();
-    const q = input.value.trim().toLowerCase();
-    const picked = new Set(phenoEdit.panels);
-    const matches = opts
-      .filter(p => !picked.has(p.name)
-                && (!q || p.name.toLowerCase().includes(q)))
-      .slice(0, 30);
-    if (!matches.length) { close(); return; }
+  if (!dropdown) return;
+  const opts = await loadPanelOptions();
+  const ql = (q || "").trim().toLowerCase();
+  const picked = new Set(phenoEdit.panels);
+  const matches = opts
+    .filter(p => !picked.has(p.name) && (!ql || p.name.toLowerCase().includes(ql)))
+    .slice(0, 30);
+  if (!matches.length) {
+    dropdown.innerHTML = '<li class="muted" style="padding:6px 10px">（無結果）</li>';
+  } else {
     dropdown.innerHTML = matches.map(p => `
       <li class="combobox-option" data-name="${escapeAttr(p.name)}">
         <span class="opt-lis">${escapeHtml(p.name)}</span>
         <span class="opt-name">${p.gene_count} genes</span>
         <span class="opt-mrn"></span>
       </li>`).join("");
-    open();
-  });
-  input.addEventListener("focus", () => input.dispatchEvent(new Event("input")));
-  input.addEventListener("blur",  () => setTimeout(close, 150));
+  }
+  _panelOpen();
+}
 
-  dropdown.addEventListener("mousedown", ev => {
-    const opt = ev.target.closest(".combobox-option");
-    if (!opt) return;
+// Phase B delegated typeahead: catch input/focus/blur on the two
+// search boxes and clicks on their dropdown options at the document
+// level so we don't depend on element-specific listeners.
+document.addEventListener("input", ev => {
+  const t = ev.target;
+  if (t.id === "hpo-search") {
+    clearTimeout(_hpoSearchTimer);
+    const q = t.value.trim();
+    if (!q) { _hpoClose(); return; }
+    _hpoSearchTimer = setTimeout(() => _runHpoSearch(q), 200);
+  } else if (t.id === "panel-search") {
+    _runPanelSearch(t.value);
+  }
+});
+
+document.addEventListener("focusin", ev => {
+  if (ev.target.id === "hpo-search") {
+    if (ev.target.value.trim()) _runHpoSearch(ev.target.value.trim());
+  } else if (ev.target.id === "panel-search") {
+    _runPanelSearch(ev.target.value);
+  }
+});
+
+document.addEventListener("focusout", ev => {
+  if (ev.target.id === "hpo-search")     setTimeout(_hpoClose,   150);
+  if (ev.target.id === "panel-search")   setTimeout(_panelClose, 150);
+});
+
+// Mousedown so the option fires before the input's blur kills the dropdown.
+document.addEventListener("mousedown", ev => {
+  const opt = ev.target.closest(".combobox-option");
+  if (!opt) return;
+  const dropdown = opt.parentElement;
+  if (dropdown?.id === "hpo-search-dropdown") {
+    ev.preventDefault();
+    addHpo(opt.dataset.id, opt.dataset.name);
+    const inp = document.getElementById("hpo-search");
+    if (inp) inp.value = "";
+    _hpoClose();
+  } else if (dropdown?.id === "panel-search-dropdown") {
     ev.preventDefault();
     addPanel(opt.dataset.name);
-    input.value = ""; close();
-  });
-}
+    const inp = document.getElementById("panel-search");
+    if (inp) inp.value = "";
+    _panelClose();
+  }
+});
 
 function addHpo(id, label) {
   if (!id) return;
