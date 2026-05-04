@@ -32,14 +32,42 @@
       <div class="sample-meta">
         <div><span class="label">LIS_ID</span><span id="m-lis"></span></div>
         <div><span class="label">Name</span><span id="m-name"></span></div>
-        <div><span class="label">MRN</span><span id="m-mrn"></span></div>
-        <div><span class="label">Test</span><span id="m-test"></span></div>
+        <div>
+          <span class="label">MRN</span>
+          <span class="m-mrn-row">
+            <span id="m-mrn"></span>
+            <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
+          </span>
+        </div>
+        <div>
+          <span class="label">Test</span>
+          <select id="m-test" class="meta-select">
+            <option value="">—</option>
+            <option value="WES">WES</option>
+            <option value="WGS">WGS</option>
+          </select>
+        </div>
+        <div>
+          <span class="label">Build</span>
+          <select id="m-build" class="meta-select">
+            <option value="">—</option>
+            <option value="hg19">hg19</option>
+            <option value="hg38">hg38</option>
+          </select>
+        </div>
         <div>
           <span class="label">Category</span>
           <select id="m-category" class="meta-select"></select>
         </div>
         <div><span class="label">Generated</span><span id="m-generated"></span></div>
       </div>
+      <div id="m-meta-hint" class="muted" style="margin-top:6px;font-size:11px"></div>
+    </section>
+
+    <!-- QC blacklist warnings (rendered only when qc_summary.json has entries) -->
+    <section id="qc-card" class="card hidden">
+      <h2>⚠ QC Blacklist 警告</h2>
+      <ul id="qc-warnings" class="qc-warnings"></ul>
     </section>
 
     <!-- Clinical presentation (free-text) -->

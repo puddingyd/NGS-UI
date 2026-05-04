@@ -895,3 +895,32 @@ html, body {
 .phenotype-top10 summary { cursor: pointer; color: var(--muted); user-select: none; }
 .phenotype-top10 ol { margin: 4px 0 0 20px; padding: 0; }
 .phenotype-top10 li { padding: 1px 0; }
+
+/* ---- Phase D: editable sample meta + QC blacklist banner ------- */
+.m-mrn-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#m-emr-link {
+  font-size: 11px;
+  padding: 1px 6px;
+  text-decoration: none;
+}
+#qc-card h2 { margin: 0 0 8px; font-size: 14px; color: var(--danger); }
+.qc-warnings { list-style: none; padding: 0; margin: 0; }
+.qc-warning {
+  display: grid;
+  grid-template-columns: 120px 90px 1fr;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--warn-bg);
+  border-left: 3px solid var(--warn-border);
+  margin-bottom: 4px;
+}
+.qc-warning-fully  { background: #fee2e2; border-left-color: #b91c1c; }
+.qc-gene { font-family: ui-monospace, monospace; font-weight: 600; }
+.qc-level { color: var(--muted); text-transform: uppercase; font-size: 10px; padding-top: 2px; }
+.qc-reason { color: #444; }

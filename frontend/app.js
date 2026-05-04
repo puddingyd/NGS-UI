@@ -317,8 +317,20 @@ function renderSampleMeta() {
   document.getElementById("m-lis").textContent       = m.LIS_ID || "—";
   document.getElementById("m-name").textContent      = m.Name || "—";
   document.getElementById("m-mrn").textContent       = m.MRN || "—";
-  document.getElementById("m-test").textContent      = m.Test || "—";
   document.getElementById("m-generated").textContent = state.data.generated_at || "—";
+
+  // EMR link is hospital-internal; only build it when MRN is present.
+  const emr = document.getElementById("m-emr-link");
+  if (m.MRN) {
+    emr.href = `http://hisweb.hosp.ncku/Emrquery/autologin.aspx?chartno=${encodeURIComponent(m.MRN)}`;
+    emr.hidden = false;
+  } else {
+    emr.removeAttribute("href"); emr.hidden = true;
+  }
+
+  // Editable selects backed by sample_metadata.json
+  document.getElementById("m-test").value  = m.Test || "";
+  document.getElementById("m-build").value = state.data.genome_build || "";
 
   const sel = document.getElementById("m-category");
   const opts = (state.options && state.options.category_options) || [];
@@ -330,7 +342,52 @@ function renderSampleMeta() {
   }).join("");
 
   document.getElementById("sample-card").classList.remove("hidden");
+  renderQcWarnings();
 }
+
+// QC blacklist banner. The pipeline emits qc_summary.json with at most
+// a top-level `blacklist` array of {gene, level, reason}; we hide the
+// whole card when it's empty.
+function renderQcWarnings() {
+  const qc = state.data.qc_summary || {};
+  const items = Array.isArray(qc.blacklist) ? qc.blacklist : [];
+  const card = document.getElementById("qc-card");
+  const ul   = document.getElementById("qc-warnings");
+  if (!items.length) { card.classList.add("hidden"); ul.innerHTML = ""; return; }
+  ul.innerHTML = items.map(w => `
+    <li class="qc-warning qc-warning-${escapeAttr(w.level || "")}">
+      <span class="qc-gene">${escapeHtml(w.gene || "?")}</span>
+      <span class="qc-level">${escapeHtml(w.level || "")}</span>
+      <span class="qc-reason">${escapeHtml(w.reason || "")}</span>
+    </li>`).join("");
+  card.classList.remove("hidden");
+}
+
+// Sample-metadata edit: save on change for Test / Build (Category goes
+// via the legacy reports flow). Debounced so rapid keypresses don't
+// produce a flurry of writes.
+let _metaSaveTimer = null;
+function _saveSampleMeta(patch) {
+  if (!state.currentLIS) return;
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  const hint = document.getElementById("m-meta-hint");
+  clearTimeout(_metaSaveTimer);
+  hint.textContent = "儲存中…";
+  _metaSaveTimer = setTimeout(async () => {
+    try {
+      await apiPut(`/samples/${encodeURIComponent(sid)}/metadata`, patch);
+      hint.textContent = `已儲存 ${new Date().toLocaleTimeString()}`;
+    } catch (e) {
+      hint.textContent = "儲存失敗：" + e.message;
+    }
+  }, 300);
+}
+
+document.addEventListener("change", ev => {
+  if (ev.target.id === "m-test")  _saveSampleMeta({ test_type:    ev.target.value });
+  if (ev.target.id === "m-build") _saveSampleMeta({ genome_build: ev.target.value });
+});
 
 // Generic renderer for collapsible free-text cards (Clinical presentation,
 // Comment). Both default to collapsed; user-toggled state is remembered
@@ -470,12 +527,11 @@ async function _resumeJobPollingIfAny() {
     const live = jobs.find(j => j.status === "queued" || j.status === "running");
     if (live) {
       _activeJobId = live.job_id;
-      _setJobStatus(`${live.status}${live.step ? " · " + live.step : ""}`, true);
+      const tool = _stepTool(live.step);
+      _setJobStatus(tool ? `${live.status} ${tool}` : live.status, true);
       _startJobPolling(sid, live.job_id);
     } else if (jobs.length) {
-      const last = jobs[0];
-      const t = (last.finished_at || last.updated_at || "").slice(11, 19);
-      _setJobStatus(`上次：${last.status}${t ? " @ " + t : ""}`);
+      _setJobStatus(jobs[0].status);
     }
   } catch (e) { /* ignore */ }
 }
@@ -697,6 +753,16 @@ async function apiPost(path, body) {
 let _jobPollTimer = null;
 let _activeJobId  = null;
 
+// Map a worker step like "exomiser:run" / "lirical:render" to the
+// short tool name shown in the status pill. Anything else (parse,
+// queued, done, …) becomes empty so the pill just shows the status.
+function _stepTool(step) {
+  const s = String(step || "");
+  if (s.startsWith("exomiser")) return "exomiser";
+  if (s.startsWith("lirical"))  return "lirical";
+  return "";
+}
+
 function _setJobStatus(text, busy = false) {
   const el = document.getElementById("job-status");
   if (el) el.textContent = text || "";
@@ -734,8 +800,9 @@ function _startJobPolling(sid, jobId) {
       const j = await apiFetch(`/jobs/${encodeURIComponent(jobId)}`);
       if (!j) return;
       const status = j.status || j.rq_status || "?";
-      const step   = j.step ? ` · ${j.step}` : "";
-      _setJobStatus(`${status}${step}`, status === "queued" || status === "running");
+      const tool   = _stepTool(j.step);
+      _setJobStatus(tool ? `${status} ${tool}` : status,
+                    status === "queued" || status === "running");
       if (status === "succeeded" || status === "failed") {
         clearInterval(_jobPollTimer);
         if (status === "succeeded") {
