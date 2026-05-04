@@ -566,6 +566,32 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     extras.push({ key: "PDIVAS", text: fmtNum(v.PDIVAS_score),
                   cls: classifyPDIVAS(v.PDIVAS_score) });
   }
+  // Tertiary-spec extras: P-KNN / REVEL / BayesDel / ESM2 / Evo2 / CADD.
+  // P-KNN is the primary missense PP3/BP4 metric per the 2026 spec; the
+  // others are secondary references shown only when populated.
+  if (v.PKNN_LLR != null && v.PKNN_LLR !== "") {
+    extras.push({ key: "P-KNN LLR", text: fmtNum(v.PKNN_LLR) });
+  }
+  if (v.REVEL != null && v.REVEL !== "") {
+    extras.push({ key: "REVEL", text: fmtNum(v.REVEL) });
+  }
+  if (v.BayesDel != null && v.BayesDel !== "") {
+    extras.push({ key: "BayesDel", text: fmtNum(v.BayesDel) });
+  }
+  if (v.CADD_phred != null && v.CADD_phred !== "") {
+    extras.push({ key: "CADD", text: fmtNum(v.CADD_phred) });
+  }
+  if (v.ESM2_score != null && v.ESM2_score !== "") {
+    extras.push({ key: "ESM-2", text: fmtNum(v.ESM2_score) });
+  }
+  if (v.Evo2_score != null && v.Evo2_score !== "") {
+    extras.push({ key: "Evo2", text: fmtNum(v.Evo2_score) });
+  }
+  if (v.loftee_hc || v.loftee_filter || v.loftee_flags) {
+    const parts = [v.loftee_hc, v.loftee_filter, v.loftee_flags]
+      .filter(Boolean).join(" / ");
+    extras.push({ key: "LOFTEE", text: parts });
+  }
   const extrasHtml = extras.map(x => {
     const valHtml = x.html != null ? x.html : escapeHtml(x.text);
     return `<span class="k">${escapeHtml(x.key)}</span>`
@@ -606,6 +632,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(v.HGVS || id)}<button class="btn-copy" data-copy="${escapeAttr(v.HGVS || id)}" title="複製 HGVS">${COPY_ICON_SVG}</button> <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
       <span class="ext-links">${links}</span>
     </div>
+    ${renderVariantBadges(v)}
     <div class="comment-row">
       <label>Comment:
         <input class="variant-comment" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editComment)}" />
@@ -620,8 +647,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
-        <span class="k">Read depth (VAF)</span><span class="v">${fmtAdVaf(v.AD, v.alt_af)}</span>
-        <span class="k">Exon / Intron</span><span class="v">${fmtTxt(v.exon_or_intron)}</span>
+        <span class="k">Phase</span><span class="v">${fmtPhase(v)}</span>
+        <span class="k">Consequence</span><span class="v">${fmtTxt(v.Consequence)}</span>
       </div>
       <div>
         <span class="k">${clinvarLabel}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
@@ -649,10 +676,75 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
     </div>
     ${(extras.length || scoreExtras.length) ? `<button class="btn-more" type="button">▾ More</button>` : ""}
+    ${renderManeAll(v)}
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
 
   return card;
+}
+
+// ---- helpers used by renderVariantCard (Phase 4) -----------------
+
+// Top-of-card chip row: TRANSCRIPT_TYPE / CALLERS / panel/ROH/blacklist
+// hits / LOFTEE HC. Empty-string entries are filtered out so the row
+// hides itself when nothing is worth showing.
+function renderVariantBadges(v) {
+  const chips = [];
+  if (v.transcript_type) {
+    const cls = "badge-tx badge-" + v.transcript_type.toLowerCase().replace(/_/g, "-");
+    chips.push(`<span class="badge ${cls}" title="Transcript type">${escapeHtml(v.transcript_type)}</span>`);
+  }
+  if (v.callers) {
+    const cls = v.callers === "DV+HC" ? "badge-callers-both"
+              : v.callers === "DV"    ? "badge-callers-dv"
+              : v.callers === "HC"    ? "badge-callers-hc"
+              :                          "badge-callers";
+    chips.push(`<span class="badge ${cls}" title="Variant callers">${escapeHtml(v.callers)}</span>`);
+  }
+  if (v.in_panel)     chips.push(`<span class="badge badge-panel"     title="Gene is in the requested panel">In panel</span>`);
+  if (v.in_roh)       chips.push(`<span class="badge badge-roh"       title="Variant falls inside an ROH region">In ROH</span>`);
+  if (v.in_blacklist) chips.push(`<span class="badge badge-blacklist" title="Variant or gene flagged on the QC blacklist">⚠ Blacklist</span>`);
+  if (v.loftee_hc === "HC") {
+    chips.push(`<span class="badge badge-loftee-hc" title="LOFTEE high-confidence LoF">LOFTEE HC</span>`);
+  }
+  if (!chips.length) return "";
+  return `<div class="variant-badges">${chips.join("")}</div>`;
+}
+
+// "trans / cis / unphased" — show phase group too when present so the
+// user can see which co-segregating variants share the same haplotype.
+function fmtPhase(v) {
+  const result = (v.phase_result || "").trim();
+  const group  = (v.phase_group  || "").trim();
+  if (!result && !group) return "—";
+  if (!result) return group;
+  if (!group)  return result;
+  return `${result} <span class="muted">(PG=${escapeHtml(group)})</span>`;
+}
+
+// Inline <details> block listing every MANE transcript carried by
+// MANE_ALL. The pipeline emits this as an array of
+// {transcript, transcript_type, hgvs_c, hgvs_p, consequence}; older
+// rows leave the list empty and we hide the block in that case.
+function renderManeAll(v) {
+  const rows = Array.isArray(v.MANE_ALL) ? v.MANE_ALL : [];
+  if (!rows.length) return "";
+  const cells = rows.map(r => `
+    <tr>
+      <td><span class="badge badge-${(r.transcript_type || "").toLowerCase().replace(/_/g, "-")}">${escapeHtml(r.transcript_type || "")}</span></td>
+      <td class="mane-tx">${escapeHtml(r.transcript || "")}</td>
+      <td>${escapeHtml(r.hgvs_c || "")}</td>
+      <td>${escapeHtml(r.hgvs_p || "")}</td>
+      <td>${escapeHtml(r.consequence || "")}</td>
+    </tr>`).join("");
+  return `
+    <details class="mane-all">
+      <summary>MANE transcripts (${rows.length})</summary>
+      <table class="mane-table">
+        <thead><tr><th>Type</th><th>Transcript</th><th>HGVS.c</th><th>HGVS.p</th><th>Consequence</th></tr></thead>
+        <tbody>${cells}</tbody>
+      </table>
+    </details>`;
 }
 
 // Manual variant cards live in state.reports.manual_variants instead of
