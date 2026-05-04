@@ -1,5 +1,18 @@
 [
   {
+    "sample_id": "25G00457",
+    "lis_id": "25G00457",
+    "name": "林佳緯",
+    "mrn": "17908659",
+    "test_type": "WGS",
+    "category": "Neurology",
+    "run_date": "2025-12-01",
+    "tags": [],
+    "yield": 1,
+    "has_completed": true,
+    "tertiary_dir": "25G00457"
+  },
+  {
     "sample_id": "26WE0064",
     "lis_id": "26WE0064",
     "name": "孫亮葇",

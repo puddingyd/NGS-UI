@@ -13068,7 +13068,9 @@
     "recommendations": [
       {
         "drug": "abacavir",
-        "implicated": ["HLA-B"],
+        "implicated": [
+          "HLA-B"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13079,18 +13081,23 @@
       },
       {
         "drug": "acenocoumarol",
-        "implicated": ["VKORC1"],
+        "implicated": [
+          "VKORC1"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
-            "text": "Monitoring by the ANTICOAGULATION CLINIC (National INR Monitoring Service):\n<ul>\n<li>recommend to use 50% of the standard initial dose<\/li>\n<\/ul>\nOTHERWISE:\n<ul>\n<li>recommend to use 50% of the standard initial dose<\/li>\n<li>recommend more frequent monitoring of the INR<\/li>\n<\/ul>\nThe initial dose and the maintenance dose can be calculated using an algorithm.\nHowever, for patients with two or more VKORC1 and/or CYP2C9 variations, the algorithm used in EU-PACT\n(see <a rel=\"noopener noreferrer\" href=\"https://www.knmp.nl/patientenzorg/medicatiebewaking/farmacogenetica\" target=\"_blank\">knmp<\/a> for a calculation tool in the form of an Excel file) did not result in a significant reduction in the incidence of INRs above the target range when\ncompared to an algorithm without genetic information. We are therefore unable to recommend the use of this\nalgorithm at this time.\nA (non-validated) algorithm has been prescribed for children that should result in a better prediction of the\nmaintenance dose for AA than the current guideline used by the Anticoagulation Clinic [Article:<a href=\"/pmid/29935043\">29935043<\/a>].",
+            "text": "Monitoring by the ANTICOAGULATION CLINIC (National INR Monitoring Service):\n<ul>\n<li>recommend to use 50% of the standard initial dose</li>\n</ul>\nOTHERWISE:\n<ul>\n<li>recommend to use 50% of the standard initial dose</li>\n<li>recommend more frequent monitoring of the INR</li>\n</ul>\nThe initial dose and the maintenance dose can be calculated using an algorithm.\nHowever, for patients with two or more VKORC1 and/or CYP2C9 variations, the algorithm used in EU-PACT\n(see <a rel=\"noopener noreferrer\" href=\"https://www.knmp.nl/patientenzorg/medicatiebewaking/farmacogenetica\" target=\"_blank\">knmp</a> for a calculation tool in the form of an Excel file) did not result in a significant reduction in the incidence of INRs above the target range when\ncompared to an algorithm without genetic information. We are therefore unable to recommend the use of this\nalgorithm at this time.\nA (non-validated) algorithm has been prescribed for children that should result in a better prediction of the\nmaintenance dose for AA than the current guideline used by the Anticoagulation Clinic [Article:<a href=\"/pmid/29935043\">29935043</a>].",
             "classification": "Unspecified"
           }
         ]
       },
       {
         "drug": "allopurinol",
-        "implicated": ["HLA-B", "ABCG2"],
+        "implicated": [
+          "HLA-B",
+          "ABCG2"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13106,7 +13113,9 @@
       },
       {
         "drug": "amikacin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13117,7 +13126,10 @@
       },
       {
         "drug": "amitriptyline",
-        "implicated": ["CYP2C19", "CYP2D6"],
+        "implicated": [
+          "CYP2C19",
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13133,7 +13145,9 @@
       },
       {
         "drug": "aripiprazole",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13144,7 +13158,9 @@
       },
       {
         "drug": "atazanavir",
-        "implicated": ["UGT1A1"],
+        "implicated": [
+          "UGT1A1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13160,7 +13176,9 @@
       },
       {
         "drug": "atomoxetine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13181,7 +13199,9 @@
       },
       {
         "drug": "atorvastatin",
-        "implicated": ["SLCO1B1"],
+        "implicated": [
+          "SLCO1B1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13190,14 +13210,17 @@
           },
           {
             "source": "DPWG_GUIDELINE",
-            "text": "<ul>\n<li>Patient has ADDITIONAL SIGNIFICANT RISK FACTORS for statin-induced myopathy:<\/li>\n<\/ul>\n<ol>\n<li>Choose an alternative.\nRosuvastatin and pravastatin are influenced to a lesser extent by the SLCO1B1 gene variation and are not influenced by CYP3A4 inhibitors such as amiodarone, verapamil and diltiazem. Fluvastatin is not influenced significantly by the SLCO1B1 gene variation or CYP3A4 inhibitors.<\/li>\n<li>If an alternative is not an option: keep the atorvastatin dose as low as possible (e.g. by adding ezetimibe)<\/li>\n<li>advise the patient to report muscle symptoms.<\/li>\n<\/ol>\n<ul>\n<li>Patient has NO additional significant risk factors for statin-induced myopathy:<\/li>\n<\/ul>\n<ol>\n<li>advise the patient to report muscle symptoms.<\/li>\n<\/ol>",
+            "text": "<ul>\n<li>Patient has ADDITIONAL SIGNIFICANT RISK FACTORS for statin-induced myopathy:</li>\n</ul>\n<ol>\n<li>Choose an alternative.\nRosuvastatin and pravastatin are influenced to a lesser extent by the SLCO1B1 gene variation and are not influenced by CYP3A4 inhibitors such as amiodarone, verapamil and diltiazem. Fluvastatin is not influenced significantly by the SLCO1B1 gene variation or CYP3A4 inhibitors.</li>\n<li>If an alternative is not an option: keep the atorvastatin dose as low as possible (e.g. by adding ezetimibe)</li>\n<li>advise the patient to report muscle symptoms.</li>\n</ol>\n<ul>\n<li>Patient has NO additional significant risk factors for statin-induced myopathy:</li>\n</ul>\n<ol>\n<li>advise the patient to report muscle symptoms.</li>\n</ol>",
             "classification": "Unspecified"
           }
         ]
       },
       {
         "drug": "azathioprine",
-        "implicated": ["NUDT15", "TPMT"],
+        "implicated": [
+          "NUDT15",
+          "TPMT"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13211,7 +13234,7 @@
           },
           {
             "source": "DPWG_GUIDELINE",
-            "text": "<ul>\n<li>IMMUNOSUPPRESSION\n<ul>\n<li>Start with 50% of the normal dose. Adjustment of the initial dose should be guided by toxicity (monitoring of blood counts) and effectiveness.<\/li>\n<li>Dose adjustment is not required for doses lower than 1.5 mg/kg per day for azathioprine or 0.75 mg/kg per day for 6-mercaptopurine.<\/li>\n<\/ul>\n<\/li>\n<li>LEUKAEMIA:\n<ul>\n<li>Start with 50% of the normal 6-mercaptopurine dose or start with the normal dose and reduce to 50% if side-effects necessitate a dose reduction.\nIt is not known whether dose reduction in advance results in the same efficacy as dose reduction based on toxicity.\nAdjustment of the initial dose should be guided by toxicity (monitoring of blood count) and effectiveness.<\/li>\n<\/ul>\n<\/li>\n<\/ul>\nNote: more stringent dose reductions are necessary if the patient is also NUDT15 IM or NUDT15 PM.",
+            "text": "<ul>\n<li>IMMUNOSUPPRESSION\n<ul>\n<li>Start with 50% of the normal dose. Adjustment of the initial dose should be guided by toxicity (monitoring of blood counts) and effectiveness.</li>\n<li>Dose adjustment is not required for doses lower than 1.5 mg/kg per day for azathioprine or 0.75 mg/kg per day for 6-mercaptopurine.</li>\n</ul>\n</li>\n<li>LEUKAEMIA:\n<ul>\n<li>Start with 50% of the normal 6-mercaptopurine dose or start with the normal dose and reduce to 50% if side-effects necessitate a dose reduction.\nIt is not known whether dose reduction in advance results in the same efficacy as dose reduction based on toxicity.\nAdjustment of the initial dose should be guided by toxicity (monitoring of blood count) and effectiveness.</li>\n</ul>\n</li>\n</ul>\nNote: more stringent dose reductions are necessary if the patient is also NUDT15 IM or NUDT15 PM.",
             "classification": "Unspecified"
           },
           {
@@ -13228,7 +13251,9 @@
       },
       {
         "drug": "brexpiprazole",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13239,7 +13264,9 @@
       },
       {
         "drug": "brivaracetam",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "FDA_ASSOC",
@@ -13250,7 +13277,9 @@
       },
       {
         "drug": "capecitabine",
-        "implicated": ["DPYD"],
+        "implicated": [
+          "DPYD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13266,7 +13295,10 @@
       },
       {
         "drug": "carbamazepine",
-        "implicated": ["HLA-A", "HLA-B"],
+        "implicated": [
+          "HLA-A",
+          "HLA-B"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13287,7 +13319,9 @@
       },
       {
         "drug": "celecoxib",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13298,7 +13332,9 @@
       },
       {
         "drug": "citalopram",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13307,14 +13343,16 @@
           },
           {
             "source": "DPWG_GUIDELINE",
-            "text": "Do not exceed the following daily doses:\n<ol>\n<li>Adults up to 65 years: 30mg as tablets or 22mg as drops,<\/li>\n<li>Adults 65 years or older: 15mg as tablets or 10mg as drops<\/li>\n<\/ol>",
+            "text": "Do not exceed the following daily doses:\n<ol>\n<li>Adults up to 65 years: 30mg as tablets or 22mg as drops,</li>\n<li>Adults 65 years or older: 15mg as tablets or 10mg as drops</li>\n</ol>",
             "classification": "Unspecified"
           }
         ]
       },
       {
         "drug": "clobazam",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "FDA_ASSOC",
@@ -13325,7 +13363,10 @@
       },
       {
         "drug": "clomipramine",
-        "implicated": ["CYP2C19", "CYP2D6"],
+        "implicated": [
+          "CYP2C19",
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13346,7 +13387,9 @@
       },
       {
         "drug": "clopidogrel",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13377,7 +13420,9 @@
       },
       {
         "drug": "codeine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13393,7 +13438,9 @@
       },
       {
         "drug": "dapsone",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13404,7 +13451,10 @@
       },
       {
         "drug": "desflurane",
-        "implicated": ["CACNA1S", "RYR1"],
+        "implicated": [
+          "CACNA1S",
+          "RYR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13420,7 +13470,9 @@
       },
       {
         "drug": "desipramine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13431,7 +13483,9 @@
       },
       {
         "drug": "dexlansoprazole",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13447,7 +13501,9 @@
       },
       {
         "drug": "dibekacin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13458,7 +13514,10 @@
       },
       {
         "drug": "doxepin",
-        "implicated": ["CYP2C19", "CYP2D6"],
+        "implicated": [
+          "CYP2C19",
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13479,7 +13538,9 @@
       },
       {
         "drug": "efavirenz",
-        "implicated": ["CYP2B6"],
+        "implicated": [
+          "CYP2B6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13495,7 +13556,9 @@
       },
       {
         "drug": "eliglustat",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13516,7 +13579,10 @@
       },
       {
         "drug": "enflurane",
-        "implicated": ["CACNA1S", "RYR1"],
+        "implicated": [
+          "CACNA1S",
+          "RYR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13527,7 +13593,9 @@
       },
       {
         "drug": "escitalopram",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13548,7 +13616,9 @@
       },
       {
         "drug": "flecainide",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13559,7 +13629,9 @@
       },
       {
         "drug": "flucytosine",
-        "implicated": ["DPYD"],
+        "implicated": [
+          "DPYD"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13570,7 +13642,9 @@
       },
       {
         "drug": "fluorouracil",
-        "implicated": ["DPYD"],
+        "implicated": [
+          "DPYD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13586,7 +13660,9 @@
       },
       {
         "drug": "flurbiprofen",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13597,7 +13673,10 @@
       },
       {
         "drug": "fluvastatin",
-        "implicated": ["CYP2C9", "SLCO1B1"],
+        "implicated": [
+          "CYP2C9",
+          "SLCO1B1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13608,7 +13687,9 @@
       },
       {
         "drug": "fluvoxamine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13619,7 +13700,10 @@
       },
       {
         "drug": "fosphenytoin",
-        "implicated": ["CYP2C9", "HLA-B"],
+        "implicated": [
+          "CYP2C9",
+          "HLA-B"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13635,7 +13719,9 @@
       },
       {
         "drug": "gentamicin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13646,7 +13732,9 @@
       },
       {
         "drug": "haloperidol",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13657,7 +13745,10 @@
       },
       {
         "drug": "halothane",
-        "implicated": ["CACNA1S", "RYR1"],
+        "implicated": [
+          "CACNA1S",
+          "RYR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13668,7 +13759,9 @@
       },
       {
         "drug": "hydralazine",
-        "implicated": ["NAT2"],
+        "implicated": [
+          "NAT2"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13679,7 +13772,9 @@
       },
       {
         "drug": "hydrocodone",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13690,7 +13785,9 @@
       },
       {
         "drug": "ibuprofen",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13701,7 +13798,10 @@
       },
       {
         "drug": "imipramine",
-        "implicated": ["CYP2C19", "CYP2D6"],
+        "implicated": [
+          "CYP2C19",
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13722,7 +13822,9 @@
       },
       {
         "drug": "irinotecan",
-        "implicated": ["UGT1A1"],
+        "implicated": [
+          "UGT1A1"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13733,7 +13835,10 @@
       },
       {
         "drug": "isoflurane",
-        "implicated": ["CACNA1S", "RYR1"],
+        "implicated": [
+          "CACNA1S",
+          "RYR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13749,7 +13854,9 @@
       },
       {
         "drug": "ivacaftor",
-        "implicated": ["CFTR"],
+        "implicated": [
+          "CFTR"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13760,7 +13867,9 @@
       },
       {
         "drug": "kanamycin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13771,7 +13880,9 @@
       },
       {
         "drug": "lamotrigine",
-        "implicated": ["HLA-B"],
+        "implicated": [
+          "HLA-B"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13782,7 +13893,9 @@
       },
       {
         "drug": "lansoprazole",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13798,7 +13911,9 @@
       },
       {
         "drug": "lornoxicam",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13809,7 +13924,9 @@
       },
       {
         "drug": "lovastatin",
-        "implicated": ["SLCO1B1"],
+        "implicated": [
+          "SLCO1B1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13820,7 +13937,9 @@
       },
       {
         "drug": "mavacamten",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -13836,7 +13955,9 @@
       },
       {
         "drug": "meclizine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "FDA_LABEL",
@@ -13847,7 +13968,9 @@
       },
       {
         "drug": "meloxicam",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13858,7 +13981,10 @@
       },
       {
         "drug": "mercaptopurine",
-        "implicated": ["NUDT15", "TPMT"],
+        "implicated": [
+          "NUDT15",
+          "TPMT"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13872,7 +13998,7 @@
           },
           {
             "source": "DPWG_GUIDELINE",
-            "text": "<ul>\n<li>IMMUNOSUPPRESSION:\n<ul>\n<li>Start with 50% of the normal dose<\/li>\n<li>Adjustment of the initial dose should be guided by toxicity (monitoring of blood counts) and\neffectiveness.<\/li>\n<li>Dose adjustment is not required for doses lower than 1.5 mg/kg per day for azathioprine or 0.75 mg/kg\nper day for 6-mercaptopurine.<\/li>\n<\/ul>\n<\/li>\n<li>LEUKAEMIA:\n<ul>\n<li>start with 50% of the normal 6-mercaptopurine dose, or start with the normal dose and reduce to 50% if\nside effects necessitate a dose reduction. It is not known whether dose reduction in advance results in\nthe same efficacy as dose reduction based on toxicity.<\/li>\n<li>Adjustment of the initial dose should be guided by toxicity (monitoring of the blood counts) and\neffectiveness.<\/li>\n<\/ul>\n<\/li>\n<\/ul>\nNote: more stringent dose reductions are necessary if the patient is also NUDT15 IM or NUDT15 PM.",
+            "text": "<ul>\n<li>IMMUNOSUPPRESSION:\n<ul>\n<li>Start with 50% of the normal dose</li>\n<li>Adjustment of the initial dose should be guided by toxicity (monitoring of blood counts) and\neffectiveness.</li>\n<li>Dose adjustment is not required for doses lower than 1.5 mg/kg per day for azathioprine or 0.75 mg/kg\nper day for 6-mercaptopurine.</li>\n</ul>\n</li>\n<li>LEUKAEMIA:\n<ul>\n<li>start with 50% of the normal 6-mercaptopurine dose, or start with the normal dose and reduce to 50% if\nside effects necessitate a dose reduction. It is not known whether dose reduction in advance results in\nthe same efficacy as dose reduction based on toxicity.</li>\n<li>Adjustment of the initial dose should be guided by toxicity (monitoring of the blood counts) and\neffectiveness.</li>\n</ul>\n</li>\n</ul>\nNote: more stringent dose reductions are necessary if the patient is also NUDT15 IM or NUDT15 PM.",
             "classification": "Unspecified"
           },
           {
@@ -13889,7 +14015,10 @@
       },
       {
         "drug": "methoxyflurane",
-        "implicated": ["CACNA1S", "RYR1"],
+        "implicated": [
+          "CACNA1S",
+          "RYR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13900,7 +14029,9 @@
       },
       {
         "drug": "methylene blue",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13911,7 +14042,9 @@
       },
       {
         "drug": "metoprolol",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13927,7 +14060,9 @@
       },
       {
         "drug": "neomycin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13938,7 +14073,9 @@
       },
       {
         "drug": "netilmicin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13949,7 +14086,9 @@
       },
       {
         "drug": "nitrofurantoin",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13960,7 +14099,9 @@
       },
       {
         "drug": "nortriptyline",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13976,7 +14117,9 @@
       },
       {
         "drug": "omeprazole",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -13997,7 +14140,9 @@
       },
       {
         "drug": "ondansetron",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14008,7 +14153,9 @@
       },
       {
         "drug": "oxcarbazepine",
-        "implicated": ["HLA-B"],
+        "implicated": [
+          "HLA-B"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14024,7 +14171,9 @@
       },
       {
         "drug": "pantoprazole",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14045,7 +14194,9 @@
       },
       {
         "drug": "paromomycin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14056,7 +14207,9 @@
       },
       {
         "drug": "paroxetine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14072,7 +14225,9 @@
       },
       {
         "drug": "pegloticase",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14083,18 +14238,23 @@
       },
       {
         "drug": "phenprocoumon",
-        "implicated": ["VKORC1"],
+        "implicated": [
+          "VKORC1"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
-            "text": "Monitoring by a ANTICOAGULATION CLINIC:\n<ul>\n<li>recommend to use 50% of the standard initial dose<\/li>\n<\/ul>\nNO monitoring by a anticoagulation clinic:\n<ul>\n<li>recommend to use 50% of the standard initial dose<\/li>\n<li>recommend more frequent monitoring of the INR<\/li>\n<\/ul>\nFor patients younger than 75 years, the initial dose and the maintenance dose can be calculated using an\nalgorithm as found in EU-PACT:\nsee <a rel=\"noopener noreferrer\" href=\"https://www.knmp.nl/patientenzorg/medicatiebewaking/farmacogenetica\" target=\"_blank\">knmp<\/a> for a calculation tool in the form\nof an Excel file.\nHowever, for patients aged 75 years and older, this algorithm increases the risk of an INR above the\ntherapeutic range compared to an algorithm without gene variations. Therefore, use of this algorithm is not\nrecommended for these patients.",
+            "text": "Monitoring by a ANTICOAGULATION CLINIC:\n<ul>\n<li>recommend to use 50% of the standard initial dose</li>\n</ul>\nNO monitoring by a anticoagulation clinic:\n<ul>\n<li>recommend to use 50% of the standard initial dose</li>\n<li>recommend more frequent monitoring of the INR</li>\n</ul>\nFor patients younger than 75 years, the initial dose and the maintenance dose can be calculated using an\nalgorithm as found in EU-PACT:\nsee <a rel=\"noopener noreferrer\" href=\"https://www.knmp.nl/patientenzorg/medicatiebewaking/farmacogenetica\" target=\"_blank\">knmp</a> for a calculation tool in the form\nof an Excel file.\nHowever, for patients aged 75 years and older, this algorithm increases the risk of an INR above the\ntherapeutic range compared to an algorithm without gene variations. Therefore, use of this algorithm is not\nrecommended for these patients.",
             "classification": "Unspecified"
           }
         ]
       },
       {
         "drug": "phenytoin",
-        "implicated": ["CYP2C9", "HLA-B"],
+        "implicated": [
+          "CYP2C9",
+          "HLA-B"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14115,7 +14275,9 @@
       },
       {
         "drug": "pimozide",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14126,7 +14288,9 @@
       },
       {
         "drug": "piroxicam",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14137,7 +14301,9 @@
       },
       {
         "drug": "pitavastatin",
-        "implicated": ["SLCO1B1"],
+        "implicated": [
+          "SLCO1B1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14148,7 +14314,9 @@
       },
       {
         "drug": "plazomicin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14159,7 +14327,9 @@
       },
       {
         "drug": "pravastatin",
-        "implicated": ["SLCO1B1"],
+        "implicated": [
+          "SLCO1B1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14170,7 +14340,9 @@
       },
       {
         "drug": "primaquine",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14181,7 +14353,9 @@
       },
       {
         "drug": "propafenone",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14192,7 +14366,9 @@
       },
       {
         "drug": "quetiapine",
-        "implicated": ["CYP3A4"],
+        "implicated": [
+          "CYP3A4"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14203,7 +14379,9 @@
       },
       {
         "drug": "rasburicase",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14214,7 +14392,9 @@
       },
       {
         "drug": "ribostamycin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14225,7 +14405,9 @@
       },
       {
         "drug": "risperidone",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14236,7 +14418,10 @@
       },
       {
         "drug": "rosuvastatin",
-        "implicated": ["ABCG2", "SLCO1B1"],
+        "implicated": [
+          "ABCG2",
+          "SLCO1B1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14245,14 +14430,17 @@
           },
           {
             "source": "DPWG_GUIDELINE",
-            "text": "Patient has ADDITIONAL SIGNIFICANT RISK FACTORS for statin-induced myopathy:\n<ol>\n<li>keep the rosuvastatin dose as low as possible (e.g. by adding ezetimibe)<\/li>\n<li>advise the patient to report muscle symptoms<\/li>\n<\/ol>\nPatient has NO additional significant risk factors for statin-induced myopathy:\n<ol>\n<li>advise the patient to report muscle symptoms<\/li>\n<\/ol>",
+            "text": "Patient has ADDITIONAL SIGNIFICANT RISK FACTORS for statin-induced myopathy:\n<ol>\n<li>keep the rosuvastatin dose as low as possible (e.g. by adding ezetimibe)</li>\n<li>advise the patient to report muscle symptoms</li>\n</ol>\nPatient has NO additional significant risk factors for statin-induced myopathy:\n<ol>\n<li>advise the patient to report muscle symptoms</li>\n</ol>",
             "classification": "Unspecified"
           }
         ]
       },
       {
         "drug": "sertraline",
-        "implicated": ["CYP2B6", "CYP2C19"],
+        "implicated": [
+          "CYP2B6",
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14268,7 +14456,10 @@
       },
       {
         "drug": "sevoflurane",
-        "implicated": ["CACNA1S", "RYR1"],
+        "implicated": [
+          "CACNA1S",
+          "RYR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14284,7 +14475,9 @@
       },
       {
         "drug": "simvastatin",
-        "implicated": ["SLCO1B1"],
+        "implicated": [
+          "SLCO1B1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14293,7 +14486,7 @@
           },
           {
             "source": "DPWG_GUIDELINE",
-            "text": "<ol>\n<li>Choose an alternative.\nConsider any additional risk factors for statin-induced myopathy.\nAtorvastatin is affected less severely by the SLCO1B1 gene variation, but is also affected by CYP3A4 inhibitors such as amiodarone, verapamil and diltiazem. Use of atorvastatin is not recommended for patients with additional risk factors for statin-induced myopathy.\nRosuvastatin and pravastatin are influenced to a lesser extent by the SLCO1B1 gene variation. They are also not influenced by CYP3A4 inhibitors such as amiodarone, verapamil and diltiazem.\nFluvastatin is not significantly influenced by the SLCO1B1 gene variation or CYP3A4 inhibitors.<\/li>\n<li>If an alternative is not an option:\n<ol>\n<li>Avoid simvastatin doses exceeding 40 mg/day (e.g. by adding ezetimibe).<\/li>\n<li>Advise the patient to report muscle symptoms.<\/li>\n<\/ol>\n<\/li>\n<\/ol>",
+            "text": "<ol>\n<li>Choose an alternative.\nConsider any additional risk factors for statin-induced myopathy.\nAtorvastatin is affected less severely by the SLCO1B1 gene variation, but is also affected by CYP3A4 inhibitors such as amiodarone, verapamil and diltiazem. Use of atorvastatin is not recommended for patients with additional risk factors for statin-induced myopathy.\nRosuvastatin and pravastatin are influenced to a lesser extent by the SLCO1B1 gene variation. They are also not influenced by CYP3A4 inhibitors such as amiodarone, verapamil and diltiazem.\nFluvastatin is not significantly influenced by the SLCO1B1 gene variation or CYP3A4 inhibitors.</li>\n<li>If an alternative is not an option:\n<ol>\n<li>Avoid simvastatin doses exceeding 40 mg/day (e.g. by adding ezetimibe).</li>\n<li>Advise the patient to report muscle symptoms.</li>\n</ol>\n</li>\n</ol>",
             "classification": "Unspecified"
           },
           {
@@ -14305,7 +14498,9 @@
       },
       {
         "drug": "siponimod",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14321,7 +14516,9 @@
       },
       {
         "drug": "streptomycin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14332,7 +14529,10 @@
       },
       {
         "drug": "succinylcholine",
-        "implicated": ["CACNA1S", "RYR1"],
+        "implicated": [
+          "CACNA1S",
+          "RYR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14348,7 +14548,9 @@
       },
       {
         "drug": "tacrolimus",
-        "implicated": ["CYP3A5"],
+        "implicated": [
+          "CYP3A5"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14369,7 +14571,9 @@
       },
       {
         "drug": "tafenoquine",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14380,7 +14584,9 @@
       },
       {
         "drug": "tamoxifen",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14396,7 +14602,9 @@
       },
       {
         "drug": "tegafur",
-        "implicated": ["DPYD"],
+        "implicated": [
+          "DPYD"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14407,7 +14615,9 @@
       },
       {
         "drug": "tenoxicam",
-        "implicated": ["CYP2C9"],
+        "implicated": [
+          "CYP2C9"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14418,7 +14628,9 @@
       },
       {
         "drug": "tetrabenazine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "FDA_LABEL",
@@ -14429,7 +14641,10 @@
       },
       {
         "drug": "thioguanine",
-        "implicated": ["NUDT15", "TPMT"],
+        "implicated": [
+          "NUDT15",
+          "TPMT"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14460,7 +14675,9 @@
       },
       {
         "drug": "tobramycin",
-        "implicated": ["MT-RNR1"],
+        "implicated": [
+          "MT-RNR1"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14471,7 +14688,9 @@
       },
       {
         "drug": "toluidine blue",
-        "implicated": ["G6PD"],
+        "implicated": [
+          "G6PD"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14482,7 +14701,9 @@
       },
       {
         "drug": "tramadol",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14498,7 +14719,10 @@
       },
       {
         "drug": "trimipramine",
-        "implicated": ["CYP2C19", "CYP2D6"],
+        "implicated": [
+          "CYP2C19",
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14509,7 +14733,9 @@
       },
       {
         "drug": "tropisetron",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14520,7 +14746,9 @@
       },
       {
         "drug": "venlafaxine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14536,7 +14764,9 @@
       },
       {
         "drug": "voriconazole",
-        "implicated": ["CYP2C19"],
+        "implicated": [
+          "CYP2C19"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14562,7 +14792,9 @@
       },
       {
         "drug": "vortioxetine",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "CPIC_GUIDELINE",
@@ -14573,7 +14805,11 @@
       },
       {
         "drug": "warfarin",
-        "implicated": ["CYP2C9", "CYP4F2", "VKORC1"],
+        "implicated": [
+          "CYP2C9",
+          "CYP4F2",
+          "VKORC1"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14582,7 +14818,7 @@
           },
           {
             "source": "DPWG_GUIDELINE",
-            "text": "Use 60% of the standard initial dose.\nThe genotype-specific initial dose and maintenance dose can be calculated using an algorithm, as used in\nEU-PACT: see <a rel=\"noopener noreferrer\" href=\"https://www.knmp.nl/patientenzorg/medicatiebewaking/farmacogenetica\" target=\"_blank\">knmp<\/a>.\nFrom day 6 on the standard algorithm without genotype information can be used to calculate the dose.",
+            "text": "Use 60% of the standard initial dose.\nThe genotype-specific initial dose and maintenance dose can be calculated using an algorithm, as used in\nEU-PACT: see <a rel=\"noopener noreferrer\" href=\"https://www.knmp.nl/patientenzorg/medicatiebewaking/farmacogenetica\" target=\"_blank\">knmp</a>.\nFrom day 6 on the standard algorithm without genotype information can be used to calculate the dose.",
             "classification": "Unspecified"
           },
           {
@@ -14599,7 +14835,9 @@
       },
       {
         "drug": "zuclopenthixol",
-        "implicated": ["CYP2D6"],
+        "implicated": [
+          "CYP2D6"
+        ],
         "items": [
           {
             "source": "DPWG_GUIDELINE",
@@ -14610,5 +14848,6 @@
       }
     ]
   },
-  "generated_at": "2026-04-27T21:38:04+0800"
+  "generated_at": "2026-04-27T21:38:04+0800",
+  "genome_build": "hg38"
 }
