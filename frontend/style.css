@@ -694,7 +694,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: #f3f4f6;
+  background: #e5e7eb;
 }
 .snv-tab-header {
   padding: 12px 14px;
