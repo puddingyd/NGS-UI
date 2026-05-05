@@ -691,10 +691,11 @@ html, body {
 /* ---- SNV/Indel tier tabs --------------------------------------- */
 .snv-tab-card {
   margin-top: 12px;
+  margin-bottom: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: #e5e7eb;
+  background: #ebedef;
 }
 .snv-tab-header {
   padding: 12px 14px;
