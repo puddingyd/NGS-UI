@@ -731,7 +731,6 @@ html, body {
 .tier-tab.active {
   opacity: 1;
   font-weight: 600;
-  box-shadow: 0 -2px 0 inset rgba(0,0,0,0.1);
 }
 .tier-tab .tier-tab-title { font-size: 13px; }
 .tier-tab .tier-tab-count {
