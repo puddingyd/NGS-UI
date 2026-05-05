@@ -1016,7 +1016,8 @@ html, body {
 .qc-level { color: var(--muted); text-transform: uppercase; font-size: 10px; padding-top: 2px; }
 .qc-reason { color: #444; }
 
-/* ---- Floating Close ✕ button (collapses analysis sections) ----- */
+/* ---- Floating 全部收合 button (collapses ACMG SF / Proactive /
+   Carrier / PharmCat panels) -------------------------------------- */
 .btn-floating-close {
   position: fixed;
   right: 16px;
@@ -1026,10 +1027,15 @@ html, body {
   background: #fff;
   border: 1px solid var(--border);
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  padding: 14px 22px;
+  padding: 22px 14px;
   border-radius: 28px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  /* Vertical: text stacks top-to-bottom so the button itself is tall
+     and narrow, hugging the right margin. */
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  letter-spacing: 2px;
 }
 .btn-floating-close:hover { background: #f3f4f6; }
