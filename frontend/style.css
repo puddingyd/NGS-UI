@@ -685,8 +685,57 @@ html, body {
 .cat-block.tier-1a > .block-header { background: #fca5a5; border-left: 4px solid #7f1d1d; }
 .cat-block.tier-1b > .block-header { background: #fecaca; border-left: 4px solid #b91c1c; }
 .cat-block.tier-1c > .block-header { background: #fee2e2; border-left: 4px solid #ef4444; }
-.cat-block.tier-2  > .block-header { background: #fefad5; border-left: 4px solid #ca8a04; }
-.cat-block.tier-3  > .block-header { background: #fefad5; border-left: 4px solid #ca8a04; }
+.cat-block.tier-2  > .block-header { background: #fff4a3; border-left: 4px solid #ca8a04; }
+.cat-block.tier-3  > .block-header { background: #fff4a3; border-left: 4px solid #ca8a04; }
+
+/* ---- SNV/Indel tier tabs --------------------------------------- */
+.tier-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+.tier-tab {
+  flex: 1 1 0;
+  min-width: 160px;
+  padding: 8px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #f9fafb;
+  color: #374151;
+  opacity: 0.55;
+  transition: opacity 0.12s;
+}
+.tier-tab:hover { opacity: 0.85; }
+.tier-tab.active {
+  opacity: 1;
+  font-weight: 600;
+  box-shadow: 0 -2px 0 inset rgba(0,0,0,0.1);
+}
+.tier-tab .tier-tab-title { font-size: 13px; }
+.tier-tab .tier-tab-count { font-size: 11px; color: #6b7280; }
+.tier-tab.active .tier-tab-count { color: #1f2937; }
+.tier-tab.tier-1a { background: #fca5a5; }
+.tier-tab.tier-1b { background: #fecaca; }
+.tier-tab.tier-1c { background: #fee2e2; }
+.tier-tab.tier-2  { background: #fff4a3; }
+.tier-tab.tier-3  { background: #fff4a3; }
+
+.tier-tab-panels { border-top: 2px solid var(--border); }
+/* Only the active tier panel renders; the inner block-header (title +
+   collapse arrow) is redundant once the tab bar shows the title, so
+   hide it for the tier panels. */
+.tier-panel { display: none; }
+.tier-panel.active { display: block; }
+.tier-panel > .block-header { display: none; }
+.tier-panel > .block-body   { display: block !important; padding-top: 8px; }
 .cat-block[class*="tier-"] > .block-header .title { font-weight: 600; }
 
 /* ---- Phase 4: variant badges + phasing + MANE_ALL detail -------- */

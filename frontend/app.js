@@ -1446,7 +1446,78 @@ function renderCandidateSections() {
   renderPharmcatBlock("cat-pharmcat-c");
   document.getElementById("category-sections").classList.remove("hidden");
   updateInPanelCount();
+  renderTierTabBar();
 }
+
+// Build the SNV/Indel tier tab bar from the same defs / counts as the
+// panels themselves. Each tab carries the tier title + 'In panel X /
+// Total Y' so the collapsed view still surfaces those numbers. The
+// active panel is whatever was active before, falling back to the
+// first tier with any visible variants, falling back to 1A.
+const TIER_ORDER = ["1A", "1B", "1C", "2", "3"];
+let activeTierTab = null;
+
+function renderTierTabBar() {
+  const bar = document.getElementById("tier-tab-bar");
+  if (!bar) return;
+
+  const counts = {};
+  for (const tier of TIER_ORDER) {
+    const def = CANDIDATE_SECTION_DEFS.find(d => d.tier === tier);
+    const ids = def ? idsForCandidateSection(def) : [];
+    const visible = ids.filter(id => getStatus(id) !== "X");
+    const inPanel = visible.filter(
+      id => state.data.variants?.[id]?.in_panel
+    ).length;
+    counts[tier] = { total: visible.length, inPanel };
+  }
+
+  // Pick the active tier: keep what was active if it still exists,
+  // else first tier with variants, else 1A so the bar is never blank.
+  if (!TIER_ORDER.includes(activeTierTab)) activeTierTab = null;
+  if (!activeTierTab) {
+    activeTierTab = TIER_ORDER.find(t => counts[t].total > 0) || "1A";
+  }
+
+  const titles = {
+    "1A": "1A — ClinVar P/LP ≥ 1★",
+    "1B": "1B — Frameshift / Nonsense (LOFTEE HC)",
+    "1C": "1C — ACMG points ≥ 4",
+    "2":  "2 — ClinVar P/LP 0★ or Conflicting",
+    "3":  "3 — ACMG points < 4",
+  };
+  bar.innerHTML = TIER_ORDER.map(t => {
+    const c = counts[t];
+    const cls = "tier-" + t.toLowerCase();
+    const active = t === activeTierTab ? " active" : "";
+    return `<button type="button" class="tier-tab ${cls}${active}" data-tier="${t}">
+              <span class="tier-tab-title">${escapeHtml(titles[t])}</span>
+              <span class="tier-tab-count">In panel ${c.inPanel} / Total ${c.total}</span>
+            </button>`;
+  }).join("");
+
+  applyTierTabActive();
+}
+
+function applyTierTabActive() {
+  const panels = document.getElementById("tier-tab-panels");
+  if (!panels) return;
+  panels.querySelectorAll(".tier-panel").forEach(p => {
+    p.classList.toggle("active", p.dataset.tier === activeTierTab);
+  });
+}
+
+document.addEventListener("click", ev => {
+  const tab = ev.target.closest(".tier-tab");
+  if (!tab) return;
+  const tier = tab.dataset.tier;
+  if (!tier || tier === activeTierTab) return;
+  activeTierTab = tier;
+  document.querySelectorAll(".tier-tab").forEach(b => {
+    b.classList.toggle("active", b.dataset.tier === tier);
+  });
+  applyTierTabActive();
+});
 
 // Tally how many of the currently-loaded SNV variants flagged the in_panel
 // bit, then render that next to the "In panel only" toggle so the user

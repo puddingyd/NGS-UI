@@ -151,7 +151,7 @@
 
     <!-- Report sections (marked variants) -->
     <section id="report-sections" class="report-sections hidden">
-      <h2>Report</h2>
+      <h2>報告</h2>
       <div id="sec-causative"  class="report-block" data-kind="report"   data-status="1"></div>
       <div id="sec-other"      class="report-block" data-kind="report"   data-status="2"></div>
       <div id="sec-acmg-sf"    class="report-block" data-kind="panel"    data-category="acmg_sf"></div>
@@ -175,11 +175,15 @@
           <span id="in-panel-count" class="muted"></span>
         </label>
       </div>
-      <div id="cat-tier-1a" class="cat-block tier-1a" data-tier="1A"></div>
-      <div id="cat-tier-1b" class="cat-block tier-1b" data-tier="1B"></div>
-      <div id="cat-tier-1c" class="cat-block tier-1c" data-tier="1C"></div>
-      <div id="cat-tier-2"  class="cat-block tier-2"  data-tier="2"></div>
-      <div id="cat-tier-3"  class="cat-block tier-3"  data-tier="3"></div>
+      <!-- SNV/Indel tier tabs: clicking a tab shows that tier full-width below. -->
+      <div id="tier-tab-bar" class="tier-tab-bar"></div>
+      <div id="tier-tab-panels" class="tier-tab-panels">
+        <div id="cat-tier-1a" class="cat-block tier-1a tier-panel" data-tier="1A"></div>
+        <div id="cat-tier-1b" class="cat-block tier-1b tier-panel" data-tier="1B"></div>
+        <div id="cat-tier-1c" class="cat-block tier-1c tier-panel" data-tier="1C"></div>
+        <div id="cat-tier-2"  class="cat-block tier-2  tier-panel" data-tier="2"></div>
+        <div id="cat-tier-3"  class="cat-block tier-3  tier-panel" data-tier="3"></div>
+      </div>
       <div id="cat-acmg-sf-c"  class="cat-block" data-category="acmg_sf"></div>
       <div id="cat-proactive-c" class="cat-block" data-category="proactive"></div>
       <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
