@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 # Tier categories defined in 三級輸出計畫.md §2.3 Page 2.
-TIERS = ["1A", "1B", "2", "3", "4", "5"]
+TIERS = ["1A", "1B", "1C", "2", "3"]
 
 _PLP_SIGS = {
     "Pathogenic",
@@ -49,15 +49,14 @@ def _to_bool(v: str) -> bool:
 
 
 def classify_tier(row: dict) -> str:
-    """Map one TSV row to a tier (1A / 1B / 2 / 3 / 4 / 5).
+    """Map one TSV row to a tier (1A / 1B / 1C / 2 / 3).
 
     Per spec:
         1A — ClinVar P/LP ≥ 1★
         1B — Frameshift / nonsense (LOFTEE HC)
-        2  — ClinVar P/LP 0★
-        3  — ClinVar Conflicting (含 P)
-        4  — ACMG points > 0 (其餘有正向證據者)
-        5  — 其餘 VUS
+        1C — ACMG points ≥ 4 (strong-evidence VUS+)
+        2  — ClinVar P/LP 0★ or Conflicting (含 P)
+        3  — 其餘 (ACMG points < 4)
     """
     sig = (row.get("CLINVAR_SIG") or "").strip()
     stars = _to_int(row.get("CLINVAR_STARS"), 0)
@@ -69,14 +68,12 @@ def classify_tier(row: dict) -> str:
         return "1A"
     if loftee_hc:
         return "1B"
-    if is_plp and stars == 0:
-        return "2"
-    if is_conflicting:
-        return "3"
     points = _to_num(row.get("ACMG_POINTS")) or 0
-    if isinstance(points, (int, float)) and points > 0:
-        return "4"
-    return "5"
+    if isinstance(points, (int, float)) and points >= 4:
+        return "1C"
+    if (is_plp and stars == 0) or is_conflicting:
+        return "2"
+    return "3"
 
 
 def _acmg_to_geno_score(acmg_points) -> int | None:
