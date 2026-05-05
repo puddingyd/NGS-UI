@@ -680,12 +680,13 @@ html, body {
 
 /* ---- Tier color bands (per 三級輸出計畫.md §2.3) ---------------- */
 /* Header tint + 4px left rail per tier; card body stays white for legibility. */
-/* Deep → light red gradient: 1A is the strongest evidence, 3 is the rest. */
-.cat-block.tier-1a > .block-header { background: #fecaca; border-left: 4px solid #991b1b; }
-.cat-block.tier-1b > .block-header { background: #fecdd3; border-left: 4px solid #b91c1c; }
-.cat-block.tier-1c > .block-header { background: #fee2e2; border-left: 4px solid #dc2626; }
-.cat-block.tier-2  > .block-header { background: #ffe4e6; border-left: 4px solid #ef4444; }
-.cat-block.tier-3  > .block-header { background: #fff1f2; border-left: 4px solid #fca5a5; }
+/* 1A → 1C: deep → light red. 2 and 3: pale yellow (same band, distinct
+   from the red tiers so the two groups are visually obvious at a glance). */
+.cat-block.tier-1a > .block-header { background: #fca5a5; border-left: 4px solid #7f1d1d; }
+.cat-block.tier-1b > .block-header { background: #fecaca; border-left: 4px solid #b91c1c; }
+.cat-block.tier-1c > .block-header { background: #fee2e2; border-left: 4px solid #ef4444; }
+.cat-block.tier-2  > .block-header { background: #fef9c3; border-left: 4px solid #ca8a04; }
+.cat-block.tier-3  > .block-header { background: #fef9c3; border-left: 4px solid #eab308; }
 .cat-block[class*="tier-"] > .block-header .title { font-weight: 600; }
 
 /* ---- Phase 4: variant badges + phasing + MANE_ALL detail -------- */
