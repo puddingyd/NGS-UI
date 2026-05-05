@@ -1481,9 +1481,9 @@ function renderTierTabBar() {
 
   const titles = {
     "1A": "1A — ClinVar P/LP ≥ 1★",
-    "1B": "1B — Frameshift / Nonsense (LOFTEE HC)",
+    "1B": "1B — Frameshift / Nonsense",
     "1C": "1C — ACMG points ≥ 4",
-    "2":  "2 — ClinVar P/LP 0★ or Conflicting",
+    "2":  "2 — ClinVar P/LP 0★ or CONF",
     "3":  "3 — ACMG points < 4",
   };
   bar.innerHTML = TIER_ORDER.map(t => {

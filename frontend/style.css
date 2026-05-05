@@ -699,7 +699,7 @@ html, body {
   flex: 1 1 0;
   min-width: 160px;
   padding: 8px 12px;
-  text-align: left;
+  text-align: center;
   border: 1px solid var(--border);
   border-bottom: none;
   border-radius: 6px 6px 0 0;
@@ -707,7 +707,8 @@ html, body {
   font: inherit;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
   background: #f9fafb;
   color: #374151;
   opacity: 0.55;
@@ -720,13 +721,26 @@ html, body {
   box-shadow: 0 -2px 0 inset rgba(0,0,0,0.1);
 }
 .tier-tab .tier-tab-title { font-size: 13px; }
-.tier-tab .tier-tab-count { font-size: 11px; color: #6b7280; }
-.tier-tab.active .tier-tab-count { color: #1f2937; }
+.tier-tab .tier-tab-count {
+  font-size: 11px;
+  color: #1f2937;
+  padding: 2px 8px;
+  border-radius: 10px;
+  /* default chip background; per-tier override below for lighter band. */
+  background: #f3f4f6;
+}
 .tier-tab.tier-1a { background: #fca5a5; }
 .tier-tab.tier-1b { background: #fecaca; }
 .tier-tab.tier-1c { background: #fee2e2; }
 .tier-tab.tier-2  { background: #fff4a3; }
 .tier-tab.tier-3  { background: #fff4a3; }
+/* Count chip: a touch lighter than the tab's own band so it reads as
+   a pill but stays within the same colour family. */
+.tier-tab.tier-1a .tier-tab-count { background: #fecaca; }
+.tier-tab.tier-1b .tier-tab-count { background: #fee2e2; }
+.tier-tab.tier-1c .tier-tab-count { background: #fef2f2; }
+.tier-tab.tier-2  .tier-tab-count { background: #fefce8; }
+.tier-tab.tier-3  .tier-tab-count { background: #fefce8; }
 
 .tier-tab-panels { border-top: 2px solid var(--border); }
 /* Only the active tier panel renders; the inner block-header (title +
