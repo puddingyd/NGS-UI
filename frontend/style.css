@@ -755,14 +755,20 @@ html, body {
 .tier-tab.tier-2  .tier-tab-count { background: #fefce8; }
 .tier-tab.tier-3  .tier-tab-count { background: #fefce8; }
 
-.tier-tab-panels { padding: 0 8px 8px; }
+.tier-tab-panels { padding: 0; }
 /* Only the active tier panel renders; the inner block-header (title +
    collapse arrow) is redundant once the tab bar shows the title, so
-   hide it for the tier panels. */
+   hide it for the tier panels. Each panel's background matches its
+   tab so the active tab looks like it grew out of the panel. */
 .tier-panel { display: none; }
 .tier-panel.active { display: block; }
 .tier-panel > .block-header { display: none; }
 .tier-panel > .block-body   { display: block !important; padding-top: 8px; }
+.tier-panel.tier-1a { background: #fca5a5; }
+.tier-panel.tier-1b { background: #fecaca; }
+.tier-panel.tier-1c { background: #fee2e2; }
+.tier-panel.tier-2  { background: #fff4a3; }
+.tier-panel.tier-3  { background: #fff4a3; }
 .cat-block[class*="tier-"] > .block-header .title { font-weight: 600; }
 
 /* ---- Phase 4: variant badges + phasing + MANE_ALL detail -------- */
