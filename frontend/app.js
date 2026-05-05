@@ -1350,20 +1350,15 @@ function idsForReportSection(def) {
 
 function idsForCandidateSection(def) {
   const ids = state.data.categories?.[def.category] || [];
-  // Common-variant filter: AF > 0.01 in ANY major population means the
+  // Common-variant filter: gnomAD genome global AF > 0.01 means the
   // variant is too frequent to be causative. Tier 1A keeps these (those
   // are already-curated P/LP★ calls, kept for visibility), every other
-  // section drops them so reviewers don't waste time scanning common
-  // hits. Missing AFs are treated as 0 (rare).
+  // section drops them. Missing AF is treated as rare.
   if (def.tier === "1A") return ids;
   const COMMON_AF = 0.01;
   return ids.filter(id => {
-    const v = state.data.variants?.[id];
-    if (!v) return true;
-    const afs = [v.AF, v.AF_eas, v.AF_exome, v.AF_exome_eas, v.TaiwanBioBank]
-      .map(x => Number(x))
-      .filter(Number.isFinite);
-    return afs.length === 0 || Math.max(...afs) <= COMMON_AF;
+    const af = Number(state.data.variants?.[id]?.AF);
+    return !Number.isFinite(af) || af <= COMMON_AF;
   });
 }
 
