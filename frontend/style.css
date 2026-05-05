@@ -685,8 +685,8 @@ html, body {
 .cat-block.tier-1a > .block-header { background: #fca5a5; border-left: 4px solid #7f1d1d; }
 .cat-block.tier-1b > .block-header { background: #fecaca; border-left: 4px solid #b91c1c; }
 .cat-block.tier-1c > .block-header { background: #fee2e2; border-left: 4px solid #ef4444; }
-.cat-block.tier-2  > .block-header { background: #fefce8; border-left: 4px solid #ca8a04; }
-.cat-block.tier-3  > .block-header { background: #fefce8; border-left: 4px solid #ca8a04; }
+.cat-block.tier-2  > .block-header { background: #fefad5; border-left: 4px solid #ca8a04; }
+.cat-block.tier-3  > .block-header { background: #fefad5; border-left: 4px solid #ca8a04; }
 .cat-block[class*="tier-"] > .block-header .title { font-weight: 600; }
 
 /* ---- Phase 4: variant badges + phasing + MANE_ALL detail -------- */
