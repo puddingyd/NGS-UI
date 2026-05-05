@@ -694,14 +694,13 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: #fff;
+  background: #f3f4f6;
 }
 .snv-tab-header {
-  padding: 8px 14px;
-  background: #f3f4f6;
-  font-weight: 600;
-  font-size: 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 18px;
 }
 .tier-tab-bar {
   display: flex;
@@ -756,7 +755,7 @@ html, body {
 .tier-tab.tier-2  .tier-tab-count { background: #fefce8; }
 .tier-tab.tier-3  .tier-tab-count { background: #fefce8; }
 
-.tier-tab-panels { border-top: 2px solid var(--border); padding: 0 8px 8px; }
+.tier-tab-panels { padding: 0 8px 8px; }
 /* Only the active tier panel renders; the inner block-header (title +
    collapse arrow) is redundant once the tab bar shows the title, so
    hide it for the tier panels. */
