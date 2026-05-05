@@ -1113,8 +1113,11 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
-        <span class="k">Phase</span><span class="v">${fmtPhase(v)}</span>
+        <span class="k">Read depth (VAF)</span><span class="v">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
         <span class="k">Consequence</span><span class="v">${fmtTxt(v.Consequence)}</span>
+        <div class="more-extras hidden">
+          <span class="k">Phase</span><span class="v">${fmtPhase(v)}</span>
+        </div>
       </div>
       <div>
         <span class="k">${clinvarLabel}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
@@ -1141,7 +1144,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           : ""}
       </div>
     </div>
-    ${extras.length ? `<button class="btn-more" type="button">▾ More</button>` : ""}
+    <button class="btn-more" type="button">▾ More</button>
     ${renderManeAll(v)}
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
@@ -1767,9 +1770,36 @@ function copyToClipboard(btn) {
     btn.textContent = mark;
     setTimeout(() => { btn.innerHTML = orig; }, ms);
   };
-  navigator.clipboard.writeText(text)
-    .then(() => flash("✓", 900))
-    .catch(() => flash("✗", 1200));
+  // navigator.clipboard requires a secure context (HTTPS or localhost).
+  // The hospital intranet serves this app over plain HTTP, so we fall
+  // back to the legacy textarea + execCommand approach when the modern
+  // API is unavailable or rejects.
+  const legacyCopy = () => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      flash(ok ? "✓" : "✗", ok ? 900 : 1200);
+    } catch {
+      flash("✗", 1200);
+    }
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(() => flash("✓", 900))
+      .catch(legacyCopy);
+  } else {
+    legacyCopy();
+  }
 }
 
 function toggleVariantExtras(btn) {
