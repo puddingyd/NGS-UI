@@ -1,16 +1,52 @@
+"""Path / env config.
+
+Layout (production):
+    NGS_UI/                    ← NGS_UI_HOME
+    ├── NGS-UI/                ← REPO_ROOT (this git checkout)
+    ├── biotools/              ← Exomiser + LIRICAL CLIs
+    ├── vcf/                   ← per-sample VCFs
+    ├── tertiary_output/       ← per-sample TSV + sidecars (NOT in git)
+    ├── data/                  ← server runtime state (users.db, jobs/, …)
+    └── _index.json            ← optional sample-list cache
+
+Every path is derived from NGS_UI_HOME so the whole tree can be moved
+by changing one env var (or the default below). Each piece can still be
+overridden individually with its own env var when the layout differs.
+"""
 import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Default: parent of the repo (NGS_UI/NGS-UI/ → NGS_UI/). Falls back to
+# the repo itself when NGS_UI_HOME is unset and no parent layout exists,
+# so dev checkouts keep working with everything inside the repo.
+_default_home = REPO_ROOT.parent if (REPO_ROOT.parent / "NGS-UI").exists() else REPO_ROOT
+NGS_UI_HOME = Path(os.environ.get("NGS_UI_HOME", _default_home))
+
 TERTIARY_OUTPUT_ROOT = Path(os.environ.get(
     "TERTIARY_OUTPUT_ROOT",
-    REPO_ROOT / "tertiary_output",
+    NGS_UI_HOME / "tertiary_output",
 ))
 
 DATA_ROOT = Path(os.environ.get(
     "NGS_UI_DATA_ROOT",
-    REPO_ROOT / "data",
+    NGS_UI_HOME / "data",
+))
+
+INDEX_PATH = Path(os.environ.get(
+    "NGS_UI_INDEX_PATH",
+    NGS_UI_HOME / "_index.json",
+))
+
+VCF_DIR = Path(os.environ.get(
+    "NGS_UI_VCF_DIR",
+    NGS_UI_HOME / "vcf",
+))
+
+BIOTOOLS_DIR = Path(os.environ.get(
+    "NGS_UI_BIOTOOLS_DIR",
+    NGS_UI_HOME / "biotools",
 ))
 
 REPORTS_DIR = DATA_ROOT / "reports"
@@ -27,7 +63,7 @@ FRONTEND_DIR = Path(os.environ.get(
 
 EXOMISER_HOME = Path(os.environ.get(
     "EXOMISER_HOME",
-    "/home/n102968/biotools/exomiser-cli-14.1.0",
+    BIOTOOLS_DIR / "exomiser-cli-14.1.0",
 ))
 EXOMISER_JAR  = Path(os.environ.get(
     "EXOMISER_JAR",
@@ -48,7 +84,7 @@ EXOMISER_DATA_HG19 = Path(os.environ.get(
 
 LIRICAL_HOME = Path(os.environ.get(
     "LIRICAL_HOME",
-    "/home/n102968/biotools/lirical-cli-2.2.1",
+    BIOTOOLS_DIR / "lirical-cli-2.2.1",
 ))
 LIRICAL_JAR  = Path(os.environ.get(
     "LIRICAL_JAR",

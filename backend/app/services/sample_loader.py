@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..adapters.snv_tsv import TIERS, load_snv_tsv
-from ..config import TERTIARY_OUTPUT_ROOT
+from ..config import INDEX_PATH, TERTIARY_OUTPUT_ROOT
 
 
 def _read_json_or(path: Path, default):
@@ -55,10 +55,12 @@ def list_index() -> list[dict]:
     build a minimal entry from each `sample_metadata.json` (or just the
     directory name).
     """
-    idx_path = TERTIARY_OUTPUT_ROOT / "_index.json"
-    if idx_path.exists():
-        data = _read_json_or(idx_path, [])
-        return data if isinstance(data, list) else []
+    # Prefer the canonical NGS_UI/_index.json. Tolerate the legacy path
+    # inside tertiary_output/ so deployments mid-migration keep working.
+    for idx_path in (INDEX_PATH, TERTIARY_OUTPUT_ROOT / "_index.json"):
+        if idx_path.exists():
+            data = _read_json_or(idx_path, [])
+            return data if isinstance(data, list) else []
 
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():

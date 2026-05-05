@@ -4,9 +4,9 @@ __pycache__/
 venv/
 node_modules/
 .DS_Store
-data/reports/*.json
-data/jobs/*.json
-data/users.db
-data/session_secret
-!data/reports/.gitkeep
-!data/jobs/.gitkeep
+
+# Patient data and runtime state live OUTSIDE the repo (in NGS_UI/).
+# These entries also catch a dev checkout that leaves them inside.
+tertiary_output/
+data/
+_index.json
