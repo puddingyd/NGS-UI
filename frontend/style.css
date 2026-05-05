@@ -689,11 +689,25 @@ html, body {
 .cat-block.tier-3  > .block-header { background: #fff4a3; border-left: 4px solid #ca8a04; }
 
 /* ---- SNV/Indel tier tabs --------------------------------------- */
+.snv-tab-card {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.snv-tab-header {
+  padding: 8px 14px;
+  background: #f3f4f6;
+  font-weight: 600;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
 .tier-tab-bar {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 8px 0 0;
+  padding: 8px 8px 0;
 }
 .tier-tab {
   flex: 1 1 0;
@@ -742,7 +756,7 @@ html, body {
 .tier-tab.tier-2  .tier-tab-count { background: #fefce8; }
 .tier-tab.tier-3  .tier-tab-count { background: #fefce8; }
 
-.tier-tab-panels { border-top: 2px solid var(--border); }
+.tier-tab-panels { border-top: 2px solid var(--border); padding: 0 8px 8px; }
 /* Only the active tier panel renders; the inner block-header (title +
    collapse arrow) is redundant once the tab bar shows the title, so
    hide it for the tier panels. */
