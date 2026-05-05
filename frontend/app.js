@@ -2004,17 +2004,18 @@ function toggleCollapsibleCard(header) {
 
 function collapseCandidateSections() {
   const host = document.getElementById("category-sections");
-  // Skip the SNV/Indel tier panels — those live behind a tab bar now,
-  // not behind the per-block disclosure arrow, so collapsing them
-  // would just hide content the user can't reopen via the same button.
-  // Only the panel blocks (ACMG SF / Proactive / Carrier / PharmCat)
-  // still use the open/close arrow, so confine the action to those.
   host.querySelectorAll(".cat-block:not(.tier-panel)").forEach(block => {
     block.dataset.wasOpen = "0";
     toggledBlocks.add(block.id);
     block.querySelector(".block-header")?.classList.remove("open");
     block.querySelector(".block-body")?.classList.remove("open");
   });
+  // Also close the currently visible tier panel by deselecting its tab.
+  // The tab strip stays put so the user can reopen any tier with one
+  // click.
+  activeTierTab = null;
+  document.querySelectorAll(".tier-tab").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tier-panel").forEach(p => p.classList.remove("active"));
 }
 
 // ---------- Save: write reports JSON to GitHub via Contents API ----
