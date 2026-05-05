@@ -1369,9 +1369,15 @@ function renderBlock(def, ids, openKey) {
 
   const header = document.createElement("div");
   header.className = "block-header" + (wasOpen ? " open" : "");
+  // Counts: "In panel X / Total Y" so reviewers can see at a glance how
+  // much of the section overlaps the requested panel.
+  const inPanelCount = visibleIds.filter(
+    id => state.data.variants?.[id]?.in_panel
+  ).length;
+  const countLabel = `In panel ${inPanelCount} / Total ${visibleIds.length}`;
   header.innerHTML = `
     <span><span class="arrow"></span><span class="title">${escapeHtml(def.title)}</span></span>
-    <span class="count">${visibleIds.length}</span>`;
+    <span class="count">${escapeHtml(countLabel)}</span>`;
   host.appendChild(header);
 
   const body = document.createElement("div");
