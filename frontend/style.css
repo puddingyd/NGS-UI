@@ -485,7 +485,17 @@ html, body {
   gap: 4px;
   min-width: 0;
 }
-.acmg-class-row .acmg-class { flex: 1; min-width: 0; }
+.acmg-class-row .acmg-class {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+  color: var(--fg);
+}
 .acmg-class-row .acmg-paren { color: var(--muted); }
 .acmg-class-row .acmg-score { width: 3em; flex: none; text-align: center; font-family: ui-monospace, monospace; }
 

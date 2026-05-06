@@ -1147,7 +1147,14 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="k">${clinvarLabel}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
         <span class="k">ACMG</span>
         <span class="acmg-class-row">
-          <input class="acmg-class ${classifySignificance(editAcmgClass) || ""}" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgClass)}" />
+          <select class="acmg-class ${classifySignificance(editAcmgClass) || ""}" data-id="${escapeAttr(id)}">
+            <option value=""                       ${editAcmgClass === ""                      ? "selected" : ""}>—</option>
+            <option value="Pathogenic"             ${editAcmgClass === "Pathogenic"            ? "selected" : ""}>Pathogenic (P)</option>
+            <option value="Likely pathogenic"      ${editAcmgClass === "Likely pathogenic"     ? "selected" : ""}>Likely pathogenic (LP)</option>
+            <option value="Uncertain significance" ${editAcmgClass === "Uncertain significance"? "selected" : ""}>Uncertain significance (VUS)</option>
+            <option value="Likely benign"          ${editAcmgClass === "Likely benign"         ? "selected" : ""}>Likely benign (LB)</option>
+            <option value="Benign"                 ${editAcmgClass === "Benign"                ? "selected" : ""}>Benign (B)</option>
+          </select>
           <span class="acmg-paren">(</span>
           <input class="acmg-score" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgScore)}" />
           <span class="acmg-paren">)</span>
