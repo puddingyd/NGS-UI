@@ -1149,11 +1149,11 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="acmg-class-row">
           <select class="acmg-class ${classifySignificance(editAcmgClass) || ""}" data-id="${escapeAttr(id)}">
             <option value=""                       ${editAcmgClass === ""                      ? "selected" : ""}>—</option>
-            <option value="Pathogenic"             ${editAcmgClass === "Pathogenic"            ? "selected" : ""}>Pathogenic (P)</option>
-            <option value="Likely pathogenic"      ${editAcmgClass === "Likely pathogenic"     ? "selected" : ""}>Likely pathogenic (LP)</option>
-            <option value="Uncertain significance" ${editAcmgClass === "Uncertain significance"? "selected" : ""}>Uncertain significance (VUS)</option>
-            <option value="Likely benign"          ${editAcmgClass === "Likely benign"         ? "selected" : ""}>Likely benign (LB)</option>
-            <option value="Benign"                 ${editAcmgClass === "Benign"                ? "selected" : ""}>Benign (B)</option>
+            <option value="Pathogenic"             ${editAcmgClass === "Pathogenic"            ? "selected" : ""}>Pathogenic</option>
+            <option value="Likely pathogenic"      ${editAcmgClass === "Likely pathogenic"     ? "selected" : ""}>Likely pathogenic</option>
+            <option value="Uncertain significance" ${editAcmgClass === "Uncertain significance"? "selected" : ""}>VUS</option>
+            <option value="Likely benign"          ${editAcmgClass === "Likely benign"         ? "selected" : ""}>Likely benign</option>
+            <option value="Benign"                 ${editAcmgClass === "Benign"                ? "selected" : ""}>Benign</option>
           </select>
           <span class="acmg-paren">(</span>
           <input class="acmg-score" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgScore)}" />
