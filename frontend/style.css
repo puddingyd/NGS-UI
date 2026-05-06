@@ -137,10 +137,13 @@ html, body {
   gap: 6px 18px;
 }
 .sample-meta > div {
+  flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
+.sample-meta > div > span:not(.label) { overflow: hidden; text-overflow: ellipsis; }
 .sample-meta .label {
   font-size: 10px;
   color: var(--muted);
@@ -249,7 +252,11 @@ html, body {
   font-family: inherit;
   font-size: 13px;
   resize: vertical;
+  overflow: hidden;
 }
+/* Auto-grow: when JS bumps the height to scrollHeight on input, the
+   textarea expands instead of showing a scroll bar. */
+#clinical-text { min-height: calc(1.5em * 5 + 12px); }
 
 /* Comment card body lays out textarea + tag picker side-by-side. */
 .comment-row-flex { display: flex; gap: 12px; align-items: stretch; }

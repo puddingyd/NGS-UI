@@ -48,12 +48,21 @@
     <!-- Sample info -->
     <section id="sample-card" class="card hidden">
       <div class="sample-meta">
-        <div><span class="label">LIS_ID</span><span id="m-lis"></span></div>
-        <div><span class="label">Name</span><span id="m-name"></span></div>
+        <div>
+          <span class="label">LIS_ID</span>
+          <span id="m-lis"></span>
+          <button id="m-lis-copy" class="btn-copy" type="button" title="複製 LIS_ID" hidden></button>
+        </div>
+        <div>
+          <span class="label">Name</span>
+          <span id="m-name"></span>
+          <button id="m-name-copy" class="btn-copy" type="button" title="複製姓名" hidden></button>
+        </div>
         <div>
           <span class="label">MRN</span>
           <span class="m-mrn-row">
             <span id="m-mrn"></span>
+            <button id="m-mrn-copy" class="btn-copy" type="button" title="複製 MRN" hidden></button>
             <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
           </span>
         </div>

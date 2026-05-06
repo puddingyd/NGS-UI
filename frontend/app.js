@@ -328,6 +328,24 @@ function renderSampleMeta() {
   document.getElementById("m-mrn").textContent       = m.MRN || "—";
   document.getElementById("m-generated").textContent = state.data.generated_at || "—";
 
+  // Copy buttons next to LIS_ID / Name / MRN. Hide when the value is
+  // missing so the icon doesn't dangle next to an em-dash.
+  const setCopy = (btnId, value) => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    if (value) {
+      btn.dataset.copy = value;
+      btn.innerHTML = COPY_ICON_SVG;
+      btn.hidden = false;
+    } else {
+      delete btn.dataset.copy;
+      btn.hidden = true;
+    }
+  };
+  setCopy("m-lis-copy",  m.LIS_ID);
+  setCopy("m-name-copy", m.Name);
+  setCopy("m-mrn-copy",  m.MRN);
+
   // EMR link is hospital-internal; only build it when MRN is present.
   const emr = document.getElementById("m-emr-link");
   if (m.MRN) {
@@ -415,6 +433,12 @@ function renderCollapsibleCard(cardId, headerId, bodyId, taId, value) {
   header.classList.toggle("open", open);
   body.classList.toggle("open", open);
   card.classList.remove("hidden");
+  // After the body becomes display:block, run autoGrow so the
+  // textarea matches the loaded content. Doing this synchronously
+  // while the body is still display:none would yield scrollHeight=0.
+  if (open && taId === "clinical-text") {
+    requestAnimationFrame(() => autoGrow(ta));
+  }
 }
 
 function renderClinicalDescription() {
@@ -2007,12 +2031,19 @@ document.addEventListener("change", ev => {
   }
 });
 
+function autoGrow(ta) {
+  if (!ta) return;
+  ta.style.height = "auto";
+  ta.style.height = ta.scrollHeight + "px";
+}
+
 document.addEventListener("input", ev => {
   const t = ev.target;
   if (t.matches("#clinical-text")) {
     state.reports.clinical_description = t.value;
     state.dirty = true;
     updateSaveHint();
+    autoGrow(t);
   } else if (t.matches("#comment-text")) {
     state.reports.comment = t.value;
     state.dirty = true;
@@ -2069,6 +2100,13 @@ function toggleCollapsibleCard(header) {
   header.classList.toggle("open", open);
   body.classList.toggle("open", open);
   toggledBlocks.add(card.id);
+  // The clinical textarea auto-grows; resize it to fit existing
+  // content the moment the body becomes visible (scrollHeight is 0
+  // while display:none).
+  if (open) {
+    const ta = body.querySelector("#clinical-text");
+    if (ta) requestAnimationFrame(() => autoGrow(ta));
+  }
 }
 
 function collapseCandidateSections() {
