@@ -3,6 +3,21 @@
 For Phase 2 we only handle SNV/indel + sample_metadata. CNV / SV / STR /
 SF / PGx adapters land in later phases and will be merged into the same
 returned dict.
+
+Layout (post-migration):
+    tertiary_output/{sid}/
+      sample_metadata.json     (patient-level: meta + reviewer fields +
+                                active_analysis)
+      snv_indel.annotated.tsv  (variant calls; same TSV across versions)
+      analyses/{ver}/
+        analysis.json          (hpo + selected_panels + note)
+        pheno_score.tsv
+        exomiser_results.tsv
+        lirical_results.tsv
+
+Pre-migration layout (sidecars + hpo at the sample root) is still
+recognized as a fallback so the loader keeps working between deploy
+and migration.
 """
 from __future__ import annotations
 
@@ -12,6 +27,7 @@ from pathlib import Path
 
 from ..adapters.snv_tsv import TIERS, load_snv_tsv
 from ..config import INDEX_PATH, TERTIARY_OUTPUT_ROOT
+from . import analyses_store
 
 
 def _read_json_or(path: Path, default):
@@ -84,8 +100,48 @@ def list_index() -> list[dict]:
     return out
 
 
-def load_sample(sample_id: str) -> dict | None:
-    """Build the per-sample webdata payload the frontend renders."""
+def _normalize_phenotype(entries: list) -> list[dict]:
+    out = []
+    for entry in entries or []:
+        if isinstance(entry, str):
+            out.append({"phenotype": entry, "label": entry})
+        elif isinstance(entry, dict):
+            out.append({
+                "phenotype": entry.get("phenotype") or entry.get("hpo_id") or "",
+                "label":     entry.get("label")     or entry.get("hpo_name") or "",
+                "weight":    entry.get("weight"),
+            })
+    return out
+
+
+def _resolve_version(sample_id: str, requested: str | None,
+                     meta_active: str | None) -> str | None:
+    """Pick the analysis version to load.
+
+    Priority: explicit query param → sample_metadata.active_analysis →
+    'default' if it exists → first available version → None (legacy
+    pre-migration sample, sidecars at sample root).
+    """
+    versions = analyses_store.list_versions(sample_id)
+    names = {v["name"] for v in versions}
+    if requested and requested in names:
+        return requested
+    if meta_active and meta_active in names:
+        return meta_active
+    if "default" in names:
+        return "default"
+    if versions:
+        return versions[0]["name"]
+    return None
+
+
+def load_sample(sample_id: str, version: str | None = None) -> dict | None:
+    """Build the per-sample webdata payload the frontend renders.
+
+    `version` selects which analysis sidecar set to join in. When None,
+    falls back to the sample's `active_analysis`, then `default`, then
+    the legacy flat layout (sidecars at the sample root).
+    """
     sub = TERTIARY_OUTPUT_ROOT / sample_id
     if not sub.is_dir():
         return None
@@ -96,15 +152,37 @@ def load_sample(sample_id: str) -> dict | None:
     else:
         variants, categories = {}, {t: [] for t in TIERS}
 
+    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+
+    # Decide which directory holds the sidecar TSVs for this load.
+    chosen_version = _resolve_version(
+        sample_id,
+        requested=version,
+        meta_active=meta.get("active_analysis"),
+    )
+    if chosen_version is not None:
+        sidecar_dir = analyses_store.version_dir(sample_id, chosen_version)
+    else:
+        # Pre-migration fallback: sidecars used to live at the sample root.
+        sidecar_dir = sub
+
+    # HPO/panels: prefer the chosen analysis version; fall back to legacy
+    # fields on sample_metadata.json for un-migrated samples.
+    if chosen_version is not None:
+        analysis = analyses_store.read_version(sample_id, chosen_version) or {}
+        hpo_list      = analysis.get("hpo") or []
+        panels_list   = analysis.get("selected_panels") or []
+    else:
+        hpo_list      = meta.get("hpo") or meta.get("patient_phenotype") or []
+        panels_list   = meta.get("selected_panels") or []
+
     # Join per-variant Exomiser / LIRICAL scores from the sidecar TSVs that
     # the rerun worker writes. Either may be absent (not run yet); cards
     # silently omit those rows when the field is None.
-    exo = _read_tsv_dict(sub / "exomiser_results.tsv")
-    lir = _read_tsv_dict(sub / "lirical_results.tsv")
-    # In-house pheno_score is gene-level (one row per gene_symbol), so
-    # build a quick lookup and assign by GENE per variant.
+    exo = _read_tsv_dict(sidecar_dir / "exomiser_results.tsv")
+    lir = _read_tsv_dict(sidecar_dir / "lirical_results.tsv")
     pheno_by_gene: dict[str, float] = {}
-    pheno_path = sub / "pheno_score.tsv"
+    pheno_path = sidecar_dir / "pheno_score.tsv"
     if pheno_path.exists():
         import csv as _csv
         with pheno_path.open("r", encoding="utf-8", newline="") as f:
@@ -155,21 +233,8 @@ def load_sample(sample_id: str) -> dict | None:
     for t, ids in categories.items():
         categories[t] = sorted(ids, key=lambda i: (-_ts(i), i))
 
-    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
-    qc = _read_json_or(sub / "qc_summary.json", {}) or {}
+    qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
-
-    phenotype = meta.get("hpo") or meta.get("patient_phenotype") or []
-    norm_phenotype = []
-    for entry in phenotype:
-        if isinstance(entry, str):
-            norm_phenotype.append({"phenotype": entry, "label": entry})
-        elif isinstance(entry, dict):
-            norm_phenotype.append({
-                "phenotype": entry.get("phenotype") or entry.get("hpo_id") or "",
-                "label":     entry.get("label") or entry.get("hpo_name") or "",
-                "weight":    entry.get("weight"),
-            })
 
     return {
         "meta": {
@@ -182,8 +247,8 @@ def load_sample(sample_id: str) -> dict | None:
         "sample_id":         sample_id,
         "genome_build":      meta.get("genome_build", "hg38"),
         "generated_at":      meta.get("run_date") or datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        "patient_phenotype": norm_phenotype,
-        "selected_panels":   meta.get("selected_panels", []) or [],
+        "patient_phenotype": _normalize_phenotype(hpo_list),
+        "selected_panels":   panels_list,
         "vcf_path":          meta.get("vcf_path", ""),
         "qc_summary":        qc,
         "roh_summary":       roh,
@@ -191,4 +256,8 @@ def load_sample(sample_id: str) -> dict | None:
         "categories":        categories,
         "tiers":             TIERS,
         "pharmcat":          {},
+        # Active version metadata so the frontend can show a version
+        # picker / detect when re-analysis should ask for a target.
+        "active_analysis":   chosen_version,
+        "analyses":          analyses_store.list_versions(sample_id),
     }

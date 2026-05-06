@@ -53,20 +53,40 @@ def update_phenotype(sample_id: str, payload: dict):
 
     hpo_in = payload.get("hpo") or []
     panels_in = payload.get("panels") or []
+    # Caller can target a specific version; otherwise we land on the
+    # currently-active version, creating 'default' on the fly for
+    # un-migrated samples that have nothing yet.
+    target_version = payload.get("version")
 
-    # 1. Persist into sample_metadata.json
+    from ..services import analyses_store
+    if target_version:
+        analyses_store.validate_name(target_version)
+    else:
+        target_version = analyses_store.active_version(sample_id) or "default"
+
+    # 1. Persist hpo/panels into analyses/{version}/analysis.json.
+    analyses_store.write_version(
+        sample_id, target_version,
+        hpo=hpo_in, panels=panels_in,
+        note=payload.get("note", ""),
+    )
+
+    # Update sample_metadata.json's active_analysis pointer + clean up
+    # any legacy `hpo` / `selected_panels` left over from before the
+    # migration so the loader can stop reading them on next load.
     meta_path = sub / "sample_metadata.json"
+    meta = {}
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             meta = {}
-    else:
-        meta = {}
     if not isinstance(meta, dict):
         meta = {}
-    meta["hpo"] = hpo_in
-    meta["selected_panels"] = panels_in
+    meta.pop("hpo", None)
+    meta.pop("patient_phenotype", None)
+    meta.pop("selected_panels", None)
+    meta["active_analysis"] = target_version
     meta["phenotype_updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 

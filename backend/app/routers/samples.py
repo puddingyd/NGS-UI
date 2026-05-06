@@ -29,8 +29,8 @@ def list_samples():
 
 
 @router.get("/samples/{sample_id}")
-def get_sample(sample_id: str):
-    payload = sample_loader.load_sample(sample_id)
+def get_sample(sample_id: str, version: str | None = None):
+    payload = sample_loader.load_sample(sample_id, version=version)
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")
     return payload

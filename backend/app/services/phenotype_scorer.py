@@ -176,14 +176,15 @@ def compute_pheno_score(
 
 
 def write_pheno_table(sample_id: str, pheno_score: dict[str, float]) -> Path:
-    """Persist gene → score as `<sample_dir>/pheno_score.tsv` (sorted desc).
+    """Persist gene → score as `pheno_score.tsv` (sorted desc).
 
-    This is the equivalent of the R script's `<ID>.pheno.txt` and lets
-    downstream code (and an operator who SSH's in) inspect what got
-    scored without re-running the math.
+    Lands inside the active analysis version's directory so each
+    version owns its own pheno table; the R-script equivalent (one
+    flat file per sample) gets emulated only for pre-migration samples
+    where no analyses/ dir exists yet.
     """
-    from ..config import TERTIARY_OUTPUT_ROOT
-    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    from . import analyses_store
+    sub = analyses_store.active_version_dir(sample_id)
     sub.mkdir(parents=True, exist_ok=True)
     out = sub / "pheno_score.tsv"
     rows = sorted(pheno_score.items(), key=lambda kv: -kv[1])
