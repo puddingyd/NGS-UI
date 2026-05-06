@@ -1447,6 +1447,7 @@ function renderCandidateSections() {
   document.getElementById("category-sections").classList.remove("hidden");
   updateInPanelCount();
   renderTierTabBar();
+  renderCnvSvTabBar();
 }
 
 // Build the SNV/Indel tier tab bar from the same defs / counts as the
@@ -1507,16 +1508,84 @@ function applyTierTabActive() {
   });
 }
 
+// CNV/SV tab bar: same tab UX as SNV, but the backend doesn't produce
+// these tiers yet so every panel renders an empty placeholder. The
+// structure stays so the next pipeline pass can drop variants in
+// without touching the UI.
+const CNV_SV_TIER_ORDER = ["CNV-1A", "CNV-1B", "SV-2A", "SV-2B"];
+const CNV_SV_TITLES = {
+  "CNV-1A": "1A CNV Clinical",
+  "CNV-1B": "1B CNV Pathogenic",
+  "SV-2A":  "2A SV Clinical",
+  "SV-2B":  "2B SV Pathogenic",
+};
+const CNV_SV_TIER_CLASS = {
+  "CNV-1A": "tier-cnv",
+  "CNV-1B": "tier-cnv",
+  "SV-2A":  "tier-sv",
+  "SV-2B":  "tier-sv",
+};
+let activeCnvSvTab = null;
+
+function renderCnvSvTabBar() {
+  const bar = document.getElementById("cnv-sv-tab-bar");
+  if (!bar) return;
+  if (!CNV_SV_TIER_ORDER.includes(activeCnvSvTab)) activeCnvSvTab = null;
+  if (!activeCnvSvTab) activeCnvSvTab = "CNV-1A";
+
+  bar.innerHTML = CNV_SV_TIER_ORDER.map(t => {
+    const active = t === activeCnvSvTab ? " active" : "";
+    return `<button type="button" class="tier-tab ${CNV_SV_TIER_CLASS[t]}${active}" data-tier="${t}">
+              <span class="tier-tab-title">${escapeHtml(CNV_SV_TITLES[t])}</span>
+              <span class="tier-tab-count">In panel 0 / Total 0</span>
+            </button>`;
+  }).join("");
+
+  document.querySelectorAll("#cnv-sv-tab-panels .tier-panel").forEach(p => {
+    if (!p.firstChild) {
+      p.innerHTML = `<div class="analysis-card-empty">（無資料）</div>`;
+    }
+  });
+  applyCnvSvTabActive();
+}
+
+function applyCnvSvTabActive() {
+  const panels = document.getElementById("cnv-sv-tab-panels");
+  if (!panels) return;
+  panels.querySelectorAll(".tier-panel").forEach(p => {
+    p.classList.toggle("active", p.dataset.tier === activeCnvSvTab);
+  });
+}
+
+// Click dispatch: SNV vs CNV/SV is decided by the tab's data-tier value
+// so we can scope the active-class toggle to just that tab group (not
+// every .tier-tab in the DOM, which would clobber the other group's
+// state).
 document.addEventListener("click", ev => {
   const tab = ev.target.closest(".tier-tab");
   if (!tab) return;
   const tier = tab.dataset.tier;
-  if (!tier || tier === activeTierTab) return;
-  activeTierTab = tier;
-  document.querySelectorAll(".tier-tab").forEach(b => {
+  if (!tier) return;
+  const isCnvSv = CNV_SV_TIER_ORDER.includes(tier);
+  const barId   = isCnvSv ? "cnv-sv-tab-bar" : "tier-tab-bar";
+  const current = isCnvSv ? activeCnvSvTab    : activeTierTab;
+  if (tier === current) return;
+  if (isCnvSv) activeCnvSvTab = tier; else activeTierTab = tier;
+  document.querySelectorAll(`#${barId} .tier-tab`).forEach(b => {
     b.classList.toggle("active", b.dataset.tier === tier);
   });
-  applyTierTabActive();
+  if (isCnvSv) applyCnvSvTabActive(); else applyTierTabActive();
+});
+
+// Jump-nav: clicking a button in the analysis section header scrolls
+// the matching card into view. Cards declare an id; the button's
+// data-jump value points at that id. scroll-margin-top on the card
+// keeps the topbar from covering the heading after the scroll lands.
+document.addEventListener("click", ev => {
+  const jump = ev.target.closest(".jump-nav button[data-jump]");
+  if (!jump) return;
+  const target = document.getElementById(jump.dataset.jump);
+  if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
 // Tally how many of the currently-loaded SNV variants flagged the in_panel
@@ -2010,10 +2079,11 @@ function collapseCandidateSections() {
     block.querySelector(".block-header")?.classList.remove("open");
     block.querySelector(".block-body")?.classList.remove("open");
   });
-  // Also close the currently visible tier panel by deselecting its tab.
-  // The tab strip stays put so the user can reopen any tier with one
-  // click.
+  // Also close the currently visible tier panels (SNV + CNV/SV) by
+  // deselecting their tabs. The tab strips stay put so the user can
+  // reopen any tier with one click.
   activeTierTab = null;
+  activeCnvSvTab = null;
   document.querySelectorAll(".tier-tab").forEach(b => b.classList.remove("active"));
   document.querySelectorAll(".tier-panel").forEach(p => p.classList.remove("active"));
 }

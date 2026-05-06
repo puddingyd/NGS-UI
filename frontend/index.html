@@ -169,6 +169,13 @@
     <section id="category-sections" class="category-sections hidden">
       <div class="section-header">
         <h2>分析</h2>
+        <nav class="jump-nav">
+          <button type="button" data-jump="card-snv">SNV/Indel</button>
+          <button type="button" data-jump="card-cnv-sv">CNV/SV</button>
+          <button type="button" data-jump="card-mito">Mitochondria</button>
+          <button type="button" data-jump="card-str">STR</button>
+          <button type="button" data-jump="card-roh">ROH</button>
+        </nav>
         <label class="filter-toggle">
           <input id="filter-in-panel-only" type="checkbox" checked />
           <span>In panel only</span>
@@ -176,8 +183,8 @@
         </label>
       </div>
       <!-- SNV/Indel tier tabs: clicking a tab shows that tier full-width below. -->
-      <div class="snv-tab-card">
-        <div class="snv-tab-header">SNV / Indel</div>
+      <div id="card-snv" class="analysis-card">
+        <div class="analysis-card-header">SNV / Indel</div>
         <div id="tier-tab-bar" class="tier-tab-bar"></div>
         <div id="tier-tab-panels" class="tier-tab-panels">
           <div id="cat-tier-1a" class="cat-block tier-1a tier-panel" data-tier="1A"></div>
@@ -186,6 +193,29 @@
           <div id="cat-tier-2"  class="cat-block tier-2  tier-panel" data-tier="2"></div>
           <div id="cat-tier-3"  class="cat-block tier-3  tier-panel" data-tier="3"></div>
         </div>
+      </div>
+      <!-- CNV/SV: same tab structure, two CNV tiers (blue) + two SV tiers (violet). -->
+      <div id="card-cnv-sv" class="analysis-card">
+        <div class="analysis-card-header">CNV / SV</div>
+        <div id="cnv-sv-tab-bar" class="tier-tab-bar"></div>
+        <div id="cnv-sv-tab-panels" class="tier-tab-panels">
+          <div id="cat-tier-cnv-1a" class="cat-block tier-cnv tier-panel" data-tier="CNV-1A"></div>
+          <div id="cat-tier-cnv-1b" class="cat-block tier-cnv tier-panel" data-tier="CNV-1B"></div>
+          <div id="cat-tier-sv-2a"  class="cat-block tier-sv  tier-panel" data-tier="SV-2A"></div>
+          <div id="cat-tier-sv-2b"  class="cat-block tier-sv  tier-panel" data-tier="SV-2B"></div>
+        </div>
+      </div>
+      <div id="card-mito" class="analysis-card">
+        <div class="analysis-card-header">Mitochondria</div>
+        <div class="analysis-card-empty">（無資料）</div>
+      </div>
+      <div id="card-str" class="analysis-card">
+        <div class="analysis-card-header">STR</div>
+        <div class="analysis-card-empty">（無資料）</div>
+      </div>
+      <div id="card-roh" class="analysis-card">
+        <div class="analysis-card-header">ROH</div>
+        <div class="analysis-card-empty">（無資料）</div>
       </div>
       <div id="cat-acmg-sf-c"  class="cat-block" data-category="acmg_sf"></div>
       <div id="cat-proactive-c" class="cat-block" data-category="proactive"></div>
