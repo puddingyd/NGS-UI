@@ -493,8 +493,9 @@ html, body {
   border-radius: 4px;
   font: inherit;
   font-size: 13px;
-  background: #fff;
   color: var(--fg);
+  /* Background stays unset so the sig-p / sig-lp / sig-vus / sig-lb /
+     sig-b classes added by classifySignificance() can paint the field. */
 }
 .acmg-class-row .acmg-paren { color: var(--muted); }
 .acmg-class-row .acmg-score { width: 3em; flex: none; text-align: center; font-family: ui-monospace, monospace; }
