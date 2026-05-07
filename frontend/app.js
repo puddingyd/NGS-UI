@@ -3732,10 +3732,16 @@ document.addEventListener("click", ev => {
   }
 });
 
+// In-memory map: LIS_ID → entry from /samples/unregistered. Used by
+// the dropdown change handler so we don't have to re-fetch the
+// preview each time the reviewer scrubs the list.
+let _unregisteredById = {};
+
 document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   const form = document.getElementById("new-case-form");
   form?.reset();
   document.getElementById("new-case-error")?.classList.add("hidden");
+  _renderNewCasePhenoPreview(null);
 
   // Populate the Category dropdown from /api/options so this modal +
   // the sample-card Category select share one source of truth.
@@ -3753,6 +3759,8 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   showModal("new-case-modal");
   try {
     const list = await apiFetch("/samples/unregistered") || [];
+    _unregisteredById = {};
+    list.forEach(r => { _unregisteredById[r.lis_id] = r; });
     if (!list.length) {
       select.innerHTML = `<option value="">（沒有未登錄的個案）</option>`;
       return;
@@ -3770,6 +3778,54 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
     select.innerHTML = `<option value="">（讀取失敗：${escapeHtml(e.message)}）</option>`;
   }
 });
+
+// Picking a sample previews its phenotype + auto-fills the MRN that
+// was embedded in the phenotype filename.
+document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
+  const lis_id = ev.target.value;
+  const entry = _unregisteredById[lis_id];
+  if (!entry) { _renderNewCasePhenoPreview(null); return; }
+  if (entry.phenotype && entry.phenotype.mrn) {
+    const mrnInput = document.getElementById("new-case-mrn");
+    // Don't clobber a manually-typed MRN unless the field is empty.
+    if (mrnInput && !mrnInput.value) mrnInput.value = entry.phenotype.mrn;
+  }
+  _renderNewCasePhenoPreview(entry.phenotype || null);
+});
+
+function _renderNewCasePhenoPreview(pheno) {
+  const host = document.getElementById("new-case-pheno-preview");
+  if (!host) return;
+  if (!pheno) {
+    host.innerHTML = `<div class="muted" style="font-size:12px">沒有讀到 phenotype 檔案，可在分析畫面再補。`
+                   + `（路徑慣例：<code>NGS_UI/patient_phenotype/&lt;LIS_ID&gt;_&lt;MRN&gt;_phenotype.txt</code>）</div>`;
+    return;
+  }
+  const hpoChips = (pheno.hpo || []).map(h =>
+    `<li class="chip chip-hpo">`
+    + `<span class="hpo-id">${escapeHtml(h.phenotype || "")}</span>`
+    + `<span class="chip-label">${escapeHtml(h.label || "")}</span>`
+    + (h.weight && h.weight !== 1 ? `<span class="muted">w=${escapeHtml(String(h.weight))}</span>` : "")
+    + `</li>`
+  ).join("");
+  const panelChips = (pheno.panels || []).map(p =>
+    `<li class="chip chip-panel">`
+    + `<span class="chip-label">${escapeHtml(p.name || "")}</span>`
+    + (p.weight && p.weight !== 1 ? `<span class="muted">w=${escapeHtml(String(p.weight))}</span>` : "")
+    + `</li>`
+  ).join("");
+  host.innerHTML = `
+    <div class="muted" style="font-size:11px;margin-bottom:6px">${escapeHtml(pheno.path || "")}</div>
+    <div class="phenotype-row">
+      <label class="phenotype-label">HPO terms</label>
+      <ul class="phenotype-chips">${hpoChips || '<li class="muted">（無）</li>'}</ul>
+    </div>
+    <div class="phenotype-row">
+      <label class="phenotype-label">Custom panels</label>
+      <ul class="phenotype-chips">${panelChips || '<li class="muted">（無）</li>'}</ul>
+    </div>
+  `;
+}
 
 document.getElementById("new-case-form")?.addEventListener("submit", async (ev) => {
   ev.preventDefault();

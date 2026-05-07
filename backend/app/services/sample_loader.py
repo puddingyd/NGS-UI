@@ -113,9 +113,15 @@ def list_unregistered() -> list[dict]:
     surfaces these in the 載入新個案 dropdown so the reviewer can attach
     basic info + HPO without having to retype the LIS_ID.
 
-    Sorted by directory mtime descending (newest first) so the just-
-    finished pipeline output sits at the top.
+    For each entry we also look up the matching
+        NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt
+    and surface the parsed contents inline so the modal can show a
+    preview chip row + auto-fill the MRN field on selection.
+
+    Sorted by directory mtime descending (newest first).
     """
+    from ..config import PHENOTYPE_DIR
+    from . import phenotype_io
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():
         return out
@@ -126,18 +132,43 @@ def list_unregistered() -> list[dict]:
         meta = sub / "sample_metadata.json"
         if not tsv.exists() or meta.exists():
             continue
-        # Detect a phenotype.txt the pipeline may have dropped alongside
-        # the TSV; surface its filename so the modal can preselect it.
-        pheno_files = sorted(sub.glob("*phenotype*.txt"))
+        lis_id = sub.name
+
+        # Resolve a matching phenotype file in the central phenotype dir.
+        # Filename convention: {lis_id}_{mrn}_phenotype.txt → strip both
+        # ends to recover the MRN. If multiple match (different MRNs)
+        # take the lexicographically first; reviewer can re-aim later.
+        pheno_payload = None
+        if PHENOTYPE_DIR.is_dir():
+            matches = sorted(PHENOTYPE_DIR.glob(f"{lis_id}_*_phenotype.txt"))
+            if matches:
+                pf = matches[0]
+                stem = pf.stem  # "lis_mrn_phenotype"
+                # stem looks like "{lis_id}_{mrn}_phenotype"
+                if stem.startswith(lis_id + "_") and stem.endswith("_phenotype"):
+                    mrn = stem[len(lis_id) + 1 : -len("_phenotype")]
+                else:
+                    mrn = ""
+                try:
+                    hpo, panels = phenotype_io.parse(pf.read_text(encoding="utf-8"))
+                except OSError:
+                    hpo, panels = [], []
+                pheno_payload = {
+                    "path":   str(pf),
+                    "mrn":    mrn,
+                    "hpo":    hpo,
+                    "panels": panels,
+                }
+
         try:
             mtime = sub.stat().st_mtime
         except OSError:
             mtime = 0.0
         out.append({
-            "lis_id":          sub.name,
-            "tsv_size":        tsv.stat().st_size if tsv.exists() else 0,
-            "phenotype_file":  pheno_files[0].name if pheno_files else "",
-            "mtime":           mtime,
+            "lis_id":     lis_id,
+            "tsv_size":   tsv.stat().st_size if tsv.exists() else 0,
+            "mtime":      mtime,
+            "phenotype":  pheno_payload,
         })
     out.sort(key=lambda r: r["mtime"], reverse=True)
     return out

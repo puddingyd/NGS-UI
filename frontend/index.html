@@ -255,7 +255,6 @@
   <div id="new-case-modal" class="modal hidden">
     <form id="new-case-form" class="modal-card modal-card-wide">
       <h2>載入新個案</h2>
-      <p class="muted">從 tertiary_output/ 中尚未登錄的個案資料夾挑一個（含 snv_indel.annotated.tsv 但還沒有 sample_metadata.json），補上基本資料後即可啟用。</p>
       <div class="form-grid">
         <label class="form-grid-wide">未登錄個案
           <select name="lis_id" id="new-case-lis-id" required>
@@ -263,7 +262,7 @@
           </select>
         </label>
         <label>姓名<input name="name" required /></label>
-        <label>病歷號 (MRN)<input name="mrn" required /></label>
+        <label>病歷號 (MRN)<input name="mrn" id="new-case-mrn" required /></label>
         <label>Test type
           <select name="test_type">
             <option value="WES" selected>WES</option>
@@ -285,7 +284,9 @@
       </div>
       <div class="form-section">
         <div class="form-section-title">Phenotype</div>
-        <div class="muted" style="font-size:12px">將自動從 <code>NGS_UI/patient_phenotype/&lt;LIS_ID&gt;_&lt;MRN&gt;_phenotype.txt</code> 讀入。檔案不存在時以空 HPO/panels 載入，可在 UI 上面再補。</div>
+        <div id="new-case-pheno-preview" class="new-case-pheno-preview">
+          <div class="muted" style="font-size:12px">選擇上方個案後在這裡顯示。</div>
+        </div>
       </div>
       <div id="new-case-error" class="error hidden"></div>
       <div class="modal-actions">
