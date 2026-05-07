@@ -275,6 +275,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .sample-meta-row > div > span:not(.label) { overflow: hidden; text-overflow: ellipsis; }
 .sample-meta .label {
+  /* Fixed width so labels never push the value sideways. With this
+     width pinned, the values across both rows share a left baseline
+     within each grid column (LIS_ID lines up with TEST, etc.). */
+  width: 70px;
+  flex: none;
   font-size: 10px;
   color: var(--muted);
   text-transform: uppercase;
