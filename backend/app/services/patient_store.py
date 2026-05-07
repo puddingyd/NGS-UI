@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store, phenotype_io
+from . import analyses_store, phenotype_io, vcf_writer
 
 
 _LIS_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -60,7 +60,6 @@ def register(
     test_type: str = "WES",
     genome_build: str = "hg38",
     category: str = "",
-    vcf_path: str = "",
     phenotype_text: str = "",
 ) -> dict:
     """Attach reviewer-side info to a pipeline-produced directory.
@@ -96,6 +95,11 @@ def register(
     # Parse phenotype.txt → hpo + panels for the default analysis.
     hpo, panels = phenotype_io.parse(phenotype_text or "")
 
+    # Generate the minimal VCF Exomiser/LIRICAL will consume. The path
+    # is convention-driven (tertiary_output/{lis_id}/{lis_id}.from_tsv.vcf.gz)
+    # so we don't ask the reviewer to fill it in.
+    vcf_out = vcf_writer.from_tsv(lis_id)
+
     # Seed sample_metadata.json with basic info + empty reviewer state.
     now = _now()
     meta = {
@@ -106,7 +110,7 @@ def register(
         "test_type":            test_type,
         "genome_build":         genome_build,
         "category":             category or "",
-        "vcf_path":             vcf_path or "",
+        "vcf_path":             str(vcf_out),
         "run_date":             now,
         "active_analysis":      "default",
         "clinical_description": "",

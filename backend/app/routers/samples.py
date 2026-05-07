@@ -47,16 +47,15 @@ def register_sample(
     test_type:     str = Form("WES"),
     genome_build:  str = Form("hg38"),
     category:      str = Form(""),
-    vcf_path:      str = Form(""),
 ):
     """Attach reviewer-side info to a pipeline-produced directory.
 
     The TSV must already live at
         tertiary_output/{lis_id}/snv_indel.annotated.tsv
-    (the pipeline puts it there). This endpoint only writes
-    sample_metadata.json + analyses/default/analysis.json on top.
-    Refuses with 404 if the directory is missing, 409 if it already has
-    a sample_metadata.json.
+    (the pipeline puts it there). register() also generates the
+    minimal Exomiser/LIRICAL-input VCF beside it
+    ({lis_id}.from_tsv.vcf.gz) so the operator never has to point at a
+    VCF manually.
 
     Phenotype is auto-loaded from
         NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt
@@ -75,7 +74,7 @@ def register_sample(
         meta = patient_store.register(
             lis_id=lis_id, name=name, mrn=mrn,
             test_type=test_type, genome_build=genome_build,
-            category=category, vcf_path=vcf_path,
+            category=category,
             phenotype_text=phenotype_text,
         )
     except FileExistsError as e:
@@ -124,7 +123,7 @@ def put_sample_metadata(sample_id: str, payload: dict):
     if not isinstance(meta, dict):
         meta = {}
     EDITABLE = {"name", "mrn", "lis_id", "test_type", "category",
-                "genome_build", "vcf_path", "tags", "run_date"}
+                "genome_build", "tags", "run_date"}
     for k, v in (payload or {}).items():
         if k in EDITABLE:
             meta[k] = v

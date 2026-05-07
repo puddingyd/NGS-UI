@@ -38,7 +38,7 @@ from ..config import (
     REPO_ROOT,
     TERTIARY_OUTPUT_ROOT,
 )
-from ..services import analyses_store, job_store
+from ..services import analyses_store, job_store, vcf_writer
 from .results_parser import parse_exomiser_variants_tsv, parse_lirical_variant_tsv
 
 EXOMISER_TEMPLATE = REPO_ROOT / "phenotype_reference" / "exomiser_input.yml"
@@ -130,9 +130,15 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
 
     meta_path = sample_root / "sample_metadata.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    vcf  = Path(meta.get("vcf_path") or "")
+
+    # VCF is convention-driven: tertiary_output/{lis_id}/{lis_id}.from_tsv.vcf.gz.
+    # Regenerate if missing or older than the source TSV so a freshly-
+    # produced annotation table doesn't run against a stale VCF.
+    if vcf_writer.needs_rebuild(sample_id):
+        vcf_writer.from_tsv(sample_id)
+    vcf = vcf_writer.vcf_path_for(sample_id)
     if not vcf.is_file():
-        raise RuntimeError(f"vcf not found: {vcf}")
+        raise RuntimeError(f"vcf not found after rebuild attempt: {vcf}")
 
     assembly = (meta.get("genome_build") or "hg38").lower()
     if assembly not in ("hg19", "hg38"):
