@@ -8,12 +8,37 @@
 </head>
 <body>
   <header class="topbar">
+    <button id="btn-sidebar-toggle" class="btn-icon" type="button" aria-label="切換選單" aria-expanded="true">
+      <span class="hamburger"></span>
+    </button>
     <h1>NGS 三級分析</h1>
     <div class="topbar-actions">
       <span id="topbar-user" class="muted" hidden></span>
       <button id="btn-logout" class="btn btn-ghost" hidden>登出</button>
     </div>
   </header>
+
+  <!-- Side nav. Desktop default expanded, mobile (≤768px) default
+       collapsed. Sub-list under '分析' uses a native <details> so
+       collapse state survives page reload via the open attribute. -->
+  <aside id="sidebar" aria-label="頁面導覽">
+    <nav class="sidebar-nav">
+      <button type="button" class="sidebar-link" data-target="sample-card">基本資料</button>
+      <button type="button" class="sidebar-link" data-target="report-sections">報告</button>
+      <details class="sidebar-group" open>
+        <summary>分析</summary>
+        <button type="button" class="sidebar-link sub" data-target="card-snv">SNV/Indel</button>
+        <button type="button" class="sidebar-link sub" data-target="card-cnv-sv">CNV/SV</button>
+        <button type="button" class="sidebar-link sub" data-target="card-mito">Mitochondria</button>
+        <button type="button" class="sidebar-link sub" data-target="card-str">STR</button>
+        <button type="button" class="sidebar-link sub" data-target="card-roh">ROH</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-acmg-sf-c">ACMG SF</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-proactive-c">Proactive</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-carrier-c">Carrier</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-pharmcat-c">PharmCat</button>
+      </details>
+    </nav>
+  </aside>
 
   <!-- Login modal -->
   <div id="login-modal" class="modal hidden">
@@ -183,13 +208,6 @@
     <section id="category-sections" class="category-sections hidden">
       <div class="section-header">
         <h2>分析</h2>
-        <nav class="jump-nav">
-          <button type="button" data-jump="card-snv">SNV/Indel</button>
-          <button type="button" data-jump="card-cnv-sv">CNV/SV</button>
-          <button type="button" data-jump="card-mito">Mitochondria</button>
-          <button type="button" data-jump="card-str">STR</button>
-          <button type="button" data-jump="card-roh">ROH</button>
-        </nav>
         <label class="filter-toggle">
           <input id="filter-in-panel-only" type="checkbox" checked />
           <span>In panel only</span>

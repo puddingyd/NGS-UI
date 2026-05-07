@@ -1636,15 +1636,43 @@ document.addEventListener("click", ev => {
   if (isCnvSv) applyCnvSvTabActive(); else applyTierTabActive();
 });
 
-// Jump-nav: clicking a button in the analysis section header scrolls
-// the matching card into view. Cards declare an id; the button's
-// data-jump value points at that id. scroll-margin-top on the card
-// keeps the topbar from covering the heading after the scroll lands.
+// Sidebar nav: clicking a button with data-target scrolls the matching
+// card into view. Cards declare an id (scroll-margin-top keeps the
+// landing position below the topbar). On narrow viewports we also
+// auto-collapse the sidebar after the click so it doesn't sit on top
+// of the freshly-revealed content.
 document.addEventListener("click", ev => {
-  const jump = ev.target.closest(".jump-nav button[data-jump]");
-  if (!jump) return;
-  const target = document.getElementById(jump.dataset.jump);
-  if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+  const link = ev.target.closest(".sidebar-link[data-target]");
+  if (!link) return;
+  const target = document.getElementById(link.dataset.target);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (window.matchMedia("(max-width: 768px)").matches) {
+    document.body.classList.add("sidebar-collapsed");
+    _setSidebarToggleAria(false);
+  }
+});
+
+// Sidebar open/close. Default: expanded on desktop, collapsed on
+// mobile. localStorage remembers an explicit toggle so the choice
+// persists across reloads.
+function _setSidebarToggleAria(open) {
+  const btn = document.getElementById("btn-sidebar-toggle");
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+(function initSidebar() {
+  const stored = localStorage.getItem("ngs-sidebar");
+  const isMobile = window.matchMedia("(max-width: 768px)").matches;
+  const open = stored === null ? !isMobile : stored === "open";
+  document.body.classList.toggle("sidebar-collapsed", !open);
+  // aria-expanded is set on DOMContentLoaded since the button isn't
+  // guaranteed to be in the DOM when this IIFE runs (module script).
+  document.addEventListener("DOMContentLoaded", () => _setSidebarToggleAria(open), { once: true });
+})();
+document.getElementById("btn-sidebar-toggle")?.addEventListener("click", () => {
+  const collapsed = document.body.classList.toggle("sidebar-collapsed");
+  localStorage.setItem("ngs-sidebar", collapsed ? "collapsed" : "open");
+  _setSidebarToggleAria(!collapsed);
 });
 
 // Tally how many of the currently-loaded SNV variants flagged the in_panel

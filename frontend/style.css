@@ -41,9 +41,119 @@ html, body {
   background: #24292f;
   color: #fff;
 }
-.topbar h1 { font-size: 16px; margin: 0; }
+.topbar h1 { font-size: 16px; margin: 0; flex: 1; }
 
-.container { max-width: 1200px; margin: 16px auto; padding: 0 16px 64px; }
+/* Hamburger button on the left of the topbar; toggles the side nav. */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.btn-icon:hover { background: rgba(255,255,255,0.08); }
+.btn-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hamburger,
+.hamburger::before,
+.hamburger::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  position: relative;
+}
+.hamburger::before { content: ""; position: absolute; top: -6px; left: 0; }
+.hamburger::after  { content: ""; position: absolute; top:  6px; left: 0; }
+
+/* Sidebar nav targets sit below a sticky topbar; scroll-margin-top
+   keeps the heading visible after a click instead of being covered. */
+#sample-card,
+#report-sections,
+#cat-acmg-sf-c,
+#cat-proactive-c,
+#cat-carrier-c,
+#cat-pharmcat-c { scroll-margin-top: 60px; }
+
+/* ---- Side navigation -------------------------------------------- */
+#sidebar {
+  position: fixed;
+  top: 49px;          /* topbar height = 33 (8+8+content) but with border ~49 */
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  background: #f5f5f5;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 14px 8px 24px;
+  z-index: 40;
+  transition: transform 0.18s ease;
+}
+body.sidebar-collapsed #sidebar {
+  transform: translateX(-100%);
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-link {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.sidebar-link:hover { background: #e5e5e5; }
+.sidebar-link.active { background: #e5e5e5; font-weight: 600; }
+.sidebar-link.sub { padding-left: 28px; font-size: 12px; color: #525252; }
+.sidebar-group { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-group summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  user-select: none;
+}
+.sidebar-group summary::-webkit-details-marker { display: none; }
+.sidebar-group summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+  font-size: 10px;
+  color: var(--muted);
+}
+.sidebar-group[open] summary::before { transform: rotate(90deg); }
+.sidebar-group summary:hover { background: #e5e5e5; }
+
+/* Push the page content over to make room for the sidebar. */
+.container {
+  max-width: 1200px;
+  margin: 16px auto;
+  padding: 0 16px 64px;
+  margin-left: 236px;       /* sidebar 220 + gap 16 */
+  transition: margin-left 0.18s ease;
+}
+body.sidebar-collapsed .container { margin-left: auto; }
+
+/* Mobile: sidebar floats over the page instead of pushing it, and
+   defaults to collapsed (handled in JS). */
+@media (max-width: 768px) {
+  .container { margin-left: auto; }
+  #sidebar { box-shadow: 4px 0 16px rgba(0,0,0,0.12); }
+}
 
 .card {
   background: var(--card-bg);
