@@ -255,19 +255,19 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .combobox-option .opt-mrn { color: var(--muted); font-family: ui-monospace, monospace; }
 
 /* Sample meta — single horizontal row, wraps if narrow */
+/* Two-row patient meta strip. The outer .sample-meta is a single
+   4-column grid; each .sample-meta-row uses display:contents so its
+   children become grid items of the parent and align column-for-
+   column across rows (LIS_ID lines up under Test, Sex under
+   Generated, etc.). */
 .sample-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.sample-meta-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 18px;
   align-items: center;
-  gap: 6px 18px;
 }
+.sample-meta-row { display: contents; }
 .sample-meta-row > div {
-  flex: 1 1 0;
   min-width: 0;
   display: inline-flex;
   align-items: center;
