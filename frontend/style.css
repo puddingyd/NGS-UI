@@ -103,9 +103,11 @@ body.sidebar-collapsed #sidebar {
   gap: 2px;
 }
 .sidebar-link {
+  display: block;
+  width: 100%;
   text-align: left;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: 15px;
   font-family: inherit;
   background: transparent;
   border: none;
@@ -115,13 +117,13 @@ body.sidebar-collapsed #sidebar {
 }
 .sidebar-link:hover { background: #e5e5e5; }
 .sidebar-link.active { background: #e5e5e5; font-weight: 600; }
-.sidebar-link.sub { padding-left: 28px; font-size: 12px; color: #525252; }
+.sidebar-link.sub { padding-left: 32px; font-size: 14px; color: #525252; }
 .sidebar-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-group summary {
   list-style: none;
   cursor: pointer;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   border-radius: 6px;
   user-select: none;
