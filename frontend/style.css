@@ -703,7 +703,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
   width: 90%;
 }
 .modal-card h2 { margin-top: 0; }
-.modal-card input {
+/* Default styling targets text-like fields only — radios/checkboxes/
+   files keep their natural sizing so .radio-row can lay them out
+   alongside labels without the input swallowing the whole row. */
+.modal-card input[type="text"],
+.modal-card input[type="password"] {
   width: 100%;
   padding: 8px;
   border: 1px solid var(--border);
@@ -775,9 +779,20 @@ body.sidebar-collapsed .container { margin-left: auto; }
   margin: 10px 0;
   font-size: 13px;
 }
+.radio-row > input[type="radio"] {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+.radio-row > span {
+  flex: none;
+  white-space: nowrap;
+}
 .radio-row select,
 .radio-row input[type="text"] {
   flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 4px;
