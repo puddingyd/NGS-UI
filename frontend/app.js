@@ -138,6 +138,8 @@ async function loadSample(LIS_ID) {
   state.reports    = reports;
   state.currentLIS = LIS_ID;
   state.dirty      = false;
+  _saveError       = "";
+  clearTimeout(_autoSaveTimer);
   // Reset manual-toggle tracking between samples so defaultOpen applies fresh.
   toggledBlocks.clear();
 }
@@ -1965,11 +1967,52 @@ function renderAll() {
   updateSaveHint();
 }
 
-function updateSaveHint() {
-  const hint = state.dirty ? "有未儲存變更" : "無變更";
-  document.getElementById("save-hint-top").textContent = hint;
-  document.getElementById("save-hint-bottom").textContent = hint;
+// Auto-save state. Every dirty edit schedules a debounced background
+// save through saveChanges({silent:true}); the hint line under the
+// 💾 buttons reflects the current phase (dirty / saving / saved /
+// error). beforeunload below catches the rare case where the user
+// closes the tab during the debounce window.
+let _autoSaveTimer = null;
+let _saveInflight = false;
+let _saveError = "";
+
+function scheduleAutoSave(delayMs = 1500) {
+  if (!state.currentLIS) return;
+  clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(_doAutoSave, delayMs);
 }
+
+async function _doAutoSave() {
+  if (!state.dirty || !state.currentLIS || _saveInflight) return;
+  await saveChanges({ silent: true });
+}
+
+function updateSaveHint() {
+  let msg;
+  if (_saveError) {
+    msg = "⚠ 儲存失敗：" + _saveError;
+  } else if (_saveInflight) {
+    msg = "儲存中…";
+  } else if (state.dirty) {
+    msg = "有變更（自動儲存中…）";
+    scheduleAutoSave();
+  } else {
+    msg = "已儲存";
+  }
+  document.getElementById("save-hint-top").textContent = msg;
+  document.getElementById("save-hint-bottom").textContent = msg;
+}
+
+// Native browser confirmation when the user tries to leave with
+// unsaved edits or a save still in flight. Auto-save normally fires
+// after 1.5 s of inactivity, but a closed tab between keystrokes can
+// still drop the most-recent change.
+window.addEventListener("beforeunload", (ev) => {
+  if (state.dirty || _saveInflight) {
+    ev.preventDefault();
+    ev.returnValue = "";
+  }
+});
 
 // ---------- Event wiring -------------------------------------------
 
@@ -2294,18 +2337,22 @@ function encodePath(p) {
   return p.split("/").map(encodeURIComponent).join("/");
 }
 
-async function saveChanges() {
-  if (!state.currentLIS) return;
+async function saveChanges(opts = {}) {
+  // opts.silent: don't pop an alert on failure (auto-save calls this
+  // with silent=true; manual 💾 clicks pass nothing → loud failure).
+  if (!state.currentLIS || _saveInflight) return;
+  if (!state.dirty) return;
+  _saveInflight = true;
+  _saveError = "";
+  // Cancel any pending debounced save; this call is the save.
+  clearTimeout(_autoSaveTimer);
+
   const btnTop = document.getElementById("btn-save-top");
   const btnBot = document.getElementById("btn-save-bottom");
   const setBusy = b => { btnTop.disabled = b; btnBot.disabled = b; };
-  const hint = msg => {
-    document.getElementById("save-hint-top").textContent = msg;
-    document.getElementById("save-hint-bottom").textContent = msg;
-  };
 
   setBusy(true);
-  hint("儲存中…");
+  updateSaveHint();
   try {
     const statuses = state.reports.status || {};
     const hasAutoCausative = Object.values(statuses).some(v => v === "1");
@@ -2317,12 +2364,13 @@ async function saveChanges() {
     const sid = row?.sample_id || state.currentLIS;
     await apiPut(`/samples/${encodeURIComponent(sid)}/report`, state.reports);
     state.dirty = false;
-    hint(`已儲存 (${new Date().toLocaleTimeString()})`);
   } catch (e) {
-    hint("");
-    alert("儲存失敗：" + e.message);
+    _saveError = e.message || "未知錯誤";
+    if (!opts.silent) alert("儲存失敗：" + e.message);
   } finally {
+    _saveInflight = false;
     setBusy(false);
+    updateSaveHint();
   }
 }
 
