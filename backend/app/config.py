@@ -6,8 +6,8 @@ Layout (production):
     ├── biotools/              ← Exomiser + LIRICAL CLIs
     ├── vcf/                   ← per-sample VCFs
     ├── tertiary_output/       ← per-sample TSV + sidecars (NOT in git)
-    ├── data/                  ← server runtime state (users.db, jobs/, …)
-    └── _index.json            ← optional sample-list cache
+    │   └── _index.json        ← optional sample-list cache (lives next to samples)
+    └── data/                  ← server runtime state (users.db, jobs/, …)
 
 Every path is derived from NGS_UI_HOME so the whole tree can be moved
 by changing one env var (or the default below). Each piece can still be
@@ -36,7 +36,7 @@ DATA_ROOT = Path(os.environ.get(
 
 INDEX_PATH = Path(os.environ.get(
     "NGS_UI_INDEX_PATH",
-    NGS_UI_HOME / "_index.json",
+    NGS_UI_HOME / "tertiary_output" / "_index.json",
 ))
 
 VCF_DIR = Path(os.environ.get(

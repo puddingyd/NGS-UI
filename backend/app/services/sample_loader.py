@@ -71,9 +71,14 @@ def list_index() -> list[dict]:
     build a minimal entry from each `sample_metadata.json` (or just the
     directory name).
     """
-    # Prefer the canonical NGS_UI/_index.json. Tolerate the legacy path
-    # inside tertiary_output/ so deployments mid-migration keep working.
-    for idx_path in (INDEX_PATH, TERTIARY_OUTPUT_ROOT / "_index.json"):
+    # Canonical location lives next to the per-sample dirs so the
+    # tertiary pipeline can drop both at once. Fall back to the
+    # legacy NGS_UI/_index.json (one level up) for older deployments.
+    for idx_path in (
+        TERTIARY_OUTPUT_ROOT / "_index.json",
+        TERTIARY_OUTPUT_ROOT.parent / "_index.json",
+        INDEX_PATH,
+    ):
         if idx_path.exists():
             data = _read_json_or(idx_path, [])
             return data if isinstance(data, list) else []
@@ -97,6 +102,44 @@ def list_index() -> list[dict]:
             "has_completed": (sub / "snv_indel.annotated.tsv").exists(),
             "tertiary_dir":  sub.name,
         })
+    return out
+
+
+def list_unregistered() -> list[dict]:
+    """Sample dirs the tertiary pipeline left behind without a metadata file.
+
+    A directory under tertiary_output/ counts as "unregistered" when it
+    has snv_indel.annotated.tsv but NO sample_metadata.json yet. The UI
+    surfaces these in the 載入新個案 dropdown so the reviewer can attach
+    basic info + HPO without having to retype the LIS_ID.
+
+    Sorted by directory mtime descending (newest first) so the just-
+    finished pipeline output sits at the top.
+    """
+    out: list[dict] = []
+    if not TERTIARY_OUTPUT_ROOT.exists():
+        return out
+    for sub in TERTIARY_OUTPUT_ROOT.iterdir():
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        tsv = sub / "snv_indel.annotated.tsv"
+        meta = sub / "sample_metadata.json"
+        if not tsv.exists() or meta.exists():
+            continue
+        # Detect a phenotype.txt the pipeline may have dropped alongside
+        # the TSV; surface its filename so the modal can preselect it.
+        pheno_files = sorted(sub.glob("*phenotype*.txt"))
+        try:
+            mtime = sub.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        out.append({
+            "lis_id":          sub.name,
+            "tsv_size":        tsv.stat().st_size if tsv.exists() else 0,
+            "phenotype_file":  pheno_files[0].name if pheno_files else "",
+            "mtime":           mtime,
+        })
+    out.sort(key=lambda r: r["mtime"], reverse=True)
     return out
 
 

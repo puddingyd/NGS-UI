@@ -3732,11 +3732,12 @@ document.addEventListener("click", ev => {
   }
 });
 
-document.getElementById("btn-new-case")?.addEventListener("click", () => {
+document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   const form = document.getElementById("new-case-form");
   form?.reset();
   document.getElementById("new-case-error")?.classList.add("hidden");
-  // Reset both source-tab pairs to upload mode.
+  document.getElementById("new-case-pheno-hint").textContent = "";
+  // Reset phenotype source tab to upload mode.
   form?.querySelectorAll(".form-source-tabs").forEach(tabs => {
     tabs.querySelectorAll(".form-tab").forEach(b => {
       b.classList.toggle("active", b.dataset.mode === "upload");
@@ -3747,7 +3748,41 @@ document.getElementById("btn-new-case")?.addEventListener("click", () => {
     if (fileInp) fileInp.hidden = false;
     if (pathInp) { pathInp.hidden = true; pathInp.value = ""; }
   });
+
+  // Populate the LIS_ID dropdown from /api/samples/unregistered. Newest
+  // first so the just-finished pipeline output sits at the top.
+  const select = document.getElementById("new-case-lis-id");
+  select.innerHTML = `<option value="">— 載入中… —</option>`;
   showModal("new-case-modal");
+  try {
+    const list = await apiFetch("/samples/unregistered") || [];
+    if (!list.length) {
+      select.innerHTML = `<option value="">（沒有未登錄的個案）</option>`;
+      return;
+    }
+    const fmt = ts => ts ? new Date(ts * 1000).toLocaleString() : "";
+    const fmtKB = b => `${(b / 1024).toFixed(0)} KB`;
+    select.innerHTML = `<option value="">— 選擇 —</option>` +
+      list.map(r =>
+        `<option value="${escapeAttr(r.lis_id)}" data-pheno="${escapeAttr(r.phenotype_file || "")}">`
+        + `${escapeHtml(r.lis_id)}  ·  ${fmt(r.mtime)}`
+        + (r.tsv_size ? `  ·  ${fmtKB(r.tsv_size)}` : "")
+        + (r.phenotype_file ? `  ·  📝 ${escapeHtml(r.phenotype_file)}` : "")
+        + `</option>`
+      ).join("");
+  } catch (e) {
+    select.innerHTML = `<option value="">（讀取失敗：${escapeHtml(e.message)}）</option>`;
+  }
+});
+
+// When user picks a folder, surface the auto-detected phenotype.txt
+// filename so they know what's available without leaving the modal.
+document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
+  const opt  = ev.target.selectedOptions[0];
+  const pheno = opt?.dataset?.pheno || "";
+  const hint  = document.getElementById("new-case-pheno-hint");
+  if (!pheno) { hint.textContent = ""; return; }
+  hint.textContent = `偵測到資料夾內有 ${pheno}（如不上傳/指定路徑就不會被自動讀入）`;
 });
 
 document.getElementById("new-case-form")?.addEventListener("submit", async (ev) => {

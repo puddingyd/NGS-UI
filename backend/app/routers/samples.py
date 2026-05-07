@@ -28,50 +28,41 @@ def list_samples():
     return sample_loader.list_index()
 
 
-@router.post("/samples")
-async def create_sample(
-    lis_id:        str = Form(...),
-    name:          str = Form(...),
-    mrn:           str = Form(...),
-    test_type:     str = Form("WES"),
-    genome_build:  str = Form("hg38"),
-    category:      str = Form(""),
-    vcf_path:      str = Form(""),
-    tsv_path:      str = Form(""),
-    phenotype_path:str = Form(""),
-    tsv_file:      UploadFile | None = None,
-    phenotype_file:UploadFile | None = None,
-):
-    """Create a new patient directory.
+@router.get("/samples/unregistered")
+def list_unregistered_samples():
+    """Pipeline-dropped directories not yet attached to reviewer info.
 
-    Accepts both browser multipart uploads (tsv_file/phenotype_file)
-    AND server-side paths (tsv_path/phenotype_path). For each pair you
-    can pick either form per file independently. The function refuses
-    to create when:
-
-      * lis_id is already a sample dir (UI offers an 'open existing'
-        button rather than overwriting),
-      * neither tsv_file nor tsv_path is supplied,
-      * the supplied tsv_path doesn't resolve to a file.
-
-    Phenotype is optional; with neither file nor path the default
-    analysis lands with empty hpo/panels.
+    The 載入新個案 modal calls this to populate the LIS_ID dropdown so
+    reviewers don't have to retype an ID that already lives on disk.
     """
-    if patient_store.sample_exists(lis_id):
-        raise HTTPException(409, f"sample already exists: {lis_id}")
+    return sample_loader.list_unregistered()
 
-    # TSV: prefer uploaded blob, fall back to path pointer.
-    tsv_bytes = None
-    tsv_src   = None
-    if tsv_file is not None and tsv_file.filename:
-        tsv_bytes = await tsv_file.read()
-    elif tsv_path:
-        from pathlib import Path
-        tsv_src = Path(tsv_path)
-    else:
-        raise HTTPException(400, "either tsv_file or tsv_path is required")
 
-    # Phenotype: same dual-input shape, but optional.
+@router.post("/samples")
+async def register_sample(
+    lis_id:         str = Form(...),
+    name:           str = Form(...),
+    mrn:            str = Form(...),
+    test_type:      str = Form("WES"),
+    genome_build:   str = Form("hg38"),
+    category:       str = Form(""),
+    vcf_path:       str = Form(""),
+    phenotype_path: str = Form(""),
+    phenotype_file: UploadFile | None = None,
+):
+    """Attach reviewer-side info to a pipeline-produced directory.
+
+    The TSV must already live at
+        tertiary_output/{lis_id}/snv_indel.annotated.tsv
+    (the pipeline puts it there). This endpoint only writes
+    sample_metadata.json + analyses/default/analysis.json on top.
+    Refuses with 404 if the directory is missing, 409 if it already has
+    a sample_metadata.json.
+
+    Phenotype is optional. Accepts either an uploaded blob
+    (phenotype_file) or a server-side path (phenotype_path).
+    """
+    # Phenotype: pick whichever form the form supplied; both empty is OK.
     phenotype_text = ""
     if phenotype_file is not None and phenotype_file.filename:
         phenotype_text = (await phenotype_file.read()).decode("utf-8", errors="replace")
@@ -83,16 +74,17 @@ async def create_sample(
         phenotype_text = p.read_text(encoding="utf-8")
 
     try:
-        meta = patient_store.create_new(
+        meta = patient_store.register(
             lis_id=lis_id, name=name, mrn=mrn,
             test_type=test_type, genome_build=genome_build,
             category=category, vcf_path=vcf_path,
-            tsv_src=tsv_src, tsv_bytes=tsv_bytes,
             phenotype_text=phenotype_text,
         )
     except FileExistsError as e:
         raise HTTPException(409, str(e))
-    except (FileNotFoundError, ValueError) as e:
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
         raise HTTPException(400, str(e))
     return {"sample_id": lis_id, "meta": meta}
 

@@ -1,23 +1,26 @@
-"""Create / hydrate the per-patient sample directory.
+"""Hydrate a per-patient sample directory the pipeline already produced.
 
-The per-patient layout (post-Phase-1 migration):
+The tertiary pipeline lands variant calls in
+    tertiary_output/{LIS_ID}/snv_indel.annotated.tsv
+on its own. The 載入新個案 flow attaches reviewer-side info on top:
+basic identifiers, an empty default analysis, optionally a parsed
+copy of the phenotype.txt. After hydration the directory looks like:
 
     tertiary_output/{LIS_ID}/
-      sample_metadata.json     (basic info + reviewer state)
-      snv_indel.annotated.tsv  (variant calls)
+      snv_indel.annotated.tsv  (untouched; pipeline output)
+      sample_metadata.json     (basic info + empty reviewer state)
       analyses/default/
         analysis.json          (hpo + selected_panels + note)
+        {LIS_ID}_{MRN}_phenotype.txt   (audit copy, when provided)
 
-This module owns the "create a brand-new patient" flow: validate the
-identifiers, copy/move the TSV into place, parse the phenotype.txt,
-write sample_metadata.json and the default analysis.json. The actual
-HTTP shell (multipart vs. path pointer) lives in routers/samples.py.
+Refusal cases:
+  * lis_id directory missing or no TSV → 404 / 400 from the router
+  * sample_metadata.json already present → 409 (already registered)
 """
 from __future__ import annotations
 
 import json
 import re
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,7 +48,11 @@ def sample_exists(lis_id: str) -> bool:
     return (TERTIARY_OUTPUT_ROOT / lis_id).is_dir()
 
 
-def create_new(
+def is_registered(lis_id: str) -> bool:
+    return (TERTIARY_OUTPUT_ROOT / lis_id / "sample_metadata.json").is_file()
+
+
+def register(
     *,
     lis_id: str,
     name: str,
@@ -54,16 +61,14 @@ def create_new(
     genome_build: str = "hg38",
     category: str = "",
     vcf_path: str = "",
-    tsv_src: Path | None = None,
-    tsv_bytes: bytes | None = None,
     phenotype_text: str = "",
 ) -> dict:
-    """Create a new patient directory and seed the default analysis.
+    """Attach reviewer-side info to a pipeline-produced directory.
 
-    Exactly one of `tsv_src` (server-side path) or `tsv_bytes` (uploaded
-    blob) must be provided.
-
-    Returns the freshly-loaded sample_metadata.json dict.
+    The directory tertiary_output/{lis_id}/ must already exist with at
+    least snv_indel.annotated.tsv inside (the pipeline drops it there).
+    Refuses if the dir is already registered (sample_metadata.json
+    present).
     """
     _validate_lis_id(lis_id)
     if not name:
@@ -74,24 +79,19 @@ def create_new(
         raise ValueError(f"test_type must be one of {sorted(_TEST_TYPES)}")
     if genome_build not in _GENOME_BUILDS:
         raise ValueError(f"genome_build must be one of {sorted(_GENOME_BUILDS)}")
-    if (tsv_src is None) == (tsv_bytes is None):
-        raise ValueError("provide exactly one of tsv_src or tsv_bytes")
 
     sample_dir = TERTIARY_OUTPUT_ROOT / lis_id
-    if sample_dir.exists():
-        raise FileExistsError(f"sample already exists: {lis_id}")
-    sample_dir.mkdir(parents=True)
-
-    # Write the TSV first; if anything below fails we leave the dir
-    # behind but at least the variant data is on disk.
-    tsv_dst = sample_dir / "snv_indel.annotated.tsv"
-    if tsv_src is not None:
-        if not tsv_src.is_file():
-            shutil.rmtree(sample_dir, ignore_errors=True)
-            raise FileNotFoundError(f"tsv source not found: {tsv_src}")
-        shutil.copyfile(tsv_src, tsv_dst)
-    else:
-        tsv_dst.write_bytes(tsv_bytes or b"")
+    if not sample_dir.is_dir():
+        raise FileNotFoundError(
+            f"pipeline directory not found: {sample_dir} "
+            "(tertiary pipeline drops the TSV here; nothing to register yet)"
+        )
+    if not (sample_dir / "snv_indel.annotated.tsv").is_file():
+        raise FileNotFoundError(
+            f"snv_indel.annotated.tsv missing under {sample_dir}"
+        )
+    if (sample_dir / "sample_metadata.json").is_file():
+        raise FileExistsError(f"sample already registered: {lis_id}")
 
     # Parse phenotype.txt → hpo + panels for the default analysis.
     hpo, panels = phenotype_io.parse(phenotype_text or "")

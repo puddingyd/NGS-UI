@@ -249,13 +249,19 @@
 
   </main>
 
-  <!-- Load new case modal: collects basic info + TSV + phenotype.txt
-       (each file accepts either browser upload or a server-side path). -->
+  <!-- Load new case modal: pick a pipeline-dropped directory + attach
+       basic info. The TSV already lives in tertiary_output/{LIS_ID}/;
+       only phenotype.txt is optional reviewer-side input. -->
   <div id="new-case-modal" class="modal hidden">
     <form id="new-case-form" class="modal-card modal-card-wide">
       <h2>載入新個案</h2>
+      <p class="muted">從 tertiary_output/ 中尚未登錄的個案資料夾挑一個（含 snv_indel.annotated.tsv 但還沒有 sample_metadata.json），補上基本資料後即可啟用。</p>
       <div class="form-grid">
-        <label>LIS_ID<input name="lis_id" required pattern="[A-Za-z0-9_\-]{1,32}" /></label>
+        <label class="form-grid-wide">未登錄個案
+          <select name="lis_id" id="new-case-lis-id" required>
+            <option value="">— 載入中… —</option>
+          </select>
+        </label>
         <label>姓名<input name="name" required /></label>
         <label>病歷號 (MRN)<input name="mrn" required /></label>
         <label>Test type
@@ -271,16 +277,7 @@
           </select>
         </label>
         <label>Category<input name="category" placeholder="選填" /></label>
-        <label class="form-grid-wide">VCF 路徑 (server 上)<input name="vcf_path" placeholder="/home/n102968/NGS_UI/vcf/...vcf.gz" /></label>
-      </div>
-      <div class="form-section">
-        <div class="form-section-title">snv_indel.annotated.tsv</div>
-        <div class="form-source-tabs" data-target="tsv">
-          <button type="button" class="form-tab active" data-mode="upload">上傳檔案</button>
-          <button type="button" class="form-tab" data-mode="path">指定路徑</button>
-        </div>
-        <input type="file" name="tsv_file" accept=".tsv,.txt" />
-        <input type="text" name="tsv_path" placeholder="/home/n102968/NGS_UI/incoming/...tsv" hidden />
+        <label class="form-grid-wide">VCF 路徑 (server 上；之後重跑 Exomiser/LIRICAL 才會用到)<input name="vcf_path" placeholder="/home/n102968/NGS_UI/vcf/...vcf.gz" /></label>
       </div>
       <div class="form-section">
         <div class="form-section-title">phenotype.txt （HPO + panel；選填）</div>
@@ -289,7 +286,8 @@
           <button type="button" class="form-tab" data-mode="path">指定路徑</button>
         </div>
         <input type="file" name="phenotype_file" accept=".txt,.tsv" />
-        <input type="text" name="phenotype_path" placeholder="/home/n102968/NGS_UI/incoming/..._phenotype.txt" hidden />
+        <input type="text" name="phenotype_path" placeholder="/home/n102968/NGS_UI/tertiary_output/{LIS_ID}/{LIS_ID}_{MRN}_phenotype.txt" hidden />
+        <div id="new-case-pheno-hint" class="muted" style="margin-top:6px;font-size:11px"></div>
       </div>
       <div id="new-case-error" class="error hidden"></div>
       <div class="modal-actions">
