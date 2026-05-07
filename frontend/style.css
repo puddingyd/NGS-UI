@@ -248,18 +248,23 @@ body.sidebar-collapsed .container { margin-left: auto; }
 /* Sample meta — single horizontal row, wraps if narrow */
 .sample-meta {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sample-meta-row {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 18px;
 }
-.sample-meta > div {
+.sample-meta-row > div {
   flex: 1 1 0;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.sample-meta > div > span:not(.label) { overflow: hidden; text-overflow: ellipsis; }
+.sample-meta-row > div > span:not(.label) { overflow: hidden; text-overflow: ellipsis; }
 .sample-meta .label {
   font-size: 10px;
   color: var(--muted);

@@ -44,6 +44,7 @@ def register_sample(
     lis_id:        str = Form(...),
     name:          str = Form(...),
     mrn:           str = Form(...),
+    sex:           str = Form(""),
     test_type:     str = Form("WES"),
     genome_build:  str = Form("hg38"),
     category:      str = Form(""),
@@ -72,7 +73,7 @@ def register_sample(
 
     try:
         meta = patient_store.register(
-            lis_id=lis_id, name=name, mrn=mrn,
+            lis_id=lis_id, name=name, mrn=mrn, sex=sex,
             test_type=test_type, genome_build=genome_build,
             category=category,
             phenotype_text=phenotype_text,
@@ -122,7 +123,7 @@ def put_sample_metadata(sample_id: str, payload: dict):
             meta = {}
     if not isinstance(meta, dict):
         meta = {}
-    EDITABLE = {"name", "mrn", "lis_id", "test_type", "category",
+    EDITABLE = {"name", "mrn", "lis_id", "sex", "test_type", "category",
                 "genome_build", "tags", "run_date"}
     for k, v in (payload or {}).items():
         if k in EDITABLE:

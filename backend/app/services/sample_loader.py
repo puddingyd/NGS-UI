@@ -68,13 +68,12 @@ def list_index() -> list[dict]:
     """Return the sample list for the top-bar combobox.
 
     Source of truth is a directory scan: every subdirectory of
-    tertiary_output/ that has sample_metadata.json shows up here. We
-    used to read tertiary_output/_index.json as a cache and short-
-    circuit the scan, but that hid samples freshly registered through
-    the UI (the cache file isn't auto-rewritten), so the directory
-    scan wins outright now. _index.json on disk is informational only
-    — anything the pipeline wants to advertise should land in
-    sample_metadata.json directly.
+    tertiary_output/ that has sample_metadata.json shows up here,
+    sorted by created_at descending so newly-registered samples land
+    at the top. _index.json gets rewritten as a side-effect on every
+    scan so the file on disk stays fresh for human inspection /
+    pipeline-side enrichment, but the UI never trusts the cache for
+    correctness.
     """
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():
@@ -93,13 +92,31 @@ def list_index() -> list[dict]:
             "lis_id":        meta.get("lis_id") or sub.name,
             "name":          meta.get("name", ""),
             "mrn":           meta.get("mrn", ""),
+            "sex":           meta.get("sex", ""),
             "test_type":     meta.get("test_type", ""),
             "category":      meta.get("category", ""),
             "run_date":      meta.get("run_date", ""),
+            "created_at":    meta.get("created_at", ""),
             "tags":          meta.get("tags", []),
             "has_completed": (sub / "snv_indel.annotated.tsv").exists(),
             "tertiary_dir":  sub.name,
         })
+    # Sort newest-first by registration date; samples without a stored
+    # created_at fall to the bottom (stable order by lis_id thereafter).
+    out.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
+
+    # Best-effort cache write so an operator browsing the filesystem
+    # sees an up-to-date listing. Failures are non-fatal — the read
+    # path doesn't depend on this file existing.
+    try:
+        cache_path = TERTIARY_OUTPUT_ROOT / "_index.json"
+        cache_path.write_text(
+            json.dumps(out, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
     return out
 
 
@@ -313,6 +330,7 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
             "LIS_ID":   meta.get("lis_id") or meta.get("sample_id") or sample_id,
             "Name":     meta.get("name", ""),
             "MRN":      meta.get("mrn", ""),
+            "Sex":      meta.get("sex", ""),
             "Test":     meta.get("test_type", ""),
             "Category": meta.get("category", ""),
         },

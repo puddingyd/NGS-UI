@@ -73,45 +73,58 @@
     <!-- Sample info -->
     <section id="sample-card" class="card hidden">
       <div class="sample-meta">
-        <div>
-          <span class="label">LIS_ID</span>
-          <span id="m-lis"></span>
-          <button id="m-lis-copy" class="btn-copy" type="button" title="複製 LIS_ID" hidden></button>
+        <div class="sample-meta-row">
+          <div>
+            <span class="label">LIS_ID</span>
+            <span id="m-lis"></span>
+            <button id="m-lis-copy" class="btn-copy" type="button" title="複製 LIS_ID" hidden></button>
+          </div>
+          <div>
+            <span class="label">Name</span>
+            <span id="m-name"></span>
+            <button id="m-name-copy" class="btn-copy" type="button" title="複製姓名" hidden></button>
+          </div>
+          <div>
+            <span class="label">MRN</span>
+            <span class="m-mrn-row">
+              <span id="m-mrn"></span>
+              <button id="m-mrn-copy" class="btn-copy" type="button" title="複製 MRN" hidden></button>
+              <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
+            </span>
+          </div>
+          <div>
+            <span class="label">Sex</span>
+            <select id="m-sex" class="meta-select">
+              <option value="">—</option>
+              <option value="M">M</option>
+              <option value="F">F</option>
+              <option value="U">U</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <span class="label">Name</span>
-          <span id="m-name"></span>
-          <button id="m-name-copy" class="btn-copy" type="button" title="複製姓名" hidden></button>
+        <div class="sample-meta-row">
+          <div>
+            <span class="label">Test</span>
+            <select id="m-test" class="meta-select">
+              <option value="">—</option>
+              <option value="WES">WES</option>
+              <option value="WGS">WGS</option>
+            </select>
+          </div>
+          <div>
+            <span class="label">Build</span>
+            <select id="m-build" class="meta-select">
+              <option value="">—</option>
+              <option value="hg19">hg19</option>
+              <option value="hg38">hg38</option>
+            </select>
+          </div>
+          <div>
+            <span class="label">Category</span>
+            <select id="m-category" class="meta-select"></select>
+          </div>
+          <div><span class="label">Generated</span><span id="m-generated"></span></div>
         </div>
-        <div>
-          <span class="label">MRN</span>
-          <span class="m-mrn-row">
-            <span id="m-mrn"></span>
-            <button id="m-mrn-copy" class="btn-copy" type="button" title="複製 MRN" hidden></button>
-            <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
-          </span>
-        </div>
-        <div>
-          <span class="label">Test</span>
-          <select id="m-test" class="meta-select">
-            <option value="">—</option>
-            <option value="WES">WES</option>
-            <option value="WGS">WGS</option>
-          </select>
-        </div>
-        <div>
-          <span class="label">Build</span>
-          <select id="m-build" class="meta-select">
-            <option value="">—</option>
-            <option value="hg19">hg19</option>
-            <option value="hg38">hg38</option>
-          </select>
-        </div>
-        <div>
-          <span class="label">Category</span>
-          <select id="m-category" class="meta-select"></select>
-        </div>
-        <div><span class="label">Generated</span><span id="m-generated"></span></div>
       </div>
       <div id="m-meta-hint" class="muted" style="margin-top:6px;font-size:11px"></div>
     </section>
@@ -280,6 +293,14 @@
         </label>
         <label>姓名<input name="name" required /></label>
         <label>病歷號 (MRN)<input name="mrn" id="new-case-mrn" required /></label>
+        <label>Sex
+          <select name="sex">
+            <option value="" selected>—</option>
+            <option value="M">M</option>
+            <option value="F">F</option>
+            <option value="U">U</option>
+          </select>
+        </label>
         <label>Test type
           <select name="test_type">
             <option value="WES" selected>WES</option>

@@ -358,6 +358,7 @@ function renderSampleMeta() {
   // Editable selects backed by sample_metadata.json
   document.getElementById("m-test").value  = m.Test || "";
   document.getElementById("m-build").value = state.data.genome_build || "";
+  document.getElementById("m-sex").value   = m.Sex || "";
 
   const sel = document.getElementById("m-category");
   const opts = (state.options && state.options.category_options) || [];
@@ -414,6 +415,7 @@ function _saveSampleMeta(patch) {
 document.addEventListener("change", ev => {
   if (ev.target.id === "m-test")  _saveSampleMeta({ test_type:    ev.target.value });
   if (ev.target.id === "m-build") _saveSampleMeta({ genome_build: ev.target.value });
+  if (ev.target.id === "m-sex")   _saveSampleMeta({ sex:          ev.target.value });
 });
 
 // Generic renderer for collapsible free-text cards (Clinical presentation,
