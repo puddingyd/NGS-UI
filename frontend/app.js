@@ -3460,8 +3460,11 @@ async function loadByRow(row) {
   }
 }
 
-document.getElementById("btn-load").addEventListener("click", async () => {
-  const q  = document.getElementById("q-lis").value;
+// Selecting a row from the typeahead drops here via setupCombobox.pick().
+// Pressing Enter without a highlighted row tries to resolve whatever
+// the user typed against the index; the old [Load] button was redundant
+// once dropdown picks already auto-loaded.
+async function loadByQuery(q) {
   const st = document.getElementById("search-status");
   st.textContent = "查詢中...";
   let row;
@@ -3469,7 +3472,7 @@ document.getElementById("btn-load").addEventListener("click", async () => {
   catch (e) { st.textContent = e.message; return; }
   if (!row) { st.textContent = "找不到對應樣本（請從下拉選單選擇）"; return; }
   await loadByRow(row);
-});
+}
 
 // ---------- LIS_ID combobox typeahead ------------------------------
 
@@ -3534,7 +3537,7 @@ function setupCombobox() {
       if (activeIdx >= 0 && rows[activeIdx]) {
         pick(rows[activeIdx]);
       } else {
-        document.getElementById("btn-load").click();
+        loadByQuery(input.value);
       }
     } else if (ev.key === "Escape") {
       list.classList.add("hidden");

@@ -8,8 +8,9 @@ gene-level scoring loses some compound-het fidelity. For the
 post-pipeline tertiary stage, that's the lesser of two evils
 compared with maintaining a separate VCF path per sample.
 
-Output filename convention:
-    tertiary_output/{LIS_ID}/{LIS_ID}.from_tsv.vcf.gz
+Output filename is fixed (not LIS_ID-prefixed) so external scripts
+can hard-code the path:
+    tertiary_output/{LIS_ID}/vcf_from_tsv.vcf.gz
 """
 from __future__ import annotations
 
@@ -21,14 +22,14 @@ from pathlib import Path
 from ..config import TERTIARY_OUTPUT_ROOT
 
 
-VCF_FILENAME_SUFFIX = ".from_tsv.vcf.gz"
+VCF_FILENAME = "vcf_from_tsv.vcf.gz"
 
 # UCSC-style names; both hg19 and hg38 TSVs in this codebase use them.
 CONTIGS = [f"chr{n}" for n in range(1, 23)] + ["chrX", "chrY", "chrM"]
 
 
 def vcf_path_for(lis_id: str) -> Path:
-    return TERTIARY_OUTPUT_ROOT / lis_id / f"{lis_id}{VCF_FILENAME_SUFFIX}"
+    return TERTIARY_OUTPUT_ROOT / lis_id / VCF_FILENAME
 
 
 def needs_rebuild(lis_id: str) -> bool:

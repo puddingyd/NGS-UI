@@ -43,11 +43,19 @@ def migrate_one(sample_dir: Path) -> str:
     if not (sample_dir / "snv_indel.annotated.tsv").is_file():
         return "no-tsv"
 
+    # If a previously-named LIS-prefixed VCF exists, rename it in
+    # place — the new convention drops the prefix so external scripts
+    # can hard-code the filename.
+    legacy = sample_dir / f"{sid}.from_tsv.vcf.gz"
+    canonical_path = vcf_writer.vcf_path_for(sid)
+    if legacy.exists() and not canonical_path.exists():
+        legacy.rename(canonical_path)
+
     # (Re)generate the VCF if missing or stale.
     if vcf_writer.needs_rebuild(sid):
         vcf_writer.from_tsv(sid)
 
-    canonical = str(vcf_writer.vcf_path_for(sid))
+    canonical = str(canonical_path)
 
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     if not isinstance(meta, dict):

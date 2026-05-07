@@ -71,8 +71,12 @@ html, body {
 .btn:hover { background: #eaeef2; }
 .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .btn-primary:hover { background: var(--accent-hover); }
-.btn-ghost { background: transparent; border-color: #4b5058; color: #fff; }
-.btn-ghost:hover { background: #3f464f; }
+.btn-ghost { background: transparent; border-color: var(--border); color: var(--fg); }
+.btn-ghost:hover { background: var(--chip-bg); }
+/* Topbar logout sits on a darker band; force light text there so the
+   ghost button stays readable. */
+.topbar .btn-ghost { border-color: #4b5058; color: #fff; }
+.topbar .btn-ghost:hover { background: #3f464f; }
 .btn-link { padding: 2px 8px; font-size: 12px; }
 
 /* Search */
