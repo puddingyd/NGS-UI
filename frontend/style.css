@@ -115,6 +115,15 @@ body.sidebar-collapsed #sidebar {
   color: var(--fg);
   cursor: pointer;
 }
+/* Static triangle on top-level (non-sub) links so they line up with
+   the 分析 group's expand triangle even though they don't expand. */
+.sidebar-link:not(.sub)::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
 .sidebar-link:hover { background: #e5e5e5; }
 .sidebar-link.active { background: #e5e5e5; font-weight: 600; }
 .sidebar-link.sub { padding-left: 32px; font-size: 14px; color: #525252; }

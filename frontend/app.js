@@ -326,7 +326,10 @@ function renderSampleMeta() {
   document.getElementById("m-lis").textContent       = m.LIS_ID || "—";
   document.getElementById("m-name").textContent      = m.Name || "—";
   document.getElementById("m-mrn").textContent       = m.MRN || "—";
-  document.getElementById("m-generated").textContent = state.data.generated_at || "—";
+  // Generated date: only the YYYY-MM-DD prefix; the time/tz suffix
+  // adds noise without telling the reviewer anything they care about.
+  const gen = state.data.generated_at || "";
+  document.getElementById("m-generated").textContent = gen ? gen.slice(0, 10) : "—";
 
   // Copy buttons next to LIS_ID / Name / MRN. Hide when the value is
   // missing so the icon doesn't dangle next to an em-dash.
