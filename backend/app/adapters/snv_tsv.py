@@ -133,6 +133,8 @@ def _row_to_variant(row: dict) -> dict:
         "zygosity": row.get("ZYGOSITY", ""),
         "GT_DV": row.get("GT_DV", ""),
         "GT_HC": row.get("GT_HC", ""),
+        "exon":   row.get("EXON", ""),
+        "intron": row.get("INTRON", ""),
         "AD":     row.get("AD", ""),
         "alt_af": _to_num(row.get("VAF")),
         "CLNSIG": row.get("CLINVAR_SIG", ""),

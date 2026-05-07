@@ -26,6 +26,7 @@ COLUMNS = [
     "MANE_ALL",
     "CALLERS",
     "ZYGOSITY", "GT_DV", "GT_HC",
+    "EXON", "INTRON",
     "AD", "VAF",
     "CLINVAR_SIG", "CLINVAR_STARS", "CLINVAR_DN", "CLINVAR_CONF",
     "GNOMAD_G_AF", "GNOMAD_G_EAS_AF", "GNOMAD_E_AF", "GNOMAD_E_EAS_AF",
@@ -177,6 +178,9 @@ def convert_variant(v, pheno_genes_set, build="hg38"):
         # per-caller GT.
         "GT_DV": gt,
         "GT_HC": gt,
+        # Placeholder: old JSON has no exon/intron number; pipeline-only.
+        "EXON":   empty_to_blank(v.get("EXON")   or v.get("exon")),
+        "INTRON": empty_to_blank(v.get("INTRON") or v.get("intron")),
         "AD":  empty_to_blank(v.get("AD")),
         "VAF": empty_to_blank(v.get("alt_af")),
         "CLINVAR_SIG": empty_to_blank(v.get("CLNSIG")),
