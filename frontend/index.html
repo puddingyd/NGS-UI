@@ -276,18 +276,16 @@
             <option value="hg19">hg19</option>
           </select>
         </label>
-        <label>Category<input name="category" placeholder="選填" /></label>
+        <label>Category
+          <select name="category" id="new-case-category">
+            <option value="" selected>—</option>
+          </select>
+        </label>
         <label class="form-grid-wide">VCF 路徑 (server 上；之後重跑 Exomiser/LIRICAL 才會用到)<input name="vcf_path" placeholder="/home/n102968/NGS_UI/vcf/...vcf.gz" /></label>
       </div>
       <div class="form-section">
-        <div class="form-section-title">phenotype.txt （HPO + panel；選填）</div>
-        <div class="form-source-tabs" data-target="phenotype">
-          <button type="button" class="form-tab active" data-mode="upload">上傳檔案</button>
-          <button type="button" class="form-tab" data-mode="path">指定路徑</button>
-        </div>
-        <input type="file" name="phenotype_file" accept=".txt,.tsv" />
-        <input type="text" name="phenotype_path" placeholder="/home/n102968/NGS_UI/tertiary_output/{LIS_ID}/{LIS_ID}_{MRN}_phenotype.txt" hidden />
-        <div id="new-case-pheno-hint" class="muted" style="margin-top:6px;font-size:11px"></div>
+        <div class="form-section-title">Phenotype</div>
+        <div class="muted" style="font-size:12px">將自動從 <code>NGS_UI/patient_phenotype/&lt;LIS_ID&gt;_&lt;MRN&gt;_phenotype.txt</code> 讀入。檔案不存在時以空 HPO/panels 載入，可在 UI 上面再補。</div>
       </div>
       <div id="new-case-error" class="error hidden"></div>
       <div class="modal-actions">

@@ -44,6 +44,11 @@ VCF_DIR = Path(os.environ.get(
     NGS_UI_HOME / "vcf",
 ))
 
+PHENOTYPE_DIR = Path(os.environ.get(
+    "NGS_UI_PHENOTYPE_DIR",
+    NGS_UI_HOME / "patient_phenotype",
+))
+
 BIOTOOLS_DIR = Path(os.environ.get(
     "NGS_UI_BIOTOOLS_DIR",
     NGS_UI_HOME / "biotools",

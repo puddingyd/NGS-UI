@@ -3736,18 +3736,15 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   const form = document.getElementById("new-case-form");
   form?.reset();
   document.getElementById("new-case-error")?.classList.add("hidden");
-  document.getElementById("new-case-pheno-hint").textContent = "";
-  // Reset phenotype source tab to upload mode.
-  form?.querySelectorAll(".form-source-tabs").forEach(tabs => {
-    tabs.querySelectorAll(".form-tab").forEach(b => {
-      b.classList.toggle("active", b.dataset.mode === "upload");
-    });
-    const target = tabs.dataset.target;
-    const fileInp = form.querySelector(`input[name="${target}_file"]`);
-    const pathInp = form.querySelector(`input[name="${target}_path"]`);
-    if (fileInp) fileInp.hidden = false;
-    if (pathInp) { pathInp.hidden = true; pathInp.value = ""; }
-  });
+
+  // Populate the Category dropdown from /api/options so this modal +
+  // the sample-card Category select share one source of truth.
+  const catSel = document.getElementById("new-case-category");
+  if (catSel) {
+    const opts = (state.options && state.options.category_options) || [];
+    catSel.innerHTML = `<option value="" selected>—</option>` +
+      opts.map(o => `<option value="${escapeAttr(o)}">${escapeHtml(o)}</option>`).join("");
+  }
 
   // Populate the LIS_ID dropdown from /api/samples/unregistered. Newest
   // first so the just-finished pipeline output sits at the top.
@@ -3764,25 +3761,14 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
     const fmtKB = b => `${(b / 1024).toFixed(0)} KB`;
     select.innerHTML = `<option value="">— 選擇 —</option>` +
       list.map(r =>
-        `<option value="${escapeAttr(r.lis_id)}" data-pheno="${escapeAttr(r.phenotype_file || "")}">`
+        `<option value="${escapeAttr(r.lis_id)}">`
         + `${escapeHtml(r.lis_id)}  ·  ${fmt(r.mtime)}`
         + (r.tsv_size ? `  ·  ${fmtKB(r.tsv_size)}` : "")
-        + (r.phenotype_file ? `  ·  📝 ${escapeHtml(r.phenotype_file)}` : "")
         + `</option>`
       ).join("");
   } catch (e) {
     select.innerHTML = `<option value="">（讀取失敗：${escapeHtml(e.message)}）</option>`;
   }
-});
-
-// When user picks a folder, surface the auto-detected phenotype.txt
-// filename so they know what's available without leaving the modal.
-document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
-  const opt  = ev.target.selectedOptions[0];
-  const pheno = opt?.dataset?.pheno || "";
-  const hint  = document.getElementById("new-case-pheno-hint");
-  if (!pheno) { hint.textContent = ""; return; }
-  hint.textContent = `偵測到資料夾內有 ${pheno}（如不上傳/指定路徑就不會被自動讀入）`;
 });
 
 document.getElementById("new-case-form")?.addEventListener("submit", async (ev) => {
@@ -3792,12 +3778,6 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
   errEl.classList.add("hidden");
   errEl.textContent = "";
   const fd = new FormData(form);
-  // Drop empty file fields so FastAPI's UploadFile is None when the
-  // user picked the path mode (and vice versa).
-  for (const [k, v] of Array.from(fd.entries())) {
-    if (v instanceof File && (!v.name || v.size === 0)) fd.delete(k);
-    if (typeof v === "string" && v.trim() === "" && k !== "category" && k !== "vcf_path") fd.delete(k);
-  }
   try {
     const resp = await fetch(`${API_BASE}/samples`, {
       method: "POST",
@@ -3807,7 +3787,7 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
     if (resp.status === 401) { showLoginModal(); throw new Error("not authenticated"); }
     if (resp.status === 409) {
       const body = await resp.json().catch(() => ({}));
-      throw new Error(body.detail || "個案已存在");
+      throw new Error(body.detail || "個案已登錄");
     }
     if (!resp.ok) {
       const body = await resp.json().catch(() => ({}));
@@ -3819,6 +3799,14 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
     await loadIndex();
     await loadSample(out.sample_id);
     renderAll();
+    // Surface where the phenotype file was looked for so the reviewer
+    // knows whether HPO/panels got loaded automatically.
+    const stEl = document.getElementById("search-status");
+    if (stEl) {
+      stEl.textContent = out.phenotype_loaded
+        ? `已登錄 ${out.sample_id}（已載入 ${out.phenotype_path}）`
+        : `已登錄 ${out.sample_id}（${out.phenotype_path} 不存在，HPO/panels 留空）`;
+    }
   } catch (e) {
     errEl.textContent = e.message;
     errEl.classList.remove("hidden");

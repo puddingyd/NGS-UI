@@ -1,9 +1,10 @@
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import Response
 
 from ..auth import current_user
+from ..config import PHENOTYPE_DIR
 from ..services import docx_export, patient_store, report_store, sample_loader
 
 router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
@@ -39,16 +40,14 @@ def list_unregistered_samples():
 
 
 @router.post("/samples")
-async def register_sample(
-    lis_id:         str = Form(...),
-    name:           str = Form(...),
-    mrn:            str = Form(...),
-    test_type:      str = Form("WES"),
-    genome_build:   str = Form("hg38"),
-    category:       str = Form(""),
-    vcf_path:       str = Form(""),
-    phenotype_path: str = Form(""),
-    phenotype_file: UploadFile | None = None,
+def register_sample(
+    lis_id:        str = Form(...),
+    name:          str = Form(...),
+    mrn:           str = Form(...),
+    test_type:     str = Form("WES"),
+    genome_build:  str = Form("hg38"),
+    category:      str = Form(""),
+    vcf_path:      str = Form(""),
 ):
     """Attach reviewer-side info to a pipeline-produced directory.
 
@@ -59,19 +58,18 @@ async def register_sample(
     Refuses with 404 if the directory is missing, 409 if it already has
     a sample_metadata.json.
 
-    Phenotype is optional. Accepts either an uploaded blob
-    (phenotype_file) or a server-side path (phenotype_path).
+    Phenotype is auto-loaded from
+        NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt
+    when the file exists. If it doesn't, the sample registers with
+    empty hpo/panels and the response includes phenotype_loaded=false
+    so the UI can hint about it.
     """
-    # Phenotype: pick whichever form the form supplied; both empty is OK.
+    pheno_path = PHENOTYPE_DIR / f"{lis_id}_{mrn}_phenotype.txt"
     phenotype_text = ""
-    if phenotype_file is not None and phenotype_file.filename:
-        phenotype_text = (await phenotype_file.read()).decode("utf-8", errors="replace")
-    elif phenotype_path:
-        from pathlib import Path
-        p = Path(phenotype_path)
-        if not p.is_file():
-            raise HTTPException(400, f"phenotype_path not found: {phenotype_path}")
-        phenotype_text = p.read_text(encoding="utf-8")
+    phenotype_loaded = False
+    if pheno_path.is_file():
+        phenotype_text = pheno_path.read_text(encoding="utf-8")
+        phenotype_loaded = True
 
     try:
         meta = patient_store.register(
@@ -86,7 +84,12 @@ async def register_sample(
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    return {"sample_id": lis_id, "meta": meta}
+    return {
+        "sample_id": lis_id,
+        "meta": meta,
+        "phenotype_loaded": phenotype_loaded,
+        "phenotype_path":   str(pheno_path),
+    }
 
 
 @router.get("/samples/{sample_id}")
@@ -140,15 +143,35 @@ def put_report(sample_id: str, payload: dict):
     return report_store.save(sample_id, payload)
 
 
+# Canonical category list — drives both the load-new-case modal
+# dropdown AND the editable Category select on the sample card so the
+# values stay in sync. Order matches the reviewer-requested ordering.
+_CATEGORY_OPTIONS = [
+    "Neurology", "Endocrinology", "MCA", "Nephrology", "GI", "Metabolism",
+    "AIR", "Hematology", "Oncology", "Ophthalmology", "Musculoskeletal",
+    "Dermatology", "CV", "ENT", "Asymptomatic",
+]
+
+
 @router.get("/options")
 def get_options():
-    """Category / tag dropdown suggestions; reads _options.json if present."""
+    """Category list + (optional) tag suggestions.
+
+    Categories are hard-coded server-side so adding a new one is a
+    one-line edit + restart, not a config file the operator has to
+    remember to update. Tag suggestions still come from _options.json
+    when present so reviewers can keep iterating on the tag vocabulary
+    without a deploy.
+    """
     from ..config import TERTIARY_OUTPUT_ROOT
     import json as _json
+    payload = {"category_options": list(_CATEGORY_OPTIONS), "tag_suggestions": []}
     p = TERTIARY_OUTPUT_ROOT / "_options.json"
-    if not p.exists():
-        return {"category_options": [], "tag_suggestions": []}
-    try:
-        return _json.loads(p.read_text(encoding="utf-8"))
-    except _json.JSONDecodeError:
-        return {"category_options": [], "tag_suggestions": []}
+    if p.exists():
+        try:
+            extra = _json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(extra, dict) and isinstance(extra.get("tag_suggestions"), list):
+                payload["tag_suggestions"] = extra["tag_suggestions"]
+        except _json.JSONDecodeError:
+            pass
+    return payload
