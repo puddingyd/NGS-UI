@@ -1,9 +1,9 @@
 """Reviewer-side state (status / edits / panels / comment / tags …).
 
-Post-migration, these fields all live on the per-patient
-sample_metadata.json so they survive across analysis versions. Pre
-migration, the loader falls back to data/reports/{sample_id}.json so a
-deploy doesn't break the UI before the migration script runs.
+These fields live on the per-patient sample_metadata.json so they
+survive across analysis versions. Pipeline-owned keys (lis_id, name,
+mrn, test_type, vcf_path, …) are preserved untouched on save() — only
+the whitelist below gets overwritten.
 
 Phase 4 will swap this for a DB-backed store with per-user audit trail.
 """
@@ -13,12 +13,9 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import REPORTS_DIR, TERTIARY_OUTPUT_ROOT
+from ..config import TERTIARY_OUTPUT_ROOT
 
 
-# Reviewer-editable fields that live on sample_metadata.json. Fields
-# outside this list (lis_id, name, vcf_path, …) are pipeline metadata
-# and never get clobbered by a save() call.
 _REVIEWER_FIELDS = {
     "status",
     "edits",
@@ -47,10 +44,6 @@ _DEFAULT = {
 
 def _meta_path(sample_id: str) -> Path:
     return TERTIARY_OUTPUT_ROOT / sample_id / "sample_metadata.json"
-
-
-def _legacy_path(sample_id: str) -> Path:
-    return REPORTS_DIR / f"{sample_id}.json"
 
 
 def _read_json(p: Path) -> dict:
@@ -82,31 +75,11 @@ def _project_reviewer(meta: dict) -> dict:
 
 
 def load(sample_id: str) -> dict:
-    """Return the reviewer-state dict.
-
-    Reads sample_metadata.json first (canonical post-migration). If it
-    doesn't have any reviewer fields yet, falls back to the legacy
-    data/reports/{sample_id}.json so old samples keep working.
-    """
-    meta = _read_json(_meta_path(sample_id))
-    if any(k in meta for k in _REVIEWER_FIELDS):
-        return _project_reviewer(meta)
-
-    legacy = _read_json(_legacy_path(sample_id))
-    if legacy:
-        out = dict(_DEFAULT)
-        out.update(legacy)
-        return out
-    return dict(_DEFAULT)
+    return _project_reviewer(_read_json(_meta_path(sample_id)))
 
 
 def save(sample_id: str, payload: dict) -> dict:
-    """Merge reviewer fields into sample_metadata.json.
-
-    Pipeline-owned fields (lis_id, name, mrn, test_type, vcf_path, …)
-    are preserved as-is — the merge only touches keys in
-    `_REVIEWER_FIELDS` plus `updated_at`.
-    """
+    """Merge reviewer fields into sample_metadata.json."""
     p = _meta_path(sample_id)
     meta = _read_json(p)
     payload = payload or {}

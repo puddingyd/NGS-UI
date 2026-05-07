@@ -49,9 +49,7 @@ BIOTOOLS_DIR = Path(os.environ.get(
     NGS_UI_HOME / "biotools",
 ))
 
-REPORTS_DIR = DATA_ROOT / "reports"
-JOBS_DIR    = DATA_ROOT / "jobs"
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+JOBS_DIR = DATA_ROOT / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 FRONTEND_DIR = Path(os.environ.get(

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import current_user
 from ..config import REDIS_URL, TERTIARY_OUTPUT_ROOT
-from ..services import job_store
+from ..services import analyses_store, job_store
 
 router = APIRouter(prefix="/api", tags=["jobs"], dependencies=[Depends(current_user)])
 
@@ -34,7 +34,11 @@ def _rq_status(job_id: str) -> dict:
         return {}
 
 
-def _enqueue(sample_id: str, kind: str = "exomiser_lirical") -> dict:
+def _enqueue(
+    sample_id: str,
+    kind: str = "exomiser_lirical",
+    version: str | None = None,
+) -> dict:
     sub = TERTIARY_OUTPUT_ROOT / sample_id
     if not sub.is_dir():
         raise HTTPException(404, f"sample not found: {sample_id}")
@@ -44,11 +48,22 @@ def _enqueue(sample_id: str, kind: str = "exomiser_lirical") -> dict:
     except ImportError as e:
         raise HTTPException(500, f"RQ not installed: {e}")
 
+    # Worker pulls HPO + sidecar paths from active_version. If the
+    # caller asked for a specific version, switch active before
+    # enqueueing so the worker lands on the right one. Validates the
+    # name exists; falls back to the existing active otherwise.
+    if version:
+        try:
+            analyses_store.set_active(sample_id, version)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
     job_id = job_store.new_job_id()
     record = job_store.write({
         "job_id":    job_id,
         "sample_id": sample_id,
         "kind":      kind,
+        "version":   version or analyses_store.active_version(sample_id),
         "status":    "queued",
         "step":      "queued",
     })
@@ -69,8 +84,13 @@ def _enqueue(sample_id: str, kind: str = "exomiser_lirical") -> dict:
 
 
 @router.post("/samples/{sample_id}/jobs/exomiser_lirical")
-def post_exomiser_lirical(sample_id: str):
-    return _enqueue(sample_id, "exomiser_lirical")
+def post_exomiser_lirical(sample_id: str, payload: dict | None = None):
+    """Body: { version?: "default" | "v2_seizure" | ... }
+
+    Omitted version → use the sample's current active analysis.
+    """
+    version = (payload or {}).get("version")
+    return _enqueue(sample_id, "exomiser_lirical", version=version)
 
 
 @router.get("/samples/{sample_id}/jobs")

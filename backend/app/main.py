@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
-from .routers import auth, jobs, phenotype, samples
+from .routers import analyses, auth, jobs, phenotype, samples
 from .services import hpo_ontology, phenotype_scorer, users
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
@@ -37,6 +37,7 @@ def healthz():
 
 app.include_router(auth.router)
 app.include_router(samples.router)
+app.include_router(analyses.router)
 app.include_router(phenotype.router)
 app.include_router(jobs.router)
 
