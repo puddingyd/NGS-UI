@@ -882,17 +882,43 @@ function _setJobStatus(text, busy = false) {
 // The phenotype POST returns immediately so the cards' IN_PANEL badges
 // flip right away; the Exomiser/LIRICAL job runs in the background and
 // the polling loop refreshes the sample once it lands.
-async function startAnalysis() {
+//
+// `opts.version` selects which analysis version to write into; `opts.mode`
+// is "overwrite" (clear sidecars first) or "new" (create fresh version).
+// Defaults: overwrite the currently-active version, no clear (legacy).
+async function startAnalysis(opts = {}) {
   if (!state.currentLIS) return;
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sid = row?.sample_id || state.currentLIS;
   const hint = document.getElementById("phenotype-hint");
+  const version = opts.version || state.data?.active_analysis || "default";
+  const mode    = opts.mode    || "overwrite";
+
   _setJobStatus("送出工作中…", true);
   hint.textContent = "計算中…";
+
+  // Make sure the chosen version exists and is the active one before we
+  // write to it. Overwriting an existing version wipes its sidecars so
+  // a partial re-run can't blend old + new outputs.
+  try {
+    await apiPost(`/samples/${encodeURIComponent(sid)}/analyses`, {
+      name:           version,
+      hpo:            phenoEdit.hpo,
+      panels:         phenoEdit.panels,
+      set_active:     true,
+      clear_sidecars: mode === "overwrite",
+    });
+  } catch (e) {
+    hint.textContent = "失敗：" + e.message;
+    _setJobStatus("失敗", false);
+    return;
+  }
+
   try {
     const result = await apiPost(`/samples/${encodeURIComponent(sid)}/phenotype`, {
       hpo:    phenoEdit.hpo,
       panels: phenoEdit.panels,
+      version,
     });
     document.getElementById("phenotype-stats").textContent =
       `${result.n_hpo} HPO + ${result.n_panels} panels → ${result.n_in_panel_genes} genes in panel · top ${(result.top_score ?? 0).toFixed(0)}`;
@@ -913,7 +939,9 @@ async function startAnalysis() {
     return;
   }
   try {
-    const job = await apiPost(`/samples/${encodeURIComponent(sid)}/jobs/exomiser_lirical`, {});
+    const job = await apiPost(`/samples/${encodeURIComponent(sid)}/jobs/exomiser_lirical`, {
+      version,
+    });
     _activeJobId = job.job_id;
     _setJobStatus(`已排入：${job.job_id}`, true);
     _startJobPolling(sid, job.job_id);
@@ -1897,6 +1925,7 @@ function renderAll() {
   renderSampleMeta();
   renderClinicalDescription();
   renderPhenotype();
+  renderVersionPicker();
   renderComment();
   renderReportSections();
   renderCandidateSections();
@@ -3422,6 +3451,10 @@ async function loadByRow(row) {
     await loadSample(row.LIS_ID);
     st.textContent = `已載入: ${row.LIS_ID}`;
     renderAll();
+    // Samples with > 1 analysis versions get the picker; on confirm
+    // the picker reloads + re-renders, so the initial render above
+    // is the placeholder until the user picks.
+    maybeShowVersionPicker(() => renderAll());
   } catch (e) {
     st.textContent = "錯誤: " + e.message;
   }
@@ -3560,7 +3593,7 @@ function setupPhenotypeEvents() {
       ev.stopPropagation();
       removePanel(Number(btn.dataset.panelIdx));
     } else if (btn.matches("#btn-start-analysis")) {
-      startAnalysis();
+      requestAnalysis();
     }
   });
 
@@ -3637,4 +3670,277 @@ function downloadBlob(blob, filename) {
   document.body.removeChild(a);
   // Defer revoke so the download has a chance to start.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ============================================================
+// Phase 3: load-new-case + version management UI
+// ============================================================
+
+// Generic modal show/hide. Modals carry an `.modal` class and toggle
+// `.hidden` to enter/leave the page.
+function showModal(id) {
+  document.getElementById(id)?.classList.remove("hidden");
+}
+function hideModal(id) {
+  document.getElementById(id)?.classList.add("hidden");
+}
+
+// Wire every modal's close button + outside-click + ESC.
+document.addEventListener("click", ev => {
+  const t = ev.target;
+  const closer = t.closest?.("[data-close]");
+  if (closer) {
+    hideModal(closer.dataset.close);
+    return;
+  }
+  // Click on the dim backdrop closes the modal too. The form card
+  // is the only direct child; everything else (the dim) is the modal
+  // itself.
+  if (t.matches?.(".modal")) {
+    t.classList.add("hidden");
+  }
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") {
+    document.querySelectorAll(".modal:not(.hidden)").forEach(m => m.classList.add("hidden"));
+  }
+});
+
+// ---- Load new case ------------------------------------------------
+
+// The two file inputs each have an "upload | path" tab. Clicking a tab
+// hides the other input + clears its value so we don't accidentally
+// submit both.
+document.addEventListener("click", ev => {
+  const tab = ev.target.closest?.(".form-source-tabs .form-tab");
+  if (!tab) return;
+  const tabs = tab.parentElement;
+  const target = tabs.dataset.target;       // "tsv" or "phenotype"
+  const mode   = tab.dataset.mode;          // "upload" or "path"
+  tabs.querySelectorAll(".form-tab").forEach(b => {
+    b.classList.toggle("active", b === tab);
+  });
+  const form = tab.closest("form");
+  const fileInp = form.querySelector(`input[name="${target}_file"]`);
+  const pathInp = form.querySelector(`input[name="${target}_path"]`);
+  if (mode === "upload") {
+    fileInp.hidden = false;
+    pathInp.hidden = true;  pathInp.value = "";
+  } else {
+    pathInp.hidden = false;
+    fileInp.hidden = true;  fileInp.value = "";
+  }
+});
+
+document.getElementById("btn-new-case")?.addEventListener("click", () => {
+  const form = document.getElementById("new-case-form");
+  form?.reset();
+  document.getElementById("new-case-error")?.classList.add("hidden");
+  // Reset both source-tab pairs to upload mode.
+  form?.querySelectorAll(".form-source-tabs").forEach(tabs => {
+    tabs.querySelectorAll(".form-tab").forEach(b => {
+      b.classList.toggle("active", b.dataset.mode === "upload");
+    });
+    const target = tabs.dataset.target;
+    const fileInp = form.querySelector(`input[name="${target}_file"]`);
+    const pathInp = form.querySelector(`input[name="${target}_path"]`);
+    if (fileInp) fileInp.hidden = false;
+    if (pathInp) { pathInp.hidden = true; pathInp.value = ""; }
+  });
+  showModal("new-case-modal");
+});
+
+document.getElementById("new-case-form")?.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = ev.currentTarget;
+  const errEl = document.getElementById("new-case-error");
+  errEl.classList.add("hidden");
+  errEl.textContent = "";
+  const fd = new FormData(form);
+  // Drop empty file fields so FastAPI's UploadFile is None when the
+  // user picked the path mode (and vice versa).
+  for (const [k, v] of Array.from(fd.entries())) {
+    if (v instanceof File && (!v.name || v.size === 0)) fd.delete(k);
+    if (typeof v === "string" && v.trim() === "" && k !== "category" && k !== "vcf_path") fd.delete(k);
+  }
+  try {
+    const resp = await fetch(`${API_BASE}/samples`, {
+      method: "POST",
+      credentials: "same-origin",
+      body: fd,
+    });
+    if (resp.status === 401) { showLoginModal(); throw new Error("not authenticated"); }
+    if (resp.status === 409) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.detail || "個案已存在");
+    }
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+    }
+    const out = await resp.json();
+    hideModal("new-case-modal");
+    // Refresh the index so the new sample is searchable, then load it.
+    await loadIndex();
+    await loadSample(out.sample_id);
+    renderAll();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove("hidden");
+  }
+});
+
+// ---- Re-analyze target picker ------------------------------------
+
+// Replaces the immediate startAnalysis() call. Pops the modal, pre-
+// fills the overwrite dropdown with existing versions, and routes the
+// confirmed selection back to startAnalysis().
+function requestAnalysis() {
+  if (!state.currentLIS) return;
+  const versions = state.data?.analyses || [];
+  const select   = document.getElementById("reanalyze-target");
+  const active   = state.data?.active_analysis || "default";
+
+  if (!versions.length) {
+    // Brand-new sample with no analysis yet → just go.
+    startAnalysis({ version: "default", mode: "overwrite" });
+    return;
+  }
+
+  select.innerHTML = versions.map(v =>
+    `<option value="${escapeAttr(v.name)}" ${v.name === active ? "selected" : ""}>${escapeHtml(v.name)}</option>`
+  ).join("");
+  document.querySelector('input[name="reanalyze-mode"][value="overwrite"]').checked = true;
+  document.getElementById("reanalyze-name").value = "";
+  document.getElementById("reanalyze-error")?.classList.add("hidden");
+  showModal("reanalyze-modal");
+}
+
+document.getElementById("reanalyze-form")?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const errEl = document.getElementById("reanalyze-error");
+  errEl.classList.add("hidden");
+  const mode = document.querySelector('input[name="reanalyze-mode"]:checked')?.value;
+  let version, runMode;
+  if (mode === "new") {
+    version = document.getElementById("reanalyze-name").value.trim();
+    if (!/^[A-Za-z0-9_\-]{1,32}$/.test(version)) {
+      errEl.textContent = "版本名稱必須符合 [A-Za-z0-9_-]{1,32}";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    if (version === "default" && (state.data?.analyses || []).some(v => v.name === "default")) {
+      errEl.textContent = "default 已存在；改用「覆蓋」或取另一個名稱";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    if ((state.data?.analyses || []).some(v => v.name === version)) {
+      errEl.textContent = `版本 ${version} 已存在；改用「覆蓋」`;
+      errEl.classList.remove("hidden");
+      return;
+    }
+    runMode = "new";
+  } else {
+    version = document.getElementById("reanalyze-target").value;
+    runMode = "overwrite";
+  }
+  hideModal("reanalyze-modal");
+  startAnalysis({ version, mode: runMode });
+});
+
+// ---- Version dropdown on the phenotype card ----------------------
+
+function renderVersionPicker() {
+  const select = document.getElementById("version-select");
+  const delBtn = document.getElementById("btn-delete-version");
+  if (!select) return;
+  const versions = state.data?.analyses || [];
+  const active   = state.data?.active_analysis || "";
+  if (!versions.length) {
+    select.innerHTML = `<option value="">—</option>`;
+    select.disabled = true;
+    if (delBtn) delBtn.hidden = true;
+    return;
+  }
+  select.disabled = false;
+  select.innerHTML = versions.map(v =>
+    `<option value="${escapeAttr(v.name)}" ${v.name === active ? "selected" : ""}>${escapeHtml(v.name)}</option>`
+  ).join("");
+  if (delBtn) delBtn.hidden = (active === "default");
+}
+
+document.getElementById("version-select")?.addEventListener("change", async (ev) => {
+  if (!state.currentLIS) return;
+  const target = ev.target.value;
+  if (!target || target === state.data?.active_analysis) return;
+
+  if (state.dirty) {
+    const ok = confirm("有未儲存的編輯。切換版本會丟失它們，繼續？");
+    if (!ok) {
+      ev.target.value = state.data?.active_analysis || "";
+      return;
+    }
+  }
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  await apiPut(`/samples/${encodeURIComponent(sid)}/active_analysis`, { name: target });
+  await loadSample(state.currentLIS);
+  renderAll();
+});
+
+document.getElementById("btn-delete-version")?.addEventListener("click", async () => {
+  if (!state.currentLIS) return;
+  const active = state.data?.active_analysis;
+  if (!active || active === "default") return;
+  if (!confirm(`刪除版本「${active}」？此操作無法復原。`)) return;
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  const resp = await fetch(`${API_BASE}/samples/${encodeURIComponent(sid)}/analyses/${encodeURIComponent(active)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  if (!resp.ok) {
+    alert("刪除失敗：" + resp.statusText);
+    return;
+  }
+  await loadSample(state.currentLIS);
+  renderAll();
+});
+
+// ---- Multi-version picker on load --------------------------------
+
+// When the loaded sample has more than one analysis version, pop a
+// picker so the reviewer chooses which one to land on. Defaults to
+// the active version. Single-version samples skip the picker.
+function maybeShowVersionPicker(onPick) {
+  const versions = state.data?.analyses || [];
+  if (versions.length <= 1) return false;
+  const active = state.data?.active_analysis || versions[0].name;
+  const list = document.getElementById("version-pick-list");
+  list.innerHTML = versions.map(v => {
+    const meta = [
+      v.updated_at ? `updated ${new Date(v.updated_at).toLocaleString()}` : "",
+      `${v.n_hpo} HPO + ${v.n_panels} panels`,
+      v.note ? `note: ${escapeHtml(v.note)}` : "",
+    ].filter(Boolean).join(" · ");
+    return `<li data-version="${escapeAttr(v.name)}" class="${v.name === active ? "active" : ""}">
+              <span class="v-name">${escapeHtml(v.name)}${v.name === "default" ? " (預設)" : ""}</span>
+              <span class="v-meta">${meta}</span>
+            </li>`;
+  }).join("");
+  list.onclick = async (ev) => {
+    const li = ev.target.closest("li[data-version]");
+    if (!li) return;
+    const target = li.dataset.version;
+    hideModal("version-pick-modal");
+    if (target !== active) {
+      const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+      const sid = row?.sample_id || state.currentLIS;
+      await apiPut(`/samples/${encodeURIComponent(sid)}/active_analysis`, { name: target });
+      await loadSample(state.currentLIS);
+    }
+    if (onPick) onPick();
+  };
+  showModal("version-pick-modal");
+  return true;
 }

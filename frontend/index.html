@@ -41,6 +41,7 @@
           <ul id="q-lis-dropdown" class="combobox-dropdown hidden"></ul>
         </label>
         <button id="btn-load" class="btn btn-primary">Load</button>
+        <button id="btn-new-case" class="btn">📥 載入新個案</button>
       </div>
       <div id="search-status" class="muted"></div>
     </section>
@@ -112,6 +113,11 @@
       <div class="phenotype-header">
         <h2>Patient phenotype</h2>
         <span id="phenotype-stats" class="muted"></span>
+        <span class="version-picker">
+          版本
+          <select id="version-select" class="meta-select"></select>
+          <button id="btn-delete-version" type="button" class="btn btn-ghost" title="刪除這個版本" hidden>🗑</button>
+        </span>
       </div>
 
       <div class="phenotype-row">
@@ -242,6 +248,91 @@
     </section>
 
   </main>
+
+  <!-- Load new case modal: collects basic info + TSV + phenotype.txt
+       (each file accepts either browser upload or a server-side path). -->
+  <div id="new-case-modal" class="modal hidden">
+    <form id="new-case-form" class="modal-card modal-card-wide">
+      <h2>載入新個案</h2>
+      <div class="form-grid">
+        <label>LIS_ID<input name="lis_id" required pattern="[A-Za-z0-9_\-]{1,32}" /></label>
+        <label>姓名<input name="name" required /></label>
+        <label>病歷號 (MRN)<input name="mrn" required /></label>
+        <label>Test type
+          <select name="test_type">
+            <option value="WES" selected>WES</option>
+            <option value="WGS">WGS</option>
+          </select>
+        </label>
+        <label>Genome build
+          <select name="genome_build">
+            <option value="hg38" selected>hg38</option>
+            <option value="hg19">hg19</option>
+          </select>
+        </label>
+        <label>Category<input name="category" placeholder="選填" /></label>
+        <label class="form-grid-wide">VCF 路徑 (server 上)<input name="vcf_path" placeholder="/home/n102968/NGS_UI/vcf/...vcf.gz" /></label>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">snv_indel.annotated.tsv</div>
+        <div class="form-source-tabs" data-target="tsv">
+          <button type="button" class="form-tab active" data-mode="upload">上傳檔案</button>
+          <button type="button" class="form-tab" data-mode="path">指定路徑</button>
+        </div>
+        <input type="file" name="tsv_file" accept=".tsv,.txt" />
+        <input type="text" name="tsv_path" placeholder="/home/n102968/NGS_UI/incoming/...tsv" hidden />
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">phenotype.txt （HPO + panel；選填）</div>
+        <div class="form-source-tabs" data-target="phenotype">
+          <button type="button" class="form-tab active" data-mode="upload">上傳檔案</button>
+          <button type="button" class="form-tab" data-mode="path">指定路徑</button>
+        </div>
+        <input type="file" name="phenotype_file" accept=".txt,.tsv" />
+        <input type="text" name="phenotype_path" placeholder="/home/n102968/NGS_UI/incoming/..._phenotype.txt" hidden />
+      </div>
+      <div id="new-case-error" class="error hidden"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="new-case-modal">取消</button>
+        <button type="submit" class="btn btn-primary">載入</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Re-analyze target picker (opens when ▶ 開始分析 is clicked). -->
+  <div id="reanalyze-modal" class="modal hidden">
+    <form id="reanalyze-form" class="modal-card">
+      <h2>選擇分析版本</h2>
+      <p class="muted">將以目前的 HPO + panels 重新計算分數並排入 Exomiser/LIRICAL。</p>
+      <label class="radio-row">
+        <input type="radio" name="reanalyze-mode" value="overwrite" checked />
+        <span>覆蓋現有版本：</span>
+        <select id="reanalyze-target"></select>
+      </label>
+      <label class="radio-row">
+        <input type="radio" name="reanalyze-mode" value="new" />
+        <span>建立新版本：</span>
+        <input id="reanalyze-name" type="text" placeholder="新版本名稱（[A-Za-z0-9_-]{1,32}）" pattern="[A-Za-z0-9_\-]{1,32}" />
+      </label>
+      <div id="reanalyze-error" class="error hidden"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="reanalyze-modal">取消</button>
+        <button type="submit" class="btn btn-primary">確認</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Version picker shown on load when a sample has > 1 versions. -->
+  <div id="version-pick-modal" class="modal hidden">
+    <form id="version-pick-form" class="modal-card">
+      <h2>選擇分析版本</h2>
+      <p class="muted">這個個案有多個分析版本。</p>
+      <ul id="version-pick-list" class="version-pick-list"></ul>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="version-pick-modal">取消</button>
+      </div>
+    </form>
+  </div>
 
   <!-- jsPDF (used by exportScreeningReport — Chinese font fetched on demand) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
