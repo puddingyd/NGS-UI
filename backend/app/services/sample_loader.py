@@ -26,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..adapters.snv_tsv import TIERS, load_snv_tsv
-from ..config import INDEX_PATH, TERTIARY_OUTPUT_ROOT
+from ..config import TERTIARY_OUTPUT_ROOT
 from . import analyses_store
 
 
@@ -67,29 +67,27 @@ def _to_num(s):
 def list_index() -> list[dict]:
     """Return the sample list for the top-bar combobox.
 
-    Prefer `_index.json` if present; otherwise scan subdirectories and
-    build a minimal entry from each `sample_metadata.json` (or just the
-    directory name).
+    Source of truth is a directory scan: every subdirectory of
+    tertiary_output/ that has sample_metadata.json shows up here. We
+    used to read tertiary_output/_index.json as a cache and short-
+    circuit the scan, but that hid samples freshly registered through
+    the UI (the cache file isn't auto-rewritten), so the directory
+    scan wins outright now. _index.json on disk is informational only
+    — anything the pipeline wants to advertise should land in
+    sample_metadata.json directly.
     """
-    # Canonical location lives next to the per-sample dirs so the
-    # tertiary pipeline can drop both at once. Fall back to the
-    # legacy NGS_UI/_index.json (one level up) for older deployments.
-    for idx_path in (
-        TERTIARY_OUTPUT_ROOT / "_index.json",
-        TERTIARY_OUTPUT_ROOT.parent / "_index.json",
-        INDEX_PATH,
-    ):
-        if idx_path.exists():
-            data = _read_json_or(idx_path, [])
-            return data if isinstance(data, list) else []
-
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():
         return out
     for sub in sorted(TERTIARY_OUTPUT_ROOT.iterdir()):
         if not sub.is_dir() or sub.name.startswith("_"):
             continue
-        meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+        meta_path = sub / "sample_metadata.json"
+        if not meta_path.exists():
+            # Pipeline-dropped sample that hasn't been registered yet —
+            # surfaces through /samples/unregistered, not the search bar.
+            continue
+        meta = _read_json_or(meta_path, {}) or {}
         out.append({
             "sample_id":     meta.get("sample_id") or sub.name,
             "lis_id":        meta.get("lis_id") or sub.name,
