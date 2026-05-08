@@ -763,6 +763,17 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .form-grid-wide { grid-column: 1 / -1; }
 
+/* MRN cell in the load-new-case modal: input + small EMR sync button
+   sit on one row so the button stays adjacent to the value the
+   reviewer just typed. */
+.mrn-with-button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.mrn-with-button > input { flex: 1; min-width: 0; }
+.mrn-with-button > button { flex: none; padding: 4px 8px; font-size: 12px; }
+
 .form-section { margin: 12px 0; padding: 12px; background: var(--chip-bg); border-radius: 6px; }
 .form-section-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
 .form-source-tabs {

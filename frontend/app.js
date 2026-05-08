@@ -3668,7 +3668,7 @@ document.getElementById("btn-emr-sync")?.addEventListener("click", async () => {
   const btn = document.getElementById("btn-emr-sync");
   const orig = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "🔄 同步中…";
+  btn.textContent = "同步中…";
   try {
     const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
     const sid = row?.sample_id || state.currentLIS;
@@ -3892,11 +3892,32 @@ document.addEventListener("click", ev => {
 // preview each time the reviewer scrubs the list.
 let _unregisteredById = {};
 
+// Editable HPO/panel state for the load-new-case modal. Mirrors
+// phenoEdit on the analysis page but kept separate so the analysis
+// page's running session isn't disturbed while the modal is open.
+const newCaseEdit = {
+  hpo: [],
+  panels: [],
+  emrPhenotype: null,   // raw EMR phenotype payload (read-only ref)
+  source: "",           // 'reviewer-txt' / 'EMR' / 'edited' — for the source line
+};
+
 document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   const form = document.getElementById("new-case-form");
   form?.reset();
   document.getElementById("new-case-error")?.classList.add("hidden");
-  _renderNewCasePhenoPreview(null);
+  newCaseEdit.hpo = [];
+  newCaseEdit.panels = [];
+  newCaseEdit.emrPhenotype = null;
+  newCaseEdit.source = "";
+  renderNewCasePhenoEditor();
+  renderNewCaseEmrRef();
+
+  // EMR sync button only shows when the server has client_id; mirrors
+  // the sample-card behaviour. The probe value is cached on
+  // bootAfterAuth so this is just a state read.
+  const emrBtn = document.getElementById("btn-new-case-emr");
+  if (emrBtn) emrBtn.hidden = !state.emrEnabled;
 
   // Populate the Category dropdown from /api/options so this modal +
   // the sample-card Category select share one source of truth.
@@ -3934,53 +3955,243 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   }
 });
 
-// Picking a sample previews its phenotype + auto-fills the MRN that
-// was embedded in the phenotype filename.
+// Picking a sample preloads phenotype from the reviewer txt + auto-
+// fills the MRN that was embedded in the phenotype filename.
 document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
   const lis_id = ev.target.value;
   const entry = _unregisteredById[lis_id];
-  if (!entry) { _renderNewCasePhenoPreview(null); return; }
-  if (entry.phenotype && entry.phenotype.mrn) {
-    const mrnInput = document.getElementById("new-case-mrn");
-    // Don't clobber a manually-typed MRN unless the field is empty.
-    if (mrnInput && !mrnInput.value) mrnInput.value = entry.phenotype.mrn;
-  }
-  _renderNewCasePhenoPreview(entry.phenotype || null);
-});
-
-function _renderNewCasePhenoPreview(pheno) {
-  const host = document.getElementById("new-case-pheno-preview");
-  if (!host) return;
-  if (!pheno) {
-    host.innerHTML = `<div class="muted" style="font-size:12px">沒有讀到 phenotype 檔案，可在分析畫面再補。`
-                   + `（路徑慣例：<code>NGS_UI/patient_phenotype/&lt;LIS_ID&gt;_&lt;MRN&gt;_phenotype.txt</code>）</div>`;
+  if (!entry) {
+    newCaseEdit.hpo = [];
+    newCaseEdit.panels = [];
+    newCaseEdit.source = "";
+    renderNewCasePhenoEditor();
     return;
   }
-  const hpoChips = (pheno.hpo || []).map(h =>
+  if (entry.phenotype && entry.phenotype.mrn) {
+    const mrnInput = document.getElementById("new-case-mrn");
+    if (mrnInput && !mrnInput.value) mrnInput.value = entry.phenotype.mrn;
+  }
+  if (entry.phenotype && (entry.phenotype.hpo?.length || entry.phenotype.panels?.length)) {
+    newCaseEdit.hpo = (entry.phenotype.hpo || []).map(h => ({...h}));
+    newCaseEdit.panels = (entry.phenotype.panels || []).map(p => ({...p}));
+    newCaseEdit.source = `reviewer txt：${entry.phenotype.path || ""}`;
+  } else {
+    newCaseEdit.hpo = [];
+    newCaseEdit.panels = [];
+    newCaseEdit.source = "未找到 reviewer phenotype.txt";
+  }
+  renderNewCasePhenoEditor();
+});
+
+// EMR sync button on the modal: pull name / sex / dob / phenotype
+// from the EMR APIs and merge into the form. Sex overwrites whatever
+// the reviewer picked (per spec). HPO chips get REPLACED with the EMR
+// list (so the EMR-reference column below shows what's available;
+// reviewer can then edit).
+document.getElementById("btn-new-case-emr")?.addEventListener("click", async () => {
+  const mrnInput  = document.getElementById("new-case-mrn");
+  const nameInput = document.getElementById("new-case-name");
+  const sexInput  = document.querySelector('#new-case-form select[name="sex"]');
+  const errEl     = document.getElementById("new-case-error");
+  const mrn = (mrnInput?.value || "").trim();
+  if (!mrn) {
+    errEl.textContent = "請先填 MRN 才能 EMR 同步";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  errEl.classList.add("hidden");
+  const btn = document.getElementById("btn-new-case-emr");
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "同步中…";
+  try {
+    const data = await apiFetch(`/emr/${encodeURIComponent(mrn)}`);
+    if (!data) throw new Error("EMR 無回應");
+    const consult = data.consultation || {};
+    const pheno   = data.phenotype    || {};
+    if (consult.sex && sexInput)            sexInput.value = consult.sex;
+    if (consult.records?.[0] && nameInput && !nameInput.value) {
+      // The consultation API doesn't carry the patient's name; nothing
+      // to fill from there. Left as-is for the reviewer to type.
+    }
+    if (pheno.hpo && pheno.hpo.length) {
+      newCaseEdit.hpo = pheno.hpo.map(h => ({...h}));
+      newCaseEdit.source = "EMR phenotype API";
+    }
+    newCaseEdit.emrPhenotype = pheno;
+    renderNewCasePhenoEditor();
+    renderNewCaseEmrRef();
+  } catch (e) {
+    errEl.textContent = "EMR 同步失敗：" + (e.message || e);
+    errEl.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+});
+
+function renderNewCasePhenoEditor() {
+  const hpoUl   = document.getElementById("new-case-hpo-chips");
+  const panelUl = document.getElementById("new-case-panel-chips");
+  const srcEl   = document.getElementById("new-case-pheno-source");
+  if (srcEl) srcEl.textContent = newCaseEdit.source ? `來源：${newCaseEdit.source}` : "";
+  if (hpoUl) {
+    hpoUl.innerHTML = (newCaseEdit.hpo || []).map((h, i) =>
+      `<li class="chip chip-hpo">`
+      + `<span class="hpo-id">${escapeHtml(h.phenotype || "")}</span>`
+      + `<span class="chip-label">${escapeHtml(h.label || "")}</span>`
+      + `<input type="number" class="chip-weight" data-nc-hpo-idx="${i}" value="${escapeAttr(String(h.weight ?? 1))}" min="0" step="0.5" title="weight" />`
+      + `<button type="button" class="chip-remove" data-nc-hpo-idx="${i}" title="移除">×</button>`
+      + `</li>`
+    ).join("");
+  }
+  if (panelUl) {
+    panelUl.innerHTML = (newCaseEdit.panels || []).map((p, i) =>
+      `<li class="chip chip-panel">`
+      + `<span class="chip-label">${escapeHtml(p.name || "")}</span>`
+      + `<input type="number" class="chip-weight" data-nc-panel-idx="${i}" value="${escapeAttr(String(p.weight ?? 1))}" min="0" step="0.5" title="weight" />`
+      + `<button type="button" class="chip-remove" data-nc-panel-idx="${i}" title="移除">×</button>`
+      + `</li>`
+    ).join("");
+  }
+}
+
+function renderNewCaseEmrRef() {
+  const host = document.getElementById("new-case-emr-pheno");
+  if (!host) return;
+  const p = newCaseEdit.emrPhenotype;
+  if (!p || !p.found) {
+    host.innerHTML = `<span class="muted" style="font-size:12px">尚未從 EMR 抓取（或 EMR 無資料）。</span>`;
+    return;
+  }
+  const chips = (p.hpo || []).map(h =>
     `<li class="chip chip-hpo">`
     + `<span class="hpo-id">${escapeHtml(h.phenotype || "")}</span>`
     + `<span class="chip-label">${escapeHtml(h.label || "")}</span>`
-    + (h.weight && h.weight !== 1 ? `<span class="muted">w=${escapeHtml(String(h.weight))}</span>` : "")
     + `</li>`
   ).join("");
-  const panelChips = (pheno.panels || []).map(p =>
-    `<li class="chip chip-panel">`
-    + `<span class="chip-label">${escapeHtml(p.name || "")}</span>`
-    + (p.weight && p.weight !== 1 ? `<span class="muted">w=${escapeHtml(String(p.weight))}</span>` : "")
-    + `</li>`
-  ).join("");
+  const notes = (p.notes || []).map(n => `<li class="muted" style="font-size:11px">${escapeHtml(n)}</li>`).join("");
   host.innerHTML = `
-    <div class="muted" style="font-size:11px;margin-bottom:6px">${escapeHtml(pheno.path || "")}</div>
-    <div class="phenotype-row">
-      <label class="phenotype-label">HPO terms</label>
-      <ul class="phenotype-chips">${hpoChips || '<li class="muted">（無）</li>'}</ul>
-    </div>
-    <div class="phenotype-row">
-      <label class="phenotype-label">Custom panels</label>
-      <ul class="phenotype-chips">${panelChips || '<li class="muted">（無）</li>'}</ul>
-    </div>
+    <ul class="phenotype-chips" style="margin:0">${chips || '<li class="muted">（EMR 無 HPO）</li>'}</ul>
+    ${notes ? `<ul style="margin:6px 0 0;padding:0;list-style:none">${notes}</ul>` : ""}
+    <div class="muted" style="font-size:11px;margin-top:4px">EMR date: ${escapeHtml(p.date || "")}</div>
   `;
 }
+
+// Chip remove + weight editing for the modal. Document-level so the
+// chips can be re-rendered without rebinding listeners.
+document.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-nc-hpo-idx], [data-nc-panel-idx]");
+  if (!btn || !btn.matches(".chip-remove")) return;
+  const hpoIdx = btn.getAttribute("data-nc-hpo-idx");
+  const pnlIdx = btn.getAttribute("data-nc-panel-idx");
+  if (hpoIdx !== null) newCaseEdit.hpo.splice(Number(hpoIdx), 1);
+  if (pnlIdx !== null) newCaseEdit.panels.splice(Number(pnlIdx), 1);
+  newCaseEdit.source = newCaseEdit.source ? newCaseEdit.source + "（已編輯）" : "已編輯";
+  renderNewCasePhenoEditor();
+});
+document.addEventListener("change", ev => {
+  const inp = ev.target;
+  if (!inp.matches(".chip-weight")) return;
+  const hpoIdx = inp.getAttribute("data-nc-hpo-idx");
+  const pnlIdx = inp.getAttribute("data-nc-panel-idx");
+  const w = parseFloat(inp.value);
+  if (Number.isNaN(w)) return;
+  if (hpoIdx !== null && newCaseEdit.hpo[Number(hpoIdx)]) newCaseEdit.hpo[Number(hpoIdx)].weight = w;
+  if (pnlIdx !== null && newCaseEdit.panels[Number(pnlIdx)]) newCaseEdit.panels[Number(pnlIdx)].weight = w;
+});
+
+// Search dropdowns for the modal. Wire to /api/hpo/search and
+// /api/panels with the same shapes the analysis page uses, but
+// scoped to #new-case-* element ids so the analysis-page handlers
+// don't pick these up.
+let _ncHpoSearchTimer = null;
+let _ncPanelSearchTimer = null;
+document.addEventListener("input", ev => {
+  if (ev.target.id === "new-case-hpo-search") {
+    clearTimeout(_ncHpoSearchTimer);
+    _ncHpoSearchTimer = setTimeout(() => _ncRunHpoSearch(ev.target.value), 200);
+  } else if (ev.target.id === "new-case-panel-search") {
+    clearTimeout(_ncPanelSearchTimer);
+    _ncPanelSearchTimer = setTimeout(() => _ncRunPanelSearch(ev.target.value), 200);
+  }
+});
+async function _ncRunHpoSearch(q) {
+  const drop = document.getElementById("new-case-hpo-search-dropdown");
+  if (!drop) return;
+  q = (q || "").trim();
+  if (!q) { drop.classList.add("hidden"); drop.innerHTML = ""; return; }
+  let rows = [];
+  try { rows = await apiFetch(`/hpo/search?q=${encodeURIComponent(q)}&limit=15`) || []; }
+  catch { rows = []; }
+  if (!rows.length) { drop.classList.add("hidden"); drop.innerHTML = ""; return; }
+  drop.innerHTML = rows.map(r =>
+    `<li class="combobox-option" data-nc-hpo-pick='${escapeAttr(JSON.stringify(r))}'>`
+    + `<span class="opt-lis">${escapeHtml(r.hpo_id || "")}</span>`
+    + `<span class="opt-name">${escapeHtml(r.name || "")}</span>`
+    + (r.gene_count ? `<span class="opt-mrn">${r.gene_count} genes</span>` : "")
+    + `</li>`
+  ).join("");
+  drop.classList.remove("hidden");
+}
+async function _ncRunPanelSearch(q) {
+  const drop = document.getElementById("new-case-panel-search-dropdown");
+  if (!drop) return;
+  q = (q || "").trim();
+  let rows = [];
+  try { rows = await apiFetch("/panels") || []; }
+  catch { rows = []; }
+  if (q) {
+    const ql = q.toLowerCase();
+    rows = rows.filter(r => (r.name || "").toLowerCase().includes(ql));
+  }
+  rows = rows.slice(0, 15);
+  if (!rows.length) { drop.classList.add("hidden"); drop.innerHTML = ""; return; }
+  drop.innerHTML = rows.map(r =>
+    `<li class="combobox-option" data-nc-panel-pick='${escapeAttr(JSON.stringify(r))}'>`
+    + `<span class="opt-name">${escapeHtml(r.name || "")}</span>`
+    + (r.n_genes ? `<span class="opt-mrn">${r.n_genes} genes</span>` : "")
+    + `</li>`
+  ).join("");
+  drop.classList.remove("hidden");
+}
+document.addEventListener("mousedown", ev => {
+  const opt = ev.target.closest("[data-nc-hpo-pick], [data-nc-panel-pick]");
+  if (!opt) return;
+  ev.preventDefault();
+  if (opt.dataset.ncHpoPick) {
+    const r = JSON.parse(opt.dataset.ncHpoPick);
+    const id = r.hpo_id || r.phenotype || "";
+    if (!id) return;
+    if (!newCaseEdit.hpo.some(h => h.phenotype === id)) {
+      newCaseEdit.hpo.push({phenotype: id, label: r.name || id, weight: 1});
+      newCaseEdit.source = newCaseEdit.source ? newCaseEdit.source + "（已編輯）" : "已編輯";
+    }
+    document.getElementById("new-case-hpo-search").value = "";
+    document.getElementById("new-case-hpo-search-dropdown").classList.add("hidden");
+    renderNewCasePhenoEditor();
+  } else if (opt.dataset.ncPanelPick) {
+    const r = JSON.parse(opt.dataset.ncPanelPick);
+    const name = r.name || "";
+    if (!name) return;
+    if (!newCaseEdit.panels.some(p => p.name === name)) {
+      newCaseEdit.panels.push({name, weight: 1});
+      newCaseEdit.source = newCaseEdit.source ? newCaseEdit.source + "（已編輯）" : "已編輯";
+    }
+    document.getElementById("new-case-panel-search").value = "";
+    document.getElementById("new-case-panel-search-dropdown").classList.add("hidden");
+    renderNewCasePhenoEditor();
+  }
+});
+document.addEventListener("focusout", ev => {
+  // Slight delay so click on a dropdown row lands first.
+  if (ev.target.id === "new-case-hpo-search") {
+    setTimeout(() => document.getElementById("new-case-hpo-search-dropdown")?.classList.add("hidden"), 150);
+  }
+  if (ev.target.id === "new-case-panel-search") {
+    setTimeout(() => document.getElementById("new-case-panel-search-dropdown")?.classList.add("hidden"), 150);
+  }
+});
 
 document.getElementById("new-case-form")?.addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -3989,6 +4200,13 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
   errEl.classList.add("hidden");
   errEl.textContent = "";
   const fd = new FormData(form);
+  // Always send the modal-edited chips; backend uses them as the
+  // authoritative phenotype (overrides reviewer txt + EMR fallback).
+  fd.set("hpo_json",    JSON.stringify(newCaseEdit.hpo || []));
+  fd.set("panels_json", JSON.stringify(newCaseEdit.panels || []));
+  // run_analysis=true so backend enqueues exomiser/lirical right
+  // after register, regardless of whether chips were edited.
+  fd.set("run_analysis", "true");
   try {
     const resp = await fetch(`${API_BASE}/samples`, {
       method: "POST",
@@ -4006,18 +4224,15 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
     }
     const out = await resp.json();
     hideModal("new-case-modal");
-    // Refresh the index so the new sample is searchable, then load it.
     await loadIndex();
     await loadSample(out.sample_id);
     renderAll();
-    // Surface where the phenotype file was looked for so the reviewer
-    // knows whether HPO/panels got loaded automatically.
     const stEl = document.getElementById("search-status");
     if (stEl) {
-      stEl.textContent = out.phenotype_loaded
-        ? `已登錄 ${out.sample_id}（已載入 ${out.phenotype_path}）`
-        : `已登錄 ${out.sample_id}（${out.phenotype_path} 不存在，HPO/panels 留空）`;
+      const job = out.job_id ? `；分析已排入 (${out.job_id})` : "";
+      stEl.textContent = `已登錄 ${out.sample_id}${job}`;
     }
+    if (out.job_id) _startJobPolling(out.sample_id, out.job_id);
   } catch (e) {
     errEl.textContent = e.message;
     errEl.classList.remove("hidden");

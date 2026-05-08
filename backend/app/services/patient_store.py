@@ -62,7 +62,18 @@ def register(
     genome_build: str = "hg38",
     category: str = "",
     phenotype_text: str = "",
+    hpo: list | None = None,
+    panels: list | None = None,
 ) -> dict:
+    """Attach reviewer-side info to a pipeline-produced directory.
+
+    Phenotype precedence:
+      1. Explicit `hpo` / `panels` lists (frontend-edited chips win;
+         already include any EMR-sourced terms the reviewer kept).
+      2. Else parse `phenotype_text` (the reviewer's
+         <LIS>_<MRN>_phenotype.txt content).
+      3. Else fall back to the EMR phenotype API.
+    """
     """Attach reviewer-side info to a pipeline-produced directory.
 
     The directory tertiary_output/{lis_id}/ must already exist with at
@@ -96,13 +107,20 @@ def register(
     # Parse the reviewer-curated phenotype.txt first; if it had any
     # content treat that as authoritative. Otherwise fall back to the
     # EMR's GetPhenotypeList output (best-effort: reviewer txt wins
-    # per the system convention).
-    hpo, panels = phenotype_io.parse(phenotype_text or "")
-    emr_payload = emr_client.fetch(mrn) if mrn else {}
-    if not hpo and not panels:
-        emr_pheno = emr_payload.get("phenotype") or {}
-        if emr_pheno.get("found"):
-            hpo = emr_pheno.get("hpo") or []
+    # per the system convention). Frontend-edited chips override
+    # both — they were derived from one of these sources and may
+    # have been edited.
+    if hpo is not None or panels is not None:
+        hpo = list(hpo or [])
+        panels = list(panels or [])
+        emr_payload = emr_client.fetch(mrn) if mrn else {}
+    else:
+        hpo, panels = phenotype_io.parse(phenotype_text or "")
+        emr_payload = emr_client.fetch(mrn) if mrn else {}
+        if not hpo and not panels:
+            emr_pheno = emr_payload.get("phenotype") or {}
+            if emr_pheno.get("found"):
+                hpo = emr_pheno.get("hpo") or []
 
     # Sex / dob / genetic_counseling come from the consultation API.
     # Sex from EMR overwrites whatever the reviewer typed (per spec);

@@ -90,7 +90,7 @@
               <span id="m-mrn"></span>
               <button id="m-mrn-copy" class="btn-copy" type="button" title="複製 MRN" hidden></button>
               <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
-              <button id="btn-emr-sync" class="btn btn-link" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>🔄 EMR 同步</button>
+              <button id="btn-emr-sync" class="btn btn-link" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>EMR 同步</button>
             </span>
           </div>
           <div>
@@ -143,7 +143,7 @@
         <span id="counseling-synced" class="muted" style="font-size:11px"></span>
       </div>
       <div id="counseling-body" class="clinical-body">
-        <textarea id="counseling-text" rows="5" placeholder="EMR 看診紀錄（按 🔄 從 EMR 同步 抓取 / 可手動編輯）..."></textarea>
+        <textarea id="counseling-text" rows="5" placeholder="EMR 看診紀錄（按 EMR 同步 抓取 / 可手動編輯）..."></textarea>
       </div>
     </section>
 
@@ -303,8 +303,13 @@
             <option value="">— 載入中… —</option>
           </select>
         </label>
-        <label>姓名<input name="name" required /></label>
-        <label>病歷號 (MRN)<input name="mrn" id="new-case-mrn" required /></label>
+        <label>姓名<input name="name" id="new-case-name" required /></label>
+        <label>病歷號 (MRN)
+          <span class="mrn-with-button">
+            <input name="mrn" id="new-case-mrn" required />
+            <button type="button" id="btn-new-case-emr" class="btn btn-link" hidden title="從 EMR 抓取 sex / 看診紀錄 / phenotype">EMR 同步</button>
+          </span>
+        </label>
         <label>Sex
           <select name="sex">
             <option value="" selected>—</option>
@@ -332,10 +337,28 @@
         </label>
       </div>
       <div class="form-section">
-        <div class="form-section-title">Phenotype</div>
-        <div id="new-case-pheno-preview" class="new-case-pheno-preview">
-          <div class="muted" style="font-size:12px">選擇上方個案後在這裡顯示。</div>
+        <div class="form-section-title">Phenotype（可編輯）</div>
+        <div id="new-case-pheno-source" class="muted" style="font-size:11px;margin-bottom:6px"></div>
+        <div class="phenotype-row">
+          <label class="phenotype-label">HPO terms</label>
+          <ul id="new-case-hpo-chips" class="phenotype-chips"></ul>
+          <div class="hpo-add">
+            <input id="new-case-hpo-search" type="text" placeholder="輸入 HPO 名稱或 HP:ID 搜尋…" autocomplete="off" />
+            <ul id="new-case-hpo-search-dropdown" class="combobox-dropdown hidden"></ul>
+          </div>
         </div>
+        <div class="phenotype-row">
+          <label class="phenotype-label">Custom panels</label>
+          <ul id="new-case-panel-chips" class="phenotype-chips"></ul>
+          <div class="hpo-add">
+            <input id="new-case-panel-search" type="text" placeholder="輸入 panel 名稱搜尋…" autocomplete="off" />
+            <ul id="new-case-panel-search-dropdown" class="combobox-dropdown hidden"></ul>
+          </div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-title">EMR 上的 phenotype（參考用）</div>
+        <div id="new-case-emr-pheno" class="muted" style="font-size:12px">尚未從 EMR 抓取。</div>
       </div>
       <div id="new-case-error" class="error hidden"></div>
       <div class="modal-actions">

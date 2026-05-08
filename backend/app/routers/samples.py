@@ -48,6 +48,9 @@ def register_sample(
     test_type:     str = Form("WES"),
     genome_build:  str = Form("hg38"),
     category:      str = Form(""),
+    hpo_json:      str = Form(""),
+    panels_json:   str = Form(""),
+    run_analysis:  str = Form(""),
 ):
     """Attach reviewer-side info to a pipeline-produced directory.
 
@@ -64,6 +67,18 @@ def register_sample(
     empty hpo/panels and the response includes phenotype_loaded=false
     so the UI can hint about it.
     """
+    # Frontend-edited chips arrive as JSON strings; an empty string
+    # means "no override → fall back to file/EMR" (handled inside
+    # register()). Bad JSON falls back too rather than 4xxing.
+    import json as _json
+    hpo_payload = panels_payload = None
+    if hpo_json or panels_json:
+        try:
+            hpo_payload    = _json.loads(hpo_json)    if hpo_json    else []
+            panels_payload = _json.loads(panels_json) if panels_json else []
+        except _json.JSONDecodeError:
+            hpo_payload = panels_payload = None
+
     pheno_path = PHENOTYPE_DIR / f"{lis_id}_{mrn}_phenotype.txt"
     phenotype_text = ""
     phenotype_loaded = False
@@ -77,6 +92,7 @@ def register_sample(
             test_type=test_type, genome_build=genome_build,
             category=category,
             phenotype_text=phenotype_text,
+            hpo=hpo_payload, panels=panels_payload,
         )
     except FileExistsError as e:
         raise HTTPException(409, str(e))
@@ -84,11 +100,27 @@ def register_sample(
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
+    # If the reviewer asked us to run analysis on register (or if any
+    # phenotype data ended up populated), enqueue exomiser/lirical so
+    # the cards have scores by the time they finish reading the
+    # patient's basic info. Failure to enqueue is non-fatal — the
+    # sample is registered, reviewer can hit ▶ 開始分析 manually.
+    job_id = None
+    should_run = (str(run_analysis).lower() in ("1", "true", "yes", "on")
+                  or bool(hpo_payload) or bool(panels_payload))
+    if should_run:
+        try:
+            from . import jobs as _jobs
+            rec = _jobs._enqueue(lis_id, "exomiser_lirical", version="default")
+            job_id = rec.get("job_id")
+        except Exception:
+            job_id = None
     return {
         "sample_id": lis_id,
         "meta": meta,
         "phenotype_loaded": phenotype_loaded,
         "phenotype_path":   str(pheno_path),
+        "job_id":           job_id,
     }
 
 
