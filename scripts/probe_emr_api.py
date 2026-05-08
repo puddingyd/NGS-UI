@@ -29,11 +29,13 @@ from __future__ import annotations
 
 import json
 import re
+import ssl
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
-
-import requests
 
 
 PHENO_URL = "http://hisweb.hosp.ncku/hisservice/opd/nckuhisweb/aspx/DelegateExamServiceGate.aspx/GetPhenotypeList"
@@ -87,52 +89,70 @@ def try_fix_json(raw: str):
         return f"<repair failed: {e}>"
 
 
+def _post(url: str, body: bytes, headers: dict, timeout: int = 15) -> tuple[int, str]:
+    """Plain urllib POST. Returns (status, text). Treats HTTP error
+    responses (4xx/5xx) as data, not exceptions, so probing a missing
+    MRN still returns the body for inspection."""
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    # The intranet HTTPS endpoint may use an internal CA the system
+    # trust store doesn't know about; the apim gateway is internal-
+    # only, so accept self-signed for the probe.
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            return resp.status, resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", errors="replace")
+
+
 def fetch_phenotype(mrn: str) -> dict:
     """Returns {http_status, raw_size, parse, parsed} for one MRN."""
-    payload = {"JasonInputValue": json.dumps({"ChartNo": mrn})}
+    form = urllib.parse.urlencode({"JasonInputValue": json.dumps({"ChartNo": mrn})}).encode("utf-8")
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
     try:
-        r = requests.post(PHENO_URL, data=payload, timeout=15)
+        status, raw = _post(PHENO_URL, form, headers)
     except Exception as exc:
         return {"http_status": "EXC", "raw_size": 0, "parse": "exc",
                 "parsed": str(exc)}
-    raw = r.text
     (OUT_DIR / f"{mrn}_phenotype.txt").write_text(raw, encoding="utf-8")
     # The .sh splits on \n\n then escapes inner newlines. Replicate.
     json_part = raw.replace("\r", "").split("\n\n")[0].replace("\n", "\\n")
     try:
         parsed = json.loads(json_part, strict=False)
-        return {"http_status": r.status_code, "raw_size": len(raw),
+        return {"http_status": status, "raw_size": len(raw),
                 "parse": "ok", "parsed": parsed}
     except json.JSONDecodeError as e:
         repaired = try_fix_json(json_part)
-        return {"http_status": r.status_code, "raw_size": len(raw),
+        return {"http_status": status, "raw_size": len(raw),
                 "parse": "repaired" if isinstance(repaired, (list, dict))
                                      else "broken",
                 "parsed": repaired, "json_error": str(e)}
 
 
 def fetch_consultation(mrn: str) -> dict:
-    body = json.dumps({"chartNo": mrn, "tcode": CONSULT_TCODE})
+    body = json.dumps({"chartNo": mrn, "tcode": CONSULT_TCODE}).encode("utf-8")
     headers = {
-        "Content-Type":   "application/json",
-        "Accept":         "application/json",
+        "Content-Type":    "application/json",
+        "Accept":          "application/json",
         "X-IBM-Client-Id": APIM_CLIENT_ID,
     }
     try:
-        r = requests.post(CONSULT_URL, data=body, headers=headers, timeout=15)
+        status, raw = _post(CONSULT_URL, body, headers)
     except Exception as exc:
         return {"http_status": "EXC", "raw_size": 0, "parse": "exc",
                 "parsed": str(exc)}
-    (OUT_DIR / f"{mrn}_consultation.json").write_text(r.text, encoding="utf-8")
-    if r.status_code != 200:
-        return {"http_status": r.status_code, "raw_size": len(r.text),
-                "parse": "http", "parsed": r.text[:500]}
+    (OUT_DIR / f"{mrn}_consultation.json").write_text(raw, encoding="utf-8")
+    if status != 200:
+        return {"http_status": status, "raw_size": len(raw),
+                "parse": "http", "parsed": raw[:500]}
     try:
-        return {"http_status": r.status_code, "raw_size": len(r.text),
-                "parse": "ok", "parsed": r.json()}
+        return {"http_status": status, "raw_size": len(raw),
+                "parse": "ok", "parsed": json.loads(raw)}
     except json.JSONDecodeError as e:
-        return {"http_status": r.status_code, "raw_size": len(r.text),
-                "parse": "broken", "parsed": r.text[:500],
+        return {"http_status": status, "raw_size": len(raw),
+                "parse": "broken", "parsed": raw[:500],
                 "json_error": str(e)}
 
 
