@@ -360,6 +360,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 
 /* Clinical description card (same collapsible feel as block-header) */
 #clinical-card,
+#counseling-card,
 #comment-card { padding: 0; overflow: hidden; }
 .clinical-header {
   display: flex;
@@ -1259,18 +1260,6 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 4px;
 }
 .chip-weight:hover { background: rgba(0,0,0,0.05); }
-/* Number-input variant used by the load-new-case modal. Default
-   browser sizing leaves room for a 6+-character value plus chunky
-   spinner buttons; cap to fit a single digit so the chip stays
-   compact. */
-input.chip-weight[type="number"] {
-  width: 3.2em;
-  text-align: center;
-  border: 1px solid var(--border);
-  background: #fff;
-  cursor: text;
-  padding: 1px 2px 1px 4px;
-}
 .chip-remove {
   border: 0;
   background: transparent;
