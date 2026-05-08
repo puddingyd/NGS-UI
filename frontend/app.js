@@ -4090,6 +4090,35 @@ document.addEventListener("click", ev => {
   newCaseEdit.source = newCaseEdit.source ? newCaseEdit.source + "（已編輯）" : "已編輯";
   renderNewCasePhenoEditor();
 });
+// Asymmetric step on the load-new-case chip-weight inputs:
+// down-arrow steps by -0.5 (HTML default with step=0.5), but
+// up-arrow should bump by +1 instead of +0.5. Browsers don't
+// support that natively, so we intercept 'input' events from the
+// spinner: a +0.5 delta means the up-arrow fired and we override
+// the value to prev+1. Typed-in values pass through untouched.
+function _trackChipWeightPrev(ev) {
+  const inp = ev.target;
+  if (inp.matches(".chip-weight[data-nc-hpo-idx], .chip-weight[data-nc-panel-idx]")) {
+    inp.dataset.prev = inp.value;
+  }
+}
+document.addEventListener("focusin",  _trackChipWeightPrev, true);
+document.addEventListener("mousedown", _trackChipWeightPrev, true);
+
+document.addEventListener("input", ev => {
+  const inp = ev.target;
+  if (!inp.matches(".chip-weight[data-nc-hpo-idx], .chip-weight[data-nc-panel-idx]")) return;
+  const prev = parseFloat(inp.dataset.prev);
+  const cur  = parseFloat(inp.value);
+  if (Number.isFinite(prev) && Number.isFinite(cur)) {
+    // Native +0.5 spinner click → bump to prev+1 instead.
+    if (Math.abs((cur - prev) - 0.5) < 0.01) {
+      inp.value = String(prev + 1);
+    }
+  }
+  inp.dataset.prev = inp.value;
+});
+
 document.addEventListener("change", ev => {
   const inp = ev.target;
   if (!inp.matches(".chip-weight")) return;

@@ -729,6 +729,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 8px;
   max-width: 500px;
   width: 90%;
+  /* Tall content (load-new-case modal with chips + EMR ref) was
+     getting clipped below the viewport, hiding the submit button.
+     Cap the card at 90vh and let it scroll internally. */
+  max-height: 90vh;
+  overflow-y: auto;
 }
 .modal-card h2 { margin-top: 0; }
 /* Default styling targets text-like fields only — radios/checkboxes/
@@ -1254,6 +1259,18 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 4px;
 }
 .chip-weight:hover { background: rgba(0,0,0,0.05); }
+/* Number-input variant used by the load-new-case modal. Default
+   browser sizing leaves room for a 6+-character value plus chunky
+   spinner buttons; cap to fit a single digit so the chip stays
+   compact. */
+input.chip-weight[type="number"] {
+  width: 3.2em;
+  text-align: center;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: text;
+  padding: 1px 2px 1px 4px;
+}
 .chip-remove {
   border: 0;
   background: transparent;
