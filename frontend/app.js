@@ -3974,11 +3974,11 @@ document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
   if (entry.phenotype && (entry.phenotype.hpo?.length || entry.phenotype.panels?.length)) {
     newCaseEdit.hpo = (entry.phenotype.hpo || []).map(h => ({...h}));
     newCaseEdit.panels = (entry.phenotype.panels || []).map(p => ({...p}));
-    newCaseEdit.source = `reviewer txt：${entry.phenotype.path || ""}`;
+    newCaseEdit.source = "Web phenotype input tool";
   } else {
     newCaseEdit.hpo = [];
     newCaseEdit.panels = [];
-    newCaseEdit.source = "未找到 reviewer phenotype.txt";
+    newCaseEdit.source = "未找到 Web phenotype input tool 紀錄";
   }
   renderNewCasePhenoEditor();
 });
@@ -4020,7 +4020,7 @@ document.getElementById("btn-new-case-emr")?.addEventListener("click", async () 
       // reference row below. Reviewer can manually copy into the
       // editable chips. EMR populates the editable chips only when txt
       // was missing.
-      const hasTxt = (newCaseEdit.source || "").startsWith("reviewer txt");
+      const hasTxt = (newCaseEdit.source || "").startsWith("Web phenotype input tool");
       if (!hasTxt) {
         newCaseEdit.hpo = pheno.hpo.map(h => ({...h}));
         newCaseEdit.source = "EMR phenotype API";
