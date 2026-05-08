@@ -4015,8 +4015,16 @@ document.getElementById("btn-new-case-emr")?.addEventListener("click", async () 
       // to fill from there. Left as-is for the reviewer to type.
     }
     if (pheno.hpo && pheno.hpo.length) {
-      newCaseEdit.hpo = pheno.hpo.map(h => ({...h}));
-      newCaseEdit.source = "EMR phenotype API";
+      // txt phenotype is authoritative: if the reviewer-curated txt
+      // had any HPO/panel chips, EMR sync only refreshes the read-only
+      // reference row below. Reviewer can manually copy into the
+      // editable chips. EMR populates the editable chips only when txt
+      // was missing.
+      const hasTxt = (newCaseEdit.source || "").startsWith("reviewer txt");
+      if (!hasTxt) {
+        newCaseEdit.hpo = pheno.hpo.map(h => ({...h}));
+        newCaseEdit.source = "EMR phenotype API";
+      }
     }
     newCaseEdit.emrPhenotype = pheno;
     renderNewCasePhenoEditor();
@@ -4068,16 +4076,12 @@ function renderNewCaseEmrRef() {
     host.innerHTML = `<span class="muted" style="font-size:12px">尚未從 EMR 抓取（或 EMR 無資料）。</span>`;
     return;
   }
-  const chips = (p.hpo || []).map(h =>
-    `<li class="chip chip-hpo">`
-    + `<span class="hpo-id">${escapeHtml(h.phenotype || "")}</span>`
-    + `<span class="chip-label">${escapeHtml(h.label || "")}</span>`
-    + `</li>`
-  ).join("");
-  const notes = (p.notes || []).map(n => `<li class="muted" style="font-size:11px">${escapeHtml(n)}</li>`).join("");
+  // Show the EMR text exactly as it lives in the EMR — no chip
+  // parsing — so the reviewer can read EMR's own wording and decide
+  // what to copy into the editable phenotype chips above.
+  const raw = p.raw_content || "";
   host.innerHTML = `
-    <ul class="phenotype-chips" style="margin:0">${chips || '<li class="muted">（EMR 無 HPO）</li>'}</ul>
-    ${notes ? `<ul style="margin:6px 0 0;padding:0;list-style:none">${notes}</ul>` : ""}
+    <textarea class="emr-ref-text" readonly rows="6" placeholder="（EMR 無內容）">${escapeHtml(raw)}</textarea>
     <div class="muted" style="font-size:11px;margin-top:4px">EMR date: ${escapeHtml(p.date || "")}</div>
   `;
 }

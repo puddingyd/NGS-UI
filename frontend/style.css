@@ -1260,6 +1260,20 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 4px;
 }
 .chip-weight:hover { background: rgba(0,0,0,0.05); }
+/* Read-only EMR reference textarea inside the load-new-case modal. */
+.emr-ref-text {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
+  background: #f6f8fa;
+  color: var(--fg);
+  white-space: pre-wrap;
+}
 .chip-remove {
   border: 0;
   background: transparent;
