@@ -378,6 +378,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .clinical-body { padding: 8px 12px; display: none; }
 .clinical-body.open { display: block; }
 #clinical-text,
+#counseling-text,
 #comment-text {
   width: 100%;
   box-sizing: border-box;
@@ -391,7 +392,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 /* Auto-grow: when JS bumps the height to scrollHeight on input, the
    textarea expands instead of showing a scroll bar. */
-#clinical-text { min-height: calc(1.5em * 5 + 12px); }
+#clinical-text,
+#counseling-text { min-height: calc(1.5em * 5 + 12px); }
 
 /* Comment card body lays out textarea + tag picker side-by-side. */
 .comment-row-flex { display: flex; gap: 12px; align-items: stretch; }
