@@ -377,6 +377,13 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .clinical-header.open .arrow::before { transform: rotate(90deg); }
 .clinical-body { padding: 8px 12px; display: none; }
 .clinical-body.open { display: block; }
+/* Clinical / counseling cards keep no extra inner padding — the .card
+   shell already pads the content, and double-padding made the nested
+   textarea look indented compared to the outer box. The comment card
+   keeps the .clinical-body padding because its tag-picker side-by-
+   side layout needs the breathing room. */
+#clinical-body.open,
+#counseling-body.open { padding: 0; }
 #clinical-text,
 #counseling-text,
 #comment-text {
