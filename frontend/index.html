@@ -90,6 +90,7 @@
               <span id="m-mrn"></span>
               <button id="m-mrn-copy" class="btn-copy" type="button" title="複製 MRN" hidden></button>
               <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
+              <button id="btn-emr-sync" class="btn btn-link" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>🔄 EMR 同步</button>
             </span>
           </div>
           <div>
@@ -133,6 +134,17 @@
     <section id="qc-card" class="card hidden">
       <h2>⚠ QC Blacklist 警告</h2>
       <ul id="qc-warnings" class="qc-warnings"></ul>
+    </section>
+
+    <!-- Genetic counseling (auto-loaded from EMR consultation API; reviewer-editable). -->
+    <section id="counseling-card" class="card hidden">
+      <div id="counseling-header" class="clinical-header">
+        <span><span class="arrow"></span><span class="title">Genetic counseling</span></span>
+        <span id="counseling-synced" class="muted" style="font-size:11px"></span>
+      </div>
+      <div id="counseling-body" class="clinical-body">
+        <textarea id="counseling-text" rows="5" placeholder="EMR 看診紀錄（按 🔄 從 EMR 同步 抓取 / 可手動編輯）..."></textarea>
+      </div>
     </section>
 
     <!-- Clinical presentation (free-text) -->

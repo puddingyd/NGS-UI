@@ -127,10 +127,12 @@ async function loadSample(LIS_ID) {
   const data = await apiFetch(`/samples/${encodeURIComponent(sid)}`);
   if (!data) throw new Error(`找不到 sample ${sid}`);
   const reports = await apiFetch(`/samples/${encodeURIComponent(sid)}/report`) || {
-    status: {}, edits: {}, panels: {}, clinical_description: "", comment: "",
+    status: {}, edits: {}, panels: {}, clinical_description: "",
+    genetic_counseling: "", comment: "",
     category: null, yield: 0, updated_at: null,
   };
   if (reports.clinical_description == null) reports.clinical_description = "";
+  if (reports.genetic_counseling   == null) reports.genetic_counseling   = data.genetic_counseling || "";
   if (reports.comment == null)               reports.comment = "";
   if (!Array.isArray(reports.tags))          reports.tags = [];
   if (!Array.isArray(reports.manual_variants)) reports.manual_variants = [];
@@ -359,6 +361,10 @@ function renderSampleMeta() {
   } else {
     emr.removeAttribute("href"); emr.hidden = true;
   }
+  // 🔄 EMR sync button only appears when the server has a client_id
+  // configured AND the sample carries an MRN to look up.
+  const sync = document.getElementById("btn-emr-sync");
+  if (sync) sync.hidden = !(state.emrEnabled && m.MRN);
 
   // Editable selects backed by sample_metadata.json
   document.getElementById("m-test").value  = m.Test || "";
@@ -443,7 +449,7 @@ function renderCollapsibleCard(cardId, headerId, bodyId, taId, value) {
   // After the body becomes display:block, run autoGrow so the
   // textarea matches the loaded content. Doing this synchronously
   // while the body is still display:none would yield scrollHeight=0.
-  if (open && taId === "clinical-text") {
+  if (open && (taId === "clinical-text" || taId === "counseling-text")) {
     requestAnimationFrame(() => autoGrow(ta));
   }
 }
@@ -451,6 +457,22 @@ function renderCollapsibleCard(cardId, headerId, bodyId, taId, value) {
 function renderClinicalDescription() {
   renderCollapsibleCard("clinical-card", "clinical-header", "clinical-body",
                         "clinical-text", state.reports.clinical_description);
+}
+
+function renderGeneticCounseling() {
+  // Counseling text lives in state.reports.genetic_counseling (also
+  // mirrored in state.data.genetic_counseling on load). The header
+  // shows the last EMR sync timestamp so reviewers know whether the
+  // text is auto-pulled or hand-edited.
+  const value = state.reports.genetic_counseling
+              ?? state.data.genetic_counseling ?? "";
+  renderCollapsibleCard("counseling-card", "counseling-header", "counseling-body",
+                        "counseling-text", value);
+  const syncedEl = document.getElementById("counseling-synced");
+  const synced = state.data.emr_synced_at || "";
+  if (syncedEl) {
+    syncedEl.textContent = synced ? `EMR synced: ${synced.slice(0, 10)}` : "";
+  }
 }
 
 function renderComment() {
@@ -1958,6 +1980,7 @@ function renderPharmcatGeneDetails(g) {
 function renderAll() {
   if (!state.data) return;
   renderSampleMeta();
+  renderGeneticCounseling();
   renderClinicalDescription();
   renderPhenotype();
   renderVersionPicker();
@@ -2156,6 +2179,11 @@ document.addEventListener("input", ev => {
     state.dirty = true;
     updateSaveHint();
     autoGrow(t);
+  } else if (t.matches("#counseling-text")) {
+    state.reports.genetic_counseling = t.value;
+    state.dirty = true;
+    updateSaveHint();
+    autoGrow(t);
   } else if (t.matches("#comment-text")) {
     state.reports.comment = t.value;
     state.dirty = true;
@@ -2216,7 +2244,7 @@ function toggleCollapsibleCard(header) {
   // content the moment the body becomes visible (scrollHeight is 0
   // while display:none).
   if (open) {
-    const ta = body.querySelector("#clinical-text");
+    const ta = body.querySelector("#clinical-text, #counseling-text");
     if (ta) requestAnimationFrame(() => autoGrow(ta));
   }
 }
@@ -3626,6 +3654,40 @@ function setupCombobox() {
   });
 }
 
+// EMR sync: re-fetch from EMR for the current sample and merge into
+// sample_metadata.json server-side, then reload to surface the new
+// sex / dob / genetic_counseling. Failures (network, no MRN) bubble
+// up as alerts since the button is an explicit reviewer action.
+document.getElementById("btn-emr-sync")?.addEventListener("click", async () => {
+  if (!state.currentLIS) return;
+  if (state.dirty) {
+    if (!confirm("有未儲存的編輯，EMR 同步會覆蓋部分欄位（sex / 看診紀錄）。先儲存還是覆蓋？\n\n按取消先去儲存，按確定立即同步。")) {
+      return;
+    }
+  }
+  const btn = document.getElementById("btn-emr-sync");
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "🔄 同步中…";
+  try {
+    const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+    const sid = row?.sample_id || state.currentLIS;
+    const result = await apiPost(`/samples/${encodeURIComponent(sid)}/sync_emr`, {});
+    await loadSample(state.currentLIS);
+    renderAll();
+    const cnts = result.changes || {};
+    const note = Object.keys(cnts).length
+      ? `已同步：${Object.keys(cnts).join(" / ")}`
+      : "EMR 無新資料";
+    document.getElementById("search-status").textContent = note;
+  } catch (e) {
+    alert("EMR 同步失敗：" + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+});
+
 async function bootAfterAuth() {
   try {
     await loadIndex();
@@ -3634,6 +3696,15 @@ async function bootAfterAuth() {
       n ? `索引已載入：${n} 筆樣本` : "索引為空";
   } catch (e) {
     document.getElementById("search-status").textContent = "載入索引失敗: " + e.message;
+  }
+  // Probe whether the EMR client_id is configured server-side. The
+  // 🔄 EMR sync button stays hidden when disabled so the UI doesn't
+  // dangle a button that would only ever 503.
+  try {
+    const probe = await apiFetch("/emr/enabled");
+    state.emrEnabled = !!(probe && probe.enabled);
+  } catch {
+    state.emrEnabled = false;
   }
 }
 

@@ -98,3 +98,11 @@ JAVA_BIN  = os.environ.get("JAVA_BIN",  "java")
 JAVA_OPTS = os.environ.get("JAVA_OPTS", "-Xms4g -Xmx16g")
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
+
+# NCKU intranet EMR (HIS phenotype list + APIM consultation gateway).
+# Empty value disables every EMR-related code path so the UI can run
+# off-network without raising. The legacy VIP_API.sh hard-coded this
+# id; we now read it from systemd's Environment= so it lives outside
+# the repo. EMR endpoints are intranet-only so this is currently
+# secondary defense, not auth.
+EMR_CLIENT_ID = os.environ.get("NGS_UI_EMR_CLIENT_ID", "")

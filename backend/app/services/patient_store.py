@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store, phenotype_io, vcf_writer
+from . import analyses_store, emr_client, phenotype_io, vcf_writer
 
 
 _LIS_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -93,11 +93,32 @@ def register(
     if (sample_dir / "sample_metadata.json").is_file():
         raise FileExistsError(f"sample already registered: {lis_id}")
 
-    # Parse phenotype.txt → hpo + panels for the default analysis.
+    # Parse the reviewer-curated phenotype.txt first; if it had any
+    # content treat that as authoritative. Otherwise fall back to the
+    # EMR's GetPhenotypeList output (best-effort: reviewer txt wins
+    # per the system convention).
     hpo, panels = phenotype_io.parse(phenotype_text or "")
+    emr_payload = emr_client.fetch(mrn) if mrn else {}
+    if not hpo and not panels:
+        emr_pheno = emr_payload.get("phenotype") or {}
+        if emr_pheno.get("found"):
+            hpo = emr_pheno.get("hpo") or []
+
+    # Sex / dob / genetic_counseling come from the consultation API.
+    # Sex from EMR overwrites whatever the reviewer typed (per spec);
+    # genetic_counseling lands as-is. Failures are silent — feature
+    # disabled / empty consultation just means these fields stay blank.
+    consult = emr_payload.get("consultation") or {}
+    if consult.get("sex"):
+        sex = consult["sex"]                           # overwrite
+    if consult.get("date_of_birth"):
+        dob_from_emr = consult["date_of_birth"]
+    else:
+        dob_from_emr = ""
+    genetic_counseling = consult.get("text", "") or ""
 
     # Generate the minimal VCF Exomiser/LIRICAL will consume. The path
-    # is convention-driven (tertiary_output/{lis_id}/{lis_id}.from_tsv.vcf.gz)
+    # is convention-driven (tertiary_output/{lis_id}/vcf_from_tsv.vcf.gz)
     # so we don't ask the reviewer to fill it in.
     vcf_out = vcf_writer.from_tsv(lis_id)
 
@@ -109,6 +130,7 @@ def register(
         "name":                 name,
         "mrn":                  mrn,
         "sex":                  (sex or "").upper() if sex else "",
+        "date_of_birth":        dob_from_emr,
         "test_type":            test_type,
         "genome_build":         genome_build,
         "category":             category or "",
@@ -116,6 +138,8 @@ def register(
         "run_date":             now,
         "active_analysis":      "default",
         "clinical_description": "",
+        "genetic_counseling":   genetic_counseling,
+        "emr_synced_at":        now if (consult.get("found") or emr_payload.get("phenotype", {}).get("found")) else "",
         "comment":              "",
         "tags":                 [],
         "status":               {},

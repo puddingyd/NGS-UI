@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
-from .routers import analyses, auth, jobs, phenotype, samples
+from .routers import analyses, auth, emr, jobs, phenotype, samples
 from .services import hpo_ontology, phenotype_scorer, users
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
@@ -40,6 +40,7 @@ app.include_router(samples.router)
 app.include_router(analyses.router)
 app.include_router(phenotype.router)
 app.include_router(jobs.router)
+app.include_router(emr.router)
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

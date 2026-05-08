@@ -24,6 +24,7 @@ _REVIEWER_FIELDS = {
     "tags",
     "comment",
     "clinical_description",
+    "genetic_counseling",
     "category",
     "yield",
 }
@@ -36,6 +37,7 @@ _DEFAULT = {
     "manual_variants": [],
     "comment": "",
     "clinical_description": "",
+    "genetic_counseling": "",
     "category": None,
     "yield": 0,
     "updated_at": None,
