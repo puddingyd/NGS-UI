@@ -27,7 +27,7 @@ from pathlib import Path
 
 from ..adapters.snv_tsv import TIERS, load_snv_tsv
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store
+from . import analyses_store, omim_store
 
 
 def _read_json_or(path: Path, default):
@@ -311,6 +311,18 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
             v["rank_lirical_variant"]  = _to_num(l.get("RANK_LIRICAL_VARIANT"))
             v["lirical_disease_name"]  = l.get("DISEASE_NAME") or ""
             v["lirical_disease_curie"] = l.get("DISEASE_CURIE") or ""
+
+        # OMIM annotation (Disease1..5 + OMIM_id + OMIM_disease +
+        # Inheritance). Frontend already renders these when present;
+        # missing-file / missing-gene rows just stay empty.
+        omim_id = omim_store.parse_omim_id_from_link(v.get("OMIM_link", ""))
+        rec = omim_store.lookup(omim_id=omim_id, gene=gene)
+        if rec:
+            v["OMIM_id"]      = rec.get("OMIM_id", "")
+            v["OMIM_disease"] = rec.get("OMIM_disease", "")
+            v["Inheritance"]  = rec.get("Inheritance", "")
+            for f in ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5"):
+                v[f] = rec.get(f, "")
 
     # Re-sort each tier by total_score desc now that pheno_score is
     # joined. Adapter only had ACMG_POINTS available; here we have the

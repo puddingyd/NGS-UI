@@ -54,6 +54,14 @@ BIOTOOLS_DIR = Path(os.environ.get(
     NGS_UI_HOME / "biotools",
 ))
 
+# OMIM annotation table (xlsx). Loaded once at first use and lazily
+# reloaded when the file mtime changes. Empty value or missing file
+# disables OMIM annotation; variants render with empty Disease lists.
+OMIM_XLSX = Path(os.environ.get(
+    "NGS_UI_OMIM_XLSX",
+    NGS_UI_HOME / "OMIM" / "OMIM.xlsx",
+))
+
 JOBS_DIR = DATA_ROOT / "jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
