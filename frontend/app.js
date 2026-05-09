@@ -1615,6 +1615,22 @@ const CNV_SV_TIER_CLASS = {
 };
 let activeCnvSvTab = null;
 
+// Reads cnv_variants/sv_variants/cnv_categories/sv_categories from
+// state.data and dispatches each variant id to the right tier panel
+// renderer. Tier counts on the tab bar reflect the actual list size.
+function _cnvSvVariantById(id) {
+  return (state.data?.cnv_variants?.[id])
+      || (state.data?.sv_variants?.[id])
+      || null;
+}
+
+function _cnvSvIdsForTier(tier) {
+  const cats = tier.startsWith("CNV-")
+    ? state.data?.cnv_categories
+    : state.data?.sv_categories;
+  return (cats && cats[tier]) || [];
+}
+
 function renderCnvSvTabBar() {
   const bar = document.getElementById("cnv-sv-tab-bar");
   if (!bar) return;
@@ -1623,16 +1639,38 @@ function renderCnvSvTabBar() {
 
   bar.innerHTML = CNV_SV_TIER_ORDER.map(t => {
     const active = t === activeCnvSvTab ? " active" : "";
+    const ids = _cnvSvIdsForTier(t);
     return `<button type="button" class="tier-tab ${CNV_SV_TIER_CLASS[t]}${active}" data-tier="${t}">
               <span class="tier-tab-title">${escapeHtml(CNV_SV_TITLES[t])}</span>
-              <span class="tier-tab-count">In panel 0 / Total 0</span>
+              <span class="tier-tab-count">Total ${ids.length}</span>
             </button>`;
   }).join("");
 
-  document.querySelectorAll("#cnv-sv-tab-panels .tier-panel").forEach(p => {
-    if (!p.firstChild) {
-      p.innerHTML = `<div class="analysis-card-empty">（無資料）</div>`;
+  // Populate every panel from the data. Clinical panels (1A / 2A) get
+  // a phenotype-missing hint when the sample has no HPO/panels at
+  // all — otherwise an empty list might be mis-read as "nothing
+  // matched" rather than "we have no signal to match against".
+  CNV_SV_TIER_ORDER.forEach(tier => {
+    const panel = document.querySelector(`#cnv-sv-tab-panels .tier-panel[data-tier="${tier}"]`);
+    if (!panel) return;
+    const ids = _cnvSvIdsForTier(tier);
+    const isClinical = tier.endsWith("-1A") || tier.endsWith("-2A");
+    if (!ids.length) {
+      if (isClinical && !state.data?.has_phenotype) {
+        panel.innerHTML = `<div class="analysis-card-empty">
+          請先設定 phenotype（HPO / panel），才會有 Clinical 結果。
+        </div>`;
+      } else {
+        panel.innerHTML = `<div class="analysis-card-empty">（無資料）</div>`;
+      }
+      return;
     }
+    panel.innerHTML = "";
+    ids.forEach(id => {
+      const v = _cnvSvVariantById(id);
+      if (!v) return;
+      panel.appendChild(renderCnvSvCard(v, id, { tier }));
+    });
   });
   applyCnvSvTabActive();
 }
@@ -1663,6 +1701,317 @@ document.addEventListener("click", ev => {
     b.classList.toggle("active", b.dataset.tier === tier);
   });
   if (isCnvSv) applyCnvSvTabActive(); else applyTierTabActive();
+});
+
+// ---------- CNV / SV variant card rendering ----------------------
+//
+// One card per AnnotSV record. Layout mirrors the SNV variant card's
+// visual language (header pills + collapsible body + status dropdown
+// + comment + disease list) but the fields are SV-specific:
+//   • position / type / cytoband / length / copy-number
+//   • AnnotSV's own ACMG class (1-5) and ranking score
+//   • per-gene table built from split rows (Tx / Location / OMIM)
+//   • pathogenic-region overlap (P_loss / P_gain) + benign AF
+//   • AnnotSV reasoning text (collapsed)
+//   • disease list synthesised from gene OMIM_phenotype lines
+//
+// Edits (status / comment / report-disease checkbox) reuse the same
+// state.reports.{status,edits} dicts as SNV cards — AnnotSV_IDs and
+// SNV chr-pos-ref-alt ids never collide so one flat namespace works.
+
+const SV_TYPE_LABELS = { DEL: "缺失", DUP: "重複", INV: "倒位", INS: "插入", TRA: "易位" };
+const SV_INHERITANCE_LABELS = {
+  AD: "體染色體顯性", AR: "體染色體隱性",
+  XLD: "性染色體顯性", XLR: "性染色體隱性", XL: "性染色體",
+  YL: "Y 染色體", MT: "粒線體",
+};
+
+function _fmtPos(n) {
+  if (n == null) return "?";
+  return Number(n).toLocaleString();
+}
+
+function _fmtBp(n) {
+  if (n == null) return "";
+  const a = Math.abs(Number(n));
+  if (a >= 1e6) return `${(a / 1e6).toFixed(2)}Mb`;
+  if (a >= 1e3) return `${(a / 1e3).toFixed(1)}kb`;
+  return `${a}bp`;
+}
+
+function _cnvSvExternalLinks(v) {
+  const build = state.data?.genome_build === "hg19" ? "hg19" : "hg38";
+  const chrom = (v.CHROM || "").startsWith("chr") ? v.CHROM : `chr${v.CHROM}`;
+  const region = `${chrom}:${v.POS}-${v.END}`;
+  const ucscDb = build === "hg19" ? "hg19" : "hg38";
+  const links = [
+    { label: "UCSC",     href: `https://genome.ucsc.edu/cgi-bin/hgTracks?db=${ucscDb}&position=${region}` },
+    { label: "DECIPHER", href: `https://www.deciphergenomics.org/search/patients/results?q=${encodeURIComponent(region)}` },
+    { label: "dbVar",    href: `https://www.ncbi.nlm.nih.gov/dbvar/?term=${encodeURIComponent(region)}` },
+  ];
+  if (v.gene_symbol) {
+    links.push({ label: "GeneCards", href: `https://www.genecards.org/cgi-bin/carddisp.pl?gene=${encodeURIComponent(v.gene_symbol)}` });
+  }
+  return links;
+}
+
+function _renderCnvSvHeader(v, id) {
+  const sourceLabel = v.source === "cnv" ? "CNV" : "SV";
+  const typeChip = `<span class="sv-type-pill sv-type-${escapeAttr(v.sv_type || "")}">${escapeHtml(v.sv_type || "?")}</span>`;
+  const chrom = (v.CHROM || "").startsWith("chr") ? v.CHROM : `chr${v.CHROM}`;
+  const lengthPart = v.length != null ? ` · ${_fmtBp(v.length)}` : "";
+  const cytoPart   = v.cytoband ? ` · ${escapeHtml(v.cytoband)}` : "";
+  const acmgClass  = (v.acmg_class != null) ? `<span class="acmg-pill acmg-${v.acmg_class}">ACMG-${v.acmg_class}</span>` : "";
+  const rankPart   = (v.ranking_score != null) ? `<span class="rank-pill" title="AnnotSV ranking score">score ${Number(v.ranking_score).toFixed(2)}</span>` : "";
+  const clinicalPill = v.in_panel ? `<span class="clinical-pill" title="Overlaps panel/HPO gene ${escapeHtml(v.trigger_gene || "")}">Clinical</span>` : "";
+  const triggerLabel = v.trigger_gene
+    ? `<span class="trigger-gene"><strong>${escapeHtml(v.trigger_gene)}</strong>⭐${
+         (v.max_pheno_score != null) ? ` <span class="muted" style="font-size:11px">${Number(v.max_pheno_score).toFixed(1)}</span>` : ""
+       }</span>`
+    : (v.gene_symbol
+       ? `<span class="trigger-gene">${escapeHtml(v.gene_symbol)}</span>`
+       : "");
+  const extraGenes = (v.gene_count != null && v.gene_count > 1)
+    ? `<span class="muted" style="font-size:11px">+${v.gene_count - 1}</span>`
+    : "";
+  const status = (state.reports?.status?.[id]) || "";
+  const statusOpts = [["", "—"], ["1", "Causative"], ["2", "Other"]];
+  const statusSel = `<select class="status-dropdown" data-id="${escapeAttr(id)}" title="判定">${
+    statusOpts.map(([v_, l]) => `<option value="${v_}" ${v_===status?"selected":""}>${escapeHtml(l)}</option>`).join("")
+  }</select>`;
+
+  return `<div class="cnv-sv-header">
+    <span class="cnv-sv-source-tag">${sourceLabel}</span>
+    ${typeChip}
+    <span class="cnv-sv-pos">${escapeHtml(chrom)}:${_fmtPos(v.POS)}-${_fmtPos(v.END)}<span class="muted" style="font-size:11px">${lengthPart}${cytoPart}</span></span>
+    ${acmgClass}
+    ${rankPart}
+    ${clinicalPill}
+    ${triggerLabel}
+    ${extraGenes}
+    <span style="flex:1"></span>
+    ${statusSel}
+  </div>`;
+}
+
+function _renderCnvSvDetailRow(v) {
+  const chrom = (v.CHROM || "").startsWith("chr") ? v.CHROM : `chr${v.CHROM}`;
+  const cn = (v.copy_number != null) ? ` · CN ${v.copy_number}` : "";
+  const filter = v.filter && v.filter !== "." ? v.filter : "PASS";
+  const qual = (v.qual != null) ? Number(v.qual).toFixed(2) : "—";
+  const zyg = v.zygosity || "—";
+  return `<div class="cnv-sv-detail">
+    <span><strong>位置:</strong> ${escapeHtml(chrom)}:${_fmtPos(v.POS)}-${_fmtPos(v.END)}</span>
+    <span><strong>長度:</strong> ${_fmtBp(v.length)}</span>
+    <span><strong>類型:</strong> ${escapeHtml(v.sv_type || "?")}${SV_TYPE_LABELS[v.sv_type] ? `（${SV_TYPE_LABELS[v.sv_type]}）` : ""}</span>
+    <span><strong>基因型:</strong> ${escapeHtml(v.GT || "—")} (${escapeHtml(zyg)})${cn}</span>
+    <span><strong>Filter:</strong> ${escapeHtml(filter)}</span>
+    <span><strong>Qual:</strong> ${qual}</span>
+  </div>`;
+}
+
+function _renderCnvSvGeneTable(v) {
+  const genes = v.genes || [];
+  if (!genes.length) return "";
+  // Sort: in-panel first (by pheno_score desc), then alphabetic.
+  const sorted = genes.slice().sort((a, b) => {
+    const pa = (a.in_panel ? 1 : 0), pb = (b.in_panel ? 1 : 0);
+    if (pa !== pb) return pb - pa;
+    const sa = a.pheno_score || -1, sb = b.pheno_score || -1;
+    if (sa !== sb) return sb - sa;
+    return String(a.gene || "").localeCompare(String(b.gene || ""));
+  });
+  const cap = 20;
+  const rows = sorted.slice(0, cap).map(g => {
+    const triggerMark = g.in_panel ? "⭐" : "";
+    const omimCell = g.omim_id
+      ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
+      : "—";
+    const inhLabel = g.omim_inheritance
+      ? `${escapeHtml(g.omim_inheritance)}${SV_INHERITANCE_LABELS[g.omim_inheritance] ? `（${SV_INHERITANCE_LABELS[g.omim_inheritance]}）` : ""}`
+      : "—";
+    const pheno = (g.pheno_score != null) ? Number(g.pheno_score).toFixed(1) : "—";
+    return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}">
+      <td><strong>${escapeHtml(g.gene || "?")}</strong>${triggerMark}</td>
+      <td>${escapeHtml(g.tx || "")}</td>
+      <td>${escapeHtml(g.location || "")}</td>
+      <td>${g.overlap_cds_pct != null ? Math.round(Number(g.overlap_cds_pct) * 100) + "%" : "—"}</td>
+      <td>${inhLabel}</td>
+      <td>${omimCell}</td>
+      <td>${(g.omim_phenotype || "").split("\n")[0].slice(0, 80) || "—"}</td>
+      <td>${pheno}</td>
+    </tr>`;
+  }).join("");
+  const overflow = genes.length > cap
+    ? `<details class="cnv-sv-gene-overflow"><summary class="muted">展開其餘 ${genes.length - cap} 個基因…</summary>${
+         sorted.slice(cap).map(g =>
+           `<div class="gene-overflow-row${g.in_panel ? " gene-row-in-panel" : ""}">${escapeHtml(g.gene || "?")}${g.in_panel ? "⭐" : ""}${g.omim_id ? ` <a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener" class="muted">OMIM:${escapeHtml(g.omim_id)}</a>` : ""}</div>`
+         ).join("")
+       }</details>`
+    : "";
+  return `<div class="cnv-sv-section">
+    <div class="cnv-sv-section-title">基因 (${genes.length})</div>
+    <table class="cnv-sv-gene-table"><thead><tr>
+      <th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th><th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    ${overflow}
+  </div>`;
+}
+
+function _renderCnvSvOverlap(v) {
+  const sections = [];
+  for (const [key, label] of [["p_loss", "P_loss"], ["p_gain", "P_gain"], ["p_ins", "P_ins"]]) {
+    const p = v[key];
+    if (!p || (!p.phens && !(p.sources || []).length)) continue;
+    const phenLine = p.phens ? `<div>${escapeHtml(p.phens)}</div>` : "";
+    const sources = (p.sources || []).slice(0, 8);
+    const more = (p.sources || []).length - sources.length;
+    const srcLine = sources.length
+      ? `<div class="muted" style="font-size:11px">${sources.map(escapeHtml).join("； ")}${more > 0 ? `…（其餘 ${more}）` : ""}</div>`
+      : "";
+    sections.push(`<div class="cnv-sv-overlap-row"><strong>${label}:</strong>${phenLine}${srcLine}</div>`);
+  }
+  if (!sections.length) return "";
+  return `<div class="cnv-sv-section">
+    <div class="cnv-sv-section-title">已知致病區域重疊</div>
+    ${sections.join("")}
+  </div>`;
+}
+
+function _renderCnvSvBenign(v) {
+  const parts = [];
+  if (v.b_loss_af_max != null) parts.push(`B_loss max AF: ${Number(v.b_loss_af_max).toFixed(4)}`);
+  if (v.b_gain_af_max != null) parts.push(`B_gain max AF: ${Number(v.b_gain_af_max).toFixed(4)}`);
+  if (v.b_ins_af_max  != null) parts.push(`B_ins  max AF: ${Number(v.b_ins_af_max).toFixed(4)}`);
+  if (!parts.length) return "";
+  const warn = (v.b_loss_af_max && v.b_loss_af_max > 0.01) || (v.b_gain_af_max && v.b_gain_af_max > 0.01);
+  return `<div class="cnv-sv-section ${warn ? "cnv-sv-warn" : ""}">
+    <div class="cnv-sv-section-title">族群常見變異 ${warn ? "⚠️" : ""}</div>
+    <div class="muted">${parts.map(escapeHtml).join(" · ")}</div>
+  </div>`;
+}
+
+function _renderCnvSvReasoning(v) {
+  if (!v.ranking_criteria) return "";
+  const items = v.ranking_criteria.split(";").map(s => s.trim()).filter(Boolean);
+  return `<details class="cnv-sv-section cnv-sv-reasoning">
+    <summary class="cnv-sv-section-title">AnnotSV 評分依據</summary>
+    <ul class="cnv-sv-reasoning-list">${
+      items.map(s => `<li><code>${escapeHtml(s)}</code></li>`).join("")
+    }</ul>
+  </details>`;
+}
+
+function _renderCnvSvDiseaseList(v, id) {
+  // Synthesise disease entries from per-gene OMIM_phenotype lines so
+  // reviewers can tick which disease(s) belong on the report. Each
+  // OMIM_phenotype field can have multiple disease lines (\n-split).
+  // In-panel genes float to the top so the trigger reasons are
+  // visible without scrolling.
+  const diseases = [];
+  const seen = new Set();
+  const sorted = (v.genes || []).slice().sort((a, b) =>
+    (b.in_panel ? 1 : 0) - (a.in_panel ? 1 : 0) ||
+    (b.pheno_score || -1) - (a.pheno_score || -1)
+  );
+  for (const g of sorted) {
+    const lines = (g.omim_phenotype || "").split("\n").map(s => s.trim()).filter(Boolean);
+    for (const line of lines) {
+      const key = `${g.gene}::${line}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      diseases.push({ gene: g.gene, line, in_panel: !!g.in_panel, omim_id: g.omim_id });
+    }
+  }
+  if (!diseases.length) return "";
+  const picked = (getEdit(id, "report_diseases") || {});
+  const rows = diseases.slice(0, 10).map((d, i) => {
+    const idx = i + 1;
+    const checked = picked[idx] ? "checked" : "";
+    return `<details class="disease-row${d.in_panel ? " disease-row-in-panel" : ""}">
+      <summary>
+        <input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${idx}" ${checked} title="報告要發這個疾病" />
+        <span class="disease-summary-text"><strong>${escapeHtml(d.gene)}</strong>${d.in_panel ? "⭐" : ""}: ${escapeHtml(d.line)}</span>
+      </summary>
+      <div class="disease-detail">${
+        d.omim_id
+          ? `<a href="https://www.omim.org/entry/${escapeAttr(d.omim_id)}" target="_blank" rel="noopener">OMIM:${escapeHtml(d.omim_id)}</a>`
+          : ""
+      }</div>
+    </details>`;
+  }).join("");
+  const overflow = diseases.length > 10
+    ? `<div class="muted" style="font-size:11px;margin-top:4px">（其餘 ${diseases.length - 10} 個疾病已省略）</div>`
+    : "";
+  return `<div class="cnv-sv-section">
+    <div class="cnv-sv-section-title">相關疾病（勾選=放進報告）</div>
+    <div class="disease-list">${rows}</div>${overflow}
+  </div>`;
+}
+
+function _renderCnvSvLinks(v) {
+  const links = _cnvSvExternalLinks(v);
+  return `<div class="cnv-sv-links">${
+    links.map(l => `<a href="${escapeAttr(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`).join(" · ")
+  }</div>`;
+}
+
+function _renderCnvSvComment(v, id) {
+  const comment = (getEdit(id, "comment") || "");
+  return `<div class="cnv-sv-section cnv-sv-comment">
+    <div class="cnv-sv-section-title">Reviewer comment</div>
+    <textarea class="cnv-sv-comment-text" data-id="${escapeAttr(id)}" rows="2" placeholder="reviewer 備註…">${escapeHtml(comment)}</textarea>
+  </div>`;
+}
+
+function renderCnvSvCard(v, id, opts = {}) {
+  const card = document.createElement("div");
+  card.className = `variant-card cnv-sv-card${v.source === "cnv" ? " card-cnv" : " card-sv"}`;
+  card.dataset.id = id;
+  card.innerHTML = `
+    ${_renderCnvSvHeader(v, id)}
+    ${_renderCnvSvDetailRow(v)}
+    ${_renderCnvSvGeneTable(v)}
+    ${_renderCnvSvOverlap(v)}
+    ${_renderCnvSvBenign(v)}
+    ${_renderCnvSvReasoning(v)}
+    ${_renderCnvSvDiseaseList(v, id)}
+    ${_renderCnvSvComment(v, id)}
+    ${_renderCnvSvLinks(v)}
+  `;
+  return card;
+}
+
+// CNV/SV-specific edit hooks. These piggy-back on the existing
+// state.reports.{status, edits} dicts that the SNV cards use, but
+// listen on .cnv-sv-card-scoped selectors so we don't double-fire
+// with the SNV handlers in renderVariantCard.
+document.addEventListener("change", ev => {
+  const t = ev.target;
+  const card = t.closest?.(".cnv-sv-card");
+  if (!card) return;
+  const id = card.dataset.id;
+  if (!id) return;
+  if (t.matches(".status-dropdown")) {
+    state.reports.status = state.reports.status || {};
+    if (t.value) state.reports.status[id] = t.value;
+    else delete state.reports.status[id];
+    state.dirty = true;
+    scheduleAutoSave();
+  } else if (t.matches(".disease-pick")) {
+    const picked = { ...(getEdit(id, "report_diseases") || {}) };
+    const idx = Number(t.dataset.idx);
+    if (t.checked) picked[idx] = true; else delete picked[idx];
+    setEdit(id, "report_diseases", picked);
+  }
+});
+
+document.addEventListener("input", ev => {
+  const t = ev.target;
+  if (!t.matches?.(".cnv-sv-comment-text")) return;
+  const id = t.dataset.id;
+  if (!id) return;
+  setEdit(id, "comment", t.value);
 });
 
 // Sidebar nav: clicking a button with data-target scrolls the matching

@@ -359,6 +359,21 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
     for t, ids in categories.items():
         categories[t] = sorted(ids, key=lambda i: (-_ts(i), i))
 
+    # CNV / SV: load only when the AnnotSV outputs are present beside
+    # the SNV TSV (pipeline drops them per-sample). Empty dicts when
+    # absent → frontend just shows "（無資料）" placeholders.
+    from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS, SV_TIERS
+    cnv_path = sub / "cnv.annotated.tsv"
+    sv_path  = sub / "sv.annotated.tsv"
+    cnv_variants, cnv_categories = (
+        load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene)
+        if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
+    )
+    sv_variants, sv_categories = (
+        load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene)
+        if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
+    )
+
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
 
@@ -385,6 +400,17 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
         "variants":          variants,
         "categories":        categories,
         "tiers":             TIERS,
+        # CNV / SV side-channels (independent variant maps + tier
+        # categories so the frontend can render them in their own
+        # tab group without colliding with SNV ids).
+        "cnv_variants":      cnv_variants,
+        "cnv_categories":    cnv_categories,
+        "sv_variants":       sv_variants,
+        "sv_categories":     sv_categories,
+        # Whether the sample has phenotype configured at all — the
+        # frontend uses this to show a "Clinical 區塊空白是因為沒有
+        # phenotype" hint instead of leaving the panel silently empty.
+        "has_phenotype":     bool(hpo_list or panels_list),
         "pharmcat":          {},
         # Active version metadata so the frontend can show a version
         # picker / detect when re-analysis should ask for a target.
