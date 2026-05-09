@@ -1091,17 +1091,12 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .tier-panel.tier-sv  { background: #ddd6fe; }
 .cat-block[class*="tier-"] > .block-header .title { font-weight: 600; }
 
-/* ---- CNV / SV variant cards ----------------------------------- */
+/* ---- CNV / SV variant cards ------------------------------------
+   Cards reuse .variant-card / .variant-head from the SNV side so the
+   inset-on-coloured-panel look matches; only CNV/SV-specific extras
+   live below. No left-border stripe — the tier-panel colour around
+   the card already signals which group it belongs to. */
 
-.cnv-sv-card { background: #fff; padding: 12px 14px; border-radius: 6px; margin-bottom: 10px;
-  border: 1px solid var(--border); }
-.cnv-sv-card.card-cnv { border-left: 4px solid #3b82f6; }
-.cnv-sv-card.card-sv  { border-left: 4px solid #8b5cf6; }
-
-.cnv-sv-header {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  font-size: 13px; margin-bottom: 8px;
-}
 .cnv-sv-source-tag {
   font-size: 10px; font-weight: 600;
   background: #f3f4f6; color: #4b5563;
@@ -1118,45 +1113,53 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .sv-type-pill.sv-type-INS { background: #7c3aed; }
 .sv-type-pill.sv-type-TRA { background: #6b7280; }
 
-.cnv-sv-pos { font-family: ui-monospace, monospace; font-size: 12px; }
-
-.acmg-pill {
-  font-size: 11px; font-weight: 600; padding: 2px 8px;
-  border-radius: 10px; color: #fff;
-}
-.acmg-pill.acmg-5 { background: #b91c1c; }
-.acmg-pill.acmg-4 { background: #ea580c; }
-.acmg-pill.acmg-3 { background: #ca8a04; color: #1f2937; }
-.acmg-pill.acmg-2 { background: #93c5fd; color: #1f2937; }
-.acmg-pill.acmg-1 { background: #86efac; color: #1f2937; }
-
-.rank-pill {
-  font-size: 11px; padding: 2px 8px; border-radius: 10px;
-  background: #e5e7eb; color: #374151;
+.cnv-sv-pos {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600; font-size: 13px;
+  display: inline-flex; align-items: center; gap: 4px;
+  flex: 1; min-width: 0;
 }
 
-.clinical-pill {
-  font-size: 11px; font-weight: 600; padding: 2px 8px;
-  border-radius: 10px; background: #dcfce7; color: #166534;
-}
+/* ACMG colour applied to the dropdown <select> so the active option
+   colour-codes the cell (1=green … 5=red, matching SNV ACMG colours). */
+.cnv-sv-acmg-select { font-size: 12px; padding: 2px 6px;
+  border-radius: 4px; border: 1px solid var(--border); background: #fff; }
+.cnv-sv-acmg-select.acmg-5 { background: #fee2e2; color: #991b1b; }
+.cnv-sv-acmg-select.acmg-4 { background: #fed7aa; color: #9a3412; }
+.cnv-sv-acmg-select.acmg-3 { background: #fef9c3; color: #854d0e; }
+.cnv-sv-acmg-select.acmg-2 { background: #dbeafe; color: #1e3a8a; }
+.cnv-sv-acmg-select.acmg-1 { background: #dcfce7; color: #166534; }
 
-.trigger-gene {
+/* The grey-box detail block: two info rows + a collapsible
+   AnnotSV-criteria sub-block. Mirrors the SNV info-grid look. */
+.cnv-sv-detail-box {
+  background: #f6f8fa;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
   font-size: 12px;
+  color: #374151;
+}
+.cnv-sv-detail-row {
+  display: flex; flex-wrap: wrap; gap: 12px 18px;
+  align-items: center;
+}
+.cnv-sv-detail-row + .cnv-sv-detail-row { margin-top: 6px; }
+.cnv-sv-detail-box strong { color: #111827; font-weight: 600; }
+.cnv-sv-reasoning { margin-top: 8px; }
+.cnv-sv-reasoning summary {
+  cursor: pointer; user-select: none;
+  font-weight: 600; font-size: 12px; color: #374151;
+}
+.cnv-sv-reasoning-list {
+  margin: 4px 0 0; padding-left: 18px; font-size: 11px; color: #4b5563;
+}
+.cnv-sv-reasoning-list code {
+  background: #fff; border: 1px solid var(--border);
+  padding: 1px 4px; border-radius: 3px;
 }
 
-.status-dropdown {
-  font-size: 12px; padding: 2px 6px; border: 1px solid var(--border);
-  border-radius: 4px; background: #fff;
-}
-
-.cnv-sv-detail {
-  display: flex; flex-wrap: wrap; gap: 12px;
-  font-size: 12px; color: #374151;
-  padding: 8px 10px; background: #f9fafb; border-radius: 4px;
-  margin-bottom: 10px;
-}
-.cnv-sv-detail strong { color: #111827; font-weight: 600; }
-
+/* Section blocks below the detail box. */
 .cnv-sv-section { margin: 10px 0; }
 .cnv-sv-section-title {
   font-weight: 600; font-size: 12px; color: #374151;
@@ -1164,45 +1167,64 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .cnv-sv-section.cnv-sv-warn { border-left: 3px solid #f59e0b; padding-left: 8px; }
 
+/* Gene table: report-pick column + click-to-expand phenotype cell. */
 .cnv-sv-gene-table {
   width: 100%; border-collapse: collapse; font-size: 12px;
+  table-layout: fixed;
 }
 .cnv-sv-gene-table th, .cnv-sv-gene-table td {
   padding: 4px 6px; text-align: left;
   border-bottom: 1px solid #f3f4f6;
+  vertical-align: top;
 }
 .cnv-sv-gene-table th { background: #f9fafb; font-weight: 600; font-size: 11px; }
 .cnv-sv-gene-table tr.gene-row-in-panel { background: #fef3c7; }
 .cnv-sv-gene-table tr.gene-row-in-panel:hover { background: #fde68a; }
+.cnv-sv-gene-table .gene-pick-cell { width: 22px; text-align: center; }
+.cnv-sv-gene-table th:nth-child(1) { width: 22px; }      /* checkbox */
+.cnv-sv-gene-table th:nth-child(2) { width: 8em; }       /* gene */
+.cnv-sv-gene-table th:nth-child(3) { width: 9em; }       /* tx */
+.cnv-sv-gene-table th:nth-child(4) { width: 8em; }       /* loc */
+.cnv-sv-gene-table th:nth-child(5) { width: 5em; }       /* cds% */
+.cnv-sv-gene-table th:nth-child(6) { width: 6em; }       /* inh */
+.cnv-sv-gene-table th:nth-child(7) { width: 6em; }       /* omim */
+.cnv-sv-gene-table th:nth-child(9) { width: 4em; }       /* pheno */
+.cnv-sv-gene-table .gene-phen-cell {
+  cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 0;            /* let table-layout:fixed clip overflow */
+}
+.cnv-sv-gene-table .gene-phen-cell:hover { background: #eef2ff; }
+.cnv-sv-gene-table tr.gene-row-expanded .gene-phen-cell {
+  white-space: pre-wrap; overflow: visible; text-overflow: clip;
+  max-width: none;
+  background: #eef2ff;
+}
 
 .cnv-sv-gene-overflow {
   margin-top: 4px; font-size: 12px;
 }
-.cnv-sv-gene-overflow summary { cursor: pointer; padding: 2px 0; }
-.gene-overflow-row {
+.cnv-sv-gene-overflow > summary { cursor: pointer; padding: 2px 0; }
+.cnv-sv-gene-overflow .cnv-sv-gene-table { margin-top: 6px; }
+.gene-overflow-chips { margin-top: 6px; }
+.gene-overflow-chip {
   display: inline-block; margin: 2px 6px 2px 0;
   padding: 1px 6px; background: #f3f4f6; border-radius: 3px;
   font-size: 11px;
 }
-.gene-overflow-row.gene-row-in-panel { background: #fef3c7; }
+.gene-overflow-chip.gene-row-in-panel { background: #fef3c7; }
 
+/* Pathogenic-region overlap. First two rows always visible; rest
+   tucked behind <details>. */
 .cnv-sv-overlap-row {
-  font-size: 12px; margin: 4px 0; padding: 4px 8px;
+  font-size: 12px; margin: 4px 0; padding: 6px 8px;
   background: #fff7ed; border-left: 2px solid #f97316; border-radius: 3px;
 }
 .cnv-sv-overlap-row strong { color: #9a3412; }
-
-.cnv-sv-reasoning summary {
-  cursor: pointer; user-select: none;
-}
-.cnv-sv-reasoning-list {
-  margin: 4px 0 0; padding-left: 18px; font-size: 11px; color: #4b5563;
-}
-.cnv-sv-reasoning-list code {
-  background: #f3f4f6; padding: 1px 4px; border-radius: 3px;
-}
-
-.disease-row.disease-row-in-panel summary { background: #fef9c3; }
+.cnv-sv-overlap-phen { margin-top: 2px; }
+.cnv-sv-overlap-sources { margin-top: 4px; font-size: 11px; word-break: break-all; }
+.cnv-sv-overlap-more { margin-top: 4px; }
+.cnv-sv-overlap-more > summary { cursor: pointer; user-select: none; font-size: 11px; }
 
 .cnv-sv-comment-text {
   width: 100%; box-sizing: border-box;
@@ -1210,14 +1232,6 @@ body.sidebar-collapsed .container { margin-left: auto; }
   padding: 6px 8px; font-family: inherit; font-size: 12px;
   resize: vertical;
 }
-
-.cnv-sv-links {
-  margin-top: 8px; padding-top: 8px;
-  border-top: 1px dashed var(--border);
-  font-size: 12px;
-}
-.cnv-sv-links a { color: #2563eb; text-decoration: none; }
-.cnv-sv-links a:hover { text-decoration: underline; }
 
 /* ---- Jump nav (next to 分析 header) ---------------------------- */
 .jump-nav {
