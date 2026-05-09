@@ -175,18 +175,24 @@ def compute_pheno_score(
     }
 
 
-def write_pheno_table(sample_id: str, pheno_score: dict[str, float]) -> Path:
+def write_pheno_table(
+    sample_id: str,
+    pheno_score: dict[str, float],
+    *,
+    target_dir: Path | None = None,
+) -> Path:
     """Persist gene → score as `pheno_score.tsv` (sorted desc).
 
-    Lands inside the active analysis version's directory so each
-    version owns its own pheno table; the R-script equivalent (one
-    flat file per sample) gets emulated only for pre-migration samples
-    where no analyses/ dir exists yet.
+    `target_dir` lets callers (e.g. analyses_store.write_version) write
+    into a specific version's directory regardless of which version is
+    currently active. When omitted, the file lands in the sample's
+    active analysis dir — same behaviour as before.
     """
-    from . import analyses_store
-    sub = analyses_store.active_version_dir(sample_id)
-    sub.mkdir(parents=True, exist_ok=True)
-    out = sub / "pheno_score.tsv"
+    if target_dir is None:
+        from . import analyses_store
+        target_dir = analyses_store.active_version_dir(sample_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    out = target_dir / "pheno_score.tsv"
     rows = sorted(pheno_score.items(), key=lambda kv: -kv[1])
     with out.open("w", encoding="utf-8", newline="") as f:
         f.write("gene_symbol\tpheno_score\n")

@@ -173,12 +173,24 @@ def register(
     )
 
     # Default analysis.json + audit copy of the parsed phenotype.txt.
+    # write_version side-effects pheno_score.tsv into the version dir,
+    # so the freshly-registered sample is immediately ready for the
+    # Clinical-block / pheno-score lookups (no need to wait for the
+    # reviewer to hit "save" in the analysis page).
     analyses_store.write_version(lis_id, "default", hpo=hpo, panels=panels)
     if hpo or panels:
         phenotype_io.write(
             hpo, panels,
             analyses_store.version_dir(lis_id, "default")
             / f"{lis_id}_{mrn}_phenotype.txt",
+        )
+        # Reflect the just-computed pheno set onto the SNV TSV's
+        # IN_PANEL column so per-sample loads see the right markers
+        # immediately. (No-op when HPO+panels are both empty.)
+        from . import phenotype_scorer
+        scores = phenotype_scorer.compute_pheno_score(hpo or [], panels or [])
+        phenotype_scorer.update_in_panel_column(
+            lis_id, {g for g, s in scores.items() if s > 0}
         )
 
     return meta

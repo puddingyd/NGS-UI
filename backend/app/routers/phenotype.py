@@ -90,13 +90,12 @@ def update_phenotype(sample_id: str, payload: dict):
     meta["phenotype_updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 2. Compute pheno_score
+    # 2. Compute pheno_score (analyses_store.write_version already
+    # wrote pheno_score.tsv as a side effect; recompute here only to
+    # produce the in-panel set + the response stats below).
     scores = phenotype_scorer.compute_pheno_score(hpo_in, panels_in)
 
-    # 3. Persist gene → score sidecar
-    phenotype_scorer.write_pheno_table(sample_id, scores)
-
-    # 4. Rewrite IN_PANEL column (in_panel iff score > 0)
+    # 3. Rewrite IN_PANEL column (in_panel iff score > 0)
     in_panel_genes = {g for g, s in scores.items() if s > 0}
     n_updated = phenotype_scorer.update_in_panel_column(sample_id, in_panel_genes)
 

@@ -179,6 +179,24 @@ def write_version(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    # Side effect: keep pheno_score.tsv in sync with this version's
+    # HPO/panels. Computing it here means every caller that touches a
+    # version (register, edit, copy/rename) gets a consistent
+    # gene-score sidecar without having to remember the second step.
+    # Empty HPO+panels → wipe any stale pheno_score.tsv from a
+    # previous edit instead of leaving misleading content behind.
+    from . import phenotype_scorer
+    pheno_tsv = vdir / "pheno_score.tsv"
+    if (hpo or panels):
+        scores = phenotype_scorer.compute_pheno_score(hpo or [], panels or [])
+        phenotype_scorer.write_pheno_table(sample_id, scores, target_dir=vdir)
+    elif pheno_tsv.exists():
+        try:
+            pheno_tsv.unlink()
+        except OSError:
+            pass
+
     return payload
 
 

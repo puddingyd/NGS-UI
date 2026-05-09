@@ -272,6 +272,31 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
     lir = _read_tsv_dict(sidecar_dir / "lirical_results.tsv")
     pheno_by_gene: dict[str, float] = {}
     pheno_path = sidecar_dir / "pheno_score.tsv"
+
+    # Lazy backfill: legacy samples + any pheno_score.tsv predating its
+    # analysis.json (e.g. HPO/panels touched by a tool that bypassed
+    # write_version) get recomputed inline so the Clinical/in-panel
+    # consumers downstream always see a fresh table.
+    analysis_path = sidecar_dir / "analysis.json"
+    needs_backfill = (
+        analysis_path.is_file() and (
+            not pheno_path.exists()
+            or pheno_path.stat().st_mtime < analysis_path.stat().st_mtime
+        )
+    )
+    if needs_backfill:
+        try:
+            from . import phenotype_scorer
+            scores = phenotype_scorer.compute_pheno_score(hpo_list, panels_list)
+            if scores:
+                phenotype_scorer.write_pheno_table(
+                    sample_id, scores, target_dir=sidecar_dir
+                )
+        except Exception:
+            # Backfill is best-effort; the loader still degrades to no
+            # pheno column rather than 5xx the whole sample load.
+            pass
+
     if pheno_path.exists():
         import csv as _csv
         with pheno_path.open("r", encoding="utf-8", newline="") as f:
