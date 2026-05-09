@@ -365,12 +365,30 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
     from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS, SV_TIERS
     cnv_path = sub / "cnv.annotated.tsv"
     sv_path  = sub / "sv.annotated.tsv"
+    # CNV/SV gene tables render the pheno column as `matched/total`
+    # (e.g. "2/3" — gene was implicated by 2 of 3 input HPO/panel
+    # weights). Recompute the raw matched-weight + total-weight pair
+    # here from the active analysis version's HPO/panels so the
+    # numerator on each gene matches what compute_pheno_score
+    # multiplied by 100 to write pheno_score.tsv.
+    from . import phenotype_scorer
+    pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(
+        hpo_list, panels_list
+    )
     cnv_variants, cnv_categories = (
-        load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene)
+        load_annotsv_tsv(
+            cnv_path, source="cnv",
+            pheno_by_gene=pheno_by_gene,
+            pheno_matched=pheno_matched, pheno_total=pheno_total,
+        )
         if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
     )
     sv_variants, sv_categories = (
-        load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene)
+        load_annotsv_tsv(
+            sv_path, source="sv",
+            pheno_by_gene=pheno_by_gene,
+            pheno_matched=pheno_matched, pheno_total=pheno_total,
+        )
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
 

@@ -1214,17 +1214,46 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .gene-overflow-chip.gene-row-in-panel { background: #fef3c7; }
 
-/* Pathogenic-region overlap. First two rows always visible; rest
-   tucked behind <details>. */
+/* Pathogenic-region overlap. Content visually clamps to ~2 lines via
+   line-clamp; the toggle button below flips an `.expanded` class to
+   reveal the rest. (\\n-split didn't work because AnnotSV often emits
+   one long wrapped line per category.) */
 .cnv-sv-overlap-row {
   font-size: 12px; margin: 4px 0; padding: 6px 8px;
   background: #fff7ed; border-left: 2px solid #f97316; border-radius: 3px;
 }
 .cnv-sv-overlap-row strong { color: #9a3412; }
-.cnv-sv-overlap-phen { margin-top: 2px; }
-.cnv-sv-overlap-sources { margin-top: 4px; font-size: 11px; word-break: break-all; }
-.cnv-sv-overlap-more { margin-top: 4px; }
-.cnv-sv-overlap-more > summary { cursor: pointer; user-select: none; font-size: 11px; }
+.cnv-sv-overlap-head { margin-bottom: 2px; }
+.cnv-sv-overlap-content {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+          line-clamp: 2;
+  overflow: hidden;
+  word-break: break-all;
+}
+.cnv-sv-overlap-row.expanded .cnv-sv-overlap-content {
+  -webkit-line-clamp: unset;
+          line-clamp: unset;
+  overflow: visible;
+}
+.cnv-sv-overlap-phen { margin-bottom: 2px; }
+.cnv-sv-overlap-sources { font-size: 11px; }
+.cnv-sv-overlap-toggle {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  background: transparent; border: 0; padding: 0;
+  color: #9a3412; cursor: pointer;
+}
+.cnv-sv-overlap-toggle:hover { text-decoration: underline; }
+
+/* Inline pheno star — replaces the ⭐ emoji. Soft amber to match
+   the in-panel row highlight without screaming. */
+.pheno-star {
+  display: inline-block; margin-left: 3px;
+  color: #d97706; font-size: 11px; line-height: 1;
+}
 
 .cnv-sv-comment-text {
   width: 100%; box-sizing: border-box;

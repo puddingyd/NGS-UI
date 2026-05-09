@@ -102,10 +102,22 @@ def _split_genes(gene_name: str) -> list[str]:
     return [g.strip() for g in (gene_name or "").split(";") if g.strip()]
 
 
-def _split_row_to_gene(row: dict, pheno_by_gene: dict[str, float]) -> dict:
-    """Build a per-gene record from one AnnotSV split row."""
+def _split_row_to_gene(
+    row: dict,
+    pheno_by_gene: dict[str, float],
+    pheno_matched: dict[str, float],
+    pheno_total: float,
+) -> dict:
+    """Build a per-gene record from one AnnotSV split row.
+
+    `pheno_score` (0-100, used for sorting) and `pheno_matched` /
+    `pheno_total` (raw matched-weight / total-input-weight pair, used
+    by the UI to render the fraction) all describe the same per-gene
+    value at different stages of normalisation.
+    """
     gene = (row.get("Gene_name") or "").strip()
     score = pheno_by_gene.get(gene)
+    matched = pheno_matched.get(gene, 0.0) if pheno_matched else 0.0
     return {
         "gene":             gene,
         "tx":               (row.get("Tx") or "").strip(),
@@ -122,7 +134,9 @@ def _split_row_to_gene(row: dict, pheno_by_gene: dict[str, float]) -> dict:
         "loeuf_bin":        _to_float(row.get("LOEUF_bin")),
         "pli":              _to_float(row.get("GnomAD_pLI") or row.get("ExAC_pLI")),
         "pheno_score":      round(score, 2) if score is not None else None,
-        "in_panel":         bool(score and score > 0),
+        "pheno_matched":    matched,
+        "pheno_total":      pheno_total,
+        "in_panel":         bool(matched and matched > 0),
     }
 
 
@@ -220,6 +234,8 @@ def load_annotsv_tsv(
     *,
     source: str,                              # "cnv" | "sv"
     pheno_by_gene: dict[str, float] | None = None,
+    pheno_matched: dict[str, float] | None = None,
+    pheno_total: float = 0.0,
 ) -> tuple[dict[str, dict], dict[str, list[str]]]:
     """Read AnnotSV output → ({annotsv_id: variant}, {tier: [ids]}).
 
@@ -229,6 +245,7 @@ def load_annotsv_tsv(
     stable ordering across reloads.
     """
     pheno_by_gene = pheno_by_gene or {}
+    pheno_matched = pheno_matched or {}
     tiers = list(CNV_TIERS) if source == "cnv" else list(SV_TIERS)
     variants: dict[str, dict] = {}
     categories: dict[str, list[str]] = {t: [] for t in tiers}
@@ -279,7 +296,7 @@ def load_annotsv_tsv(
                 # Split rows ride alongside the full row; if we haven't
                 # seen the full one yet (file not strictly ordered),
                 # stash the gene record and merge later.
-                gene_rec = _split_row_to_gene(row, pheno_by_gene)
+                gene_rec = _split_row_to_gene(row, pheno_by_gene, pheno_matched, pheno_total)
                 if aid in variants:
                     variants[aid]["genes"].append(gene_rec)
                 else:

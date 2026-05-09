@@ -117,20 +117,19 @@ def gene_count(hpo_id: str) -> int:
     return len(_HPO_TO_GENES.get(hpo_id, ()))
 
 
-def compute_pheno_score(
+def compute_pheno_match(
     hpo_terms: list[dict] | list[tuple[str, float]],
     panels: Iterable = (),
-) -> dict[str, float]:
-    """Return {gene_symbol: pheno_score} for genes with score > 0.
+) -> tuple[dict[str, float], float]:
+    """Pre-multiplication state of compute_pheno_score.
 
-    `hpo_terms` accepts either:
-        [{"phenotype": "HP:0001250", "weight": 2}, ...]   (dict form)
-        [("HP:0001250", 2), ...]                          (tuple form)
+    Returns ({gene_symbol: matched_weight}, total_input_weight) where
+    matched_weight is the sum of weights of HPO terms / panels that
+    contain the gene, and total_input_weight is the sum of all input
+    weights. CNV/SV cards render `matched/total` as a fraction so the
+    reviewer can see "this gene was implicated by 2 of the 3 panels".
 
-    `panels` accepts mixed:
-        ["HIE", "Marfan_panel"]                              (legacy strings → weight 1)
-        [{"name": "HIE", "weight": 2}, ...]                  (preferred)
-        [("HIE", 2), ...]                                    (tuple)
+    Input shapes: same as compute_pheno_score.
     """
     if not _LOADED:
         load()
@@ -161,17 +160,32 @@ def compute_pheno_score(
             pairs.append((name, w))
 
     total_weight = sum(w for _, w in pairs)
-    if total_weight <= 0 or not pairs:
-        return {}
-
     accum: dict[str, float] = defaultdict(float)
     for hid, w in pairs:
         for gene in _HPO_TO_GENES.get(hid, ()):
             accum[gene] += w
+    return dict(accum), total_weight
+
+
+def compute_pheno_score(
+    hpo_terms: list[dict] | list[tuple[str, float]],
+    panels: Iterable = (),
+) -> dict[str, float]:
+    """Return {gene_symbol: pheno_score} for genes with score > 0.
+
+    Score = 100 × matched_weight / total_input_weight. Identical to
+    compute_pheno_match() followed by the per-gene normalisation —
+    kept as a thin wrapper so all existing callers (SNV pheno join,
+    pheno_score.tsv writer, in-panel column rewrite) keep working
+    unchanged.
+    """
+    matched, total = compute_pheno_match(hpo_terms, panels)
+    if total <= 0 or not matched:
+        return {}
     return {
-        g: 100.0 * v / total_weight
-        for g, v in accum.items()
-        if v > 0
+        g: 100.0 * w / total
+        for g, w in matched.items()
+        if w > 0
     }
 
 

@@ -1812,8 +1812,6 @@ function _renderCnvSvHeader(v, id, opts) {
 }
 
 function _renderCnvSvDetailBox(v, id) {
-  const chrom = _normalizeChrom(v.CHROM);
-  const cytoBoth = v.cytoband ? `${_chromNumber(v.CHROM)}${v.cytoband}` : "";
   const cn = (v.copy_number != null) ? ` · CN ${v.copy_number}` : "";
   const filter = v.filter && v.filter !== "." ? v.filter : "PASS";
   const qual = (v.qual != null) ? Number(v.qual).toFixed(2) : "—";
@@ -1846,7 +1844,6 @@ function _renderCnvSvDetailBox(v, id) {
 
   return `<div class="cnv-sv-detail-box">
     <div class="cnv-sv-detail-row">
-      <span><strong>位置:</strong> ${escapeHtml(chrom)}:${_fmtPos(v.POS)}-${_fmtPos(v.END)}</span>
       <span><strong>長度:</strong> ${escapeHtml(_fmtBp(v.length))}</span>
       <span><strong>類型:</strong> ${escapeHtml(v.sv_type || "?")}</span>
       <span><strong>基因型:</strong> ${escapeHtml(v.GT || "—")} (${escapeHtml(zyg)})${cn}</span>
@@ -1854,7 +1851,6 @@ function _renderCnvSvDetailBox(v, id) {
       <span><strong>Qual:</strong> ${qual}</span>
     </div>
     <div class="cnv-sv-detail-row">
-      <span><strong>Cytoband:</strong> ${escapeHtml(cytoBoth || "—")}</span>
       <span><strong>ACMG:</strong> ${acmgSelect}</span>
       <span><strong>Score:</strong> ${escapeHtml(score)}</span>
     </div>
@@ -1875,7 +1871,7 @@ function _renderCnvSvGeneTable(v, id) {
   // Top 20 + any in-panel rows beyond 20 always get the full table
   // treatment so reviewers don't lose their ⭐ rows behind the
   // overflow disclosure.
-  const cap = 20;
+  const cap = 10;
   const visible = sorted.slice(0, cap);
   const overflow = sorted.slice(cap);
   const overflowInPanel = overflow.filter(g => g.in_panel);
@@ -1884,12 +1880,18 @@ function _renderCnvSvGeneTable(v, id) {
   const picked = getEdit(id, "report_genes") || {};
   const rowHtml = (g) => {
     const checked = picked[g.gene] ? "checked" : "";
-    const triggerMark = g.in_panel ? "⭐" : "";
+    const triggerMark = g.in_panel ? `<span class="pheno-star" title="HPO/panel match">★</span>` : "";
     const omimCell = g.omim_id
       ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
       : "—";
     const inhLabel = g.omim_inheritance ? escapeHtml(g.omim_inheritance) : "—";
-    const pheno = (g.pheno_score != null) ? Number(g.pheno_score).toFixed(1) : "—";
+    // Render pheno as `matched/total` so the reviewer can see how
+    // many of the input HPO/panel weights implicate this gene. Falls
+    // back to "—" when phenotype isn't configured (denominator 0).
+    const _fmtW = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
+    const pheno = (g.pheno_total && g.pheno_total > 0)
+      ? `${_fmtW(g.pheno_matched || 0)}/${_fmtW(g.pheno_total)}`
+      : "—";
     const phenLine = (g.omim_phenotype || "").split("\n")[0] || "";
     const phenFull = g.omim_phenotype || "";
     return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
@@ -1935,28 +1937,32 @@ function _renderCnvSvGeneTable(v, id) {
 }
 
 function _renderCnvSvOverlap(v) {
-  // Each P_* category shows the first 2 source lines; the rest sit
-  // behind a <details> disclosure so a 50-source dbVar hit doesn't
-  // dominate the card.
+  // Type-specific filter: a deletion only meaningfully overlaps loss
+  // pathogenic regions; a duplication only gain regions; everything
+  // else (INV / INS / TRA) shows all three so reviewers can pick.
+  const allowed = new Set();
+  if (v.sv_type === "DEL") allowed.add("p_loss");
+  else if (v.sv_type === "DUP") allowed.add("p_gain");
+  else { allowed.add("p_loss"); allowed.add("p_gain"); allowed.add("p_ins"); }
+
+  // Each block clamps to 2 visible lines via CSS line-clamp (the
+  // `\n`-split approach broke when AnnotSV puts the entire phen text
+  // on one wrapped line). A toggle button below each block flips a
+  // `.expanded` class to reveal the rest.
   const groups = [];
   for (const [key, label] of [["p_loss", "P_loss"], ["p_gain", "P_gain"], ["p_ins", "P_ins"]]) {
+    if (!allowed.has(key)) continue;
     const p = v[key];
     if (!p || (!p.phens && !(p.sources || []).length)) continue;
     const phenLine = p.phens ? `<div class="cnv-sv-overlap-phen">${escapeHtml(p.phens)}</div>` : "";
     const sources = p.sources || [];
-    const visible = sources.slice(0, 2);
-    const hidden = sources.slice(2);
-    const visibleHtml = visible.length
-      ? `<div class="muted cnv-sv-overlap-sources">${visible.map(escapeHtml).join("； ")}</div>`
-      : "";
-    const hiddenHtml = hidden.length
-      ? `<details class="cnv-sv-overlap-more">
-           <summary class="muted">展開其餘 ${hidden.length} 個來源…</summary>
-           <div class="muted cnv-sv-overlap-sources">${hidden.map(escapeHtml).join("； ")}</div>
-         </details>`
+    const sourcesHtml = sources.length
+      ? `<div class="muted cnv-sv-overlap-sources">${sources.map(escapeHtml).join("； ")}</div>`
       : "";
     groups.push(`<div class="cnv-sv-overlap-row">
-      <strong>${label}:</strong>${phenLine}${visibleHtml}${hiddenHtml}
+      <div class="cnv-sv-overlap-head"><strong>${label}:</strong></div>
+      <div class="cnv-sv-overlap-content">${phenLine}${sourcesHtml}</div>
+      <button type="button" class="cnv-sv-overlap-toggle">▸ 展開全部</button>
     </div>`);
   }
   if (!groups.length) return "";
@@ -2052,6 +2058,18 @@ document.addEventListener("click", ev => {
     tr.classList.add("gene-row-expanded");
     cell.textContent = cell.dataset.phenFull || "";
   }
+});
+
+// 致病區域重疊 expand/collapse: each row has its content wrapped in
+// a CSS-line-clamped div; this toggle flips the expanded class and
+// updates the button label.
+document.addEventListener("click", ev => {
+  const btn = ev.target.closest?.(".cnv-sv-overlap-toggle");
+  if (!btn) return;
+  const row = btn.closest(".cnv-sv-overlap-row");
+  if (!row) return;
+  const expanded = row.classList.toggle("expanded");
+  btn.textContent = expanded ? "▾ 收合" : "▸ 展開全部";
 });
 
 // Sidebar nav: clicking a button with data-target scrolls the matching
