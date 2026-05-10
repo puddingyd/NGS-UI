@@ -282,14 +282,14 @@ _NEEDED_COLS = set(_FULL_COLS) | set(_SPLIT_COLS)
 GENE_VISIBLE_CAP = 10
 
 
-def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], int]:
+def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], list[dict], int]:
     """Sort genes (in-panel first, then pheno_score desc, then alpha)
-    and split into ({full visible}, {compact overflow}, total_count).
+    and split into ({visible 10}, {in-panel overflow full}, {other overflow compact}, total).
 
-    Visible = top GENE_VISIBLE_CAP rows + any in-panel rows beyond
-    that cap (so the in-panel ⭐ rows are never relegated to the
-    chip overflow). Compact rows carry only the fields the chip
-    overflow displays, dropping ~14 unused fields per gene record.
+    Visible is strictly the top GENE_VISIBLE_CAP rows. In-panel rows
+    beyond the cap stay as full records (table treatment when the
+    reviewer expands the overflow); non-in-panel overflow drops to
+    compact chip records to keep payload small.
     """
     sorted_genes = sorted(genes, key=lambda g: (
         not g.get("in_panel"),
@@ -298,14 +298,14 @@ def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], int]:
     ))
     visible = sorted_genes[:GENE_VISIBLE_CAP]
     rest = sorted_genes[GENE_VISIBLE_CAP:]
-    overflow_in_panel = [g for g in rest if g.get("in_panel")]
-    overflow_other    = [
+    overflow_full    = [g for g in rest if g.get("in_panel")]
+    overflow_compact = [
         {"gene": g.get("gene"),
          "omim_id": g.get("omim_id"),
          "in_panel": g.get("in_panel")}
         for g in rest if not g.get("in_panel")
     ]
-    return visible + overflow_in_panel, overflow_other, len(genes)
+    return visible, overflow_full, overflow_compact, len(genes)
 
 
 def load_annotsv_tsv(
@@ -403,10 +403,11 @@ def load_annotsv_tsv(
             categories[tier].append(aid)
         # Trim the gene array. Without this, a 1518-gene SV carries
         # 600 KB of per-gene records all the way to the browser.
-        full, compact, total = _trim_genes(v["genes"])
-        v["genes"] = full
-        v["genes_compact"] = compact
-        v["genes_total"]   = total
+        visible, ov_full, ov_compact, total = _trim_genes(v["genes"])
+        v["genes"]              = visible
+        v["genes_overflow"]     = ov_full
+        v["genes_compact"]      = ov_compact
+        v["genes_total"]        = total
 
     # Sort each tier.
     def _clinical_key(aid: str) -> tuple:

@@ -1887,22 +1887,27 @@ function _renderCnvSvGeneTable(v, id) {
   if (!total) return "";
 
   const picked = getEdit(id, "report_genes") || {};
+  const _fmtW = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
+  const _firstLine = s => (s || "").split("\n")[0] || "";
   const rowHtml = (g) => {
     const checked = picked[g.gene] ? "checked" : "";
     const triggerMark = g.in_panel ? `<span class="pheno-star" title="HPO/panel match">★</span>` : "";
     const omimCell = g.omim_id
       ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
       : "—";
-    const inhLabel = g.omim_inheritance ? escapeHtml(g.omim_inheritance) : "—";
+    // AnnotSV emits Overlapped_CDS_percent as 0..100 already (saw
+    // 100 → "10000%" pre-fix). Treat the value as the percent itself,
+    // no extra ×100.
+    const cdsPct = (g.overlap_cds_pct != null)
+      ? `${Math.round(Number(g.overlap_cds_pct))}%` : "—";
     // Pheno reads as `matched/total` so the reviewer sees how many
     // input HPO/panel weights implicate this gene. Falls back to "—"
     // when phenotype isn't configured (denominator 0).
-    const _fmtW = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
     const pheno = (g.pheno_total && g.pheno_total > 0)
       ? `${_fmtW(g.pheno_matched || 0)}/${_fmtW(g.pheno_total)}`
       : "—";
-    const phenLine = (g.omim_phenotype || "").split("\n")[0] || "";
-    const phenFull = g.omim_phenotype || "";
+    const inh     = g.omim_inheritance || "";
+    const phenAll = g.omim_phenotype   || "";
     return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
       <td class="gene-pick-cell">
         <input type="checkbox" class="gene-pick" data-id="${escapeAttr(id)}" data-gene="${escapeAttr(g.gene || "")}" ${checked} title="勾選=放進報告" />
@@ -1910,10 +1915,10 @@ function _renderCnvSvGeneTable(v, id) {
       <td><strong>${escapeHtml(g.gene || "?")}</strong>${triggerMark}</td>
       <td>${escapeHtml(g.tx || "")}</td>
       <td>${escapeHtml(g.location || "")}</td>
-      <td>${g.overlap_cds_pct != null ? Math.round(Number(g.overlap_cds_pct) * 100) + "%" : "—"}</td>
-      <td>${inhLabel}</td>
+      <td>${cdsPct}</td>
+      <td class="gene-clip-cell" data-full="${escapeAttr(inh)}" title="點此展開">${escapeHtml(inh) || "—"}</td>
       <td>${omimCell}</td>
-      <td class="gene-phen-cell" data-phen-full="${escapeAttr(phenFull)}" title="點此展開完整 phenotype">${escapeHtml(phenLine) || "—"}</td>
+      <td class="gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開">${escapeHtml(_firstLine(phenAll)) || "—"}</td>
       <td>${pheno}</td>
     </tr>`;
   };
@@ -1927,10 +1932,12 @@ function _renderCnvSvGeneTable(v, id) {
   // Overflow body is rendered lazily on first <details> open. For
   // SVs that span 1500+ genes, eagerly building the chip DOM was
   // adding ~100 ms per card even though the panel was hidden.
+  const genesOverflow = v.genes_overflow || [];
+  const overflowCount = genesOverflow.length + genesCompact.length;
   let overflowHtml = "";
-  if (genesCompact.length) {
+  if (overflowCount) {
     overflowHtml = `<details class="cnv-sv-gene-overflow" data-id="${escapeAttr(id)}" data-rendered="0">
-      <summary class="muted">展開其餘 ${genesCompact.length} 個基因…</summary>
+      <summary class="muted">展開其餘 ${overflowCount} 個基因…</summary>
       <div class="gene-overflow-body"></div>
     </details>`;
   }
@@ -2038,8 +2045,8 @@ function _renderCnvSvBenign(v) {
 function _renderCnvSvComment(v, id) {
   const comment = (getEdit(id, "comment") || "");
   return `<div class="cnv-sv-section cnv-sv-comment">
-    <div class="cnv-sv-section-title">Reviewer comment</div>
-    <textarea class="cnv-sv-comment-text" data-id="${escapeAttr(id)}" rows="2" placeholder="reviewer 備註…">${escapeHtml(comment)}</textarea>
+    <div class="cnv-sv-section-title">Comment</div>
+    <textarea class="cnv-sv-comment-text" data-id="${escapeAttr(id)}" rows="2" placeholder="備註">${escapeHtml(comment)}</textarea>
   </div>`;
 }
 
@@ -2095,19 +2102,19 @@ document.addEventListener("input", ev => {
   setEdit(id, "comment", t.value);
 });
 
-// Click on a phenotype cell in the gene table → expand row to show
-// the full multi-line OMIM phenotype text. Click again to collapse.
+// Click on a truncated cell (Inheritance / Phenotype) → expand it
+// to show the full text. Click again to collapse. Each cell tracks
+// its own state via .gene-clip-expanded so phen and inh expand
+// independently.
 document.addEventListener("click", ev => {
-  const cell = ev.target.closest?.(".cnv-sv-gene-table .gene-phen-cell");
+  const cell = ev.target.closest?.(".cnv-sv-gene-table .gene-clip-cell");
   if (!cell) return;
-  const tr = cell.closest("tr");
-  if (!tr) return;
-  if (tr.classList.contains("gene-row-expanded")) {
-    tr.classList.remove("gene-row-expanded");
-    cell.textContent = (cell.dataset.phenFull || "").split("\n")[0] || "—";
+  if (cell.classList.contains("gene-clip-expanded")) {
+    cell.classList.remove("gene-clip-expanded");
+    cell.textContent = (cell.dataset.full || "").split("\n")[0] || "—";
   } else {
-    tr.classList.add("gene-row-expanded");
-    cell.textContent = cell.dataset.phenFull || "";
+    cell.classList.add("gene-clip-expanded");
+    cell.textContent = cell.dataset.full || "";
   }
 });
 
@@ -2124,19 +2131,57 @@ document.addEventListener("toggle", ev => {
   const id = det.dataset.id;
   const v = _cnvSvVariantById(id);
   if (!v) return;
-  const compact = v.genes_compact || [];
+  const overflowFull = v.genes_overflow || [];
+  const compact      = v.genes_compact  || [];
   const body = det.querySelector(".gene-overflow-body");
   if (!body) return;
-  body.innerHTML = `<div class="gene-overflow-chips">${
-    compact.map(g =>
-      `<span class="gene-overflow-chip${g.in_panel ? " gene-row-in-panel" : ""}">`
-      + `${escapeHtml(g.gene || "?")}`
-      + (g.omim_id
-          ? ` <a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener" class="muted">${escapeHtml(g.omim_id)}</a>`
-          : "")
-      + `</span>`
-    ).join("")
-  }</div>`;
+  // In-panel rows beyond the visible cap stay in full table format
+  // (so reviewers can still see Tx / Location / Phenotype for them).
+  // Non-in-panel rows collapse to compact chips since they were
+  // shipped without those fields.
+  const picked = getEdit(id, "report_genes") || {};
+  const _fmtW = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
+  const _firstLine = s => (s || "").split("\n")[0] || "";
+  const fullRowHtml = (g) => {
+    const checked = picked[g.gene] ? "checked" : "";
+    const triggerMark = g.in_panel ? `<span class="pheno-star" title="HPO/panel match">★</span>` : "";
+    const omimCell = g.omim_id
+      ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
+      : "—";
+    const cdsPct = (g.overlap_cds_pct != null)
+      ? `${Math.round(Number(g.overlap_cds_pct))}%` : "—";
+    const pheno = (g.pheno_total && g.pheno_total > 0)
+      ? `${_fmtW(g.pheno_matched || 0)}/${_fmtW(g.pheno_total)}`
+      : "—";
+    const inh     = g.omim_inheritance || "";
+    const phenAll = g.omim_phenotype   || "";
+    return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
+      <td class="gene-pick-cell"><input type="checkbox" class="gene-pick" data-id="${escapeAttr(id)}" data-gene="${escapeAttr(g.gene || "")}" ${checked} title="勾選=放進報告" /></td>
+      <td><strong>${escapeHtml(g.gene || "?")}</strong>${triggerMark}</td>
+      <td>${escapeHtml(g.tx || "")}</td>
+      <td>${escapeHtml(g.location || "")}</td>
+      <td>${cdsPct}</td>
+      <td class="gene-clip-cell" data-full="${escapeAttr(inh)}" title="點此展開">${escapeHtml(inh) || "—"}</td>
+      <td>${omimCell}</td>
+      <td class="gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開">${escapeHtml(_firstLine(phenAll)) || "—"}</td>
+      <td>${pheno}</td>
+    </tr>`;
+  };
+  const tableHead = `<thead><tr>
+    <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
+    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th>
+  </tr></thead>`;
+  const fullTable = overflowFull.length
+    ? `<table class="cnv-sv-gene-table">${tableHead}<tbody>${overflowFull.map(fullRowHtml).join("")}</tbody></table>`
+    : "";
+  const chipBlock = compact.length
+    ? `<div class="gene-overflow-chips">${compact.map(g =>
+        `<span class="gene-overflow-chip${g.in_panel ? " gene-row-in-panel" : ""}">${escapeHtml(g.gene || "?")}${
+          g.omim_id ? ` <a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener" class="muted">${escapeHtml(g.omim_id)}</a>` : ""
+        }</span>`
+      ).join("")}</div>`
+    : "";
+  body.innerHTML = fullTable + chipBlock;
   det.dataset.rendered = "1";
 }, true);
 

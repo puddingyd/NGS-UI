@@ -1194,16 +1194,19 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .cnv-sv-gene-table th:nth-child(6) { width: 6em; }       /* inh */
 .cnv-sv-gene-table th:nth-child(7) { width: 6em; }       /* omim */
 .cnv-sv-gene-table th:nth-child(9) { width: 4em; }       /* pheno */
-.cnv-sv-gene-table .gene-phen-cell {
+.cnv-sv-gene-table .gene-clip-cell {
   cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 0;            /* let table-layout:fixed clip overflow */
+  max-width: 0;            /* table-layout:fixed clips at column width */
 }
-.cnv-sv-gene-table .gene-phen-cell:hover { background: #eef2ff; }
-.cnv-sv-gene-table tr.gene-row-expanded .gene-phen-cell {
+.cnv-sv-gene-table .gene-clip-cell:hover { background: rgba(0,0,0,0.04); }
+.cnv-sv-gene-table .gene-clip-cell.gene-clip-expanded {
   white-space: pre-wrap; overflow: visible; text-overflow: clip;
   max-width: none;
-  background: #eef2ff;
+  /* No background change — preserves the in-panel yellow row tint
+     when expanded. A subtle outline marks the active state instead. */
+  outline: 1px solid rgba(0,0,0,0.15);
+  outline-offset: -1px;
 }
 
 .cnv-sv-gene-overflow {
