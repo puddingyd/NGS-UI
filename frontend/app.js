@@ -1854,9 +1854,20 @@ function _renderCnvSvDetailBox(v, id) {
       })()
     : `<div class="cnv-sv-reasoning"><strong>Score:</strong> ${escapeHtml(score)}</div>`;
 
+  // Disease-related gene count = genes with a non-empty OMIM
+  // phenotype text. OMIM_morbid would be the strictest signal but we
+  // don't always parse it; OMIM_phenotype non-empty is a reliable
+  // proxy and is the same field we already render in the gene table.
+  const totalGenes = (v.gene_count != null) ? v.gene_count : (v.genes || []).length;
+  const diseaseGenes = (v.genes || []).filter(g => g.omim_phenotype).length;
+  const geneCountText = totalGenes != null
+    ? `${totalGenes}（${diseaseGenes} 個疾病相關）`
+    : "—";
+
   return `<div class="cnv-sv-detail-box">
     <div class="cnv-sv-detail-row">
       <span><strong>ACMG:</strong> ${acmgSelect}</span>
+      <span><strong>涵蓋基因數:</strong> ${escapeHtml(geneCountText)}</span>
       <span><strong>基因型:</strong> ${escapeHtml(v.GT || "—")} (${escapeHtml(zyg)})${cn}</span>
       <span><strong>Filter:</strong> ${escapeHtml(filter)}</span>
       <span><strong>Qual:</strong> ${qual}</span>
