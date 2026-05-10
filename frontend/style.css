@@ -1253,6 +1253,15 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .cnv-sv-overlap-toggle:hover { text-decoration: underline; }
 
+/* Benign-region overlap rows: same shape as pathogenic, swapped to a
+   green palette so reviewers can tell them apart at a glance. */
+.cnv-sv-overlap-row.cnv-sv-benign-row {
+  background: #ecfdf5;
+  border-left-color: #10b981;
+}
+.cnv-sv-overlap-row.cnv-sv-benign-row strong { color: #065f46; }
+.cnv-sv-overlap-row.cnv-sv-benign-row .cnv-sv-overlap-toggle { color: #065f46; }
+
 /* Inline pheno star — replaces the ⭐ emoji. Soft amber to match
    the in-panel row highlight without screaming. */
 .pheno-star {

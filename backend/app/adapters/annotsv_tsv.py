@@ -60,6 +60,24 @@ def _split_semi(s: str | None) -> list[str]:
     return [p for p in s.split(";") if p]
 
 
+def _parse_b_block(row: dict, prefix: str) -> dict:
+    """B_loss / B_gain / B_ins / B_inv: parallel ;-separated source +
+    coord + AFmax lists, one entry per overlapping benign-region
+    record. The scalar `af_max` is the max of the per-source AFs
+    (used by the frontend for the AF summary line)."""
+    sources = _split_semi(row.get(f"{prefix}_source") or "")
+    coords  = _split_semi(row.get(f"{prefix}_coord") or "")
+    afs_raw = _split_semi(row.get(f"{prefix}_AFmax") or "")
+    af_nums = [_to_float(s) for s in afs_raw]
+    af_nums = [f for f in af_nums if f is not None]
+    return {
+        "sources": sources,
+        "coords":  coords,
+        "afs":     afs_raw,
+        "af_max":  max(af_nums) if af_nums else None,
+    }
+
+
 def _parse_format_sample(fmt: str, sample: str) -> dict[str, str]:
     """VCF FORMAT/sample → dict (e.g. GT:CN, 0/1:1 → {GT:0/1, CN:1})."""
     if not fmt or not sample:
@@ -194,9 +212,10 @@ def _full_row_to_variant(
             "sources":  _split_semi(full_row.get("P_ins_source") or ""),
             "coords":   _split_semi(full_row.get("P_ins_coord") or ""),
         },
-        "b_loss_af_max":     _to_float(full_row.get("B_loss_AFmax")),
-        "b_gain_af_max":     _to_float(full_row.get("B_gain_AFmax")),
-        "b_ins_af_max":      _to_float(full_row.get("B_ins_AFmax")),
+        "b_loss":            _parse_b_block(full_row, "B_loss"),
+        "b_gain":            _parse_b_block(full_row, "B_gain"),
+        "b_ins":             _parse_b_block(full_row, "B_ins"),
+        "b_inv":             _parse_b_block(full_row, "B_inv"),
         "qual":              _to_float(full_row.get("QUAL")),
         "filter":            (full_row.get("FILTER") or "").strip(),
         "format":            fmt,

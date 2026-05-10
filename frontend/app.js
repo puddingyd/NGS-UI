@@ -1980,15 +1980,49 @@ function _renderCnvSvOverlap(v) {
 }
 
 function _renderCnvSvBenign(v) {
-  const parts = [];
-  if (v.b_loss_af_max != null) parts.push(`B_loss max AF: ${Number(v.b_loss_af_max).toFixed(4)}`);
-  if (v.b_gain_af_max != null) parts.push(`B_gain max AF: ${Number(v.b_gain_af_max).toFixed(4)}`);
-  if (v.b_ins_af_max  != null) parts.push(`B_ins  max AF: ${Number(v.b_ins_af_max).toFixed(4)}`);
-  if (!parts.length) return "";
-  const warn = (v.b_loss_af_max && v.b_loss_af_max > 0.01) || (v.b_gain_af_max && v.b_gain_af_max > 0.01);
-  return `<div class="cnv-sv-section ${warn ? "cnv-sv-warn" : ""}">
-    <div class="cnv-sv-section-title">族群常見變異 ${warn ? "⚠️" : ""}</div>
-    <div class="muted">${parts.map(escapeHtml).join(" · ")}</div>
+  // Type-specific filter mirrors the pathogenic-overlap one:
+  // DEL → B_loss, DUP → B_gain, INV / INS / TRA → all four blocks.
+  const allowed = new Set();
+  if (v.sv_type === "DEL") allowed.add("b_loss");
+  else if (v.sv_type === "DUP") allowed.add("b_gain");
+  else { allowed.add("b_loss"); allowed.add("b_gain"); allowed.add("b_ins"); allowed.add("b_inv"); }
+
+  const groups = [];
+  for (const [key, label] of [["b_loss","B_loss"], ["b_gain","B_gain"], ["b_ins","B_ins"], ["b_inv","B_inv"]]) {
+    if (!allowed.has(key)) continue;
+    const b = v[key];
+    if (!b || (!b.sources?.length && !b.coords?.length)) continue;
+    const afHead = (b.af_max != null)
+      ? ` <span class="muted" style="font-size:11px">max AF ${Number(b.af_max).toFixed(4)}</span>`
+      : "";
+    // Pair source+coord+AF when we can; fall back to source-only line
+    // if the lengths don't agree (defensive — AnnotSV usually emits
+    // them in lock-step).
+    const lines = [];
+    const n = Math.max(b.sources.length, b.coords.length, (b.afs || []).length);
+    for (let i = 0; i < n; i++) {
+      const src   = b.sources[i] || "";
+      const coord = b.coords[i] || "";
+      const af    = (b.afs && b.afs[i]) || "";
+      const segs = [];
+      if (src)   segs.push(escapeHtml(src));
+      if (coord) segs.push(`<span class="muted">${escapeHtml(coord)}</span>`);
+      if (af)    segs.push(`<span class="muted">AF ${escapeHtml(af)}</span>`);
+      if (segs.length) lines.push(segs.join(" · "));
+    }
+    const sourcesHtml = lines.length
+      ? `<div class="muted cnv-sv-overlap-sources">${lines.join("； ")}</div>`
+      : "";
+    groups.push(`<div class="cnv-sv-overlap-row cnv-sv-benign-row">
+      <div class="cnv-sv-overlap-head"><strong>${label}:</strong>${afHead}</div>
+      <div class="cnv-sv-overlap-content">${sourcesHtml}</div>
+      <button type="button" class="cnv-sv-overlap-toggle">▸ 展開全部</button>
+    </div>`);
+  }
+  if (!groups.length) return "";
+  return `<div class="cnv-sv-section">
+    <div class="cnv-sv-section-title">已知良性區域重疊</div>
+    ${groups.join("")}
   </div>`;
 }
 
