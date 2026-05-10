@@ -1120,15 +1120,16 @@ body.sidebar-collapsed .container { margin-left: auto; }
   flex: 1; min-width: 0;
 }
 
-/* ACMG colour applied to the dropdown <select> so the active option
-   colour-codes the cell (1=green … 5=red, matching SNV ACMG colours). */
-.cnv-sv-acmg-select { font-size: 12px; padding: 2px 6px;
-  border-radius: 4px; border: 1px solid var(--border); background: #fff; }
-.cnv-sv-acmg-select.acmg-5 { background: #fee2e2; color: #991b1b; }
-.cnv-sv-acmg-select.acmg-4 { background: #fed7aa; color: #9a3412; }
-.cnv-sv-acmg-select.acmg-3 { background: #fef9c3; color: #854d0e; }
-.cnv-sv-acmg-select.acmg-2 { background: #dbeafe; color: #1e3a8a; }
-.cnv-sv-acmg-select.acmg-1 { background: #dcfce7; color: #166534; }
+/* ACMG dropdown — same shape + sig-* colour scale as SNV's ACMG
+   classification field so the eye reads them as one family. */
+.cnv-sv-acmg-select {
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+}
 
 /* The grey-box detail block: two info rows + a collapsible
    AnnotSV-criteria sub-block. Mirrors the SNV info-grid look. */
@@ -1146,11 +1147,15 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .cnv-sv-detail-row + .cnv-sv-detail-row { margin-top: 6px; }
 .cnv-sv-detail-box strong { color: #111827; font-weight: 600; }
-.cnv-sv-reasoning { margin-top: 8px; }
+.cnv-sv-reasoning { margin-top: 6px; font-size: 12px; color: #374151; }
 .cnv-sv-reasoning summary {
   cursor: pointer; user-select: none;
-  font-weight: 600; font-size: 12px; color: #374151;
+  font-weight: 600;
+  display: flex; align-items: baseline; gap: 16px;
+  list-style: revert;
 }
+.cnv-sv-reasoning-score { font-weight: 400; }
+.cnv-sv-reasoning-score strong { font-weight: 600; }
 .cnv-sv-reasoning-list {
   margin: 4px 0 0; padding-left: 18px; font-size: 11px; color: #4b5563;
 }

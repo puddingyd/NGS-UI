@@ -1730,6 +1730,16 @@ const SV_ACMG_LABELS = {
   4: "Likely pathogenic",
   5: "Pathogenic",
 };
+// Mirror of SNV's classifySignificance(): map AnnotSV's 1..5 numeric
+// scale onto the SNV sig-* colour classes so the dropdown reads the
+// same way visually.
+const SV_ACMG_SIG_CLASS = {
+  5: "sig-p",
+  4: "sig-lp",
+  3: "sig-vus",
+  2: "sig-lb",
+  1: "sig-b",
+};
 
 function _fmtPos(n) {
   if (n == null) return "?";
@@ -1816,14 +1826,16 @@ function _renderCnvSvDetailBox(v, id) {
   const filter = v.filter && v.filter !== "." ? v.filter : "PASS";
   const qual = (v.qual != null) ? Number(v.qual).toFixed(2) : "—";
   const zyg = v.zygosity || "—";
-  // ACMG dropdown mirrors the SNV variant card: select with five
-  // levels + an empty placeholder. AnnotSV's class is the default;
-  // reviewer override lives in state.reports.edits[id].ACMG_class_sv
-  // (separate from SNV's `ACMG_classification` so we don't collide).
+  // ACMG dropdown borrows SNV's sig-* colour scale (sig-p…sig-b) so
+  // the field colour matches the rest of the app — Pathogenic red,
+  // VUS yellow, etc. AnnotSV's numeric class is the default; the
+  // reviewer's override lives on state.reports.edits[id].ACMG_class_sv
+  // (separate field from SNV's `ACMG_classification` so they don't
+  // collide).
   const acmgVal = _cnvSvAcmgClassValue(id, v);
-  const acmgClassCss = (acmgVal != null) ? ` acmg-${acmgVal}` : "";
+  const sigClass = SV_ACMG_SIG_CLASS[acmgVal] || "";
   const acmgSelect = `
-    <select class="cnv-sv-acmg-select${acmgClassCss}" data-id="${escapeAttr(id)}">
+    <select class="cnv-sv-acmg-select ${sigClass}" data-id="${escapeAttr(id)}">
       <option value="" ${acmgVal==null ? "selected" : ""}>—</option>
       ${[5,4,3,2,1].map(n =>
         `<option value="${n}" ${acmgVal===n?"selected":""}>${escapeHtml(SV_ACMG_LABELS[n])}</option>`
@@ -1834,25 +1846,20 @@ function _renderCnvSvDetailBox(v, id) {
     ? (() => {
         const items = v.ranking_criteria.split(";").map(s => s.trim()).filter(Boolean);
         return `<details class="cnv-sv-reasoning">
-          <summary>AnnotSV 評分依據</summary>
+          <summary>AnnotSV 評分依據 <span class="cnv-sv-reasoning-score"><strong>Score:</strong> ${escapeHtml(score)}</span></summary>
           <ul class="cnv-sv-reasoning-list">${
             items.map(s => `<li><code>${escapeHtml(s)}</code></li>`).join("")
           }</ul>
         </details>`;
       })()
-    : "";
+    : `<div class="cnv-sv-reasoning"><strong>Score:</strong> ${escapeHtml(score)}</div>`;
 
   return `<div class="cnv-sv-detail-box">
     <div class="cnv-sv-detail-row">
-      <span><strong>長度:</strong> ${escapeHtml(_fmtBp(v.length))}</span>
-      <span><strong>類型:</strong> ${escapeHtml(v.sv_type || "?")}</span>
+      <span><strong>ACMG:</strong> ${acmgSelect}</span>
       <span><strong>基因型:</strong> ${escapeHtml(v.GT || "—")} (${escapeHtml(zyg)})${cn}</span>
       <span><strong>Filter:</strong> ${escapeHtml(filter)}</span>
       <span><strong>Qual:</strong> ${qual}</span>
-    </div>
-    <div class="cnv-sv-detail-row">
-      <span><strong>ACMG:</strong> ${acmgSelect}</span>
-      <span><strong>Score:</strong> ${escapeHtml(score)}</span>
     </div>
     ${reasoning}
   </div>`;
@@ -2029,10 +2036,11 @@ document.addEventListener("change", ev => {
     setEdit(id, "report_genes", picked);
   } else if (t.matches(".cnv-sv-acmg-select")) {
     setEdit(id, "ACMG_class_sv", t.value);
-    // Refresh the colour class on the select so the badge stays in
-    // sync with the new value without a full re-render.
-    t.classList.remove("acmg-1","acmg-2","acmg-3","acmg-4","acmg-5");
-    if (t.value) t.classList.add(`acmg-${t.value}`);
+    // Refresh the sig-* colour class so the field repaints in place
+    // without a full card re-render.
+    t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
+    const next = SV_ACMG_SIG_CLASS[Number(t.value)];
+    if (next) t.classList.add(next);
   }
 });
 
