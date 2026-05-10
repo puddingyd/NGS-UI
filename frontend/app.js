@@ -1009,11 +1009,13 @@ function _startJobPolling(sid, jobId) {
 // ---------- Render: variant card -----------------------------------
 
 function statusOptions(kind) {
-  // kind: "candidate" (causative/other/candidate/diagnostic/pathogenic → 1/2/0/X)
-  //       "panel"     (ACMG SF / Proactive / Carrier → V/0/X)
+  // kind: "candidate" → causative/other/candidate/skip/reject mapped to
+  //                     1 / 2 / C / 0 / X. "C" routes the variant into
+  //                     the Candidate variants report section.
+  //       "panel"     → ACMG SF / Proactive / Carrier → V/0/X.
   // "0" = reviewed but kept on the page (surfaces nowhere in Report).
   if (kind === "panel") return ["", "V", "0", "X"];
-  return ["", "1", "2", "0", "X"];
+  return ["", "1", "2", "C", "0", "X"];
 }
 
 function getStatus(id) {
@@ -1393,6 +1395,10 @@ function renderDiseaseList(v, id, withCheckbox) {
 const REPORT_SECTION_DEFS = [
   { el: "sec-causative", title: "Causative variants", match: id => getStatus(id) === "1", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "1" },
   { el: "sec-other",     title: "Other variants",     match: id => getStatus(id) === "2", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "2" },
+  { el: "sec-candidate", title: "Candidate variants", match: id => getStatus(id) === "C", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "C" },
+  // ACMG SF / Proactive / Carrier / PharmCat all live inside the
+  // Secondary findings collapsible group in the HTML; they render
+  // the same way as before, just nested in a different container.
   { el: "sec-acmg-sf",   title: "ACMG SF",            category: "acmg_sf",   dropdown: "panel", diseaseCheckbox: true },
   { el: "sec-proactive", title: "Proactive",          category: "proactive", dropdown: "panel", diseaseCheckbox: true },
   { el: "sec-carrier",   title: "Carrier screening",  category: "carrier",   dropdown: "panel", diseaseCheckbox: true },
@@ -1796,10 +1802,11 @@ function _renderCnvSvHeader(v, id, opts) {
   const lengthPart = v.length != null ? _fmtBp(v.length) : "";
   const region = `${chrom}:${_fmtPos(v.POS)}-${_fmtPos(v.END)}`;
   const regionRaw = `${chrom}:${v.POS}-${v.END}`;
-  // SNV-card-style status dropdown (1/2/0/X). Reuses the same
-  // state.reports.status dict so docx export already understands it.
+  // SNV-card-style status dropdown (1/2/C/0/X). Reuses the same
+  // state.reports.status dict + the same options as SNV — picking C
+  // routes the variant into the Candidate variants report section.
   const status = (state.reports?.status?.[id]) || "";
-  const options = ["", "1", "2", "0", "X"];
+  const options = ["", "1", "2", "C", "0", "X"];
   const statusSel = `<select class="status-select" data-id="${escapeAttr(id)}">${
     options.map(s => `<option value="${s}" ${s===status?"selected":""}>${s||"—"}</option>`).join("")
   }</select>`;
@@ -2230,6 +2237,17 @@ function _setSidebarToggleAria(open) {
   // guaranteed to be in the DOM when this IIFE runs (module script).
   document.addEventListener("DOMContentLoaded", () => _setSidebarToggleAria(open), { once: true });
 })();
+// Secondary findings header toggle. Plain triangle-button toggling
+// .open on the sibling body div — no animation, matches the
+// lightweight visual style the reviewer asked for.
+document.querySelector(".secondary-findings-toggle")?.addEventListener("click", (ev) => {
+  const btn = ev.currentTarget;
+  const body = btn.nextElementSibling;
+  const expand = btn.getAttribute("aria-expanded") !== "true";
+  btn.setAttribute("aria-expanded", expand ? "true" : "false");
+  body?.classList.toggle("open", expand);
+});
+
 document.getElementById("btn-sidebar-toggle")?.addEventListener("click", () => {
   const collapsed = document.body.classList.toggle("sidebar-collapsed");
   localStorage.setItem("ngs-sidebar", collapsed ? "collapsed" : "open");

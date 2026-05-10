@@ -218,10 +218,23 @@
       <h2>報告</h2>
       <div id="sec-causative"  class="report-block" data-kind="report"   data-status="1"></div>
       <div id="sec-other"      class="report-block" data-kind="report"   data-status="2"></div>
-      <div id="sec-acmg-sf"    class="report-block" data-kind="panel"    data-category="acmg_sf"></div>
-      <div id="sec-proactive"  class="report-block" data-kind="panel"    data-category="proactive"></div>
-      <div id="sec-carrier"    class="report-block" data-kind="panel"    data-category="carrier"></div>
-      <div id="sec-pharmcat"   class="report-block" data-kind="pharmcat"></div>
+      <div id="sec-candidate"  class="report-block" data-kind="report"   data-status="C"></div>
+      <!-- Secondary findings group: collapsible umbrella around the
+           panel-style report sections (ACMG SF, Proactive, Carrier,
+           PharmCat). Plain text header + triangle toggle — no card
+           styling so it doesn't compete visually with the
+           primary report sections above. -->
+      <div id="sec-secondary-findings" class="secondary-findings-group">
+        <button type="button" class="secondary-findings-toggle" aria-expanded="false">
+          <span class="arrow"></span>Secondary findings
+        </button>
+        <div class="secondary-findings-body">
+          <div id="sec-acmg-sf"    class="report-block" data-kind="panel"    data-category="acmg_sf"></div>
+          <div id="sec-proactive"  class="report-block" data-kind="panel"    data-category="proactive"></div>
+          <div id="sec-carrier"    class="report-block" data-kind="panel"    data-category="carrier"></div>
+          <div id="sec-pharmcat"   class="report-block" data-kind="pharmcat"></div>
+        </div>
+      </div>
       <div class="save-row">
         <button id="btn-save-top" class="btn btn-primary">💾 儲存變更</button>
         <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>

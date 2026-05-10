@@ -887,8 +887,29 @@ body.sidebar-collapsed .container { margin-left: auto; }
 /* Category-specific hit background hints */
 .report-block[data-status="1"] .block-header { background: var(--hit-patho); }
 .report-block[data-status="2"] .block-header { background: var(--hit-panel); }
+.report-block[data-status="C"] .block-header { background: #fde68a; }
 .report-block[data-kind="panel"] .block-header,
 .report-block[data-kind="pharmcat"].has-data .block-header { background: #e5e7eb; }
+
+/* Secondary findings collapsible group: just a triangle + label, no
+   surrounding card. Reviewer asked specifically for plain text. */
+.secondary-findings-group { margin-top: 12px; }
+.secondary-findings-toggle {
+  display: flex; align-items: center;
+  background: transparent; border: 0; padding: 4px 0;
+  font-size: 15px; font-weight: 600;
+  cursor: pointer; user-select: none;
+  color: var(--fg); font-family: inherit;
+}
+.secondary-findings-toggle .arrow::before {
+  content: "▸"; margin-right: 6px; display: inline-block;
+  transition: transform 0.15s;
+}
+.secondary-findings-toggle[aria-expanded="true"] .arrow::before {
+  transform: rotate(90deg);
+}
+.secondary-findings-body { display: none; margin-top: 6px; }
+.secondary-findings-body.open { display: block; }
 
 /* PharmCAT table */
 .pharmcat-ts { margin-bottom: 6px; }
