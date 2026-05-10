@@ -1861,7 +1861,7 @@ function _renderCnvSvDetailBox(v, id) {
   const totalGenes = (v.gene_count != null) ? v.gene_count : (v.genes || []).length;
   const diseaseGenes = (v.genes || []).filter(g => g.omim_phenotype).length;
   const geneCountText = totalGenes != null
-    ? `${totalGenes}（${diseaseGenes} 個疾病相關）`
+    ? `${totalGenes}（疾病相關：${diseaseGenes}）`
     : "—";
 
   return `<div class="cnv-sv-detail-box">
