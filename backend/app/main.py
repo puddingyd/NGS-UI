@@ -4,7 +4,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
 from .routers import analyses, auth, emr, jobs, phenotype, samples
-from .services import hpo_ontology, phenotype_scorer, users
+from .services import hpo_ontology, omim_store, phenotype_scorer, users
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
 
@@ -27,6 +27,14 @@ def _warm_caches():
     # rows) once so subsequent requests don't pay the I/O cost.
     hpo_ontology.load()
     phenotype_scorer.load()
+    # OMIM.xlsx (~17 k rows via openpyxl) takes ~2 s on first parse;
+    # warming it here moves the cost off the first /samples/{id} call.
+    # Failures are silent so a missing/misconfigured xlsx doesn't
+    # block startup — sample loads will degrade to empty Disease cols.
+    try:
+        omim_store._ensure_loaded()
+    except Exception:
+        pass
 
 
 @app.get("/api/healthz")

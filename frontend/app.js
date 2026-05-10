@@ -1877,23 +1877,14 @@ function _renderCnvSvDetailBox(v, id) {
 }
 
 function _renderCnvSvGeneTable(v, id) {
+  // Backend trims `genes` to the visible-table set (≤10 rows + any
+  // in-panel overflow), and ships the long tail in `genes_compact`
+  // with only the chip-display fields. `genes_total` is the original
+  // gene_count so the section header reads correctly.
   const genes = v.genes || [];
-  if (!genes.length) return "";
-  const sorted = genes.slice().sort((a, b) => {
-    const pa = (a.in_panel ? 1 : 0), pb = (b.in_panel ? 1 : 0);
-    if (pa !== pb) return pb - pa;
-    const sa = a.pheno_score || -1, sb = b.pheno_score || -1;
-    if (sa !== sb) return sb - sa;
-    return String(a.gene || "").localeCompare(String(b.gene || ""));
-  });
-  // Top 20 + any in-panel rows beyond 20 always get the full table
-  // treatment so reviewers don't lose their ⭐ rows behind the
-  // overflow disclosure.
-  const cap = 10;
-  const visible = sorted.slice(0, cap);
-  const overflow = sorted.slice(cap);
-  const overflowInPanel = overflow.filter(g => g.in_panel);
-  const overflowOther   = overflow.filter(g => !g.in_panel);
+  const genesCompact = v.genes_compact || [];
+  const total = (v.genes_total != null) ? v.genes_total : genes.length + genesCompact.length;
+  if (!total) return "";
 
   const picked = getEdit(id, "report_genes") || {};
   const rowHtml = (g) => {
@@ -1903,9 +1894,9 @@ function _renderCnvSvGeneTable(v, id) {
       ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
       : "—";
     const inhLabel = g.omim_inheritance ? escapeHtml(g.omim_inheritance) : "—";
-    // Render pheno as `matched/total` so the reviewer can see how
-    // many of the input HPO/panel weights implicate this gene. Falls
-    // back to "—" when phenotype isn't configured (denominator 0).
+    // Pheno reads as `matched/total` so the reviewer sees how many
+    // input HPO/panel weights implicate this gene. Falls back to "—"
+    // when phenotype isn't configured (denominator 0).
     const _fmtW = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
     const pheno = (g.pheno_total && g.pheno_total > 0)
       ? `${_fmtW(g.pheno_matched || 0)}/${_fmtW(g.pheno_total)}`
@@ -1927,28 +1918,25 @@ function _renderCnvSvGeneTable(v, id) {
     </tr>`;
   };
 
-  const visibleRows = visible.map(rowHtml).join("");
-  const overflowInPanelRows = overflowInPanel.map(rowHtml).join("");
-  const overflowOtherRows = overflowOther.map(g =>
-    `<span class="gene-overflow-chip${g.in_panel ? " gene-row-in-panel" : ""}">${escapeHtml(g.gene || "?")}${g.omim_id ? ` <a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener" class="muted">${escapeHtml(g.omim_id)}</a>` : ""}</span>`
-  ).join("");
-
   const tableHead = `<thead><tr>
     <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
     <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th>
   </tr></thead>`;
+  const visibleRows = genes.map(rowHtml).join("");
 
+  // Overflow body is rendered lazily on first <details> open. For
+  // SVs that span 1500+ genes, eagerly building the chip DOM was
+  // adding ~100 ms per card even though the panel was hidden.
   let overflowHtml = "";
-  if (overflow.length) {
-    overflowHtml = `<details class="cnv-sv-gene-overflow">
-      <summary class="muted">展開其餘 ${overflow.length} 個基因…</summary>
-      ${overflowInPanelRows ? `<table class="cnv-sv-gene-table">${tableHead}<tbody>${overflowInPanelRows}</tbody></table>` : ""}
-      ${overflowOtherRows ? `<div class="gene-overflow-chips">${overflowOtherRows}</div>` : ""}
+  if (genesCompact.length) {
+    overflowHtml = `<details class="cnv-sv-gene-overflow" data-id="${escapeAttr(id)}" data-rendered="0">
+      <summary class="muted">展開其餘 ${genesCompact.length} 個基因…</summary>
+      <div class="gene-overflow-body"></div>
     </details>`;
   }
 
   return `<div class="cnv-sv-section">
-    <div class="cnv-sv-section-title">基因 (${genes.length})</div>
+    <div class="cnv-sv-section-title">基因 (${total})</div>
     <table class="cnv-sv-gene-table">${tableHead}<tbody>${visibleRows}</tbody></table>
     ${overflowHtml}
   </div>`;
@@ -2122,6 +2110,35 @@ document.addEventListener("click", ev => {
     cell.textContent = cell.dataset.phenFull || "";
   }
 });
+
+// Lazy-render the gene-overflow chip body on first <details> open.
+// SVs that span thousands of genes shipped ~600 KB of chip DOM up
+// front; deferring it keeps card render fast and only pays the cost
+// when the reviewer actually expands the section. Toggle events
+// don't bubble, so the listener attaches in capture phase.
+document.addEventListener("toggle", ev => {
+  const det = ev.target;
+  if (!det || !det.classList?.contains("cnv-sv-gene-overflow")) return;
+  if (!det.open) return;
+  if (det.dataset.rendered === "1") return;
+  const id = det.dataset.id;
+  const v = _cnvSvVariantById(id);
+  if (!v) return;
+  const compact = v.genes_compact || [];
+  const body = det.querySelector(".gene-overflow-body");
+  if (!body) return;
+  body.innerHTML = `<div class="gene-overflow-chips">${
+    compact.map(g =>
+      `<span class="gene-overflow-chip${g.in_panel ? " gene-row-in-panel" : ""}">`
+      + `${escapeHtml(g.gene || "?")}`
+      + (g.omim_id
+          ? ` <a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener" class="muted">${escapeHtml(g.omim_id)}</a>`
+          : "")
+      + `</span>`
+    ).join("")
+  }</div>`;
+  det.dataset.rendered = "1";
+}, true);
 
 // 致病區域重疊 expand/collapse: each row has its content wrapped in
 // a CSS-line-clamped div; this toggle flips the expanded class and

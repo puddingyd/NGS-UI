@@ -248,6 +248,66 @@ def _classify(v: dict, source: str) -> list[str]:
     return out
 
 
+# Columns we actually consume. Pre-computing the {col: index} map
+# after reading the header lets each row build a ~30-key dict instead
+# of a 128-key one (AnnotSV emits a lot of provenance fields we don't
+# render). On a 1859-row sv.annotated.tsv this drops parse time from
+# ~500 ms to ~150 ms.
+_FULL_COLS = (
+    "AnnotSV_ID", "Annotation_mode", "SV_chrom", "SV_start", "SV_end",
+    "SV_length", "SV_type", "CytoBand", "Gene_count", "Gene_name",
+    "FORMAT", "QUAL", "FILTER",
+    "ACMG_class", "AnnotSV_ranking_score", "AnnotSV_ranking_criteria",
+    "P_loss_phen", "P_loss_source", "P_loss_coord",
+    "P_gain_phen", "P_gain_source", "P_gain_coord",
+    "P_ins_phen",  "P_ins_source",  "P_ins_coord",
+    "B_loss_source", "B_loss_coord", "B_loss_AFmax",
+    "B_gain_source", "B_gain_coord", "B_gain_AFmax",
+    "B_ins_source",  "B_ins_coord",  "B_ins_AFmax",
+    "B_inv_source",  "B_inv_coord",  "B_inv_AFmax",
+)
+_SPLIT_COLS = (
+    "AnnotSV_ID", "Annotation_mode", "Gene_name",
+    "Tx", "Tx_version", "Location", "Location2",
+    "Exon_count", "Frameshift",
+    "Overlapped_CDS_percent", "Overlapped_CDS_length",
+    "OMIM_ID", "OMIM_phenotype", "OMIM_inheritance",
+    "LOEUF_bin", "GnomAD_pLI", "ExAC_pLI",
+)
+_NEEDED_COLS = set(_FULL_COLS) | set(_SPLIT_COLS)
+
+# Visible-gene cap. Genes beyond this go into the compact overflow
+# array (chip view in the UI) — a 1518-gene SV otherwise ships ~600KB
+# of per-gene records the reviewer never looks at.
+GENE_VISIBLE_CAP = 10
+
+
+def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], int]:
+    """Sort genes (in-panel first, then pheno_score desc, then alpha)
+    and split into ({full visible}, {compact overflow}, total_count).
+
+    Visible = top GENE_VISIBLE_CAP rows + any in-panel rows beyond
+    that cap (so the in-panel ⭐ rows are never relegated to the
+    chip overflow). Compact rows carry only the fields the chip
+    overflow displays, dropping ~14 unused fields per gene record.
+    """
+    sorted_genes = sorted(genes, key=lambda g: (
+        not g.get("in_panel"),
+        -(g.get("pheno_score") or -1),
+        g.get("gene", ""),
+    ))
+    visible = sorted_genes[:GENE_VISIBLE_CAP]
+    rest = sorted_genes[GENE_VISIBLE_CAP:]
+    overflow_in_panel = [g for g in rest if g.get("in_panel")]
+    overflow_other    = [
+        {"gene": g.get("gene"),
+         "omim_id": g.get("omim_id"),
+         "in_panel": g.get("in_panel")}
+        for g in rest if not g.get("in_panel")
+    ]
+    return visible + overflow_in_panel, overflow_other, len(genes)
+
+
 def load_annotsv_tsv(
     tsv_path: Path,
     *,
@@ -272,33 +332,25 @@ def load_annotsv_tsv(
     if not tsv_path.exists():
         return variants, categories
 
-    # We need both fieldnames (for sample-column index) and the raw
-    # row values (so we can fish out the proband sample column even
-    # when its header is the LIS_ID, not a fixed name).
     with tsv_path.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        fieldnames: list[str] = list(reader.fieldnames or [])
-        # First column after FORMAT is the proband sample. SV TSVs may
-        # carry multiple sample columns; we take the first.
+        reader = csv.reader(f, delimiter="\t")
+        headers = next(reader, None) or []
+        # Pre-compute index for every column we care about. Anything
+        # AnnotSV adds (or removes) outside this set is ignored.
+        col_idx = {c: i for i, c in enumerate(headers) if c in _NEEDED_COLS}
+        # Proband sample column is whatever sits immediately to the
+        # right of FORMAT (its header is the LIS_ID, not a fixed name).
         try:
-            fmt_idx = fieldnames.index("FORMAT")
-            sample_idx = fmt_idx + 1
+            sample_idx = headers.index("FORMAT") + 1
         except ValueError:
             sample_idx = -1
 
-        # AnnotSV_ID + per-row mode lets us group full+split. We also
-        # need to remember the RAW row tuple (positional) for the
-        # sample column whose header is dynamic.
-        # csv.DictReader doesn't expose ordered values directly, so we
-        # keep the raw line via a parallel reader.
-        f.seek(0)
-        next(f)  # discard header line we already consumed
-        raw_reader = csv.reader(f, delimiter="\t")
-        for raw_values in raw_reader:
-            if not raw_values:
+        for raw in reader:
+            if not raw:
                 continue
-            row = {k: (raw_values[i] if i < len(raw_values) else "")
-                   for i, k in enumerate(fieldnames)}
+            # Build a small dict (~30 keys) restricted to wanted cols.
+            n = len(raw)
+            row = {c: (raw[i] if i < n else "") for c, i in col_idx.items()}
             mode = (row.get("Annotation_mode") or "").strip()
             aid  = (row.get("AnnotSV_ID") or "").strip()
             if not aid:
@@ -307,15 +359,17 @@ def load_annotsv_tsv(
                 variants[aid] = _full_row_to_variant(
                     row,
                     sample_col_idx=sample_idx,
-                    fieldnames=fieldnames,
-                    raw_full_values=raw_values,
+                    fieldnames=headers,
+                    raw_full_values=raw,
                     source=source,
                 )
             elif mode == "split":
                 # Split rows ride alongside the full row; if we haven't
                 # seen the full one yet (file not strictly ordered),
                 # stash the gene record and merge later.
-                gene_rec = _split_row_to_gene(row, pheno_by_gene, pheno_matched, pheno_total)
+                gene_rec = _split_row_to_gene(
+                    row, pheno_by_gene, pheno_matched, pheno_total
+                )
                 if aid in variants:
                     variants[aid]["genes"].append(gene_rec)
                 else:
@@ -332,7 +386,7 @@ def load_annotsv_tsv(
         if "id" not in v:
             del variants[aid]
 
-    # Compute Clinical-trigger fields + classify.
+    # Compute Clinical-trigger fields + classify + trim gene list.
     for aid, v in variants.items():
         max_score = None
         trigger = ""
@@ -347,6 +401,12 @@ def load_annotsv_tsv(
         v["max_pheno_score"] = max_score
         for tier in _classify(v, source):
             categories[tier].append(aid)
+        # Trim the gene array. Without this, a 1518-gene SV carries
+        # 600 KB of per-gene records all the way to the browser.
+        full, compact, total = _trim_genes(v["genes"])
+        v["genes"] = full
+        v["genes_compact"] = compact
+        v["genes_total"]   = total
 
     # Sort each tier.
     def _clinical_key(aid: str) -> tuple:
