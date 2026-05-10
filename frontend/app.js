@@ -1983,7 +1983,12 @@ function _renderCnvSvOverlap(v) {
       <button type="button" class="cnv-sv-overlap-toggle">▸ 展開全部</button>
     </div>`);
   }
-  if (!groups.length) return "";
+  if (!groups.length) {
+    return `<div class="cnv-sv-section">
+      <div class="cnv-sv-section-title">已知致病區域重疊</div>
+      <div class="cnv-sv-overlap-empty muted">無已知致病區域重疊</div>
+    </div>`;
+  }
   return `<div class="cnv-sv-section">
     <div class="cnv-sv-section-title">已知致病區域重疊</div>
     ${groups.join("")}
@@ -2030,7 +2035,12 @@ function _renderCnvSvBenign(v) {
       <button type="button" class="cnv-sv-overlap-toggle">▸ 展開全部</button>
     </div>`);
   }
-  if (!groups.length) return "";
+  if (!groups.length) {
+    return `<div class="cnv-sv-section">
+      <div class="cnv-sv-section-title">已知良性區域重疊</div>
+      <div class="cnv-sv-overlap-empty muted">無已知良性區域重疊</div>
+    </div>`;
+  }
   return `<div class="cnv-sv-section">
     <div class="cnv-sv-section-title">已知良性區域重疊</div>
     ${groups.join("")}
