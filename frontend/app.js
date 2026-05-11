@@ -828,6 +828,104 @@ function hideLoginModal() {
   document.getElementById("login-modal")?.classList.add("hidden");
 }
 
+// ---------- Gene search modal -------------------------------------
+//
+// The SNV / Indel and CNV / SV card headers each carry a gene search
+// box. Typing a symbol + Enter opens a modal listing every variant
+// of that gene as cards — the same renderers (renderVariantCard /
+// renderCnvSvCard) the tier tables use, so the cards are fully
+// interactive (status dropdown, disease list, comment, …). The
+// modal's own input lets the reviewer pivot to another gene without
+// closing it.
+
+function _geneSearchSnv(geneUpper) {
+  const matches = Object.entries(state.data?.variants || {})
+    .filter(([, v]) => (v.gene_symbol || "").toUpperCase() === geneUpper);
+  matches.sort((a, b) => {
+    const sa = Number(a[1].total_score), sb = Number(b[1].total_score);
+    return (Number.isFinite(sb) ? sb : -Infinity) - (Number.isFinite(sa) ? sa : -Infinity);
+  });
+  return matches;
+}
+
+function _geneSearchCnvSv(geneUpper) {
+  const all = [
+    ...Object.entries(state.data?.cnv_variants || {}),
+    ...Object.entries(state.data?.sv_variants  || {}),
+  ];
+  const matches = all.filter(([, v]) =>
+    (v.gene_list || []).some(g => String(g).toUpperCase() === geneUpper)
+  );
+  matches.sort((a, b) => {
+    const ra = Number(a[1].ranking_score), rb = Number(b[1].ranking_score);
+    return (Number.isFinite(rb) ? rb : -Infinity) - (Number.isFinite(ra) ? ra : -Infinity);
+  });
+  return matches;
+}
+
+function renderGeneSearchResults(kind, geneUpper) {
+  const titleEl = document.getElementById("gene-search-title");
+  const host    = document.getElementById("gene-search-results");
+  if (!titleEl || !host) return;
+  host.innerHTML = "";
+  if (!geneUpper) {
+    titleEl.textContent = "基因變異搜尋";
+    host.innerHTML = `<div class="muted" style="padding:12px">輸入基因名稱以搜尋。</div>`;
+    return;
+  }
+  const label = kind === "snv" ? "SNV/Indel" : "CNV/SV";
+  if (kind === "snv") {
+    const matches = _geneSearchSnv(geneUpper);
+    titleEl.textContent = `${geneUpper} 的 ${label} 變異（${matches.length}）`;
+    if (!matches.length) {
+      host.innerHTML = `<div class="muted" style="padding:12px">找不到 ${escapeHtml(geneUpper)} 的變異。</div>`;
+      return;
+    }
+    matches.forEach(([id, v], i) => {
+      host.appendChild(renderVariantCard(v, id, "candidate", { index: i + 1, diseaseCheckbox: true }));
+    });
+  } else {
+    const matches = _geneSearchCnvSv(geneUpper);
+    titleEl.textContent = `${geneUpper} 的 ${label} 變異（${matches.length}）`;
+    if (!matches.length) {
+      host.innerHTML = `<div class="muted" style="padding:12px">找不到涵蓋 ${escapeHtml(geneUpper)} 的 CNV/SV。</div>`;
+      return;
+    }
+    matches.forEach(([id, v], i) => {
+      host.appendChild(renderCnvSvCard(v, id, { index: i + 1 }));
+    });
+  }
+}
+
+function openGeneSearchModal(kind, gene) {
+  const inp = document.getElementById("gene-search-modal-input");
+  if (inp) {
+    inp.value = gene || "";
+    inp.dataset.kind = kind;
+  }
+  renderGeneSearchResults(kind, (gene || "").trim().toUpperCase());
+  showModal("gene-search-modal");
+  inp?.focus();
+}
+
+function setupGeneSearch() {
+  document.querySelectorAll(".gene-search-input").forEach(inp => {
+    inp.addEventListener("keydown", ev => {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      const g = inp.value.trim();
+      if (!g) return;
+      openGeneSearchModal(inp.dataset.kind || "snv", g);
+    });
+  });
+  document.getElementById("gene-search-modal-input")?.addEventListener("keydown", ev => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    const inp = ev.currentTarget;
+    renderGeneSearchResults(inp.dataset.kind || "snv", inp.value.trim().toUpperCase());
+  });
+}
+
 // 上傳個案清單: pick an xlsx → POST /api/patient_list → toast the
 // {added, updated, total} result. The roster it builds is what the
 // 載入新個案 modal reads to auto-fill MRN / 姓名 / Test type.
@@ -4315,6 +4413,7 @@ async function bootAfterAuth() {
   document.getElementById("login-form")?.addEventListener("submit", handleLogin);
   document.getElementById("btn-logout")?.addEventListener("click", handleLogout);
   setupPatientListUpload();
+  setupGeneSearch();
 
   // Probe /auth/me; show login modal if no session, otherwise boot the
   // sample index. /auth/me bypasses the global 401 handler because we

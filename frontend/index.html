@@ -266,7 +266,13 @@
       </div>
       <!-- SNV/Indel tier tabs: clicking a tab shows that tier full-width below. -->
       <div id="card-snv" class="analysis-card">
-        <div class="analysis-card-header">SNV / Indel</div>
+        <div class="analysis-card-header has-gene-search">
+          <span></span>
+          <span class="ac-title">SNV / Indel</span>
+          <span class="ac-gene-search">
+            <input type="text" class="gene-search-input" data-kind="snv" placeholder="搜尋基因…" autocomplete="off" title="輸入基因名稱按 Enter，列出該基因所有 SNV/Indel 變異" />
+          </span>
+        </div>
         <div id="tier-tab-bar" class="tier-tab-bar"></div>
         <div id="tier-tab-panels" class="tier-tab-panels">
           <div id="cat-tier-1a" class="cat-block tier-1a tier-panel" data-tier="1A"></div>
@@ -278,7 +284,13 @@
       </div>
       <!-- CNV/SV: same tab structure, two CNV tiers (blue) + two SV tiers (violet). -->
       <div id="card-cnv-sv" class="analysis-card">
-        <div class="analysis-card-header">CNV / SV</div>
+        <div class="analysis-card-header has-gene-search">
+          <span></span>
+          <span class="ac-title">CNV / SV</span>
+          <span class="ac-gene-search">
+            <input type="text" class="gene-search-input" data-kind="cnv-sv" placeholder="搜尋基因…" autocomplete="off" title="輸入基因名稱按 Enter，列出涵蓋該基因的所有 CNV/SV" />
+          </span>
+        </div>
         <div id="cnv-sv-tab-bar" class="tier-tab-bar"></div>
         <div id="cnv-sv-tab-panels" class="tier-tab-panels">
           <div id="cat-tier-cnv-1a" class="cat-block tier-cnv tier-panel" data-tier="CNV-1A"></div>
@@ -429,6 +441,21 @@
         <button type="button" class="btn btn-ghost" data-close="version-pick-modal">取消</button>
       </div>
     </form>
+  </div>
+
+  <!-- Gene search modal: lists every SNV/Indel (or CNV/SV) variant
+       that touches the typed gene as cards, reusing the same card
+       renderers as the tier tables. Triggered from the search box in
+       the SNV / Indel and CNV / SV card headers. -->
+  <div id="gene-search-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide gene-search-card">
+      <div class="gene-search-head">
+        <h2 id="gene-search-title">基因變異搜尋</h2>
+        <input id="gene-search-modal-input" type="text" placeholder="輸入基因名稱，按 Enter 搜尋…" autocomplete="off" />
+        <button type="button" class="btn btn-ghost" data-close="gene-search-modal">關閉</button>
+      </div>
+      <div id="gene-search-results"></div>
+    </div>
   </div>
 
   <!-- jsPDF (used by exportScreeningReport — Chinese font fetched on demand) -->

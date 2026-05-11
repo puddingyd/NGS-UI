@@ -1035,6 +1035,42 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-weight: 700;
   font-size: 18px;
 }
+/* Headers with a gene search box become a 3-col grid so the title
+   stays optically centred (left spacer 1fr · title auto · search 1fr
+   right-aligned). Simple-text headers (Mito / STR / ROH) keep the
+   plain centred layout above. */
+.analysis-card-header.has-gene-search {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  text-align: initial;
+}
+.analysis-card-header.has-gene-search .ac-title { text-align: center; }
+.analysis-card-header.has-gene-search .ac-gene-search { justify-self: end; }
+.gene-search-input {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 12em;
+  max-width: 100%;
+}
+/* Gene search modal: wide card, scrollable results list. */
+.gene-search-card { width: 90%; max-width: 820px; }
+.gene-search-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px;
+}
+.gene-search-head h2 { margin: 0; flex: 1; font-size: 16px; }
+#gene-search-modal-input {
+  font: inherit; font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 4px;
+  width: 16em;
+}
+#gene-search-results { max-height: 70vh; overflow-y: auto; }
 .analysis-card-empty {
   padding: 14px 14px 18px;
   text-align: center;
