@@ -188,7 +188,14 @@ body.sidebar-collapsed .container { margin-left: auto; }
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
+  /* So <a class="btn"> matches <button class="btn"> exactly — no
+     underline, same baseline alignment inside flex rows. */
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  line-height: normal;
 }
+.btn:hover { text-decoration: none; }
 .btn:hover { background: #eaeef2; }
 .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .btn-primary:hover { background: var(--accent-hover); }
