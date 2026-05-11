@@ -141,6 +141,7 @@ async function loadSample(LIS_ID) {
   state.currentLIS = LIS_ID;
   state.dirty      = false;
   _saveError       = "";
+  _lastSavedAt     = null;
   clearTimeout(_autoSaveTimer);
   // Reset manual-toggle tracking between samples so defaultOpen applies fresh.
   toggledBlocks.clear();
@@ -2549,6 +2550,7 @@ function renderAll() {
 let _autoSaveTimer = null;
 let _saveInflight = false;
 let _saveError = "";
+let _lastSavedAt = null;   // Date of the most recent successful save, for the hint label
 
 function scheduleAutoSave(delayMs = 1500) {
   if (!state.currentLIS) return;
@@ -2571,7 +2573,12 @@ function updateSaveHint() {
     msg = "有變更（自動儲存中…）";
     scheduleAutoSave();
   } else {
-    msg = "已儲存";
+    // Append the timestamp of the last successful save so the
+    // reviewer knows whether the auto-save fired recently. Locale
+    // toLocaleTimeString output is e.g. "下午2:30:15" / "14:30:15".
+    msg = _lastSavedAt
+      ? `已儲存（${_lastSavedAt.toLocaleTimeString()}）`
+      : "已儲存";
   }
   // Update every save-hint span on the page (top / mid / bottom).
   const txt = msg;
@@ -2943,6 +2950,7 @@ async function saveChanges(opts = {}) {
     const sid = row?.sample_id || state.currentLIS;
     await apiPut(`/samples/${encodeURIComponent(sid)}/report`, state.reports);
     state.dirty = false;
+    _lastSavedAt = new Date();
   } catch (e) {
     _saveError = e.message || "未知錯誤";
     if (!opts.silent) alert("儲存失敗：" + e.message);
