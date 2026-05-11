@@ -92,6 +92,30 @@ def _acmg_to_geno_score(acmg_points) -> int | None:
     return int(round((x + 10.0) / 20.0 * 100.0))
 
 
+# Canonical 5-tier ACMG class strings the frontend's <select> uses as
+# option values. The source TSV is inconsistent ("VUS",
+# "Uncertain_significance", lowercase, …), so normalise here — anything
+# we don't recognise (e.g. stray evidence-code strings like
+# "BP4_Strong|BA1" that leaked into this column upstream) is passed
+# through verbatim and the UI just shows it as "—".
+_ACMG_CLASS_CANON = {
+    "pathogenic":             "Pathogenic",
+    "likely pathogenic":      "Likely pathogenic",
+    "likely_pathogenic":      "Likely pathogenic",
+    "uncertain significance": "Uncertain significance",
+    "uncertain_significance": "Uncertain significance",
+    "vus":                    "Uncertain significance",
+    "likely benign":          "Likely benign",
+    "likely_benign":          "Likely benign",
+    "benign":                 "Benign",
+}
+
+
+def _normalize_acmg_class(raw: str) -> str:
+    key = (raw or "").strip().lower()
+    return _ACMG_CLASS_CANON.get(key, (raw or "").strip())
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -160,7 +184,7 @@ def _row_to_variant(row: dict) -> dict:
         "loftee_flags": row.get("LOFTEE_FLAGS", ""),
         "ACMG_criteria": (row.get("ACMG_EVIDENCE") or "").replace("|", ","),
         "ACMG_score": _to_num(row.get("ACMG_POINTS")),
-        "ACMG_classification": row.get("ACMG_CLASS", ""),
+        "ACMG_classification": _normalize_acmg_class(row.get("ACMG_CLASS", "")),
         # Variant score for the "Score" pill: ACMG_POINTS rescaled 0-100.
         "geno_score": _acmg_to_geno_score(_to_num(row.get("ACMG_POINTS"))),
         "phase_group": row.get("PHASE_GROUP", ""),
