@@ -998,9 +998,13 @@ function setupPatientListUpload() {
 
 function setLoggedInUser(username) {
   const span = document.getElementById("topbar-user");
-  const btn  = document.getElementById("btn-logout");
+  const btn  = document.getElementById("btn-logout");   // doubles as the 登入 button when signed out
   if (span) { span.textContent = username; span.hidden = !username; }
-  if (btn)  btn.hidden = !username;
+  if (btn) {
+    btn.hidden = false;                                  // always visible — toggles label/action
+    btn.textContent = username ? "登出" : "登入";
+    btn.dataset.loggedIn = username ? "1" : "0";
+  }
   const up = document.getElementById("btn-upload-list");
   if (up) up.hidden = !username;
   // #btn-phenotype-tool is intentionally always visible — the HPO/panel
@@ -4463,7 +4467,10 @@ async function bootAfterAuth() {
 
   // Wire login form + logout button.
   document.getElementById("login-form")?.addEventListener("submit", handleLogin);
-  document.getElementById("btn-logout")?.addEventListener("click", handleLogout);
+  document.getElementById("btn-logout")?.addEventListener("click", (ev) => {
+    if (ev.currentTarget.dataset.loggedIn === "1") handleLogout();
+    else showLoginModal();
+  });
   setupPatientListUpload();
   setupGeneSearch();
 
@@ -4473,7 +4480,7 @@ async function bootAfterAuth() {
   try {
     const me = await fetch(`${API_BASE}/auth/me`, { credentials: "same-origin" })
       .then(r => r.ok ? r.json() : null);
-    if (!me) { showLoginModal(); return; }
+    if (!me) { setLoggedInUser(""); showLoginModal(); return; }
     setLoggedInUser(me.username);
     await bootAfterAuth();
   } catch (e) {

@@ -784,8 +784,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
    white card so it's effectively invisible until the operator
    selects the text — keeps the modal clean while the command stays
    copy-pasteable. */
-.login-hint { margin-top: 0; font-size: 12px; color: #fff; }
-.login-hint-code { background: transparent; color: #fff; }
+.login-hint { margin: 4px 0; font-size: 10px; color: #fff; line-height: 1.2; white-space: nowrap; overflow: hidden; }
+.login-hint-code { background: transparent; color: #fff; font-size: 10px; }
 .modal-actions { margin-top: 16px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
 .modal-card-wide { max-width: 760px; }
 
