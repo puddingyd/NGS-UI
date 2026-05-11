@@ -33,7 +33,9 @@ html, body {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 50;
+  /* Above the login modal (z-index 100) so the 輸入臨床表徵 link in
+     the topbar stays clickable before sign-in. */
+  z-index: 110;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -778,6 +780,12 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .modal-card .variant-card .acmg-class-row .acmg-score { width: 3em; }
 .modal-card .variant-card .variant-comment { width: 100%; }
+/* Login modal's "create a user via SSH" hint: same colour as the
+   white card so it's effectively invisible until the operator
+   selects the text — keeps the modal clean while the command stays
+   copy-pasteable. */
+.login-hint { margin-top: 0; font-size: 12px; color: #fff; }
+.login-hint-code { background: transparent; color: #fff; }
 .modal-actions { margin-top: 16px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
 .modal-card-wide { max-width: 760px; }
 

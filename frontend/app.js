@@ -1003,8 +1003,9 @@ function setLoggedInUser(username) {
   if (btn)  btn.hidden = !username;
   const up = document.getElementById("btn-upload-list");
   if (up) up.hidden = !username;
-  const ph = document.getElementById("btn-phenotype-tool");
-  if (ph) ph.hidden = !username;
+  // #btn-phenotype-tool is intentionally always visible — the HPO/panel
+  // tool needs no login (it runs on the intranet), so the link stays
+  // reachable even before sign-in.
 }
 
 async function handleLogin(ev) {

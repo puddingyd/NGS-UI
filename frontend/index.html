@@ -15,7 +15,7 @@
     <div class="topbar-actions">
       <span id="topbar-user" class="muted" hidden></span>
       <button id="btn-logout" class="btn btn-ghost" hidden>登出</button>
-      <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" hidden title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
+      <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
       <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" hidden />
     </div>
@@ -47,8 +47,8 @@
   <div id="login-modal" class="modal hidden">
     <form id="login-form" class="modal-card">
       <h2>登入</h2>
-      <p class="muted" style="margin-top:0">尚未有帳號？SSH 進 server 後執行：<br>
-        <code>PYTHONPATH=backend python -m app create-user</code></p>
+      <p class="login-hint">尚未有帳號？SSH 進 server 後執行：<br>
+        <code class="login-hint-code">PYTHONPATH=backend python -m app create-user</code></p>
       <input id="login-username" type="text" placeholder="使用者名稱" autocomplete="username" required />
       <input id="login-password" type="password" placeholder="密碼" autocomplete="current-password" required />
       <div id="login-error" class="error hidden"></div>
