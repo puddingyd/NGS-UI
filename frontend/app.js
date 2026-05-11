@@ -828,11 +828,51 @@ function hideLoginModal() {
   document.getElementById("login-modal")?.classList.add("hidden");
 }
 
+// 上傳個案清單: pick an xlsx → POST /api/patient_list → toast the
+// {added, updated, total} result. The roster it builds is what the
+// 載入新個案 modal reads to auto-fill MRN / 姓名 / Test type.
+function setupPatientListUpload() {
+  const btn  = document.getElementById("btn-upload-list");
+  const file = document.getElementById("upload-list-file");
+  if (!btn || !file) return;
+  btn.addEventListener("click", () => { file.value = ""; file.click(); });
+  file.addEventListener("change", async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    const origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "上傳中…";
+    try {
+      const fd = new FormData();
+      fd.append("file", f, f.name);
+      const resp = await fetch(`${API_BASE}/patient_list`, {
+        method: "POST",
+        credentials: "same-origin",
+        body: fd,
+      });
+      if (resp.status === 401) { showLoginModal(); throw new Error("尚未登入"); }
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+      alert(`個案清單上傳完成\n\n解析 ${body.parsed} 筆 · 新增 ${body.added} · 更新 ${body.updated}\nroster 目前共 ${body.total} 筆`);
+      // Refresh the unregistered-sample cache so an open 載入新個案
+      // modal picks up the new MRN/name mappings next time it opens.
+      _unregisteredById = {};
+    } catch (e) {
+      alert("個案清單上傳失敗：" + (e.message || e));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origLabel;
+    }
+  });
+}
+
 function setLoggedInUser(username) {
   const span = document.getElementById("topbar-user");
   const btn  = document.getElementById("btn-logout");
   if (span) { span.textContent = username; span.hidden = !username; }
   if (btn)  btn.hidden = !username;
+  const up = document.getElementById("btn-upload-list");
+  if (up) up.hidden = !username;
 }
 
 async function handleLogin(ev) {
@@ -4274,6 +4314,7 @@ async function bootAfterAuth() {
   // Wire login form + logout button.
   document.getElementById("login-form")?.addEventListener("submit", handleLogin);
   document.getElementById("btn-logout")?.addEventListener("click", handleLogout);
+  setupPatientListUpload();
 
   // Probe /auth/me; show login modal if no session, otherwise boot the
   // sample index. /auth/me bypasses the global 401 handler because we
@@ -4523,10 +4564,23 @@ document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
     renderNewCasePhenoEditor();
     return;
   }
-  if (entry.phenotype && entry.phenotype.mrn) {
-    const mrnInput = document.getElementById("new-case-mrn");
-    if (mrnInput && !mrnInput.value) mrnInput.value = entry.phenotype.mrn;
-  }
+  // Auto-fill MRN / 姓名 / Test type from the uploaded clinic-list
+  // roster when this LIS_ID is on it. Fall back to the MRN parsed out
+  // of the phenotype.txt filename for samples not yet on any list.
+  const roster = entry.roster || null;
+  const mrnInput  = document.getElementById("new-case-mrn");
+  const nameInput = document.getElementById("new-case-name");
+  const testSel   = document.querySelector('#new-case-form select[name="test_type"]');
+  const fillMrn = (roster && roster.mrn) || (entry.phenotype && entry.phenotype.mrn) || "";
+  if (mrnInput && !mrnInput.value && fillMrn) mrnInput.value = fillMrn;
+  if (nameInput && !nameInput.value && roster && roster.name) nameInput.value = roster.name;
+  if (testSel && roster && roster.test_type) testSel.value = roster.test_type;
+  // Show the ordering department as a hint next to Category — the
+  // canonical Category list is in English so we can't auto-pick it
+  // from the Chinese 科別, but surfacing it helps the reviewer choose.
+  const deptHint = document.getElementById("new-case-dept-hint");
+  if (deptHint) deptHint.textContent = (roster && roster.department) ? `科別：${roster.department}` : "";
+
   if (entry.phenotype && (entry.phenotype.hpo?.length || entry.phenotype.panels?.length)) {
     newCaseEdit.hpo = (entry.phenotype.hpo || []).map(h => ({...h}));
     newCaseEdit.panels = (entry.phenotype.panels || []).map(p => ({...p}));

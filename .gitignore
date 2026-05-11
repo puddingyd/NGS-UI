@@ -9,4 +9,5 @@ node_modules/
 # These entries also catch a dev checkout that leaves them inside.
 tertiary_output/
 data/
+patient_list/
 _index.json

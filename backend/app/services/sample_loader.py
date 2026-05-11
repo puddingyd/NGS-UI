@@ -128,15 +128,20 @@ def list_unregistered() -> list[dict]:
     surfaces these in the 載入新個案 dropdown so the reviewer can attach
     basic info + HPO without having to retype the LIS_ID.
 
-    For each entry we also look up the matching
-        NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt
-    and surface the parsed contents inline so the modal can show a
-    preview chip row + auto-fill the MRN field on selection.
+    Per-entry enrichment:
+      * `roster` — {mrn, name, test_type, department} from the uploaded
+        未完成報告清單 (patient_list_store). This is the preferred
+        source for MRN + 姓名 + Test type in the modal.
+      * `phenotype` — parsed HPO/panels from
+        NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt, used for
+        the preview chip row. (Its filename-derived MRN is kept as a
+        fallback for samples not in the roster.)
 
     Sorted by directory mtime descending (newest first).
     """
     from ..config import PHENOTYPE_DIR
-    from . import phenotype_io
+    from . import patient_list_store, phenotype_io
+    roster = patient_list_store.load_roster()
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():
         return out
@@ -149,28 +154,39 @@ def list_unregistered() -> list[dict]:
             continue
         lis_id = sub.name
 
+        roster_entry = roster.get(lis_id)
+        roster_mrn = (roster_entry or {}).get("mrn") or ""
+
         # Resolve a matching phenotype file in the central phenotype dir.
         # Filename convention: {lis_id}_{mrn}_phenotype.txt → strip both
-        # ends to recover the MRN. If multiple match (different MRNs)
-        # take the lexicographically first; reviewer can re-aim later.
+        # ends to recover the MRN. We still parse it for the HPO/panel
+        # preview; its MRN is only a fallback when the roster lacks the
+        # LIS_ID. When the roster has an MRN we prefer the
+        # {lis_id}_{roster_mrn}_phenotype.txt file if it exists, else
+        # any match.
         pheno_payload = None
         if PHENOTYPE_DIR.is_dir():
             matches = sorted(PHENOTYPE_DIR.glob(f"{lis_id}_*_phenotype.txt"))
-            if matches:
+            pf = None
+            if roster_mrn:
+                preferred = PHENOTYPE_DIR / f"{lis_id}_{roster_mrn}_phenotype.txt"
+                if preferred.is_file():
+                    pf = preferred
+            if pf is None and matches:
                 pf = matches[0]
-                stem = pf.stem  # "lis_mrn_phenotype"
-                # stem looks like "{lis_id}_{mrn}_phenotype"
+            if pf is not None:
+                stem = pf.stem  # "{lis_id}_{mrn}_phenotype"
                 if stem.startswith(lis_id + "_") and stem.endswith("_phenotype"):
-                    mrn = stem[len(lis_id) + 1 : -len("_phenotype")]
+                    file_mrn = stem[len(lis_id) + 1 : -len("_phenotype")]
                 else:
-                    mrn = ""
+                    file_mrn = ""
                 try:
                     hpo, panels = phenotype_io.parse(pf.read_text(encoding="utf-8"))
                 except OSError:
                     hpo, panels = [], []
                 pheno_payload = {
                     "path":   str(pf),
-                    "mrn":    mrn,
+                    "mrn":    file_mrn,
                     "hpo":    hpo,
                     "panels": panels,
                 }
@@ -184,6 +200,14 @@ def list_unregistered() -> list[dict]:
             "tsv_size":   tsv.stat().st_size if tsv.exists() else 0,
             "mtime":      mtime,
             "phenotype":  pheno_payload,
+            # Roster-sourced identifiers (None when the LIS_ID isn't on
+            # any uploaded clinic list yet).
+            "roster":     {
+                "mrn":        (roster_entry or {}).get("mrn", ""),
+                "name":       (roster_entry or {}).get("name", ""),
+                "test_type":  (roster_entry or {}).get("test_type", ""),
+                "department": (roster_entry or {}).get("department", ""),
+            } if roster_entry else None,
         })
     out.sort(key=lambda r: r["mtime"], reverse=True)
     return out

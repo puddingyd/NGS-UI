@@ -49,6 +49,14 @@ PHENOTYPE_DIR = Path(os.environ.get(
     NGS_UI_HOME / "patient_phenotype",
 ))
 
+# Uploaded "未完成報告清單" xlsx files + the derived roster.json that
+# maps LIS_ID → {mrn, name, test_name, department}. The 載入新個案
+# modal reads the roster to auto-fill MRN / 姓名 / Test type.
+PATIENT_LIST_DIR = Path(os.environ.get(
+    "NGS_UI_PATIENT_LIST_DIR",
+    NGS_UI_HOME / "patient_list",
+))
+
 BIOTOOLS_DIR = Path(os.environ.get(
     "NGS_UI_BIOTOOLS_DIR",
     NGS_UI_HOME / "biotools",

@@ -1,11 +1,17 @@
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from ..auth import current_user
 from ..config import PHENOTYPE_DIR
-from ..services import docx_export, patient_store, report_store, sample_loader
+from ..services import (
+    docx_export,
+    patient_list_store,
+    patient_store,
+    report_store,
+    sample_loader,
+)
 
 router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
 
@@ -37,6 +43,29 @@ def list_unregistered_samples():
     reviewers don't have to retype an ID that already lives on disk.
     """
     return sample_loader.list_unregistered()
+
+
+@router.post("/patient_list")
+async def upload_patient_list(file: UploadFile = File(...)):
+    """Ingest a 未完成報告清單 xlsx → archive it + merge into roster.json.
+
+    The roster maps LIS_ID → {mrn, name, test_type, department}; the
+    載入新個案 modal reads it to auto-fill those fields when the
+    reviewer picks a pipeline-dropped TSV.
+    """
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "空白檔案")
+    try:
+        return patient_list_store.ingest_xlsx(content, file.filename or "upload.xlsx")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/patient_list")
+def get_patient_list():
+    """Current merged roster ({lis_id: {...}}). For debugging / UI display."""
+    return patient_list_store.load_roster()
 
 
 @router.post("/samples")
