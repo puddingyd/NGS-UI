@@ -752,6 +752,17 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
+/* …but variant / CNV-SV cards rendered inside the gene-search modal
+   carry their own field styling — don't let the catch-all above
+   stretch e.g. the 3em ACMG-points input or restyle the comment box. */
+.modal-card .variant-card input[type="text"],
+.modal-card .cnv-sv-card input[type="text"] {
+  width: auto;
+  padding: revert;
+  font-family: inherit;
+}
+.modal-card .variant-card .acmg-class-row .acmg-score { width: 3em; }
+.modal-card .variant-card .variant-comment { width: 100%; }
 .modal-actions { margin-top: 16px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
 .modal-card-wide { max-width: 760px; }
 
