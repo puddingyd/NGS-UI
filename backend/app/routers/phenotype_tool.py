@@ -49,17 +49,26 @@ def list_panels_public():
 def save_phenotype_file(payload: dict):
     """Write the tool's generated phenotype.txt into PHENOTYPE_DIR.
 
-    Body: {mrn (required), code (optional LIS_ID), content}.
+    Body: {mrn, code (LIS_ID), content}. At least one of mrn / code
+    is required. Filename: {code}_{mrn}_ when both given, {code}_
+    when only LIS_ID, {mrn}_ when only MRN.
     """
-    mrn  = _check_token("MRN",     (payload or {}).get("mrn", ""),  required=True)
-    code = _check_token("LIS_ID",  (payload or {}).get("code", ""), required=False)
+    mrn  = _check_token("MRN",    (payload or {}).get("mrn", ""),  required=False)
+    code = _check_token("LIS_ID", (payload or {}).get("code", ""), required=False)
+    if not mrn and not code:
+        raise HTTPException(400, "請至少提供 MRN 或 LIS_ID")
     content = (payload or {}).get("content", "")
     if not isinstance(content, str) or not content.strip():
         raise HTTPException(400, "內容為空")
     if len(content.encode("utf-8")) > _MAX_CONTENT_BYTES:
         raise HTTPException(400, "內容過大")
 
-    fname = f"{code}_{mrn}_phenotype.txt" if code else f"{mrn}_phenotype.txt"
+    if code and mrn:
+        fname = f"{code}_{mrn}_phenotype.txt"
+    elif code:
+        fname = f"{code}_phenotype.txt"
+    else:
+        fname = f"{mrn}_phenotype.txt"
     PHENOTYPE_DIR.mkdir(parents=True, exist_ok=True)
     out = PHENOTYPE_DIR / fname
     # Defence in depth: the name is built from validated tokens, but
@@ -90,9 +99,19 @@ def load_phenotype_file(
 
     candidate = None
     if code:
-        matches = sorted(PHENOTYPE_DIR.glob(f"{code}_*_phenotype.txt"))
-        if matches:
-            candidate = matches[0]
+        # exact "{code}_{mrn}" if both given, then code-only, then any MRN
+        if mrn:
+            p = PHENOTYPE_DIR / f"{code}_{mrn}_phenotype.txt"
+            if p.is_file():
+                candidate = p
+        if candidate is None:
+            p = PHENOTYPE_DIR / f"{code}_phenotype.txt"
+            if p.is_file():
+                candidate = p
+        if candidate is None:
+            matches = sorted(PHENOTYPE_DIR.glob(f"{code}_*_phenotype.txt"))
+            if matches:
+                candidate = matches[0]
     if candidate is None and mrn:
         exact = PHENOTYPE_DIR / f"{mrn}_phenotype.txt"
         if exact.is_file():
@@ -108,17 +127,22 @@ def load_phenotype_file(
         text = candidate.read_text(encoding="utf-8")
     except OSError:
         raise HTTPException(404, "讀取失敗")
-    # Best-effort parse of {code}_{mrn}_phenotype or {mrn}_phenotype.
+    # Best-effort recover {code, mrn} from the filename. Three shapes:
+    #   {code}_{mrn}_phenotype.txt   {code}_phenotype.txt   {mrn}_phenotype.txt
     stem = candidate.stem
-    if stem.endswith("_phenotype"):
-        core = stem[:-len("_phenotype")]
+    core = stem[:-len("_phenotype")] if stem.endswith("_phenotype") else stem
+    if code and core == code:
+        parsed_code, parsed_mrn = code, ""
+    elif mrn and core == mrn:
+        parsed_code, parsed_mrn = "", mrn
+    elif code and core.startswith(code + "_"):
+        parsed_code, parsed_mrn = code, core[len(code) + 1:]
     else:
-        core = stem
-    parts = core.split("_")
-    if len(parts) >= 2:
-        parsed_code, parsed_mrn = parts[0], parts[1]
-    else:
-        parsed_code, parsed_mrn = "", core
+        parts = core.split("_")
+        if len(parts) >= 2:
+            parsed_code, parsed_mrn = parts[0], parts[1]
+        else:
+            parsed_code, parsed_mrn = "", core
     return {
         "filename": candidate.name,
         "content":  text,

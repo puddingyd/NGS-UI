@@ -372,8 +372,9 @@ function _collectLines() {
 }
 
 function generateFile() {
-  const mrn = document.getElementById("patient-mrn").value.trim();
-  if (!mrn) { showStatus("請填病歷號 MRN（必填）。", "error"); return; }
+  const mrn  = document.getElementById("patient-mrn").value.trim();
+  const code = document.getElementById("patient-code").value.trim();
+  if (!mrn && !code) { showStatus("請至少填 病歷號 MRN 或 LIS_ID 其中一個。", "error"); return; }
   const lines = _collectLines();
   if (lines.length <= 1) { showStatus("尚未選擇任何 HPO term 或 panel。", "error"); return; }
   generatedContent = lines.join("\n") + "\n";
@@ -387,20 +388,22 @@ function generateFile() {
 function _filename() {
   const code = document.getElementById("patient-code").value.trim();
   const mrn  = document.getElementById("patient-mrn").value.trim();
-  return code ? `${code}_${mrn}_phenotype.txt` : `${mrn}_phenotype.txt`;
+  if (code && mrn) return `${code}_${mrn}_phenotype.txt`;
+  if (code)        return `${code}_phenotype.txt`;
+  return `${mrn}_phenotype.txt`;
 }
 
 async function saveToServer() {
   if (!generatedContent) { showStatus("請先按「產生 phenotype.txt」。", "error"); return; }
   const code = document.getElementById("patient-code").value.trim();
   const mrn  = document.getElementById("patient-mrn").value.trim();
-  if (!mrn) { showStatus("請填病歷號 MRN（必填）。", "error"); return; }
+  if (!mrn && !code) { showStatus("請至少填 病歷號 MRN 或 LIS_ID 其中一個。", "error"); return; }
   showStatus("存檔中…", "");
   try {
     const resp = await fetch("/api/phenotype-tool/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mrn, code: code || "", content: generatedContent }),
+      body: JSON.stringify({ mrn: mrn || "", code: code || "", content: generatedContent }),
     });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);

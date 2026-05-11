@@ -165,30 +165,43 @@ def list_unregistered() -> list[dict]:
         #   2. {mrn}_phenotype.txt       — the standalone HPO tool's
         #      MRN-only output (no LIS_ID).
         # Either way we still parse the file for the HPO/panel preview.
+        # Lookup priority:
+        #   1. {lis_id}_{roster_mrn}_phenotype.txt  — exact (roster MRN)
+        #   2. {lis_id}_phenotype.txt               — LIS_ID-only file
+        #   3. {lis_id}_*_phenotype.txt             — any MRN segment
+        #   4. {roster_mrn}_phenotype.txt           — MRN-only file
         pheno_payload = None
         if PHENOTYPE_DIR.is_dir():
             pf = None
-            lis_matches = sorted(PHENOTYPE_DIR.glob(f"{lis_id}_*_phenotype.txt"))
             if roster_mrn:
                 exact = PHENOTYPE_DIR / f"{lis_id}_{roster_mrn}_phenotype.txt"
                 if exact.is_file():
                     pf = exact
-            if pf is None and lis_matches:
-                pf = lis_matches[0]
+            if pf is None:
+                lis_only = PHENOTYPE_DIR / f"{lis_id}_phenotype.txt"
+                if lis_only.is_file():
+                    pf = lis_only
+            if pf is None:
+                lis_matches = sorted(PHENOTYPE_DIR.glob(f"{lis_id}_*_phenotype.txt"))
+                if lis_matches:
+                    pf = lis_matches[0]
             if pf is None and roster_mrn:
                 mrn_only = PHENOTYPE_DIR / f"{roster_mrn}_phenotype.txt"
                 if mrn_only.is_file():
                     pf = mrn_only
             if pf is not None:
-                stem = pf.stem  # "{lis_id}_{mrn}_phenotype" or "{mrn}_phenotype"
+                # Recover the MRN from the filename for the modal's
+                # fallback. {lis_id}_phenotype → no MRN; {lis_id}_{mrn}
+                # → the second segment; {mrn}_phenotype → the whole core.
+                stem = pf.stem
                 core = stem[:-len("_phenotype")] if stem.endswith("_phenotype") else stem
-                if core.startswith(lis_id + "_"):
+                if core == lis_id:
+                    file_mrn = ""
+                elif core.startswith(lis_id + "_"):
                     file_mrn = core[len(lis_id) + 1:]
                 elif core == roster_mrn:
                     file_mrn = roster_mrn
                 else:
-                    # {mrn}_phenotype.txt or unexpected — take the last
-                    # underscore-segment as the MRN guess.
                     file_mrn = core.split("_")[-1] if "_" in core else core
                 try:
                     hpo, panels = phenotype_io.parse(pf.read_text(encoding="utf-8"))
