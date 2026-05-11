@@ -19,15 +19,15 @@ A reload happens on demand via reload_db() (no auto-watch).
 from __future__ import annotations
 
 import csv
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
-from ..config import REPO_ROOT
+from ..config import GENE_PANELS_DIR, PHENO_DATA_DIR
 
-PHENO_DATA_DIR = REPO_ROOT / "phenotype_data"
 PHENO_TO_GENES_PATH = PHENO_DATA_DIR / "phenotype_to_genes.txt"
-PANELS_DIR = PHENO_DATA_DIR / "gene_panels"
+PANELS_DIR = GENE_PANELS_DIR
 
 
 # hpo_id (or panel_name) → set[gene_symbol]
@@ -99,6 +99,64 @@ def reload_db() -> tuple[int, int]:
     global _LOADED
     _LOADED = False
     return load()
+
+
+_PANEL_NAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def sanitize_panel_name(name: str) -> str:
+    """Map an arbitrary user-typed panel name to a filename-safe id:
+    non [A-Za-z0-9_-] runs (incl. spaces, dots) → '_', collapse
+    repeats, trim leading/trailing '_'. Empty after cleanup → ''."""
+    cleaned = _PANEL_NAME_RE.sub("_", (name or "").strip())
+    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
+    return cleaned[:64]
+
+
+def register_custom_panel(name: str, genes: Iterable[str]) -> dict:
+    """Create a reusable gene panel from a user-supplied gene list.
+
+    The name is sanitised (see sanitize_panel_name); collisions with an
+    existing panel are refused. Genes are de-duplicated case-sensitively
+    in first-seen order (gene symbols like 'C7orf50' carry meaningful
+    case, so we don't upper-case). Writes {name}.txt into the panels
+    directory (one gene per line) and updates the in-memory tables so
+    the panel is usable immediately — no reload / restart needed.
+
+    Returns {"name": <sanitised>, "n_genes": int}.
+    Raises ValueError on an empty/invalid name, empty gene list, or a
+    name collision.
+    """
+    if not _LOADED:
+        load()
+    clean = sanitize_panel_name(name)
+    if not clean:
+        raise ValueError("panel 名稱清理後為空，請改用含英數的名稱")
+    if clean in _PANEL_TO_GENES:
+        raise ValueError(f"已存在名為 {clean} 的 panel，請改名")
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for g in genes or []:
+        g = (g or "").strip()
+        if g and g not in seen:
+            seen.add(g)
+            ordered.append(g)
+    if not ordered:
+        raise ValueError("沒有可用的基因（清空後為空）")
+
+    PANELS_DIR.mkdir(parents=True, exist_ok=True)
+    out = PANELS_DIR / f"{clean}.txt"
+    # Defence in depth: clean is [A-Za-z0-9_-]{1,64} so this can't
+    # escape, but resolve-and-check anyway.
+    if out.resolve().parent != PANELS_DIR.resolve():
+        raise ValueError("panel 檔名不合法")
+    out.write_text("\n".join(ordered) + "\n", encoding="utf-8")
+
+    gene_set = set(ordered)
+    _PANEL_TO_GENES[clean] = gene_set
+    _HPO_TO_GENES[clean] |= gene_set
+    return {"name": clean, "n_genes": len(gene_set)}
 
 
 def list_panels() -> list[dict]:

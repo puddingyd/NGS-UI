@@ -10,4 +10,5 @@ node_modules/
 tertiary_output/
 data/
 patient_list/
+phenotype_data/
 _index.json

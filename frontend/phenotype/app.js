@@ -353,11 +353,52 @@ async function loadPatient() {
 }
 
 // ============================================================
-// Generate + save
+// Custom panel rows
 // ============================================================
 
-function _collectLines() {
-  const lines = ["phenotype\thpo_name\tweight"];
+let customPanelRowCount = 0;
+
+function createCustomPanelRow() {
+  customPanelRowCount++;
+  const num = customPanelRowCount;
+  const container = document.getElementById("custom-panel-rows");
+  const row = document.createElement("div");
+  row.className = "custom-panel-row";
+  row.id = `custom-panel-row-${num}`;
+  row.innerHTML = `
+    <div class="cp-fields">
+      <input type="text" class="cp-name" placeholder="自訂 panel 名稱（例：MyPanel）">
+      <textarea class="cp-genes" rows="3" placeholder="基因清單（逗號或換行分隔，例：BRCA1, TP53, C7orf50）"></textarea>
+    </div>
+    <input type="number" class="weight-input" value="1" min="0" step="1" placeholder="W" title="weight">
+    <button class="btn-remove" onclick="removeCustomPanelRow(${num})" title="移除">&times;</button>
+  `;
+  container.appendChild(row);
+  return row;
+}
+function initCustomPanelRows() { /* none by default — added on demand */ }
+function addCustomPanelRow() { const r = createCustomPanelRow(); r.querySelector(".cp-name")?.focus(); }
+function removeCustomPanelRow(num) { document.getElementById(`custom-panel-row-${num}`)?.remove(); }
+
+function _collectCustomPanels() {
+  // → [{rowEl, name, genes, weight}] for rows that have a name + genes.
+  const out = [];
+  document.querySelectorAll(".custom-panel-row").forEach((row) => {
+    const name = (row.querySelector(".cp-name")?.value || "").trim();
+    const genesRaw = (row.querySelector(".cp-genes")?.value || "").trim();
+    const weight = row.querySelector(".weight-input")?.value || "1";
+    if (name && genesRaw) out.push({ rowEl: row, name, genes: genesRaw, weight });
+    else if (name || genesRaw) out.push({ rowEl: row, name, genes: genesRaw, weight, incomplete: true });
+  });
+  return out;
+}
+
+// ============================================================
+// Generate (creates custom panels + writes phenotype.txt to server)
+// ============================================================
+
+function _collectHpoAndPanelLines() {
+  const lines = [];
   document.querySelectorAll(".phenotype-row:not(.panel-row)").forEach((row) => {
     const hpId = row.dataset.hpId, hpName = row.dataset.hpName;
     const weight = row.querySelector(".weight-input").value || "1";
@@ -371,35 +412,49 @@ function _collectLines() {
   return lines;
 }
 
-function generateFile() {
+async function generateFile() {
+  const btn = document.getElementById("btn-generate");
   const mrn  = document.getElementById("patient-mrn").value.trim();
   const code = document.getElementById("patient-code").value.trim();
-  if (!mrn && !code) { showStatus("請至少填 病歷號 MRN 或 LIS_ID 其中一個。", "error"); return; }
-  const lines = _collectLines();
-  if (lines.length <= 1) { showStatus("尚未選擇任何 HPO term 或 panel。", "error"); return; }
-  generatedContent = lines.join("\n") + "\n";
-  document.getElementById("output-preview").style.display = "block";
-  document.getElementById("output-content").textContent = generatedContent;
-  document.getElementById("btn-save").style.display = "inline-block";
-  document.getElementById("btn-download").style.display = "inline-block";
-  showStatus("已產生內容，可存到伺服器或下載。", "success");
-}
+  if (!mrn && !code) { showStatus("請至少填 病歷號 或 檢體編號 其中一個。", "error"); return; }
 
-function _filename() {
-  const code = document.getElementById("patient-code").value.trim();
-  const mrn  = document.getElementById("patient-mrn").value.trim();
-  if (code && mrn) return `${code}_${mrn}_phenotype.txt`;
-  if (code)        return `${code}_phenotype.txt`;
-  return `${mrn}_phenotype.txt`;
-}
+  const customPanels = _collectCustomPanels();
+  const incomplete = customPanels.find(c => c.incomplete);
+  if (incomplete) { showStatus("有自訂 panel 列只填了名稱或基因其中一項，請補齊或移除該列。", "error"); return; }
 
-async function saveToServer() {
-  if (!generatedContent) { showStatus("請先按「產生 phenotype.txt」。", "error"); return; }
-  const code = document.getElementById("patient-code").value.trim();
-  const mrn  = document.getElementById("patient-mrn").value.trim();
-  if (!mrn && !code) { showStatus("請至少填 病歷號 MRN 或 LIS_ID 其中一個。", "error"); return; }
-  showStatus("存檔中…", "");
+  const baseLines = _collectHpoAndPanelLines();
+  if (baseLines.length === 0 && customPanels.length === 0) {
+    showStatus("尚未選擇任何 HPO term、panel 或自訂 panel。", "error"); return;
+  }
+
+  btn.disabled = true;
+  showStatus("處理中…", "");
   try {
+    // 1) Create each custom panel on the server; remember the
+    //    server-sanitised name so the phenotype.txt references it
+    //    correctly.
+    const customLines = [];
+    for (const cp of customPanels) {
+      const resp = await fetch("/api/phenotype-tool/custom-panel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: cp.name, genes: cp.genes }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(`自訂 panel「${cp.name}」建立失敗：${body.detail || resp.statusText}`);
+      }
+      // Reflect the sanitised name back into the row so the user sees it.
+      if (cp.rowEl) {
+        const nameInp = cp.rowEl.querySelector(".cp-name");
+        if (nameInp && nameInp.value.trim() !== body.name) nameInp.value = body.name;
+      }
+      customLines.push(`${body.name}\t\t${cp.weight}`);
+    }
+
+    // 2) Build the phenotype.txt body and save it.
+    const all = ["phenotype\thpo_name\tweight", ...baseLines, ...customLines];
+    generatedContent = all.join("\n") + "\n";
     const resp = await fetch("/api/phenotype-tool/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -407,20 +462,18 @@ async function saveToServer() {
     });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
-    showStatus(`已存到伺服器：${body.path}`, "success");
-  } catch (e) {
-    showStatus("存檔失敗：" + (e.message || e), "error");
-  }
-}
 
-function downloadFile() {
-  if (!generatedContent) { showStatus("請先按「產生 phenotype.txt」。", "error"); return; }
-  const blob = new Blob([generatedContent], { type: "text/plain" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = _filename();
-  a.click();
-  URL.revokeObjectURL(a.href);
+    document.getElementById("output-preview").style.display = "block";
+    document.getElementById("output-content").textContent = generatedContent;
+    // Refresh the panel autocomplete so the new custom panels show up.
+    if (customPanels.length) loadPanelList();
+    const cpNote = customPanels.length ? `（含 ${customPanels.length} 個自訂 panel）` : "";
+    showStatus(`已存到伺服器：${body.path}${cpNote}`, "success");
+  } catch (e) {
+    showStatus(e.message || String(e), "error");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function showStatus(msg, type) {

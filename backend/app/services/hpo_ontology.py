@@ -15,9 +15,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from ..config import REPO_ROOT
+from ..config import PHENO_DATA_DIR
 
-HP_OBO_PATH = REPO_ROOT / "phenotype_data" / "hp.obo"
+HP_OBO_PATH = PHENO_DATA_DIR / "hp.obo"
 
 _ID_RE = re.compile(r"^id:\s*(HP:\d+)\s*$")
 _NAME_RE = re.compile(r"^name:\s*(.+?)\s*$")

@@ -45,6 +45,40 @@ def list_panels_public():
     return phenotype_scorer.list_panels()
 
 
+_GENE_SPLIT_RE = re.compile(r"[,\s]+")
+_MAX_PANEL_GENES = 5000
+
+
+@router.post("/custom-panel")
+def create_custom_panel(payload: dict):
+    """Create a reusable gene panel from a user-supplied gene list.
+
+    Body: {name, genes}. `genes` may be a comma/whitespace-separated
+    string or a list of strings. The name is sanitised server-side
+    (non [A-Za-z0-9_-] runs → '_'); a collision with an existing panel
+    is a 409. On success the panel file is written and the in-memory
+    tables updated, so analysis can use it immediately. Returns
+    {"name": <sanitised>, "n_genes": int}.
+    """
+    raw_genes = (payload or {}).get("genes", "")
+    if isinstance(raw_genes, str):
+        genes = [g for g in _GENE_SPLIT_RE.split(raw_genes) if g]
+    elif isinstance(raw_genes, (list, tuple)):
+        genes = []
+        for chunk in raw_genes:
+            genes.extend(g for g in _GENE_SPLIT_RE.split(str(chunk or "")) if g)
+    else:
+        genes = []
+    if len(genes) > _MAX_PANEL_GENES:
+        raise HTTPException(400, f"基因數過多（上限 {_MAX_PANEL_GENES}）")
+    try:
+        return phenotype_scorer.register_custom_panel((payload or {}).get("name", ""), genes)
+    except ValueError as e:
+        msg = str(e)
+        # "已存在" → 409 Conflict; everything else is a bad request.
+        raise HTTPException(409 if "已存在" in msg else 400, msg)
+
+
 @router.post("/save")
 def save_phenotype_file(payload: dict):
     """Write the tool's generated phenotype.txt into PHENOTYPE_DIR.
