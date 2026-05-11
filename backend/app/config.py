@@ -60,12 +60,11 @@ PATIENT_LIST_DIR = Path(os.environ.get(
 # Reference data for phenotype scoring + HPO search: hp.obo,
 # phenotype_to_genes.txt, gene_panels/*.txt (incl. user-created custom
 # panels). Lives under NGS_UI_HOME so it can be swapped without a
-# redeploy. Fallback to the legacy in-repo location so a dev checkout
-# that hasn't migrated the directory yet keeps working.
-_pheno_data_default = NGS_UI_HOME / "phenotype_data"
-if not _pheno_data_default.is_dir() and (REPO_ROOT / "phenotype_data").is_dir():
-    _pheno_data_default = REPO_ROOT / "phenotype_data"
-PHENO_DATA_DIR = Path(os.environ.get("NGS_UI_PHENO_DATA_DIR", _pheno_data_default))
+# redeploy.
+PHENO_DATA_DIR = Path(os.environ.get(
+    "NGS_UI_PHENO_DATA_DIR",
+    NGS_UI_HOME / "phenotype_data",
+))
 GENE_PANELS_DIR = Path(os.environ.get("NGS_UI_GENE_PANELS_DIR", PHENO_DATA_DIR / "gene_panels"))
 
 BIOTOOLS_DIR = Path(os.environ.get(
