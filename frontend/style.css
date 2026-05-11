@@ -708,6 +708,14 @@ body.sidebar-collapsed .container { margin-left: auto; }
   max-width: 100%;
   word-break: break-word;
 }
+.disease-row .disease-collapse {
+  display: block;
+  margin-top: 6px;
+  background: transparent; border: 0; padding: 0;
+  font: inherit; font-size: 11px;
+  color: #8a6d00; cursor: pointer;
+}
+.disease-row .disease-collapse:hover { text-decoration: underline; }
 
 /* Save row */
 .save-row {

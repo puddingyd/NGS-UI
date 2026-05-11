@@ -1554,7 +1554,7 @@ function renderDiseaseList(v, id, withCheckbox) {
     rows.push(`
       <details class="disease-row">
         <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}</span></summary>
-        <div class="disease-detail">${escapeHtml(String(d))}</div>
+        <div class="disease-detail">${escapeHtml(String(d))}<button type="button" class="disease-collapse">▴ 收合</button></div>
       </details>`);
   }
   if (!rows.length) return "";
@@ -2811,6 +2811,12 @@ document.addEventListener("click", ev => {
   } else if (t.matches(".disease-pick")) {
     // Don't let clicking the checkbox also toggle its <details> container.
     ev.stopPropagation();
+  } else if (t.matches(".disease-collapse")) {
+    // "▴ 收合" at the bottom of the expanded yellow detail box —
+    // closes the parent <details>.
+    ev.stopPropagation();
+    const det = t.closest("details.disease-row");
+    if (det) det.open = false;
   }
 });
 
