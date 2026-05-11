@@ -1064,8 +1064,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
   width: 12em;
   max-width: 100%;
 }
-/* Gene search modal: wide card, scrollable results list. */
-.gene-search-card { width: 90%; max-width: 820px; }
+/* Gene search modal: wide card, scrollable results list. Wide enough
+   that the SNV variant card's info-grid (ACMG dropdown column etc.)
+   isn't clipped. */
+.gene-search-card { width: 95%; max-width: 1100px; }
 .gene-search-head {
   display: flex; align-items: center; gap: 12px;
   margin-bottom: 12px;
