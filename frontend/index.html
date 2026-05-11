@@ -213,6 +213,16 @@
       </div>
     </section>
 
+    <!-- Mid save row: between Comment and the report sections so the
+         reviewer can save / export without scrolling. Same handler as
+         the top + bottom rows; classes (.js-btn-save / .js-save-hint)
+         let one click handler & one hint update cover all three. -->
+    <div id="save-row-mid" class="save-row save-row-mid hidden">
+      <button class="btn btn-primary js-btn-save">💾 儲存變更</button>
+      <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
+      <span class="muted js-save-hint"></span>
+    </div>
+
     <!-- Report sections (marked variants) -->
     <section id="report-sections" class="report-sections hidden">
       <h2>報告</h2>
@@ -236,9 +246,9 @@
         </div>
       </div>
       <div class="save-row">
-        <button id="btn-save-top" class="btn btn-primary">💾 儲存變更</button>
+        <button id="btn-save-top" class="btn btn-primary js-btn-save">💾 儲存變更</button>
         <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
-        <span id="save-hint-top" class="muted"></span>
+        <span id="save-hint-top" class="muted js-save-hint"></span>
       </div>
     </section>
 
@@ -292,9 +302,9 @@
       <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
       <div id="cat-pharmcat-c" class="cat-block" data-category="pharmcat"></div>
       <div class="save-row">
-        <button id="btn-save-bottom" class="btn btn-primary">💾 儲存變更</button>
+        <button id="btn-save-bottom" class="btn btn-primary js-btn-save">💾 儲存變更</button>
         <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
-        <span id="save-hint-bottom" class="muted"></span>
+        <span id="save-hint-bottom" class="muted js-save-hint"></span>
       </div>
 
       <!-- Floating Close: collapses every analysis section. Position

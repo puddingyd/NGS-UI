@@ -365,6 +365,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .clinical-header {
   display: flex;
   align-items: center;
+  /* Spacing between the title group and any trailing meta span
+     (e.g. Genetic counseling's "EMR synced: …"). Single-child
+     headers are unaffected. */
+  gap: 12px;
   padding: 10px 12px;
   cursor: pointer;
   background: #f6f8fa;
@@ -1562,10 +1566,18 @@ body.sidebar-collapsed .container { margin-left: auto; }
   align-items: center;
   gap: 6px;
 }
-#m-emr-link {
+/* Both EMR buttons (the link <a> and the sync <button>) sit on the
+   same row next to the MRN. Force matching dimensions so neither
+   visually outgrows the other — <a> and <button> default
+   line-heights differ in most browsers. */
+.m-mrn-row .btn-link {
   font-size: 11px;
-  padding: 1px 6px;
+  padding: 2px 8px;
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
   text-decoration: none;
+  box-sizing: border-box;
 }
 #qc-card h2 { margin: 0 0 8px; font-size: 14px; color: var(--danger); }
 .qc-warnings { list-style: none; padding: 0; margin: 0; }

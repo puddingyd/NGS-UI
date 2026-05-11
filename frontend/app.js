@@ -1531,6 +1531,7 @@ function renderReportSections() {
   }
   renderPharmcatBlock("sec-pharmcat");
   document.getElementById("report-sections").classList.remove("hidden");
+  document.getElementById("save-row-mid")?.classList.remove("hidden");
 }
 
 function renderCandidateSections() {
@@ -2572,8 +2573,9 @@ function updateSaveHint() {
   } else {
     msg = "已儲存";
   }
-  document.getElementById("save-hint-top").textContent = msg;
-  document.getElementById("save-hint-bottom").textContent = msg;
+  // Update every save-hint span on the page (top / mid / bottom).
+  const txt = msg;
+  document.querySelectorAll(".js-save-hint").forEach(el => { el.textContent = txt; });
 }
 
 // Native browser confirmation when the user tries to leave with
@@ -2591,7 +2593,7 @@ window.addEventListener("beforeunload", (ev) => {
 
 document.addEventListener("click", ev => {
   const t = ev.target;
-  if (t.matches("#btn-save-top, #btn-save-bottom")) {
+  if (t.matches(".js-btn-save")) {
     saveChanges();
   } else if (t.matches("#btn-close-bottom")) {
     collapseCandidateSections();
@@ -2925,9 +2927,8 @@ async function saveChanges(opts = {}) {
   // Cancel any pending debounced save; this call is the save.
   clearTimeout(_autoSaveTimer);
 
-  const btnTop = document.getElementById("btn-save-top");
-  const btnBot = document.getElementById("btn-save-bottom");
-  const setBusy = b => { btnTop.disabled = b; btnBot.disabled = b; };
+  const saveBtns = document.querySelectorAll(".js-btn-save");
+  const setBusy = b => saveBtns.forEach(btn => { btn.disabled = b; });
 
   setBusy(true);
   updateSaveHint();
@@ -2959,8 +2960,7 @@ async function exportAnalysisHTML() {
   const btns = document.querySelectorAll(".btn-export-html");
   const setBusy = b => btns.forEach(x => { x.disabled = b; });
   const hint = msg => {
-    document.getElementById("save-hint-top").textContent    = msg;
-    document.getElementById("save-hint-bottom").textContent = msg;
+    document.querySelectorAll(".js-save-hint").forEach(el => { el.textContent = msg; });
   };
 
   setBusy(true);
@@ -3577,8 +3577,7 @@ async function exportClinicalReport() {
   const btns = document.querySelectorAll(".btn-export-clinical");
   const setBusy = b => btns.forEach(x => { x.disabled = b; });
   const hint = msg => {
-    document.getElementById("save-hint-top").textContent    = msg;
-    document.getElementById("save-hint-bottom").textContent = msg;
+    document.querySelectorAll(".js-save-hint").forEach(el => { el.textContent = msg; });
   };
 
   setBusy(true);
@@ -4074,8 +4073,7 @@ async function exportScreeningReport() {
   const btns = document.querySelectorAll(".btn-export-screening");
   const setBusy = b => btns.forEach(x => { x.disabled = b; });
   const hint = msg => {
-    document.getElementById("save-hint-top").textContent    = msg;
-    document.getElementById("save-hint-bottom").textContent = msg;
+    document.querySelectorAll(".js-save-hint").forEach(el => { el.textContent = msg; });
   };
   setBusy(true);
   hint("產生健檢報告 PDF…");
