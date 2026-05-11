@@ -420,3 +420,15 @@ button {
   color: #555;
   min-height: 18px;
 }
+
+/* ---- standalone-tool status bar ---- */
+#status-bar {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  min-height: 1.2em;
+}
+#status-bar:empty { display: none; }
+#status-bar.status-success { background: #d4edda; color: #155724; }
+#status-bar.status-error   { background: #f8d7da; color: #721c24; }

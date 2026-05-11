@@ -1,9 +1,10 @@
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
-from .routers import analyses, auth, emr, jobs, phenotype, samples
+from .routers import analyses, auth, emr, jobs, phenotype, phenotype_tool, samples
 from .services import hpo_ontology, omim_store, phenotype_scorer, users
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
@@ -47,8 +48,19 @@ app.include_router(auth.router)
 app.include_router(samples.router)
 app.include_router(analyses.router)
 app.include_router(phenotype.router)
+app.include_router(phenotype_tool.router)
 app.include_router(jobs.router)
 app.include_router(emr.router)
+
+
+# Friendly direct URL for the standalone HPO/panel tool: /phenotype
+# (no trailing slash) → /phenotype/ which the static mount resolves
+# to frontend/phenotype/index.html. Registered before the catch-all
+# StaticFiles mount so it wins.
+@app.get("/phenotype")
+def _phenotype_tool_redirect():
+    return RedirectResponse("/phenotype/")
+
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

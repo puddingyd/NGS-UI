@@ -1003,6 +1003,8 @@ function setLoggedInUser(username) {
   if (btn)  btn.hidden = !username;
   const up = document.getElementById("btn-upload-list");
   if (up) up.hidden = !username;
+  const ph = document.getElementById("btn-phenotype-tool");
+  if (ph) ph.hidden = !username;
 }
 
 async function handleLogin(ev) {
