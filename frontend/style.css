@@ -1046,7 +1046,14 @@ body.sidebar-collapsed .container { margin-left: auto; }
   text-align: initial;
 }
 .analysis-card-header.has-gene-search .ac-title { text-align: center; }
-.analysis-card-header.has-gene-search .ac-gene-search { justify-self: end; }
+.analysis-card-header.has-gene-search .ac-gene-search {
+  justify-self: end;
+  display: flex; align-items: center; gap: 6px;
+}
+.ac-tool-btn {
+  font-size: 12px; font-weight: 600;
+  padding: 3px 10px;
+}
 .gene-search-input {
   font: inherit;
   font-size: 13px;

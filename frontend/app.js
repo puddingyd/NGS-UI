@@ -900,12 +900,41 @@ function renderGeneSearchResults(kind, geneUpper) {
 function openGeneSearchModal(kind, gene) {
   const inp = document.getElementById("gene-search-modal-input");
   if (inp) {
+    inp.style.display = "";
     inp.value = gene || "";
     inp.dataset.kind = kind;
   }
   renderGeneSearchResults(kind, (gene || "").trim().toUpperCase());
   showModal("gene-search-modal");
   inp?.focus();
+}
+
+// LIRICAL / Exomiser top-20 list, sharing the gene-search modal
+// shell. Variants with a per-variant rank 1–20 for the chosen tool,
+// sorted by rank ascending; the card's #N marker shows the rank.
+function openToolRankModal(tool) {
+  const titleEl = document.getElementById("gene-search-title");
+  const host    = document.getElementById("gene-search-results");
+  const inp      = document.getElementById("gene-search-modal-input");
+  if (inp) inp.style.display = "none";   // re-search input is meaningless in rank mode
+  const rankKey  = tool === "lirical" ? "rank_lirical_variant" : "rank_exomiser_variant";
+  const toolName = tool === "lirical" ? "LIRICAL" : "Exomiser";
+  const matches = Object.entries(state.data?.variants || {})
+    .map(([id, v]) => [id, v, Number(v[rankKey])])
+    .filter(([, , r]) => Number.isFinite(r) && r >= 1 && r <= 20)
+    .sort((a, b) => a[2] - b[2]);
+  if (titleEl) titleEl.textContent = `${toolName} rank 1–20（${matches.length}）`;
+  if (host) {
+    host.innerHTML = "";
+    if (!matches.length) {
+      host.innerHTML = `<div class="muted" style="padding:12px">沒有 ${toolName} rank 1–20 的變異（可能還沒跑分析）。</div>`;
+    } else {
+      matches.forEach(([id, v, rank]) => {
+        host.appendChild(renderVariantCard(v, id, "candidate", { index: rank, diseaseCheckbox: true }));
+      });
+    }
+  }
+  showModal("gene-search-modal");
 }
 
 function setupGeneSearch() {
@@ -917,6 +946,9 @@ function setupGeneSearch() {
       if (!g) return;
       openGeneSearchModal(inp.dataset.kind || "snv", g);
     });
+  });
+  document.querySelectorAll(".ac-tool-btn").forEach(btn => {
+    btn.addEventListener("click", () => openToolRankModal(btn.dataset.tool || "exomiser"));
   });
   document.getElementById("gene-search-modal-input")?.addEventListener("keydown", ev => {
     if (ev.key !== "Enter") return;
@@ -1563,15 +1595,26 @@ function idsForReportSection(def) {
   const all = Array.from(new Set([...known, ...reported, ...panelReported]));
 
   if (def.match) {
-    // Causative / Other report sections sort by total_score desc so the
-    // most-likely-causative variants land at the top of the report.
-    return all.filter(def.match).sort((a, b) => {
+    // Causative / Other / Candidate report sections: sort by
+    // total_score desc, then cluster same-gene variants together.
+    // The gene with the highest-scored variant leads; its lower-
+    // scored siblings get pulled up directly behind it instead of
+    // scattering down the list. Manual entries (no gene_symbol)
+    // stay put as singleton clusters.
+    const sorted = all.filter(def.match).sort((a, b) => {
       const sa = Number(state.data.variants[a]?.total_score);
       const sb = Number(state.data.variants[b]?.total_score);
       const va = Number.isFinite(sa) ? sa : -Infinity;
       const vb = Number.isFinite(sb) ? sb : -Infinity;
       return vb - va;
     });
+    const groups = new Map();
+    for (const id of sorted) {
+      const key = state.data.variants[id]?.gene_symbol || `__${id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(id);
+    }
+    return Array.from(groups.values()).flat();
   }
   if (def.category) {
     const inCat = new Set(state.data.categories?.[def.category] || []);
