@@ -8,10 +8,11 @@
 # Steps : 1. bcftools norm (left-align indels, split multiallelics)
 #         2. VEP (gene / consequence / HGVS; vertebrate-mito codon table)
 #         3. parse_mito_vep.py — join the local MITOMAP tables (disease /
-#            status / MitoTIP / GenBank freq) → <sample>.mito.annotated.tsv
-# Output: <outdir>/<sample>.mito.vep.vcf.gz (+ .tbi)
-#         <outdir>/<sample>.mito.annotated.tsv  ← drop into
-#         tertiary_output/<LIS_ID>/mito.annotated.tsv for the UI.
+#            status / MitoTIP / GenBank freq) → mito.annotated.tsv
+# Output: <outdir>/mito.annotated.tsv       ← the file the UI reads;
+#                                              point --outdir at the
+#                                              sample's tertiary dir.
+#         <outdir>/<sample>.mito.vep.vcf.gz (+ .tbi)  ← intermediate
 #
 # Paths are env-overridable; defaults follow the tertiary pipeline's
 # `dgm` (production) profile. If $VEP_SIF / $BCFTOOLS_SIF are set the
@@ -106,7 +107,11 @@ run_vep \
 run_tabix -p vcf "$VEP_VCF"
 
 # ---- Step 3: parse to TSV (join the local MITOMAP tables) ----
-TSV="${OUTDIR}/${SAMPLE}.mito.annotated.tsv"
+# Final TSV gets the canonical, sample-free name so it can be dropped
+# straight into tertiary_output/<LIS_ID>/mito.annotated.tsv where the
+# UI looks for it (mirrors snv_indel.annotated.tsv). The intermediate
+# VEP / norm VCFs keep the <sample>. prefix.
+TSV="${OUTDIR}/mito.annotated.tsv"
 MM_CC="${MITOMAP_DIR}/mitomap_mutations_coding_control.tsv"
 MM_RNA="${MITOMAP_DIR}/mitomap_mutations_rna.tsv"
 echo "[mito] $SAMPLE  parse → TSV…" >&2

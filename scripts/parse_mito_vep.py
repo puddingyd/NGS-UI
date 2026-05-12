@@ -22,8 +22,9 @@ Notes:
   * Multiple records at the same (POS,REF,ALT) — Mutect2-mito re-emits
     from different assembly regions, or norm-split STR alts — are
     de-duplicated, keeping the highest-TLOD copy.
-  * MITOMAP is joined by (POS, REF, ALT) for SNVs; indels match on POS
-    only (best effort — mtDNA disease indels are rare).
+  * MITOMAP is joined by (POS, REF, ALT) only — no POS-only fallback,
+    so a different allele at the same position never bleeds in.
+    MITOMAP indels (with their own notation) just stay unmatched.
   * Heteroplasmy = FORMAT/AF, depth = FORMAT/DP, AD = FORMAT/AD.
 """
 from __future__ import annotations
@@ -116,8 +117,8 @@ def _gene_at(pos: int) -> tuple[str, str]:
 
 
 def _load_mitomap_cc(path: Path) -> dict[tuple[int, str, str], dict]:
-    """coding/control table → {(pos, ref, alt): record}. Indels keyed
-    additionally by (pos, '', '') so a POS-only fallback works.
+    """coding/control table → {(pos, ref, alt): record}, keyed off the
+    "Nucleotide Change" (ref-alt) column for SNVs.
 
     MITOMAP exports are Latin-1, not UTF-8 (stray 0xa0 etc.), so read
     them as latin-1 — it decodes any byte and the data is otherwise
@@ -145,12 +146,11 @@ def _load_mitomap_cc(path: Path) -> dict[tuple[int, str, str], dict]:
             m = re.fullmatch(r"([ACGTN])-([ACGTN])", nuc, re.I)
             if m:
                 out[(pos, m.group(1).upper(), m.group(2).upper())] = rec
-            out.setdefault((pos, "", ""), rec)   # POS-only fallback
     return out
 
 
 def _load_mitomap_rna(path: Path) -> dict[tuple[int, str, str], dict]:
-    """tRNA/rRNA table → {(pos, ref, alt): record} (+ POS-only fallback).
+    """tRNA/rRNA table → {(pos, ref, alt): record}.
     Allele here is `<ref><pos><alt>` for SNVs (e.g. A576G)."""
     out: dict[tuple, dict] = {}
     if not path or not path.is_file():
@@ -176,20 +176,17 @@ def _load_mitomap_rna(path: Path) -> dict[tuple[int, str, str], dict]:
             m = _RNA_ALLELE_RE.fullmatch(allele)
             if m:
                 out[(pos, m.group(1).upper(), m.group(3).upper())] = rec
-            out.setdefault((pos, "", ""), rec)
     return out
 
 
 def _mitomap_lookup(cc: dict, rna: dict, pos: int, ref: str, alt: str, locus_type: str) -> dict:
-    """Pick the right table by locus type, then exact (pos,ref,alt) →
-    POS-only fallback. Empty record when nothing matches."""
+    """Exact (pos, ref, alt) lookup only. tRNA/rRNA variants prefer the
+    rna table, everything else the coding/control table. No POS-only
+    fallback — matching a different allele at the same position would
+    surface the wrong disease/freq data (e.g. m.114C>A vs m.114C>T)."""
     tables = ([rna, cc] if locus_type in ("tRNA", "rRNA") else [cc, rna])
     for t in tables:
         rec = t.get((pos, ref.upper(), alt.upper()))
-        if rec:
-            return rec
-    for t in tables:
-        rec = t.get((pos, "", ""))
         if rec:
             return rec
     return {"disease": "", "status": "", "plasmy": "", "gb_freq": "",
