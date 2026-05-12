@@ -271,12 +271,103 @@ def _resolve_version(sample_id: str, requested: str | None,
     return None
 
 
-def load_sample(sample_id: str, version: str | None = None) -> dict | None:
+def _read_pheno_by_gene(sidecar_dir) -> dict:
+    """Read pheno_score.tsv → {gene_symbol: 0-100 score}. Empty if absent."""
+    out: dict[str, float] = {}
+    p = sidecar_dir / "pheno_score.tsv"
+    if not p.exists():
+        return out
+    import csv as _csv
+    with p.open("r", encoding="utf-8", newline="") as f:
+        for row in _csv.DictReader(f, delimiter="\t"):
+            g = (row.get("gene_symbol") or "").strip()
+            try:
+                out[g] = float(row.get("pheno_score") or 0)
+            except ValueError:
+                pass
+    return out
+
+
+def _load_pheno_context(sample_id: str, version: str | None):
+    """Resolve the active analysis version + its pheno gene set for a
+    sample, without parsing any variant TSV. Used by the staged
+    CNV/SV and Mito loaders so they don't have to re-do the full
+    load_sample. Returns (sub, sidecar_dir, hpo_list, panels_list,
+    pheno_by_gene) or None when the sample dir is missing."""
+    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    if not sub.is_dir():
+        return None
+    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    chosen_version = _resolve_version(
+        sample_id, requested=version, meta_active=meta.get("active_analysis"))
+    sidecar_dir = (analyses_store.version_dir(sample_id, chosen_version)
+                   if chosen_version is not None else sub)
+    if chosen_version is not None:
+        analysis = analyses_store.read_version(sample_id, chosen_version) or {}
+        hpo_list    = analysis.get("hpo") or []
+        panels_list = analysis.get("selected_panels") or []
+    else:
+        hpo_list    = meta.get("hpo") or meta.get("patient_phenotype") or []
+        panels_list = meta.get("selected_panels") or []
+    return sub, sidecar_dir, hpo_list, panels_list, _read_pheno_by_gene(sidecar_dir)
+
+
+def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader: just the CNV/SV side-channels for a sample.
+    {cnv_variants, cnv_categories, sv_variants, sv_categories} or None."""
+    ctx = _load_pheno_context(sample_id, version)
+    from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS, SV_TIERS
+    if ctx is None:
+        return None
+    sub, _sd, hpo_list, panels_list, pheno_by_gene = ctx
+    from . import phenotype_scorer
+    pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(hpo_list, panels_list)
+    cnv_path = sub / "cnv.annotated.tsv"
+    sv_path  = sub / "sv.annotated.tsv"
+    cnv_variants, cnv_categories = (
+        load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene,
+                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+        if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
+    )
+    sv_variants, sv_categories = (
+        load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene,
+                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+        if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
+    )
+    return {
+        "cnv_variants": cnv_variants, "cnv_categories": cnv_categories,
+        "sv_variants": sv_variants,   "sv_categories": sv_categories,
+    }
+
+
+def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader: just the Mitochondria side-channel for a sample.
+    {mito_variants, mito_categories} or None."""
+    ctx = _load_pheno_context(sample_id, version)
+    from ..adapters.mito_tsv import load_mito_tsv, MITO_TIERS
+    if ctx is None:
+        return None
+    sub, _sd, _h, _p, pheno_by_gene = ctx
+    mito_path = sub / "mito.annotated.tsv"
+    mv, mc = (
+        load_mito_tsv(mito_path, pheno_by_gene=pheno_by_gene)
+        if mito_path.exists() else ({}, {t: [] for t in MITO_TIERS})
+    )
+    return {"mito_variants": mv, "mito_categories": mc}
+
+
+def load_sample(sample_id: str, version: str | None = None,
+                include_aux: bool = True) -> dict | None:
     """Build the per-sample webdata payload the frontend renders.
 
     `version` selects which analysis sidecar set to join in. When None,
     falls back to the sample's `active_analysis`, then `default`, then
     the legacy flat layout (sidecars at the sample root).
+
+    `include_aux=False` skips the CNV/SV and Mito TSV parsing (returns
+    empty dicts for them + `aux_pending: True`); the frontend then
+    pulls those from /samples/{id}/cnv-sv and /samples/{id}/mito so
+    the SNV/Indel view appears without waiting on the rest.
     """
     sub = TERTIARY_OUTPUT_ROOT / sample_id
     if not sub.is_dir():
@@ -408,46 +499,52 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
 
     # CNV / SV: load only when the AnnotSV outputs are present beside
     # the SNV TSV (pipeline drops them per-sample). Empty dicts when
-    # absent → frontend just shows "（無資料）" placeholders.
+    # absent → frontend just shows "（無資料）" placeholders. When
+    # include_aux is False these are deferred to /samples/{id}/cnv-sv
+    # and /samples/{id}/mito (staged loading).
     from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS, SV_TIERS
-    cnv_path = sub / "cnv.annotated.tsv"
-    sv_path  = sub / "sv.annotated.tsv"
-    # CNV/SV gene tables render the pheno column as `matched/total`
-    # (e.g. "2/3" — gene was implicated by 2 of 3 input HPO/panel
-    # weights). Recompute the raw matched-weight + total-weight pair
-    # here from the active analysis version's HPO/panels so the
-    # numerator on each gene matches what compute_pheno_score
-    # multiplied by 100 to write pheno_score.tsv.
-    from . import phenotype_scorer
-    pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(
-        hpo_list, panels_list
-    )
-    cnv_variants, cnv_categories = (
-        load_annotsv_tsv(
-            cnv_path, source="cnv",
-            pheno_by_gene=pheno_by_gene,
-            pheno_matched=pheno_matched, pheno_total=pheno_total,
-        )
-        if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
-    )
-    sv_variants, sv_categories = (
-        load_annotsv_tsv(
-            sv_path, source="sv",
-            pheno_by_gene=pheno_by_gene,
-            pheno_matched=pheno_matched, pheno_total=pheno_total,
-        )
-        if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
-    )
-
-    # Mitochondria: per-sample mito.annotated.tsv (VEP + local MITOMAP),
-    # produced by scripts/annotate_mito_vcf.sh. Pheno gene set drives the
-    # "Clinical (in panel)" tier just like the SNV/CNV/SV sides.
     from ..adapters.mito_tsv import load_mito_tsv, MITO_TIERS
-    mito_path = sub / "mito.annotated.tsv"
-    mito_variants, mito_categories = (
-        load_mito_tsv(mito_path, pheno_by_gene=pheno_by_gene)
-        if mito_path.exists() else ({}, {t: [] for t in MITO_TIERS})
-    )
+    if include_aux:
+        cnv_path = sub / "cnv.annotated.tsv"
+        sv_path  = sub / "sv.annotated.tsv"
+        # CNV/SV gene tables render the pheno column as `matched/total`
+        # (e.g. "2/3" — gene was implicated by 2 of 3 input HPO/panel
+        # weights). Recompute the raw matched-weight + total-weight pair
+        # here from the active analysis version's HPO/panels so the
+        # numerator on each gene matches what compute_pheno_score
+        # multiplied by 100 to write pheno_score.tsv.
+        from . import phenotype_scorer
+        pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(
+            hpo_list, panels_list
+        )
+        cnv_variants, cnv_categories = (
+            load_annotsv_tsv(
+                cnv_path, source="cnv",
+                pheno_by_gene=pheno_by_gene,
+                pheno_matched=pheno_matched, pheno_total=pheno_total,
+            )
+            if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
+        )
+        sv_variants, sv_categories = (
+            load_annotsv_tsv(
+                sv_path, source="sv",
+                pheno_by_gene=pheno_by_gene,
+                pheno_matched=pheno_matched, pheno_total=pheno_total,
+            )
+            if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
+        )
+        # Mitochondria: per-sample mito.annotated.tsv (VEP + local MITOMAP),
+        # produced by scripts/annotate_mito_vcf.sh. Pheno gene set drives the
+        # "Clinical (in panel)" tier just like the SNV/CNV/SV sides.
+        mito_path = sub / "mito.annotated.tsv"
+        mito_variants, mito_categories = (
+            load_mito_tsv(mito_path, pheno_by_gene=pheno_by_gene)
+            if mito_path.exists() else ({}, {t: [] for t in MITO_TIERS})
+        )
+    else:
+        cnv_variants, cnv_categories = {}, {t: [] for t in CNV_TIERS}
+        sv_variants,  sv_categories  = {}, {t: [] for t in SV_TIERS}
+        mito_variants, mito_categories = {}, {t: [] for t in MITO_TIERS}
 
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
@@ -484,6 +581,10 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
         "sv_categories":     sv_categories,
         "mito_variants":     mito_variants,
         "mito_categories":   mito_categories,
+        # When True the CNV/SV + Mito side-channels above are empty
+        # placeholders; the frontend fetches them from the dedicated
+        # /samples/{id}/cnv-sv and /samples/{id}/mito endpoints.
+        "aux_pending":       not include_aux,
         # Whether the sample has phenotype configured at all — the
         # frontend uses this to show a "Clinical 區塊空白是因為沒有
         # phenotype" hint instead of leaving the panel silently empty.

@@ -155,7 +155,28 @@ def register_sample(
 
 @router.get("/samples/{sample_id}")
 def get_sample(sample_id: str, version: str | None = None):
-    payload = sample_loader.load_sample(sample_id, version=version)
+    # include_aux=False → core payload only (meta + SNV/Indel + report
+    # state); the frontend pulls CNV/SV and Mito separately so the
+    # SNV/Indel view shows up first (staged loading).
+    payload = sample_loader.load_sample(sample_id, version=version, include_aux=False)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
+@router.get("/samples/{sample_id}/cnv-sv")
+def get_sample_cnv_sv(sample_id: str, version: str | None = None):
+    """CNV/SV side-channels for the staged loader."""
+    payload = sample_loader.load_sample_cnv_sv(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
+@router.get("/samples/{sample_id}/mito")
+def get_sample_mito(sample_id: str, version: str | None = None):
+    """Mitochondria side-channel for the staged loader."""
+    payload = sample_loader.load_sample_mito(sample_id, version=version)
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")
     return payload

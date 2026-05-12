@@ -145,6 +145,44 @@ async function loadSample(LIS_ID) {
   clearTimeout(_autoSaveTimer);
   // Reset manual-toggle tracking between samples so defaultOpen applies fresh.
   toggledBlocks.clear();
+
+  // Staged loading: the core payload above carries empty CNV/SV + Mito
+  // side-channels (aux_pending). Pull them in the background so the
+  // SNV/Indel view + report sections appear immediately; each card
+  // re-renders itself when its data lands. A monotonic token drops a
+  // stale response that arrives after the user switched samples.
+  if (data.aux_pending) {
+    const token = (state._auxLoadToken = (state._auxLoadToken || 0) + 1);
+    state.cnvSvPending = true;
+    state.mitoPending  = true;
+    apiFetch(`/samples/${encodeURIComponent(sid)}/cnv-sv`)
+      .then(aux => {
+        if (token !== state._auxLoadToken || !state.data) return;
+        if (aux) Object.assign(state.data, aux);
+        state.cnvSvPending = false;
+        try { renderCnvSvTabBar(); } catch (_e) {}
+      })
+      .catch(() => {
+        if (token !== state._auxLoadToken) return;
+        state.cnvSvPending = false;
+        try { renderCnvSvTabBar(); } catch (_e) {}
+      });
+    apiFetch(`/samples/${encodeURIComponent(sid)}/mito`)
+      .then(aux => {
+        if (token !== state._auxLoadToken || !state.data) return;
+        if (aux) Object.assign(state.data, aux);
+        state.mitoPending = false;
+        try { renderMitoTabBar(); } catch (_e) {}
+      })
+      .catch(() => {
+        if (token !== state._auxLoadToken) return;
+        state.mitoPending = false;
+        try { renderMitoTabBar(); } catch (_e) {}
+      });
+  } else {
+    state.cnvSvPending = false;
+    state.mitoPending  = false;
+  }
 }
 
 // ---------- Formatting helpers --------------------------------------
@@ -1834,12 +1872,13 @@ function renderCnvSvTabBar() {
   if (!CNV_SV_TIER_ORDER.includes(activeCnvSvTab)) activeCnvSvTab = null;
   if (!activeCnvSvTab) activeCnvSvTab = "CNV-1A";
 
+  const loading = !!state.cnvSvPending;
   bar.innerHTML = CNV_SV_TIER_ORDER.map(t => {
     const active = t === activeCnvSvTab ? " active" : "";
     const ids = _cnvSvIdsForTier(t);
     return `<button type="button" class="tier-tab ${CNV_SV_TIER_CLASS[t]}${active}" data-tier="${t}">
               <span class="tier-tab-title">${escapeHtml(CNV_SV_TITLES[t])}</span>
-              <span class="tier-tab-count">Total ${ids.length}</span>
+              <span class="tier-tab-count">${loading ? "…" : "Total " + ids.length}</span>
             </button>`;
   }).join("");
 
@@ -1853,6 +1892,13 @@ function renderCnvSvTabBar() {
     const ids = _cnvSvIdsForTier(tier);
     const isClinical = tier.endsWith("-1A") || tier.endsWith("-2A");
     panel.innerHTML = "";
+    if (loading) {
+      const wrap = document.createElement("div");
+      wrap.className = "block-body";
+      wrap.innerHTML = `<div class="analysis-card-empty">載入中…</div>`;
+      panel.appendChild(wrap);
+      return;
+    }
     if (!ids.length) {
       const empty = document.createElement("div");
       empty.className = "block-body";
@@ -1903,12 +1949,13 @@ function renderMitoTabBar() {
   if (!MITO_TIER_ORDER.includes(activeMitoTab)) activeMitoTab = null;
   if (!activeMitoTab) activeMitoTab = "MITO-1";
 
+  const loading = !!state.mitoPending;
   bar.innerHTML = MITO_TIER_ORDER.map(t => {
     const active = t === activeMitoTab ? " active" : "";
     const ids = _mitoIdsForTier(t);
     return `<button type="button" class="tier-tab tier-mito${active}" data-tier="${t}">
               <span class="tier-tab-title">${escapeHtml(MITO_TITLES[t])}</span>
-              <span class="tier-tab-count">Total ${ids.length}</span>
+              <span class="tier-tab-count">${loading ? "…" : "Total " + ids.length}</span>
             </button>`;
   }).join("");
 
@@ -1917,6 +1964,13 @@ function renderMitoTabBar() {
     if (!panel) return;
     const ids = _mitoIdsForTier(tier);
     panel.innerHTML = "";
+    if (loading) {
+      const wrap = document.createElement("div");
+      wrap.className = "block-body";
+      wrap.innerHTML = `<div class="analysis-card-empty">載入中…</div>`;
+      panel.appendChild(wrap);
+      return;
+    }
     if (!ids.length) {
       const empty = document.createElement("div");
       empty.className = "block-body";
