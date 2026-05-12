@@ -26,12 +26,14 @@
 set -euo pipefail
 
 # ---- config (override via env) ----
-REF_DIR="${REF_DIR:-/home/pipeline/reference}"
+# Defaults follow the tertiary pipeline's `dgm` (production) profile;
+# the `local` profile uses /scratch/.../hg38 + /data/pylin1991/nf-containers.
+REF_DIR="${REF_DIR:-/home/pipeline/reference/hg38}"
 REF_FASTA="${REF_FASTA:-${REF_DIR}/Homo_sapiens_assembly38.fasta}"
 VEP_CACHE="${VEP_CACHE:-${REF_DIR}/tertiary/vep_cache}"
-VEP_SIF="${VEP_SIF:-}"                 # e.g. /home/pipeline/nextflow_containers/vep_115.sif
-BCFTOOLS_SIF="${BCFTOOLS_SIF:-}"       # e.g. /home/pipeline/nextflow_containers/bcftools_1.23.1.sif
-APPTAINER_BIND="${APPTAINER_BIND:---bind /home,/scratch,/data}"
+VEP_SIF="${VEP_SIF:-/home/pipeline/nextflow_containers/vep_115.sif}"
+BCFTOOLS_SIF="${BCFTOOLS_SIF:-/home/pipeline/nextflow_containers/bcftools_1.23.1.sif}"
+APPTAINER_BIND="${APPTAINER_BIND:---bind /home}"
 THREADS="${THREADS:-4}"
 
 # ---- args ----
