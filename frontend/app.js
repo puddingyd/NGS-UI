@@ -2062,15 +2062,9 @@ function _mitoHeteroplasmy(v) {
 }
 
 function _mitoConsequenceLabel(v) {
-  const c = (v.consequence || "");
-  if (!c) return "—";
-  if (c.startsWith("non_coding")) {
-    return v.locus_type === "tRNA" ? "tRNA variant"
-         : v.locus_type === "rRNA" ? "rRNA variant"
-         : "non-coding";
-  }
-  // missense_variant → "missense", stop_gained → "stop_gained", etc.
-  return c.split("&")[0];
+  // The MITOMAP-only annotator already emits readable labels
+  // (missense / synonymous / stop_gained / non-coding (tRNA) / …).
+  return (v.consequence || "—");
 }
 
 // Mutect2-mito FILTER flag → plain-Chinese gloss (shown as a tooltip).
@@ -2131,9 +2125,7 @@ function _renderMitoDetailBox(v) {
     </div>
     <div class="cnv-sv-detail-row">
       <span><strong>Consequence:</strong> ${escapeHtml(consL)}</span>
-      ${v.HGVS_C ? `<span><strong>HGVSc:</strong> ${escapeHtml(v.HGVS_C)}</span>` : ""}
-      ${v.HGVS_P ? `<span><strong>HGVSp:</strong> ${escapeHtml(v.HGVS_P)}</span>` : ""}
-      ${v.aa_change ? `<span><strong>AA:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
+      ${v.aa_change ? `<span><strong>Protein change:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
       <span title="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>
     </div>
     ${mmBlock}

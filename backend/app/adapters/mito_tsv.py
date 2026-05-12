@@ -163,8 +163,6 @@ def load_mito_tsv(
                 "gene_symbol":   gene,
                 "locus_type":    locus_type,
                 "consequence":   (row.get("CONSEQUENCE") or "").strip(),
-                "HGVS_C":        (row.get("HGVS_C") or "").strip(),
-                "HGVS_P":        (row.get("HGVS_P") or "").strip(),
                 "aa_change":     (row.get("AA_CHANGE") or "").strip(),
                 "heteroplasmy":  het,                       # 0-1 fraction
                 "AD":            (row.get("AD") or "").strip(),
