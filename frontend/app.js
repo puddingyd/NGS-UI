@@ -2121,12 +2121,12 @@ function _renderMitoDetailBox(v) {
       <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
       <span><strong>類型:</strong> ${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>
       <span><strong>Heteroplasmy:</strong> ${_mitoHeteroplasmy(v)} <span class="muted">(AD ${escapeHtml(ad)} · DP ${dp})</span></span>
-      <span title="${escapeAttr(_mitoFilterTitle(filt))}"><strong>Filter:</strong> ${escapeHtml(filt)} <span class="muted" style="cursor:help">ⓘ</span></span>
+      <span data-tip="${escapeAttr(_mitoFilterTitle(filt))}"><strong>Filter:</strong> ${escapeHtml(filt)} <span class="muted" style="cursor:help">ⓘ</span></span>
     </div>
     <div class="cnv-sv-detail-row">
       <span><strong>Consequence:</strong> ${escapeHtml(consL)}</span>
       ${v.aa_change ? `<span><strong>Protein change:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
-      <span title="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>
+      <span data-tip="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>
     </div>
     ${mmBlock}
   </div>`;
@@ -5434,3 +5434,59 @@ function maybeShowVersionPicker(onPick) {
   showModal("version-pick-modal");
   return true;
 }
+
+// ---------- Lightweight hover tooltip (replaces native `title`) ------
+// Native `title` has a long (~1 s) delay and tiny multi-line text; for
+// the `ⓘ` hints (mito FILTER / TLOD, …) we use a 0.5 s custom popup.
+// Opt in by putting the text on `data-tip` ("\n" → <br>).
+(() => {
+  let tipEl = null, timer = null, curTarget = null;
+  function ensureEl() {
+    if (!tipEl) {
+      tipEl = document.createElement("div");
+      tipEl.className = "app-tooltip";
+      tipEl.style.display = "none";
+      document.body.appendChild(tipEl);
+    }
+    return tipEl;
+  }
+  function show(el) {
+    const txt = el.getAttribute("data-tip");
+    if (!txt) return;
+    const t = ensureEl();
+    t.innerHTML = String(txt).split("\n").map(escapeHtml).join("<br>");
+    t.style.display = "block";
+    t.style.left = "0px"; t.style.top = "0px";
+    const r = el.getBoundingClientRect();
+    const tw = t.offsetWidth, th = t.offsetHeight;
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    let left = r.left + window.scrollX;
+    const maxLeft = window.scrollX + vw - tw - 8;
+    if (left > maxLeft) left = Math.max(window.scrollX + 8, maxLeft);
+    let top = r.bottom + window.scrollY + 6;
+    if (r.bottom + 6 + th > vh) top = r.top + window.scrollY - th - 6;
+    t.style.left = left + "px";
+    t.style.top = top + "px";
+    curTarget = el;
+  }
+  function hide() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    curTarget = null;
+    if (tipEl) tipEl.style.display = "none";
+  }
+  document.addEventListener("mouseover", ev => {
+    const el = ev.target.closest("[data-tip]");
+    if (!el || el === curTarget) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; show(el); }, 500);
+  });
+  document.addEventListener("mouseout", ev => {
+    const el = ev.target.closest("[data-tip]");
+    if (!el) return;
+    if (ev.relatedTarget && el.contains(ev.relatedTarget)) return;
+    hide();
+  });
+  document.addEventListener("mousedown", hide, true);
+  window.addEventListener("scroll", hide, true);
+})();

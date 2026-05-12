@@ -1721,3 +1721,19 @@ body.sidebar-collapsed .container { margin-left: auto; }
   letter-spacing: 2px;
 }
 .btn-floating-close:hover { background: #f3f4f6; }
+
+/* Custom hover tooltip (see the data-tip handler in app.js). */
+.app-tooltip {
+  position: absolute;
+  z-index: 1000;
+  max-width: 340px;
+  background: #1f2937;
+  color: #f9fafb;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 6px 9px;
+  border-radius: 5px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .28);
+  pointer-events: none;
+  white-space: normal;
+}
