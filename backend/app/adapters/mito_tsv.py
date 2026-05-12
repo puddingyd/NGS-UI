@@ -4,17 +4,26 @@ Reads the per-sample mitochondrial TSV produced by
 scripts/annotate_mito_vcf.sh (VEP + the local MITOMAP tables) and
 shapes it for the frontend's Mitochondria card.
 
-Tiers (exclusive — a variant lands in the highest one it qualifies for):
+Only disease-relevant variants are surfaced — the card lists variants
+that are either (a) pathogenic per MITOMAP/MitoTIP, or (b) carry some
+MITOMAP disease association. Polymorphisms / haplogroup variants with
+no MITOMAP record are dropped entirely (the raw mito VCF has ~150
+variants per sample, almost all of which are exactly that).
+
+Tiers:
     MITO-1  Pathogenic   — MITOMAP status confirmed-ish ("Cfrm" /
                            "Confirmed" / "[P]" / "[LP]") or a MitoTIP
                            "(likely) pathogenic" call
-    MITO-2  Clinical     — GENE is in the patient's pheno_score gene
-                           set (HPO/panel match) and not already in MITO-1
-    MITO-3  Other        — everything else (polymorphisms, haplogroup
-                           variants, the poly-C/A tract artefacts)
+    MITO-2  Clinical     — has a non-empty MITOMAP_DISEASE (and isn't
+                           already in MITO-1)
 
-Heteroplasmy (FORMAT/AF, 0–1) is the headline metric — every tier
-sorts by it descending (then by position) so high-load calls float up.
+Both tiers sort by a "disease-relevance" key, most-relevant first:
+    (status_rank, mitotip_rank, in_panel_rank, -refs, -heteroplasmy, pos)
+where status_rank   = Cfrm/Confirmed 0 · Reported 1 · Conflicting 2 · else 3
+      mitotip_rank  = Pathogenic 0 · Likely pathogenic 1 · Possibly… 2 · else 3
+      in_panel_rank = 0 if GENE is in the patient's pheno_score gene set else 1
+heteroplasmy still tie-breaks (a *disease-associated* variant at high load
+is more likely clinically significant) but is no longer the headline sort.
 """
 from __future__ import annotations
 
@@ -22,7 +31,7 @@ import csv
 import re
 from pathlib import Path
 
-MITO_TIERS = ["MITO-1", "MITO-2", "MITO-3"]
+MITO_TIERS = ["MITO-1", "MITO-2"]
 
 _PATHO_STATUS_RE = re.compile(r"\bCfrm\b|\bConfirmed\b|\[L?P\]", re.I)
 _PATHO_MITOTIP   = {"pathogenic", "likely pathogenic"}
@@ -58,6 +67,37 @@ def _is_pathogenic(status: str, mitotip: str) -> bool:
     return False
 
 
+def _status_rank(status: str) -> int:
+    s = (status or "").lower()
+    if "cfrm" in s or "confirmed" in s:
+        return 0
+    if "reported" in s:
+        return 1
+    if "conflicting" in s or "disputed" in s:
+        return 2
+    return 3
+
+
+def _mitotip_rank(mitotip: str) -> int:
+    m = (mitotip or "").strip().lower()
+    if m == "pathogenic":
+        return 0
+    if m == "likely pathogenic":
+        return 1
+    if m.startswith("possibly"):
+        return 2
+    return 3
+
+
+def _refs_count(refs: str) -> int:
+    """MITOMAP "References" is usually an integer count; be lenient."""
+    n = _to_int(refs)
+    if n is not None:
+        return n
+    # fall back to counting non-empty tokens
+    return len([t for t in re.split(r"[;, ]+", refs or "") if t])
+
+
 def load_mito_tsv(
     tsv_path: Path,
     *,
@@ -67,6 +107,7 @@ def load_mito_tsv(
 
     `id` is chrM-{pos}-{ref}-{alt} (distinct from SNV/CNV ids, so the
     one flat state.reports.{status,edits} namespace stays collision-free).
+    Only disease-relevant variants make it into the returned dicts.
     """
     pheno_by_gene = pheno_by_gene or {}
     variants: dict[str, dict] = {}
@@ -82,15 +123,23 @@ def load_mito_tsv(
             alt = (row.get("ALT") or "").strip()
             if pos is None or not ref or not alt:
                 continue
-            vid = f"chrM-{pos}-{ref}-{alt}"
             gene = (row.get("GENE") or "").strip()
             locus_type = (row.get("LOCUS_TYPE") or "").strip() or "unknown"
             status = (row.get("MITOMAP_STATUS") or "").strip()
             mitotip = (row.get("MITOTIP_SCORE") or "").strip()
+            disease = (row.get("MITOMAP_DISEASE") or "").strip()
+            pathogenic = _is_pathogenic(status, mitotip)
+            # Only keep disease-relevant variants: pathogenic, or with
+            # any MITOMAP disease association. Everything else (the bulk
+            # — polymorphisms / haplogroup variants) is dropped.
+            if not pathogenic and not disease:
+                continue
+
+            vid = f"chrM-{pos}-{ref}-{alt}"
             het = _to_float(row.get("HETEROPLASMY"))
             pheno = pheno_by_gene.get(gene)
             in_panel = bool(pheno and pheno > 0)
-            pathogenic = _is_pathogenic(status, mitotip)
+            refs_raw = (row.get("MITOMAP_REFS") or "").strip()
 
             v = {
                 "id":            vid,
@@ -110,12 +159,12 @@ def load_mito_tsv(
                 "depth":         _to_int(row.get("DEPTH")),
                 "filter":        (row.get("FILTER") or "").strip(),
                 "TLOD":          _to_float(row.get("TLOD")),
-                "mitomap_disease": (row.get("MITOMAP_DISEASE") or "").strip(),
+                "mitomap_disease": disease,
                 "mitomap_status":  status,
                 "mitomap_plasmy":  (row.get("MITOMAP_PLASMY") or "").strip(),
                 "mitomap_gb_freq": (row.get("MITOMAP_GB_FREQ") or "").strip(),
                 "mitomap_gb_seqs": (row.get("MITOMAP_GB_SEQS") or "").strip(),
-                "mitomap_refs":    (row.get("MITOMAP_REFS") or "").strip(),
+                "mitomap_refs":    refs_raw,
                 "mitotip_score":   mitotip,
                 "mitomap_allele":  (row.get("MITOMAP_ALLELE") or "").strip(),
                 "pheno_score":     round(pheno, 2) if pheno is not None else None,
@@ -123,14 +172,20 @@ def load_mito_tsv(
                 "pathogenic":      pathogenic,
             }
             variants[vid] = v
-            tier = "MITO-1" if pathogenic else ("MITO-2" if in_panel else "MITO-3")
-            categories[tier].append(vid)
+            categories["MITO-1" if pathogenic else "MITO-2"].append(vid)
 
-    def _key(vid: str) -> tuple:
+    def _relevance_key(vid: str) -> tuple:
         v = variants[vid]
         het = v.get("heteroplasmy")
-        return (-(het if het is not None else -1.0), v.get("POS") or 0)
+        return (
+            _status_rank(v.get("mitomap_status", "")),
+            _mitotip_rank(v.get("mitotip_score", "")),
+            0 if v.get("in_panel") else 1,
+            -_refs_count(v.get("mitomap_refs", "")),
+            -(het if het is not None else -1.0),
+            v.get("POS") or 0,
+        )
     for t in categories:
-        categories[t].sort(key=_key)
+        categories[t].sort(key=_relevance_key)
 
     return variants, categories

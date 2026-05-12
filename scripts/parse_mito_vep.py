@@ -205,12 +205,17 @@ def _parse_csq_format(line: str) -> list[str]:
 
 def _pick_csq(csq_field: str, csq_cols: list[str]) -> dict:
     """Return the 'best' CSQ entry as {col: value}: prefer a genic
-    consequence (not up/downstream), most-severe, then PICK=1."""
+    consequence (not up/downstream), most-severe, then PICK=1.
+
+    VEP percent-encodes a few chars in CSQ values ( = → %3D , etc.);
+    every value is run through urllib.parse.unquote so e.g.
+    p.Gly320%3D becomes p.Gly320=."""
+    from urllib.parse import unquote
     best = None
     best_key = None
     for entry in csq_field.split(","):
         vals = entry.split("|")
-        d = {c: (vals[i] if i < len(vals) else "") for i, c in enumerate(csq_cols)}
+        d = {c: (unquote(vals[i]) if i < len(vals) else "") for i, c in enumerate(csq_cols)}
         cons = d.get("Consequence", "")
         first_cons = cons.split("&")[0]
         sev = min((_CSQ_SEVERITY.get(c, 99) for c in cons.split("&")), default=99)

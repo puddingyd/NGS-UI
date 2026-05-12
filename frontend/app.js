@@ -1883,11 +1883,13 @@ function applyCnvSvTabActive() {
 }
 
 // ---------- Mitochondria tier tabs --------------------------------
-const MITO_TIER_ORDER = ["MITO-1", "MITO-2", "MITO-3"];
+// Only disease-relevant variants are shown — MITO-1 = pathogenic (per
+// MITOMAP/MitoTIP), MITO-2 = anything else with a MITOMAP disease
+// association. Polymorphisms / haplogroup variants are dropped server-side.
+const MITO_TIER_ORDER = ["MITO-1", "MITO-2"];
 const MITO_TITLES = {
   "MITO-1": "1 Pathogenic",
-  "MITO-2": "2 Clinical（in panel）",
-  "MITO-3": "3 Other",
+  "MITO-2": "2 Disease-associated",
 };
 let activeMitoTab = null;
 
@@ -1918,9 +1920,9 @@ function renderMitoTabBar() {
     if (!ids.length) {
       const empty = document.createElement("div");
       empty.className = "block-body";
-      empty.innerHTML = (tier === "MITO-2" && !state.data?.has_phenotype)
-        ? `<div class="analysis-card-empty">請先設定 phenotype（HPO / panel），才會有 Clinical 結果。</div>`
-        : `<div class="analysis-card-empty">（無資料）</div>`;
+      empty.innerHTML = `<div class="analysis-card-empty">${
+        tier === "MITO-1" ? "（無致病性 mtDNA 變異）" : "（無 disease 相關 mtDNA 變異）"
+      }</div>`;
       panel.appendChild(empty);
       return;
     }
@@ -2017,6 +2019,31 @@ function _mitoConsequenceLabel(v) {
   return c.split("&")[0];
 }
 
+// Mutect2-mito FILTER flag → plain-Chinese gloss (shown as a tooltip).
+const MITO_FILTER_GLOSS = {
+  PASS:             "通過所有過濾",
+  weak_evidence:    "變異訊號弱（likelihood 未達門檻）— 常見於低 heteroplasmy 雜訊位點",
+  base_qual:        "alt allele 的中位 base quality 偏低",
+  blacklisted_site: "落在 mtDNA 已知問題區（poly-C tract、NUMT 高相似區等黑名單）",
+  possible_numt:    "疑似來自核基因組的 mtDNA 偽基因片段（NUMT）",
+  contamination:    "疑似樣本污染",
+  strand_bias:      "證據只來自單一 read 方向",
+  strict_strand:    "alt allele 在兩個 read 方向都沒被代表到",
+  slippage:         "STR 區域的 polymerase slippage",
+  map_qual:         "mapping quality 異常（ref 與 alt 差異大）",
+  position:         "alt 變異離 read 末端太近",
+  clustered_events: "附近 somatic events 過多",
+  haplotype:        "靠近同一 haplotype 上被過濾掉的變異",
+  multiallelic:     "此位點 alt allele 過多",
+  fragment:         "ref/alt 的中位 fragment length 差異過大",
+};
+function _mitoFilterTitle(filt) {
+  const parts = (filt || "").split(";").map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return MITO_FILTER_GLOSS.PASS;
+  return parts.map(p => `${p}：${MITO_FILTER_GLOSS[p] || "（未知旗標）"}`).join("\n");
+}
+const _MITO_TLOD_TITLE = "Mutect2 tumor LOD：log10(變異存在 / 不存在) 的 likelihood ratio。越高 = 越確定是真變異（非測序錯誤）；一般 >6 算可靠，1-2 多為雜訊。";
+
 function _renderMitoDetailBox(v) {
   const filt = v.filter && v.filter !== "." ? v.filter : "PASS";
   const tlod = (v.TLOD != null) ? Number(v.TLOD).toFixed(2) : "—";
@@ -2046,14 +2073,14 @@ function _renderMitoDetailBox(v) {
       <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
       <span><strong>類型:</strong> ${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>
       <span><strong>Heteroplasmy:</strong> ${_mitoHeteroplasmy(v)} <span class="muted">(AD ${escapeHtml(ad)} · DP ${dp})</span></span>
-      <span><strong>Filter:</strong> ${escapeHtml(filt)}</span>
+      <span title="${escapeAttr(_mitoFilterTitle(filt))}"><strong>Filter:</strong> ${escapeHtml(filt)} <span class="muted" style="cursor:help">ⓘ</span></span>
     </div>
     <div class="cnv-sv-detail-row">
       <span><strong>Consequence:</strong> ${escapeHtml(consL)}</span>
       ${v.HGVS_C ? `<span><strong>HGVSc:</strong> ${escapeHtml(v.HGVS_C)}</span>` : ""}
       ${v.HGVS_P ? `<span><strong>HGVSp:</strong> ${escapeHtml(v.HGVS_P)}</span>` : ""}
       ${v.aa_change ? `<span><strong>AA:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
-      <span><strong>TLOD:</strong> ${tlod}</span>
+      <span title="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>
     </div>
     ${mmBlock}
   </div>`;
