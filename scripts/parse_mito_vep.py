@@ -55,6 +55,7 @@ _MT_GENES = [
     ("MT-TW",    5512,  5579, "tRNA"),
     ("MT-TA",    5587,  5655, "tRNA"),
     ("MT-TN",    5657,  5729, "tRNA"),
+    ("MT-OLR",   5730,  5760, "control"),   # origin of L-strand replication (OriL)
     ("MT-TC",    5761,  5826, "tRNA"),
     ("MT-TY",    5826,  5891, "tRNA"),
     ("MT-CO1",   5904,  7445, "protein"),
@@ -107,13 +108,13 @@ _RNA_ALLELE_RE = re.compile(r"^([ACGTN])(\d+)([ACGTN])$", re.I)
 
 
 def _gene_at(pos: int) -> tuple[str, str]:
-    """(gene, locus_type) for a position, from the rCRS map. Falls back
-    to control-region if the position is in the D-loop, else the first
-    gene whose range it overlaps, else ('', 'unknown')."""
+    """(gene, locus_type) for a position, from the rCRS map. D-loop →
+    control region; the few tiny intergenic gaps between genes →
+    ('', 'intergenic')."""
     for name, start, end, lt in _MT_GENES:
         if start <= pos <= end:
             return name, lt
-    return "MT-CR" if (pos <= 576 or pos >= 16024) else ("", "unknown")
+    return ("MT-CR", "control") if (pos <= 576 or pos >= 16024) else ("", "intergenic")
 
 
 def _load_mitomap_cc(path: Path) -> dict[tuple[int, str, str], dict]:
