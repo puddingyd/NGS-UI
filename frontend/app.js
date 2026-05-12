@@ -1732,6 +1732,7 @@ function renderCandidateSections() {
   updateInPanelCount();
   renderTierTabBar();
   renderCnvSvTabBar();
+  renderMitoTabBar();
 }
 
 // Build the SNV/Indel tier tab bar from the same defs / counts as the
@@ -1881,25 +1882,215 @@ function applyCnvSvTabActive() {
   });
 }
 
-// Click dispatch: SNV vs CNV/SV is decided by the tab's data-tier value
-// so we can scope the active-class toggle to just that tab group (not
-// every .tier-tab in the DOM, which would clobber the other group's
-// state).
+// ---------- Mitochondria tier tabs --------------------------------
+const MITO_TIER_ORDER = ["MITO-1", "MITO-2", "MITO-3"];
+const MITO_TITLES = {
+  "MITO-1": "1 Pathogenic",
+  "MITO-2": "2 Clinical（in panel）",
+  "MITO-3": "3 Other",
+};
+let activeMitoTab = null;
+
+function _mitoIdsForTier(tier) {
+  return (state.data?.mito_categories && state.data.mito_categories[tier]) || [];
+}
+
+function renderMitoTabBar() {
+  const bar = document.getElementById("mito-tab-bar");
+  if (!bar) return;
+  if (!MITO_TIER_ORDER.includes(activeMitoTab)) activeMitoTab = null;
+  if (!activeMitoTab) activeMitoTab = "MITO-1";
+
+  bar.innerHTML = MITO_TIER_ORDER.map(t => {
+    const active = t === activeMitoTab ? " active" : "";
+    const ids = _mitoIdsForTier(t);
+    return `<button type="button" class="tier-tab tier-mito${active}" data-tier="${t}">
+              <span class="tier-tab-title">${escapeHtml(MITO_TITLES[t])}</span>
+              <span class="tier-tab-count">Total ${ids.length}</span>
+            </button>`;
+  }).join("");
+
+  MITO_TIER_ORDER.forEach(tier => {
+    const panel = document.querySelector(`#mito-tab-panels .tier-panel[data-tier="${tier}"]`);
+    if (!panel) return;
+    const ids = _mitoIdsForTier(tier);
+    panel.innerHTML = "";
+    if (!ids.length) {
+      const empty = document.createElement("div");
+      empty.className = "block-body";
+      empty.innerHTML = (tier === "MITO-2" && !state.data?.has_phenotype)
+        ? `<div class="analysis-card-empty">請先設定 phenotype（HPO / panel），才會有 Clinical 結果。</div>`
+        : `<div class="analysis-card-empty">（無資料）</div>`;
+      panel.appendChild(empty);
+      return;
+    }
+    const body = document.createElement("div");
+    body.className = "block-body open";
+    ids.forEach((id, i) => {
+      const v = state.data?.mito_variants?.[id];
+      if (!v) return;
+      body.appendChild(renderMitoCard(v, id, { index: i + 1 }));
+    });
+    panel.appendChild(body);
+  });
+  applyMitoTabActive();
+}
+
+function applyMitoTabActive() {
+  const panels = document.getElementById("mito-tab-panels");
+  if (!panels) return;
+  panels.querySelectorAll(".tier-panel").forEach(p => {
+    p.classList.toggle("active", p.dataset.tier === activeMitoTab);
+  });
+}
+
+// Click dispatch for all three tier-tab groups (SNV, CNV/SV, Mito).
+// The tab's data-tier tells us which group, so the active-class toggle
+// stays scoped to that group's bar.
 document.addEventListener("click", ev => {
   const tab = ev.target.closest(".tier-tab");
   if (!tab) return;
   const tier = tab.dataset.tier;
   if (!tier) return;
-  const isCnvSv = CNV_SV_TIER_ORDER.includes(tier);
-  const barId   = isCnvSv ? "cnv-sv-tab-bar" : "tier-tab-bar";
-  const current = isCnvSv ? activeCnvSvTab    : activeTierTab;
+  let barId, current, setActive, applyActive;
+  if (CNV_SV_TIER_ORDER.includes(tier)) {
+    barId = "cnv-sv-tab-bar"; current = activeCnvSvTab;
+    setActive = t => { activeCnvSvTab = t; }; applyActive = applyCnvSvTabActive;
+  } else if (MITO_TIER_ORDER.includes(tier)) {
+    barId = "mito-tab-bar"; current = activeMitoTab;
+    setActive = t => { activeMitoTab = t; }; applyActive = applyMitoTabActive;
+  } else {
+    barId = "tier-tab-bar"; current = activeTierTab;
+    setActive = t => { activeTierTab = t; }; applyActive = applyTierTabActive;
+  }
   if (tier === current) return;
-  if (isCnvSv) activeCnvSvTab = tier; else activeTierTab = tier;
+  setActive(tier);
   document.querySelectorAll(`#${barId} .tier-tab`).forEach(b => {
     b.classList.toggle("active", b.dataset.tier === tier);
   });
-  if (isCnvSv) applyCnvSvTabActive(); else applyTierTabActive();
+  applyActive();
 });
+
+// ---------- Mitochondria variant card -----------------------------
+const MITO_LOCUS_LABELS = {
+  protein: "protein-coding", tRNA: "tRNA", rRNA: "rRNA",
+  control: "control region", intergenic: "intergenic", unknown: "—",
+};
+
+function _mitoExternalLinks(v) {
+  // gnomAD v3 has a dedicated mtDNA dataset; M-<pos>-<ref>-<alt> works
+  // for SNVs (gnomAD normalises). MITOMAP search page as a fallback.
+  const links = [];
+  if (v.REF && v.ALT) {
+    links.push({
+      label: "gnomAD-MT",
+      href: `https://gnomad.broadinstitute.org/variant/M-${v.POS}-${escapeAttr(v.REF)}-${escapeAttr(v.ALT)}?dataset=gnomad_r3`,
+    });
+  }
+  links.push({ label: "MITOMAP", href: "https://www.mitomap.org/foswiki/bin/view/Main/SearchAllele" });
+  return links;
+}
+
+function _mitoReviewerStatusSel(id) {
+  const status = (state.reports?.status?.[id]) || "";
+  const opts = ["", "1", "2", "C", "0", "X"];
+  return `<select class="status-select" data-id="${escapeAttr(id)}" title="判定">${
+    opts.map(s => `<option value="${s}" ${s===status?"selected":""}>${s||"—"}</option>`).join("")
+  }</select>`;
+}
+
+function _mitoHeteroplasmy(v) {
+  const h = v.heteroplasmy;
+  if (h == null || !Number.isFinite(Number(h))) return "—";
+  return `${(Number(h) * 100).toFixed(1)}%`;
+}
+
+function _mitoConsequenceLabel(v) {
+  const c = (v.consequence || "");
+  if (!c) return "—";
+  if (c.startsWith("non_coding")) {
+    return v.locus_type === "tRNA" ? "tRNA variant"
+         : v.locus_type === "rRNA" ? "rRNA variant"
+         : "non-coding";
+  }
+  // missense_variant → "missense", stop_gained → "stop_gained", etc.
+  return c.split("&")[0];
+}
+
+function _renderMitoDetailBox(v) {
+  const filt = v.filter && v.filter !== "." ? v.filter : "PASS";
+  const tlod = (v.TLOD != null) ? Number(v.TLOD).toFixed(2) : "—";
+  const ad   = v.AD || "—";
+  const dp   = (v.depth != null) ? v.depth : "—";
+  const consL = _mitoConsequenceLabel(v);
+  // MITOMAP reasoning block: disease / status / plasmy / GenBank
+  // freq / refs / MitoTIP. Folded — most variants are polymorphisms
+  // with nothing here.
+  const hasMm = v.mitomap_disease || v.mitomap_status || v.mitomap_plasmy
+             || v.mitomap_gb_freq || v.mitotip_score;
+  const mmItems = [];
+  if (v.mitomap_disease) mmItems.push(`<li><strong>Disease:</strong> ${escapeHtml(v.mitomap_disease)}</li>`);
+  if (v.mitomap_status)  mmItems.push(`<li><strong>Status:</strong> ${escapeHtml(v.mitomap_status)}</li>`);
+  if (v.mitomap_plasmy)  mmItems.push(`<li><strong>Plasmy (homo/hetero reports):</strong> ${escapeHtml(v.mitomap_plasmy)}</li>`);
+  if (v.mitomap_gb_freq) mmItems.push(`<li><strong>GenBank freq FL(CR):</strong> ${escapeHtml(v.mitomap_gb_freq)}${v.mitomap_gb_seqs ? ` <span class="muted">(${escapeHtml(v.mitomap_gb_seqs)} seqs)</span>` : ""}</li>`);
+  if (v.mitotip_score)   mmItems.push(`<li><strong>MitoTIP:</strong> ${escapeHtml(v.mitotip_score)}</li>`);
+  if (v.mitomap_refs)    mmItems.push(`<li><strong>References:</strong> ${escapeHtml(v.mitomap_refs)}</li>`);
+  const mmBlock = hasMm
+    ? `<details class="cnv-sv-reasoning" open>
+         <summary>MITOMAP${v.mitomap_allele ? ` <span class="muted" style="font-weight:400">(${escapeHtml(v.mitomap_allele)})</span>` : ""}</summary>
+         <ul class="cnv-sv-reasoning-list">${mmItems.join("")}</ul>
+       </details>`
+    : `<div class="muted" style="font-size:12px;margin-top:6px">MITOMAP 無此變異紀錄（多為 polymorphism / haplogroup 變異）</div>`;
+  return `<div class="cnv-sv-detail-box">
+    <div class="cnv-sv-detail-row">
+      <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
+      <span><strong>類型:</strong> ${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>
+      <span><strong>Heteroplasmy:</strong> ${_mitoHeteroplasmy(v)} <span class="muted">(AD ${escapeHtml(ad)} · DP ${dp})</span></span>
+      <span><strong>Filter:</strong> ${escapeHtml(filt)}</span>
+    </div>
+    <div class="cnv-sv-detail-row">
+      <span><strong>Consequence:</strong> ${escapeHtml(consL)}</span>
+      ${v.HGVS_C ? `<span><strong>HGVSc:</strong> ${escapeHtml(v.HGVS_C)}</span>` : ""}
+      ${v.HGVS_P ? `<span><strong>HGVSp:</strong> ${escapeHtml(v.HGVS_P)}</span>` : ""}
+      ${v.aa_change ? `<span><strong>AA:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
+      <span><strong>TLOD:</strong> ${tlod}</span>
+    </div>
+    ${mmBlock}
+  </div>`;
+}
+
+function renderMitoCard(v, id, opts = {}) {
+  const card = document.createElement("div");
+  card.className = "variant-card mito-card";
+  card.dataset.id = id;
+  const idxTxt = opts.index ? `<span class="card-idx">#${opts.index}</span>` : "";
+  const locusCls = `mito-locus-${(v.locus_type || "unknown")}`;
+  const locusPill = `<span class="mito-locus-pill ${locusCls}">${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>`;
+  const hgvs = v.HGVS_M || `m.${v.POS}${v.REF}>${v.ALT}`;
+  const links = _mitoExternalLinks(v).map(l =>
+    `<a href="${escapeAttr(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`
+  ).join("");
+  const comment = (getEdit(id, "comment") || "");
+  card.innerHTML = `
+    <div class="variant-head">
+      ${idxTxt}
+      ${_mitoReviewerStatusSel(id)}
+      ${locusPill}
+      <span class="cnv-sv-pos">${escapeHtml(hgvs)}<button class="btn-copy" data-copy="${escapeAttr(hgvs)}" title="複製">${COPY_ICON_SVG}</button>
+        ${v.gene_symbol ? ` <span class="muted" style="font-size:12px">${escapeHtml(v.gene_symbol)}</span>` : ""}
+      </span>
+      <span class="mito-het-badge" title="heteroplasmy fraction">${_mitoHeteroplasmy(v)}</span>
+      <span style="flex:1"></span>
+      <span class="ext-links">${links}</span>
+    </div>
+    ${_renderMitoDetailBox(v)}
+    <div class="cnv-sv-section cnv-sv-comment">
+      <div class="cnv-sv-section-title">Comment</div>
+      <textarea class="cnv-sv-comment-text" data-id="${escapeAttr(id)}" rows="2" placeholder="備註">${escapeHtml(comment)}</textarea>
+    </div>
+  `;
+  return card;
+}
 
 // ---------- CNV / SV variant card rendering ----------------------
 //

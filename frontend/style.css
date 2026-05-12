@@ -1167,6 +1167,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 /* CNV/SV: blue family for both CNV tiers, violet family for both SV tiers. */
 .tier-tab.tier-cnv { background: #bfdbfe; }
 .tier-tab.tier-sv  { background: #ddd6fe; }
+.tier-tab.tier-mito { background: #99f6e4; }
 /* Count chip: a touch lighter than the tab's own band so it reads as
    a pill but stays within the same colour family. */
 .tier-tab.tier-1a .tier-tab-count { background: #fecaca; }
@@ -1176,6 +1177,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .tier-tab.tier-3  .tier-tab-count { background: #fefce8; }
 .tier-tab.tier-cnv .tier-tab-count { background: #dbeafe; }
 .tier-tab.tier-sv  .tier-tab-count { background: #ede9fe; }
+.tier-tab.tier-mito .tier-tab-count { background: #ccfbf1; }
 
 .tier-tab-panels { padding: 0; }
 /* Only the active tier panel renders; the inner block-header (title +
@@ -1193,6 +1195,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .tier-panel.tier-3  { background: #fff4a3; }
 .tier-panel.tier-cnv { background: #bfdbfe; }
 .tier-panel.tier-sv  { background: #ddd6fe; }
+.tier-panel.tier-mito { background: #99f6e4; }
 .cat-block[class*="tier-"] > .block-header .title { font-weight: 600; }
 
 /* ---- CNV / SV variant cards ------------------------------------
@@ -1216,6 +1219,25 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .sv-type-pill.sv-type-INV { background: #ea580c; }
 .sv-type-pill.sv-type-INS { background: #7c3aed; }
 .sv-type-pill.sv-type-TRA { background: #6b7280; }
+
+/* Mitochondria card: locus-type pill + heteroplasmy badge. */
+.mito-locus-pill {
+  font-size: 11px; font-weight: 600; padding: 2px 8px;
+  border-radius: 10px; color: #fff;
+}
+.mito-locus-pill.mito-locus-protein   { background: #dc2626; }
+.mito-locus-pill.mito-locus-tRNA      { background: #ea580c; }
+.mito-locus-pill.mito-locus-rRNA      { background: #2563eb; }
+.mito-locus-pill.mito-locus-control,
+.mito-locus-pill.mito-locus-intergenic,
+.mito-locus-pill.mito-locus-unknown   { background: #6b7280; }
+.mito-het-badge {
+  font-size: 12px; font-weight: 600;
+  background: #ccfbf1; color: #115e59;
+  padding: 2px 8px; border-radius: 10px;
+  font-family: ui-monospace, monospace;
+}
+.mito-card .cnv-sv-pos { color: var(--fg); }
 
 .cnv-sv-pos {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

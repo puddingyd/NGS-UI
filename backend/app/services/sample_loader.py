@@ -439,6 +439,16 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
 
+    # Mitochondria: per-sample mito.annotated.tsv (VEP + local MITOMAP),
+    # produced by scripts/annotate_mito_vcf.sh. Pheno gene set drives the
+    # "Clinical (in panel)" tier just like the SNV/CNV/SV sides.
+    from ..adapters.mito_tsv import load_mito_tsv, MITO_TIERS
+    mito_path = sub / "mito.annotated.tsv"
+    mito_variants, mito_categories = (
+        load_mito_tsv(mito_path, pheno_by_gene=pheno_by_gene)
+        if mito_path.exists() else ({}, {t: [] for t in MITO_TIERS})
+    )
+
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
 
@@ -472,6 +482,8 @@ def load_sample(sample_id: str, version: str | None = None) -> dict | None:
         "cnv_categories":    cnv_categories,
         "sv_variants":       sv_variants,
         "sv_categories":     sv_categories,
+        "mito_variants":     mito_variants,
+        "mito_categories":   mito_categories,
         # Whether the sample has phenotype configured at all — the
         # frontend uses this to show a "Clinical 區塊空白是因為沒有
         # phenotype" hint instead of leaving the panel silently empty.
