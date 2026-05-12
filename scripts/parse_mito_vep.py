@@ -117,11 +117,15 @@ def _gene_at(pos: int) -> tuple[str, str]:
 
 def _load_mitomap_cc(path: Path) -> dict[tuple[int, str, str], dict]:
     """coding/control table → {(pos, ref, alt): record}. Indels keyed
-    additionally by (pos, '', '') so a POS-only fallback works."""
+    additionally by (pos, '', '') so a POS-only fallback works.
+
+    MITOMAP exports are Latin-1, not UTF-8 (stray 0xa0 etc.), so read
+    them as latin-1 — it decodes any byte and the data is otherwise
+    plain ASCII."""
     out: dict[tuple, dict] = {}
     if not path or not path.is_file():
         return out
-    with path.open("r", encoding="utf-8", newline="") as f:
+    with path.open("r", encoding="latin-1", newline="") as f:
         for row in csv.DictReader(f, delimiter="\t"):
             try:
                 pos = int((row.get("Position") or "").strip())
@@ -151,7 +155,7 @@ def _load_mitomap_rna(path: Path) -> dict[tuple[int, str, str], dict]:
     out: dict[tuple, dict] = {}
     if not path or not path.is_file():
         return out
-    with path.open("r", encoding="utf-8", newline="") as f:
+    with path.open("r", encoding="latin-1", newline="") as f:
         for row in csv.DictReader(f, delimiter="\t"):
             try:
                 pos = int((row.get("Position") or "").strip())
