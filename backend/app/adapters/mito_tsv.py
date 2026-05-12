@@ -4,11 +4,17 @@ Reads the per-sample mitochondrial TSV produced by
 scripts/annotate_mito_vcf.sh (VEP + the local MITOMAP tables) and
 shapes it for the frontend's Mitochondria card.
 
-Only disease-relevant variants are surfaced — the card lists variants
-that are either (a) pathogenic per MITOMAP/MitoTIP, or (b) carry some
-MITOMAP disease association. Polymorphisms / haplogroup variants with
-no MITOMAP record are dropped entirely (the raw mito VCF has ~150
-variants per sample, almost all of which are exactly that).
+Two filters are applied before a variant reaches the card:
+  1. FILTER must be PASS — non-PASS Mutect2-mito flags (weak_evidence,
+     base_qual, blacklisted_site, possible_numt, contamination, …) are
+     all "don't trust this call" reasons; the GATK Mitochondria
+     best-practices keep PASS only. (TLOD is already baked into the
+     FILTER decision, so no separate TLOD threshold is needed.)
+  2. Disease-relevance — the variant is either (a) pathogenic per
+     MITOMAP/MitoTIP, or (b) carries some MITOMAP disease association.
+     Polymorphisms / haplogroup variants with no MITOMAP record are
+     dropped (the raw mito VCF has ~150 variants per sample, almost
+     all of which are exactly that).
 
 Tiers:
     MITO-1  Pathogenic   — MITOMAP status confirmed-ish ("Cfrm" /
@@ -123,6 +129,12 @@ def load_mito_tsv(
             alt = (row.get("ALT") or "").strip()
             if pos is None or not ref or not alt:
                 continue
+            filt = (row.get("FILTER") or "").strip()
+            # Keep PASS only — every non-PASS Mutect2-mito flag is a
+            # reason to distrust the call (NUMT / blacklist artefacts,
+            # weak/low-base-qual noise, contamination, strand bias, …).
+            if filt and filt not in ("PASS", "."):
+                continue
             gene = (row.get("GENE") or "").strip()
             locus_type = (row.get("LOCUS_TYPE") or "").strip() or "unknown"
             status = (row.get("MITOMAP_STATUS") or "").strip()
@@ -157,7 +169,7 @@ def load_mito_tsv(
                 "heteroplasmy":  het,                       # 0-1 fraction
                 "AD":            (row.get("AD") or "").strip(),
                 "depth":         _to_int(row.get("DEPTH")),
-                "filter":        (row.get("FILTER") or "").strip(),
+                "filter":        filt or "PASS",
                 "TLOD":          _to_float(row.get("TLOD")),
                 "mitomap_disease": disease,
                 "mitomap_status":  status,
