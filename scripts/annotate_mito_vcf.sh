@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
 # =========================================================
-# annotate_mito_vcf.sh — VEP-annotate a mitochondrial VCF
+# annotate_mito_vcf.sh — annotate a mitochondrial VCF end-to-end
 # =========================================================
 # Input : a GATK Mutect2 --mitochondria-mode VCF (chrM / rCRS coords,
 #         FILTER applied by FilterMutectCalls). FORMAT carries AF
 #         (heteroplasmy fraction), AD, DP.
-# Output: <outdir>/<sample>.mito.vep.vcf.gz (+ .tbi) — adds a CSQ
-#         INFO field with gene / consequence / HGVS / protein change.
-#         VEP uses the vertebrate-mitochondrial codon table for chrM
-#         automatically, so missense vs synonymous is called correctly.
+# Steps : 1. bcftools norm (left-align indels, split multiallelics)
+#         2. VEP (gene / consequence / HGVS; vertebrate-mito codon table)
+#         3. parse_mito_vep.py — join the local MITOMAP tables (disease /
+#            status / MitoTIP / GenBank freq) → <sample>.mito.annotated.tsv
+# Output: <outdir>/<sample>.mito.vep.vcf.gz (+ .tbi)
+#         <outdir>/<sample>.mito.annotated.tsv  ← drop into
+#         tertiary_output/<LIS_ID>/mito.annotated.tsv for the UI.
 #
-# This only covers the VEP step. Disease / MITOMAP status /
-# pathogenicity prediction / population frequencies still come from a
-# separate HmtVar lookup (a converter that turns this VEP VCF + HmtVar
-# into tertiary_output/<LIS_ID>/mito.annotated.tsv lands later).
-#
-# Paths are env-overridable; defaults match the tertiary pipeline's
-# `production` profile. If $VEP_SIF / $BCFTOOLS_SIF are set the tools
-# run inside those apptainer images; otherwise `vep` / `bcftools` are
-# expected on PATH.
+# Paths are env-overridable; defaults follow the tertiary pipeline's
+# `dgm` (production) profile. If $VEP_SIF / $BCFTOOLS_SIF are set the
+# tools run inside those apptainer images; otherwise `vep` / `bcftools`
+# are expected on PATH. python3 is always run on the host.
 #
 # Usage:
 #   scripts/annotate_mito_vcf.sh --in 26WE0040.mito.vcf.gz [--sample 26WE0040] [--outdir .]
@@ -33,8 +31,10 @@ REF_FASTA="${REF_FASTA:-${REF_DIR}/Homo_sapiens_assembly38.fasta}"
 VEP_CACHE="${VEP_CACHE:-${REF_DIR}/tertiary/vep_cache}"
 VEP_SIF="${VEP_SIF:-/home/pipeline/nextflow_containers/vep_115.sif}"
 BCFTOOLS_SIF="${BCFTOOLS_SIF:-/home/pipeline/nextflow_containers/bcftools_1.23.1.sif}"
+MITOMAP_DIR="${MITOMAP_DIR:-${REF_DIR}/tertiary/mitomap}"
 APPTAINER_BIND="${APPTAINER_BIND:---bind /home}"
 THREADS="${THREADS:-4}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- args ----
 IN=""
@@ -105,5 +105,17 @@ run_vep \
 
 run_tabix -p vcf "$VEP_VCF"
 
-echo "[mito] $SAMPLE  done → $VEP_VCF" >&2
+# ---- Step 3: parse to TSV (join the local MITOMAP tables) ----
+TSV="${OUTDIR}/${SAMPLE}.mito.annotated.tsv"
+MM_CC="${MITOMAP_DIR}/mitomap_mutations_coding_control.tsv"
+MM_RNA="${MITOMAP_DIR}/mitomap_mutations_rna.tsv"
+echo "[mito] $SAMPLE  parse → TSV…" >&2
+python3 "${SCRIPT_DIR}/parse_mito_vep.py" \
+  --vep_vcf "$VEP_VCF" \
+  --mitomap_cc  "$MM_CC" \
+  --mitomap_rna "$MM_RNA" \
+  --sample_id "$SAMPLE" \
+  --output "$TSV"
+
+echo "[mito] $SAMPLE  done → $TSV  (+ $VEP_VCF)" >&2
 run_bcftools stats "$VEP_VCF" | grep "^SN" >&2 || true
