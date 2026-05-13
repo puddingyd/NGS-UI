@@ -1414,6 +1414,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
         <span class="k">Read depth (VAF)</span><span class="v">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
         <span class="k">Consequence</span><span class="v">${fmtTxt(v.Consequence)}</span>
+        <span class="k">Exon</span><span class="v">${fmtExonIntron(v)}</span>
         <div class="more-extras hidden">
           <span class="k">Phase</span><span class="v">${fmtPhase(v)}</span>
         </div>
@@ -1488,6 +1489,16 @@ function renderVariantBadges(v) {
 
 // "trans / cis / unphased" — show phase group too when present so the
 // user can see which co-segregating variants share the same haplotype.
+// VEP EXON/INTRON come through as "current/total" (e.g. "6/10"); show
+// whichever the variant falls in, "—" when both are blank.
+function fmtExonIntron(v) {
+  const e = String(v.exon || "").trim();
+  if (e) return `exon ${e}`;
+  const i = String(v.intron || "").trim();
+  if (i) return `intron ${i}`;
+  return "—";
+}
+
 function fmtPhase(v) {
   const result = (v.phase_result || "").trim();
   const group  = (v.phase_group  || "").trim();
@@ -4725,6 +4736,7 @@ async function bootAfterAuth() {
 (async function boot() {
   setupCombobox();
   setupInPanelFilter();
+  setupOmimFilter();
   setupHpoSearchInput();
   setupPanelSearchInput();
   setupPhenotypeEvents();
@@ -4794,6 +4806,17 @@ function setupInPanelFilter() {
     document.getElementById("category-sections")
       .classList.toggle("filter-in-panel-only", cb.checked);
   });
+}
+
+// OMIM-display toggle: unchecked → hide the .disease-list block under
+// every SNV variant card via a class on #category-sections.
+function setupOmimFilter() {
+  const cb = document.getElementById("filter-omim");
+  if (!cb) return;
+  const apply = () => document.getElementById("category-sections")
+    ?.classList.toggle("hide-omim", !cb.checked);
+  apply();
+  cb.addEventListener("change", apply);
 }
 
 // ---------- tiny utils ---------------------------------------------

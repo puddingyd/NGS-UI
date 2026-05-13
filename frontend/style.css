@@ -1520,6 +1520,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 #category-sections.filter-in-panel-only .variant-card[data-in-panel="false"] {
   display: none;
 }
+#category-sections.hide-omim .disease-list { display: none; }
 
 /* ---- Phase A/B: phenotype + panel editor ----------------------- */
 
