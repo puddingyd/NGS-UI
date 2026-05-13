@@ -1499,7 +1499,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
   gap: 12px;
   margin: 16px 0 8px;
 }
-.section-header .filter-toggle { margin-left: auto; }
+.section-header .filter-toggle:first-of-type { margin-left: auto; }
 .section-header h2 { margin: 0; font-size: 18px; }
 .filter-toggle {
   display: inline-flex;

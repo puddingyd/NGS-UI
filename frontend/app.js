@@ -1414,8 +1414,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
         <span class="k">Read depth (VAF)</span><span class="v">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
         <span class="k">Consequence</span><span class="v">${fmtTxt(v.Consequence)}</span>
-        <span class="k">Exon</span><span class="v">${fmtExonIntron(v)}</span>
         <div class="more-extras hidden">
+          <span class="k">Exon / Intron</span><span class="v">${fmtExonIntron(v)}</span>
           <span class="k">Phase</span><span class="v">${fmtPhase(v)}</span>
         </div>
       </div>
