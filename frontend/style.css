@@ -1786,3 +1786,24 @@ body.sidebar-collapsed .container { margin-left: auto; }
   width: 1%;
 }
 .cnv-sv-gene-table .gene-search-cell .same-gene-btn { margin: 0; }
+
+/* CNV/SV near-duplicate alternatives — collapsed by default, indented
+   so they read as "siblings of the rep card above". Stop-gap visual
+   collapse until the pipeline runs Truvari / SURVIVOR upstream. */
+.cnv-sv-cluster-alts {
+  margin: -4px 0 12px 16px;
+  border-left: 2px dashed #d0d7de;
+  padding-left: 10px;
+}
+.cnv-sv-cluster-alts > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
+  user-select: none;
+}
+.cnv-sv-cluster-alts > summary::-webkit-details-marker { display: none; }
+.cnv-sv-cluster-alts > summary:hover { color: var(--fg); }
+.cnv-sv-cluster-alt-body { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.cnv-sv-card.cnv-sv-cluster-alt { opacity: 0.92; }

@@ -1973,6 +1973,68 @@ function _cnvSvIdsForTier(tier) {
   return (cats && cats[tier]) || [];
 }
 
+// ---------- CNV/SV near-duplicate clustering ----------------------
+//
+// SV callers (Manta / DELLY / GRIDSS / cnvkit) routinely report the
+// same biological event as several nearly-identical SVs whose
+// breakpoints differ by a few hundred bp. This is a pure-visual
+// stop-gap collapse: pick a representative per cluster (the first
+// id, which carries the highest ranking_score because tiers are
+// pre-sorted) and tuck the others inside an expandable "顯示同位點
+// N 個近似 SV" detail block on the rep card. No edits / no data are
+// lost — the alternatives are still full, interactive cards.
+//
+// Long-term fix is upstream: pipeline should run Truvari / SURVIVOR
+// before AnnotSV so AnnotSV sees one SV per real event. When that
+// ships this clustering naturally becomes a no-op.
+
+const CNV_SV_CLUSTER_OVERLAP_THRESHOLD = 0.8;
+
+function _cnvSvSpan(v) {
+  const s = Number(v?.POS);
+  const e = Number(v?.END);
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null;
+  return [s, e];
+}
+
+function _cnvSvReciprocalOverlap(a, b) {
+  const sa = _cnvSvSpan(a);
+  const sb = _cnvSvSpan(b);
+  if (!sa || !sb) return 0;
+  const ov = Math.max(0, Math.min(sa[1], sb[1]) - Math.max(sa[0], sb[0]));
+  return ov / Math.max(sa[1] - sa[0], sb[1] - sb[0]);
+}
+
+function _cnvSvClusterIds(ids) {
+  // {reps: [repId, ...], members: {repId: [otherIds]}} preserving input
+  // order so the first id of each cluster (= highest ranking_score
+  // because tiers are pre-sorted) becomes the representative.
+  const reps = [];
+  const members = {};
+  for (const id of ids) {
+    const v = _cnvSvVariantById(id);
+    if (!v) continue;
+    let foundRep = null;
+    for (const repId of reps) {
+      const rv = _cnvSvVariantById(repId);
+      if (!rv) continue;
+      if ((rv.CHROM || "") !== (v.CHROM || "")) continue;
+      if ((rv.sv_type || "") !== (v.sv_type || "")) continue;
+      if (_cnvSvReciprocalOverlap(rv, v) >= CNV_SV_CLUSTER_OVERLAP_THRESHOLD) {
+        foundRep = repId;
+        break;
+      }
+    }
+    if (foundRep) {
+      members[foundRep].push(id);
+    } else {
+      reps.push(id);
+      members[id] = [];
+    }
+  }
+  return { reps, members };
+}
+
 function renderCnvSvTabBar() {
   const bar = document.getElementById("cnv-sv-tab-bar");
   if (!bar) return;
@@ -2017,10 +2079,30 @@ function renderCnvSvTabBar() {
     }
     const body = document.createElement("div");
     body.className = "block-body open";
-    ids.forEach((id, i) => {
-      const v = _cnvSvVariantById(id);
+    const { reps, members } = _cnvSvClusterIds(ids);
+    reps.forEach((repId, i) => {
+      const v = _cnvSvVariantById(repId);
       if (!v) return;
-      body.appendChild(renderCnvSvCard(v, id, { tier, index: i + 1 }));
+      body.appendChild(renderCnvSvCard(v, repId, { tier, index: i + 1 }));
+      const memberIds = members[repId] || [];
+      if (memberIds.length) {
+        const det = document.createElement("details");
+        det.className = "cnv-sv-cluster-alts";
+        const summary = document.createElement("summary");
+        summary.textContent = `⤴ 顯示同位點 ${memberIds.length} 個近似 SV（不同 caller / breakpoint）`;
+        det.appendChild(summary);
+        const altBody = document.createElement("div");
+        altBody.className = "cnv-sv-cluster-alt-body";
+        memberIds.forEach(mid => {
+          const mv = _cnvSvVariantById(mid);
+          if (!mv) return;
+          const altCard = renderCnvSvCard(mv, mid, { tier });
+          altCard.classList.add("cnv-sv-cluster-alt");
+          altBody.appendChild(altCard);
+        });
+        det.appendChild(altBody);
+        body.appendChild(det);
+      }
     });
     panel.appendChild(body);
   });
