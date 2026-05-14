@@ -48,6 +48,14 @@ def _to_bool(v: str) -> bool:
     return str(v).strip().lower() in ("true", "1", "yes", "y", "t")
 
 
+def _loftee_hc_call(row: dict) -> bool:
+    """Old pipeline emitted LOFTEE_HC ('HC' or ''); new pipeline emits
+    a single LOFTEE column ('HC' / 'LC' / '.'). Accept either.
+    """
+    raw = _coalesce(row.get("LOFTEE_HC"), row.get("LOFTEE"))
+    return raw.strip().upper() == "HC"
+
+
 def classify_tier(row: dict) -> str:
     """Map one TSV row to a tier (1A / 1B / 1C / 2 / 3).
 
@@ -60,7 +68,7 @@ def classify_tier(row: dict) -> str:
     """
     sig = (row.get("CLINVAR_SIG") or "").strip()
     stars = _to_int(row.get("CLINVAR_STARS"), 0)
-    loftee_hc = (row.get("LOFTEE_HC") or "").strip().upper() == "HC"
+    loftee_hc = _loftee_hc_call(row)
     is_plp = sig in _PLP_SIGS
     is_conflicting = "Conflicting" in sig
 
@@ -194,7 +202,7 @@ def _row_to_variant(row: dict) -> dict:
         "Evo2_score": _to_num(row.get("EVO2_SCORE")),
         "SpliceAI_score": _to_num(row.get("SPLICEAI_MAX")),
         "CADD_phred": _to_num(row.get("CADD_PHRED")),
-        "loftee_hc": row.get("LOFTEE_HC", ""),
+        "loftee_hc": _coalesce(row.get("LOFTEE_HC"), row.get("LOFTEE")),
         "loftee_filter": row.get("LOFTEE_FILTER", ""),
         "loftee_flags": row.get("LOFTEE_FLAGS", ""),
         "ACMG_criteria": (row.get("ACMG_EVIDENCE") or "").replace("|", ","),
