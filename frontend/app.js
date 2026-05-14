@@ -248,13 +248,57 @@ function classifySignificance(text) {
 // Each entry holds the four boundary scores; classifyByThresholds() walks
 // them top-down and returns the first matching sig-* class.
 const TOOL_CUTOFFS = {
+  // Pejaver 2022 (AJHG, PMID 36413997) ClinGen-recommended calibrations.
   alphamissense: { p: 0.990, lp: 0.792, vus: 0.170, lb: 0.071 },
   metarnn:       { p: 0.939, lp: 0.748, vus: 0.267, lb: 0.108 },
-  // SpliceAI is a splice-impact probability, not a pathogenicity score —
-  // a low value just means "no predicted splice change", not "benign", so
-  // anything below the VUS threshold stays uncoloured (no lb / no implicit B).
+  revel:         { p: 0.932, lp: 0.773, vus: 0.290, lb: 0.183 },
+  bayesdel:      { p: 0.500, lp: 0.270, vus: -0.180, lb: -0.360 },
+  // Splice-impact probabilities — low value = "no predicted splice change",
+  // not "benign", so leave the low end uncoloured (no lb).
   spliceai:      { p: 0.800, lp: 0.500, vus: 0.200 },
+  pangolin:      { p: 0.800, lp: 0.500, vus: 0.200 },
 };
+
+// In-silico predictors in display order. Primary slot indices 0-3 are
+// always rendered on the front face (value or "—"); index 4+ go under
+// ▾ More. Each entry: {key, label, scoreField, predField?, cutoffs?}.
+const IN_SILICO_TOOLS = [
+  { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred", cutoffs: "alphamissense" },
+  { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred",      cutoffs: "bayesdel" },
+  { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score",                                       cutoffs: "pangolin" },
+  { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score",                                       cutoffs: "spliceai" },
+  // -- everything below this line lives in More --
+  { key: "esm",           label: "ESM",           scoreField: "ESM2_score",          predField: "ESM_pred" },
+  { key: "metarnn",       label: "MetaRNN",       scoreField: "MetaRNN_score",                                        cutoffs: "metarnn" },
+  { key: "revel",         label: "REVEL",         scoreField: "REVEL",                                                cutoffs: "revel" },
+  { key: "cadd",          label: "CADD",          scoreField: "CADD_phred" },
+  { key: "evo2",          label: "Evo2",          scoreField: "Evo2_score" },
+  { key: "varity",        label: "VARITY",        scoreField: "VARITY" },
+  { key: "sift",          label: "SIFT",          scoreField: "SIFT_score",          predField: "SIFT_pred" },
+  { key: "dann",          label: "DANN",          scoreField: "DANN" },
+  { key: "phactboost",    label: "PhactBoost",    scoreField: "PhactBoost" },
+  { key: "phylop",        label: "PhyloP",        scoreField: "PhyloP" },
+  { key: "gerp",          label: "GERP",          scoreField: "GERP" },
+  { key: "loftool",       label: "LOFTOOL",       scoreField: "LOFTOOL" },
+  { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR" },
+];
+const IN_SILICO_PRIMARY_COUNT = 4;
+
+function _hasNum(x) {
+  return x != null && x !== "" && Number.isFinite(Number(x));
+}
+function _renderInSilicoCell(v, tool) {
+  const score = v[tool.scoreField];
+  const has = _hasNum(score);
+  const pred = tool.predField ? (v[tool.predField] || "").trim() : "";
+  const cutoffs = tool.cutoffs ? TOOL_CUTOFFS[tool.cutoffs] : null;
+  const cls = has && cutoffs ? (classifyByThresholds(score, cutoffs) || "") : "";
+  const valueTxt = has
+    ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
+    : "—";
+  return `<span class="k">${escapeHtml(tool.label)}</span>`
+       + `<span class="v ${cls}">${valueTxt}</span>`;
+}
 function classifyByThresholds(score, cutoffs) {
   if (score == null || score === "") return null;
   const x = Number(score);
@@ -1388,27 +1432,10 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     extras.push({ key: "PDIVAS", text: fmtNum(v.PDIVAS_score),
                   cls: classifyPDIVAS(v.PDIVAS_score) });
   }
-  // Tertiary-spec extras: P-KNN / REVEL / BayesDel / ESM2 / Evo2 / CADD.
-  // P-KNN is the primary missense PP3/BP4 metric per the 2026 spec; the
-  // others are secondary references shown only when populated.
-  if (v.PKNN_LLR != null && v.PKNN_LLR !== "") {
-    extras.push({ key: "P-KNN LLR", text: fmtNum(v.PKNN_LLR) });
-  }
-  if (v.REVEL != null && v.REVEL !== "") {
-    extras.push({ key: "REVEL", text: fmtNum(v.REVEL) });
-  }
-  if (v.BayesDel != null && v.BayesDel !== "") {
-    extras.push({ key: "BayesDel", text: fmtNum(v.BayesDel) });
-  }
-  if (v.CADD_phred != null && v.CADD_phred !== "") {
-    extras.push({ key: "CADD", text: fmtNum(v.CADD_phred) });
-  }
-  if (v.ESM2_score != null && v.ESM2_score !== "") {
-    extras.push({ key: "ESM-2", text: fmtNum(v.ESM2_score) });
-  }
-  if (v.Evo2_score != null && v.Evo2_score !== "") {
-    extras.push({ key: "Evo2", text: fmtNum(v.Evo2_score) });
-  }
+  // The in-silico predictor row (AlphaMissense / BayesDel / Pangolin /
+  // SpliceAI primary; ESM / MetaRNN / REVEL / CADD / Evo2 / VARITY /
+  // SIFT / DANN / PhactBoost / PhyloP / GERP / LOFTOOL / P-KNN in More)
+  // is rendered separately below from IN_SILICO_TOOLS.
   if (v.loftee_hc || v.loftee_filter || v.loftee_flags) {
     const parts = [v.loftee_hc, v.loftee_filter, v.loftee_flags]
       .filter(Boolean).join(" / ");
@@ -1486,10 +1513,16 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <textarea class="acmg-crit" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(editAcmgCrit)}</textarea>
       </div>
       <div>
-        <span class="k">AlphaMissense</span><span class="v ${classifyByThresholds(v.AlphaMissense_score, TOOL_CUTOFFS.alphamissense) || ''}">${fmtNum(v.AlphaMissense_score)}</span>
-        <span class="k">MetaRNN</span><span class="v ${classifyByThresholds(v.MetaRNN_score, TOOL_CUTOFFS.metarnn) || ''}">${fmtNum(v.MetaRNN_score)}</span>
-        <span class="k">SpliceAI</span><span class="v ${classifyByThresholds(v.SpliceAI_score, TOOL_CUTOFFS.spliceai) || ''}">${fmtNum(v.SpliceAI_score)}</span>
-        ${extras.length ? `<div class="more-extras hidden">${extrasHtml}</div>` : ""}
+        ${IN_SILICO_TOOLS.slice(0, IN_SILICO_PRIMARY_COUNT)
+          .map(t => _renderInSilicoCell(v, t)).join("")}
+        ${(() => {
+          const secondaryCells = IN_SILICO_TOOLS
+            .slice(IN_SILICO_PRIMARY_COUNT)
+            .filter(t => _hasNum(v[t.scoreField]))
+            .map(t => _renderInSilicoCell(v, t)).join("");
+          const more = secondaryCells + extrasHtml;
+          return more ? `<div class="more-extras hidden">${more}</div>` : "";
+        })()}
       </div>
       <div>
         <span class="k">AF</span><span class="v">${fmtNum(v.AF, 5)}</span>

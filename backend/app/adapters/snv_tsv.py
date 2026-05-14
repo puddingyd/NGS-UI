@@ -133,6 +133,47 @@ def _coalesce(*vals: str) -> str:
     return ""
 
 
+def _max_multi(v) -> float | None:
+    """Max numeric value across a `&`-separated multi-value cell.
+
+    VEP emits per-transcript / per-consequence scores joined with `&`
+    (e.g. AlphaMissense `.&0.9482&0.9432`). Take the worst-case (max)
+    so the card surfaces the most pathogenic prediction for the locus.
+    Returns None when no part parses to a number.
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s in (".", "NA", "N/A"):
+        return None
+    best: float | None = None
+    for part in s.split("&"):
+        p = part.strip()
+        if not p or p in (".", "NA", "N/A"):
+            continue
+        try:
+            x = float(p)
+        except ValueError:
+            continue
+        if best is None or x > best:
+            best = x
+    return best
+
+
+def _first_str(v) -> str:
+    """First non-blank/non-NA part of a `&`-separated cell."""
+    if v is None:
+        return ""
+    s = str(v).strip()
+    if not s or s in (".", "NA", "N/A"):
+        return ""
+    for part in s.split("&"):
+        p = part.strip()
+        if p and p not in (".", "NA", "N/A"):
+            return p
+    return ""
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -195,16 +236,38 @@ def _row_to_variant(row: dict) -> dict:
         "TaiwanBioBank": _to_num(row.get("TWB_AF")),
         "PKNN_LLR": _to_num(row.get("PKNN_LLR")),
         "REVEL": _to_num(row.get("REVEL")),
-        "BayesDel": _to_num(_coalesce(row.get("BAYESDEL"),
-                                       row.get("BAYESDEL_NOAF"))),
-        "AlphaMissense_score": _to_num(row.get("ALPHAMISSENSE")),
-        "MetaRNN_score": _to_num(row.get("METARNN")),
-        "ESM2_score": _to_num(_coalesce(row.get("ESM2_SCORE"),
-                                         row.get("ESM1B"))),
-        "Evo2_score": _to_num(row.get("EVO2_SCORE")),
-        "SpliceAI_score": _to_num(_coalesce(row.get("SPLICEAI_MAX"),
-                                             row.get("PANGOLIN_SCORE"))),
-        "CADD_phred": _to_num(row.get("CADD_PHRED")),
+        # In-silico predictors. VEP can emit per-transcript scores
+        # joined by '&' (e.g. AlphaMissense '.&0.9482&0.9432') — take
+        # the worst case (max). Categorical _PRED columns get the first
+        # non-empty value.
+        "BayesDel": _max_multi(_coalesce(row.get("BAYESDEL"),
+                                          row.get("BAYESDEL_NOAF"))),
+        "BayesDel_pred": _first_str(row.get("BAYESDEL_NOAF_PRED")),
+        "AlphaMissense_score": _max_multi(row.get("ALPHAMISSENSE")),
+        "AlphaMissense_pred": _first_str(row.get("ALPHAMISSENSE_PRED")),
+        "MetaRNN_score": _max_multi(row.get("METARNN")),
+        # ESM payload still called ESM2_score for legacy reasons; the
+        # new pipeline emits ESM1B in the same role (LM-based path-pred).
+        "ESM2_score": _max_multi(_coalesce(row.get("ESM2_SCORE"),
+                                            row.get("ESM1B"))),
+        "ESM_pred":   _first_str(row.get("ESM1B_PRED")),
+        "Evo2_score": _max_multi(row.get("EVO2_SCORE")),
+        # SpliceAI and Pangolin both reach the card now as separate
+        # fields. Old pipeline had SPLICEAI_MAX, new pipeline has
+        # PANGOLIN_SCORE; reviewers may see one, the other, or both.
+        "SpliceAI_score": _max_multi(row.get("SPLICEAI_MAX")),
+        "Pangolin_score": _max_multi(row.get("PANGOLIN_SCORE")),
+        "Pangolin_detail": (row.get("PANGOLIN_DETAIL") or "").strip(),
+        "CADD_phred": _max_multi(row.get("CADD_PHRED")),
+        # New pipeline extras
+        "SIFT_score":  _max_multi(row.get("SIFT")),
+        "SIFT_pred":   _first_str(row.get("SIFT_PRED")),
+        "VARITY":      _max_multi(row.get("VARITY_R")),
+        "DANN":        _max_multi(row.get("DANN")),
+        "PhactBoost":  _max_multi(row.get("PHACTBOOST")),
+        "PhyloP":      _max_multi(row.get("PHYLOP100")),
+        "GERP":        _max_multi(row.get("GERP")),
+        "LOFTOOL":     _max_multi(row.get("LOFTOOL")),
         "loftee_hc": _coalesce(row.get("LOFTEE_HC"), row.get("LOFTEE")),
         "loftee_filter": row.get("LOFTEE_FILTER", ""),
         "loftee_flags": row.get("LOFTEE_FLAGS", ""),
