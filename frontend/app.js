@@ -911,6 +911,32 @@ function renderGeneSearchResults(kind, geneUpper) {
     host.innerHTML = `<div class="muted" style="padding:12px">輸入基因名稱以搜尋。</div>`;
     return;
   }
+  if (kind === "all") {
+    const snvMatches = _geneSearchSnv(geneUpper);
+    const cnvMatches = _geneSearchCnvSv(geneUpper);
+    titleEl.textContent = `${geneUpper} 的所有變異（SNV/Indel: ${snvMatches.length}，CNV/SV: ${cnvMatches.length}）`;
+    if (!snvMatches.length && !cnvMatches.length) {
+      host.innerHTML = `<div class="muted" style="padding:12px">找不到 ${escapeHtml(geneUpper)} 的變異。</div>`;
+      return;
+    }
+    if (snvMatches.length) {
+      const h = document.createElement("h3");
+      h.className = "gene-search-section";
+      h.textContent = `SNV / Indel（${snvMatches.length}）`;
+      host.appendChild(h);
+      snvMatches.forEach(([id, v], i) =>
+        host.appendChild(renderVariantCard(v, id, "candidate", { index: i + 1, diseaseCheckbox: true })));
+    }
+    if (cnvMatches.length) {
+      const h = document.createElement("h3");
+      h.className = "gene-search-section";
+      h.textContent = `CNV / SV（${cnvMatches.length}）`;
+      host.appendChild(h);
+      cnvMatches.forEach(([id, v], i) =>
+        host.appendChild(renderCnvSvCard(v, id, { index: i + 1 })));
+    }
+    return;
+  }
   const label = kind === "snv" ? "SNV/Indel" : "CNV/SV";
   if (kind === "snv") {
     const matches = _geneSearchSnv(geneUpper);
@@ -933,6 +959,13 @@ function renderGeneSearchResults(kind, geneUpper) {
       host.appendChild(renderCnvSvCard(v, id, { index: i + 1 }));
     });
   }
+}
+
+// Combined SNV/Indel + CNV/SV search for one gene — the "搜尋同基因"
+// button on each variant card. Used to spot compound-het / mixed-mode
+// hits while reviewing an AR candidate.
+function openSameGeneModal(gene) {
+  openGeneSearchModal("all", gene);
 }
 
 function openGeneSearchModal(kind, gene) {
@@ -976,6 +1009,16 @@ function openToolRankModal(tool) {
 }
 
 function setupGeneSearch() {
+  // Delegated: per-card "搜尋同基因" buttons (SNV + CNV/SV cards live
+  // both in the main view and in the modal, plus they're re-rendered
+  // a lot, so capture-phase delegation is simpler than per-render
+  // binding).
+  document.addEventListener("click", ev => {
+    const btn = ev.target.closest(".same-gene-btn");
+    if (!btn) return;
+    const g = btn.getAttribute("data-gene");
+    if (g) openSameGeneModal(g);
+  });
   document.querySelectorAll(".gene-search-input").forEach(inp => {
     inp.addEventListener("keydown", ev => {
       if (ev.key !== "Enter") return;
@@ -1452,7 +1495,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
     </div>
     <button class="btn-more" type="button">▾ More</button>
-    ${renderManeAll(v)}
+    <div class="more-extras hidden">${renderManeAll(v)}</div>
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
 
@@ -1483,8 +1526,17 @@ function renderVariantBadges(v) {
   if (v.loftee_hc === "HC") {
     chips.push(`<span class="badge badge-loftee-hc" title="LOFTEE high-confidence LoF">LOFTEE HC</span>`);
   }
-  if (!chips.length) return "";
-  return `<div class="variant-badges">${chips.join("")}</div>`;
+  // Right-aligned "搜尋同基因" — lists every SNV/Indel + CNV/SV that
+  // touches this gene. Mainly for spotting compound-het / mixed-mode
+  // hits when the AR diagnosis is on the table.
+  const sameGeneBtn = v.gene_symbol
+    ? `<button class="same-gene-btn" data-gene="${escapeAttr(v.gene_symbol)}" type="button" title="列出此基因的所有 SNV/Indel + CNV/SV 變異">搜尋同基因</button>`
+    : "";
+  if (!chips.length && !sameGeneBtn) return "";
+  return `<div class="variant-badges">
+    <span class="variant-badges-chips">${chips.join("")}</span>
+    ${sameGeneBtn}
+  </div>`;
 }
 
 // "trans / cis / unphased" — show phase group too when present so the
@@ -2522,12 +2574,30 @@ function _renderCnvSvComment(v, id) {
   </div>`;
 }
 
+function _renderCnvSvSameGeneRow(v) {
+  // Mirror the SNV "搜尋同基因" button. AnnotSV gives us a gene_list;
+  // pick the first as the search target (typically the primary gene
+  // of the SV). Multi-gene SVs can still pivot through the gene-search
+  // box in the modal once it's open.
+  const genes = Array.isArray(v.gene_list) ? v.gene_list.filter(Boolean) : [];
+  if (!genes.length) return "";
+  const g = String(genes[0]);
+  const hint = genes.length > 1
+    ? `搜尋 ${g}（此 SV 共涵蓋 ${genes.length} 個基因；modal 內可改搜其他基因）`
+    : `搜尋 ${g} 的所有 SNV/Indel + CNV/SV 變異`;
+  return `<div class="variant-badges cnv-sv-same-gene-row">
+    <span class="variant-badges-chips"></span>
+    <button class="same-gene-btn" data-gene="${escapeAttr(g)}" type="button" title="${escapeAttr(hint)}">搜尋同基因</button>
+  </div>`;
+}
+
 function renderCnvSvCard(v, id, opts = {}) {
   const card = document.createElement("div");
   card.className = "variant-card cnv-sv-card";
   card.dataset.id = id;
   card.innerHTML = `
     ${_renderCnvSvHeader(v, id, opts)}
+    ${_renderCnvSvSameGeneRow(v)}
     ${_renderCnvSvDetailBox(v, id)}
     ${_renderCnvSvGeneTable(v, id)}
     ${_renderCnvSvOverlap(v)}

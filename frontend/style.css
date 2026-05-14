@@ -1738,3 +1738,42 @@ body.sidebar-collapsed .container { margin-left: auto; }
   pointer-events: none;
   white-space: normal;
 }
+
+/* "搜尋同基因" button on the variant-badges row (SNV) and an
+   equivalent row inserted on CNV/SV cards. Styled to match the
+   .ext-links a chips so it reads as another "go to another view"
+   action. */
+.variant-badges {
+  align-items: center;
+  justify-content: space-between;
+}
+.variant-badges-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.same-gene-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #f6f8fa;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  cursor: pointer;
+  margin-left: auto;
+}
+.same-gene-btn:hover { background: #eaeef2; }
+.cnv-sv-card .cnv-sv-same-gene-row { margin: 4px 0 8px; }
+
+/* Gene-search modal section heading — separates SNV/Indel results
+   from CNV/SV results when "搜尋同基因" pulls both. */
+.gene-search-section {
+  margin: 14px 4px 6px;
+  font-size: 13px;
+  color: #57606a;
+  font-weight: 600;
+  border-bottom: 1px dashed var(--border);
+  padding-bottom: 4px;
+}
+.gene-search-section:first-child { margin-top: 0; }

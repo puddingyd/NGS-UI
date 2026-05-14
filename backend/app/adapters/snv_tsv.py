@@ -116,6 +116,15 @@ def _normalize_acmg_class(raw: str) -> str:
     return _ACMG_CLASS_CANON.get(key, (raw or "").strip())
 
 
+def _coalesce(*vals: str) -> str:
+    """First non-blank / non-NA value, '' otherwise."""
+    for v in vals:
+        s = (v or "").strip()
+        if s and s not in (".", "NA", "N/A"):
+            return s
+    return ""
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -159,8 +168,13 @@ def _row_to_variant(row: dict) -> dict:
         "GT_HC": row.get("GT_HC", ""),
         "exon":   row.get("EXON", ""),
         "intron": row.get("INTRON", ""),
-        "AD":     row.get("AD", ""),
-        "alt_af": _to_num(row.get("VAF")),
+        # Old pipeline emits single AD/VAF; new pipeline splits per caller
+        # (AD_DV/AD_HC, VAF_DV/VAF_HC). DV's VAF is more reliable for
+        # heteroplasmy estimation, so prefer it.
+        "AD":     _coalesce(row.get("AD"),  row.get("AD_DV"),  row.get("AD_HC")),
+        "alt_af": _to_num(
+                      _coalesce(row.get("VAF"), row.get("VAF_DV"), row.get("VAF_HC"))
+                  ),
         "CLNSIG": row.get("CLINVAR_SIG", ""),
         "clinvar_stars": _to_num(row.get("CLINVAR_STARS")),
         "clinvar_dn": row.get("CLINVAR_DN", ""),
