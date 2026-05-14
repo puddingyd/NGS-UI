@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """GeneBe ACMG annotation — sites-only wrapper.
 
 Why "sites-only": pygenebe doesn't handle multi-sample VCFs cleanly,
