@@ -1778,7 +1778,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .gene-search-section:first-child { margin-top: 0; }
 
-/* CNV/SV gene-table "搜尋同基因" cell — buttons stay snug right of the
-   Pheno column. */
-.cnv-sv-gene-table .gene-search-cell { white-space: nowrap; padding-left: 8px; }
+/* CNV/SV gene-table "搜尋同基因" cell — shrink-to-fit so the column
+   is only as wide as the button. */
+.cnv-sv-gene-table .gene-search-cell {
+  white-space: nowrap;
+  padding-left: 8px;
+  width: 1%;
+}
 .cnv-sv-gene-table .gene-search-cell .same-gene-btn { margin: 0; }
