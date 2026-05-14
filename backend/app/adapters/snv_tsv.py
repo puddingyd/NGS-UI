@@ -215,12 +215,47 @@ def _row_to_variant(row: dict) -> dict:
     transcript = row.get("TRANSCRIPT", "")
     hgvs_c = row.get("HGVS_C", "")
     hgvs_p = row.get("HGVS_P", "")
-    hgvs_full = ":".join(p for p in (gene, transcript, hgvs_c, hgvs_p) if p)
 
     try:
-        mane_all = json.loads(row.get("MANE_ALL") or "[]")
+        mane_all_raw = json.loads(row.get("MANE_ALL") or "[]")
     except json.JSONDecodeError:
-        mane_all = []
+        mane_all_raw = []
+    # Normalise key names (new pipeline uses tx/enst/type/hgvsc/hgvsp;
+    # frontend expects transcript/transcript_type/hgvs_c/hgvs_p).
+    mane_all = [
+        {
+            "transcript":      r.get("tx")          or r.get("transcript")      or "",
+            "enst":            r.get("enst")        or "",
+            "transcript_type": r.get("type")        or r.get("transcript_type") or "",
+            "consequence":     r.get("consequence") or "",
+            "hgvs_c":          r.get("hgvsc")       or r.get("hgvs_c")          or "",
+            "hgvs_p":          r.get("hgvsp")       or r.get("hgvs_p")          or "",
+            "impact":          r.get("impact")      or "",
+        }
+        for r in mane_all_raw if isinstance(r, dict)
+    ]
+
+    # Reviewers prefer RefSeq accessions for continuity with old reports.
+    # If MANE_ALL carries a MANE_SELECT entry whose ENST matches the
+    # picked TRANSCRIPT, swap the displayed transcript + the HGVS.c
+    # accession prefix to RefSeq NM_*. HGVS.p loses its ENSP_* prefix
+    # (pipeline doesn't ship matched NP_*) — leave just `p.xxx`.
+    enst_base = (transcript or "").split(".")[0]
+    refseq_nm = ""
+    for m in mane_all:
+        if (m["transcript_type"] or "").upper() != "MANE_SELECT":
+            continue
+        if (m["enst"] or "").split(".")[0] == enst_base:
+            refseq_nm = m["transcript"]
+            break
+    if refseq_nm:
+        transcript = refseq_nm
+        if hgvs_c and ":" in hgvs_c:
+            hgvs_c = f"{refseq_nm}:{hgvs_c.split(':', 1)[1]}"
+        if hgvs_p and ":" in hgvs_p:
+            hgvs_p = hgvs_p.split(":", 1)[1]
+
+    hgvs_full = ":".join(p for p in (gene, transcript, hgvs_c, hgvs_p) if p)
 
     return {
         "id": vid,
