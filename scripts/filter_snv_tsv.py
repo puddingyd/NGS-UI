@@ -32,6 +32,18 @@ from pathlib import Path
 
 PATHO_RE = re.compile(r"\b(?:Likely_)?[Pp]athogenic\b")
 
+# Primary assembly contigs (hg38). Anything else — alt haplotypes
+# (_alt), unplaced (chrUn_*), random (_random), patches (_fix), decoy
+# — has no clinical reporting value and is dropped by default.
+_PRIMARY_CONTIGS = (
+    {f"chr{i}" for i in range(1, 23)} | {"chrX", "chrY", "chrM", "chrMT"}
+    | {str(i) for i in range(1, 23)} | {"X", "Y", "M", "MT"}
+)
+
+
+def _is_primary_contig(chrom: str) -> bool:
+    return chrom.strip() in _PRIMARY_CONTIGS
+
 
 def _max_af(row: dict, cols: list[str]) -> float:
     m = 0.0
@@ -65,6 +77,7 @@ def filter_tsv(
     max_af: float,
     af_cols: list[str],
     impact_keep: set[str],
+    keep_alt_contigs: bool = False,
 ) -> dict:
     overwriting = in_tsv.resolve() == out_tsv.resolve()
     target = Path(str(out_tsv) + ".tmp") if overwriting else out_tsv
@@ -73,6 +86,7 @@ def filter_tsv(
     n_in = 0
     n_kept = 0
     n_drop_star = 0
+    n_drop_contig = 0
     n_drop_af = 0
     n_drop_impact = 0
     n_keep_clinvar_rescue = 0  # would have been dropped, kept by ClinVar rule
@@ -90,6 +104,9 @@ def filter_tsv(
                 alt = (row.get("ALT") or "").strip()
                 if "*" in (ref, alt):
                     n_drop_star += 1
+                    continue
+                if not keep_alt_contigs and not _is_primary_contig(row.get("CHROM", "")):
+                    n_drop_contig += 1
                     continue
 
                 clinvar_patho = _is_clinvar_patho(row)
@@ -115,11 +132,12 @@ def filter_tsv(
         os.replace(target, out_tsv)
 
     return {
-        "n_in":       n_in,
-        "n_kept":     n_kept,
-        "drop_star":  n_drop_star,
-        "drop_af":    n_drop_af,
-        "drop_impact": n_drop_impact,
+        "n_in":         n_in,
+        "n_kept":       n_kept,
+        "drop_star":    n_drop_star,
+        "drop_contig":  n_drop_contig,
+        "drop_af":      n_drop_af,
+        "drop_impact":  n_drop_impact,
         "clinvar_rescue": n_keep_clinvar_rescue,
     }
 
@@ -143,6 +161,10 @@ def main() -> int:
                     help="comma-separated IMPACT values to keep "
                          "(default HIGH,MODERATE; pass empty string to disable "
                          "the impact filter)")
+    ap.add_argument("--keep-alt-contigs", action="store_true",
+                    help="keep variants on alt haplotypes / chrUn / random / "
+                         "decoy contigs (default: drop them — only "
+                         "chr1-22 + chrX/Y/M are reported)")
     args = ap.parse_args()
 
     in_tsv = Path(args.tsv).resolve()
@@ -164,14 +186,17 @@ def main() -> int:
     stats = filter_tsv(in_tsv, out_tsv,
                        max_af=args.max_af,
                        af_cols=af_cols,
-                       impact_keep=impact_keep)
-    print(f"[filter] read   {stats['n_in']:>10} rows", file=sys.stderr)
-    print(f"[filter] kept   {stats['n_kept']:>10} rows  "
+                       impact_keep=impact_keep,
+                       keep_alt_contigs=args.keep_alt_contigs)
+    print(f"[filter] read    {stats['n_in']:>10} rows", file=sys.stderr)
+    print(f"[filter] kept    {stats['n_kept']:>10} rows  "
           f"(ClinVar P/LP rescue: {stats['clinvar_rescue']})",
           file=sys.stderr)
-    print(f"[filter] drop * {stats['drop_star']:>10}", file=sys.stderr)
-    print(f"[filter] drop AF{stats['drop_af']:>10}", file=sys.stderr)
-    print(f"[filter] drop IMP{stats['drop_impact']:>9}", file=sys.stderr)
+    print(f"[filter] drop *  {stats['drop_star']:>10}", file=sys.stderr)
+    print(f"[filter] drop ctg{stats['drop_contig']:>9}  "
+          f"(alt/random/decoy contigs)", file=sys.stderr)
+    print(f"[filter] drop AF {stats['drop_af']:>10}", file=sys.stderr)
+    print(f"[filter] drop IMP{stats['drop_impact']:>10}", file=sys.stderr)
     return 0
 
 
