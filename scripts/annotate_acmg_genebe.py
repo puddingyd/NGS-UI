@@ -234,11 +234,12 @@ def main() -> int:
                         "GENEBE_SIF",
                         str(Path.home() / "NGS_UI" / "biotools" / "genebe.sif")))
     ap.add_argument("--max-af", type=float, default=0.01,
-                    help="drop sites whose max(GNOMAD_G_AF,GNOMAD_E_AF) > this "
+                    help="drop sites whose GNOMAD_G_AF > this "
                          "(default 0.01; use -1 to disable)")
-    ap.add_argument("--af-cols", default="GNOMAD_G_AF,GNOMAD_E_AF",
-                    help="comma-separated AF columns to check (default "
-                         "GNOMAD_G_AF,GNOMAD_E_AF)")
+    ap.add_argument("--af-cols", default="GNOMAD_G_AF",
+                    help="comma-separated AF columns to check "
+                         "(default GNOMAD_G_AF — gnomAD genome 'global' AF, "
+                         "matches filter_snv_tsv.py)")
     args = ap.parse_args()
 
     if not args.username or not args.api_key:
