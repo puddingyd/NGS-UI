@@ -199,9 +199,14 @@ const CLINVAR_ABBREV = {
 };
 
 function formatClinvar(sig, conf, stars) {
-  if (!sig) return "—";
+  // Treat pipeline placeholders ('.', 'NA', '') as "no ClinVar data"
+  // — otherwise the cell renders as `.(0★)` instead of `—`.
+  const sigStr = (sig == null ? "" : String(sig)).trim();
+  if (!sigStr || sigStr === "." || sigStr.toUpperCase() === "NA" || sigStr.toUpperCase() === "N/A") {
+    return "—";
+  }
   const starTxt = (stars != null && stars !== "") ? `(${stars}★)` : "";
-  if (String(sig).startsWith("Conflicting") && conf) {
+  if (sigStr.startsWith("Conflicting") && conf) {
     const parts = String(conf).split(/[,|]/).map(p => p.trim().replace(/^_/, ""));
     const out = parts.map(p => {
       const m = p.match(/^(.+?)\((\d+)\)$/);
@@ -210,7 +215,7 @@ function formatClinvar(sig, conf, stars) {
     });
     return out.join("|") + starTxt;
   }
-  return (CLINVAR_ABBREV[sig] || sig) + starTxt;
+  return (CLINVAR_ABBREV[sigStr] || sigStr) + starTxt;
 }
 
 // Map any ClinVar / ACMG classification string (canonical, abbreviated,
