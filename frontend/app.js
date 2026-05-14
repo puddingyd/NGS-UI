@@ -5142,6 +5142,16 @@ function renderNewCaseEmrRef() {
 }
 
 // Chip remove + weight editing for the modal. Document-level so the
+// Stamp "（已編輯）" onto the phenotype source label exactly once,
+// so the prefix doesn't accumulate "（已編輯）（已編輯）..." every
+// time the reviewer adds/removes a chip.
+function _markNewCaseEdited() {
+  const tag = "（已編輯）";
+  const src = newCaseEdit.source || "";
+  if (src.includes(tag)) return;
+  newCaseEdit.source = src ? src + tag : "已編輯";
+}
+
 // chips can be re-rendered without rebinding listeners.
 document.addEventListener("click", ev => {
   const btn = ev.target.closest("[data-nc-hpo-idx], [data-nc-panel-idx]");
@@ -5150,7 +5160,7 @@ document.addEventListener("click", ev => {
   const pnlIdx = btn.getAttribute("data-nc-panel-idx");
   if (hpoIdx !== null) newCaseEdit.hpo.splice(Number(hpoIdx), 1);
   if (pnlIdx !== null) newCaseEdit.panels.splice(Number(pnlIdx), 1);
-  newCaseEdit.source = newCaseEdit.source ? newCaseEdit.source + "（已編輯）" : "已編輯";
+  _markNewCaseEdited();
   renderNewCasePhenoEditor();
 });
 document.addEventListener("change", ev => {
@@ -5229,7 +5239,7 @@ document.addEventListener("mousedown", ev => {
     if (!id) return;
     if (!newCaseEdit.hpo.some(h => h.phenotype === id)) {
       newCaseEdit.hpo.push({phenotype: id, label: r.name || id, weight: 1});
-      newCaseEdit.source = newCaseEdit.source ? newCaseEdit.source + "（已編輯）" : "已編輯";
+      _markNewCaseEdited();
     }
     document.getElementById("new-case-hpo-search").value = "";
     document.getElementById("new-case-hpo-search-dropdown").classList.add("hidden");
@@ -5240,7 +5250,7 @@ document.addEventListener("mousedown", ev => {
     if (!name) return;
     if (!newCaseEdit.panels.some(p => p.name === name)) {
       newCaseEdit.panels.push({name, weight: 1});
-      newCaseEdit.source = newCaseEdit.source ? newCaseEdit.source + "（已編輯）" : "已編輯";
+      _markNewCaseEdited();
     }
     document.getElementById("new-case-panel-search").value = "";
     document.getElementById("new-case-panel-search-dropdown").classList.add("hidden");
