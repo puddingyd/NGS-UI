@@ -45,9 +45,44 @@ def _open(p):
     return gzip.open(p, "rt") if str(p).endswith(".gz") else open(p, "r")
 
 
-def tsv_to_sites(tsv_in: str, vcf_out: Path) -> int:
-    """snv_indel.annotated.tsv → minimal sites-only VCF."""
+def _row_max_af(row: dict, cols: list[str]) -> float:
+    """Largest numeric AF across the listed columns; missing/non-numeric → 0.
+
+    "Missing means rare" matches ACMG BA1/BS1 practice: an AF that
+    gnomAD doesn't carry isn't evidence of commonness.
+    """
+    m = 0.0
+    for c in cols:
+        v = row.get(c)
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s or s.upper() in ("NA", "N/A", "."):
+            continue
+        try:
+            f = float(s)
+        except ValueError:
+            continue
+        if f > m:
+            m = f
+    return m
+
+
+def tsv_to_sites(
+    tsv_in: str,
+    vcf_out: Path,
+    *,
+    max_af: float | None = None,
+    af_cols: list[str] | None = None,
+) -> tuple[int, int]:
+    """snv_indel.annotated.tsv → minimal sites-only VCF.
+
+    Returns (n_written, n_dropped_by_af). max_af=None disables the AF
+    filter.
+    """
+    af_cols = af_cols or ["GNOMAD_G_AF", "GNOMAD_E_AF"]
     seen: set = set()
+    dropped = 0
     with open(tsv_in, "r", encoding="utf-8", newline="") as fi, \
          open(vcf_out, "w", encoding="utf-8") as fo:
         fo.write("##fileformat=VCFv4.2\n")
@@ -62,9 +97,12 @@ def tsv_to_sites(tsv_in: str, vcf_out: Path) -> int:
             key = (chrom, pos, ref, alt)
             if key in seen:
                 continue
+            if max_af is not None and _row_max_af(row, af_cols) > max_af:
+                dropped += 1
+                continue
             seen.add(key)
             fo.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
-    return len(seen)
+    return len(seen), dropped
 
 
 def vcf_to_sites(vcf_in: str, vcf_out: Path) -> int:
@@ -164,6 +202,14 @@ def main() -> int:
                     default=os.environ.get(
                         "GENEBE_SIF",
                         str(Path.home() / "NGS_UI" / "biotools" / "genebe.sif")))
+    ap.add_argument("--max-af", type=float, default=0.01,
+                    help="drop sites where any listed AF column exceeds this "
+                         "(default 0.01; use --max-af -1 to disable). "
+                         "Only applies to --tsv input.")
+    ap.add_argument("--af-cols",
+                    default="GNOMAD_G_AF,GNOMAD_E_AF",
+                    help="comma-separated AF columns to check for --max-af "
+                         "(default GNOMAD_G_AF,GNOMAD_E_AF)")
     args = ap.parse_args()
 
     if not args.username or not args.api_key:
@@ -177,10 +223,21 @@ def main() -> int:
     annot = outdir / "sites.genebe.vcf"
     out   = outdir / "acmg_genebe.tsv"
 
-    n_sites = tsv_to_sites(args.tsv, sites) if args.tsv else vcf_to_sites(args.vcf, sites)
-    print(f"[genebe] {n_sites} unique sites → {sites}", file=sys.stderr)
+    if args.tsv:
+        max_af = None if args.max_af < 0 else args.max_af
+        af_cols = [c.strip() for c in args.af_cols.split(",") if c.strip()]
+        n_sites, n_dropped = tsv_to_sites(args.tsv, sites,
+                                          max_af=max_af, af_cols=af_cols)
+        af_note = (f"  (dropped {n_dropped} with max({','.join(af_cols)}) > {max_af})"
+                   if max_af is not None else "  (AF filter off)")
+    else:
+        n_sites = vcf_to_sites(args.vcf, sites)
+        n_dropped = 0
+        af_note = ""
+    print(f"[genebe] {n_sites} unique sites → {sites}{af_note}", file=sys.stderr)
     if n_sites == 0:
-        print("ERROR: 0 sites — 檢查輸入 TSV/VCF 是否有 CHROM/POS/REF/ALT 欄。",
+        print("ERROR: 0 sites — 檢查輸入 TSV/VCF 是否有 CHROM/POS/REF/ALT 欄，"
+              "或 --max-af 過嚴。",
               file=sys.stderr)
         return 1
 
