@@ -95,6 +95,10 @@ def tsv_to_sites(
             alt   = (row.get("ALT")   or "").strip()
             if not (chrom and pos and ref and alt):
                 continue
+            # Spanning-deletion alleles (REF/ALT '*') have no ACMG meaning;
+            # GeneBe just errors on them ("Invalid format").
+            if "*" in (ref, alt):
+                continue
             key = (chrom, pos, ref, alt)
             if key in seen:
                 continue
@@ -121,6 +125,8 @@ def vcf_to_sites(vcf_in: str, vcf_out: Path) -> int:
             if len(f) < 8:
                 continue
             chrom, pos, vid, ref, alt, qual, flt, info = f[:8]
+            if "*" in (ref, alt):
+                continue
             key = (chrom, pos, ref, alt)
             if key in seen:
                 continue
