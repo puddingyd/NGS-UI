@@ -452,8 +452,15 @@ def load_sample(sample_id: str, version: str | None = None,
 
     for vid, v in variants.items():
         gene = v.get("gene_symbol", "")
-        if gene and gene in pheno_by_gene:
-            v["pheno_score"] = round(pheno_by_gene[gene], 2)
+        pheno = pheno_by_gene.get(gene) if gene else None
+        if pheno and pheno > 0:
+            v["pheno_score"] = round(pheno, 2)
+        # in_panel is the live "gene matched the active phenotype" flag —
+        # always derived from pheno_score > 0 here, so it stays in sync
+        # even when the TSV's IN_PANEL column was never (re)written
+        # (legacy samples, stop-gap-script-produced TSVs, phenotype
+        # edits that bypassed update_in_panel_column).
+        v["in_panel"] = bool(pheno and pheno > 0)
         # Total = variant + pheno; either missing → treat as 0 in the
         # sum but only emit a total when at least one component exists.
         gs = v.get("geno_score")
