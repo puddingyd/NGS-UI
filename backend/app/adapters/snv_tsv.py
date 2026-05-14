@@ -200,70 +200,20 @@ def _row_to_variant(row: dict) -> dict:
     }
 
 
-def _load_genebe_sidecar(tsv_path: Path) -> dict[tuple[str, str, str, str], dict]:
-    """Read scripts/annotate_acmg_genebe.py's output next to the SNV TSV.
-
-    Used as fallback ACMG when the pipeline's own ACMG_CLASSIFY step
-    hasn't filled ACMG_POINTS / ACMG_EVIDENCE / ACMG_CLASS. Empty/no
-    sidecar → {} → no fallback (caller leaves the columns blank).
-    """
-    p = tsv_path.parent / "acmg_genebe.tsv"
-    if not p.is_file():
-        return {}
-    out: dict[tuple[str, str, str, str], dict] = {}
-    with p.open("r", encoding="utf-8", newline="") as f:
-        for r in csv.DictReader(f, delimiter="\t"):
-            chrom = (r.get("CHROM") or "").strip()
-            pos   = (r.get("POS")   or "").strip()
-            ref   = (r.get("REF")   or "").strip()
-            alt   = (r.get("ALT")   or "").strip()
-            if not (chrom and pos and ref and alt):
-                continue
-            out[(chrom, pos, ref, alt)] = {
-                "ACMG_POINTS":   (r.get("ACMG_score")    or "").strip(),
-                "ACMG_EVIDENCE": (r.get("ACMG_criteria") or "").strip(),
-                "ACMG_CLASS":    (r.get("ACMG_class")    or "").strip(),
-            }
-    return out
-
-
 def load_snv_tsv(tsv_path: Path) -> tuple[dict[str, dict], dict[str, list[str]]]:
     """Read snv_indel.annotated.tsv → (variants, categories).
 
     `variants` is keyed by chr-pos-ref-alt id.
     `categories` is keyed by tier (1A / 1B / 2 / 3 / 4 / 5) → ordered ids
     (within tier 4: ACMG_POINTS desc; within tier 5: ACMG_POINTS desc).
-
-    A sibling `acmg_genebe.tsv` (see scripts/annotate_acmg_genebe.py)
-    is used to backfill empty ACMG columns until the tertiary pipeline's
-    own ACMG_CLASSIFY step ships. Variants where ACMG comes from GeneBe
-    get `acmg_source: "genebe"`; otherwise `"pipeline"` (or "" when
-    nothing is known yet).
     """
     variants: dict[str, dict] = {}
     by_tier: dict[str, list[tuple[float, str]]] = {t: [] for t in TIERS}
-    genebe = _load_genebe_sidecar(tsv_path)
 
     with tsv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
-            key = (row.get("CHROM", ""), str(row.get("POS", "") or ""),
-                   row.get("REF", ""), row.get("ALT", ""))
-            pipeline_had_acmg = bool((row.get("ACMG_CLASS") or "").strip()) \
-                                or bool((row.get("ACMG_POINTS") or "").strip()) \
-                                or bool((row.get("ACMG_EVIDENCE") or "").strip())
-            gb = genebe.get(key)
-            if gb and not pipeline_had_acmg:
-                if gb["ACMG_POINTS"]:   row["ACMG_POINTS"]   = gb["ACMG_POINTS"]
-                if gb["ACMG_EVIDENCE"]: row["ACMG_EVIDENCE"] = gb["ACMG_EVIDENCE"]
-                if gb["ACMG_CLASS"]:    row["ACMG_CLASS"]    = gb["ACMG_CLASS"]
             v = _row_to_variant(row)
-            if not pipeline_had_acmg and gb and any(gb.values()):
-                v["acmg_source"] = "genebe"
-            elif pipeline_had_acmg:
-                v["acmg_source"] = "pipeline"
-            else:
-                v["acmg_source"] = ""
             variants[v["id"]] = v
             pts = v.get("ACMG_score")
             sort_key = float(pts) if isinstance(pts, (int, float)) else -999.0
