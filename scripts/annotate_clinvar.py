@@ -166,16 +166,17 @@ def merge_into_tsv(in_tsv: Path, out_tsv: Path, cv: dict) -> dict:
                         break
                 if hit:
                     sig, stars, dn, sigconf = hit
-                    changed = False
+                    # CLINVAR_SIG drives the group: if the pipeline left
+                    # SIG blank ('.' / ''), it hasn't done ClinVar
+                    # annotation at all and the other three cells are
+                    # placeholders (raw TSV defaults STARS to "0",
+                    # SIGCONF to "." etc.). Treat the four columns as
+                    # one unit and overwrite them all from ClinVar.
                     if not _has_value(row, "CLINVAR_SIG") and sig:
-                        row["CLINVAR_SIG"] = sig; changed = True
-                    if not _has_value(row, "CLINVAR_STARS"):
-                        row["CLINVAR_STARS"] = str(stars); changed = True
-                    if not _has_value(row, "CLINVAR_DN") and dn:
-                        row["CLINVAR_DN"] = dn; changed = True
-                    if not _has_value(row, "CLINVAR_SIGCONF") and sigconf:
-                        row["CLINVAR_SIGCONF"] = sigconf; changed = True
-                    if changed:
+                        row["CLINVAR_SIG"]     = sig
+                        row["CLINVAR_STARS"]   = str(stars)
+                        row["CLINVAR_DN"]      = dn or row.get("CLINVAR_DN", "")
+                        row["CLINVAR_SIGCONF"] = sigconf or row.get("CLINVAR_SIGCONF", "")
                         n_filled += 1
                 writer.writerow(row)
     if overwriting:
