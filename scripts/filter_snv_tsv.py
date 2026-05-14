@@ -16,7 +16,7 @@ DROP everything else. Always drop '*'-allele rows (no clinical meaning).
 
 Defaults:
     --max-af 0.01
-    --af-cols GNOMAD_G_AF,GNOMAD_E_AF
+    --af-cols GNOMAD_G_AF
     --impact  HIGH,MODERATE
 
 Updates the input TSV in place unless --out-tsv given.
@@ -136,9 +136,9 @@ def main() -> int:
     ap.add_argument("--max-af", type=float, default=0.01,
                     help="drop rows whose max(--af-cols) > this (default 0.01; "
                          "use a large number e.g. 1.1 to disable)")
-    ap.add_argument("--af-cols", default="GNOMAD_G_AF,GNOMAD_E_AF",
+    ap.add_argument("--af-cols", default="GNOMAD_G_AF",
                     help="comma-separated AF columns to check "
-                         "(default GNOMAD_G_AF,GNOMAD_E_AF)")
+                         "(default GNOMAD_G_AF — gnomAD genome 'global' AF)")
     ap.add_argument("--impact", default="HIGH,MODERATE",
                     help="comma-separated IMPACT values to keep "
                          "(default HIGH,MODERATE; pass empty string to disable "
