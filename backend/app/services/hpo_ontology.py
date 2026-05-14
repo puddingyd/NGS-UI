@@ -117,6 +117,21 @@ def get(hpo_id: str) -> HpoTerm | None:
     return _TERMS.get(hpo_id)
 
 
+def _normalize_hpo_id(q: str) -> str | None:
+    """If the query looks like an HPO ID fragment, return canonical
+    'HP:NNNNNNN'. Handles bare digits and HP:-prefixed forms with or
+    without leading zeros: '1250' / 'HP:1250' / 'hp:0001250' /
+    '0001250' all → 'HP:0001250'. Returns None when the query has any
+    non-digit content after stripping 'HP:'.
+    """
+    s = (q or "").strip().upper()
+    if s.startswith("HP:"):
+        s = s[3:]
+    if s and s.isdigit() and len(s) <= 7:
+        return "HP:" + s.zfill(7)
+    return None
+
+
 def search(query: str, limit: int = 20) -> list[dict]:
     """Rank-order search; see module docstring for ranking."""
     if not _TERMS:
@@ -128,8 +143,12 @@ def search(query: str, limit: int = 20) -> list[dict]:
     seen: set[str] = set()
     out: list[HpoTerm] = []
 
-    # 1. Exact ID
-    if q.upper().startswith("HP:") and q.upper() in _TERMS:
+    # 1. Exact ID (canonical form 'HP:NNNNNNN' or any fragment that
+    #    normalises to one — bare digits, missing leading zeros, …).
+    norm_id = _normalize_hpo_id(q)
+    if norm_id and norm_id in _TERMS:
+        out.append(_TERMS[norm_id]); seen.add(norm_id)
+    if q.upper().startswith("HP:") and q.upper() in _TERMS and q.upper() not in seen:
         out.append(_TERMS[q.upper()]); seen.add(q.upper())
 
     # 2. Exact name
@@ -159,6 +178,15 @@ def search(query: str, limit: int = 20) -> list[dict]:
             if hid in seen: continue
             if q_lower in syn_lc:
                 out.append(_TERMS[hid]); seen.add(hid)
+                if len(out) >= limit: break
+
+    # 6. ID substring — for digit-only queries that didn't resolve via
+    #    zero-pad (e.g. '125' should also surface HP:0012500 / 0125000).
+    if q.isdigit() and len(out) < limit:
+        for hid, t in _TERMS.items():
+            if hid in seen: continue
+            if q in hid:
+                out.append(t); seen.add(hid)
                 if len(out) >= limit: break
 
     return [t.to_dict() for t in out[:limit]]
