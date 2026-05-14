@@ -174,6 +174,31 @@ def _first_str(v) -> str:
     return ""
 
 
+def _max_abs_multi(v) -> float | None:
+    """Like _max_multi but picks the value with the largest |x| —
+    preserves sign. Useful for signed splice scores (Pangolin), where
+    negative = splice loss and positive = splice gain, and what matters
+    clinically is the magnitude of the predicted splice change.
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s in (".", "NA", "N/A"):
+        return None
+    best: float | None = None
+    for part in s.split("&"):
+        p = part.strip()
+        if not p or p in (".", "NA", "N/A"):
+            continue
+        try:
+            x = float(p)
+        except ValueError:
+            continue
+        if best is None or abs(x) > abs(best):
+            best = x
+    return best
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -256,7 +281,7 @@ def _row_to_variant(row: dict) -> dict:
         # fields. Old pipeline had SPLICEAI_MAX, new pipeline has
         # PANGOLIN_SCORE; reviewers may see one, the other, or both.
         "SpliceAI_score": _max_multi(row.get("SPLICEAI_MAX")),
-        "Pangolin_score": _max_multi(row.get("PANGOLIN_SCORE")),
+        "Pangolin_score": _max_abs_multi(row.get("PANGOLIN_SCORE")),
         "Pangolin_detail": (row.get("PANGOLIN_DETAIL") or "").strip(),
         "CADD_phred": _max_multi(row.get("CADD_PHRED")),
         # New pipeline extras

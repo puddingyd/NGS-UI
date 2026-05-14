@@ -266,7 +266,10 @@ const TOOL_CUTOFFS = {
 const IN_SILICO_TOOLS = [
   { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred", cutoffs: "alphamissense" },
   { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred",      cutoffs: "bayesdel" },
-  { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score",                                       cutoffs: "pangolin" },
+  // Pangolin is signed: -0.87 = strong splice loss, +0.87 = strong
+  // splice gain. Classify by |score| so both colour-code the same way;
+  // we still display the signed number so reviewers see the direction.
+  { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score",                                       cutoffs: "pangolin", absForColor: true },
   { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score",                                       cutoffs: "spliceai" },
   // -- everything below this line lives in More --
   { key: "esm",           label: "ESM",           scoreField: "ESM2_score",          predField: "ESM_pred" },
@@ -293,7 +296,8 @@ function _renderInSilicoCell(v, tool) {
   const has = _hasNum(score);
   const pred = tool.predField ? (v[tool.predField] || "").trim() : "";
   const cutoffs = tool.cutoffs ? TOOL_CUTOFFS[tool.cutoffs] : null;
-  const cls = has && cutoffs ? (classifyByThresholds(score, cutoffs) || "") : "";
+  const scoreForCls = (has && tool.absForColor) ? Math.abs(Number(score)) : score;
+  const cls = has && cutoffs ? (classifyByThresholds(scoreForCls, cutoffs) || "") : "";
   const valueTxt = has
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
