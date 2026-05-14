@@ -2476,6 +2476,9 @@ function _renderCnvSvGeneTable(v, id) {
       : "—";
     const inh     = g.omim_inheritance || "";
     const phenAll = g.omim_phenotype   || "";
+    const sameGeneCell = g.gene
+      ? `<button class="same-gene-btn" data-gene="${escapeAttr(g.gene)}" type="button" title="列出 ${escapeAttr(g.gene)} 的所有 SNV/Indel + CNV/SV 變異">搜尋同基因</button>`
+      : "";
     return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
       <td class="gene-pick-cell">
         <input type="checkbox" class="gene-pick" data-id="${escapeAttr(id)}" data-gene="${escapeAttr(g.gene || "")}" ${checked} title="勾選=放進報告" />
@@ -2488,12 +2491,13 @@ function _renderCnvSvGeneTable(v, id) {
       <td>${omimCell}</td>
       <td class="gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開">${escapeHtml(_firstLine(phenAll)) || "—"}</td>
       <td>${pheno}</td>
+      <td class="gene-search-cell">${sameGeneCell}</td>
     </tr>`;
   };
 
   const tableHead = `<thead><tr>
     <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
-    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th>
+    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th><th></th>
   </tr></thead>`;
   const visibleRows = genes.map(rowHtml).join("");
 
@@ -2618,30 +2622,12 @@ function _renderCnvSvComment(v, id) {
   </div>`;
 }
 
-function _renderCnvSvSameGeneRow(v) {
-  // Mirror the SNV "搜尋同基因" button. AnnotSV gives us a gene_list;
-  // pick the first as the search target (typically the primary gene
-  // of the SV). Multi-gene SVs can still pivot through the gene-search
-  // box in the modal once it's open.
-  const genes = Array.isArray(v.gene_list) ? v.gene_list.filter(Boolean) : [];
-  if (!genes.length) return "";
-  const g = String(genes[0]);
-  const hint = genes.length > 1
-    ? `搜尋 ${g}（此 SV 共涵蓋 ${genes.length} 個基因；modal 內可改搜其他基因）`
-    : `搜尋 ${g} 的所有 SNV/Indel + CNV/SV 變異`;
-  return `<div class="variant-badges cnv-sv-same-gene-row">
-    <span class="variant-badges-chips"></span>
-    <button class="same-gene-btn" data-gene="${escapeAttr(g)}" type="button" title="${escapeAttr(hint)}">搜尋同基因</button>
-  </div>`;
-}
-
 function renderCnvSvCard(v, id, opts = {}) {
   const card = document.createElement("div");
   card.className = "variant-card cnv-sv-card";
   card.dataset.id = id;
   card.innerHTML = `
     ${_renderCnvSvHeader(v, id, opts)}
-    ${_renderCnvSvSameGeneRow(v)}
     ${_renderCnvSvDetailBox(v, id)}
     ${_renderCnvSvGeneTable(v, id)}
     ${_renderCnvSvOverlap(v)}
@@ -2741,6 +2727,9 @@ document.addEventListener("toggle", ev => {
       : "—";
     const inh     = g.omim_inheritance || "";
     const phenAll = g.omim_phenotype   || "";
+    const sameGeneCell = g.gene
+      ? `<button class="same-gene-btn" data-gene="${escapeAttr(g.gene)}" type="button" title="列出 ${escapeAttr(g.gene)} 的所有 SNV/Indel + CNV/SV 變異">搜尋同基因</button>`
+      : "";
     return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
       <td class="gene-pick-cell"><input type="checkbox" class="gene-pick" data-id="${escapeAttr(id)}" data-gene="${escapeAttr(g.gene || "")}" ${checked} title="勾選=放進報告" /></td>
       <td><strong>${escapeHtml(g.gene || "?")}</strong>${triggerMark}</td>
@@ -2751,11 +2740,12 @@ document.addEventListener("toggle", ev => {
       <td>${omimCell}</td>
       <td class="gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開">${escapeHtml(_firstLine(phenAll)) || "—"}</td>
       <td>${pheno}</td>
+      <td class="gene-search-cell">${sameGeneCell}</td>
     </tr>`;
   };
   const tableHead = `<thead><tr>
     <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
-    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th>
+    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th><th></th>
   </tr></thead>`;
   const fullTable = overflowFull.length
     ? `<table class="cnv-sv-gene-table">${tableHead}<tbody>${overflowFull.map(fullRowHtml).join("")}</tbody></table>`

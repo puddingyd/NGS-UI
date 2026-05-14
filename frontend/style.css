@@ -1777,3 +1777,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
   padding-bottom: 4px;
 }
 .gene-search-section:first-child { margin-top: 0; }
+
+/* CNV/SV gene-table "搜尋同基因" cell — buttons stay snug right of the
+   Pheno column. */
+.cnv-sv-gene-table .gene-search-cell { white-space: nowrap; padding-left: 8px; }
+.cnv-sv-gene-table .gene-search-cell .same-gene-btn { margin: 0; }
