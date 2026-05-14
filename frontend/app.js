@@ -259,9 +259,10 @@ const TOOL_CUTOFFS = {
   pangolin:      { p: 0.800, lp: 0.500, vus: 0.200 },
 };
 
-// In-silico predictors in display order. Primary slot indices 0-3 are
-// always rendered on the front face (value or "—"); index 4+ go under
-// ▾ More. Each entry: {key, label, scoreField, predField?, cutoffs?}.
+// In-silico predictors in display order. The first three tools with
+// actual values land on the primary row of the card; the 4th onwards
+// go under ▾ More. Empty cells are skipped entirely — `IN_SILICO_TOOLS`
+// is just the priority order, not a fixed slot list.
 const IN_SILICO_TOOLS = [
   { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred", cutoffs: "alphamissense" },
   { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred",      cutoffs: "bayesdel" },
@@ -282,7 +283,7 @@ const IN_SILICO_TOOLS = [
   { key: "loftool",       label: "LOFTOOL",       scoreField: "LOFTOOL" },
   { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR" },
 ];
-const IN_SILICO_PRIMARY_COUNT = 4;
+const IN_SILICO_PRIMARY_COUNT = 3;
 
 function _hasNum(x) {
   return x != null && x !== "" && Number.isFinite(Number(x));
@@ -1513,15 +1514,16 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <textarea class="acmg-crit" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(editAcmgCrit)}</textarea>
       </div>
       <div>
-        ${IN_SILICO_TOOLS.slice(0, IN_SILICO_PRIMARY_COUNT)
-          .map(t => _renderInSilicoCell(v, t)).join("")}
         ${(() => {
-          const secondaryCells = IN_SILICO_TOOLS
-            .slice(IN_SILICO_PRIMARY_COUNT)
-            .filter(t => _hasNum(v[t.scoreField]))
+          // Only render tools that actually have a numeric value;
+          // first N → primary, rest → More.
+          const populated = IN_SILICO_TOOLS.filter(t => _hasNum(v[t.scoreField]));
+          const primary = populated.slice(0, IN_SILICO_PRIMARY_COUNT)
             .map(t => _renderInSilicoCell(v, t)).join("");
-          const more = secondaryCells + extrasHtml;
-          return more ? `<div class="more-extras hidden">${more}</div>` : "";
+          const secondary = populated.slice(IN_SILICO_PRIMARY_COUNT)
+            .map(t => _renderInSilicoCell(v, t)).join("");
+          const more = secondary + extrasHtml;
+          return primary + (more ? `<div class="more-extras hidden">${more}</div>` : "");
         })()}
       </div>
       <div>
