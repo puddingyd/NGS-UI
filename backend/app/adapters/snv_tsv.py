@@ -199,6 +199,33 @@ def _max_abs_multi(v) -> float | None:
     return best
 
 
+def _vaf_from_ad(ad: str) -> float | None:
+    """Derive first-ALT VAF from an AD string like '4,6' or '4,6,0'.
+
+    HaplotypeCaller VCFs don't ship a FORMAT/VAF field, so HC-only
+    calls (or DV-call-with-blank-VAF rows) reach the card with
+    VAF_DV/VAF_HC both '.'. AD is always present though — compute
+    alt/(ref+alt+other_alts) so reviewers see something instead of '—'.
+    """
+    if not ad:
+        return None
+    parts = [p.strip() for p in str(ad).split(",")]
+    nums = []
+    for p in parts:
+        if not p or p == "." or p.upper() in ("NA", "N/A"):
+            continue
+        try:
+            nums.append(int(p))
+        except ValueError:
+            return None
+    if len(nums) < 2:
+        return None
+    total = sum(nums)
+    if total <= 0:
+        return None
+    return nums[1] / total  # first ALT vs all (ref + ALTs)
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -293,11 +320,12 @@ def _row_to_variant(row: dict) -> dict:
         "intron": row.get("INTRON", ""),
         # Old pipeline emits single AD/VAF; new pipeline splits per caller
         # (AD_DV/AD_HC, VAF_DV/VAF_HC). DV's VAF is more reliable for
-        # heteroplasmy estimation, so prefer it.
+        # heteroplasmy estimation, so prefer it. HC-only calls (no
+        # FORMAT/VAF in HaplotypeCaller) get VAF derived from AD so the
+        # card doesn't show '—' just because the column is missing.
         "AD":     _coalesce(row.get("AD"),  row.get("AD_DV"),  row.get("AD_HC")),
-        "alt_af": _to_num(
-                      _coalesce(row.get("VAF"), row.get("VAF_DV"), row.get("VAF_HC"))
-                  ),
+        "alt_af": (_to_num(_coalesce(row.get("VAF"), row.get("VAF_DV"), row.get("VAF_HC")))
+                   or _vaf_from_ad(_coalesce(row.get("AD"), row.get("AD_DV"), row.get("AD_HC")))),
         "CLNSIG": row.get("CLINVAR_SIG", ""),
         "clinvar_stars": _to_num(row.get("CLINVAR_STARS")),
         "clinvar_dn": row.get("CLINVAR_DN", ""),
