@@ -255,7 +255,21 @@ def _row_to_variant(row: dict) -> dict:
         if hgvs_p and ":" in hgvs_p:
             hgvs_p = hgvs_p.split(":", 1)[1]
 
-    hgvs_full = ":".join(p for p in (gene, transcript, hgvs_c, hgvs_p) if p)
+    # Build the combined display HGVS. New pipeline ships hgvs_c with
+    # its own transcript prefix (`TX:c.xxx`); strip that here so we
+    # don't end up with `GENE:NM_xxx:NM_xxx:c.xxx`. Empty / '.' parts
+    # are dropped so trailing `:.` doesn't appear when HGVS.p is
+    # absent (e.g. UTR / synonymous / non-coding variants).
+    def _strip_tx(s):
+        if not s:
+            return ""
+        t = s.strip()
+        if not t or t == "." or t.upper() in ("NA", "N/A"):
+            return ""
+        return t.split(":", 1)[1] if ":" in t else t
+    hgvs_full = ":".join(p for p in (gene, transcript,
+                                      _strip_tx(hgvs_c),
+                                      _strip_tx(hgvs_p)) if p)
 
     return {
         "id": vid,
