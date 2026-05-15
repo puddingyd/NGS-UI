@@ -412,6 +412,26 @@ function _collectHpoAndPanelLines() {
   return lines;
 }
 
+// Preview is reviewer-facing — no tabs, no weights, just the
+// human-readable signal: "HP:0001250 Seizure" for HPO rows, plain
+// "<panel_name>" for panel rows (incl. custom panels by their
+// server-sanitised name).
+function _collectPreviewLines(customPanelNames) {
+  const lines = [];
+  document.querySelectorAll(".phenotype-row:not(.panel-row)").forEach((row) => {
+    const hpId = row.dataset.hpId, hpName = row.dataset.hpName;
+    if (hpId && hpName) lines.push(`${hpId} ${hpName}`);
+  });
+  document.querySelectorAll(".panel-row").forEach((row) => {
+    const panelName = row.dataset.panelName;
+    if (panelName) lines.push(panelName);
+  });
+  for (const name of (customPanelNames || [])) {
+    if (name) lines.push(name);
+  }
+  return lines;
+}
+
 async function generateFile() {
   const btn = document.getElementById("btn-generate");
   const mrn  = document.getElementById("patient-mrn").value.trim();
@@ -434,6 +454,7 @@ async function generateFile() {
     //    server-sanitised name so the phenotype.txt references it
     //    correctly.
     const customLines = [];
+    const customPanelNames = [];
     for (const cp of customPanels) {
       const resp = await fetch("/api/phenotype-tool/custom-panel", {
         method: "POST",
@@ -450,6 +471,7 @@ async function generateFile() {
         if (nameInp && nameInp.value.trim() !== body.name) nameInp.value = body.name;
       }
       customLines.push(`${body.name}\t\t${cp.weight}`);
+      customPanelNames.push(body.name);
     }
 
     // 2) Build the phenotype.txt body and save it.
@@ -464,7 +486,12 @@ async function generateFile() {
     if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
 
     document.getElementById("output-preview").style.display = "block";
-    document.getElementById("output-content").textContent = generatedContent;
+    // The file on disk keeps the full tab-separated format with
+    // weights (parsed by phenotype_io.parse); the on-screen preview
+    // strips weights + tabs so reviewers see a clean human-readable
+    // list: "HP:0001250 Seizure" / "<panel_name>".
+    document.getElementById("output-content").textContent =
+      _collectPreviewLines(customPanelNames).join("\n");
     // Refresh the panel autocomplete so the new custom panels show up.
     if (customPanels.length) loadPanelList();
     const cpNote = customPanels.length ? `（含 ${customPanels.length} 個自訂 panel）` : "";
