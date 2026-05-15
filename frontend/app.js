@@ -393,6 +393,29 @@ function fmtTxt(v) {
 // "21,18 (0.46)" — AD with VAF in parens. Either half falls back to a dash
 // if the underlying field is missing, so a partially populated sample still
 // renders cleanly.
+// Sum AD ('4,6' / '4,6,0') → total DP. Returns null when AD is blank
+// or contains non-numeric parts.
+function adTotalDp(ad) {
+  if (ad == null || ad === "") return null;
+  const parts = String(ad).split(",").map(s => s.trim()).filter(Boolean);
+  let sum = 0;
+  for (const p of parts) {
+    if (p === "." || p.toUpperCase() === "NA") continue;
+    const n = Number(p);
+    if (!Number.isFinite(n)) return null;
+    sum += n;
+  }
+  return sum;
+}
+
+// `sig-lp` (the red ACMG-LP background) when total DP < 10 — clinical
+// WGS convention; reviewer should IGV-confirm or Sanger-validate before
+// reporting. Empty / unparseable AD → no class.
+function lowDpClass(ad, cutoff = 10) {
+  const dp = adTotalDp(ad);
+  return (dp != null && dp < cutoff) ? "sig-lp" : "";
+}
+
 function fmtAdVaf(ad, vaf) {
   const adPart  = (ad == null || ad === "") ? "—" : String(ad);
   const vafPart = (vaf == null || vaf === "" || !Number.isFinite(Number(vaf)))
@@ -1492,7 +1515,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
-        <span class="k">Read depth (VAF)</span><span class="v">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
+        <span class="k">Read depth (VAF)</span><span class="v ${lowDpClass(v.AD)}" title="${lowDpClass(v.AD) ? "Low DP (<10) — 建議 IGV / Sanger 確認" : ""}">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
         <span class="k">Consequence</span><span class="v">${fmtTxt(v.Consequence)}</span>
         <div class="more-extras hidden">
           <span class="k">Exon / Intron</span><span class="v">${fmtExonIntron(v)}</span>
