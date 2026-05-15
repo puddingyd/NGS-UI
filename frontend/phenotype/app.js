@@ -413,14 +413,14 @@ function _collectHpoAndPanelLines() {
 }
 
 // Preview is reviewer-facing — no tabs, no weights, just the
-// human-readable signal: "HP:0001250 Seizure" for HPO rows, plain
-// "<panel_name>" for panel rows (incl. custom panels by their
-// server-sanitised name).
+// human-readable signal: "Seizure HP:0001250" for HPO rows (name
+// first, then id), plain "<panel_name>" for panel rows (incl. custom
+// panels by their server-sanitised name).
 function _collectPreviewLines(customPanelNames) {
   const lines = [];
   document.querySelectorAll(".phenotype-row:not(.panel-row)").forEach((row) => {
     const hpId = row.dataset.hpId, hpName = row.dataset.hpName;
-    if (hpId && hpName) lines.push(`${hpId} ${hpName}`);
+    if (hpId && hpName) lines.push(`${hpName} ${hpId}`);
   });
   document.querySelectorAll(".panel-row").forEach((row) => {
     const panelName = row.dataset.panelName;
