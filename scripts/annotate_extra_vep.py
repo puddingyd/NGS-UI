@@ -140,6 +140,33 @@ def _parse_csq_format(vcf_path: Path) -> list[str]:
     return []
 
 
+def _max_of_multi(s: str) -> float | None:
+    """Max numeric across '&'-separated parts (VEP per-transcript)."""
+    if not s:
+        return None
+    nums = []
+    for p in s.split("&"):
+        p = p.strip()
+        if not p or p in (".", "NA"):
+            continue
+        try:
+            nums.append(float(p))
+        except ValueError:
+            pass
+    return max(nums) if nums else None
+
+
+def _first_of_multi(s: str) -> str:
+    """First non-empty token across '&'-separated parts."""
+    if not s:
+        return ""
+    for p in s.split("&"):
+        p = p.strip()
+        if p and p not in (".", "NA"):
+            return p
+    return ""
+
+
 def _spliceai_max_from_csq(csq_field_value: str) -> str:
     """Take the worst-case SpliceAI delta score across the four classes.
     VEP's SpliceAI plugin emits something like 'A|GENE|0.01|0.02|0.03|0.04|...'
@@ -160,15 +187,25 @@ def parse_vep_vcf(vep_vcf: Path) -> dict:
     """{(chrom, pos, ref, alt): {METARNN, METARNN_PRED, SPLICEAI_MAX}}.
 
     Picks the CSQ entry with PICK=1 if multiple transcripts; falls
-    back to the first.
+    back to the first. SpliceAI is split across 4 DS_* delta-score
+    columns (DS_AG / DS_AL / DS_DG / DS_DL); we take max |x| to give
+    one single 0-1 SpliceAI_pred-style score (compatible with the
+    existing TSV column shape).
     """
     fmt = _parse_csq_format(vep_vcf)
     if not fmt:
         return {}
     idx_metarnn_score = fmt.index("MetaRNN_score") if "MetaRNN_score" in fmt else -1
     idx_metarnn_pred  = fmt.index("MetaRNN_pred")  if "MetaRNN_pred"  in fmt else -1
-    idx_spliceai_pred = fmt.index("SpliceAI_pred") if "SpliceAI_pred" in fmt else -1
-    idx_pick          = fmt.index("PICK")          if "PICK"          in fmt else -1
+    # SpliceAI: capture all DS_* indices we can find
+    SPLICEAI_DS_FIELDS = (
+        "SpliceAI_pred_DS_AG",
+        "SpliceAI_pred_DS_AL",
+        "SpliceAI_pred_DS_DG",
+        "SpliceAI_pred_DS_DL",
+    )
+    idx_spliceai_ds = [fmt.index(n) for n in SPLICEAI_DS_FIELDS if n in fmt]
+    idx_pick = fmt.index("PICK") if "PICK" in fmt else -1
     out: dict = {}
     info_csq_pat = re.compile(r"(?:^|;)CSQ=([^;]+)")
     with _open_vcf(vep_vcf) as f:
@@ -193,11 +230,23 @@ def parse_vep_vcf(vep_vcf: Path) -> dict:
                 picked = csq_entries[0].split("|")
             row: dict = {}
             if idx_metarnn_score >= 0 and idx_metarnn_score < len(picked):
-                row[TSV_COL_METARNN_SCORE] = picked[idx_metarnn_score]
+                mx = _max_of_multi(picked[idx_metarnn_score])
+                if mx is not None:
+                    row[TSV_COL_METARNN_SCORE] = f"{mx:g}"
             if idx_metarnn_pred >= 0 and idx_metarnn_pred < len(picked):
-                row[TSV_COL_METARNN_PRED] = picked[idx_metarnn_pred]
-            if idx_spliceai_pred >= 0 and idx_spliceai_pred < len(picked):
-                row[TSV_COL_SPLICEAI] = _spliceai_max_from_csq(picked[idx_spliceai_pred])
+                p = _first_of_multi(picked[idx_metarnn_pred])
+                if p:
+                    row[TSV_COL_METARNN_PRED] = p
+            if idx_spliceai_ds:
+                deltas = []
+                for ix in idx_spliceai_ds:
+                    if ix < len(picked) and picked[ix]:
+                        try:
+                            deltas.append(abs(float(picked[ix])))
+                        except ValueError:
+                            pass
+                if deltas:
+                    row[TSV_COL_SPLICEAI] = f"{max(deltas):.4f}"
             for alt_one in alt.split(","):
                 out[(chrom, pos, ref, alt_one)] = row
     return out
