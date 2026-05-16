@@ -24,6 +24,24 @@ _PLP_SIGS = {
     "Likely_pathogenic/Pathogenic",
 }
 
+# Genes whose SNV/Indel calls are NOT clinically meaningful from this
+# pipeline — they're either repeat-expansion disease genes (where the
+# CAG/CTG/etc. count is what matters, separate STR pipeline) or HLA
+# (haplotype-level interpretation needed). Hide them entirely from
+# the SNV/Indel cards.
+EXCLUDED_GENES = {
+    # CAG / SCA repeat-expansion disorders
+    "ATN1", "ATXN1", "ATXN2", "ATXN3", "ATXN7",
+    "HTT", "TBP", "ZFHX3", "THAP11", "JPH3", "PABPN1",
+    # HLA — haplotype-level, separate workflow
+    "HLA-A", "HLA-B",
+}
+
+# Conflicting ClinVar interpretations are only worth surfacing in
+# tier 2 when at least one submitter called P / LP. CLNSIGCONF like
+# "Likely_benign(2)|Uncertain_significance(1)" alone is noise.
+_CONFLICTING_PATHO_RE = re.compile(r"\b(?:Likely_)?[Pp]athogenic\b")
+
 
 def _to_num(v: str):
     if v is None or v == "":
@@ -79,8 +97,15 @@ def classify_tier(row: dict) -> str:
     points = _to_num(row.get("ACMG_POINTS")) or 0
     if isinstance(points, (int, float)) and points >= 4:
         return "1C"
-    if (is_plp and stars == 0) or is_conflicting:
+    if is_plp and stars == 0:
         return "2"
+    if is_conflicting:
+        # CLNSIGCONF format: "Likely_benign(2)|Uncertain_significance(1)" etc.
+        # Only count as tier 2 when at least one submitter weighed in
+        # with P / LP — pure VUS+LB conflict isn't actionable.
+        sigconf = (row.get("CLINVAR_SIGCONF") or row.get("CLINVAR_CONF") or "")
+        if _CONFLICTING_PATHO_RE.search(sigconf):
+            return "2"
     return "3"
 
 
@@ -404,6 +429,8 @@ def load_snv_tsv(tsv_path: Path) -> tuple[dict[str, dict], dict[str, list[str]]]
     with tsv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
+            if (row.get("GENE") or "").strip() in EXCLUDED_GENES:
+                continue
             v = _row_to_variant(row)
             variants[v["id"]] = v
             pts = v.get("ACMG_score")
