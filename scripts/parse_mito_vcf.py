@@ -301,6 +301,11 @@ def main(argv):
             if len(cols) < 8:
                 continue
             chrom, pos_s, _id, ref, alts_s = cols[0], cols[1], cols[2], cols[3], cols[4]
+            # Skip nuclear rows when handed a whole-genome VCF (DRAGEN
+            # emits all calls in one file). mtDNA coords used by
+            # _gene_at / _mitomap_lookup are meaningless off chrM.
+            if chrom not in ("chrM", "MT", "chrMT"):
+                continue
             filt = cols[6]
             info = cols[7]
             try:
@@ -308,7 +313,12 @@ def main(argv):
             except ValueError:
                 continue
 
-            # INFO → TLOD (per-alt list when multiallelic)
+            # INFO → TLOD (per-alt list when multiallelic). Mutect2-mito
+            # emits TLOD; DRAGEN's chrM caller doesn't, but ships a
+            # roughly-equivalent FORMAT/SQ (somatic quality) per ALT.
+            # Read TLOD if present, else fall back to SQ — same column
+            # in the output TSV, so the downstream adapter doesn't have
+            # to know which caller produced the file.
             info_d = {}
             for kv in info.split(";"):
                 if "=" in kv:
@@ -328,6 +338,11 @@ def main(argv):
             af_list = (fd.get("AF") or "").split(",")
             dp = fd.get("DP", "")
             ad_all = (fd.get("AD") or "").split(",")   # [refDepth, alt1Depth, alt2Depth, ...]
+            # DRAGEN fallback: FORMAT/SQ when INFO/TLOD is absent.
+            if not tlod_list:
+                sq_raw = (fd.get("SQ") or "").strip()
+                if sq_raw and sq_raw not in (".", "NA"):
+                    tlod_list = sq_raw.split(",")
 
             for ai, alt in enumerate(alts_s.split(",")):
                 alt = alt.strip()
