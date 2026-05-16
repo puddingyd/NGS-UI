@@ -41,22 +41,28 @@ set -euo pipefail
 BCF_SIF="${BCFTOOLS_SIF:-/home/pipeline/nextflow_containers/bcftools_1.23.1.sif}"
 REF_FASTA="${REF_FASTA:-/home/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta}"
 GENE_BED="${GENE_BED:-$HOME/NGS_UI/biotools/gene_body.protein_coding.bed}"
+GNOMAD_AF_VCF="${GNOMAD_AF_VCF:-$HOME/NGS_UI/biotools/gnomad/gnomad_af.hg38.vcf.gz}"
+GNOMAD_AF_CUTOFF="${GNOMAD_AF_CUTOFF:-0.01}"
 
 IN=""
 SID=""
 STAGE_HOME="${STAGE_HOME:-$HOME/NGS_UI/nf_stage}"
 SKIP_NORM=0
 SKIP_BED=0
+SKIP_GNOMAD=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --in)         IN="$2"; shift 2;;
-    --sample)     SID="$2"; shift 2;;
-    --stage-home) STAGE_HOME="$2"; shift 2;;
-    --ref-fasta)  REF_FASTA="$2"; shift 2;;
-    --gene-bed)   GENE_BED="$2"; shift 2;;
-    --skip-norm)  SKIP_NORM=1; shift;;
-    --skip-bed)   SKIP_BED=1; shift;;
-    -h|--help)    sed -n '2,40p' "$0"; exit 0;;
+    --in)              IN="$2"; shift 2;;
+    --sample)          SID="$2"; shift 2;;
+    --stage-home)      STAGE_HOME="$2"; shift 2;;
+    --ref-fasta)       REF_FASTA="$2"; shift 2;;
+    --gene-bed)        GENE_BED="$2"; shift 2;;
+    --gnomad-af-vcf)   GNOMAD_AF_VCF="$2"; shift 2;;
+    --gnomad-af-cutoff) GNOMAD_AF_CUTOFF="$2"; shift 2;;
+    --skip-norm)       SKIP_NORM=1; shift;;
+    --skip-bed)        SKIP_BED=1; shift;;
+    --skip-gnomad)     SKIP_GNOMAD=1; shift;;
+    -h|--help)         sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
@@ -70,19 +76,31 @@ done
     echo "       build one first:" >&2
     echo "         scripts/build_gene_body_bed.sh" >&2
     echo "       or pass --skip-bed to bypass" >&2; exit 2; }
+# gnomAD AF VCF is optional — silently disabled if the default path
+# doesn't exist (the user may not have built it yet). Only error out
+# when the user explicitly pointed --gnomad-af-vcf at a missing file.
+if [ "$SKIP_GNOMAD" -eq 0 ] && [ ! -f "$GNOMAD_AF_VCF" ]; then
+  if [ "${GNOMAD_AF_VCF:-}" != "$HOME/NGS_UI/biotools/gnomad/gnomad_af.hg38.vcf.gz" ]; then
+    echo "ERROR: --gnomad-af-vcf not found: $GNOMAD_AF_VCF" >&2
+    exit 2
+  fi
+  SKIP_GNOMAD=1
+fi
 
 STAGE_DIR="$STAGE_HOME/$SID/04_snv_indel"
 mkdir -p "$STAGE_DIR"
 OUT="$STAGE_DIR/${SID}.ensemble.fixed.vcf.gz"
 TMP="$STAGE_DIR/.${SID}.stage.tmp.vcf"
 
-echo "[stage] in        : $IN"
-echo "[stage] out       : $OUT"
-echo "[stage] sample    : $SID  (→ ${SID}_DV + empty ${SID}_HC)"
-[ "$SKIP_NORM" -eq 0 ] && echo "[stage] norm      : on  ($REF_FASTA)" \
-                       || echo "[stage] norm      : OFF (--skip-norm)"
-[ "$SKIP_BED" -eq 0 ]  && echo "[stage] gene BED  : on  ($GENE_BED)" \
-                       || echo "[stage] gene BED  : OFF (--skip-bed)"
+echo "[stage] in            : $IN"
+echo "[stage] out           : $OUT"
+echo "[stage] sample        : $SID  (→ ${SID}_DV + empty ${SID}_HC)"
+[ "$SKIP_NORM" -eq 0 ]   && echo "[stage] norm          : on  ($REF_FASTA)" \
+                         || echo "[stage] norm          : OFF (--skip-norm)"
+[ "$SKIP_BED" -eq 0 ]    && echo "[stage] gene BED      : on  ($GENE_BED)" \
+                         || echo "[stage] gene BED      : OFF (--skip-bed)"
+[ "$SKIP_GNOMAD" -eq 0 ] && echo "[stage] gnomAD filter : on  (drop AF > $GNOMAD_AF_CUTOFF; $GNOMAD_AF_VCF)" \
+                         || echo "[stage] gnomAD filter : OFF (no $GNOMAD_AF_VCF — build with scripts/build_gnomad_af_vcf.sh)"
 
 # Inspect the input sample names
 SAMPLES=$(apptainer exec --bind /home,"$STAGE_HOME" "$BCF_SIF" \
@@ -95,27 +113,36 @@ if [ "$N_SAMPLES" -ne 1 ]; then
 fi
 ORIG_SAMPLE=$(echo "$SAMPLES" | head -1)
 
-# 1+2+3+4. Drop chrM + restrict to gene bodies + normalise + rename sample.
-echo "[stage] piping: drop chrM → gene-body filter → norm → rename …"
+# Pipeline order:
+#   drop chrM → gene-body BED → norm → annotate gnomAD AF
+#   → drop where gnomAD AF > cutoff → reheader sample → out
 RENAME_TSV="$STAGE_DIR/.rename.tsv"
 printf "%s\t%s_DV\n" "$ORIG_SAMPLE" "$SID" > "$RENAME_TSV"
 
-# Build the bcftools pipeline. Order matters: drop chrM first (cheap),
-# BED filter next (huge reduction → everything else processes less),
-# norm last (DRAGEN raw has IUPAC bases / un-split multi-allelics that
-# Pangolin would segfault on). --check-ref w on norm warns instead of
-# erroring on rare alt-contig ref mismatches.
 BED_STEP=""
 [ "$SKIP_BED" -eq 0 ]  && BED_STEP="| bcftools view -T '$GENE_BED' -"
 NORM_STEP=""
 [ "$SKIP_NORM" -eq 0 ] && NORM_STEP="| bcftools norm -f '$REF_FASTA' -m -any --check-ref w --keep-sum AD"
+GNOMAD_STEP=""
+if [ "$SKIP_GNOMAD" -eq 0 ]; then
+  # Annotate first — adds INFO/gnomAD_AF when the variant matches a
+  # site in the gnomAD VCF; missing matches stay '.'. Then drop only
+  # where AF is *both* known and above cutoff (don't drop rare or
+  # unknown variants).
+  GNOMAD_STEP="| bcftools annotate -a '$GNOMAD_AF_VCF' -c INFO/gnomAD_AF -
+               | bcftools view -e 'INFO/gnomAD_AF > $GNOMAD_AF_CUTOFF'"
+fi
 
-BIND_OPTS="/home,$STAGE_HOME,$(dirname "$REF_FASTA"),$(dirname "$GENE_BED")"
-apptainer exec --bind "$BIND_OPTS" "$BCF_SIF" bash -c "
+BIND_DIRS="/home,$STAGE_HOME,$(dirname "$REF_FASTA"),$(dirname "$GENE_BED")"
+[ "$SKIP_GNOMAD" -eq 0 ] && BIND_DIRS="$BIND_DIRS,$(dirname "$GNOMAD_AF_VCF")"
+
+echo "[stage] piping: drop chrM → gene-body BED → norm → gnomAD filter → rename …"
+apptainer exec --bind "$BIND_DIRS" "$BCF_SIF" bash -c "
   set -e
   bcftools view --regions-overlap pos -t ^chrM,^MT '$IN' \
     $BED_STEP \
     $NORM_STEP \
+    $GNOMAD_STEP \
     | bcftools reheader -s '$RENAME_TSV' \
     > '$TMP'
 "
