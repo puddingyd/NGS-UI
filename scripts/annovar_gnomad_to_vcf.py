@@ -4,7 +4,7 @@
 ANNOVAR's tab-separated format (`Chr Start End Ref Alt AF ...`) drops
 the VCF padding base required for indels — '-' is used for the empty
 allele. We round-trip back to VCF by looking up the missing base from
-the reference FASTA:
+the reference FASTA via its `.fai` index (stdlib only — no pysam):
 
   ANNOVAR (deletion)  : chr1 101 103 GT  -    AF=0.42
   VCF                 : chr1 100 .   AGT A    AF=0.42
@@ -14,33 +14,68 @@ the reference FASTA:
 
   SNV / MNV: direct copy.
 
-Output is sorted + bgzipped + tabix-indexed so `bcftools annotate -a`
-can use it.
+Output is an UNSORTED VCF (sort + bgzip + tabix is the caller's job —
+see scripts/build_gnomad_af_vcf.sh which pipes the output through
+`bcftools sort` in a container).
 
 Usage:
     scripts/annovar_gnomad_to_vcf.py \\
         --txt $HOME/NGS_UI/biotools/hg38_gnomad41_genome.txt \\
         --ref /home/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta \\
-        --out $HOME/NGS_UI/biotools/gnomad/gnomad_af.hg38.vcf.gz
-
-Run inside the tertiary_python container so pysam + bcftools are
-available; the companion wrapper `scripts/build_gnomad_af_vcf.sh`
-handles that.
+        --out gnomad_af.hg38.unsorted.vcf \\
+        --af-col gnomad41_genome_AF \\
+        --min-af 0.01
 """
 from __future__ import annotations
 
 import argparse
-import os
-import subprocess
 import sys
 from pathlib import Path
 
-try:
-    import pysam
-except ImportError:
-    print("ERROR: pysam not available. Run inside the tertiary_python "
-          "container (or pip install pysam).", file=sys.stderr)
-    sys.exit(2)
+
+class FastaRandom:
+    """Stdlib-only random-access FASTA reader using the `.fai` index.
+
+    Equivalent to pysam.FastaFile.fetch(chrom, start, end) for our
+    purposes (0-based half-open). Memory: just the index dict
+    (~tens of KB for hg38). Per-fetch cost: one seek + one read.
+    """
+
+    def __init__(self, fasta_path: str | Path):
+        self.fasta_path = str(fasta_path)
+        self.fh = open(self.fasta_path, "rb")
+        self.index: dict[str, tuple[int, int, int, int]] = {}
+        fai_path = self.fasta_path + ".fai"
+        with open(fai_path, "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 5:
+                    continue
+                chrom, length, offset, linebases, linewidth = parts[:5]
+                self.index[chrom] = (int(length), int(offset),
+                                      int(linebases), int(linewidth))
+
+    def fetch(self, chrom: str, start: int, end: int) -> str:
+        """0-based half-open. Returns "" on out-of-range / missing chrom."""
+        meta = self.index.get(chrom)
+        if meta is None:
+            return ""
+        length, offset, linebases, linewidth = meta
+        if start < 0 or end > length or start >= end:
+            return ""
+        start_line, start_col = divmod(start, linebases)
+        end_line,   end_col   = divmod(end,   linebases)
+        start_byte = offset + start_line * linewidth + start_col
+        end_byte   = offset + end_line   * linewidth + end_col
+        self.fh.seek(start_byte)
+        chunk = self.fh.read(end_byte - start_byte).decode("ascii")
+        return chunk.replace("\n", "").replace("\r", "")
+
+    def close(self):
+        try:
+            self.fh.close()
+        except Exception:
+            pass
 
 
 def main() -> int:
@@ -50,9 +85,9 @@ def main() -> int:
     )
     ap.add_argument("--txt", required=True, help="ANNOVAR gnomAD txt")
     ap.add_argument("--ref", required=True,
-                    help="Reference FASTA (used to look up indel padding bases)")
+                    help="Reference FASTA (needs companion .fai index)")
     ap.add_argument("--out", required=True,
-                    help="Output sites VCF.gz path (sorted + indexed)")
+                    help="Output unsorted VCF path (caller sorts/bgzips)")
     ap.add_argument("--af-col", default="AF",
                     help="AF column name in the ANNOVAR header (default 'AF')")
     ap.add_argument("--min-af", type=float, default=None,
@@ -65,13 +100,16 @@ def main() -> int:
     txt_path = Path(args.txt)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_vcf = out_path.with_suffix(out_path.suffix + ".unsorted")
 
-    fasta = pysam.FastaFile(args.ref)
+    if not Path(args.ref + ".fai").is_file():
+        print(f"ERROR: {args.ref}.fai not found. Build with:  samtools faidx {args.ref}",
+              file=sys.stderr)
+        return 2
+    fasta = FastaRandom(args.ref)
 
     n_in = n_out = n_skip_af = n_skip_indel = n_skip_invalid = 0
     with open(txt_path, "r", encoding="utf-8") as fi, \
-         open(tmp_vcf, "w", encoding="utf-8") as fo:
+         open(out_path, "w", encoding="utf-8") as fo:
 
         header_line = fi.readline().lstrip("#").rstrip("\n")
         header_cols = header_line.split("\t")
@@ -115,34 +153,30 @@ def main() -> int:
                 n_skip_indel += 1
                 continue
 
-            try:
-                if ref != "-" and alt != "-" and len(ref) == len(alt):
-                    # SNV / MNV — copy through
-                    vcf_pos, vcf_ref, vcf_alt = start, ref, alt
-                elif alt == "-":
-                    # Deletion: VCF needs the base BEFORE Start as padding
-                    pad = fasta.fetch(chrom, start - 2, start - 1).upper()
-                    if len(pad) != 1:
-                        n_skip_invalid += 1
-                        continue
-                    vcf_pos = start - 1
-                    vcf_ref = pad + ref
-                    vcf_alt = pad
-                elif ref == "-":
-                    # Insertion: ANNOVAR Start is the base BEFORE the insertion
-                    pad = fasta.fetch(chrom, start - 1, start).upper()
-                    if len(pad) != 1:
-                        n_skip_invalid += 1
-                        continue
-                    vcf_pos = start
-                    vcf_ref = pad
-                    vcf_alt = pad + alt
-                else:
-                    # Block substitution (uneven length, no '-')
-                    vcf_pos, vcf_ref, vcf_alt = start, ref, alt
-            except (KeyError, ValueError) as e:
-                n_skip_invalid += 1
-                continue
+            if ref != "-" and alt != "-" and len(ref) == len(alt):
+                # SNV / MNV — copy through
+                vcf_pos, vcf_ref, vcf_alt = start, ref, alt
+            elif alt == "-":
+                # Deletion: VCF needs the base BEFORE Start as padding
+                pad = fasta.fetch(chrom, start - 2, start - 1).upper()
+                if len(pad) != 1:
+                    n_skip_invalid += 1
+                    continue
+                vcf_pos = start - 1
+                vcf_ref = pad + ref
+                vcf_alt = pad
+            elif ref == "-":
+                # Insertion: ANNOVAR Start is the base BEFORE the insertion
+                pad = fasta.fetch(chrom, start - 1, start).upper()
+                if len(pad) != 1:
+                    n_skip_invalid += 1
+                    continue
+                vcf_pos = start
+                vcf_ref = pad
+                vcf_alt = pad + alt
+            else:
+                # Block substitution (uneven length, no '-')
+                vcf_pos, vcf_ref, vcf_alt = start, ref, alt
 
             fo.write(f"{chrom}\t{vcf_pos}\t.\t{vcf_ref}\t{vcf_alt}\t.\t.\t"
                      f"gnomAD_AF={af}\n")
@@ -151,19 +185,13 @@ def main() -> int:
                 print(f"[annovar→vcf] processed {n_in:>11,}  wrote {n_out:>11,}",
                       file=sys.stderr)
 
+    fasta.close()
     print(f"[annovar→vcf] read   {n_in:>11,} rows", file=sys.stderr)
     print(f"[annovar→vcf] wrote  {n_out:>11,} VCF lines", file=sys.stderr)
-    print(f"[annovar→vcf] skip AF{n_skip_af:>11,}", file=sys.stderr)
-    print(f"[annovar→vcf] skip indel{n_skip_indel:>8,}", file=sys.stderr)
-    print(f"[annovar→vcf] skip invalid{n_skip_invalid:>6,}", file=sys.stderr)
-
-    # Sort + bgzip + tabix via bcftools.
-    print(f"[annovar→vcf] sorting + bgzipping → {out_path}", file=sys.stderr)
-    subprocess.run(["bcftools", "sort", "--max-mem", "4G",
-                    str(tmp_vcf), "-Oz", "-o", str(out_path)], check=True)
-    subprocess.run(["bcftools", "index", "-t", "-f", str(out_path)], check=True)
-    tmp_vcf.unlink()
-    print(f"[annovar→vcf] done → {out_path}", file=sys.stderr)
+    print(f"[annovar→vcf] skip AF{n_skip_af:>12,}", file=sys.stderr)
+    print(f"[annovar→vcf] skip indel{n_skip_indel:>9,}", file=sys.stderr)
+    print(f"[annovar→vcf] skip invalid{n_skip_invalid:>7,}", file=sys.stderr)
+    print(f"[annovar→vcf] done (unsorted) → {out_path}", file=sys.stderr)
     return 0
 
 
