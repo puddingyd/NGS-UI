@@ -127,9 +127,15 @@ def run_vep(args, sites: Path, vep_out: Path) -> None:
 
 
 def _parse_csq_format(vcf_path: Path) -> list[str]:
-    """Read the ##INFO=<ID=CSQ,...,Format="A|B|C"> line and return the
-    pipe-separated field names so we can index by name."""
-    pat = re.compile(r'##INFO=<ID=CSQ,.*Format="([^"]+)"', re.IGNORECASE)
+    """Read the ##INFO=<ID=CSQ,...,Description="…Format: A|B|C">
+    line and return the pipe-separated field names so we can index by
+    name. VEP writes the field list *inside* the Description string
+    after a literal `Format: `, not as a separate ##INFO attribute.
+    """
+    pat = re.compile(
+        r'##INFO=<ID=CSQ,.*Description="[^"]*Format:\s*([^"]+)"',
+        re.IGNORECASE,
+    )
     with _open_vcf(vcf_path) as f:
         for line in f:
             if not line.startswith("#"):
