@@ -91,6 +91,7 @@ STAGE_DIR="$STAGE_HOME/$SID/04_snv_indel"
 mkdir -p "$STAGE_DIR"
 OUT="$STAGE_DIR/${SID}.ensemble.fixed.vcf.gz"
 TMP="$STAGE_DIR/.${SID}.stage.tmp.vcf"
+MID="$STAGE_DIR/.${SID}.stage.mid.vcf.gz"
 
 echo "[stage] in            : $IN"
 echo "[stage] out           : $OUT"
@@ -113,39 +114,52 @@ if [ "$N_SAMPLES" -ne 1 ]; then
 fi
 ORIG_SAMPLE=$(echo "$SAMPLES" | head -1)
 
-# Pipeline order:
-#   drop chrM → gene-body BED → norm → annotate gnomAD AF
-#   → drop where gnomAD AF > cutoff → reheader sample → out
 RENAME_TSV="$STAGE_DIR/.rename.tsv"
 printf "%s\t%s_DV\n" "$ORIG_SAMPLE" "$SID" > "$RENAME_TSV"
-
-BED_STEP=""
-[ "$SKIP_BED" -eq 0 ]  && BED_STEP="| bcftools view -T '$GENE_BED' -"
-NORM_STEP=""
-[ "$SKIP_NORM" -eq 0 ] && NORM_STEP="| bcftools norm -f '$REF_FASTA' -m -any --check-ref w --keep-sum AD"
-GNOMAD_STEP=""
-if [ "$SKIP_GNOMAD" -eq 0 ]; then
-  # Annotate first — adds INFO/gnomAD_AF when the variant matches a
-  # site in the gnomAD VCF; missing matches stay '.'. Then drop only
-  # where AF is *both* known and above cutoff (don't drop rare or
-  # unknown variants). Single-line: a literal newline here would
-  # truncate the surrounding pipe when GNOMAD_STEP is expanded.
-  GNOMAD_STEP="| bcftools annotate -a '$GNOMAD_AF_VCF' -c INFO/gnomAD_AF - | bcftools view -e 'INFO/gnomAD_AF > $GNOMAD_AF_CUTOFF'"
-fi
 
 BIND_DIRS="/home,$STAGE_HOME,$(dirname "$REF_FASTA"),$(dirname "$GENE_BED")"
 [ "$SKIP_GNOMAD" -eq 0 ] && BIND_DIRS="$BIND_DIRS,$(dirname "$GNOMAD_AF_VCF")"
 
-echo "[stage] piping: drop chrM → gene-body BED → norm → gnomAD filter → rename …"
+# Phase 1 — drop chrM + (optional) gene-body BED + (optional) norm.
+# Writes bgzipped intermediate. Splitting the pipeline at a real file
+# avoids the long-pipe failure modes htslib runs into ("not bgzip" /
+# "unknown file type") when many bcftools processes share a single
+# stdin chain in some container builds.
+echo "[stage] phase 1: drop chrM → gene-body BED → norm → bgzipped intermediate"
+BED_STEP=""
+[ "$SKIP_BED" -eq 0 ]  && BED_STEP="| bcftools view -T '$GENE_BED' -"
+NORM_STEP=""
+[ "$SKIP_NORM" -eq 0 ] && NORM_STEP="| bcftools norm -f '$REF_FASTA' -m -any --check-ref w --keep-sum AD"
 apptainer exec --bind "$BIND_DIRS" "$BCF_SIF" bash -c "
   set -e
   bcftools view --regions-overlap pos -t ^chrM,^MT '$IN' \
     $BED_STEP \
     $NORM_STEP \
-    $GNOMAD_STEP \
-    | bcftools reheader -s '$RENAME_TSV' \
-    > '$TMP'
+    -Oz -o '$MID'
+  bcftools index -t '$MID'
 "
+
+# Phase 2 — (optional) gnomAD AF annotate + drop common + reheader sample
+# columns, → final $TMP (uncompressed VCF; the synthesise-HC step
+# below works on text).
+echo "[stage] phase 2: gnomAD AF annotate + drop common + reheader → $TMP"
+if [ "$SKIP_GNOMAD" -eq 0 ]; then
+  apptainer exec --bind "$BIND_DIRS" "$BCF_SIF" bash -c "
+    set -e
+    bcftools annotate -a '$GNOMAD_AF_VCF' -c INFO/gnomAD_AF '$MID' \
+      | bcftools view -e 'INFO/gnomAD_AF > $GNOMAD_AF_CUTOFF' \
+      | bcftools reheader -s '$RENAME_TSV' \
+      > '$TMP'
+  "
+else
+  apptainer exec --bind "$BIND_DIRS" "$BCF_SIF" bash -c "
+    set -e
+    bcftools reheader -s '$RENAME_TSV' '$MID' \
+      | bcftools view \
+      > '$TMP'
+  "
+fi
+rm -f "$MID" "$MID.tbi"
 
 # 3. Append a synthetic ${SID}_HC sample column. We do this in pure
 #    awk — much cleaner than trying to splice a per-row FORMAT through
