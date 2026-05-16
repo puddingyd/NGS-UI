@@ -128,9 +128,9 @@ if [ "$SKIP_GNOMAD" -eq 0 ]; then
   # Annotate first — adds INFO/gnomAD_AF when the variant matches a
   # site in the gnomAD VCF; missing matches stay '.'. Then drop only
   # where AF is *both* known and above cutoff (don't drop rare or
-  # unknown variants).
-  GNOMAD_STEP="| bcftools annotate -a '$GNOMAD_AF_VCF' -c INFO/gnomAD_AF -
-               | bcftools view -e 'INFO/gnomAD_AF > $GNOMAD_AF_CUTOFF'"
+  # unknown variants). Single-line: a literal newline here would
+  # truncate the surrounding pipe when GNOMAD_STEP is expanded.
+  GNOMAD_STEP="| bcftools annotate -a '$GNOMAD_AF_VCF' -c INFO/gnomAD_AF - | bcftools view -e 'INFO/gnomAD_AF > $GNOMAD_AF_CUTOFF'"
 fi
 
 BIND_DIRS="/home,$STAGE_HOME,$(dirname "$REF_FASTA"),$(dirname "$GENE_BED")"
