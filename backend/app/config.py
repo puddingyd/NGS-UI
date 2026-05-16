@@ -132,3 +132,17 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
 # the repo. EMR endpoints are intranet-only so this is currently
 # secondary defense, not auth.
 EMR_CLIENT_ID = os.environ.get("NGS_UI_EMR_CLIENT_ID", "")
+
+# DRAGEN VCF roots scanned by /api/dragen/vcfs. Each entry is a path
+# (with shell globs) — files matching `*hard-filtered.vcf.gz` under any
+# of them show up as candidates in the 三級分析 modal. Override via env
+# (`:`-separated list of paths/globs) when DRAGEN deposits land
+# elsewhere.
+DRAGEN_VCF_ROOTS = [
+    Path(p) for p in os.environ.get(
+        "NGS_UI_DRAGEN_VCF_ROOTS",
+        "/home/datalake_Raw/Novaseq",
+    ).split(":") if p
+]
+DRAGEN_JOBS_DIR = DATA_ROOT / "jobs" / "dragen"
+DRAGEN_JOBS_DIR.mkdir(parents=True, exist_ok=True)
