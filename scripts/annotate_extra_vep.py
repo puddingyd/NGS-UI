@@ -90,12 +90,20 @@ def run_vep(args, sites: Path, vep_out: Path) -> None:
     """Invoke vep via apptainer with the minimal set of plugins we need."""
     dbnsfp_fields = ",".join(EXTRA_DBNSFP_FIELDS)
     plugin_args = [f"--plugin", f"dbNSFP,{args.dbnsfp},{dbnsfp_fields}"]
+    binds = [args.ref_dir, str(sites.parent), str(Path(args.dbnsfp).parent)]
     if args.spliceai_snv and args.spliceai_indel:
         plugin_args += ["--plugin",
                         f"SpliceAI,snv={args.spliceai_snv},indel={args.spliceai_indel}"]
+        # SpliceAI scores may live outside ref_dir (e.g. user's home);
+        # bind the parents so the container can read them.
+        binds.append(str(Path(args.spliceai_snv).parent))
+        binds.append(str(Path(args.spliceai_indel).parent))
+    # Dedup binds, preserve order.
+    seen = set()
+    binds = [b for b in binds if not (b in seen or seen.add(b))]
     cmd = [
         "apptainer", "exec",
-        "--bind", f"{args.ref_dir},{sites.parent},{Path(args.dbnsfp).parent}",
+        "--bind", ",".join(binds),
         args.vep_sif,
         "vep",
         "--input_file",  str(sites),
