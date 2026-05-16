@@ -1808,3 +1808,84 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .cnv-sv-cluster-alts > summary:hover { color: var(--fg); }
 .cnv-sv-cluster-alt-body { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .cnv-sv-card.cnv-sv-cluster-alt { opacity: 0.92; }
+
+/* ─── 三級分析 modal (DRAGEN VCF kicker) ───────────────────── */
+.topbar-job-status {
+  font-size: 12px;
+  margin-left: 8px;
+  cursor: pointer;
+  font-weight: normal;
+  color: #c8d0d8;
+}
+.topbar-job-status:hover { color: #fff; }
+
+#dragen-modal .modal-card-wide { max-width: 720px; }
+.dragen-form { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 12px; }
+.dragen-form-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dragen-form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.dragen-form-label-sub {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 80px;
+}
+.dragen-extra-toggle { /* same chip style as the In panel only toggle */ }
+.dragen-select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.dragen-sample-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dragen-sample-row input {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.dragen-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.dragen-job-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  margin-top: 6px;
+}
+.dragen-job-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.dragen-job-log {
+  background: #1f2328;
+  color: #e6edf3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border-radius: 6px;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre;
+  margin: 0;
+}

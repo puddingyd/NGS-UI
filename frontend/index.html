@@ -11,11 +11,14 @@
     <button id="btn-sidebar-toggle" class="btn-icon" type="button" aria-label="切換選單" aria-expanded="true">
       <span class="hamburger"></span>
     </button>
-    <h1>成大醫院基因醫學部 NGS 分析平台</h1>
+    <h1>成大醫院基因醫學部 NGS 分析平台
+      <span id="topbar-job-status" class="muted topbar-job-status" hidden></span>
+    </h1>
     <div class="topbar-actions">
       <span id="topbar-user" class="muted" hidden></span>
       <button id="btn-logout" class="btn btn-ghost" hidden>登出</button>
       <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
+      <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
       <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" hidden />
     </div>
@@ -464,6 +467,43 @@
         <button type="button" class="btn btn-ghost" data-close="gene-search-modal">關閉</button>
       </div>
       <div id="gene-search-results"></div>
+    </div>
+  </div>
+
+  <!-- 三級分析 — DRAGEN VCF → mito + SNV/Indel + CNV/SV chain.
+       Lists *.hard-filtered.vcf.gz under NGS_UI_DRAGEN_VCF_ROOTS,
+       reviewer picks one, kicks off the worker. Progress shows up in
+       the topbar (.topbar-job-status) and in the log pane here. -->
+  <div id="dragen-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide">
+      <h2>三級分析</h2>
+      <div class="dragen-form">
+        <div class="dragen-form-row">
+          <label class="dragen-form-label">Dragen VCF</label>
+          <label class="filter-toggle dragen-extra-toggle" title="勾選 → 跑完主 pipeline 後額外用 VEP 補 MetaRNN + SpliceAI 兩欄">
+            <input id="dragen-extra-vep" type="checkbox" checked />
+          </label>
+        </div>
+        <select id="dragen-vcf-select" class="dragen-select">
+          <option value="">— 載入中… —</option>
+        </select>
+        <div class="dragen-sample-row">
+          <label for="dragen-sample-id" class="dragen-form-label-sub">Sample ID</label>
+          <input id="dragen-sample-id" type="text" placeholder="自動從 VCF 檔名抽出" />
+        </div>
+        <div class="dragen-actions">
+          <button id="dragen-start-btn" class="btn btn-primary" type="button">開始分析</button>
+          <button type="button" class="btn btn-ghost" data-close="dragen-modal">關閉</button>
+        </div>
+      </div>
+      <div id="dragen-job-panel" class="dragen-job-panel" hidden>
+        <div class="dragen-job-head">
+          <strong>進度</strong>
+          <span id="dragen-job-step" class="muted"></span>
+          <span id="dragen-job-state" class="muted"></span>
+        </div>
+        <pre id="dragen-job-log" class="dragen-job-log"></pre>
+      </div>
     </div>
   </div>
 

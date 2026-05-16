@@ -1165,6 +1165,8 @@ function setLoggedInUser(username) {
   }
   const up = document.getElementById("btn-upload-list");
   if (up) up.hidden = !username;
+  const dr = document.getElementById("btn-dragen-launch");
+  if (dr) dr.hidden = !username;
   // #btn-phenotype-tool is intentionally always visible — the HPO/panel
   // tool needs no login (it runs on the intranet), so the link stays
   // reachable even before sign-in.
@@ -5732,3 +5734,175 @@ function maybeShowVersionPicker(onPick) {
   document.addEventListener("mousedown", hide, true);
   window.addEventListener("scroll", hide, true);
 })();
+
+// ─────────────────────────────────────────────────────────────────
+// 三級分析 — DRAGEN VCF kicker (UI for /api/dragen/*)
+//
+// Button on the topbar opens a modal listing every hard-filtered
+// VCF found under the server's DRAGEN_VCF_ROOTS, reviewer picks
+// one and clicks 開始分析. Backend spawns a worker process
+// (mito → stage → nextflow → run_stopgaps). We poll
+// /api/dragen/jobs/{job_id} every 5 s and reflect the current
+// step in (a) the modal log pane and (b) a small grey status
+// label next to the "成大醫院基因醫學部 NGS 分析平台" title.
+// ─────────────────────────────────────────────────────────────────
+
+const _DRAGEN_STATE = {
+  vcfs: [],
+  job: null,            // current job state, polled
+  pollTimer: null,
+};
+
+function _dragenFmtSize(b) {
+  if (!b) return "—";
+  const u = ["B","KB","MB","GB","TB"];
+  let i = 0, x = b;
+  while (x >= 1024 && i < u.length - 1) { x /= 1024; i++; }
+  return `${x.toFixed(x < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
+}
+
+function _dragenFmtMtime(t) {
+  if (!t) return "";
+  try { return new Date(t * 1000).toISOString().slice(0, 16).replace("T", " "); }
+  catch { return ""; }
+}
+
+async function loadDragenVcfList() {
+  const sel = document.getElementById("dragen-vcf-select");
+  if (!sel) return;
+  sel.innerHTML = `<option value="">— 載入中… —</option>`;
+  try {
+    const vcfs = await apiFetch("/dragen/vcfs") || [];
+    _DRAGEN_STATE.vcfs = vcfs;
+    if (!vcfs.length) {
+      sel.innerHTML = `<option value="">（找不到 *.hard-filtered.vcf.gz）</option>`;
+      return;
+    }
+    sel.innerHTML = `<option value="">— 請選擇 —</option>` + vcfs.map(v => {
+      const label = `${v.sample_id} · ${v.run || ""} · ${_dragenFmtSize(v.size)} · ${_dragenFmtMtime(v.mtime)}`;
+      return `<option value="${escapeAttr(v.path)}" data-sid="${escapeAttr(v.sample_id)}">${escapeHtml(label)}</option>`;
+    }).join("");
+  } catch (e) {
+    sel.innerHTML = `<option value="">（載入失敗：${escapeHtml(String(e))}）</option>`;
+  }
+}
+
+function _dragenSetJob(state) {
+  _DRAGEN_STATE.job = state;
+  // Topbar status
+  const top = document.getElementById("topbar-job-status");
+  if (top) {
+    if (!state || state.state === "done" || state.state === "failed" || state.state === "cancelled") {
+      top.hidden = true;
+      top.textContent = "";
+    } else {
+      top.hidden = false;
+      top.textContent = `· 三級分析: ${state.sample_id} (${state.step})`;
+    }
+  }
+  // Modal panel
+  const panel = document.getElementById("dragen-job-panel");
+  const stepEl  = document.getElementById("dragen-job-step");
+  const stateEl = document.getElementById("dragen-job-state");
+  const logEl   = document.getElementById("dragen-job-log");
+  if (panel && state) {
+    panel.hidden = false;
+    if (stepEl)  stepEl.textContent  = `step: ${state.step || ""}`;
+    if (stateEl) stateEl.textContent = state.error
+      ? `state: failed — ${state.error}`
+      : `state: ${state.state}`;
+    if (logEl)   logEl.textContent   = state.log_tail || "";
+    if (logEl)   logEl.scrollTop     = logEl.scrollHeight;
+  }
+}
+
+function _dragenStartPolling(jobId) {
+  if (_DRAGEN_STATE.pollTimer) clearInterval(_DRAGEN_STATE.pollTimer);
+  const tick = async () => {
+    try {
+      const s = await apiFetch(`/dragen/jobs/${encodeURIComponent(jobId)}`);
+      if (!s) return;
+      _dragenSetJob(s);
+      if (s.state === "done" || s.state === "failed" || s.state === "cancelled") {
+        clearInterval(_DRAGEN_STATE.pollTimer);
+        _DRAGEN_STATE.pollTimer = null;
+        // Refresh sample list so the new SID appears in the combobox.
+        try { await loadIndex?.(); } catch (_e) {}
+      }
+    } catch (_e) {}
+  };
+  tick();
+  _DRAGEN_STATE.pollTimer = setInterval(tick, 5000);
+}
+
+async function _dragenRecoverActiveJob() {
+  // On page load — if a job is still running in the backend, surface
+  // it in the topbar (so the user sees their previous run continuing).
+  try {
+    const jobs = await apiFetch("/dragen/jobs") || [];
+    const active = jobs.find(j => j.state === "queued" || j.state === "running");
+    if (active?.job_id) _dragenStartPolling(active.job_id);
+  } catch (_e) {}
+}
+
+async function _dragenStart() {
+  const sel = document.getElementById("dragen-vcf-select");
+  const sidIn = document.getElementById("dragen-sample-id");
+  const extra = document.getElementById("dragen-extra-vep");
+  const path = sel?.value || "";
+  if (!path) { alert("請先選一個 VCF"); return; }
+  const opt = sel.options[sel.selectedIndex];
+  const sid = (sidIn?.value || opt?.dataset.sid || "").trim();
+  if (!sid) { alert("Sample ID 必填"); return; }
+  const body = {
+    vcf_path:       path,
+    sample_id:      sid,
+    with_extra_vep: !!extra?.checked,
+  };
+  const btn = document.getElementById("dragen-start-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "啟動中…"; }
+  try {
+    const r = await fetch(`${API_BASE}/dragen/jobs`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const { job_id } = await r.json();
+    _dragenStartPolling(job_id);
+  } catch (e) {
+    alert("啟動失敗：" + (e?.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "開始分析"; }
+  }
+}
+
+function setupDragenButton() {
+  const btn = document.getElementById("btn-dragen-launch");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    await loadDragenVcfList();
+    showModal("dragen-modal");
+  });
+  const sel = document.getElementById("dragen-vcf-select");
+  if (sel) {
+    sel.addEventListener("change", () => {
+      const opt = sel.options[sel.selectedIndex];
+      const sidIn = document.getElementById("dragen-sample-id");
+      if (sidIn && opt?.dataset?.sid) sidIn.value = opt.dataset.sid;
+    });
+  }
+  document.getElementById("dragen-start-btn")?.addEventListener("click", _dragenStart);
+  // Click on the topbar status label opens the modal too.
+  document.getElementById("topbar-job-status")?.addEventListener("click", () => {
+    showModal("dragen-modal");
+  });
+  // On page load, see if a job is already running on the backend.
+  _dragenRecoverActiveJob();
+}
+
+// Wire it up at boot — sits alongside setupCombobox / setupGeneSearch.
+document.addEventListener("DOMContentLoaded", () => {
+  try { setupDragenButton(); } catch (_e) {}
+});
