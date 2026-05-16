@@ -29,8 +29,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
+
+_VALID_BASES = re.compile(r"^[ACGTNacgtn]+$")
+
+
+def _is_valid_seq(s: str) -> bool:
+    return bool(_VALID_BASES.match(s))
 
 
 class FastaRandom:
@@ -123,6 +130,11 @@ def main() -> int:
               f"(of {len(header_cols)} cols)", file=sys.stderr)
 
         fo.write("##fileformat=VCFv4.2\n")
+        # ##contig lines from the .fai index — bcftools sort needs these
+        # to validate the input; without them you get cryptic
+        # "Contig 'chr1' is not defined" errors mid-sort.
+        for chrom, (length, _, _, _) in fasta.index.items():
+            fo.write(f"##contig=<ID={chrom},length={length}>\n")
         fo.write('##INFO=<ID=gnomAD_AF,Number=1,Type=Float,'
                  'Description="gnomAD v4.1 allele frequency (from ANNOVAR txt)">\n')
         fo.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
@@ -151,6 +163,14 @@ def main() -> int:
             is_indel = (ref == "-" or alt == "-" or len(ref) != len(alt))
             if args.snv_only and is_indel:
                 n_skip_indel += 1
+                continue
+
+            # Sanity-check that the alleles are plain DNA (ANNOVAR's
+            # gnomAD usually clean, but the occasional N or weird char
+            # makes bcftools sort error out unhelpfully).
+            if (ref != "-" and not _is_valid_seq(ref)) or \
+               (alt != "-" and not _is_valid_seq(alt)):
+                n_skip_invalid += 1
                 continue
 
             if ref != "-" and alt != "-" and len(ref) == len(alt):
