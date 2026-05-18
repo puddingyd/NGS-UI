@@ -104,7 +104,67 @@ run_annotsv() {
   echo "[annotsv] $kind → $dst  ($n rows)"
 }
 
+# DRAGEN's cnv_sv.vcf.gz from the Manta-style SV caller also re-calls
+# the large DEL/DUP that the dedicated CNV caller emits. Annotating
+# both as-is duplicates events between the GUI's CNV and SV cards.
+# Pre-filter cnv_sv to drop any record whose (CHROM, POS, INFO/END,
+# INFO/SVTYPE) already appears in cnv.vcf.gz; BND breakpoints have
+# SVTYPE=BND so they never collide and stay in SV. The filtered VCF
+# is what AnnotSV actually sees, so ranking_score isn't polluted.
+subtract_cnv_from_sv() {
+  local cnv="$1" sv="$2" out="$3"
+  [ -f "$cnv" ] && [ -f "$sv" ] || return 1
+  local keys
+  keys=$(mktemp --suffix=.keys.tsv)
+  zcat "$cnv" | awk -F'\t' '
+    /^#/ { next }
+    {
+      end=""; svt=""
+      n=split($8, kv, ";")
+      for (i=1;i<=n;i++) {
+        if (kv[i] ~ /^END=/)    { end=kv[i];  sub(/^END=/,    "", end)  }
+        if (kv[i] ~ /^SVTYPE=/) { svt=kv[i];  sub(/^SVTYPE=/, "", svt)  }
+      }
+      print $1 "\t" $2 "\t" end "\t" svt
+    }
+  ' > "$keys"
+  local n_cnv n_sv n_kept
+  n_cnv=$(wc -l < "$keys")
+  n_sv=$(zcat "$sv" | awk '!/^#/' | wc -l)
+  zcat "$sv" | awk -F'\t' -v kf="$keys" '
+    BEGIN {
+      while ((getline line < kf) > 0) keys[line] = 1
+      close(kf)
+    }
+    /^#/ { print; next }
+    {
+      end=""; svt=""
+      n=split($8, kv, ";")
+      for (i=1;i<=n;i++) {
+        if (kv[i] ~ /^END=/)    { end=kv[i];  sub(/^END=/,    "", end)  }
+        if (kv[i] ~ /^SVTYPE=/) { svt=kv[i];  sub(/^SVTYPE=/, "", svt)  }
+      }
+      key = $1 "\t" $2 "\t" end "\t" svt
+      if (!(key in keys)) print
+    }
+  ' > "$out"
+  n_kept=$(awk '!/^#/' "$out" | wc -l)
+  rm -f "$keys"
+  echo "[annotsv] sv-pre-filter: cnv keys=$n_cnv, cnv_sv rows=$n_sv → kept=$n_kept (dropped $((n_sv - n_kept)) duplicates)"
+}
+
+# Process CNV first (it's the keys source). Then pre-filter cnv_sv
+# against those keys and annotate the SV-only remainder.
 run_annotsv "$CNV_VCF" cnv
-run_annotsv "$SV_VCF"  sv
+
+if [ -f "$CNV_VCF" ] && [ -f "$SV_VCF" ]; then
+  SV_ONLY="$OUT_DIR/.${SID}.sv_only.vcf"
+  subtract_cnv_from_sv "$CNV_VCF" "$SV_VCF" "$SV_ONLY"
+  run_annotsv "$SV_ONLY" sv
+  rm -f "$SV_ONLY"
+else
+  # No CNV VCF to subtract against — annotate cnv_sv as-is.
+  run_annotsv "$SV_VCF"  sv
+fi
 
 ls -la "$OUT_DIR"/{cnv,sv}.annotated.tsv 2>/dev/null || true
