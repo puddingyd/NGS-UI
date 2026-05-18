@@ -12,3 +12,4 @@ data/
 patient_list/
 phenotype_data/
 _index.json
+secrets.env

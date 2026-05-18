@@ -31,6 +31,30 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _load_secrets() -> None:
+    """Populate os.environ from $NGS_UI_HOME/secrets.env if present.
+
+    uvicorn runs under systemd and doesn't inherit interactive shell
+    `export`s, so subprocess steps that need GENEBE_USER / GENEBE_API_KEY
+    fail unless they come from somewhere outside the repo. The file is
+    plain KEY=VAL lines (no quoting, no expansion), git-ignored, mode
+    0600 — populated once by the operator. Values already in
+    os.environ win (systemd Environment= can still override).
+    """
+    path = NGS_UI_HOME / "secrets.env"
+    if not path.is_file():
+        return
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if k and k not in os.environ:
+            os.environ[k] = v
+
+
 def _update(job_id: str, **kw) -> None:
     st = dragen_jobs.load_state(job_id) or {}
     st.update(kw)
@@ -57,6 +81,8 @@ def main() -> int:
     ap.add_argument("--sample", required=True)
     ap.add_argument("--with-extra-vep", action="store_true")
     args = ap.parse_args()
+
+    _load_secrets()
 
     job_id = args.job_id
     vcf    = args.vcf
