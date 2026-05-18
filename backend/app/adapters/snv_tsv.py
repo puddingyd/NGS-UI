@@ -34,7 +34,9 @@ EXCLUDED_GENES = {
     "ATN1", "ATXN1", "ATXN2", "ATXN3", "ATXN7",
     "HTT", "TBP", "ZFHX3", "THAP11", "JPH3", "PABPN1",
     # HLA — haplotype-level, separate workflow
-    "HLA-A", "HLA-B",
+    "HLA-A", "HLA-B", "HLA-C",
+    "HLA-DQA1", "HLA-DQB1", "HLA-DRB1",
+    "HLA-DPA1", "HLA-DPB1",
 }
 
 # Conflicting ClinVar interpretations are only worth surfacing in
