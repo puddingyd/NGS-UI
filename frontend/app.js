@@ -5748,7 +5748,8 @@ function maybeShowVersionPicker(onPick) {
 // ─────────────────────────────────────────────────────────────────
 
 const _DRAGEN_STATE = {
-  vcfs: [],
+  mode: "dragen",       // dragen | inhouse
+  index: null,          // {meta, dragen: [...], inhouse: [...]}
   job: null,            // current job state, polled
   pollTimer: null,
 };
@@ -5767,21 +5768,84 @@ function _dragenFmtMtime(t) {
   catch { return ""; }
 }
 
-async function loadDragenVcfList() {
+function _dragenCurrentList() {
+  const idx = _DRAGEN_STATE.index;
+  if (!idx) return [];
+  return (_DRAGEN_STATE.mode === "inhouse" ? idx.inhouse : idx.dragen) || [];
+}
+
+function _dragenRenderMeta() {
+  const el = document.getElementById("dragen-index-meta");
+  if (!el) return;
+  const m = _DRAGEN_STATE.index?.meta;
+  if (!m || !m.updated_at) { el.textContent = ""; return; }
+  const when = new Date(m.updated_at).toLocaleString();
+  const counts = `dragen: ${m.dragen_count} · in-house: ${m.inhouse_count}`;
+  const stale = m.stale ? "（已過期，自動背景刷新中）" : "";
+  el.textContent = `上次更新 ${when}  ·  ${counts}  ${stale}`;
+}
+
+function _dragenRenderSiblings() {
+  const box = document.getElementById("dragen-siblings");
+  if (!box) return;
+  const sel = document.getElementById("dragen-vcf-select");
+  if (_DRAGEN_STATE.mode !== "inhouse" || !sel?.value) {
+    box.hidden = true; box.innerHTML = ""; return;
+  }
+  const list = _dragenCurrentList();
+  const row = list.find(v => v.path === sel.value);
+  if (!row) { box.hidden = true; return; }
+  const line = (key, path) => {
+    const cls = path ? "sib-ok" : "sib-miss";
+    const txt = path ? path : "（缺）";
+    return `<div class="sib-line"><span class="sib-key">${key}</span><span class="${cls}">${escapeHtml(txt)}</span></div>`;
+  };
+  box.innerHTML = [
+    line("CNV (gcnv)",  row.cnv_vcf),
+    line("SV  (delly)", row.sv_vcf),
+    line("Mito",        row.mito_vcf),
+  ].join("");
+  box.hidden = false;
+}
+
+function _dragenRenderList() {
+  const sel = document.getElementById("dragen-vcf-select");
+  const label = document.getElementById("dragen-vcf-label");
+  if (!sel) return;
+  const list = _dragenCurrentList();
+  if (label) {
+    label.textContent = _DRAGEN_STATE.mode === "inhouse"
+      ? "Ensemble VCF" : "Dragen VCF";
+  }
+  if (!list.length) {
+    const hint = _DRAGEN_STATE.mode === "inhouse"
+      ? "（找不到 04_snv_indel/*.ensemble.fixed.vcf.gz — 試試 🔄 更新索引）"
+      : "（找不到 *.hard-filtered.vcf.gz — 試試 🔄 更新索引）";
+    sel.innerHTML = `<option value="">${hint}</option>`;
+    _dragenRenderSiblings();
+    return;
+  }
+  sel.innerHTML = `<option value="">— 請選擇 —</option>` + list.map(v => {
+    const label = `${v.sample_id} · ${v.run || ""} · ${_dragenFmtSize(v.size)} · ${_dragenFmtMtime(v.mtime)}`;
+    return `<option value="${escapeAttr(v.path)}" data-sid="${escapeAttr(v.sample_id)}">${escapeHtml(label)}</option>`;
+  }).join("");
+  _dragenRenderSiblings();
+}
+
+async function loadDragenVcfList({ force = false } = {}) {
   const sel = document.getElementById("dragen-vcf-select");
   if (!sel) return;
+  if (!force && _DRAGEN_STATE.index) {
+    _dragenRenderList(); _dragenRenderMeta(); return;
+  }
   sel.innerHTML = `<option value="">— 載入中… —</option>`;
   try {
-    const vcfs = await apiFetch("/dragen/vcfs") || [];
-    _DRAGEN_STATE.vcfs = vcfs;
-    if (!vcfs.length) {
-      sel.innerHTML = `<option value="">（找不到 *.hard-filtered.vcf.gz）</option>`;
-      return;
-    }
-    sel.innerHTML = `<option value="">— 請選擇 —</option>` + vcfs.map(v => {
-      const label = `${v.sample_id} · ${v.run || ""} · ${_dragenFmtSize(v.size)} · ${_dragenFmtMtime(v.mtime)}`;
-      return `<option value="${escapeAttr(v.path)}" data-sid="${escapeAttr(v.sample_id)}">${escapeHtml(label)}</option>`;
-    }).join("");
+    const idx = await apiFetch(force ? "/dragen/index/refresh" : "/dragen/vcfs", {
+      method: force ? "POST" : "GET",
+    });
+    _DRAGEN_STATE.index = idx;
+    _dragenRenderList();
+    _dragenRenderMeta();
   } catch (e) {
     sel.innerHTML = `<option value="">（載入失敗：${escapeHtml(String(e))}）</option>`;
   }
@@ -5797,7 +5861,8 @@ function _dragenSetJob(state) {
       top.textContent = "";
     } else {
       top.hidden = false;
-      top.textContent = `· 三級分析: ${state.sample_id} (${state.step})`;
+      const mode = state.mode === "inhouse" ? "in-house" : "dragen";
+      top.textContent = `· 三級分析 [${mode}]: ${state.sample_id} (${state.step})`;
     }
   }
   // Modal panel
@@ -5846,19 +5911,29 @@ async function _dragenRecoverActiveJob() {
 }
 
 async function _dragenStart() {
-  const sel = document.getElementById("dragen-vcf-select");
+  const sel   = document.getElementById("dragen-vcf-select");
   const sidIn = document.getElementById("dragen-sample-id");
   const extra = document.getElementById("dragen-extra-vep");
-  const path = sel?.value || "";
+  const path  = sel?.value || "";
   if (!path) { alert("請先選一個 VCF"); return; }
   const opt = sel.options[sel.selectedIndex];
   const sid = (sidIn?.value || opt?.dataset.sid || "").trim();
   if (!sid) { alert("Sample ID 必填"); return; }
+  const mode = _DRAGEN_STATE.mode;
   const body = {
+    mode,
     vcf_path:       path,
     sample_id:      sid,
     with_extra_vep: !!extra?.checked,
   };
+  if (mode === "inhouse") {
+    const row = _dragenCurrentList().find(v => v.path === path);
+    if (row) {
+      body.cnv_vcf  = row.cnv_vcf  || "";
+      body.sv_vcf   = row.sv_vcf   || "";
+      body.mito_vcf = row.mito_vcf || "";
+    }
+  }
   const btn = document.getElementById("dragen-start-btn");
   if (btn) { btn.disabled = true; btn.textContent = "啟動中…"; }
   try {
@@ -5878,27 +5953,49 @@ async function _dragenStart() {
   }
 }
 
+function _dragenSuggestSid(vcfSid) {
+  // Append -dragen / -inhouse suffix unless the operator already added it.
+  if (!vcfSid) return "";
+  const suffix = _DRAGEN_STATE.mode === "inhouse" ? "-inhouse" : "-dragen";
+  return vcfSid.endsWith(suffix) ? vcfSid : `${vcfSid}${suffix}`;
+}
+
 function setupDragenButton() {
   const btn = document.getElementById("btn-dragen-launch");
   if (!btn) return;
   btn.addEventListener("click", async () => {
-    await loadDragenVcfList();
     showModal("dragen-modal");
+    await loadDragenVcfList();
   });
+  const modeSel = document.getElementById("dragen-mode-select");
+  if (modeSel) {
+    modeSel.addEventListener("change", () => {
+      _DRAGEN_STATE.mode = modeSel.value;
+      _dragenRenderList();
+      // Reset sample-id box so the new suffix can suggest itself
+      const sidIn = document.getElementById("dragen-sample-id");
+      if (sidIn) sidIn.value = "";
+    });
+  }
   const sel = document.getElementById("dragen-vcf-select");
   if (sel) {
     sel.addEventListener("change", () => {
       const opt = sel.options[sel.selectedIndex];
       const sidIn = document.getElementById("dragen-sample-id");
-      if (sidIn && opt?.dataset?.sid) sidIn.value = opt.dataset.sid;
+      if (sidIn && opt?.dataset?.sid) sidIn.value = _dragenSuggestSid(opt.dataset.sid);
+      _dragenRenderSiblings();
     });
   }
+  document.getElementById("dragen-refresh-btn")?.addEventListener("click", async (ev) => {
+    const b = ev.currentTarget;
+    if (b) { b.disabled = true; b.textContent = "🔄 更新中…"; }
+    try { await loadDragenVcfList({ force: true }); }
+    finally { if (b) { b.disabled = false; b.textContent = "🔄 更新索引"; } }
+  });
   document.getElementById("dragen-start-btn")?.addEventListener("click", _dragenStart);
-  // Click on the topbar status label opens the modal too.
   document.getElementById("topbar-job-status")?.addEventListener("click", () => {
     showModal("dragen-modal");
   });
-  // On page load, see if a job is already running on the backend.
   _dragenRecoverActiveJob();
 }
 

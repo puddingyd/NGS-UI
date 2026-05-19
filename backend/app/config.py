@@ -146,3 +146,27 @@ DRAGEN_VCF_ROOTS = [
 ]
 DRAGEN_JOBS_DIR = DATA_ROOT / "jobs" / "dragen"
 DRAGEN_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+
+# In-house Nextflow ensemble pipeline outputs scanned by
+# /api/dragen/vcfs under mode=inhouse. Per-sample layout:
+#   <root>/.../<SID>/04_snv_indel/<SID>.ensemble.fixed.vcf.gz
+#   <root>/.../<SID>/05_cnv_sv/<SID>.gcnv.vcf.gz
+#   <root>/.../<SID>/05_cnv_sv/<SID>.delly.vcf.gz
+#   <root>/.../<SID>/07_mitochondria/<SID>.mito.vcf.gz
+# Override via env (`:`-separated). The 三級分析 modal anchors on the
+# SNV/Indel VCF; the three siblings are discovered relative to it.
+INHOUSE_VCF_ROOTS = [
+    Path(p) for p in os.environ.get(
+        "NGS_UI_INHOUSE_VCF_ROOTS",
+        "/home/datalake_Intermediate/n102968:/home/datalake_Intermediate/NextSeq2000",
+    ).split(":") if p
+]
+
+# Cached scan results for both DRAGEN + in-house VCF discovery. find(1)
+# across the datalake can take 1–30 s; the modal reads this file
+# directly so it opens instantly. A 🔄 button POSTs to
+# /api/dragen/index/refresh to rescan on demand. The file is treated as
+# stale after PIPELINE_VCF_INDEX_TTL_HOURS so the modal kicks off a
+# background refresh on the next open.
+PIPELINE_VCF_INDEX_PATH = DATA_ROOT / "pipeline_vcf_index.json"
+PIPELINE_VCF_INDEX_TTL_HOURS = 24

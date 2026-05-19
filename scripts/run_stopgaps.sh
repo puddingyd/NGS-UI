@@ -9,9 +9,9 @@
 #   2. filter_snv_tsv.py        — filter MODIFIER / common / alt-contig / *
 #   3. annotate_acmg_genebe.py  — backfill ACMG_* via GeneBe REST
 #   4. annotate_extra_vep.py    — re-run VEP for MetaRNN (+ SpliceAI)
-#   5. annotate_dragen_cnv_annotsv.sh — DRAGEN <sample>.cnv.vcf.gz +
-#                                  cnv_sv.vcf.gz → AnnotSV TSV (only
-#                                  when --dragen-cnv-source supplied)
+#   5. AnnotSV CNV/SV — DRAGEN siblings (--dragen-cnv-source) or
+#                       in-house gcnv + delly (--inhouse-cnv-vcf /
+#                       --inhouse-sv-vcf). Skipped if none supplied.
 #
 # Steps 1-4 are idempotent fill-empty-only. Step 5 produces fresh
 # cnv.annotated.tsv / sv.annotated.tsv whenever DRAGEN CNV VCFs are
@@ -42,6 +42,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TSV=""
 SID=""
 DRAGEN_VCF=""
+INHOUSE_CNV_VCF=""
+INHOUSE_SV_VCF=""
 NO_BACKUP=0
 SKIP_SPLICEAI=0
 SKIP_EXTRA_VEP=0
@@ -53,6 +55,8 @@ while [ $# -gt 0 ]; do
     --tsv)                TSV="$2"; shift 2;;
     --sample)             SID="$2"; shift 2;;
     --dragen-cnv-source)  DRAGEN_VCF="$2"; shift 2;;
+    --inhouse-cnv-vcf)    INHOUSE_CNV_VCF="$2"; shift 2;;
+    --inhouse-sv-vcf)     INHOUSE_SV_VCF="$2"; shift 2;;
     --spliceai-snv)       SPLICEAI_SNV="$2"; shift 2;;
     --spliceai-indel)     SPLICEAI_INDEL="$2"; shift 2;;
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
@@ -119,23 +123,32 @@ else
   "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}"
 fi
 
-# 5. DRAGEN CNV/SV via AnnotSV. Only when --dragen-cnv-source supplied
-#    (i.e. we're processing a DRAGEN VCF whose <sample>.cnv.vcf.gz +
-#    cnv_sv.vcf.gz live in the same directory).
+# 5. CNV/SV via AnnotSV. Dispatch by which input flag was passed:
+#    --dragen-cnv-source           → DRAGEN sibling discovery + subtraction
+#    --inhouse-cnv-vcf / --sv-vcf  → explicit gcnv + delly files (no subtract)
+#    Otherwise skipped.
 SAMPLE_DIR="$(dirname "$TSV")"
 echo
-echo "[stopgaps] 5/5  annotate_dragen_cnv_annotsv.sh"
+echo "[stopgaps] 5/5  AnnotSV CNV/SV"
 if [ "$SKIP_CNV" -eq 1 ]; then
   echo "  - skipped (--skip-cnv)"
-elif [ -z "$DRAGEN_VCF" ]; then
-  echo "  - skipped (no --dragen-cnv-source)"
-elif [ ! -f "$DRAGEN_VCF" ]; then
-  echo "  - skipped (--dragen-cnv-source not found: $DRAGEN_VCF)"
-else
-  "$SCRIPT_DIR/annotate_dragen_cnv_annotsv.sh" \
-    --dragen-vcf "$DRAGEN_VCF" \
-    --sample "$SID" \
+elif [ -n "$DRAGEN_VCF" ]; then
+  if [ ! -f "$DRAGEN_VCF" ]; then
+    echo "  - skipped (--dragen-cnv-source not found: $DRAGEN_VCF)"
+  else
+    "$SCRIPT_DIR/annotate_dragen_cnv_annotsv.sh" \
+      --dragen-vcf "$DRAGEN_VCF" \
+      --sample "$SID" \
+      --out-dir "$SAMPLE_DIR"
+  fi
+elif [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; then
+  "$SCRIPT_DIR/annotate_inhouse_cnv_sv_annotsv.sh" \
+    --cnv-vcf "$INHOUSE_CNV_VCF" \
+    --sv-vcf  "$INHOUSE_SV_VCF" \
+    --sample  "$SID" \
     --out-dir "$SAMPLE_DIR"
+else
+  echo "  - skipped (no --dragen-cnv-source / --inhouse-*-vcf)"
 fi
 
 # Drop a copy at the GUI-expected path (no sample prefix).

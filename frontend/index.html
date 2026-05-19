@@ -18,7 +18,7 @@
       <span id="topbar-user" class="muted" hidden></span>
       <button id="btn-logout" class="btn btn-ghost" hidden>登出</button>
       <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
-      <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
+      <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 或 in-house ensemble Nextflow 輸出啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
       <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" hidden />
     </div>
@@ -479,17 +479,27 @@
       <h2>三級分析</h2>
       <div class="dragen-form">
         <div class="dragen-form-row">
-          <label class="dragen-form-label">Dragen VCF</label>
+          <label for="dragen-mode-select" class="dragen-form-label">Caller</label>
+          <select id="dragen-mode-select" class="dragen-mode-select">
+            <option value="dragen">DRAGEN germline</option>
+            <option value="inhouse">In-house ensemble</option>
+          </select>
           <label class="filter-toggle dragen-extra-toggle" title="勾選 → 跑完主 pipeline 後額外用 VEP 補 MetaRNN + SpliceAI 兩欄">
             <input id="dragen-extra-vep" type="checkbox" checked />
           </label>
         </div>
+        <div class="dragen-form-row dragen-vcf-row">
+          <label class="dragen-form-label" id="dragen-vcf-label">Dragen VCF</label>
+          <span id="dragen-index-meta" class="muted dragen-index-meta"></span>
+          <button id="dragen-refresh-btn" class="btn btn-ghost dragen-refresh-btn" type="button" title="重新掃描所有 root 目錄">🔄 更新索引</button>
+        </div>
         <select id="dragen-vcf-select" class="dragen-select">
           <option value="">— 載入中… —</option>
         </select>
+        <div id="dragen-siblings" class="dragen-siblings" hidden></div>
         <div class="dragen-sample-row">
           <label for="dragen-sample-id" class="dragen-form-label-sub">Sample ID</label>
-          <input id="dragen-sample-id" type="text" placeholder="自動從 VCF 檔名抽出" />
+          <input id="dragen-sample-id" type="text" placeholder="自動從 VCF 檔名抽出（in-house 會加上 -inhouse 後綴）" />
         </div>
         <div class="dragen-actions">
           <button id="dragen-start-btn" class="btn btn-primary" type="button">開始分析</button>

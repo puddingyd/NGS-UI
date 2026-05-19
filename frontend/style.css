@@ -1889,3 +1889,33 @@ body.sidebar-collapsed .container { margin-left: auto; }
   white-space: pre;
   margin: 0;
 }
+
+.dragen-mode-select {
+  padding: 4px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.dragen-vcf-row { justify-content: flex-start; }
+.dragen-index-meta {
+  font-size: 11px;
+  margin-left: auto;
+}
+.dragen-refresh-btn {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+.dragen-siblings {
+  background: #f6f8fa;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #555;
+}
+.dragen-siblings .sib-line { display: flex; gap: 6px; }
+.dragen-siblings .sib-key  { min-width: 64px; color: #777; }
+.dragen-siblings .sib-ok   { color: #1a7f37; }
+.dragen-siblings .sib-miss { color: #cf222e; }

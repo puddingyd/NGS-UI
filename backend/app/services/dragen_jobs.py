@@ -22,7 +22,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import DRAGEN_JOBS_DIR, DRAGEN_VCF_ROOTS, REPO_ROOT
+from ..config import (DRAGEN_JOBS_DIR, DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
+                       PIPELINE_VCF_INDEX_PATH,
+                       PIPELINE_VCF_INDEX_TTL_HOURS, REPO_ROOT)
 
 # Final pipeline steps, in order — the worker writes the current one
 # into state.json so the UI can show progress.
@@ -97,6 +99,126 @@ def list_dragen_vcfs() -> list[dict]:
                 })
     out.sort(key=lambda r: r["mtime"], reverse=True)
     return out
+
+
+_INHOUSE_SNV_REL = "04_snv_indel"
+_INHOUSE_SUFFIX_RE = re.compile(r"\.ensemble\.fixed\.vcf\.gz$", re.IGNORECASE)
+
+
+def _find_inhouse_snv_vcfs(root: Path) -> list[Path]:
+    """find(1) is 10-30x faster than pathlib.rglob across the datalake.
+
+    We only care about the SNV anchor; siblings are derived from its
+    path. Falls back to Python glob if `find` is missing.
+    """
+    if not root.is_dir():
+        return []
+    try:
+        proc = subprocess.run(
+            ["find", str(root), "-type", "f",
+             "-path", f"*/{_INHOUSE_SNV_REL}/*.ensemble.fixed.vcf.gz"],
+            check=False, capture_output=True, text=True,
+        )
+        if proc.returncode == 0:
+            return [Path(line) for line in proc.stdout.splitlines() if line]
+    except OSError:
+        pass
+    return list(root.glob(f"**/{_INHOUSE_SNV_REL}/*.ensemble.fixed.vcf.gz"))
+
+
+def list_inhouse_vcfs() -> list[dict]:
+    """Scan INHOUSE_VCF_ROOTS for in-house ensemble Nextflow outputs.
+
+    Anchor on the SNV/Indel VCF, then discover three siblings under the
+    sample dir. `run` is the parent-of-sample-dir basename (often a
+    batch / study id). Returns most-recent-first.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for root in INHOUSE_VCF_ROOTS:
+        for snv in _find_inhouse_snv_vcfs(root):
+            sp = str(snv)
+            if sp in seen or not snv.is_file():
+                continue
+            seen.add(sp)
+            sid = _INHOUSE_SUFFIX_RE.sub("", snv.name)
+            # snv = <root>/.../<run>/<SID>/04_snv_indel/<SID>.ensemble.fixed.vcf.gz
+            #       parents:  [0]=04_snv_indel  [1]=<SID>  [2]=<run>
+            sample_dir = snv.parents[1] if len(snv.parents) >= 2 else snv.parent
+            run = snv.parents[2].name if len(snv.parents) >= 3 else ""
+
+            def sib(rel: str) -> str:
+                p = sample_dir / rel
+                return str(p) if p.is_file() else ""
+
+            cnv  = sib(f"05_cnv_sv/{sid}.gcnv.vcf.gz")
+            sv   = sib(f"05_cnv_sv/{sid}.delly.vcf.gz")
+            mito = sib(f"07_mitochondria/{sid}.mito.vcf.gz")
+
+            try:
+                st = snv.stat()
+            except OSError:
+                continue
+            out.append({
+                "path":        sp,
+                "sample_id":   sid,
+                "sample_dir":  str(sample_dir),
+                "run":         run,
+                "cnv_vcf":     cnv,
+                "sv_vcf":      sv,
+                "mito_vcf":    mito,
+                "size":        st.st_size,
+                "mtime":       st.st_mtime,
+            })
+    out.sort(key=lambda r: r["mtime"], reverse=True)
+    return out
+
+
+# ── Pipeline VCF index ─────────────────────────────────────────────
+
+def load_index() -> dict | None:
+    p = PIPELINE_VCF_INDEX_PATH
+    if not p.is_file():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_index(idx: dict) -> None:
+    p = PIPELINE_VCF_INDEX_PATH
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(idx, ensure_ascii=False, indent=2),
+                   encoding="utf-8")
+    tmp.replace(p)
+
+
+def refresh_index() -> dict:
+    """Run both scans, persist results, return the new index."""
+    t0 = time.time()
+    dragen  = list_dragen_vcfs()
+    inhouse = list_inhouse_vcfs()
+    idx = {
+        "updated_at":        _now(),
+        "scan_duration_sec": round(time.time() - t0, 2),
+        "dragen":            dragen,
+        "inhouse":           inhouse,
+    }
+    save_index(idx)
+    return idx
+
+
+def index_is_stale(idx: dict | None) -> bool:
+    if not idx or not idx.get("updated_at"):
+        return True
+    try:
+        ts = datetime.fromisoformat(idx["updated_at"].replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+    return age_h >= PIPELINE_VCF_INDEX_TTL_HOURS
 
 
 # ── Job state I/O ──────────────────────────────────────────────────
@@ -198,13 +320,25 @@ def start_job(
     vcf_path: str,
     sample_id: str,
     *,
+    mode: str = "dragen",
     with_extra_vep: bool = True,
+    cnv_vcf: str = "",
+    sv_vcf: str = "",
+    mito_vcf: str = "",
 ) -> str:
-    """Spawn a detached worker that runs the DRAGEN chain end-to-end.
+    """Spawn a detached worker that runs the chosen pipeline chain.
+
+    mode = "dragen" → DRAGEN germline (single hard-filtered VCF; siblings
+                       cnv.vcf.gz / cnv_sv.vcf.gz auto-discovered).
+    mode = "inhouse" → in-house ensemble Nextflow output (vcf_path is the
+                       ensemble.fixed.vcf.gz; cnv_vcf / sv_vcf / mito_vcf
+                       are the explicit sibling paths from the index).
 
     Returns the job_id. The worker writes state.json + log.txt under
     DRAGEN_JOBS_DIR/<job_id>/; the route polls.
     """
+    if mode not in ("dragen", "inhouse"):
+        raise ValueError(f"unknown mode: {mode}")
     vcf = Path(vcf_path)
     if not vcf.is_file():
         raise FileNotFoundError(f"VCF not found: {vcf_path}")
@@ -217,9 +351,13 @@ def start_job(
 
     save_state(job_id, {
         "job_id":         job_id,
+        "mode":           mode,
         "vcf_path":       str(vcf),
         "sample_id":      sample_id,
         "with_extra_vep": with_extra_vep,
+        "cnv_vcf":        cnv_vcf,
+        "sv_vcf":         sv_vcf,
+        "mito_vcf":       mito_vcf,
         "state":          "queued",
         "step":           "queued",
         "created_at":     _now(),
@@ -234,9 +372,13 @@ def start_job(
         "--job-id",  job_id,
         "--vcf",     str(vcf),
         "--sample",  sample_id,
+        "--mode",    mode,
     ]
     if with_extra_vep:
         cmd.append("--with-extra-vep")
+    if cnv_vcf:  cmd += ["--cnv-vcf",  cnv_vcf]
+    if sv_vcf:   cmd += ["--sv-vcf",   sv_vcf]
+    if mito_vcf: cmd += ["--mito-vcf", mito_vcf]
 
     env = os.environ.copy()
     env.setdefault("PYTHONPATH", str(REPO_ROOT / "backend"))
