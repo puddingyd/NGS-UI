@@ -68,6 +68,16 @@ def get_patient_list():
     return patient_list_store.load_roster()
 
 
+@router.get("/patient_list/uploads")
+def get_patient_list_uploads():
+    """History of every successful 個案清單 ingest, latest first.
+
+    Each entry: {uploaded_at, original_filename, archive_name, parsed,
+    added, updated, total_after}. Powers the 上傳記錄 modal.
+    """
+    return patient_list_store.list_uploads()
+
+
 @router.post("/samples")
 def register_sample(
     lis_id:        str = Form(...),

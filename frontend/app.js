@@ -1116,20 +1116,68 @@ function setupGeneSearch() {
   });
 }
 
-// 上傳個案清單: pick an xlsx → POST /api/patient_list → toast the
-// {added, updated, total} result. The roster it builds is what the
-// 載入新個案 modal reads to auto-fill MRN / 姓名 / Test type.
+// 上傳個案清單: opens a modal listing past uploads + a button that
+// picks an xlsx → POST /api/patient_list → re-renders history. The
+// roster it builds is what the 載入新個案 modal reads to auto-fill
+// MRN / 姓名 / Test type.
+function _fmtUploadTime(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+async function _renderPatientListHistory() {
+  const host = document.getElementById("patient-list-history");
+  if (!host) return;
+  host.innerHTML = `<div class="muted">載入中…</div>`;
+  try {
+    const rows = await apiFetch("/patient_list/uploads") || [];
+    if (!rows.length) {
+      host.innerHTML = `<div class="muted" style="padding:10px">（尚無上傳記錄）</div>`;
+      return;
+    }
+    const head = `
+      <tr>
+        <th>時間</th>
+        <th>檔名</th>
+        <th class="num">解析</th>
+        <th class="num">新增</th>
+        <th class="num">更新</th>
+        <th class="num">roster</th>
+        <th>封存檔</th>
+      </tr>`;
+    const body = rows.map(r => `
+      <tr>
+        <td>${escapeHtml(_fmtUploadTime(r.uploaded_at))}</td>
+        <td class="fn" title="${escapeAttr(r.original_filename || "")}">${escapeHtml(r.original_filename || "—")}</td>
+        <td class="num">${r.parsed ?? "—"}</td>
+        <td class="num">${r.added ?? "—"}</td>
+        <td class="num">${r.updated ?? "—"}</td>
+        <td class="num">${r.total_after ?? "—"}</td>
+        <td class="fn muted" title="${escapeAttr(r.archive_name || "")}">${escapeHtml(r.archive_name || "—")}</td>
+      </tr>`).join("");
+    host.innerHTML = `<table>${head}${body}</table>`;
+  } catch (e) {
+    host.innerHTML = `<div class="muted" style="padding:10px">載入失敗：${escapeHtml(String(e))}</div>`;
+  }
+}
+
 function setupPatientListUpload() {
   const btn  = document.getElementById("btn-upload-list");
   const file = document.getElementById("upload-list-file");
+  const pick = document.getElementById("patient-list-pick-btn");
+  const status = document.getElementById("patient-list-status");
   if (!btn || !file) return;
-  btn.addEventListener("click", () => { file.value = ""; file.click(); });
+  btn.addEventListener("click", async () => {
+    showModal("patient-list-modal");
+    if (status) status.textContent = "";
+    await _renderPatientListHistory();
+  });
+  pick?.addEventListener("click", () => { file.value = ""; file.click(); });
   file.addEventListener("change", async () => {
     const f = file.files && file.files[0];
     if (!f) return;
-    const origLabel = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = "上傳中…";
+    if (pick) { pick.disabled = true; pick.textContent = "上傳中…"; }
+    if (status) status.textContent = "";
     try {
       const fd = new FormData();
       fd.append("file", f, f.name);
@@ -1141,15 +1189,13 @@ function setupPatientListUpload() {
       if (resp.status === 401) { showLoginModal(); throw new Error("尚未登入"); }
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
-      alert(`個案清單上傳完成\n\n解析 ${body.parsed} 筆 · 新增 ${body.added} · 更新 ${body.updated}\nroster 目前共 ${body.total} 筆`);
-      // Refresh the unregistered-sample cache so an open 載入新個案
-      // modal picks up the new MRN/name mappings next time it opens.
+      if (status) status.textContent = `✓ ${f.name}：解析 ${body.parsed} · 新增 ${body.added} · 更新 ${body.updated} · roster ${body.total}`;
       _unregisteredById = {};
+      await _renderPatientListHistory();
     } catch (e) {
-      alert("個案清單上傳失敗：" + (e.message || e));
+      if (status) status.textContent = "上傳失敗：" + (e.message || e);
     } finally {
-      btn.disabled = false;
-      btn.textContent = origLabel;
+      if (pick) { pick.disabled = false; pick.textContent = "選擇 xlsx 上傳"; }
     }
   });
 }

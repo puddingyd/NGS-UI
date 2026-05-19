@@ -30,12 +30,48 @@ from typing import Any
 from ..config import PATIENT_LIST_DIR
 
 _ROSTER_NAME = "roster.json"
+_UPLOADS_NAME = "uploads.json"
 _SPECIMEN_PREFIX = "8BB1"
 _HEADER_KEY = "檢體編號"     # the cell that marks the header row in col 0
 
 
 def _roster_path() -> Path:
     return PATIENT_LIST_DIR / _ROSTER_NAME
+
+
+def _uploads_path() -> Path:
+    return PATIENT_LIST_DIR / _UPLOADS_NAME
+
+
+def list_uploads() -> list[dict]:
+    """Read patient_list/uploads.json — append-only log of every
+    successful ingest. Latest first. Empty when nothing uploaded yet.
+    """
+    p = _uploads_path()
+    if not p.is_file():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            return []
+        return sorted(data, key=lambda r: r.get("uploaded_at", ""), reverse=True)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _append_upload(record: dict) -> None:
+    p = _uploads_path()
+    cur: list[dict] = []
+    if p.is_file():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                cur = data
+        except (json.JSONDecodeError, OSError):
+            cur = []
+    cur.append(record)
+    p.write_text(json.dumps(cur, ensure_ascii=False, indent=2),
+                 encoding="utf-8")
 
 
 def _now_iso() -> str:
@@ -202,6 +238,20 @@ def ingest_xlsx(content: bytes, original_filename: str) -> dict:
         json.dumps(roster, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    # Append to the upload-history log so reviewers can audit which xlsx
+    # was ingested when and what each batch contributed.
+    upload_record = {
+        "uploaded_at":       now,
+        "original_filename": original_filename or "",
+        "archive_name":      archive.name,
+        "parsed":            len(parsed),
+        "added":             added,
+        "updated":           updated,
+        "total_after":       len(roster),
+    }
+    _append_upload(upload_record)
+
     return {
         "added":        added,
         "updated":      updated,

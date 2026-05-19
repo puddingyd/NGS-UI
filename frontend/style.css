@@ -1919,3 +1919,43 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .dragen-siblings .sib-key  { min-width: 64px; color: #777; }
 .dragen-siblings .sib-ok   { color: #1a7f37; }
 .dragen-siblings .sib-miss { color: #cf222e; }
+
+/* ─── 上傳個案清單 modal ───────────────────────────────────── */
+#patient-list-modal .modal-card-wide { max-width: 820px; }
+.patient-list-form { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 12px; }
+.patient-list-actions { display: flex; align-items: center; gap: 10px; }
+.patient-list-history-title {
+  font-size: 13px;
+  margin: 8px 0 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.patient-list-history {
+  max-height: 380px;
+  overflow: auto;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.patient-list-history table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.patient-list-history th,
+.patient-list-history td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  white-space: nowrap;
+}
+.patient-list-history th {
+  position: sticky;
+  top: 0;
+  background: #f6f8fa;
+  font-weight: 600;
+  font-size: 11px;
+  color: #555;
+}
+.patient-list-history td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.patient-list-history td.fn  { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.patient-list-history tr:last-child td { border-bottom: none; }

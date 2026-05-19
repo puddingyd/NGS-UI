@@ -517,6 +517,26 @@
     </div>
   </div>
 
+  <!-- 上傳個案清單 modal: pick an xlsx, see history of past uploads -->
+  <div id="patient-list-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide">
+      <h2>上傳個案清單</h2>
+      <div class="patient-list-form">
+        <div class="patient-list-actions">
+          <button id="patient-list-pick-btn" class="btn btn-primary" type="button">選擇 xlsx 上傳</button>
+          <span id="patient-list-status" class="muted"></span>
+        </div>
+        <h3 class="patient-list-history-title">歷次上傳記錄</h3>
+        <div id="patient-list-history" class="patient-list-history">
+          <div class="muted">載入中…</div>
+        </div>
+        <div class="dragen-actions">
+          <button type="button" class="btn btn-ghost" data-close="patient-list-modal">關閉</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- jsPDF (used by exportScreeningReport — Chinese font fetched on demand) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script type="module" src="./app.js"></script>
