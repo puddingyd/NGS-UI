@@ -2,8 +2,9 @@
 # =========================================================
 # stage_dragen_for_tertiary.sh
 # =========================================================
-# Stage a DRAGEN germline hard-filter VCF so the existing tertiary
-# pipeline (which expects ensemble DV+HC input) accepts it. Does:
+# Stage a single-sample DRAGEN germline hard-filter VCF or an in-house
+# 2-sample ensemble VCF so the tertiary pipeline (which expects
+# ensemble DV+HC input) accepts it. Does:
 #
 #   1. Drop chrM rows (mtDNA is handled separately by
 #      scripts/annotate_mito_vcf.sh — DRAGEN's chrM calls have
@@ -13,10 +14,13 @@
 #      raw VCFs ship un-normalised; downstream tools (Pangolin
 #      especially) segfault on the corner cases (IUPAC bases, un-split
 #      multi-allelics, etc.).
-#   3. Reheader the single DRAGEN sample column to `${SID}_DV`.
-#   4. Append a synthetic `${SID}_HC` sample column populated with
-#      "./." for every row so PREPARE_VCF:ADD_CALLERS_TAG sees the
-#      expected (DV, HC) shape. CALLERS = DV everywhere (DRAGEN-only).
+#   3. Reheader sample columns to ${SID}_DV (+ ${SID}_HC):
+#      - 1-sample input (DRAGEN): rename the one column to ${SID}_DV,
+#        then append a synthetic ${SID}_HC column populated with "./."
+#        for every row so PREPARE_VCF:ADD_CALLERS_TAG sees the expected
+#        (DV, HC) shape. CALLERS = DV everywhere.
+#      - 2-sample input (in-house ensemble): both columns already
+#        carry the (DV, HC) shape; just rename to the new SID prefix.
 #   5. bgzip + tabix the result.
 #   6. Plant it at $STAGE_HOME/$SID/04_snv_indel/${SID}.ensemble.fixed.vcf.gz
 #      so the tertiary pipeline's `--input_dir $STAGE_HOME/$SID` finds
@@ -106,16 +110,41 @@ echo "[stage] sample        : $SID  (→ ${SID}_DV + empty ${SID}_HC)"
 # Inspect the input sample names
 SAMPLES=$(apptainer exec --bind /home,"$STAGE_HOME" "$BCF_SIF" \
   bcftools query -l "$IN")
-echo "[stage] input has $(echo "$SAMPLES" | wc -l) sample(s): $(echo "$SAMPLES" | tr '\n' ',' | sed 's/,$//')"
 N_SAMPLES=$(echo "$SAMPLES" | wc -l)
-if [ "$N_SAMPLES" -ne 1 ]; then
-  echo "ERROR: this stager only supports single-sample DRAGEN VCFs (got $N_SAMPLES)" >&2
-  exit 2
-fi
-ORIG_SAMPLE=$(echo "$SAMPLES" | head -1)
+echo "[stage] input has $N_SAMPLES sample(s): $(echo "$SAMPLES" | tr '\n' ',' | sed 's/,$//')"
 
 RENAME_TSV="$STAGE_DIR/.rename.tsv"
-printf "%s\t%s_DV\n" "$ORIG_SAMPLE" "$SID" > "$RENAME_TSV"
+: > "$RENAME_TSV"
+SYNTH_HC=0   # whether to append a synthetic ${SID}_HC column
+
+if [ "$N_SAMPLES" -eq 1 ]; then
+  # DRAGEN germline path — single sample becomes the DV column, HC
+  # synthesised below as missing rows.
+  ORIG_SAMPLE=$(echo "$SAMPLES" | head -1)
+  printf "%s\t%s_DV\n" "$ORIG_SAMPLE" "$SID" > "$RENAME_TSV"
+  SYNTH_HC=1
+elif [ "$N_SAMPLES" -eq 2 ]; then
+  # In-house ensemble path — VCF already carries (_DV, _HC) shape.
+  # Map by suffix so we don't depend on column order. If neither
+  # sample carries the suffix, fall back to position (1=DV, 2=HC).
+  S1=$(echo "$SAMPLES" | sed -n '1p')
+  S2=$(echo "$SAMPLES" | sed -n '2p')
+  case "$S1" in
+    *_DV) printf "%s\t%s_DV\n" "$S1" "$SID" >> "$RENAME_TSV" ;;
+    *_HC) printf "%s\t%s_HC\n" "$S1" "$SID" >> "$RENAME_TSV" ;;
+    *)    printf "%s\t%s_DV\n" "$S1" "$SID" >> "$RENAME_TSV" ;;
+  esac
+  case "$S2" in
+    *_DV) printf "%s\t%s_DV\n" "$S2" "$SID" >> "$RENAME_TSV" ;;
+    *_HC) printf "%s\t%s_HC\n" "$S2" "$SID" >> "$RENAME_TSV" ;;
+    *)    printf "%s\t%s_HC\n" "$S2" "$SID" >> "$RENAME_TSV" ;;
+  esac
+  echo "[stage] 2-sample input → rename map:"
+  sed 's/^/[stage]   /' "$RENAME_TSV"
+else
+  echo "ERROR: this stager supports 1- or 2-sample VCFs only (got $N_SAMPLES)" >&2
+  exit 2
+fi
 
 BIND_DIRS="/home,$STAGE_HOME,$(dirname "$REF_FASTA"),$(dirname "$GENE_BED")"
 [ "$SKIP_GNOMAD" -eq 0 ] && BIND_DIRS="$BIND_DIRS,$(dirname "$GNOMAD_AF_VCF")"
@@ -161,28 +190,31 @@ else
 fi
 rm -f "$MID" "$MID.tbi"
 
-# 3. Append a synthetic ${SID}_HC sample column. We do this in pure
-#    awk — much cleaner than trying to splice a per-row FORMAT through
-#    bcftools merge. For every data row append a tab + './.' + ':.' for
-#    each remaining FORMAT key (so column count stays valid). For the
-#    #CHROM header line append the new sample name.
-echo "[stage] appending synthetic ${SID}_HC column (all ./.) …"
-awk -v sid="$SID" '
-  BEGIN { OFS="\t" }
-  /^##/ { print; next }
-  /^#CHROM/ {
-    print $0 "\t" sid "_HC"; next
-  }
-  {
-    # Build a "missing" sample value matching the FORMAT field count.
-    # FORMAT is column 9, sample data starts at 10. We synthesise one
-    # extra column with "./." plus "." for each FORMAT key beyond GT.
-    n_fmt = split($9, fmt_arr, ":")
-    miss = "./."
-    for (i = 2; i <= n_fmt; i++) miss = miss ":."
-    print $0 "\t" miss
-  }
-' "$TMP" > "$TMP.synth"
+# 3. Append a synthetic ${SID}_HC sample column (DRAGEN single-sample
+#    case only). For in-house 2-sample input the column is already
+#    present; skip the awk step entirely.
+if [ "$SYNTH_HC" -eq 1 ]; then
+  echo "[stage] appending synthetic ${SID}_HC column (all ./.) …"
+  awk -v sid="$SID" '
+    BEGIN { OFS="\t" }
+    /^##/ { print; next }
+    /^#CHROM/ {
+      print $0 "\t" sid "_HC"; next
+    }
+    {
+      # Build a "missing" sample value matching the FORMAT field count.
+      # FORMAT is column 9, sample data starts at 10. Synthesise one
+      # extra column with "./." plus "." for each FORMAT key beyond GT.
+      n_fmt = split($9, fmt_arr, ":")
+      miss = "./."
+      for (i = 2; i <= n_fmt; i++) miss = miss ":."
+      print $0 "\t" miss
+    }
+  ' "$TMP" > "$TMP.synth"
+else
+  echo "[stage] 2-sample input — keeping ${SID}_DV + ${SID}_HC columns as-is"
+  mv "$TMP" "$TMP.synth"
+fi
 
 # 4. bgzip + tabix.
 echo "[stage] bgzip + tabix …"
