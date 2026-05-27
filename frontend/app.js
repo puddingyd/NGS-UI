@@ -488,12 +488,11 @@ function renderSampleMeta() {
   document.getElementById("m-test").value  = m.Test || "";
   document.getElementById("m-build").value = state.data.genome_build || "";
   document.getElementById("m-sex").value   = m.Sex || "";
-  // 科別 / 開單醫師 — combobox (input + datalist). Reviewer can pick
-  // a known value or type a new one. Options are fetched once on
-  // demand from /api/patient_list/options and cached.
-  document.getElementById("m-department").value = m.Department || "";
-  document.getElementById("m-physician").value  = m.Physician  || "";
-  _populateRosterOptions();
+  // 科別 / 開單醫師 — <select> populated from /api/patient_list/options
+  // (cached). Reviewer picks an existing value or "＋ 新增…" which
+  // prompts for a free-text value; the new value is added in-place
+  // and persisted via _saveSampleMeta.
+  _populateRosterOptions(m.Department || "", m.Physician || "");
 
   const sel = document.getElementById("m-category");
   const opts = (state.options && state.options.category_options) || [];
@@ -548,28 +547,69 @@ function _saveSampleMeta(patch) {
 }
 
 document.addEventListener("change", ev => {
-  if (ev.target.id === "m-test")       _saveSampleMeta({ test_type:    ev.target.value });
-  if (ev.target.id === "m-build")      _saveSampleMeta({ genome_build: ev.target.value });
-  if (ev.target.id === "m-sex")        _saveSampleMeta({ sex:          ev.target.value });
-  if (ev.target.id === "m-department") _saveSampleMeta({ department:   ev.target.value.trim() });
-  if (ev.target.id === "m-physician")  _saveSampleMeta({ physician:    ev.target.value.trim() });
+  if (ev.target.id === "m-test")  _saveSampleMeta({ test_type:    ev.target.value });
+  if (ev.target.id === "m-build") _saveSampleMeta({ genome_build: ev.target.value });
+  if (ev.target.id === "m-sex")   _saveSampleMeta({ sex:          ev.target.value });
+  if (ev.target.id === "m-department") _onRosterSelectChange("department", "科別");
+  if (ev.target.id === "m-physician")  _onRosterSelectChange("physician",  "開單醫師");
 });
+
+function _onRosterSelectChange(field, label) {
+  const sel = document.getElementById(`m-${field}`);
+  if (!sel) return;
+  if (sel.value === "__new__") {
+    const v = (prompt(`新增${label}：`, "") || "").trim();
+    if (!v) {
+      // Cancelled — revert to whatever was set when the sample loaded.
+      const m = state.data?.meta || {};
+      sel.value = field === "department" ? (m.Department || "") : (m.Physician || "");
+      return;
+    }
+    // Add the new value to the cached options + the live <select> so
+    // it's pickable next time without a roundtrip.
+    const bucket = field === "department" ? "departments" : "physicians";
+    _rosterOptions = _rosterOptions || { departments: [], physicians: [] };
+    if (!_rosterOptions[bucket].includes(v)) {
+      _rosterOptions[bucket] = [..._rosterOptions[bucket], v].sort();
+    }
+    const opt = document.createElement("option");
+    opt.value = v; opt.text = v;
+    sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
+    sel.value = v;
+    _saveSampleMeta({ [field]: v });
+  } else {
+    _saveSampleMeta({ [field]: sel.value });
+  }
+}
 
 // /api/patient_list/options returns {departments, physicians} unioned
 // across the roster. Cache on first fetch — refresh on each upload
 // (handled by setting _rosterOptions = null in the upload flow).
 let _rosterOptions = null;
-async function _populateRosterOptions() {
-  const deps = document.getElementById("m-department-options");
-  const docs = document.getElementById("m-physician-options");
+async function _populateRosterOptions(curDept, curPhys) {
+  const deps = document.getElementById("m-department");
+  const docs = document.getElementById("m-physician");
   if (!deps || !docs) return;
   if (_rosterOptions == null) {
     try { _rosterOptions = await apiFetch("/patient_list/options") || {}; }
     catch { _rosterOptions = {}; }
   }
-  const opts = (arr) => (arr || []).map(v => `<option value="${escapeAttr(v)}"></option>`).join("");
-  deps.innerHTML = opts(_rosterOptions.departments);
-  docs.innerHTML = opts(_rosterOptions.physicians);
+  const fill = (sel, opts, current) => {
+    // Always include the current value (even if it isn't in roster) so
+    // a manually-entered value survives a re-render.
+    const seen = new Set();
+    const items = ["", ...(opts || [])];
+    if (current && !items.includes(current)) items.push(current);
+    sel.innerHTML = items.map(v => {
+      if (seen.has(v)) return "";
+      seen.add(v);
+      const label = v === "" ? "—" : escapeHtml(v);
+      const sel_ = v === current ? "selected" : "";
+      return `<option value="${escapeAttr(v)}" ${sel_}>${label}</option>`;
+    }).join("") + `<option value="__new__">＋ 新增…</option>`;
+  };
+  fill(deps, _rosterOptions.departments, curDept || "");
+  fill(docs, _rosterOptions.physicians,  curPhys || "");
 }
 
 // Generic renderer for collapsible free-text cards (Clinical presentation,

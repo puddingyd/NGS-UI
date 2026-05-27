@@ -89,14 +89,12 @@
             <span id="m-name"></span>
             <button id="m-name-copy" class="btn-copy" type="button" title="複製姓名" hidden></button>
           </div>
-          <div>
+          <div class="m-mrn-cell">
             <span class="label">病歷號</span>
-            <span class="m-mrn-row">
-              <span id="m-mrn"></span>
-              <button id="m-mrn-copy" class="btn-copy" type="button" title="複製病歷號" hidden></button>
-              <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
-              <button id="btn-emr-sync" class="btn btn-link" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>EMR 同步</button>
-            </span>
+            <span id="m-mrn"></span>
+            <button id="m-mrn-copy" class="btn-copy" type="button" title="複製病歷號" hidden></button>
+            <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
+            <button id="btn-emr-sync" class="btn btn-link" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>EMR 同步</button>
           </div>
           <div>
             <span class="label">性別</span>
@@ -132,13 +130,11 @@
           </div>
           <div>
             <span class="label">科別</span>
-            <input id="m-department" class="meta-input" list="m-department-options" autocomplete="off" />
-            <datalist id="m-department-options"></datalist>
+            <select id="m-department" class="meta-select"></select>
           </div>
           <div>
             <span class="label">開單醫師</span>
-            <input id="m-physician" class="meta-input" list="m-physician-options" autocomplete="off" />
-            <datalist id="m-physician-options"></datalist>
+            <select id="m-physician" class="meta-select"></select>
           </div>
         </div>
       </div>
