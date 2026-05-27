@@ -17,11 +17,40 @@ router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(curren
 
 
 @router.get("/samples/{sample_id}/report.docx")
-def get_report_docx(sample_id: str):
+def get_report_docx(sample_id: str, gene_list_mode: str = "grouped"):
+    """Render the diagnostic report DOCX, save a copy to
+    NGS_UI/report/, and stream it back as a download.
+
+    `gene_list_mode` controls §五.4 「本次檢測基因包括」:
+      grouped (default) → one paragraph per HPO term / panel
+      merged            → single deduped flat list
+    """
+    if gene_list_mode not in ("grouped", "merged"):
+        gene_list_mode = "grouped"
     try:
-        blob = docx_export.build_diagnosis_docx(sample_id)
+        blob = docx_export.build_diagnosis_docx(
+            sample_id, gene_list_mode=gene_list_mode,
+        )
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+
+    # Archive: NGS_UI/report/{SID}_diagnosis_{YYYYMMDDTHHMMSSZ}.docx —
+    # reviewers can audit/redownload past renders without re-clicking
+    # 匯出. The latest copy is also dropped at {SID}_diagnosis.docx for
+    # easy linking from external tools.
+    from datetime import datetime, timezone
+    from ..config import REPORT_OUTPUT_DIR
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = REPORT_OUTPUT_DIR / f"{sample_id}_diagnosis_{ts}.docx"
+    latest  = REPORT_OUTPUT_DIR / f"{sample_id}_diagnosis.docx"
+    try:
+        archive.write_bytes(blob)
+        latest.write_bytes(blob)
+    except OSError:
+        # Disk write failure shouldn't prevent the download; the
+        # browser still gets the docx. Reviewer just loses the archive.
+        pass
+
     fname = quote(f"{sample_id}_diagnosis.docx")
     return Response(
         content=blob,

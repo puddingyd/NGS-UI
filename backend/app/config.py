@@ -29,6 +29,14 @@ TERTIARY_OUTPUT_ROOT = Path(os.environ.get(
     NGS_UI_HOME / "tertiary_output",
 ))
 
+# Generated docx reports — every export saves a copy here so reviewers
+# can re-download or audit past versions without re-running the report.
+REPORT_OUTPUT_DIR = Path(os.environ.get(
+    "NGS_UI_REPORT_DIR",
+    NGS_UI_HOME / "report",
+))
+REPORT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 DATA_ROOT = Path(os.environ.get(
     "NGS_UI_DATA_ROOT",
     NGS_UI_HOME / "data",

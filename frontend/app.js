@@ -1310,17 +1310,21 @@ async function handleLogin(ev) {
   }
 }
 
-// Download diagnostic DOCX. Streams from the backend so the user
-// just sees a normal browser save dialog. Filename comes from the
-// Content-Disposition header (RFC 5987 UTF-8 encoded).
+// Download diagnostic DOCX. First asks the reviewer how 「本次檢測
+// 基因包括」(§五.4) should be rendered — per-panel/HPO sections, or
+// a single deduped flat list. The backend saves an archived copy under
+// NGS_UI/report/ and also streams it back as a download.
 async function exportDiagnosticDocx() {
   if (!state.currentLIS) return;
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sid = row?.sample_id || state.currentLIS;
+
+  const mode = await _pickGeneListMode();
+  if (!mode) return;   // cancelled
+
   try {
-    const resp = await fetch(`${API_BASE}/samples/${encodeURIComponent(sid)}/report.docx`, {
-      credentials: "same-origin",
-    });
+    const url = `${API_BASE}/samples/${encodeURIComponent(sid)}/report.docx?gene_list_mode=${mode}`;
+    const resp = await fetch(url, { credentials: "same-origin" });
     if (resp.status === 401) { showLoginModal(); return; }
     if (!resp.ok) throw new Error(`匯出失敗 (${resp.status})`);
     const blob = await resp.blob();
@@ -1328,6 +1332,48 @@ async function exportDiagnosticDocx() {
   } catch (e) {
     alert("匯出失敗：" + e.message);
   }
+}
+
+// Small inline modal asking how the 檢測基因清單 should appear in §五.4.
+// Returns "grouped" | "merged" | null (cancelled).
+function _pickGeneListMode() {
+  return new Promise((resolve) => {
+    // One-shot modal — built on the fly, removed after pick.
+    const wrap = document.createElement("div");
+    wrap.className = "modal";
+    wrap.innerHTML = `
+      <div class="modal-card" style="max-width:520px">
+        <h2>匯出診斷報告</h2>
+        <p style="margin:8px 0 12px;font-size:13px;color:#555">
+          §五.4「本次檢測基因包括」要怎麼呈現？
+        </p>
+        <label class="gene-list-mode-opt" style="display:block;margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer">
+          <input type="radio" name="gene-list-mode" value="grouped" checked />
+          <strong>按 panel / HPO 分組</strong>
+          <div style="font-size:12px;color:#777;margin-left:22px">每一個 HPO term 或 panel 各自一段，標題後接該組基因清單</div>
+        </label>
+        <label class="gene-list-mode-opt" style="display:block;margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer">
+          <input type="radio" name="gene-list-mode" value="merged" />
+          <strong>全部合併（去重）</strong>
+          <div style="font-size:12px;color:#777;margin-left:22px">所有 HPO + panel 的基因取聯集，去重後列成一行</div>
+        </label>
+        <div class="dragen-actions" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="btn btn-ghost" data-act="cancel">取消</button>
+          <button type="button" class="btn btn-primary" data-act="ok">匯出</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    const finish = (val) => { document.body.removeChild(wrap); resolve(val); };
+    wrap.addEventListener("click", (ev) => {
+      if (ev.target === wrap) finish(null);
+      const act = ev.target?.dataset?.act;
+      if (act === "cancel") finish(null);
+      if (act === "ok") {
+        const sel = wrap.querySelector('input[name="gene-list-mode"]:checked');
+        finish(sel?.value || "grouped");
+      }
+    });
+  });
 }
 
 async function handleLogout() {
