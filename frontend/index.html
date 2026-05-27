@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NGS 分析系統</title>
+  <title>成大基醫部 NGS 分析平台</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
@@ -80,26 +80,26 @@
       <div class="sample-meta">
         <div class="sample-meta-row">
           <div>
-            <span class="label">LIS_ID</span>
+            <span class="label">檢體編號</span>
             <span id="m-lis"></span>
-            <button id="m-lis-copy" class="btn-copy" type="button" title="複製 LIS_ID" hidden></button>
+            <button id="m-lis-copy" class="btn-copy" type="button" title="複製檢體編號" hidden></button>
           </div>
           <div>
-            <span class="label">Name</span>
+            <span class="label">姓名</span>
             <span id="m-name"></span>
             <button id="m-name-copy" class="btn-copy" type="button" title="複製姓名" hidden></button>
           </div>
           <div>
-            <span class="label">MRN</span>
+            <span class="label">病歷號</span>
             <span class="m-mrn-row">
               <span id="m-mrn"></span>
-              <button id="m-mrn-copy" class="btn-copy" type="button" title="複製 MRN" hidden></button>
+              <button id="m-mrn-copy" class="btn-copy" type="button" title="複製病歷號" hidden></button>
               <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
               <button id="btn-emr-sync" class="btn btn-link" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>EMR 同步</button>
             </span>
           </div>
           <div>
-            <span class="label">Sex</span>
+            <span class="label">性別</span>
             <select id="m-sex" class="meta-select">
               <option value="">—</option>
               <option value="M">M</option>
@@ -107,29 +107,39 @@
               <option value="U">U</option>
             </select>
           </div>
-        </div>
-        <div class="sample-meta-row">
           <div>
-            <span class="label">Test</span>
+            <span class="label">檢驗</span>
             <select id="m-test" class="meta-select">
               <option value="">—</option>
               <option value="WES">WES</option>
               <option value="WGS">WGS</option>
             </select>
           </div>
+        </div>
+        <div class="sample-meta-row">
           <div>
-            <span class="label">Build</span>
+            <span class="label">參考基因組</span>
             <select id="m-build" class="meta-select">
               <option value="">—</option>
               <option value="hg19">hg19</option>
               <option value="hg38">hg38</option>
             </select>
           </div>
+          <div><span class="label">日期</span><span id="m-generated"></span></div>
           <div>
-            <span class="label">Category</span>
+            <span class="label">分類</span>
             <select id="m-category" class="meta-select"></select>
           </div>
-          <div><span class="label">Generated</span><span id="m-generated"></span></div>
+          <div>
+            <span class="label">科別</span>
+            <input id="m-department" class="meta-input" list="m-department-options" autocomplete="off" />
+            <datalist id="m-department-options"></datalist>
+          </div>
+          <div>
+            <span class="label">開單醫師</span>
+            <input id="m-physician" class="meta-input" list="m-physician-options" autocomplete="off" />
+            <datalist id="m-physician-options"></datalist>
+          </div>
         </div>
       </div>
       <div id="m-meta-hint" class="muted" style="margin-top:6px;font-size:11px"></div>

@@ -78,18 +78,30 @@ def get_patient_list_uploads():
     return patient_list_store.list_uploads()
 
 
+@router.get("/patient_list/options")
+def get_patient_list_options():
+    """Distinct 科別 / 開單醫師 values from the roster — fills the
+    editable datalists on the sample card so reviewers can pick or
+    type a new value.
+    """
+    return patient_list_store.list_options()
+
+
 @router.post("/samples")
 def register_sample(
     lis_id:        str = Form(...),
     name:          str = Form(...),
     mrn:           str = Form(...),
-    sex:           str = Form(""),
-    test_type:     str = Form("WES"),
-    genome_build:  str = Form("hg38"),
-    category:      str = Form(""),
-    hpo_json:      str = Form(""),
-    panels_json:   str = Form(""),
-    run_analysis:  str = Form(""),
+    sex:              str = Form(""),
+    test_type:        str = Form("WES"),
+    genome_build:     str = Form("hg38"),
+    category:         str = Form(""),
+    department:       str = Form(""),
+    physician:        str = Form(""),
+    sign_received_at: str = Form(""),
+    hpo_json:         str = Form(""),
+    panels_json:      str = Form(""),
+    run_analysis:     str = Form(""),
 ):
     """Attach reviewer-side info to a pipeline-produced directory.
 
@@ -125,11 +137,24 @@ def register_sample(
         phenotype_text = pheno_path.read_text(encoding="utf-8")
         phenotype_loaded = True
 
+    # Fall back to the latest roster entry for fields the reviewer
+    # didn't explicitly provide. Lets the load-new-case modal stay
+    # minimal — only LIS_ID + name + mrn are mandatory; 科別 /
+    # 開單醫師 / 簽收時間 ride along from the xlsx upload.
+    if not (department and physician and sign_received_at):
+        roster_entry = patient_list_store.lookup(lis_id) or {}
+        department       = department or roster_entry.get("department", "")
+        physician        = physician  or roster_entry.get("physician", "")
+        sign_received_at = sign_received_at or roster_entry.get("sign_received_at", "")
+
     try:
         meta = patient_store.register(
             lis_id=lis_id, name=name, mrn=mrn, sex=sex,
             test_type=test_type, genome_build=genome_build,
             category=category,
+            department=department,
+            physician=physician,
+            sign_received_at=sign_received_at,
             phenotype_text=phenotype_text,
             hpo=hpo_payload, panels=panels_payload,
         )
@@ -216,7 +241,8 @@ def put_sample_metadata(sample_id: str, payload: dict):
     if not isinstance(meta, dict):
         meta = {}
     EDITABLE = {"name", "mrn", "lis_id", "sex", "test_type", "category",
-                "genome_build", "tags", "run_date"}
+                "genome_build", "tags", "run_date",
+                "department", "physician", "sign_received_at"}
     for k, v in (payload or {}).items():
         if k in EDITABLE:
             meta[k] = v

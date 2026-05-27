@@ -446,10 +446,12 @@ function renderSampleMeta() {
   document.getElementById("m-lis").textContent       = m.LIS_ID || "—";
   document.getElementById("m-name").textContent      = m.Name || "—";
   document.getElementById("m-mrn").textContent       = m.MRN || "—";
-  // Generated date: only the YYYY-MM-DD prefix; the time/tz suffix
-  // adds noise without telling the reviewer anything they care about.
-  const gen = state.data.generated_at || "";
-  document.getElementById("m-generated").textContent = gen ? gen.slice(0, 10) : "—";
+  // "日期" prefers LIS 簽收時間 from the patient list xlsx; falls back
+  // to the pipeline-generated timestamp for samples uploaded before the
+  // roster carried that column. Strip the time-of-day suffix — the
+  // reviewer only cares about the date.
+  const dateRaw = m.SignReceivedAt || state.data.generated_at || "";
+  document.getElementById("m-generated").textContent = dateRaw ? dateRaw.slice(0, 10) : "—";
 
   // Copy buttons next to LIS_ID / Name / MRN. Hide when the value is
   // missing so the icon doesn't dangle next to an em-dash.
@@ -486,6 +488,12 @@ function renderSampleMeta() {
   document.getElementById("m-test").value  = m.Test || "";
   document.getElementById("m-build").value = state.data.genome_build || "";
   document.getElementById("m-sex").value   = m.Sex || "";
+  // 科別 / 開單醫師 — combobox (input + datalist). Reviewer can pick
+  // a known value or type a new one. Options are fetched once on
+  // demand from /api/patient_list/options and cached.
+  document.getElementById("m-department").value = m.Department || "";
+  document.getElementById("m-physician").value  = m.Physician  || "";
+  _populateRosterOptions();
 
   const sel = document.getElementById("m-category");
   const opts = (state.options && state.options.category_options) || [];
@@ -540,10 +548,29 @@ function _saveSampleMeta(patch) {
 }
 
 document.addEventListener("change", ev => {
-  if (ev.target.id === "m-test")  _saveSampleMeta({ test_type:    ev.target.value });
-  if (ev.target.id === "m-build") _saveSampleMeta({ genome_build: ev.target.value });
-  if (ev.target.id === "m-sex")   _saveSampleMeta({ sex:          ev.target.value });
+  if (ev.target.id === "m-test")       _saveSampleMeta({ test_type:    ev.target.value });
+  if (ev.target.id === "m-build")      _saveSampleMeta({ genome_build: ev.target.value });
+  if (ev.target.id === "m-sex")        _saveSampleMeta({ sex:          ev.target.value });
+  if (ev.target.id === "m-department") _saveSampleMeta({ department:   ev.target.value.trim() });
+  if (ev.target.id === "m-physician")  _saveSampleMeta({ physician:    ev.target.value.trim() });
 });
+
+// /api/patient_list/options returns {departments, physicians} unioned
+// across the roster. Cache on first fetch — refresh on each upload
+// (handled by setting _rosterOptions = null in the upload flow).
+let _rosterOptions = null;
+async function _populateRosterOptions() {
+  const deps = document.getElementById("m-department-options");
+  const docs = document.getElementById("m-physician-options");
+  if (!deps || !docs) return;
+  if (_rosterOptions == null) {
+    try { _rosterOptions = await apiFetch("/patient_list/options") || {}; }
+    catch { _rosterOptions = {}; }
+  }
+  const opts = (arr) => (arr || []).map(v => `<option value="${escapeAttr(v)}"></option>`).join("");
+  deps.innerHTML = opts(_rosterOptions.departments);
+  docs.innerHTML = opts(_rosterOptions.physicians);
+}
 
 // Generic renderer for collapsible free-text cards (Clinical presentation,
 // Comment). Both default to collapsed; user-toggled state is remembered
@@ -1191,6 +1218,7 @@ function setupPatientListUpload() {
       if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
       if (status) status.textContent = `✓ ${f.name}：解析 ${body.parsed} · 新增 ${body.added} · 更新 ${body.updated} · roster ${body.total}`;
       _unregisteredById = {};
+      _rosterOptions = null;          // refresh 科別/開單醫師 datalists
       await _renderPatientListHistory();
     } catch (e) {
       if (status) status.textContent = "上傳失敗：" + (e.message || e);

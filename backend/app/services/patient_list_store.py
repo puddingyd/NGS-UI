@@ -155,8 +155,35 @@ def parse_xlsx(path: Path) -> list[dict]:
             "test_name":  test_name,
             "test_type":  _test_type_from_name(test_name),
             "department": get(r, "科別"),
+            "physician":  get(r, "開單醫師"),
+            # 簽收時間 — when LIS booked the sample in. Used as the
+            # "日期" shown on the sample card and on the diagnostic
+            # report header. Format in the source xlsx is
+            # "YYYY-MM-DD HH:MM" (text or datetime cell — _strip handles
+            # both).
+            "sign_received_at": get(r, "簽收時間"),
         })
     return out
+
+
+def list_options() -> dict[str, list[str]]:
+    """Distinct department / physician values seen across the roster.
+
+    Feeds the editable datalists on the sample card so reviewers can
+    pick a known value or type a new one. Sorted for stable UI.
+    """
+    roster = load_roster()
+    deps:  set[str] = set()
+    docs:  set[str] = set()
+    for entry in roster.values():
+        d = _strip(entry.get("department"))
+        if d: deps.add(d)
+        p = _strip(entry.get("physician"))
+        if p: docs.add(p)
+    return {
+        "departments": sorted(deps),
+        "physicians":  sorted(docs),
+    }
 
 
 def load_roster() -> dict[str, dict]:
@@ -208,14 +235,16 @@ def ingest_xlsx(content: bytes, original_filename: str) -> dict:
         lid = rec["lis_id"]
         prev = roster.get(lid)
         entry = {
-            "lis_id":     lid,
-            "specimen":   rec["specimen"],
-            "mrn":        rec["mrn"],
-            "name":       rec["name"],
-            "test_name":  rec["test_name"],
-            "test_type":  rec["test_type"],
-            "department": rec["department"],
-            "updated_at": now,
+            "lis_id":           lid,
+            "specimen":         rec["specimen"],
+            "mrn":              rec["mrn"],
+            "name":             rec["name"],
+            "test_name":        rec["test_name"],
+            "test_type":        rec["test_type"],
+            "department":       rec["department"],
+            "physician":        rec["physician"],
+            "sign_received_at": rec["sign_received_at"],
+            "updated_at":       now,
         }
         if prev is None:
             entry["created_at"] = now
@@ -228,7 +257,8 @@ def ingest_xlsx(content: bytes, original_filename: str) -> dict:
             # Only count as "updated" if something actually changed.
             changed = any(
                 prev.get(k) != entry.get(k)
-                for k in ("specimen", "mrn", "name", "test_name", "test_type", "department")
+                for k in ("specimen", "mrn", "name", "test_name", "test_type",
+                          "department", "physician", "sign_received_at")
             )
             roster[lid] = entry
             if changed:

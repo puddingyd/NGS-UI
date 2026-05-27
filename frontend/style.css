@@ -271,7 +271,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
    Generated, etc.). */
 .sample-meta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px 18px;
   align-items: center;
 }
@@ -295,13 +295,16 @@ body.sidebar-collapsed .container { margin-left: auto; }
   letter-spacing: 0.04em;
 }
 .sample-meta > div > span:not(.label) { font-size: 13px; font-weight: 500; }
-.sample-meta .meta-select {
+.sample-meta .meta-select,
+.sample-meta .meta-input {
   padding: 2px 6px;
   border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 13px;
   font-weight: 500;
   background: #fff;
+  min-width: 0;
+  width: 100%;
 }
 
 /* Phenotype chips */

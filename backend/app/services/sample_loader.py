@@ -226,10 +226,12 @@ def list_unregistered() -> list[dict]:
             # Roster-sourced identifiers (None when the LIS_ID isn't on
             # any uploaded clinic list yet).
             "roster":     {
-                "mrn":        (roster_entry or {}).get("mrn", ""),
-                "name":       (roster_entry or {}).get("name", ""),
-                "test_type":  (roster_entry or {}).get("test_type", ""),
-                "department": (roster_entry or {}).get("department", ""),
+                "mrn":              (roster_entry or {}).get("mrn", ""),
+                "name":             (roster_entry or {}).get("name", ""),
+                "test_type":        (roster_entry or {}).get("test_type", ""),
+                "department":       (roster_entry or {}).get("department", ""),
+                "physician":        (roster_entry or {}).get("physician", ""),
+                "sign_received_at": (roster_entry or {}).get("sign_received_at", ""),
             } if roster_entry else None,
         })
     out.sort(key=lambda r: r["mtime"], reverse=True)
@@ -558,13 +560,16 @@ def load_sample(sample_id: str, version: str | None = None,
 
     return {
         "meta": {
-            "LIS_ID":   meta.get("lis_id") or meta.get("sample_id") or sample_id,
-            "Name":     meta.get("name", ""),
-            "MRN":      meta.get("mrn", ""),
-            "Sex":      meta.get("sex", ""),
-            "DOB":      meta.get("date_of_birth", ""),
-            "Test":     meta.get("test_type", ""),
-            "Category": meta.get("category", ""),
+            "LIS_ID":         meta.get("lis_id") or meta.get("sample_id") or sample_id,
+            "Name":           meta.get("name", ""),
+            "MRN":            meta.get("mrn", ""),
+            "Sex":            meta.get("sex", ""),
+            "DOB":            meta.get("date_of_birth", ""),
+            "Test":           meta.get("test_type", ""),
+            "Category":       meta.get("category", ""),
+            "Department":     meta.get("department", ""),
+            "Physician":      meta.get("physician", ""),
+            "SignReceivedAt": meta.get("sign_received_at", ""),
         },
         "genetic_counseling": meta.get("genetic_counseling", ""),
         "emr_synced_at":      meta.get("emr_synced_at", ""),
