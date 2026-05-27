@@ -270,46 +270,65 @@ body.sidebar-collapsed .container { margin-left: auto; }
    column across rows (LIS_ID lines up under Test, Sex under
    Generated, etc.). */
 .sample-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.sample-meta-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px 18px;
-  align-items: center;
+  align-items: start;
 }
+.sample-meta-row { display: contents; }
 .sample-meta-row > div {
-  /* Equal share by default — each cell grows; min-width 0 lets long
-     values truncate instead of busting the row. */
-  flex: 1 1 0;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-/* MRN cell holds value + copy + EMR link + sync button. Give it more
-   room so the trailing buttons don't get clipped on the 5-col row.
-   `flex: 2 1 auto` lets it grow ~2x the others. min-width keeps the
-   buttons visible even on narrow viewports (wraps to next line). */
-.sample-meta-row > div.m-mrn-cell {
-  flex: 2 1 auto;
-  min-width: 260px;
+.sample-meta-row > div > span:not(.label) { overflow: hidden; text-overflow: ellipsis; }
+
+/* 病歷號 cell — 2-line stack: row 1 = MRN + copy; row 2 = EMR buttons.
+   The cell stays 1/5 of the grid (equal width); only its internal
+   height grows. align-items:start on .sample-meta keeps the other
+   cells anchored at the top so the row looks tidy. */
+.m-mrn-cell { align-items: flex-start; }
+.m-mrn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
-/* The .label span is fixed-width (rule below); the *value* span (id
-   m-mrn / m-name etc.) is what we want to truncate. The MRN cell hosts
-   buttons that must stay visible — exclude its inner content from
-   ellipsis. */
-.sample-meta-row > div > span:not(.label):not(.m-mrn-cell *) {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.m-mrn-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-.m-mrn-cell #m-mrn {
+.m-mrn-line #m-mrn {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* EMR link + sync button — keep them visually identical (same height,
+   same font-size, same padding). The <a> needs the same box-model as
+   the <button>, so set inline-flex on both. */
+.btn-emr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn-emr:hover { background: #f6f8fa; }
+.btn-emr[hidden] { display: none; }
 .sample-meta .label {
   /* Fixed width so labels never push the value sideways. With this
      width pinned, the values across both rows share a left baseline

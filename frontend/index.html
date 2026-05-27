@@ -91,10 +91,16 @@
           </div>
           <div class="m-mrn-cell">
             <span class="label">病歷號</span>
-            <span id="m-mrn"></span>
-            <button id="m-mrn-copy" class="btn-copy" type="button" title="複製病歷號" hidden></button>
-            <a id="m-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden>🔗 EMR</a>
-            <button id="btn-emr-sync" class="btn btn-link" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>EMR 同步</button>
+            <div class="m-mrn-stack">
+              <div class="m-mrn-line">
+                <span id="m-mrn"></span>
+                <button id="m-mrn-copy" class="btn-copy" type="button" title="複製病歷號" hidden></button>
+              </div>
+              <div class="m-mrn-line m-emr-line">
+                <a id="m-emr-link" class="btn-emr" target="_blank" rel="noopener" hidden>🔗 EMR</a>
+                <button id="btn-emr-sync" class="btn-emr" type="button" title="從 EMR 重新抓取 sex / date_of_birth / 看診紀錄" hidden>EMR 同步</button>
+              </div>
+            </div>
           </div>
           <div>
             <span class="label">性別</span>
