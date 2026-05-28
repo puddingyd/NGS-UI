@@ -1296,8 +1296,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 
 /* ACMG dropdown — same shape + sig-* colour scale as SNV's ACMG
-   classification field so the eye reads them as one family. */
-.cnv-sv-acmg-select {
+   classification field so the eye reads them as one family. The mito
+   card reuses the same look via .mito-acmg-select. */
+.cnv-sv-acmg-select,
+.mito-acmg-select {
   padding: 2px 4px;
   border: 1px solid var(--border);
   border-radius: 4px;

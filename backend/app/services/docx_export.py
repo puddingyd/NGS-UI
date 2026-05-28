@@ -280,6 +280,15 @@ def _apply_normal_font(doc) -> None:
     rFonts.set(qn("w:eastAsia"), REPORT_FONT)
     rFonts.set(qn("w:ascii"),    REPORT_FONT)
     rFonts.set(qn("w:hAnsi"),    REPORT_FONT)
+    # Word's default Normal style adds 8pt space after each paragraph;
+    # the reviewer was manually clearing that on every export. Set it
+    # to 0 so the report opens already tight.
+    pf = normal.paragraph_format
+    pf.space_after  = Pt(0)
+    pf.space_before = Pt(0)
+    # Tighten line spacing too — single (1.0) instead of 1.15 multiple.
+    from docx.shared import Pt as _Pt  # noqa: F401 (silence linter)
+    pf.line_spacing = 1.0
 
 
 def _apply_page_margins(doc) -> None:
@@ -709,8 +718,11 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
 
 def _snv_reference_text(v: dict, edits: dict) -> str:
     gene = v.get("gene_symbol") or "?"
-    hgvs_c = v.get("hgvs_c") or v.get("HGVS_C") or ""
-    hgvs_p = v.get("hgvs_p") or v.get("HGVS_P") or ""
+    # Drop the "NM_xxx:" transcript prefix from HGVS values here too —
+    # the transcript already appears beside the gene name on the block
+    # header, no need to repeat it in the ref text.
+    hgvs_c = _strip_tx_prefix(v.get("hgvs_c") or v.get("HGVS_C") or "")
+    hgvs_p = _strip_tx_prefix(v.get("hgvs_p") or v.get("HGVS_P") or "")
     nuc    = hgvs_c + (f" ({hgvs_p})" if hgvs_p else "")
     cq_zh  = _consequence_zh(v.get("Consequence", ""))
     af     = _afs_str(v)
@@ -841,8 +853,11 @@ def _location_zh(g: dict) -> str:
     Partial coverage parses each endpoint:
       txStart → 基因起始, txEnd → 基因末端,
       exonN   → "Exon N 區域", intronN → "Intron N 區域"
-    Joined with 「至」. Unrecognised endpoints pass through verbatim so
-    weird AnnotSV values stay visible for review.
+    Joined with 「至」. A leading ASCII letter on the second piece gets
+    a leading space ("基因起始至 Intron 3 區域") so Latin tokens don't
+    sit right against the Chinese 至 separator.
+    Unrecognised endpoints pass through verbatim so weird AnnotSV
+    values stay visible for review.
     """
     loc = (g.get("location") or "").strip() if isinstance(g, dict) else ""
     if not loc or loc == "txStart-txEnd":
@@ -861,7 +876,18 @@ def _location_zh(g: dict) -> str:
         if m: return f"Intron {m.group(1)} 區域"
         return p
 
-    return f"{piece(parts[0])}至{piece(parts[1])}"
+    p1 = piece(parts[0])
+    p2 = piece(parts[1])
+    sep = "至" + (" " if p2 and "A" <= p2[0] <= "Z" else "")
+    return f"{p1}{sep}{p2}"
+
+
+def _gene_loc_phrase(gname: str, loc_zh: str) -> str:
+    """Build「GENE 基因之 …」 / 「GENE 基因之 Exon X 區域」 — always
+    with 之, with a space inserted when the location phrase starts
+    with a Latin letter so "基因之 Exon" reads cleanly."""
+    sep = "之" + (" " if loc_zh and "A" <= loc_zh[0] <= "Z" else "")
+    return f"{gname} 基因{sep}{loc_zh}"
 
 
 def _omim_genes(v: dict) -> list[dict]:
@@ -944,12 +970,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         g = omim_genes[0]
         gname = g.get("gene") or "?"
         loc_zh = _location_zh(g)
-        # 完整基因覆蓋用「基因之整個區域」；部分覆蓋用「基因 Exon X 區域至…」
-        # 兩者不一致是 hospital report 慣例（與制式句搭配最自然）。
-        if loc_zh == "整個區域":
-            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {gname} 基因之整個區域。")
-        else:
-            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {gname} 基因 {loc_zh}。")
+        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {_gene_loc_phrase(gname, loc_zh)}。")
         # 2. OMIM phenotype + inheritance, per-gene
         ph  = (g.get("omim_phenotype") or "").strip()
         inh = _inheritance_zh(g.get("omim_inheritance", "") or "")
@@ -1010,10 +1031,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
         g = omim_genes[0]
         gname = g.get("gene") or "?"
         loc_zh = _location_zh(g)
-        if loc_zh == "整個區域":
-            span_desc = f"此段{kind_zh}涵蓋 {gname} 基因之整個區域"
-        else:
-            span_desc = f"此段{kind_zh}涵蓋 {gname} 基因 {loc_zh}"
+        span_desc = f"此段{kind_zh}涵蓋 {_gene_loc_phrase(gname, loc_zh)}"
     elif len(omim_genes) > 1:
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         span_desc = f"此段{kind_zh}涵蓋 {', '.join(names)} 等 OMIM 疾病基因"

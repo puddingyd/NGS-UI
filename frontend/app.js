@@ -2549,7 +2549,7 @@ function _renderMitoDetailBox(v, id) {
     </select>`;
   return `<div class="cnv-sv-detail-box">
     <div class="cnv-sv-detail-row">
-      <span><strong>ACMG&AMP:</strong> ${acmgSelect}</span>
+      <span><strong>ACMG:</strong> ${acmgSelect}</span>
       <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
       <span><strong>類型:</strong> ${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>
       <span><strong>Heteroplasmy:</strong> ${_mitoHeteroplasmy(v)} <span class="muted">(AD ${escapeHtml(ad)} · DP ${dp})</span></span>
@@ -2581,8 +2581,7 @@ function renderMitoCard(v, id, opts = {}) {
       ${idxTxt}
       ${_mitoReviewerStatusSel(id)}
       ${locusPill}
-      <span class="cnv-sv-pos">${escapeHtml(hgvs)}<button class="btn-copy" data-copy="${escapeAttr(hgvs)}" title="複製">${COPY_ICON_SVG}</button>
-        ${v.gene_symbol ? ` <span class="muted" style="font-size:12px">${escapeHtml(v.gene_symbol)}</span>` : ""}
+      <span class="cnv-sv-pos">${v.gene_symbol ? `${escapeHtml(v.gene_symbol)} ` : ""}${escapeHtml(hgvs)}<button class="btn-copy" data-copy="${escapeAttr((v.gene_symbol ? v.gene_symbol + " " : "") + hgvs)}" title="複製">${COPY_ICON_SVG}</button>
       </span>
       <span class="mito-het-badge" title="heteroplasmy fraction">${_mitoHeteroplasmy(v)}</span>
       <span style="flex:1"></span>
@@ -2972,7 +2971,9 @@ function renderCnvSvCard(v, id, opts = {}) {
 // which works for either kind of variant.
 document.addEventListener("change", ev => {
   const t = ev.target;
-  const card = t.closest?.(".cnv-sv-card");
+  // Both CNV/SV cards and Mito cards use this listener block — match
+  // either so changes on a Mito card fire correctly.
+  const card = t.closest?.(".cnv-sv-card, .mito-card");
   if (!card) return;
   const id = card.dataset.id;
   if (!id) return;
@@ -2981,18 +2982,19 @@ document.addEventListener("change", ev => {
     const gene = t.dataset.gene;
     if (t.checked) picked[gene] = true; else delete picked[gene];
     setEdit(id, "report_genes", picked);
+    updateSaveHint();
   } else if (t.matches(".cnv-sv-acmg-select")) {
     setEdit(id, "ACMG_class_sv", t.value);
-    // Refresh the sig-* colour class so the field repaints in place
-    // without a full card re-render.
     t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
     const next = SV_ACMG_SIG_CLASS[Number(t.value)];
     if (next) t.classList.add(next);
+    updateSaveHint();
   } else if (t.matches(".mito-acmg-select")) {
     setEdit(id, "ACMG_classification_mito", t.value);
     t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
     const sig = classifySignificance(t.value);
     if (sig) t.classList.add(sig);
+    updateSaveHint();
   }
 });
 
