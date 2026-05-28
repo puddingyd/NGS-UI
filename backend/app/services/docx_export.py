@@ -20,7 +20,7 @@ from typing import Iterable
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Cm, Pt
 
 from ..config import TERTIARY_OUTPUT_ROOT  # noqa: F401 (kept for callers)
 from . import hpo_ontology, phenotype_scorer, report_store, sample_loader
@@ -150,6 +150,27 @@ def _zygosity_zh(z: str) -> str:
     return _ZYGOSITY_ZH.get((z or "").strip(), z or "")
 
 
+def _strip_tx_prefix(s: str) -> str:
+    """Pipeline HGVS values sometimes come prefixed with the transcript
+    ID (e.g. "NM_000295.5:c.1075A>G"); the report's 核苷酸 column shows
+    transcript-only on the gene header line, so strip the prefix here.
+    """
+    return re.sub(r"^[A-Z]+_\d+(\.\d+)?:", "", s or "")
+
+
+def _structure_label(v: dict) -> str:
+    """VEP's EXON / INTRON fields look like "5/22" (rank/total). The
+    report writes them as `exon5` or `intron6` — pick whichever has
+    a value and prefix with the type."""
+    exon = (v.get("exon") or "").strip()
+    intron = (v.get("intron") or "").strip()
+    if exon:
+        return "exon" + exon.split("/")[0].strip()
+    if intron:
+        return "intron" + intron.split("/")[0].strip()
+    return ""
+
+
 # ── Font + paragraph helpers ──────────────────────────────────────
 
 def _set_run_font(run, name: str = REPORT_FONT) -> None:
@@ -198,6 +219,17 @@ def _apply_normal_font(doc) -> None:
     rFonts.set(qn("w:hAnsi"),    REPORT_FONT)
 
 
+def _apply_page_margins(doc) -> None:
+    """A4 portrait with 1.5cm L/R margins so the 89-char-wide variant
+    tables (4-space indent + 85-char ===== box) fit on one line in
+    細明體 11pt."""
+    for section in doc.sections:
+        section.left_margin  = Cm(1.5)
+        section.right_margin = Cm(1.5)
+        section.top_margin    = Cm(2.0)
+        section.bottom_margin = Cm(2.0)
+
+
 # ── ASCII-table helpers ───────────────────────────────────────────
 # 細明體 renders CJK chars at 2x ASCII width and ASCII chars at uniform
 # half-width, so a fixed-width column layout drawn with spaces lines up
@@ -217,15 +249,48 @@ def _pad_right(s: str, w: int) -> str:
     return s + " " * max(0, w - _str_width(s))
 
 
-def _wrap_to_cols(text: str, width: int) -> list[str]:
-    """Greedy char-by-char wrap respecting CJK double width. Matches
-    the template's mid-token wrap behaviour (e.g. `c.4393C>T(p.` then
-    `Arg1465Ter)` on the next line)."""
+def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
+    """Wrap `text` so each chunk fits within `width` display columns.
+
+    mode="char" → greedy char-by-char wrap respecting CJK double width
+                  (default; mid-token break, matches template's HGVS
+                  wrap behaviour).
+    mode="token" → one whitespace-delimited token per line; also splits
+                   after "/" so "Pathogenic/Likely pathogenic" becomes
+                   3 lines (Pathogenic/ · Likely · pathogenic).
+                   Tokens longer than `width` fall back to char wrap.
+    """
     if text is None:
         return [""]
     s = str(text)
     if not s:
         return [""]
+
+    if mode == "token":
+        # Split on whitespace; also break after "/" so combined sigs
+        # like "Pathogenic/Likely pathogenic" land on three lines.
+        tokens = [t for t in re.split(r"\s+|(?<=/)", s) if t]
+        out: list[str] = []
+        for tok in tokens:
+            if _str_width(tok) <= width:
+                out.append(tok)
+            else:
+                out.extend(_wrap_to_cols(tok, width, mode="char"))
+        return out or [""]
+
+    if mode == "hgvs":
+        # Split nucleotide HGVS so the protein notation lands on its
+        # own line: "c.4393C>T(p.Arg1465Ter)" → "c.4393C>T" / "(p.Arg
+        # 1465Ter)" when both pieces fit. Falls back to char wrap when
+        # the c./p. portion alone exceeds the column.
+        m = re.search(r"(\(p\.[^)]*\)?)$", s)
+        if m and m.start() > 0:
+            prefix = s[: m.start()]
+            suffix = m.group(1)
+            if _str_width(prefix) <= width and _str_width(suffix) <= width:
+                return [prefix, suffix]
+        return _wrap_to_cols(s, width, mode="char")
+
     out, cur, cur_w = [], "", 0
     for c in s:
         cw = _ea_width(c)
@@ -240,31 +305,47 @@ def _wrap_to_cols(text: str, width: int) -> list[str]:
     return out
 
 
-def _ascii_table(doc, columns: list[tuple[str, int]], rows: list[list[str]],
+def _ascii_table(doc,
+                 columns: list[tuple],  # (header, width) or (header, width, mode)
+                 rows: list[list[str]],
                  indent: str = "    ") -> None:
     """Render a ==== bounded table where each column has a fixed display
-    width; over-long cells wrap to the next line aligned to the same
-    column start. Matches the legacy-report look exactly.
+    width; over-long cells wrap per the column's `mode` ("char" default
+    / "token" for clinical sigs). Columns are packed without inter-
+    column whitespace — pad each column to its full width on its own;
+    the data row gets a single space of side-padding inside the ====
+    boundary.
 
-    `columns` = [(header_text, width), ...]; `rows` = list of cell-value
-    lists matching the column count.
+    With column widths summing to N and (k) columns, the data line is
+    N+2 chars wide (1-space pad each side) and the sep is `=`*(N+2).
     """
-    widths = [w for _, w in columns]
-    # Separator covers all columns + one space between each.
-    sep = "=" * (sum(widths) + max(0, len(columns) - 1))
+    # Normalize each column spec to (header, width, mode).
+    cols = [(c[0], c[1], (c[2] if len(c) > 2 else "char")) for c in columns]
+    widths = [w for _, w, _ in cols]
+    modes  = [m for _, _, m in cols]
+    total  = sum(widths) + 2   # +1 pad on each side
+    sep    = "=" * total
 
-    def emit_row(cells: list[str]) -> None:
-        wrapped = [_wrap_to_cols(str(c or ""), w) for c, w in zip(cells, widths)]
+    def emit_row(cells: list[str], header: bool = False) -> None:
+        # Headers don't wrap (kept short by design).
+        if header:
+            parts = [_pad_right(str(c or ""), w) for c, w in zip(cells, widths)]
+            _add_paragraph(doc, f"{indent} {''.join(parts)} ")
+            return
+        wrapped = [
+            _wrap_to_cols(str(c or ""), w, mode=m)
+            for c, w, m in zip(cells, widths, modes)
+        ]
         n = max((len(w) for w in wrapped), default=1)
         for i in range(n):
             parts = [
                 _pad_right(cell_lines[i] if i < len(cell_lines) else "", w)
                 for cell_lines, w in zip(wrapped, widths)
             ]
-            _add_paragraph(doc, f"{indent} {' '.join(parts)}")
+            _add_paragraph(doc, f"{indent} {''.join(parts)} ")
 
     _add_paragraph(doc, f"{indent}{sep}")
-    emit_row([h for h, _ in columns])
+    emit_row([h for h, _, _ in cols], header=True)
     _add_paragraph(doc, f"{indent}{sep}")
     for row in rows:
         emit_row(row)
@@ -473,23 +554,24 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     tx   = v.get("transcript")  or v.get("MANE_SELECT") or ""
     _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
     rs    = ""   # pipeline doesn't carry rsID yet — leave blank
-    struc = (v.get("exon") or v.get("intron") or "").strip()
-    hgvs_c = v.get("hgvs_c") or v.get("HGVS_C") or ""
-    hgvs_p = v.get("hgvs_p") or v.get("HGVS_P") or ""
+    struc = _structure_label(v)
+    hgvs_c = _strip_tx_prefix(v.get("hgvs_c") or v.get("HGVS_C") or "")
+    hgvs_p = _strip_tx_prefix(v.get("hgvs_p") or v.get("HGVS_P") or "")
     nuc    = hgvs_c + (f"({hgvs_p})" if hgvs_p else "")
-    zyg    = _zygosity_zh(v.get("zygosity", ""))
+    # 基因型 column stays in English per spec (Heterozygous / Homozygous)
+    zyg    = (v.get("zygosity", "") or "").strip()
     clnsig = _clinvar_label(v)
     acmg   = _acmg_label(v, edits)
 
     _ascii_table(doc, columns=[
         ("類別",          5),
-        ("基因",         10),
-        ("RS ID",         9),
-        ("結構",          7),
-        ("核苷酸",       14),
+        ("基因",          9),
+        ("RS ID",         8),
+        ("結構",          9),
+        ("核苷酸",       13, "hgvs"),
         ("基因型",       13),
-        ("ClinVar",      13),
-        ("ACMG&AMP指引", 14),
+        ("ClinVar",      13, "token"),
+        ("ACMG&AMP指引", 13, "token"),
     ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
 
     _add_paragraph(doc, f"    1. {_omim_block_for_snv(v)}")
@@ -557,11 +639,11 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("基因",          9),
-        ("RS ID",         9),
-        ("核苷酸",       14),
+        ("RS ID",         8),
+        ("核苷酸",       13, "hgvs"),
         ("異質性比例",   11),
-        ("ClinVar",      13),
-        ("ACMG&AMP指引", 14),
+        ("ClinVar",      13, "token"),
+        ("ACMG&AMP指引", 13, "token"),
     ], rows=[[tier, gene, rs, nuc, het_s, clnsig, acmg]])
 
     mt_disease = (v.get("mitomap_disease") or "").strip()
@@ -643,7 +725,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
     sv_type   = (v.get("sv_type") or "").lower()  # del/dup/...
     cn        = v.get("copy_number")
     cn_s      = "—" if cn in (None, "", ".") else str(cn)
-    zyg       = _zygosity_zh(v.get("zygosity", ""))
+    zyg       = (v.get("zygosity", "") or "").strip()
     acmg      = _acmg_label(v, edits)
     chrom     = (v.get("CHROM") or "").replace("chr", "")
     coords_disp = coords.split(":", 1)[1] if ":" in coords else coords
@@ -657,7 +739,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         ("變異位置",     26),
         ("拷貝數",        7),
         ("基因型",       13),
-        ("ACMG&AMP指引", 14),
+        ("ACMG&AMP指引", 13, "token"),
     ], rows=[[tier, chrom, coords_disp, cn_s, zyg, acmg]])
 
     # 1. 片段位置描述 — single-gene vs multi-gene region
@@ -855,6 +937,7 @@ def build_diagnosis_docx(sample_id: str, *, gene_list_mode: str = "grouped") -> 
 
     doc = Document()
     _apply_normal_font(doc)
+    _apply_page_margins(doc)
 
     _section_test_info(doc, test_type)
     _section_panel_set(doc)
