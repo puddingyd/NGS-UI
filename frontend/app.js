@@ -161,6 +161,10 @@ async function loadSample(LIS_ID) {
         if (aux) Object.assign(state.data, aux);
         state.cnvSvPending = false;
         try { renderCnvSvTabBar(); } catch (_e) {}
+        // Causative / Other sections may carry CNV/SV ids from
+        // state.reports.status that were rendered as "missing
+        // variant" while the aux payload was still empty.
+        try { renderReportSections(); } catch (_e) {}
       })
       .catch(() => {
         if (token !== state._auxLoadToken) return;
@@ -173,6 +177,9 @@ async function loadSample(LIS_ID) {
         if (aux) Object.assign(state.data, aux);
         state.mitoPending = false;
         try { renderMitoTabBar(); } catch (_e) {}
+        // Same as above for Mito — refresh the report sections so
+        // mito ids resolve once the payload lands.
+        try { renderReportSections(); } catch (_e) {}
       })
       .catch(() => {
         if (token !== state._auxLoadToken) return;
@@ -2504,7 +2511,7 @@ function _mitoFilterTitle(filt) {
 }
 const _MITO_TLOD_TITLE = "Mutect2 tumor LOD：log10(變異存在 / 不存在) 的 likelihood ratio。越高 = 越確定是真變異（非測序錯誤）；一般 >6 算可靠，1-2 多為雜訊。";
 
-function _renderMitoDetailBox(v) {
+function _renderMitoDetailBox(v, id) {
   const filt = v.filter && v.filter !== "." ? v.filter : "PASS";
   const tlod = (v.TLOD != null) ? Number(v.TLOD).toFixed(2) : "—";
   const ad   = v.AD || "—";
@@ -2528,8 +2535,21 @@ function _renderMitoDetailBox(v) {
          <ul class="cnv-sv-reasoning-list">${mmItems.join("")}</ul>
        </details>`
     : `<div class="muted" style="font-size:12px;margin-top:6px">MITOMAP 無此變異紀錄（多為 polymorphism / haplogroup 變異）</div>`;
+  // Mito ACMG override — MITOMAP doesn't provide an ACMG class, so
+  // the reviewer picks one manually here. Persisted to
+  // state.reports.edits[id].ACMG_classification_mito and consumed by
+  // the docx report (`_acmg_label` → mito column + note-2 wording).
+  const mitoAcmg = (getEdit(id, "ACMG_classification_mito") || "").trim();
+  const mitoAcmgSig = classifySignificance(mitoAcmg) || "";
+  const acmgOpts = ["", "Pathogenic", "Likely pathogenic", "Uncertain significance",
+                    "Likely benign", "Benign"];
+  const acmgSelect = `
+    <select class="mito-acmg-select ${mitoAcmgSig}" data-id="${escapeAttr(id)}">
+      ${acmgOpts.map(o => `<option value="${escapeAttr(o)}" ${o===mitoAcmg?"selected":""}>${o || "—"}</option>`).join("")}
+    </select>`;
   return `<div class="cnv-sv-detail-box">
     <div class="cnv-sv-detail-row">
+      <span><strong>ACMG&AMP:</strong> ${acmgSelect}</span>
       <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
       <span><strong>類型:</strong> ${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>
       <span><strong>Heteroplasmy:</strong> ${_mitoHeteroplasmy(v)} <span class="muted">(AD ${escapeHtml(ad)} · DP ${dp})</span></span>
@@ -2568,7 +2588,7 @@ function renderMitoCard(v, id, opts = {}) {
       <span style="flex:1"></span>
       <span class="ext-links">${links}</span>
     </div>
-    ${_renderMitoDetailBox(v)}
+    ${_renderMitoDetailBox(v, id)}
     <div class="cnv-sv-section cnv-sv-comment">
       <div class="cnv-sv-section-title">Comment</div>
       <textarea class="cnv-sv-comment-text" data-id="${escapeAttr(id)}" rows="2" placeholder="備註">${escapeHtml(comment)}</textarea>
@@ -2968,6 +2988,11 @@ document.addEventListener("change", ev => {
     t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
     const next = SV_ACMG_SIG_CLASS[Number(t.value)];
     if (next) t.classList.add(next);
+  } else if (t.matches(".mito-acmg-select")) {
+    setEdit(id, "ACMG_classification_mito", t.value);
+    t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
+    const sig = classifySignificance(t.value);
+    if (sig) t.classList.add(sig);
   }
 });
 

@@ -56,7 +56,9 @@ _CONSEQUENCE_SEVERITY: list[tuple[str, str]] = [
     ("inframe_insertion",                 "in_frame"),
     ("inframe_deletion",                  "in_frame"),
     ("missense_variant",                  "missense"),
+    ("missense",                          "missense"),    # mito script short form
     ("synonymous_variant",                "synonymous"),
+    ("synonymous",                        "synonymous"),  # mito script short form
     ("5_prime_UTR_variant",               "noncoding"),
     ("3_prime_UTR_variant",               "noncoding"),
     ("intron_variant",                    "noncoding"),
@@ -168,6 +170,24 @@ def _inheritance_zh(code: str) -> str:
 
 def _zygosity_zh(z: str) -> str:
     return _ZYGOSITY_ZH.get((z or "").strip(), z or "")
+
+
+_ZYG_LONG: dict[str, str] = {
+    "het":          "Heterozygous",
+    "hom":          "Homozygous",
+    "hemi":         "Hemizygous",
+    "homo":         "Homozygous",
+    "heterozygous": "Heterozygous",
+    "homozygous":   "Homozygous",
+    "hemizygous":   "Hemizygous",
+}
+
+
+def _zygosity_long(z: str) -> str:
+    """Expand short forms (het/hom/hemi) to the canonical English long
+    form used in the diagnostic report tables."""
+    s = (z or "").strip()
+    return _ZYG_LONG.get(s.lower(), s)
 
 
 def _strip_tx_prefix(s: str) -> str:
@@ -565,29 +585,37 @@ def _clinvar_label(variant: dict) -> str:
 def _acmg_label(variant: dict, edits_for_v: dict) -> str:
     """Return the ACMG/AMP classification label for any variant kind.
 
-    Source priority:
-      1. SNV reviewer override        (edits.ACMG_classification)
-      2. CNV/SV reviewer override     (edits.ACMG_class_sv)
-      3. SNV pipeline value           (variant.ACMG_classification)
-      4. CNV/SV pipeline value, int   (variant.acmg_class 1-5)
-      5. Mito MITOMAP status fallback (variant.mitomap_status)
+    Source priority (most-specific first):
+      1. Mito reviewer manual entry   (edits.ACMG_classification_mito)
+      2. SNV reviewer override        (edits.ACMG_classification)
+      3. CNV/SV reviewer override     (edits.ACMG_class_sv → int 1-5)
+      4. SNV pipeline value           (variant.ACMG_classification)
+      5. CNV/SV pipeline value, int   (variant.acmg_class 1-5)
+    Mito has no automated ACMG source — when no manual entry is set
+    the function returns an empty string so the report's table cell
+    renders blank, per spec.
     """
+    cls = (edits_for_v.get("ACMG_classification_mito") or "").strip()
+    if cls:
+        return cls
     cls = (edits_for_v.get("ACMG_classification") or "").strip()
     if cls:
         return cls
-    cls = (edits_for_v.get("ACMG_class_sv") or "").strip()
-    if cls:
-        return cls
+    raw_cnv = (edits_for_v.get("ACMG_class_sv") or "").strip()
+    if raw_cnv:
+        try:
+            n = int(raw_cnv)
+            if n in _CNV_ACMG_INT_TO_LABEL:
+                return _CNV_ACMG_INT_TO_LABEL[n]
+        except ValueError:
+            return raw_cnv
     cls = (variant.get("ACMG_classification") or "").strip()
     if cls:
         return cls
     n = variant.get("acmg_class")
     if isinstance(n, int) and n in _CNV_ACMG_INT_TO_LABEL:
         return _CNV_ACMG_INT_TO_LABEL[n]
-    mst = (variant.get("mitomap_status") or "").strip()
-    if mst:
-        return mst
-    return "—"
+    return ""
 
 
 def _patho_sentence(acmg_class: str) -> str:
@@ -652,7 +680,7 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     hgvs_p = _strip_tx_prefix(v.get("hgvs_p") or v.get("HGVS_P") or "")
     nuc    = hgvs_c + (f"({hgvs_p})" if hgvs_p else "")
     # 基因型 column stays in English per spec (Heterozygous / Homozygous)
-    zyg    = (v.get("zygosity", "") or "").strip()
+    zyg    = _zygosity_long(v.get("zygosity", ""))
     clnsig = _clinvar_label(v)
     acmg   = _acmg_label(v, edits)
 
@@ -790,27 +818,50 @@ def _mito_reference_text(v: dict, edits: dict) -> str:
 def _build_coords(v: dict) -> str:
     """Prefer the adapter's `coords` field; fall back to constructing
     `chrN:POS-END` from CHROM / POS / END when it's missing or blank.
+    Always include the `chr` prefix on the chromosome name (UCSC
+    convention; matches the UI header `[GRCh38] chr1:...`).
     """
     coords = (v.get("coords") or "").strip()
-    if coords:
-        return coords
-    chrom = (v.get("CHROM") or "").strip()
-    pos   = v.get("POS")
-    end   = v.get("END")
-    if chrom and pos is not None and end is not None:
-        return f"{chrom}:{pos}-{end}"
-    return ""
+    if not coords:
+        chrom = (v.get("CHROM") or "").strip()
+        pos   = v.get("POS")
+        end   = v.get("END")
+        if chrom and pos is not None and end is not None:
+            coords = f"{chrom}:{pos}-{end}"
+    if coords and not coords.startswith("chr"):
+        coords = "chr" + coords
+    return coords
 
 
 def _location_zh(g: dict) -> str:
-    """AnnotSV's `Location` per-gene field is e.g. 'txStart-txEnd' (the
-    SV spans the whole gene), 'txStart-intron3', 'exon2-exon8', etc.
-    Return a Chinese phrase suitable for the note text.
+    """AnnotSV's per-gene `Location` field (e.g. 'txStart-txEnd',
+    'txStart-intron3', 'exon2-exon8') → 中文 phrase for the report.
+
+    Whole-gene coverage ('txStart-txEnd') always returns 「整個區域」.
+    Partial coverage parses each endpoint:
+      txStart → 基因起始, txEnd → 基因末端,
+      exonN   → "Exon N 區域", intronN → "Intron N 區域"
+    Joined with 「至」. Unrecognised endpoints pass through verbatim so
+    weird AnnotSV values stay visible for review.
     """
     loc = (g.get("location") or "").strip() if isinstance(g, dict) else ""
     if not loc or loc == "txStart-txEnd":
         return "整個區域"
-    return loc
+    parts = loc.split("-", 1)
+    if len(parts) != 2:
+        return loc
+
+    def piece(p: str) -> str:
+        p = p.strip()
+        if p == "txStart": return "基因起始"
+        if p == "txEnd":   return "基因末端"
+        m = re.match(r"^exon(\d+)$", p, re.IGNORECASE)
+        if m: return f"Exon {m.group(1)} 區域"
+        m = re.match(r"^intron(\d+)$", p, re.IGNORECASE)
+        if m: return f"Intron {m.group(1)} 區域"
+        return p
+
+    return f"{piece(parts[0])}至{piece(parts[1])}"
 
 
 def _omim_genes(v: dict) -> list[dict]:
@@ -848,16 +899,21 @@ def _sv_kind_zh(v: dict) -> str:
 def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
                        edits: dict) -> None:
     coords    = _coords_str(v, is_wgs)
-    sv_type   = (v.get("sv_type") or "").lower()  # del/dup/...
+    sv_upper  = (v.get("sv_type") or "").upper()
     cn        = v.get("copy_number")
     cn_s      = "—" if cn in (None, "", ".") else str(cn)
-    zyg       = (v.get("zygosity", "") or "").strip()
+    # 基因型 only meaningful for DEL — DUP / INS / INV reuse the column
+    # for "—" so the reviewer doesn't read het/hom on a copy gain.
+    raw_zyg   = (v.get("zygosity", "") or "").strip()
+    if sv_upper == "DEL":
+        zyg = _zygosity_long(raw_zyg) or "—"
+    else:
+        zyg = "—"
     acmg      = _acmg_label(v, edits)
     chrom     = (v.get("CHROM") or "").replace("chr", "")
     coords_disp = coords.split(":", 1)[1] if ":" in coords else coords
 
-    sv_tag = "del" if (v.get("sv_type") or "").upper() == "DEL" \
-        else ("dup" if (v.get("sv_type") or "").upper() == "DUP" else "")
+    sv_tag = "del" if sv_upper == "DEL" else ("dup" if sv_upper == "DUP" else "")
     _add_paragraph(doc, f"    [GRCh38] {coords}{sv_tag}", bold=True)
     _ascii_table(doc, columns=[
         ("類別",          5),
@@ -888,8 +944,12 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         g = omim_genes[0]
         gname = g.get("gene") or "?"
         loc_zh = _location_zh(g)
-        prep = "之" if loc_zh == "整個區域" else "之 "
-        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {gname} 基因{prep}{loc_zh}。")
+        # 完整基因覆蓋用「基因之整個區域」；部分覆蓋用「基因 Exon X 區域至…」
+        # 兩者不一致是 hospital report 慣例（與制式句搭配最自然）。
+        if loc_zh == "整個區域":
+            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {gname} 基因之整個區域。")
+        else:
+            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {gname} 基因 {loc_zh}。")
         # 2. OMIM phenotype + inheritance, per-gene
         ph  = (g.get("omim_phenotype") or "").strip()
         inh = _inheritance_zh(g.get("omim_inheritance", "") or "")
@@ -936,15 +996,24 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
 def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
                         kind_zh: str, is_wgs: bool) -> str:
     coords = _coords_str(v, is_wgs) or _build_coords(v)
-    zyg     = _zygosity_zh(v.get("zygosity", "")) or "異合子"
+    # Zygosity in the sentence only when DEL — DUP / INS / INV don't
+    # carry meaningful zygosity (a triploid duplication isn't "het").
+    sv_upper = (v.get("sv_type") or "").upper()
+    if sv_upper == "DEL":
+        zyg_text = _zygosity_zh(v.get("zygosity", "")) or "異合子"
+        zyg_phrase = f"之{zyg_text}"
+    else:
+        zyg_phrase = "之"
     acmg    = _acmg_label(v, edits)
 
     if len(omim_genes) == 1:
         g = omim_genes[0]
         gname = g.get("gene") or "?"
         loc_zh = _location_zh(g)
-        prep = "之" if loc_zh == "整個區域" else "之 "
-        span_desc = f"此段{kind_zh}涵蓋 {gname} 基因{prep}{loc_zh}"
+        if loc_zh == "整個區域":
+            span_desc = f"此段{kind_zh}涵蓋 {gname} 基因之整個區域"
+        else:
+            span_desc = f"此段{kind_zh}涵蓋 {gname} 基因 {loc_zh}"
     elif len(omim_genes) > 1:
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         span_desc = f"此段{kind_zh}涵蓋 {', '.join(names)} 等 OMIM 疾病基因"
@@ -957,7 +1026,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
                      if all_names else "此段未涵蓋已知疾病基因")
 
     return (
-        f"    在個案之檢體中，檢測到位於 {coords} 之{zyg}片段{kind_zh}變異，"
+        f"    在個案之檢體中，檢測到位於 {coords} {zyg_phrase}片段{kind_zh}變異，"
         f"{span_desc}。"
         "根據美國醫學遺傳學暨基因體學學會 (American College of Medical "
         "Genetics and Genomics) 與分子病理學學會 (Association for Molecular "
