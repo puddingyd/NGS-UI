@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import re
+import unicodedata
 from typing import Iterable
 
 from docx import Document
@@ -24,7 +25,10 @@ from docx.shared import Pt
 from ..config import TERTIARY_OUTPUT_ROOT  # noqa: F401 (kept for callers)
 from . import hpo_ontology, phenotype_scorer, report_store, sample_loader
 
-REPORT_FONT     = "PMingLiU"   # 細明體
+# 細明體 (MingLiU) — the *monospace* CJK family. (新細明體 = PMingLiU
+# is proportional, which would break the ASCII tables below.) Word
+# falls back to whatever the system has if MingLiU isn't installed.
+REPORT_FONT     = "MingLiU"
 TITLE_FONT_SIZE = Pt(13)
 BODY_FONT_SIZE  = Pt(11)
 
@@ -194,6 +198,79 @@ def _apply_normal_font(doc) -> None:
     rFonts.set(qn("w:hAnsi"),    REPORT_FONT)
 
 
+# ── ASCII-table helpers ───────────────────────────────────────────
+# 細明體 renders CJK chars at 2x ASCII width and ASCII chars at uniform
+# half-width, so a fixed-width column layout drawn with spaces lines up
+# visually. We treat East-Asian Wide/Fullwidth (W/F) as 2 columns and
+# everything else as 1.
+
+def _ea_width(c: str) -> int:
+    return 2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+
+
+def _str_width(s: str) -> int:
+    return sum(_ea_width(c) for c in s)
+
+
+def _pad_right(s: str, w: int) -> str:
+    """Right-pad with spaces up to display width w."""
+    return s + " " * max(0, w - _str_width(s))
+
+
+def _wrap_to_cols(text: str, width: int) -> list[str]:
+    """Greedy char-by-char wrap respecting CJK double width. Matches
+    the template's mid-token wrap behaviour (e.g. `c.4393C>T(p.` then
+    `Arg1465Ter)` on the next line)."""
+    if text is None:
+        return [""]
+    s = str(text)
+    if not s:
+        return [""]
+    out, cur, cur_w = [], "", 0
+    for c in s:
+        cw = _ea_width(c)
+        if cur and cur_w + cw > width:
+            out.append(cur)
+            cur, cur_w = c, cw
+        else:
+            cur += c
+            cur_w += cw
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _ascii_table(doc, columns: list[tuple[str, int]], rows: list[list[str]],
+                 indent: str = "    ") -> None:
+    """Render a ==== bounded table where each column has a fixed display
+    width; over-long cells wrap to the next line aligned to the same
+    column start. Matches the legacy-report look exactly.
+
+    `columns` = [(header_text, width), ...]; `rows` = list of cell-value
+    lists matching the column count.
+    """
+    widths = [w for _, w in columns]
+    # Separator covers all columns + one space between each.
+    sep = "=" * (sum(widths) + max(0, len(columns) - 1))
+
+    def emit_row(cells: list[str]) -> None:
+        wrapped = [_wrap_to_cols(str(c or ""), w) for c, w in zip(cells, widths)]
+        n = max((len(w) for w in wrapped), default=1)
+        for i in range(n):
+            parts = [
+                _pad_right(cell_lines[i] if i < len(cell_lines) else "", w)
+                for cell_lines, w in zip(wrapped, widths)
+            ]
+            _add_paragraph(doc, f"{indent} {' '.join(parts)}")
+
+    _add_paragraph(doc, f"{indent}{sep}")
+    emit_row([h for h, _ in columns])
+    _add_paragraph(doc, f"{indent}{sep}")
+    for row in rows:
+        emit_row(row)
+    _add_paragraph(doc, f"{indent}{sep}")
+
+
 # ── Variant-bucketing helpers ─────────────────────────────────────
 
 def _buckets_for_type(variants: dict, statuses: dict, status: str) -> list[dict]:
@@ -241,60 +318,100 @@ def _summary_line(name: str, hpo_labels: list[str]) -> str:
 
 
 def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
-    """三、檢測結果 — the meat of the report."""
+    """三、檢測結果 — the meat of the report.
+
+    第一類 (status=1) and 第二類 (status=2) sections each contain every
+    variant of that status with the matching per-type block (SNV /
+    Mito / CNV+SV) rendered inline. No "## SNV/indel" labels — those
+    were template structure markers, not actual report headings.
+    """
     _add_paragraph(doc, "三、檢測結果")
     _add_paragraph(doc, "  檢體說明:")
     _add_paragraph(doc, "    檢體類別：血液")
-
-    # — 綜合說明
     _add_paragraph(doc, "  綜合說明:")
+
     statuses = report.get("status", {}) or {}
-    variants = sample.get("variants", {}) or {}
-    cnv_vars  = sample.get("cnv_variants",  {}) or {}
-    sv_vars   = sample.get("sv_variants",   {}) or {}
-    mito_vars = sample.get("mito_variants", {}) or {}
+    edits    = report.get("edits", {})  or {}
+    is_wgs   = (test_type or "").upper() == "WGS"
 
-    snv_t1  = _buckets_for_type(variants,  statuses, "1")
-    snv_t2  = _buckets_for_type(variants,  statuses, "2")
-    cnv_t1  = _buckets_for_type(cnv_vars,  statuses, "1")
-    cnv_t2  = _buckets_for_type(cnv_vars,  statuses, "2")
-    sv_t1   = _buckets_for_type(sv_vars,   statuses, "1")
-    sv_t2   = _buckets_for_type(sv_vars,   statuses, "2")
-    mito_t1 = _buckets_for_type(mito_vars, statuses, "1")
-    mito_t2 = _buckets_for_type(mito_vars, statuses, "2")
+    snv_vars  = sample.get("variants", {})       or {}
+    cnv_vars  = sample.get("cnv_variants", {})   or {}
+    sv_vars   = sample.get("sv_variants",  {})   or {}
+    mito_vars = sample.get("mito_variants", {})  or {}
 
-    has_t1 = bool(snv_t1 or cnv_t1 or sv_t1 or mito_t1
-                  or _manual_for(report, "1"))
-    has_t2 = bool(snv_t2 or cnv_t2 or sv_t2 or mito_t2
-                  or _manual_for(report, "2"))
+    # Group by reviewer status. Each entry is ("kind", variant_dict).
+    # Insertion order = (snv → mito → cnv → sv), so 第一類/第二類 list
+    # SNVs first (the most common case in past reports).
+    def _collect(status: str) -> list[tuple[str, dict]]:
+        out: list[tuple[str, dict]] = []
+        for src_kind, src in (("snv",  snv_vars),
+                              ("mito", mito_vars),
+                              ("cnv",  cnv_vars),
+                              ("sv",   sv_vars)):
+            for vid, v in src.items():
+                if (statuses.get(vid) or "").strip() == status:
+                    out.append((src_kind, v))
+        return out
 
+    bucket1 = _collect("1")
+    bucket2 = _collect("2")
+    man1 = _manual_for(report, "1")
+    man2 = _manual_for(report, "2")
+
+    # — 第一類
     _add_paragraph(doc, "    第一類：與臨床症狀相關基因之已知致病性變異位點")
-    if not has_t1:
-        # Mirror the template wording when the bucket is empty.
+    if bucket1 or man1:
+        for kind, v in bucket1:
+            _render_variant(doc, kind, v, tier="1",
+                            edits=edits.get(v.get("id", ""), {}),
+                            is_wgs=is_wgs)
+        for m in man1:
+            _render_manual_variant(doc, m)
+    else:
+        # Empty bucket — match the template's wording. We mirror past
+        # reports that surface the HPO labels in the empty notice.
         hpo_labels = [r.get("label", "") or r.get("phenotype", "")
                       for r in (sample.get("patient_phenotype") or [])]
-        hpo_labels = [x for x in hpo_labels if x][:5]
+        hpo_labels = [x for x in hpo_labels if x][:8]
         _add_paragraph(doc, _summary_line("非特定", hpo_labels))
-
     _blank(doc)
+
+    # — 第二類
     _add_paragraph(doc, "    第二類：其他變異位點")
-    if not has_t2:
+    if bucket2 or man2:
+        for kind, v in bucket2:
+            _render_variant(doc, kind, v, tier="2",
+                            edits=edits.get(v.get("id", ""), {}),
+                            is_wgs=is_wgs)
+        for m in man2:
+            _render_manual_variant(doc, m)
+    else:
         _add_paragraph(doc, "    未找到其他變異位點。")
     _blank(doc)
 
-    # — Variant-type sections (only render headings/contents when present)
-    if snv_t1 or snv_t2 or _manual_for(report, "1") or _manual_for(report, "2"):
-        _subsection_snv(doc, snv_t1, snv_t2, report)
-    if mito_t1 or mito_t2:
-        _subsection_mito(doc, mito_t1, mito_t2, report)
-    # CNV + SV share the same template (染色體 / 變異位置 / 拷貝數 / ACMG).
-    if cnv_t1 or cnv_t2 or sv_t1 or sv_t2:
-        _subsection_cnv(doc, cnv_t1 + sv_t1, cnv_t2 + sv_t2, test_type, report)
-
-    # — Footer recommendation (always shown)
+    # Footer recommendation (always shown)
     _add_paragraph(doc, "    建議比對臨床表徵並進行父母親與家族成員之變異位點檢測，"
                         "以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或"
                         "相關資料庫更新，可能影響變異位點ACMG判讀結果。")
+    _blank(doc)
+
+
+def _render_variant(doc, kind: str, v: dict, *, tier: str, edits: dict,
+                    is_wgs: bool) -> None:
+    if kind == "snv":
+        _snv_variant_block(doc, v, tier=tier, edits=edits)
+    elif kind == "mito":
+        _mito_variant_block(doc, v, tier=tier, edits=edits)
+    else:  # cnv / sv share the same template
+        _cnv_variant_block(doc, v, tier=tier, is_wgs=is_wgs, edits=edits)
+
+
+def _render_manual_variant(doc, m: dict) -> None:
+    _add_paragraph(doc, f"    {m.get('position', '')}", bold=True)
+    if m.get("disease"):
+        _add_paragraph(doc, f"    {m['disease']}")
+    if m.get("comment"):
+        _add_paragraph(doc, f"    {m['comment']}")
     _blank(doc)
 
 
@@ -351,55 +468,39 @@ def _omim_block_for_snv(v: dict) -> str:
     return "".join(parts) + "。"
 
 
-def _subsection_snv(doc, t1: list[dict], t2: list[dict], report: dict) -> None:
-    _add_paragraph(doc, "## SNV/indel", bold=True)
-    edits = report.get("edits", {}) or {}
-    for v in t1:
-        _snv_variant_block(doc, v, tier="1", edits=edits.get(v["id"], {}))
-    for v in t2:
-        _snv_variant_block(doc, v, tier="2", edits=edits.get(v["id"], {}))
-    # manual SNV entries (reviewer-typed "＋ 新增 variant")
-    for m in _manual_for(report, "1") + _manual_for(report, "2"):
-        _add_paragraph(doc, f"    {m.get('position', '')}", bold=True)
-        if m.get("disease"):
-            _add_paragraph(doc, f"    {m['disease']}")
-        if m.get("comment"):
-            _add_paragraph(doc, f"    {m['comment']}")
-        _blank(doc)
-
-
 def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     gene = v.get("gene_symbol") or "?"
     tx   = v.get("transcript")  or v.get("MANE_SELECT") or ""
     _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
-    # ASCII-table-style block matching the template
     rs    = ""   # pipeline doesn't carry rsID yet — leave blank
     struc = (v.get("exon") or v.get("intron") or "").strip()
     hgvs_c = v.get("hgvs_c") or v.get("HGVS_C") or ""
     hgvs_p = v.get("hgvs_p") or v.get("HGVS_P") or ""
-    nuc    = f"{hgvs_c}" + (f"({hgvs_p})" if hgvs_p else "")
+    nuc    = hgvs_c + (f"({hgvs_p})" if hgvs_p else "")
     zyg    = _zygosity_zh(v.get("zygosity", ""))
     clnsig = _clinvar_label(v)
     acmg   = _acmg_label(v, edits)
 
-    sep = "=" * 78
-    _add_paragraph(doc, f"    {sep}")
-    _add_paragraph(doc, f"     類別  基因          RS ID  結構     核苷酸                       基因型     ClinVar              ACMG&AMP指引")
-    _add_paragraph(doc, f"    {sep}")
-    _add_paragraph(doc, f"     {tier:<5}{gene:<14}{rs:<7}{struc:<9}{nuc:<29}{zyg:<11}{clnsig:<21}{acmg}")
-    _add_paragraph(doc, f"    {sep}")
-    # Numbered notes
+    _ascii_table(doc, columns=[
+        ("類別",          5),
+        ("基因",         10),
+        ("RS ID",         9),
+        ("結構",          7),
+        ("核苷酸",       14),
+        ("基因型",       13),
+        ("ClinVar",      13),
+        ("ACMG&AMP指引", 14),
+    ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
+
     _add_paragraph(doc, f"    1. {_omim_block_for_snv(v)}")
     if tier == "1":
         _add_paragraph(doc, "    2. 此為致病性之變異位點，與臨床症狀相關。")
     else:
         _add_paragraph(doc, "    2. 此變異位點之臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。")
-    # Reviewer comment
     cmt = (edits.get("comment") or "").strip()
     if cmt:
         _add_paragraph(doc, f"    3. {cmt}")
 
-    # — 參考資料 (free-text per variant)
     _blank(doc)
     _add_paragraph(doc, "  參考資料:")
     _add_paragraph(doc, _snv_reference_text(v, edits))
@@ -438,15 +539,6 @@ def _snv_reference_text(v: dict, edits: dict) -> str:
 
 # ── Mitochondrial ─────────────────────────────────────────────────
 
-def _subsection_mito(doc, t1: list[dict], t2: list[dict], report: dict) -> None:
-    _add_paragraph(doc, "## Mitochondrial variants", bold=True)
-    edits = report.get("edits", {}) or {}
-    for v in t1:
-        _mito_variant_block(doc, v, tier="1", edits=edits.get(v["id"], {}))
-    for v in t2:
-        _mito_variant_block(doc, v, tier="2", edits=edits.get(v["id"], {}))
-
-
 def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     gene  = v.get("gene_symbol") or "?"
     _add_paragraph(doc, f"    {gene} (NC_012920.1)", bold=True)
@@ -455,16 +547,22 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     nuc    = hgvs_m + (f"({aa})" if aa else "")
     rs     = ""
     het    = v.get("heteroplasmy")
-    het_s  = f"{float(het) * 100:.1f}%" if het not in (None, "", ".") else "—"
+    try:
+        het_s = f"{float(het) * 100:.1f}%" if het not in (None, "", ".") else "—"
+    except (TypeError, ValueError):
+        het_s = "—"
     clnsig = _clinvar_label(v)
     acmg   = _acmg_label(v, edits)
 
-    sep = "=" * 78
-    _add_paragraph(doc, f"    {sep}")
-    _add_paragraph(doc, f"     類別  基因         RS ID  核苷酸                       異質性比例   ClinVar              ACMG&AMP指引")
-    _add_paragraph(doc, f"    {sep}")
-    _add_paragraph(doc, f"     {tier:<5}{gene:<13}{rs:<7}{nuc:<29}{het_s:<13}{clnsig:<21}{acmg}")
-    _add_paragraph(doc, f"    {sep}")
+    _ascii_table(doc, columns=[
+        ("類別",          5),
+        ("基因",          9),
+        ("RS ID",         9),
+        ("核苷酸",       14),
+        ("異質性比例",   11),
+        ("ClinVar",      13),
+        ("ACMG&AMP指引", 14),
+    ], rows=[[tier, gene, rs, nuc, het_s, clnsig, acmg]])
 
     mt_disease = (v.get("mitomap_disease") or "").strip()
     # 1. 致病基因之一 — MITOMAP disease name; 遺傳模式 fixed to 粒線體遺傳; no MIM
@@ -519,19 +617,6 @@ def _mito_reference_text(v: dict, edits: dict) -> str:
 
 # ── CNV / SV ──────────────────────────────────────────────────────
 
-def _subsection_cnv(doc, t1: list[dict], t2: list[dict], test_type: str,
-                    report: dict) -> None:
-    _add_paragraph(doc, "## CNV", bold=True)
-    edits = report.get("edits", {}) or {}
-    is_wgs = (test_type or "").upper() == "WGS"
-    for v in t1:
-        _cnv_variant_block(doc, v, tier="1", is_wgs=is_wgs,
-                           edits=edits.get(v["id"], {}))
-    for v in t2:
-        _cnv_variant_block(doc, v, tier="2", is_wgs=is_wgs,
-                           edits=edits.get(v["id"], {}))
-
-
 def _coords_str(v: dict, is_wgs: bool) -> str:
     """WES uses imprecise breakpoint notation `(?_start)_(end_?)`;
     WGS uses the precise start_end form. The adapter's `coords` is the
@@ -563,14 +648,17 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
     chrom     = (v.get("CHROM") or "").replace("chr", "")
     coords_disp = coords.split(":", 1)[1] if ":" in coords else coords
 
-    _add_paragraph(doc, f"    [GRCh38] {coords}{'' if is_wgs else 'del/dup'}",
-                   bold=True)
-    sep = "=" * 78
-    _add_paragraph(doc, f"    {sep}")
-    _add_paragraph(doc, f"     類別  染色體   變異位置                                  拷貝數   基因型     ACMG&AMP指引")
-    _add_paragraph(doc, f"    {sep}")
-    _add_paragraph(doc, f"     {tier:<5}{chrom:<9}{coords_disp:<42}{cn_s:<9}{zyg:<11}{acmg}")
-    _add_paragraph(doc, f"    {sep}")
+    sv_tag = "del" if (v.get("sv_type") or "").upper() == "DEL" \
+        else ("dup" if (v.get("sv_type") or "").upper() == "DUP" else "")
+    _add_paragraph(doc, f"    [GRCh38] {coords}{sv_tag}", bold=True)
+    _ascii_table(doc, columns=[
+        ("類別",          5),
+        ("染色體",        7),
+        ("變異位置",     26),
+        ("拷貝數",        7),
+        ("基因型",       13),
+        ("ACMG&AMP指引", 14),
+    ], rows=[[tier, chrom, coords_disp, cn_s, zyg, acmg]])
 
     # 1. 片段位置描述 — single-gene vs multi-gene region
     gene_count = int(v.get("gene_count") or 0)
