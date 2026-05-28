@@ -2560,9 +2560,10 @@ function _renderMitoDetailBox(v, id) {
       ${v.aa_change ? `<span><strong>Protein change:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
       ${(() => {
         const sig = (v.CLNSIG || "").trim();
-        if (!sig) return "";
+        if (!sig) return `<span><strong>ClinVar:</strong> —</span>`;
         const cls = classifySignificance(sig) || "";
-        const stars = v.clinvar_stars != null && v.clinvar_stars !== "" ? ` ${"★".repeat(Number(v.clinvar_stars))}` : "";
+        const stars = v.clinvar_stars != null && v.clinvar_stars !== "" && Number(v.clinvar_stars) > 0
+          ? ` ${"★".repeat(Number(v.clinvar_stars))}` : "";
         return `<span><strong>ClinVar:</strong> <span class="acmg-class ${cls}">${escapeHtml(sig.replace(/_/g," "))}${escapeHtml(stars)}</span></span>`;
       })()}
       <span data-tip="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>

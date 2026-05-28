@@ -166,7 +166,7 @@ DRAGEN_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 INHOUSE_VCF_ROOTS = [
     Path(p) for p in os.environ.get(
         "NGS_UI_INHOUSE_VCF_ROOTS",
-        "/home/datalake_Intermediate/n102968:/home/datalake_Intermediate/NextSeq2000",
+        "/home/datalake_Intermediate/pipeline/nextflow_output",
     ).split(":") if p
 ]
 
