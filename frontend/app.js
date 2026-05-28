@@ -5981,7 +5981,11 @@ function maybeShowVersionPicker(onPick) {
 // ─────────────────────────────────────────────────────────────────
 
 const _DRAGEN_STATE = {
-  mode: "dragen",       // dragen | inhouse
+  // mode is now *derived* — whichever of the two stacked <select>s
+  // (in-house / dragen) carries a non-empty value at the moment of
+  // 開始分析. Tracked here only so siblings render against the right
+  // list during reviewer interaction.
+  mode: "",             // ""    | dragen | inhouse
   index: null,          // {meta, dragen: [...], inhouse: [...]}
   job: null,            // current job state, polled
   pollTimer: null,
@@ -6001,10 +6005,19 @@ function _dragenFmtMtime(t) {
   catch { return ""; }
 }
 
-function _dragenCurrentList() {
+function _dragenCurrentList(mode = _DRAGEN_STATE.mode) {
   const idx = _DRAGEN_STATE.index;
   if (!idx) return [];
-  return (_DRAGEN_STATE.mode === "inhouse" ? idx.inhouse : idx.dragen) || [];
+  return (mode === "inhouse" ? idx.inhouse : idx.dragen) || [];
+}
+
+// Which of the two <select>s currently carries a non-empty selection.
+function _dragenActiveMode() {
+  const inhouse = document.getElementById("dragen-vcf-inhouse");
+  const dragen  = document.getElementById("dragen-vcf-dragen");
+  if (inhouse?.value) return "inhouse";
+  if (dragen?.value)  return "dragen";
+  return "";
 }
 
 function _dragenRenderMeta() {
@@ -6021,12 +6034,11 @@ function _dragenRenderMeta() {
 function _dragenRenderSiblings() {
   const box = document.getElementById("dragen-siblings");
   if (!box) return;
-  const sel = document.getElementById("dragen-vcf-select");
-  if (_DRAGEN_STATE.mode !== "inhouse" || !sel?.value) {
+  const sel = document.getElementById("dragen-vcf-inhouse");
+  if (!sel?.value) {
     box.hidden = true; box.innerHTML = ""; return;
   }
-  const list = _dragenCurrentList();
-  const row = list.find(v => v.path === sel.value);
+  const row = _dragenCurrentList("inhouse").find(v => v.path === sel.value);
   if (!row) { box.hidden = true; return; }
   const line = (key, path) => {
     const cls = path ? "sib-ok" : "sib-miss";
@@ -6041,37 +6053,37 @@ function _dragenRenderSiblings() {
   box.hidden = false;
 }
 
-function _dragenRenderList() {
-  const sel = document.getElementById("dragen-vcf-select");
-  const label = document.getElementById("dragen-vcf-label");
+function _dragenRenderOneList(selId, mode, emptyHint) {
+  const sel = document.getElementById(selId);
   if (!sel) return;
-  const list = _dragenCurrentList();
-  if (label) {
-    label.textContent = _DRAGEN_STATE.mode === "inhouse"
-      ? "Ensemble VCF" : "Dragen VCF";
-  }
+  const list = _dragenCurrentList(mode);
   if (!list.length) {
-    const hint = _DRAGEN_STATE.mode === "inhouse"
-      ? "（找不到 04_snv_indel/*.ensemble.fixed.vcf.gz — 試試 🔄 更新索引）"
-      : "（找不到 *.hard-filtered.vcf.gz — 試試 🔄 更新索引）";
-    sel.innerHTML = `<option value="">${hint}</option>`;
-    _dragenRenderSiblings();
+    sel.innerHTML = `<option value="">${emptyHint}</option>`;
     return;
   }
   sel.innerHTML = `<option value="">— 請選擇 —</option>` + list.map(v => {
     const label = `${v.sample_id} · ${v.run || ""} · ${_dragenFmtSize(v.size)} · ${_dragenFmtMtime(v.mtime)}`;
     return `<option value="${escapeAttr(v.path)}" data-sid="${escapeAttr(v.sample_id)}">${escapeHtml(label)}</option>`;
   }).join("");
+}
+
+function _dragenRenderList() {
+  _dragenRenderOneList("dragen-vcf-inhouse", "inhouse",
+    "（找不到 04_snv_indel/*.ensemble.fixed.vcf.gz — 試試 🔄 更新索引）");
+  _dragenRenderOneList("dragen-vcf-dragen",  "dragen",
+    "（找不到 *.hard-filtered.vcf.gz — 試試 🔄 更新索引）");
   _dragenRenderSiblings();
 }
 
 async function loadDragenVcfList({ force = false } = {}) {
-  const sel = document.getElementById("dragen-vcf-select");
-  if (!sel) return;
+  const inhouseSel = document.getElementById("dragen-vcf-inhouse");
+  const dragenSel  = document.getElementById("dragen-vcf-dragen");
+  if (!inhouseSel || !dragenSel) return;
   if (!force && _DRAGEN_STATE.index) {
     _dragenRenderList(); _dragenRenderMeta(); return;
   }
-  sel.innerHTML = `<option value="">— 載入中… —</option>`;
+  inhouseSel.innerHTML = `<option value="">— 載入中… —</option>`;
+  dragenSel.innerHTML  = `<option value="">— 載入中… —</option>`;
   try {
     const idx = await apiFetch(force ? "/dragen/index/refresh" : "/dragen/vcfs", {
       method: force ? "POST" : "GET",
@@ -6080,7 +6092,9 @@ async function loadDragenVcfList({ force = false } = {}) {
     _dragenRenderList();
     _dragenRenderMeta();
   } catch (e) {
-    sel.innerHTML = `<option value="">（載入失敗：${escapeHtml(String(e))}）</option>`;
+    const msg = `<option value="">（載入失敗：${escapeHtml(String(e))}）</option>`;
+    inhouseSel.innerHTML = msg;
+    dragenSel.innerHTML  = msg;
   }
 }
 
@@ -6144,7 +6158,10 @@ async function _dragenRecoverActiveJob() {
 }
 
 async function _dragenStart() {
-  const sel   = document.getElementById("dragen-vcf-select");
+  const mode = _dragenActiveMode();
+  if (!mode) { alert("請先從上面 In-house 或下面 DRAGEN 任一清單挑一個 VCF"); return; }
+  const sel = document.getElementById(
+    mode === "inhouse" ? "dragen-vcf-inhouse" : "dragen-vcf-dragen");
   const sidIn = document.getElementById("dragen-sample-id");
   const extra = document.getElementById("dragen-extra-vep");
   const path  = sel?.value || "";
@@ -6152,7 +6169,6 @@ async function _dragenStart() {
   const opt = sel.options[sel.selectedIndex];
   const sid = (sidIn?.value || opt?.dataset.sid || "").trim();
   if (!sid) { alert("Sample ID 必填"); return; }
-  const mode = _DRAGEN_STATE.mode;
   const body = {
     mode,
     vcf_path:       path,
@@ -6160,7 +6176,7 @@ async function _dragenStart() {
     with_extra_vep: !!extra?.checked,
   };
   if (mode === "inhouse") {
-    const row = _dragenCurrentList().find(v => v.path === path);
+    const row = _dragenCurrentList("inhouse").find(v => v.path === path);
     if (row) {
       body.cnv_vcf  = row.cnv_vcf  || "";
       body.sv_vcf   = row.sv_vcf   || "";
@@ -6186,11 +6202,31 @@ async function _dragenStart() {
   }
 }
 
-function _dragenSuggestSid(vcfSid) {
+function _dragenSuggestSid(vcfSid, mode) {
   // Append -dragen / -inhouse suffix unless the operator already added it.
   if (!vcfSid) return "";
-  const suffix = _DRAGEN_STATE.mode === "inhouse" ? "-inhouse" : "-dragen";
+  const suffix = mode === "inhouse" ? "-inhouse" : "-dragen";
   return vcfSid.endsWith(suffix) ? vcfSid : `${vcfSid}${suffix}`;
+}
+
+function _dragenWireSelect(selId, mode, otherSelId) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  sel.addEventListener("change", () => {
+    if (sel.value) {
+      // Picking from this list auto-clears the other one — only one
+      // caller mode at a time.
+      const other = document.getElementById(otherSelId);
+      if (other) other.value = "";
+      _DRAGEN_STATE.mode = mode;
+      const opt = sel.options[sel.selectedIndex];
+      const sidIn = document.getElementById("dragen-sample-id");
+      if (sidIn && opt?.dataset?.sid) sidIn.value = _dragenSuggestSid(opt.dataset.sid, mode);
+    } else {
+      _DRAGEN_STATE.mode = _dragenActiveMode();
+    }
+    _dragenRenderSiblings();
+  });
 }
 
 function setupDragenButton() {
@@ -6200,25 +6236,8 @@ function setupDragenButton() {
     showModal("dragen-modal");
     await loadDragenVcfList();
   });
-  const modeSel = document.getElementById("dragen-mode-select");
-  if (modeSel) {
-    modeSel.addEventListener("change", () => {
-      _DRAGEN_STATE.mode = modeSel.value;
-      _dragenRenderList();
-      // Reset sample-id box so the new suffix can suggest itself
-      const sidIn = document.getElementById("dragen-sample-id");
-      if (sidIn) sidIn.value = "";
-    });
-  }
-  const sel = document.getElementById("dragen-vcf-select");
-  if (sel) {
-    sel.addEventListener("change", () => {
-      const opt = sel.options[sel.selectedIndex];
-      const sidIn = document.getElementById("dragen-sample-id");
-      if (sidIn && opt?.dataset?.sid) sidIn.value = _dragenSuggestSid(opt.dataset.sid);
-      _dragenRenderSiblings();
-    });
-  }
+  _dragenWireSelect("dragen-vcf-inhouse", "inhouse", "dragen-vcf-dragen");
+  _dragenWireSelect("dragen-vcf-dragen",  "dragen",  "dragen-vcf-inhouse");
   document.getElementById("dragen-refresh-btn")?.addEventListener("click", async (ev) => {
     const b = ev.currentTarget;
     if (b) { b.disabled = true; b.textContent = "🔄 更新中…"; }

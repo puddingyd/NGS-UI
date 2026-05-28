@@ -45,9 +45,10 @@ def _now() -> str:
 # ── VCF discovery ──────────────────────────────────────────────────
 
 _DRAGEN_VCF_GLOBS = [
-    "*hard-filtered.vcf.gz",
+    # The only layout we care about now: <root>/<run>/vcf.gz/*hard-
+    # filtered.vcf.gz. Restricting to this one pattern keeps the index
+    # tight (no random *.hard-filtered.vcf.gz dropped one level up).
     "*/vcf.gz/*hard-filtered.vcf.gz",
-    "*/*/*hard-filtered.vcf.gz",
 ]
 _SUFFIX_RE = re.compile(r"\.hard-filtered\.vcf\.gz$", re.IGNORECASE)
 
