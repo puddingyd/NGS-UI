@@ -56,4 +56,20 @@ python3 "${SCRIPT_DIR}/parse_mito_vcf.py" \
   --mitomap_rna "$MM_RNA" \
   --sample_id "$SAMPLE" \
   --output "$TSV"
+
+# ClinVar annotation — fills CLINVAR_SIG / STARS / DN / SIGCONF on the
+# TSV by joining (CHROM, POS, REF, ALT) against a chrM-only ClinVar
+# VCF. Built once by scripts/build_mito_clinvar_vcf.sh; reused for
+# every sample. Silently skipped when the file doesn't exist so this
+# wrapper still works on hosts without ClinVar.
+CLINVAR_MITO_VCF="${CLINVAR_MITO_VCF:-$HOME/NGS_UI/biotools/clinvar/clinvar_mito.vcf.gz}"
+if [ -f "$CLINVAR_MITO_VCF" ]; then
+  echo "[mito] $SAMPLE  ClinVar annotate ($CLINVAR_MITO_VCF)" >&2
+  python3 "${SCRIPT_DIR}/annotate_clinvar.py" \
+    --tsv "$TSV" \
+    --clinvar "$CLINVAR_MITO_VCF"
+else
+  echo "[mito] $SAMPLE  ClinVar annotation skipped (no $CLINVAR_MITO_VCF)" >&2
+fi
+
 echo "[mito] $SAMPLE  done → $TSV" >&2
