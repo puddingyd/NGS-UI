@@ -710,7 +710,9 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
        mode = 'merged'  → single deduped list.
     """
     hpo_rows: list = sample.get("patient_phenotype") or []
-    panel_names: list[str] = sample.get("selected_panels") or []
+    # selected_panels is a list of {name, weight} dicts (see
+    # phenotype_io.parse) — pull the name field.
+    panel_entries: list = sample.get("selected_panels") or []
 
     # Build [(display_name, [genes...])] preserving order.
     sections: list[tuple[str, list[str]]] = []
@@ -720,7 +722,9 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         if not hid: continue
         genes = _genes_for_term_or_panel(hid)
         sections.append((f"{label} ({hid})", genes))
-    for pname in panel_names:
+    for entry in panel_entries:
+        pname = entry.get("name") if isinstance(entry, dict) else str(entry)
+        if not pname: continue
         genes = _genes_for_term_or_panel(pname)
         sections.append((pname, genes))
 
