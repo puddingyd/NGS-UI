@@ -1925,8 +1925,31 @@ const CANDIDATE_SECTION_DEFS = [
   { el: "cat-carrier-c",   title: "Carrier screening", category: "carrier",  dropdown: "panel" },
 ];
 
+// Look up a variant id across all four maps (SNV / Mito / CNV / SV)
+// so the Causative / Other report sections can render variants no
+// matter which card the reviewer flipped the status on. Returns
+// {v, kind} or {v: null, kind: null}.
+function lookupAnyVariant(id) {
+  const d = state.data || {};
+  let v = (d.variants || {})[id];
+  if (v) return { v, kind: "snv" };
+  v = (d.mito_variants || {})[id];
+  if (v) return { v, kind: "mito" };
+  v = (d.cnv_variants || {})[id];
+  if (v) return { v, kind: "cnv" };
+  v = (d.sv_variants || {})[id];
+  if (v) return { v, kind: "sv" };
+  return { v: null, kind: null };
+}
+
 function idsForReportSection(def) {
-  const known         = Object.keys(state.data.variants || {});
+  const d = state.data || {};
+  const known = [
+    ...Object.keys(d.variants      || {}),
+    ...Object.keys(d.mito_variants || {}),
+    ...Object.keys(d.cnv_variants  || {}),
+    ...Object.keys(d.sv_variants   || {}),
+  ];
   const reported      = Object.keys(state.reports.status || {});
   const panelReported = Object.keys(state.reports.panels || {});
   const all = Array.from(new Set([...known, ...reported, ...panelReported]));
@@ -1939,15 +1962,15 @@ function idsForReportSection(def) {
     // scattering down the list. Manual entries (no gene_symbol)
     // stay put as singleton clusters.
     const sorted = all.filter(def.match).sort((a, b) => {
-      const sa = Number(state.data.variants[a]?.total_score);
-      const sb = Number(state.data.variants[b]?.total_score);
+      const sa = Number(lookupAnyVariant(a).v?.total_score);
+      const sb = Number(lookupAnyVariant(b).v?.total_score);
       const va = Number.isFinite(sa) ? sa : -Infinity;
       const vb = Number.isFinite(sb) ? sb : -Infinity;
       return vb - va;
     });
     const groups = new Map();
     for (const id of sorted) {
-      const key = state.data.variants[id]?.gene_symbol || `__${id}`;
+      const key = lookupAnyVariant(id).v?.gene_symbol || `__${id}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(id);
     }
@@ -2011,12 +2034,27 @@ function renderBlock(def, ids, openKey) {
     body.innerHTML = `<div class="muted">（無符合點位）</div>`;
   } else {
     visibleIds.forEach((id, i) => {
-      const v = state.data.variants[id] || null;
-      body.appendChild(renderVariantCard(v, id, def.dropdown, {
+      // Dispatch by variant kind so mito and CNV/SV variants tagged
+      // status=1/2 render with their proper cards (heteroplasmy /
+      // copy-number / cytoband, etc.) instead of the SNV-shaped
+      // "missing variant" placeholder. Falls back to the SNV card's
+      // missing-variant warning when the id is reported but not in
+      // any current payload.
+      const { v, kind } = lookupAnyVariant(id);
+      const opts = {
         category: def.category,
         index: i + 1,
         diseaseCheckbox: !!def.diseaseCheckbox,
-      }));
+      };
+      let card;
+      if (v && kind === "mito") {
+        card = renderMitoCard(v, id, opts);
+      } else if (v && (kind === "cnv" || kind === "sv")) {
+        card = renderCnvSvCard(v, id, opts);
+      } else {
+        card = renderVariantCard(v, id, def.dropdown, opts);
+      }
+      body.appendChild(card);
     });
     manuals.forEach(m => body.appendChild(renderManualVariantCard(m)));
     if (def.manualStatus) {
