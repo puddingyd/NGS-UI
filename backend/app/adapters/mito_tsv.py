@@ -37,6 +37,8 @@ import csv
 import re
 from pathlib import Path
 
+from ..services import clinvar_mito
+
 MITO_TIERS = ["MITO-1", "MITO-2"]
 
 _PATHO_STATUS_RE = re.compile(r"\bCfrm\b|\bConfirmed\b|\[L?P\]", re.I)
@@ -169,14 +171,6 @@ def load_mito_tsv(
                 "depth":         _to_int(row.get("DEPTH")),
                 "filter":        filt or "PASS",
                 "TLOD":          _to_float(row.get("TLOD")),
-                # ClinVar — populated by scripts/annotate_clinvar.py when a
-                # mito-only ClinVar VCF is built first; same field names
-                # as the SNV adapter so the UI / docx pick them up
-                # uniformly.
-                "CLNSIG":         (row.get("CLINVAR_SIG") or "").strip(),
-                "clinvar_stars":  _to_int(row.get("CLINVAR_STARS")),
-                "clinvar_dn":     (row.get("CLINVAR_DN") or "").strip(),
-                "CLNSIGCONF":     (row.get("CLINVAR_SIGCONF") or "").strip(),
                 "mitomap_disease": disease,
                 "mitomap_status":  status,
                 "mitomap_plasmy":  (row.get("MITOMAP_PLASMY") or "").strip(),
@@ -189,6 +183,15 @@ def load_mito_tsv(
                 "in_panel":        in_panel,
                 "pathogenic":      pathogenic,
             }
+            # ClinVar — runtime lookup against the chrM-only ClinVar
+            # VCF (decoupled from the 三級分析 pipeline). Field names
+            # match the SNV adapter so the UI / docx_export pick them
+            # up uniformly; absent variants get blanks.
+            cv = clinvar_mito.lookup(pos, ref, alt)
+            v["CLNSIG"]        = cv.get("CLNSIG", "")
+            v["clinvar_stars"] = cv.get("stars", 0)
+            v["clinvar_dn"]    = cv.get("CLNDN", "")
+            v["CLNSIGCONF"]    = cv.get("CLNSIGCONF", "")
             variants[vid] = v
             categories["MITO-1" if pathogenic else "MITO-2"].append(vid)
 

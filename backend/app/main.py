@@ -5,7 +5,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
 from .routers import analyses, auth, dragen, emr, jobs, phenotype, phenotype_tool, samples
-from .services import hpo_ontology, omim_store, phenotype_scorer, users
+from .services import clinvar_mito, hpo_ontology, omim_store, phenotype_scorer, users
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
 
@@ -34,6 +34,14 @@ def _warm_caches():
     # block startup — sample loads will degrade to empty Disease cols.
     try:
         omim_store._ensure_loaded()
+    except Exception:
+        pass
+    # Cache the chrM-only ClinVar VCF (~3 k rows) so the first Mito
+    # variant load doesn't pay the ~100 ms parse cost. Silent on
+    # failure — variants just get blank ClinVar fields until the
+    # operator drops the VCF in and restarts.
+    try:
+        clinvar_mito._load()
     except Exception:
         pass
 

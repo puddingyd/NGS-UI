@@ -278,10 +278,6 @@ def main(argv):
         "CHROM", "POS", "REF", "ALT", "HGVS_M", "GENE", "LOCUS_TYPE",
         "CONSEQUENCE", "AA_CHANGE",
         "HETEROPLASMY", "AD", "DEPTH", "FILTER", "TLOD",
-        # ClinVar columns — emitted empty here; populated by
-        # scripts/annotate_clinvar.py with a mito-only ClinVar VCF
-        # (see scripts/build_mito_clinvar_vcf.sh).
-        "CLINVAR_SIG", "CLINVAR_STARS", "CLINVAR_DN", "CLINVAR_SIGCONF",
         "MITOMAP_DISEASE", "MITOMAP_STATUS", "MITOMAP_PLASMY",
         "MITOMAP_GB_FREQ", "MITOMAP_GB_SEQS", "MITOMAP_REFS",
         "MITOTIP_SCORE", "MITOMAP_ALLELE",
@@ -376,8 +372,6 @@ def main(argv):
                     "CONSEQUENCE": cons, "AA_CHANGE": aa,
                     "HETEROPLASMY": het, "AD": ad, "DEPTH": dp,
                     "FILTER": filt, "TLOD": tlod,
-                    "CLINVAR_SIG": "", "CLINVAR_STARS": "",
-                    "CLINVAR_DN":  "", "CLINVAR_SIGCONF": "",
                     "MITOMAP_DISEASE": mm["disease"], "MITOMAP_STATUS": mm["status"],
                     "MITOMAP_PLASMY": mm["plasmy"], "MITOMAP_GB_FREQ": mm["gb_freq"],
                     "MITOMAP_GB_SEQS": mm["gb_seqs"], "MITOMAP_REFS": mm["refs"],
