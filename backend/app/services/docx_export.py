@@ -250,9 +250,9 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     _add_paragraph(doc, "  綜合說明:")
     statuses = report.get("status", {}) or {}
     variants = sample.get("variants", {}) or {}
-    cnv_vars = (sample.get("cnv") or {}).get("variants", {}) or {}
-    sv_vars  = (sample.get("sv")  or {}).get("variants", {}) or {}
-    mito_vars = (sample.get("mito") or {}).get("variants", {}) or {}
+    cnv_vars  = sample.get("cnv_variants",  {}) or {}
+    sv_vars   = sample.get("sv_variants",   {}) or {}
+    mito_vars = sample.get("mito_variants", {}) or {}
 
     snv_t1  = _buckets_for_type(variants,  statuses, "1")
     snv_t2  = _buckets_for_type(variants,  statuses, "2")
