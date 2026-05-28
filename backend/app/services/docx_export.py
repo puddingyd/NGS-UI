@@ -114,6 +114,26 @@ _CNV_KIND_ZH: dict[str, str] = {
     "INV": "倒轉",
 }
 
+# Amino-acid single-letter → three-letter mapping. Used to normalise
+# MITOMAP's compact `A64V` style to HGVS `p.Ala64Val` so the report
+# matches the SNV nucleotide column format.
+_AA_1_TO_3: dict[str, str] = {
+    "A": "Ala", "R": "Arg", "N": "Asn", "D": "Asp", "C": "Cys",
+    "E": "Glu", "Q": "Gln", "G": "Gly", "H": "His", "I": "Ile",
+    "L": "Leu", "K": "Lys", "M": "Met", "F": "Phe", "P": "Pro",
+    "S": "Ser", "T": "Thr", "W": "Trp", "Y": "Tyr", "V": "Val",
+    "*": "Ter", "X": "Ter", "U": "Sec", "O": "Pyl",
+}
+
+# AnnotSV's ACMG/ClinGen classification is an int 1-5 on full rows.
+_CNV_ACMG_INT_TO_LABEL: dict[int, str] = {
+    1: "Benign",
+    2: "Likely benign",
+    3: "Uncertain significance",
+    4: "Likely pathogenic",
+    5: "Pathogenic",
+}
+
 
 def _consequence_zh(vep_csq: str) -> str:
     """Pick the most severe glossary entry for a VEP Consequence string.
@@ -156,6 +176,29 @@ def _strip_tx_prefix(s: str) -> str:
     transcript-only on the gene header line, so strip the prefix here.
     """
     return re.sub(r"^[A-Z]+_\d+(\.\d+)?:", "", s or "")
+
+
+def _mito_aa_to_hgvsp(aa: str) -> str:
+    """MITOMAP gives "A64V" — convert to "p.Ala64Val" so the report's
+    nucleotide cell matches the SNV HGVS format. Already-3-letter input
+    (with or without `p.` prefix) is normalised to carry the `p.`.
+    Empty / unparseable input passes through.
+    """
+    if not aa:
+        return ""
+    s = aa.strip()
+    if s.startswith("p."):
+        s = s[2:]
+    # 1-letter form: A64V or *64L (stop)
+    m1 = re.match(r"^([A-Z*])(\d+)([A-Z*])$", s)
+    if m1:
+        a1, pos, a2 = m1.groups()
+        return f"p.{_AA_1_TO_3.get(a1, a1)}{pos}{_AA_1_TO_3.get(a2, a2)}"
+    # 3-letter form: Ala64Val
+    m3 = re.match(r"^([A-Z][a-z]{2}|Ter)(\d+)([A-Z][a-z]{2}|Ter)$", s)
+    if m3:
+        return f"p.{s}"
+    return aa
 
 
 def _structure_label(v: dict) -> str:
@@ -520,9 +563,59 @@ def _clinvar_label(variant: dict) -> str:
 
 
 def _acmg_label(variant: dict, edits_for_v: dict) -> str:
-    cls = edits_for_v.get("ACMG_classification") \
-        or variant.get("ACMG_classification") or ""
-    return (cls or "—").strip()
+    """Return the ACMG/AMP classification label for any variant kind.
+
+    Source priority:
+      1. SNV reviewer override        (edits.ACMG_classification)
+      2. CNV/SV reviewer override     (edits.ACMG_class_sv)
+      3. SNV pipeline value           (variant.ACMG_classification)
+      4. CNV/SV pipeline value, int   (variant.acmg_class 1-5)
+      5. Mito MITOMAP status fallback (variant.mitomap_status)
+    """
+    cls = (edits_for_v.get("ACMG_classification") or "").strip()
+    if cls:
+        return cls
+    cls = (edits_for_v.get("ACMG_class_sv") or "").strip()
+    if cls:
+        return cls
+    cls = (variant.get("ACMG_classification") or "").strip()
+    if cls:
+        return cls
+    n = variant.get("acmg_class")
+    if isinstance(n, int) and n in _CNV_ACMG_INT_TO_LABEL:
+        return _CNV_ACMG_INT_TO_LABEL[n]
+    mst = (variant.get("mitomap_status") or "").strip()
+    if mst:
+        return mst
+    return "—"
+
+
+def _patho_sentence(acmg_class: str) -> str:
+    """Note-2 sentence in §三 driven by the actual ACMG class — so a
+    VUS variant reads "此為不確定意義之變異位點..." not "此為致病性...".
+    """
+    cls = (acmg_class or "").strip().lower().replace("_", " ")
+    if cls == "pathogenic":
+        return "此為致病性之變異位點，與臨床症狀相關。"
+    if cls in ("likely pathogenic",):
+        return "此為可能致病性之變異位點，與臨床症狀相關。"
+    if "pathogenic/likely" in cls or "likely pathogenic/pathogenic" in cls:
+        return "此為致病性 / 可能致病性之變異位點，與臨床症狀相關。"
+    if cls in ("uncertain significance", "vus"):
+        return ("此為不確定意義之變異位點，其臨床意義須由醫師配合其他"
+                "相關資料進行最佳綜合判斷。")
+    if cls in ("likely benign",):
+        return "此為可能良性之變異位點。"
+    if cls == "benign":
+        return "此為良性之變異位點。"
+    # Mito MITOMAP statuses
+    if any(k in cls for k in ("cfrm", "confirmed", "[p]", "[lp]")):
+        return "此為致病性之變異位點，與臨床症狀相關。"
+    if "reported" in cls:
+        return ("此為與疾病相關之變異位點，其臨床意義須由醫師配合其他"
+                "相關資料進行最佳綜合判斷。")
+    # Unknown / empty
+    return "此變異位點之臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。"
 
 
 def _omim_block_for_snv(v: dict) -> str:
@@ -575,10 +668,7 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
 
     _add_paragraph(doc, f"    1. {_omim_block_for_snv(v)}")
-    if tier == "1":
-        _add_paragraph(doc, "    2. 此為致病性之變異位點，與臨床症狀相關。")
-    else:
-        _add_paragraph(doc, "    2. 此變異位點之臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。")
+    _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
     cmt = (edits.get("comment") or "").strip()
     if cmt:
         _add_paragraph(doc, f"    3. {cmt}")
@@ -625,9 +715,8 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     gene  = v.get("gene_symbol") or "?"
     _add_paragraph(doc, f"    {gene} (NC_012920.1)", bold=True)
     hgvs_m = v.get("HGVS_M") or v.get("id") or ""
-    aa     = (v.get("aa_change") or "").strip()
+    aa     = _mito_aa_to_hgvsp(v.get("aa_change") or "")
     nuc    = hgvs_m + (f"({aa})" if aa else "")
-    rs     = ""
     het    = v.get("heteroplasmy")
     try:
         het_s = f"{float(het) * 100:.1f}%" if het not in (None, "", ".") else "—"
@@ -636,15 +725,17 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     clnsig = _clinvar_label(v)
     acmg   = _acmg_label(v, edits)
 
+    # RS ID column dropped — MITOMAP doesn't expose rsIDs in our
+    # current adapter. If the pipeline starts emitting one, conditionally
+    # add the column back.
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("基因",          9),
-        ("RS ID",         8),
-        ("核苷酸",       14, "hgvs"),
-        ("異質性比例",   11),
+        ("核苷酸",       15, "hgvs"),
+        ("異質性比例",   13),
         ("ClinVar",      13, "token"),
         ("ACMG&AMP指引", 13, "token"),
-    ], rows=[[tier, gene, rs, nuc, het_s, clnsig, acmg]])
+    ], rows=[[tier, gene, nuc, het_s, clnsig, acmg]])
 
     mt_disease = (v.get("mitomap_disease") or "").strip()
     # 1. 致病基因之一 — MITOMAP disease name; 遺傳模式 fixed to 粒線體遺傳; no MIM
@@ -652,10 +743,7 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
         _add_paragraph(doc, f"    1. {gene}為{mt_disease}的致病基因之一，其遺傳模式屬於粒線體遺傳。")
     else:
         _add_paragraph(doc, f"    1. {gene}為粒線體疾病之相關基因，其遺傳模式屬於粒線體遺傳。")
-    if tier == "1":
-        _add_paragraph(doc, "    2. 此為致病性之變異位點，與臨床症狀相關。")
-    else:
-        _add_paragraph(doc, "    2. 此變異位點臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。")
+    _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
     _add_paragraph(doc, "    3. 此檢驗結果須由臨床醫師來分析粒線體DNA基因檢驗結果與受檢者臨床症狀的相關性"
                         "並考量家族史的關聯性。此外，粒線體DNA基因變異有組織的特異性，粒線體DNA基因致病變異的"
                         "異質性（heteroplasmy）在不同組織間會有差異。")
@@ -676,7 +764,7 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
 def _mito_reference_text(v: dict, edits: dict) -> str:
     gene = v.get("gene_symbol") or "?"
     hgvs_m = v.get("HGVS_M") or v.get("id") or ""
-    aa = (v.get("aa_change") or "").strip()
+    aa = _mito_aa_to_hgvsp(v.get("aa_change") or "")
     nuc = hgvs_m + (f"({aa})" if aa else "")
     cq_zh = _consequence_zh(v.get("consequence", ""))
     clinvar = _clinvar_label(v)
@@ -699,12 +787,50 @@ def _mito_reference_text(v: dict, edits: dict) -> str:
 
 # ── CNV / SV ──────────────────────────────────────────────────────
 
+def _build_coords(v: dict) -> str:
+    """Prefer the adapter's `coords` field; fall back to constructing
+    `chrN:POS-END` from CHROM / POS / END when it's missing or blank.
+    """
+    coords = (v.get("coords") or "").strip()
+    if coords:
+        return coords
+    chrom = (v.get("CHROM") or "").strip()
+    pos   = v.get("POS")
+    end   = v.get("END")
+    if chrom and pos is not None and end is not None:
+        return f"{chrom}:{pos}-{end}"
+    return ""
+
+
+def _location_zh(g: dict) -> str:
+    """AnnotSV's `Location` per-gene field is e.g. 'txStart-txEnd' (the
+    SV spans the whole gene), 'txStart-intron3', 'exon2-exon8', etc.
+    Return a Chinese phrase suitable for the note text.
+    """
+    loc = (g.get("location") or "").strip() if isinstance(g, dict) else ""
+    if not loc or loc == "txStart-txEnd":
+        return "整個區域"
+    return loc
+
+
+def _omim_genes(v: dict) -> list[dict]:
+    """Filter the variant's `genes` list to those carrying an OMIM_ID —
+    the only ones worth surfacing in the diagnostic report."""
+    out = []
+    for g in (v.get("genes") or []):
+        if not isinstance(g, dict):
+            continue
+        if (g.get("omim_id") or "").strip():
+            out.append(g)
+    return out
+
+
 def _coords_str(v: dict, is_wgs: bool) -> str:
     """WES uses imprecise breakpoint notation `(?_start)_(end_?)`;
     WGS uses the precise start_end form. The adapter's `coords` is the
     raw AnnotSV CHROM:POS-END so we annotate accordingly.
     """
-    coords = v.get("coords") or ""
+    coords = _build_coords(v)
     if is_wgs or not coords:
         return coords
     # WES form
@@ -742,50 +868,59 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         ("ACMG&AMP指引", 13, "token"),
     ], rows=[[tier, chrom, coords_disp, cn_s, zyg, acmg]])
 
-    # 1. 片段位置描述 — single-gene vs multi-gene region
-    gene_count = int(v.get("gene_count") or 0)
-    genes      = v.get("genes") or []   # may be top-10 only
+    # 1. 片段位置描述 — only surface OMIM-tagged genes (per spec);
+    # decide single-gene vs multi-gene template by how many are left.
     chrom_num  = (v.get("CHROM") or "").replace("chr", "")
+    omim_genes = _omim_genes(v)
 
-    # Reviewer can prune which genes go on the report via edits.report_genes
+    # Reviewer can prune which genes appear via edits.report_genes
+    # (frontend toggle on the CNV/SV card). Honour the prune only when
+    # at least one OMIM gene survives.
     report_genes = edits.get("report_genes") or {}
     if isinstance(report_genes, dict):
-        kept = [g for g in genes if report_genes.get(g.get("gene") if isinstance(g, dict) else g)]
+        kept = [g for g in omim_genes if report_genes.get(g.get("gene"))]
         if kept:
-            genes = kept
+            omim_genes = kept
 
-    if gene_count <= 1 and genes:
-        g = genes[0]
-        gname = g["gene"] if isinstance(g, dict) else g
-        # AnnotSV's location string is e.g. "exon1-exon8" or "intron3-exon5"
-        loc = (v.get("location") or "").strip() or "整個區域"
-        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {gname} 基因 {loc}。")
-        # 2. OMIM + inheritance
-        ph  = (v.get("omim_phenotype") or "").strip()
-        inh = _inheritance_zh(v.get("omim_inheritance", "") or "")
-        mim = (v.get("omim_id") or "").strip()
+    kind_zh = _CNV_KIND_ZH.get((v.get("sv_type") or "").upper(), "變異")
+
+    if len(omim_genes) == 1:
+        g = omim_genes[0]
+        gname = g.get("gene") or "?"
+        loc_zh = _location_zh(g)
+        prep = "之" if loc_zh == "整個區域" else "之 "
+        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {gname} 基因{prep}{loc_zh}。")
+        # 2. OMIM phenotype + inheritance, per-gene
+        ph  = (g.get("omim_phenotype") or "").strip()
+        inh = _inheritance_zh(g.get("omim_inheritance", "") or "")
+        mim = (g.get("omim_id") or "").strip()
         bits = [f"{gname}為"]
         bits.append(f"{ph}的致病基因之一" if ph else "此疾病的致病基因之一")
         if inh: bits.append(f"，其遺傳模式屬於{inh}")
         if mim: bits.append(f" (Phenotype MIM number: {mim})")
         _add_paragraph(doc, f"    2. {''.join(bits)}。")
-    else:
-        # Multi-gene region template
-        names = [g["gene"] if isinstance(g, dict) else g for g in genes[:10]]
-        more  = "等" if gene_count > len(names) else ""
-        gene_list_str = ", ".join(names)
+    elif len(omim_genes) > 1:
+        names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
-                            f"包含 {gene_list_str}{more} OMIM 疾病基因。")
-        # 2. 區域對應疾病 — left to reviewer comment (no clean source).
+                            f"包含 {', '.join(names)} 等 OMIM 疾病基因。")
         cmt = (edits.get("comment") or "").strip()
         if cmt:
             _add_paragraph(doc, f"    2. {cmt}")
+    else:
+        # No OMIM-tagged gene in this CNV — list whatever genes are
+        # present so the reviewer has context, but skip the OMIM line.
+        all_names = [
+            g.get("gene", "") for g in (v.get("genes") or [])
+            if isinstance(g, dict) and g.get("gene")
+        ][:10]
+        if all_names:
+            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
+                                f"涵蓋 {', '.join(all_names)} 等基因區域（無 OMIM 疾病基因紀錄）。")
+        else:
+            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上。")
 
     note_idx = 3
-    if tier == "1":
-        _add_paragraph(doc, f"    {note_idx}. 此為致病性之變異位點，與臨床症狀相關。")
-    else:
-        _add_paragraph(doc, f"    {note_idx}. 此變異位點之臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。")
+    _add_paragraph(doc, f"    {note_idx}. {_patho_sentence(acmg)}")
     note_idx += 1
     if not is_wgs:
         _add_paragraph(doc, f"    {note_idx}. 由於此檢驗技術為全外顯子定序，"
@@ -794,27 +929,32 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
 
     _blank(doc)
     _add_paragraph(doc, "  參考資料:")
-    _add_paragraph(doc, _cnv_reference_text(v, edits, gene_count, genes))
+    _add_paragraph(doc, _cnv_reference_text(v, edits, omim_genes, kind_zh, is_wgs))
     _blank(doc)
 
 
-def _cnv_reference_text(v: dict, edits: dict, gene_count: int,
-                        genes: Iterable[dict]) -> str:
-    coords = v.get("coords") or ""
-    sv_type = (v.get("sv_type") or "").upper()
-    kind_zh = _CNV_KIND_ZH.get(sv_type, "變異")
+def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
+                        kind_zh: str, is_wgs: bool) -> str:
+    coords = _coords_str(v, is_wgs) or _build_coords(v)
     zyg     = _zygosity_zh(v.get("zygosity", "")) or "異合子"
     acmg    = _acmg_label(v, edits)
 
-    if gene_count <= 1 and genes:
-        g = next(iter(genes))
-        gname = g["gene"] if isinstance(g, dict) else g
-        loc = (v.get("location") or "").strip() or "整個區域"
-        span_desc = f"此段{kind_zh}涵蓋 {gname} 基因 {loc}"
+    if len(omim_genes) == 1:
+        g = omim_genes[0]
+        gname = g.get("gene") or "?"
+        loc_zh = _location_zh(g)
+        prep = "之" if loc_zh == "整個區域" else "之 "
+        span_desc = f"此段{kind_zh}涵蓋 {gname} 基因{prep}{loc_zh}"
+    elif len(omim_genes) > 1:
+        names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
+        span_desc = f"此段{kind_zh}涵蓋 {', '.join(names)} 等 OMIM 疾病基因"
     else:
-        names = [g["gene"] if isinstance(g, dict) else g for g in list(genes)[:10]]
-        more = "等" if gene_count > len(names) else ""
-        span_desc = f"此段{kind_zh}涵蓋 {', '.join(names)}{more} OMIM 疾病基因"
+        all_names = [
+            g.get("gene", "") for g in (v.get("genes") or [])
+            if isinstance(g, dict) and g.get("gene")
+        ][:10]
+        span_desc = (f"此段{kind_zh}涵蓋 {', '.join(all_names)} 等基因區域（無 OMIM 疾病基因紀錄）"
+                     if all_names else "此段未涵蓋已知疾病基因")
 
     return (
         f"    在個案之檢體中，檢測到位於 {coords} 之{zyg}片段{kind_zh}變異，"
