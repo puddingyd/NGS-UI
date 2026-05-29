@@ -55,7 +55,7 @@ directory by using the -w command line option.
 
 這會增加 Nextflow cache DB lock、metadata 混雜或 resume 行為不穩定的風險。
 
-Nextflow 比較合理的使用方式應是：
+可以考慮：
 
 - 使用獨立的 launch directory 儲存 `.nextflow` metadata
 - 使用 `-w` 指定 process work directory
@@ -154,7 +154,7 @@ drwxr-xr-x 2 n101569 dgm_nckuh 4096 May 22 01:51 /raid/DGM/pytensor_cache/n10296
 grep -n "apptainer\|singularity\|PYTENSOR\|THEANO" .command.run .command.sh .command.err
 ```
 
-發現 Singularity 執行時 pipeline config 硬塞了：
+發現 Singularity 執行時 pipeline config 裡面有：
 
 ```bash
 --env PYTENSOR_FLAGS=compiledir=/raid/DGM/pytensor_cache/${currentUser}
@@ -180,58 +180,6 @@ export PYTENSOR_FLAGS="compiledir=/raid/DGM/work/260603_ped_WES/pytensor_cache"
 
 覆蓋。
 
----
-
-## 目前 workaround
-
-目前可行的 workaround 是：
-
-1. 建立 batch 專用 `LAUNCH_DIR`
-2. 建立 batch 專用 `WORK_DIR`
-3. 在 `WORK_DIR` 下建立 batch 專用 `pytensor_cache`
-4. 複製一份 local config 到 batch 專用 launch directory
-5. 將 local config 內的 PyTensor compiledir 改成該 batch 自己可寫入的路徑
-6. 使用這份 local config 執行 Nextflow
-
-範例：
-
-```bash
-BATCH_NAME="260603_ped_WES"
-
-OUT_DIR="/datalake_Intermediate/pipeline/nextflow_output/${BATCH_NAME}"
-SAMPLESHEET="${OUT_DIR}/samplesheet.csv"
-LAUNCH_DIR="/datalake_Intermediate/pipeline/nextflow_launch/${BATCH_NAME}"
-WORK_DIR="/raid/DGM/work/${BATCH_NAME}"
-PYTENSOR_CACHE="${WORK_DIR}/pytensor_cache"
-
-mkdir -p "${LAUNCH_DIR}" "${WORK_DIR}" "${PYTENSOR_CACHE}"
-chmod -R u+rwx "${PYTENSOR_CACHE}"
-
-source /datalake_Intermediate/pipeline/pipeline_code/NGS2ndAnalysis_env.sh
-
-LOCAL_CONFIG="${LAUNCH_DIR}/nextflow_main.${BATCH_NAME}.config"
-
-cp "${PIPELINE_CONFIG}" "${LOCAL_CONFIG}"
-
-sed -i "s#compiledir=/raid/DGM/pytensor_cache/\${currentUser}#compiledir=${PYTENSOR_CACHE}#g" "${LOCAL_CONFIG}"
-sed -i "s#compiledir=/raid/DGM/pytensor_cache/n102968#compiledir=${PYTENSOR_CACHE}#g" "${LOCAL_CONFIG}"
-sed -i "s#compiledir=/home/pipeline/pytensor_cache/\${currentUser}#compiledir=${PYTENSOR_CACHE}#g" "${LOCAL_CONFIG}"
-
-cd "${LAUNCH_DIR}"
-
-nextflow -c "${LOCAL_CONFIG}" run ${PIPELINE_CODE}/main.nf \
-    -profile dgx \
-    --input_csv "${SAMPLESHEET}" \
-    --seq_type WES \
-    --run_gcnv true \
-    --out_dir "${OUT_DIR}" \
-    -w "${WORK_DIR}" \
-    -resume
-```
-
-這個 workaround 不會修改共用的主 config，只影響該 batch。
-
----
 
 ## 建議 pipeline 端修正方向
 
@@ -297,33 +245,9 @@ mkdir -p "${PYTENSOR_CACHE}"
 chmod u+rwx "${PYTENSOR_CACHE}"
 ```
 
-#### 方案 C：提供 pipeline 參數讓使用者指定
-
-例如：
-
-```bash
---pytensor_cache_dir /path/to/cache
-```
-
-再由 config 帶入 Singularity runOptions。
-
 ---
 
-### 3. 避免 hard-code 或覆蓋使用者 shell 中的 `PYTENSOR_FLAGS`
-
-目前即使使用者在 shell 中 export `PYTENSOR_FLAGS`，仍會被 config 內的 `--env PYTENSOR_FLAGS=...` 覆蓋。
-
-建議允許使用者透過參數或環境變數覆寫，例如：
-
-```groovy
-params.pytensor_cache_dir = params.pytensor_cache_dir ?: "${workDir}/pytensor_cache"
-```
-
-或至少在 guide 中說明如何指定。
-
----
-
-### 4. 檢查 Nextflow 25.10.2 config 相容性
+### 3. 檢查 Nextflow 25.10.2 config 相容性
 
 執行時也曾遇到：
 
@@ -338,30 +262,3 @@ singularity.params.sif_dir
 ```
 
 可能需要改成目前 Nextflow 支援的設定方式。
-
----
-
-## 總結
-
-目前 WES + gCNV 預設流程在多使用者環境下會遇到兩個主要問題：
-
-1. 所有 batch 若都從 `/raid/DGM/work` launch Nextflow，會共用 `/raid/DGM/work/.nextflow/cache`，可能導致 cache DB lock 或 file lock 問題。
-2. GATK gCNV 會透過 `PYTENSOR_FLAGS` 使用 `/raid/DGM/pytensor_cache/${currentUser}`，但該目錄可能已由其他使用者建立，造成目前使用者無法寫入，導致 PyTensor import 失敗，進而讓 GATK 報 `gcnvkernel` 無法 import。
-
-建議 pipeline 預設改成：
-
-```bash
-LAUNCH_DIR="/datalake_Intermediate/pipeline/nextflow_launch/${BATCH_NAME}"
-WORK_DIR="/raid/DGM/work/${BATCH_NAME}"
-PYTENSOR_CACHE="${WORK_DIR}/pytensor_cache"
-```
-
-並在 Nextflow 指令中使用：
-
-```bash
--w "${WORK_DIR}"
-```
-
-同時讓 Singularity/Apptainer 使用該 batch 自己可寫入的 PyTensor cache。
-
-這樣其他使用者才能照 guide 預設方式執行，不需要手動複製 local config 或修改 cache 路徑。
