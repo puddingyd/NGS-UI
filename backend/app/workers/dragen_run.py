@@ -2,21 +2,37 @@
 
 Runs the 4-script chain end-to-end on either a DRAGEN hard-filtered
 VCF (`--mode dragen`) or an in-house ensemble Nextflow output
-(`--mode inhouse`). Steps (same shape for both modes; only the inputs
-differ):
+(`--mode inhouse`). Steps:
 
-    1. annotate_mito_vcf.sh         → tertiary_output/<SID>/mito.annotated.tsv
-    2. stage_dragen_for_tertiary.sh → nf_stage/<SID>/04_snv_indel/...
-    3. nextflow main_tertiary.nf    → tertiary_output/<SID>/<SID>.snv_indel.annotated.tsv
-    4. run_stopgaps.sh              → ClinVar / filter / GeneBe / extra-VEP / CNV-AnnotSV
+    1. annotate_mito_vcf.sh           → NGS_UI/tertiary_output/<SID>/mito.annotated.tsv
+    2. detect existing pipeline output
+       ├ HIT  → skip 3+4, reuse the pre-existing .acmg.tsv
+       └ MISS → run 3+4 below
+    3. stage_dragen_for_tertiary.sh   → nf_stage/<SID>/04_snv_indel/...
+    4. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<SID>/
+                                          03_acmg/<SID>.snv_indel.acmg.tsv
+    5. copy pipeline TSV              → NGS_UI/tertiary_output/<SID>/
+                                          snv_indel.annotated.tsv
+                                          + pipeline_source.json (audit)
+    6. run_stopgaps.sh                → filter / GeneBe / extra-VEP / CNV-AnnotSV
+                                          (ClinVar removed — pipeline already
+                                           does it; GeneBe writes a SECOND
+                                           opinion to GENEBE_* columns)
 
 Mode differences:
   dragen  — step 1 reads the hard-filtered VCF (extracts chrM);
-            step 5 (inside run_stopgaps) auto-discovers sibling
-            <SID>.cnv.vcf.gz + cnv_sv.vcf.gz and subtracts overlap.
+            step 6's CNV/SV branch auto-discovers sibling
+            <SID>.cnv.vcf.gz + <SID>.sv.vcf.gz from the same dir.
   inhouse — step 1 reads the explicit <SID>.mito.vcf.gz;
-            step 5 runs AnnotSV separately on gcnv + delly (no
-            subtraction — different callers, no event overlap).
+            step 6 runs AnnotSV separately on gcnv + delly.
+
+Existing-output detection (step 2): tries
+    /home/pipeline/tertiary_output/<SID>/03_acmg/<SID>.snv_indel.acmg.tsv
+    /home/pipeline/tertiary_output/<stripped SID>/03_acmg/<stripped SID>.snv_indel.acmg.tsv
+in that order, where <stripped SID> drops the -dragen / -inhouse
+suffix. Production runs by the pipeline team don't carry our
+suffix, so the second candidate matches their output and we reuse
+it (saving ~30 min per WES sample).
 
 Started by `python3 -m app.workers.dragen_run --job-id … --vcf …`.
 """
@@ -25,15 +41,64 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import (DRAGEN_JOBS_DIR, NGS_UI_HOME, REPO_ROOT,
-                       TERTIARY_OUTPUT_ROOT)
+from ..config import (DRAGEN_JOBS_DIR, NGS_UI_HOME, PIPELINE_OUT_ROOT,
+                       REPO_ROOT, TERTIARY_OUTPUT_ROOT)
 from ..services import dragen_jobs
+
+
+def _strip_sid_suffix(sid: str) -> str:
+    """Drop the -dragen / -inhouse caller suffix the GUI adds for
+    directory disambiguation. Returns sid unchanged when no suffix
+    matches."""
+    for suf in ("-dragen", "-inhouse", "-WES", "-WGS"):
+        if sid.endswith(suf):
+            return sid[: -len(suf)]
+    return sid
+
+
+def _find_pipeline_acmg_tsv(sid: str) -> Path | None:
+    """Look for an existing <SID>.snv_indel.acmg.tsv under the pipeline
+    production output root. Tries the full (suffixed) SID first; falls
+    back to the stripped base SID so production runs by the pipeline
+    team (no caller suffix) are reused.
+    """
+    candidates = [sid]
+    base = _strip_sid_suffix(sid)
+    if base != sid:
+        candidates.append(base)
+    for s in candidates:
+        p = PIPELINE_OUT_ROOT / s / "03_acmg" / f"{s}.snv_indel.acmg.tsv"
+        if p.is_file():
+            return p
+    return None
+
+
+def _track_pipeline_source(sample_dir: Path, source: Path) -> None:
+    """Write a small audit record so the reviewer (and a future
+    re-sync endpoint) can tell where the SNV TSV originated.
+    Lives alongside sample_metadata.json so register() doesn't
+    accidentally clobber it.
+    """
+    try:
+        mtime = source.stat().st_mtime
+    except OSError:
+        mtime = None
+    rec = {
+        "source_path":  str(source),
+        "source_mtime": mtime,
+        "copied_at":    _now(),
+    }
+    (sample_dir / "pipeline_source.json").write_text(
+        json.dumps(rec, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 def _now():
@@ -104,7 +169,8 @@ def main() -> int:
     mode   = args.mode
     sample_dir = TERTIARY_OUTPUT_ROOT / sid
     sample_dir.mkdir(parents=True, exist_ok=True)
-    tsv = sample_dir / f"{sid}.snv_indel.annotated.tsv"
+    # NGS-UI side TSV path the adapter reads (no SID prefix).
+    gui_tsv = sample_dir / "snv_indel.annotated.tsv"
 
     scripts = REPO_ROOT / "scripts"
     nf_work  = NGS_UI_HOME / "nf_work" / sid
@@ -114,12 +180,13 @@ def main() -> int:
     # extracts chrM from the hard-filtered VCF (the worker's --vcf is
     # the whole-genome input there).
     mito_in = args.mito_vcf if (mode == "inhouse" and args.mito_vcf) else vcf
+    seq_type = "WGS" if mode == "dragen" else "WES"
 
     _update(job_id, state="running", step="mito", started_at=_now())
     try:
         # 1. Mito
         if mode == "inhouse" and not args.mito_vcf:
-            print("[1/4 mito] skipped — in-house mode but --mito-vcf empty",
+            print("[mito] skipped — in-house mode but --mito-vcf empty",
                   flush=True)
         else:
             _run([str(scripts / "annotate_mito_vcf.sh"),
@@ -128,36 +195,55 @@ def main() -> int:
                   "--outdir", str(sample_dir)],
                  label="1/4 mito")
 
-        # 2. Stage (gnomAD AF + gene-body BED filter, caller-agnostic)
-        _update(job_id, step="stage")
-        _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-              "--in",     vcf,
-              "--sample", sid],
-             label="2/4 stage")
+        # 2. Reuse existing pipeline output if the production pipeline
+        # has already processed this sample (sid or its stripped base).
+        _update(job_id, step="detect-pipeline-output")
+        existing = _find_pipeline_acmg_tsv(sid)
+        if existing is not None:
+            print(f"\n[detect] reusing existing pipeline TSV: {existing}",
+                  flush=True)
+        else:
+            print("\n[detect] no existing pipeline TSV — running nextflow",
+                  flush=True)
 
-        # 3. Nextflow tertiary pipeline
-        _update(job_id, step="nextflow")
-        _run([
-            "nextflow",
-            "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
-            "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
-            "-profile", "dgm",
-            "-work-dir", str(nf_work),
-            "--sample_id", sid,
-            "--input_dir", str(nf_stage),
-            "--seq_type",  "WGS",
-            "--out_dir",   str(TERTIARY_OUTPUT_ROOT),
-        ], label="3/4 nextflow")
+            # 3. Stage (gnomAD AF + gene-body BED filter, caller-agnostic)
+            _update(job_id, step="stage")
+            _run([str(scripts / "stage_dragen_for_tertiary.sh"),
+                  "--in",     vcf,
+                  "--sample", sid],
+                 label="2a/4 stage")
 
-        if not tsv.is_file():
-            raise RuntimeError(f"nextflow finished but TSV not found: {tsv}")
+            # 4. Nextflow → /home/pipeline/tertiary_output/<SID>/...
+            _update(job_id, step="nextflow")
+            _run([
+                "nextflow",
+                "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
+                "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
+                "-profile", "dgm",
+                "-work-dir", str(nf_work),
+                "--sample_id", sid,
+                "--input_dir", str(nf_stage),
+                "--seq_type",  seq_type,
+                "--out_dir",   str(PIPELINE_OUT_ROOT),
+            ], label="2b/4 nextflow")
 
-        # 4. Stop-gap chain. CNV/SV branch depends on mode:
-        #    dragen  → sibling discovery + cnv↔cnv_sv subtraction
-        #    inhouse → explicit gcnv + delly VCFs, no subtraction
+            existing = _find_pipeline_acmg_tsv(sid)
+            if existing is None:
+                raise RuntimeError(
+                    "nextflow finished but expected acmg.tsv not found under "
+                    f"{PIPELINE_OUT_ROOT}/{sid}/03_acmg/"
+                )
+
+        # 5. Copy pipeline TSV → NGS-UI side; record source audit.
+        _update(job_id, step="copy-pipeline-tsv")
+        shutil.copyfile(existing, gui_tsv)
+        _track_pipeline_source(sample_dir, existing)
+        print(f"[copy] {existing} → {gui_tsv}", flush=True)
+
+        # 6. Stop-gap chain (no ClinVar; pipeline already populates it).
         _update(job_id, step="stop-gaps")
         stop_args = [str(scripts / "run_stopgaps.sh"),
-                     "--tsv",    str(tsv),
+                     "--tsv",    str(gui_tsv),
                      "--sample", sid]
         if mode == "dragen":
             stop_args += ["--dragen-cnv-source", vcf]
@@ -168,7 +254,7 @@ def main() -> int:
                 stop_args += ["--inhouse-sv-vcf",  args.sv_vcf]
         if not args.with_extra_vep:
             stop_args.append("--skip-extra-vep")
-        _run(stop_args, label="4/4 stop-gaps")
+        _run(stop_args, label="3/4 stop-gaps")
 
         _update(job_id, state="done", step="done", finished_at=_now())
         print("\n[dragen_run] DONE.", flush=True)

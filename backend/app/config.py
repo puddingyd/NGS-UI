@@ -37,6 +37,16 @@ REPORT_OUTPUT_DIR = Path(os.environ.get(
 ))
 REPORT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Pipeline (林伯昱's in-house Nextflow) production output root. The
+# new pipeline always writes here; the NGS-UI worker reads it
+# (one-time copy per sample) and otherwise keeps its own state
+# in TERTIARY_OUTPUT_ROOT. Override via env when running on a
+# non-DGM machine.
+PIPELINE_OUT_ROOT = Path(os.environ.get(
+    "NGS_UI_PIPELINE_OUT_ROOT",
+    "/home/pipeline/tertiary_output",
+))
+
 DATA_ROOT = Path(os.environ.get(
     "NGS_UI_DATA_ROOT",
     NGS_UI_HOME / "data",
