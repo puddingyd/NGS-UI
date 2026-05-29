@@ -495,14 +495,15 @@ def _row_to_variant(row: dict) -> dict:
     }
 
 
-# Depth thresholds applied at the adapter level. WES has uneven
-# coverage outside the capture targets, so a hard floor at 10 keeps
-# the report free of off-target noise; WGS is uniform so we keep
-# everything and just colour-flag the low-depth tail. The lower flag
-# stops at 20 — anything <20 gets a "low_depth" marker the UI paints
-# red on the AD column.
+# Depth thresholds applied at the adapter level.
+#   WES → hard floor at DP=10 (drop noise outside the capture targets)
+#         + red flag at DP<20.
+#   WGS → no hard floor (uniform coverage); red flag at DP<10 only.
+# Both flags land on the variant as `low_depth: bool`; the UI paints
+# the Read-depth cell red when true.
 _DP_HARD_FLOOR_WES = 10
-_DP_LOW_FLAG       = 20
+_DP_LOW_FLAG_WES   = 20
+_DP_LOW_FLAG_WGS   = 10
 
 
 def load_snv_tsv(tsv_path: Path,
@@ -515,14 +516,14 @@ def load_snv_tsv(tsv_path: Path,
     (within tier 4: ACMG_POINTS desc; within tier 5: ACMG_POINTS desc).
 
     `test_type` controls the depth gate:
-      WES  → variants with DP < 10 dropped entirely (off-target noise).
-      WGS  → no hard floor (uniform coverage); low-depth flag only.
-    Both modes set `low_depth: True` on variants with DP < 20 so the
-    frontend can paint the AD cell red.
+      WES  → variants with DP < 10 dropped entirely (off-target noise);
+             low_depth set on the remainder when DP < 20.
+      WGS  → no hard floor; low_depth set when DP < 10.
     """
     variants: dict[str, dict] = {}
     by_tier: dict[str, list[tuple[float, str]]] = {t: [] for t in TIERS}
-    is_wes = (test_type or "").upper() == "WES"
+    is_wes    = (test_type or "").upper() == "WES"
+    low_flag  = _DP_LOW_FLAG_WES if is_wes else _DP_LOW_FLAG_WGS
 
     with tsv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -535,7 +536,7 @@ def load_snv_tsv(tsv_path: Path,
             dp = v.get("depth") or 0
             if is_wes and dp < _DP_HARD_FLOOR_WES:
                 continue
-            v["low_depth"] = bool(dp and dp < _DP_LOW_FLAG)
+            v["low_depth"] = bool(dp and dp < low_flag)
             variants[v["id"]] = v
             pts = v.get("ACMG_score")
             sort_key = float(pts) if isinstance(pts, (int, float)) else -999.0
