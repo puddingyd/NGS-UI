@@ -197,7 +197,7 @@ def main() -> int:
                     default=os.environ.get(
                         "CLINVAR_VCF",
                         "/home/pipeline/reference/hg38/tertiary/clinvar/"
-                        "clinvar_20260418.vcf.gz"),
+                        "clinvar_20260510.vcf.gz"),
                     help="ClinVar VCF[.gz] (default: pipeline's reference; "
                          "or env CLINVAR_VCF)")
     args = ap.parse_args()
