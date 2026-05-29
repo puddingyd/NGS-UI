@@ -1612,9 +1612,19 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     urls.omim ? `<a href="${urls.omim}"     target="_blank" rel="noopener">OMIM</a>` : "",
   ].join("");
 
-  const editAcmgClass = getEdit(id, "ACMG_classification") ?? v.ACMG_classification ?? "";
-  const editAcmgCrit  = getEdit(id, "ACMG_criteria")       ?? v.ACMG_criteria       ?? "";
-  const editAcmgScore = getEdit(id, "ACMG_score")          ?? (v.ACMG_score ?? "");
+  // ACMG priority: reviewer override > GeneBe (second-opinion stop-gap)
+  // > pipeline. GeneBe ACMG_CLASS / SCORE / CRITERIA tend to be tighter
+  // calibrated than the pipeline's per-rule classifier, so use them
+  // when present and fall back to pipeline otherwise.
+  const editAcmgClass = getEdit(id, "ACMG_classification")
+                     ?? v.genebe_acmg_class
+                     ?? v.ACMG_classification ?? "";
+  const editAcmgCrit  = getEdit(id, "ACMG_criteria")
+                     ?? v.genebe_acmg_criteria
+                     ?? v.ACMG_criteria ?? "";
+  const editAcmgScore = getEdit(id, "ACMG_score")
+                     ?? v.genebe_acmg_score
+                     ?? (v.ACMG_score ?? "");
   const editComment   = getEdit(id, "comment")             ?? "";
 
   const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
@@ -1718,7 +1728,6 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           <input class="acmg-score" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgScore)}" />
           <span class="acmg-paren">)</span>
         </span>
-        ${_renderGeneBeLine(v)}
         <textarea class="acmg-crit" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(editAcmgCrit)}</textarea>
       </div>
       <div>
@@ -1791,17 +1800,7 @@ function renderVariantBadges(v) {
 // user can see which co-segregating variants share the same haplotype.
 // VEP EXON/INTRON come through as "current/total" (e.g. "6/10"); show
 // whichever the variant falls in, "—" when both are blank.
-// "GeneBe: LP (8)" — appears below the ACMG row only when the GeneBe
-// stop-gap left a non-empty class on the variant. Class is shown as a
-// short abbreviation; the bracket carries GeneBe's own ACMG score
-// (independent of the pipeline's score). Empty class → nothing rendered.
-const _ACMG_ABBREV = {
-  "Pathogenic":             "P",
-  "Likely pathogenic":      "LP",
-  "Uncertain significance": "VUS",
-  "Likely benign":          "LB",
-  "Benign":                 "B",
-};
+
 // "舊格式，請重跑新版 pipeline" banner — shown inside the SNV card
 // whenever sample_loader rejected the TSV (old-format detection
 // raised OldFormatError). Reviewer state (status / edits / phenotype)
@@ -1821,16 +1820,6 @@ function _renderSnvTsvErrorBanner() {
   banner.innerHTML = `<strong>⚠ ${escapeHtml(msg)}</strong>
     <div class="muted" style="margin-top:4px">reviewer 編輯狀態已保留；重跑後直接 reload 即可。</div>`;
   card.insertBefore(banner, card.firstChild);
-}
-
-function _renderGeneBeLine(v) {
-  const cls = (v.genebe_acmg_class || "").trim();
-  if (!cls) return "";
-  const abbr  = _ACMG_ABBREV[cls] || cls;
-  const sigClass = classifySignificance(cls) || "";
-  const score = (v.genebe_acmg_score != null && v.genebe_acmg_score !== "")
-    ? ` (${escapeHtml(String(v.genebe_acmg_score))})` : "";
-  return `<span class="genebe-line muted">GeneBe: <span class="${sigClass}">${escapeHtml(abbr)}</span>${score}</span>`;
 }
 
 function fmtExonIntron(v) {
