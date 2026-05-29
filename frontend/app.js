@@ -264,6 +264,14 @@ const TOOL_CUTOFFS = {
   // not "benign", so leave the low end uncoloured (no lb).
   spliceai:      { p: 0.800, lp: 0.500, vus: 0.200 },
   pangolin:      { p: 0.800, lp: 0.500, vus: 0.200 },
+  // P-KNN LLR — signed, ClinGen calibration (Pejaver 2022). The
+  // existing >= cascade naturally handles the bipartite split:
+  //   LLR > 7.65         → sig-p   (Strong P)
+  //   1.99 < LLR ≤ 7.65  → sig-lp  (Moderate / Supporting P → same light red)
+  //   |LLR| ≤ 1.99       → sig-vus (ambiguous, yellow)
+  //   -7.65 ≤ LLR < -1.99 → sig-lb (Moderate / Supporting B → light green)
+  //   LLR < -7.65         → sig-b   (Strong B)
+  pknn:          { p: 7.65, lp: 1.99, vus: -1.99, lb: -7.65 },
 };
 
 // In-silico predictors in display order. The first three tools with
@@ -277,7 +285,7 @@ const TOOL_CUTOFFS = {
 // MetaRNN come from the extra-VEP stop-gap; the conservation /
 // gene-level / older tools sit further down.
 const IN_SILICO_TOOLS = [
-  { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR",            extraField: "PKNN_evidence" },
+  { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR",            extraField: "PKNN_evidence", cutoffs: "pknn" },
   { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred", cutoffs: "alphamissense" },
   // Pangolin is signed: -0.87 = strong splice loss, +0.87 = strong
   // splice gain. Classify by |score| so both colour-code the same way;
