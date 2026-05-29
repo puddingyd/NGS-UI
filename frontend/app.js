@@ -1684,7 +1684,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
-        <span class="k">Read depth (VAF)</span><span class="v ${lowDpClass(v.AD)}" title="${lowDpClass(v.AD) ? "Low DP (<10) — 建議 IGV / Sanger 確認" : ""}">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
+        <span class="k">Read depth (VAF)</span><span class="v ${v.low_depth ? "sig-lp" : ""}" title="${v.low_depth ? `Low DP (DP ${v.depth || "?"} < 20) — 建議 IGV / Sanger 確認` : ""}">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
         <span class="k">Consequence</span><span class="v">${fmtTxt(v.Consequence)}</span>
         <div class="more-extras hidden">
           <span class="k">Exon / Intron</span><span class="v">${fmtExonIntron(v)}</span>

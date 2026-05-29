@@ -292,6 +292,24 @@ def _vaf_from_ad(ad: str) -> float | None:
     return nums[1] / total  # first ALT vs all (ref + ALTs)
 
 
+def _depth_from_ad(ad: str) -> int:
+    """Fallback DP = sum(AD parts) when neither DP nor DP_DV/DP_HC is
+    populated. Returns 0 on blank / malformed input.
+    """
+    if not ad:
+        return 0
+    total = 0
+    for p in str(ad).split(","):
+        p = p.strip()
+        if not p or p == "." or p.upper() in ("NA", "N/A"):
+            continue
+        try:
+            total += int(float(p))
+        except ValueError:
+            continue
+    return total
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -397,6 +415,19 @@ def _row_to_variant(row: dict) -> dict:
         # FORMAT/VAF in HaplotypeCaller) get VAF derived from AD so the
         # card doesn't show '—' just because the column is missing.
         "AD":     _coalesce(row.get("AD"),  row.get("AD_DV"),  row.get("AD_HC")),
+        # Total read depth at the position — DV column preferred (more
+        # accurate for short reads), HC fallback. Used by the UI for
+        # depth-based filtering (drop < 10 on WES) and the low-depth
+        # red flag (< 20). Falls back to sum(AD) when neither DP column
+        # is set.
+        "depth": (
+            _to_int(row.get("DP")) or
+            _to_int(row.get("DP_DV")) or
+            _to_int(row.get("DP_HC")) or
+            _depth_from_ad(_coalesce(row.get("AD"),
+                                     row.get("AD_DV"),
+                                     row.get("AD_HC")))
+        ),
         "alt_af": (_to_num(_coalesce(row.get("VAF"), row.get("VAF_DV"), row.get("VAF_HC")))
                    or _vaf_from_ad(_coalesce(row.get("AD"), row.get("AD_DV"), row.get("AD_HC")))),
         "CLNSIG": row.get("CLINVAR_SIG", ""),
@@ -464,15 +495,34 @@ def _row_to_variant(row: dict) -> dict:
     }
 
 
-def load_snv_tsv(tsv_path: Path) -> tuple[dict[str, dict], dict[str, list[str]]]:
+# Depth thresholds applied at the adapter level. WES has uneven
+# coverage outside the capture targets, so a hard floor at 10 keeps
+# the report free of off-target noise; WGS is uniform so we keep
+# everything and just colour-flag the low-depth tail. The lower flag
+# stops at 20 — anything <20 gets a "low_depth" marker the UI paints
+# red on the AD column.
+_DP_HARD_FLOOR_WES = 10
+_DP_LOW_FLAG       = 20
+
+
+def load_snv_tsv(tsv_path: Path,
+                 *,
+                 test_type: str = "WES") -> tuple[dict[str, dict], dict[str, list[str]]]:
     """Read snv_indel.annotated.tsv → (variants, categories).
 
     `variants` is keyed by chr-pos-ref-alt id.
     `categories` is keyed by tier (1A / 1B / 2 / 3 / 4 / 5) → ordered ids
     (within tier 4: ACMG_POINTS desc; within tier 5: ACMG_POINTS desc).
+
+    `test_type` controls the depth gate:
+      WES  → variants with DP < 10 dropped entirely (off-target noise).
+      WGS  → no hard floor (uniform coverage); low-depth flag only.
+    Both modes set `low_depth: True` on variants with DP < 20 so the
+    frontend can paint the AD cell red.
     """
     variants: dict[str, dict] = {}
     by_tier: dict[str, list[tuple[float, str]]] = {t: [] for t in TIERS}
+    is_wes = (test_type or "").upper() == "WES"
 
     with tsv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -482,6 +532,10 @@ def load_snv_tsv(tsv_path: Path) -> tuple[dict[str, dict], dict[str, list[str]]]
             if canonical_gene in EXCLUDED_GENES:
                 continue
             v = _row_to_variant(row)
+            dp = v.get("depth") or 0
+            if is_wes and dp < _DP_HARD_FLOOR_WES:
+                continue
+            v["low_depth"] = bool(dp and dp < _DP_LOW_FLAG)
             variants[v["id"]] = v
             pts = v.get("ACMG_score")
             sort_key = float(pts) if isinstance(pts, (int, float)) else -999.0

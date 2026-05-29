@@ -376,8 +376,14 @@ def load_sample(sample_id: str, version: str | None = None,
         return None
 
     snv_tsv = sub / "snv_indel.annotated.tsv"
+    # Read meta early so the WES/WGS depth gate in load_snv_tsv kicks
+    # in correctly. meta is re-read below for the response payload —
+    # this duplicate is cheap (one small JSON) and keeps the gating
+    # logic out of the adapter's API.
+    _meta_early = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    _test_type  = (_meta_early.get("test_type") or "WES").upper()
     if snv_tsv.exists():
-        variants, categories = load_snv_tsv(snv_tsv)
+        variants, categories = load_snv_tsv(snv_tsv, test_type=_test_type)
     else:
         variants, categories = {}, {t: [] for t in TIERS}
 
