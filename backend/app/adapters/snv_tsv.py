@@ -11,10 +11,18 @@ from __future__ import annotations
 import csv
 import json
 import re
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
 from ..config import REPO_ROOT
+
+
+class OldFormatError(ValueError):
+    """Raised when an snv_indel.annotated.tsv is in the pre-2026-05 layout
+    (no ACMG_CRITERIA column). Caller surfaces a clear "please re-run
+    pipeline" message in the UI instead of trying to render a broken card.
+    """
 
 # Tier categories defined in 三級輸出計畫.md §2.3 Page 2.
 TIERS = ["1A", "1B", "1C", "2", "3"]
@@ -135,7 +143,8 @@ def classify_tier(row: dict) -> str:
         return "1A"
     if loftee_hc:
         return "1B"
-    points = _to_num(row.get("ACMG_POINTS")) or 0
+    points = _to_num(_coalesce(row.get("ACMG_SCORE"),
+                                row.get("ACMG_POINTS"))) or 0
     if isinstance(points, (int, float)) and points >= 4:
         return "1C"
     if is_plp and stars == 0:
@@ -331,8 +340,11 @@ def _row_to_variant(row: dict) -> dict:
     if gene and gene in alias_map:
         gene = alias_map[gene]
     transcript = row.get("TRANSCRIPT", "")
-    hgvs_c = row.get("HGVS_C", "")
-    hgvs_p = row.get("HGVS_P", "")
+    # New pipeline ships HGVS_P with URL-encoded characters (e.g.
+    # `p.Gly282%3D` for synonymous changes). Decode so the UI renders
+    # `p.Gly282=` instead of the percent escape.
+    hgvs_c = urllib.parse.unquote(row.get("HGVS_C", ""))
+    hgvs_p = urllib.parse.unquote(row.get("HGVS_P", ""))
 
     try:
         mane_all_raw = json.loads(row.get("MANE_ALL") or "[]")
@@ -439,49 +451,68 @@ def _row_to_variant(row: dict) -> dict:
         "AF_eas": _to_num(row.get("GNOMAD_G_EAS_AF")),
         "AF_exome": _to_num(row.get("GNOMAD_E_AF")),
         "AF_exome_eas": _to_num(row.get("GNOMAD_E_EAS_AF")),
-        "TaiwanBioBank": _to_num(row.get("TWB_AF")),
-        "PKNN_LLR": _to_num(row.get("PKNN_LLR")),
-        "REVEL": _to_num(row.get("REVEL")),
+        # New pipeline drops Taiwan Biobank; gnomAD EAS covers the same
+        # population well enough.
+        "TG_eas_af":           _to_num(row.get("TG_EAS_AF")),
         # In-silico predictors. VEP can emit per-transcript scores
         # joined by '&' (e.g. AlphaMissense '.&0.9482&0.9432') — take
         # the worst case (max). Categorical _PRED columns get the first
         # non-empty value.
-        "BayesDel": _max_multi(_coalesce(row.get("BAYESDEL"),
-                                          row.get("BAYESDEL_NOAF"))),
-        "BayesDel_pred": _first_str(row.get("BAYESDEL_NOAF_PRED")),
+        "PKNN_LLR":            _to_num(row.get("PKNN_LLR")),
+        "PKNN_evidence":       _first_str(row.get("PKNN_EVIDENCE")),
         "AlphaMissense_score": _max_multi(row.get("ALPHAMISSENSE")),
-        "AlphaMissense_pred": _first_str(row.get("ALPHAMISSENSE_PRED")),
-        "MetaRNN_score": _max_multi(row.get("METARNN")),
-        # ESM payload still called ESM2_score for legacy reasons; the
-        # new pipeline emits ESM1B in the same role (LM-based path-pred).
-        "ESM2_score": _max_multi(_coalesce(row.get("ESM2_SCORE"),
-                                            row.get("ESM1B"))),
-        "ESM_pred":   _first_str(row.get("ESM1B_PRED")),
-        "Evo2_score": _max_multi(row.get("EVO2_SCORE")),
-        # SpliceAI and Pangolin both reach the card now as separate
-        # fields. Old pipeline had SPLICEAI_MAX, new pipeline has
-        # PANGOLIN_SCORE; reviewers may see one, the other, or both.
-        "SpliceAI_score": _max_multi(row.get("SPLICEAI_MAX")),
-        "Pangolin_score": _max_abs_multi(row.get("PANGOLIN_SCORE")),
-        "Pangolin_detail": (row.get("PANGOLIN_DETAIL") or "").strip(),
-        "CADD_phred": _max_multi(row.get("CADD_PHRED")),
-        # New pipeline extras
-        "SIFT_score":  _max_multi(row.get("SIFT")),
-        "SIFT_pred":   _first_str(row.get("SIFT_PRED")),
-        "VARITY":      _max_multi(row.get("VARITY_R")),
-        "DANN":        _max_multi(row.get("DANN")),
-        "PhactBoost":  _max_multi(row.get("PHACTBOOST")),
-        "PhyloP":      _max_multi(row.get("PHYLOP100")),
-        "GERP":        _max_multi(row.get("GERP")),
-        "LOFTOOL":     _max_multi(row.get("LOFTOOL")),
-        "loftee_hc": _coalesce(row.get("LOFTEE_HC"), row.get("LOFTEE")),
-        "loftee_filter": row.get("LOFTEE_FILTER", ""),
-        "loftee_flags": row.get("LOFTEE_FLAGS", ""),
-        "ACMG_criteria": (row.get("ACMG_EVIDENCE") or "").replace("|", ","),
-        "ACMG_score": _to_num(row.get("ACMG_POINTS")),
+        "AlphaMissense_pred":  _first_str(row.get("ALPHAMISSENSE_PRED")),
+        "Pangolin_score":      _max_abs_multi(row.get("PANGOLIN_SCORE")),
+        "Pangolin_detail":     (row.get("PANGOLIN_DETAIL") or "").strip(),
+        # ESM1b is the model the new pipeline uses (NOT ESM2 — different
+        # protein language model). Payload key renamed to match.
+        "ESM1b_score":         _max_multi(row.get("ESM1B")),
+        "ESM1b_pred":          _first_str(row.get("ESM1B_PRED")),
+        "VARITY_R":            _max_multi(row.get("VARITY_R")),
+        "BayesDel":            _max_multi(row.get("BAYESDEL_NOAF")),
+        "BayesDel_pred":       _first_str(row.get("BAYESDEL_NOAF_PRED")),
+        # SpliceAI + MetaRNN come from annotate_extra_vep stop-gap (new
+        # pipeline doesn't ship them).
+        "SpliceAI_score":      _max_multi(row.get("SPLICEAI_MAX")),
+        "MetaRNN_score":       _max_multi(row.get("METARNN")),
+        # Others — under ▾ More on the card.
+        "DANN":                _max_multi(row.get("DANN")),
+        "PhactBoost":          _max_multi(row.get("PHACTBOOST")),
+        "PhyloP":              _max_multi(row.get("PHYLOP100")),
+        "GERP":                _max_multi(row.get("GERP")),
+        "SIFT_score":          _max_multi(row.get("SIFT")),
+        "SIFT_pred":           _first_str(row.get("SIFT_PRED")),
+        "LOFTOOL":             _max_multi(row.get("LOFTOOL")),
+        "loftee_hc":           _coalesce(row.get("LOFTEE_HC"), row.get("LOFTEE")),
+        "loftee_filter":       row.get("LOFTEE_FILTER", ""),
+        "loftee_flags":        row.get("LOFTEE_FLAGS", ""),
+        # ACMG — pipeline-computed (acmg_classifier.py).
+        "ACMG_criteria":       (_coalesce(row.get("ACMG_CRITERIA"),
+                                          row.get("ACMG_EVIDENCE"))
+                                .replace("|", ",")),
+        "ACMG_score":          _to_num(_coalesce(row.get("ACMG_SCORE"),
+                                                 row.get("ACMG_POINTS"))),
         "ACMG_classification": _normalize_acmg_class(row.get("ACMG_CLASS", "")),
-        # Variant score for the "Score" pill: ACMG_POINTS rescaled 0-100.
-        "geno_score": _acmg_to_geno_score(_to_num(row.get("ACMG_POINTS"))),
+        "ACMG_notes":          (row.get("ACMG_NOTES") or "").strip(),
+        # GeneBe — populated by annotate_acmg_genebe.py as a SECOND
+        # opinion (does NOT overwrite the pipeline's ACMG columns).
+        # All four blank when the variant isn't in GeneBe.
+        "genebe_acmg_class":   _normalize_acmg_class(row.get("GENEBE_ACMG_CLASS", "")),
+        "genebe_acmg_score":   _to_num(row.get("GENEBE_ACMG_SCORE")),
+        "genebe_acmg_criteria": (row.get("GENEBE_ACMG_CRITERIA") or "").strip(),
+        "genebe_acmg_notes":   (row.get("GENEBE_ACMG_NOTES") or "").strip(),
+        # "Score" pill: pipeline ACMG_SCORE rescaled to 0-100 (same
+        # transform regardless of which source the class came from).
+        "geno_score":          _acmg_to_geno_score(_to_num(_coalesce(
+                                   row.get("ACMG_SCORE"), row.get("ACMG_POINTS")))),
+        # New display fields from the 65-col pipeline output.
+        "rs_id":               (row.get("RS_ID") or "").strip(),
+        "hgnc_id":             (row.get("HGNC_ID") or "").strip(),
+        "clinvar_variation_id": (row.get("CLINVAR_VARIATION_ID") or "").strip(),
+        "omim_ids":            (row.get("OMIM_IDS") or "").strip(),
+        "domains":             (row.get("DOMAINS") or "").strip(),
+        "swissprot":           (row.get("SWISSPROT") or "").strip(),
+        "impact":              (row.get("IMPACT") or "").strip(),
         "phase_group": row.get("PHASE_GROUP", ""),
         "phase_result": row.get("PHASE_RESULT", ""),
         "in_roh": _to_bool(row.get("IN_ROH", "")),
@@ -527,6 +558,15 @@ def load_snv_tsv(tsv_path: Path,
 
     with tsv_path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
+        # New (2026-05+) pipeline emits ACMG_CRITERIA; the legacy
+        # version doesn't. Reject up-front so the UI shows a clear
+        # "please re-run pipeline" message instead of a half-rendered
+        # card from a misread schema.
+        if "ACMG_CRITERIA" not in (reader.fieldnames or []):
+            raise OldFormatError(
+                "snv_indel.annotated.tsv 缺 ACMG_CRITERIA 欄 — "
+                "為舊格式，請以新版 pipeline 重跑此樣本。"
+            )
         for row in reader:
             raw_gene = (row.get("GENE") or "").strip()
             canonical_gene = _load_vep_alias_map().get(raw_gene, raw_gene)
