@@ -119,9 +119,15 @@ def parse_phenotype_content(text: str) -> tuple[list[dict], list[str]]:
         if m:
             hp_id = m.group(0)
             # Strip the HP: token to leave the human-readable label.
-            label = _HP_ID_RE.sub("", line).strip(" \t·-:：")
-            # Some entries put HP:ID at the beginning with extra spaces;
-            # collapse any internal whitespace runs.
+            label = _HP_ID_RE.sub("", line)
+            # Drop empty surrounding parens that the picker UI leaves
+            # behind: "3.failure to thrive(HP:0001508)" → after HP strip
+            # becomes "3.failure to thrive()" → strip the trailing ().
+            label = re.sub(r"\(\s*\)", "", label)
+            # Drop the leading "<digit>." numbering the picker prepends.
+            label = re.sub(r"^\s*\d+\s*\.\s*", "", label)
+            label = label.strip(" \t·-:：()")
+            # Collapse internal whitespace runs.
             label = re.sub(r"\s+", " ", label).strip()
             hpo.append({
                 "phenotype": hp_id,
@@ -166,11 +172,18 @@ def fetch_phenotype(mrn: str) -> dict:
         return {"found": False, "hpo": [], "notes": [], "date": "",
                 "raw_content": ""}
     entry = parsed[0]
-    content = ""
+    # GetPhenotypeList returns ALL phenotype entries the patient has —
+    # commonly multiple records when the reviewer used both point-and-
+    # pick chips AND freetyping in different fields. Concatenate every
+    # entry's `content` (newline-separated) so parse_phenotype_content
+    # sees the union. Previously we kept only the first entry, which
+    # silently dropped any freetyped phenotypes that landed in later
+    # records.
+    contents: list[str] = []
     for p in entry.get("phenotypes", []) or []:
-        if isinstance(p, dict) and p.get("content"):
-            content = p["content"]
-            break
+        if isinstance(p, dict) and (p.get("content") or "").strip():
+            contents.append(p["content"])
+    content = "\n".join(contents)
     hpo, notes = parse_phenotype_content(content)
     return {
         "found":       bool(content.strip()),

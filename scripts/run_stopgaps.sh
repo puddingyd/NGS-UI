@@ -83,29 +83,37 @@ echo "================================================================"
 
 # 0. Snapshot.
 if [ "$NO_BACKUP" -eq 0 ] && [ ! -f "$TSV.raw" ]; then
-  echo "[stopgaps] 0/4  snapshot → ${TSV}.raw"
+  echo "[stopgaps] 0/5  snapshot → ${TSV}.raw"
   cp -v "$TSV" "$TSV.raw"
 else
-  echo "[stopgaps] 0/4  snapshot skipped (already exists or --no-backup)"
+  echo "[stopgaps] 0/5  snapshot skipped (already exists or --no-backup)"
 fi
 
-# 1. Filter.
+# 1. ClinVar fallback. The new pipeline's CLINVAR_SIG column has been
+# flaky (often blank); annotate_clinvar.py is fill-empty-only, so
+# pipeline-supplied values win when present. Once the pipeline's
+# ClinVar step is reliable this step turns into a no-op.
 echo
-echo "[stopgaps] 1/4  filter_snv_tsv.py"
+echo "[stopgaps] 1/5  annotate_clinvar.py (fill-empty fallback)"
+"$SCRIPT_DIR/annotate_clinvar.py" --tsv "$TSV"
+
+# 2. Filter.
+echo
+echo "[stopgaps] 2/5  filter_snv_tsv.py"
 "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
 
-# 2. GeneBe ACMG (writes to GENEBE_* columns; pipeline ACMG_* preserved).
+# 3. GeneBe ACMG (writes to GENEBE_* columns; pipeline ACMG_* preserved).
 echo
-echo "[stopgaps] 2/4  annotate_acmg_genebe.py"
+echo "[stopgaps] 3/5  annotate_acmg_genebe.py"
 if [ -z "${GENEBE_USER:-}" ] || [ -z "${GENEBE_API_KEY:-}" ]; then
   echo "ERROR: GENEBE_USER + GENEBE_API_KEY must be exported" >&2
   exit 2
 fi
 "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV"
 
-# 3. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
+# 4. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
 echo
-echo "[stopgaps] 3/4  annotate_extra_vep.py"
+echo "[stopgaps] 4/5  annotate_extra_vep.py"
 if [ "$SKIP_EXTRA_VEP" -eq 1 ]; then
   echo "  - skipped (--skip-extra-vep)"
 else
@@ -123,13 +131,13 @@ else
   "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}"
 fi
 
-# 4. CNV/SV via AnnotSV. Dispatch by which input flag was passed:
+# 5. CNV/SV via AnnotSV. Dispatch by which input flag was passed:
 #    --dragen-cnv-source           → DRAGEN sibling discovery
 #    --inhouse-cnv-vcf / --sv-vcf  → explicit gcnv + delly files
 #    Otherwise skipped.
 SAMPLE_DIR="$(dirname "$TSV")"
 echo
-echo "[stopgaps] 4/4  AnnotSV CNV/SV"
+echo "[stopgaps] 5/5  AnnotSV CNV/SV"
 if [ "$SKIP_CNV" -eq 1 ]; then
   echo "  - skipped (--skip-cnv)"
 elif [ -n "$DRAGEN_VCF" ]; then

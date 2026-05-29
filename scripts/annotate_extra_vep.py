@@ -123,7 +123,22 @@ def run_vep(args, sites: Path, vep_out: Path) -> None:
         *plugin_args,
     ]
     print(f"[extra-vep] running vep on {sites.name} …", file=sys.stderr)
-    subprocess.run(cmd, check=True)
+    # VEP's SpliceAI plugin spams hundreds of
+    #   "Use of uninitialized value $alt_allele in string eq at SpliceAI.pm line 263"
+    # warnings on every reference allele line of the scores VCF. They're
+    # harmless (the plugin ignores those lines) but flood the worker
+    # log. Capture stderr, drop matching lines, replay the rest.
+    proc = subprocess.run(cmd, check=False,
+                          stderr=subprocess.PIPE, text=True)
+    if proc.stderr:
+        skip_re = re.compile(
+            r"(Use of uninitialized value \$alt_allele in string eq at /plugins/SpliceAI\.pm|"
+            r"^WARNING: \d+ : Use of uninitialized value \$alt_allele)")
+        for line in proc.stderr.splitlines():
+            if not skip_re.search(line):
+                print(line, file=sys.stderr)
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 
 def _parse_csq_format(vcf_path: Path) -> list[str]:
