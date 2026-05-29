@@ -101,6 +101,29 @@ def _track_pipeline_source(sample_dir: Path, source: Path) -> None:
     )
 
 
+def _symlink_inhouse_into_nf_stage(vcf: Path, sid: str, nf_stage: Path) -> Path:
+    """In-house ensemble VCFs are already 2-sample (DV+HC) and don't
+    need staging — but Nextflow's input_dir convention forces a layout
+    `<input_dir>/04_snv_indel/<sample_id>.ensemble.fixed.vcf.gz`. Drop
+    a symlink at that path so Nextflow sees the original VCF
+    unmodified (no gnomAD/BED pre-filter — let the pipeline see every
+    variant). Returns the staging directory.
+    """
+    stage_snv = nf_stage / "04_snv_indel"
+    stage_snv.mkdir(parents=True, exist_ok=True)
+    stage_vcf = stage_snv / f"{sid}.ensemble.fixed.vcf.gz"
+    stage_tbi = stage_snv / f"{sid}.ensemble.fixed.vcf.gz.tbi"
+    # Idempotent: remove stale links from a prior run.
+    for p in (stage_vcf, stage_tbi):
+        if p.is_symlink() or p.exists():
+            p.unlink()
+    stage_vcf.symlink_to(vcf)
+    tbi = vcf.with_suffix(vcf.suffix + ".tbi")  # .vcf.gz.tbi
+    if tbi.is_file():
+        stage_tbi.symlink_to(tbi)
+    return nf_stage
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -206,12 +229,23 @@ def main() -> int:
             print("\n[detect] no existing pipeline TSV — running nextflow",
                   flush=True)
 
-            # 3. Stage (gnomAD AF + gene-body BED filter, caller-agnostic)
+            # 3. Stage. DRAGEN's 5M-row hard-filter VCF still goes
+            # through the full stager (gnomAD AF<0.01 + gene-body BED
+            # filter + DV+HC synthesis) so Pangolin doesn't segfault
+            # on the splice candidate set. In-house ensemble VCFs are
+            # already small (~40k rows) AND already 2-sample, so we
+            # just symlink them straight into the nf_stage layout
+            # without any filtering — Nextflow sees every variant.
             _update(job_id, step="stage")
-            _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-                  "--in",     vcf,
-                  "--sample", sid],
-                 label="2a/4 stage")
+            if mode == "inhouse":
+                _symlink_inhouse_into_nf_stage(Path(vcf), sid, nf_stage)
+                print(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
+                      f"{sid}.ensemble.fixed.vcf.gz (no filter)", flush=True)
+            else:
+                _run([str(scripts / "stage_dragen_for_tertiary.sh"),
+                      "--in",     vcf,
+                      "--sample", sid],
+                     label="2a/4 stage")
 
             # 4. Nextflow → /home/pipeline/tertiary_output/<SID>/...
             _update(job_id, step="nextflow")
