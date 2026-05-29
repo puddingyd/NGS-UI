@@ -707,6 +707,35 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .acmg-class-row .acmg-paren { color: var(--muted); }
 .acmg-class-row .acmg-score { width: 3em; flex: none; text-align: center; font-family: ui-monospace, monospace; }
 
+/* "GeneBe: LP (8)" small-text line right below the ACMG select — sits
+   between the ACMG row and the criteria textarea, never wider than
+   the row. Inherits sig-* colour from the inner class span. */
+.genebe-line {
+  display: block;
+  font-size: 11px;
+  margin: 1px 0 3px 4px;
+}
+/* Old-format TSV banner in the SNV card — wide yellow stripe. */
+.snv-tsv-error {
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #4a3801;
+}
+
+.genebe-line .sig-p,
+.genebe-line .sig-lp,
+.genebe-line .sig-vus,
+.genebe-line .sig-lb,
+.genebe-line .sig-b {
+  padding: 0 4px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
 /* ClinVar / ACMG classification colour chips — applied to the ClinVar
    value span and the ACMG_classification input via classifySignificance().
    Pathogenic = red, Likely pathogenic = orange, VUS = yellow,

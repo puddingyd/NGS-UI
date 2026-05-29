@@ -270,28 +270,31 @@ const TOOL_CUTOFFS = {
 // actual values land on the primary row of the card; the 4th onwards
 // go under ▾ More. Empty cells are skipped entirely — `IN_SILICO_TOOLS`
 // is just the priority order, not a fixed slot list.
+// In-silico predictor priority — 3 primary on the card, the rest in
+// ▾ More. Ordering matches the new pipeline's authoritative cascade
+// (P-KNN > AlphaMissense > Pangolin); ESM1b / VARITY_R / BayesDel sit
+// just below them (still high-confidence predictors); SpliceAI /
+// MetaRNN come from the extra-VEP stop-gap; the conservation /
+// gene-level / older tools sit further down.
 const IN_SILICO_TOOLS = [
+  { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR",            extraField: "PKNN_evidence" },
   { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred", cutoffs: "alphamissense" },
-  { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred",      cutoffs: "bayesdel" },
   // Pangolin is signed: -0.87 = strong splice loss, +0.87 = strong
   // splice gain. Classify by |score| so both colour-code the same way;
   // we still display the signed number so reviewers see the direction.
   { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score",                                       cutoffs: "pangolin", absForColor: true },
-  { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score",                                       cutoffs: "spliceai" },
   // -- everything below this line lives in More --
-  { key: "esm",           label: "ESM",           scoreField: "ESM2_score",          predField: "ESM_pred" },
+  { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
+  { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
+  { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred",      cutoffs: "bayesdel" },
+  { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score",                                       cutoffs: "spliceai" },
   { key: "metarnn",       label: "MetaRNN",       scoreField: "MetaRNN_score",                                        cutoffs: "metarnn" },
-  { key: "revel",         label: "REVEL",         scoreField: "REVEL",                                                cutoffs: "revel" },
-  { key: "cadd",          label: "CADD",          scoreField: "CADD_phred" },
-  { key: "evo2",          label: "Evo2",          scoreField: "Evo2_score" },
-  { key: "varity",        label: "VARITY",        scoreField: "VARITY" },
-  { key: "sift",          label: "SIFT",          scoreField: "SIFT_score",          predField: "SIFT_pred" },
   { key: "dann",          label: "DANN",          scoreField: "DANN" },
   { key: "phactboost",    label: "PhactBoost",    scoreField: "PhactBoost" },
   { key: "phylop",        label: "PhyloP",        scoreField: "PhyloP" },
   { key: "gerp",          label: "GERP",          scoreField: "GERP" },
+  { key: "sift",          label: "SIFT",          scoreField: "SIFT_score",          predField: "SIFT_pred" },
   { key: "loftool",       label: "LOFTOOL",       scoreField: "LOFTOOL" },
-  { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR" },
 ];
 const IN_SILICO_PRIMARY_COUNT = 3;
 
@@ -1707,6 +1710,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           <input class="acmg-score" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgScore)}" />
           <span class="acmg-paren">)</span>
         </span>
+        ${_renderGeneBeLine(v)}
         <textarea class="acmg-crit" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(editAcmgCrit)}</textarea>
       </div>
       <div>
@@ -1725,8 +1729,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       <div>
         <span class="k">AF</span><span class="v">${fmtNum(v.AF, 5)}</span>
         <span class="k">AF_eas</span><span class="v">${fmtNum(v.AF_eas, 5)}</span>
-        ${Number.isFinite(Number(v.TaiwanBioBank))
-          ? `<span class="k">TWB</span><span class="v">${fmtNum(v.TaiwanBioBank, 5)}</span>`
+        ${Number.isFinite(Number(v.TG_eas_af))
+          ? `<span class="k">1000G EAS</span><span class="v">${fmtNum(v.TG_eas_af, 5)}</span>`
           : ""}
       </div>
     </div>
@@ -1779,6 +1783,48 @@ function renderVariantBadges(v) {
 // user can see which co-segregating variants share the same haplotype.
 // VEP EXON/INTRON come through as "current/total" (e.g. "6/10"); show
 // whichever the variant falls in, "—" when both are blank.
+// "GeneBe: LP (8)" — appears below the ACMG row only when the GeneBe
+// stop-gap left a non-empty class on the variant. Class is shown as a
+// short abbreviation; the bracket carries GeneBe's own ACMG score
+// (independent of the pipeline's score). Empty class → nothing rendered.
+const _ACMG_ABBREV = {
+  "Pathogenic":             "P",
+  "Likely pathogenic":      "LP",
+  "Uncertain significance": "VUS",
+  "Likely benign":          "LB",
+  "Benign":                 "B",
+};
+// "舊格式，請重跑新版 pipeline" banner — shown inside the SNV card
+// whenever sample_loader rejected the TSV (old-format detection
+// raised OldFormatError). Reviewer state (status / edits / phenotype)
+// is preserved on the backend; just the variant list is empty.
+function _renderSnvTsvErrorBanner() {
+  const card = document.getElementById("card-snv");
+  if (!card) return;
+  const existing = card.querySelector(".snv-tsv-error");
+  const msg = (state.data?.snv_tsv_error || "").trim();
+  if (!msg) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) { existing.textContent = msg; return; }
+  const banner = document.createElement("div");
+  banner.className = "snv-tsv-error";
+  banner.innerHTML = `<strong>⚠ ${escapeHtml(msg)}</strong>
+    <div class="muted" style="margin-top:4px">reviewer 編輯狀態已保留；重跑後直接 reload 即可。</div>`;
+  card.insertBefore(banner, card.firstChild);
+}
+
+function _renderGeneBeLine(v) {
+  const cls = (v.genebe_acmg_class || "").trim();
+  if (!cls) return "";
+  const abbr  = _ACMG_ABBREV[cls] || cls;
+  const sigClass = classifySignificance(cls) || "";
+  const score = (v.genebe_acmg_score != null && v.genebe_acmg_score !== "")
+    ? ` (${escapeHtml(String(v.genebe_acmg_score))})` : "";
+  return `<span class="genebe-line muted">GeneBe: <span class="${sigClass}">${escapeHtml(abbr)}</span>${score}</span>`;
+}
+
 function fmtExonIntron(v) {
   const e = String(v.exon || "").trim();
   if (e) return `exon ${e}`;
@@ -2121,6 +2167,11 @@ let activeTierTab = null;
 function renderTierTabBar() {
   const bar = document.getElementById("tier-tab-bar");
   if (!bar) return;
+  // Old-format TSV banner — sample_loader couldn't parse the SNV TSV
+  // (lacks ACMG_CRITERIA). Render a single message in the SNV card so
+  // the reviewer knows what to do; other side-channels (mito, CNV, …)
+  // still render normally.
+  _renderSnvTsvErrorBanner();
 
   const counts = {};
   for (const tier of TIER_ORDER) {
