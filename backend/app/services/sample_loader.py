@@ -25,7 +25,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from ..adapters.snv_tsv import TIERS, load_snv_tsv
+from ..adapters.snv_tsv import TIERS, OldFormatError, load_snv_tsv
 from ..config import TERTIARY_OUTPUT_ROOT
 from . import analyses_store, omim_store
 
@@ -382,8 +382,17 @@ def load_sample(sample_id: str, version: str | None = None,
     # logic out of the adapter's API.
     _meta_early = _read_json_or(sub / "sample_metadata.json", {}) or {}
     _test_type  = (_meta_early.get("test_type") or "WES").upper()
+    old_format_error = ""
     if snv_tsv.exists():
-        variants, categories = load_snv_tsv(snv_tsv, test_type=_test_type)
+        try:
+            variants, categories = load_snv_tsv(snv_tsv, test_type=_test_type)
+        except OldFormatError as e:
+            # Pre-2026-05 layout — surface a clean error instead of
+            # silently rendering a broken card. The caller (frontend)
+            # shows "請重跑新版 pipeline" with the sample's metadata still
+            # intact so reviewers can still tag for re-analysis.
+            variants, categories = {}, {t: [] for t in TIERS}
+            old_format_error = str(e)
     else:
         variants, categories = {}, {t: [] for t in TIERS}
 
@@ -588,6 +597,11 @@ def load_sample(sample_id: str, version: str | None = None,
         "qc_summary":        qc,
         "roh_summary":       roh,
         "variants":          variants,
+        # When non-empty, the SNV/Indel TSV is in the pre-2026-05
+        # layout and load_snv_tsv refused to parse it. Frontend uses
+        # this to render a "請重跑新版 pipeline" banner instead of an
+        # empty SNV card.
+        "snv_tsv_error":     old_format_error,
         "categories":        categories,
         "tiers":             TIERS,
         # CNV / SV side-channels (independent variant maps + tier
