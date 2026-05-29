@@ -1967,8 +1967,26 @@ body.sidebar-collapsed .container { margin-left: auto; }
   line-height: 1.6;
   color: #555;
 }
-.dragen-siblings .sib-line { display: flex; gap: 6px; }
-.dragen-siblings .sib-key  { min-width: 64px; color: #777; }
+.dragen-siblings .sib-line {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.dragen-siblings .sib-key  {
+  min-width: 80px;
+  color: #777;
+  flex-shrink: 0;
+}
+/* Long /home/datalake_… paths would otherwise punch through the
+   grey box on a 1080p viewport. Wrap mid-path so the value flows
+   onto a second line instead. */
+.dragen-siblings .sib-ok,
+.dragen-siblings .sib-miss {
+  min-width: 0;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
 .dragen-siblings .sib-ok   { color: #1a7f37; }
 .dragen-siblings .sib-miss { color: #cf222e; }
 
