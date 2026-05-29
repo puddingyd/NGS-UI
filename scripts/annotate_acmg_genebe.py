@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""GeneBe ACMG annotation — backfill into snv_indel.annotated.tsv.
+"""GeneBe ACMG annotation — write a second opinion to GENEBE_* columns.
 
 Reads `--tsv snv_indel.annotated.tsv`, builds a sites-only VCF
 (skipping spanning-deletion '*' alleles and high-AF variants per
 --max-af), runs pygenebe via apptainer, and writes the GeneBe
-ACMG_score / ACMG_criteria / ACMG_class back into the TSV's
-existing ACMG_POINTS / ACMG_EVIDENCE / ACMG_CLASS columns. Only
-empty cells are filled — pipeline-supplied ACMG always wins, so the
-day the tertiary pipeline's ACMG_CLASSIFY step ships you simply stop
-running this and the TSV is already self-contained.
+classification into NEW columns named:
+    GENEBE_ACMG_SCORE
+    GENEBE_ACMG_CRITERIA
+    GENEBE_ACMG_CLASS
+
+The pipeline's own ACMG_SCORE / ACMG_CRITERIA / ACMG_CLASS columns
+are NEVER touched — the UI displays both side by side (pipeline's
+class + score on the main row; GeneBe's class + score in small grey
+text below). This lets reviewers compare the two without either one
+hiding the other.
 
 By default updates --tsv in place; use --out-tsv to write elsewhere.
 
@@ -155,7 +160,12 @@ def merge_into_tsv(
     with open(in_tsv, "r", encoding="utf-8", newline="") as fi:
         reader = csv.DictReader(fi, delimiter="\t")
         fieldnames = list(reader.fieldnames or [])
-        for col in ("ACMG_POINTS", "ACMG_EVIDENCE", "ACMG_CLASS"):
+        # New scheme: write a SECOND opinion to GENEBE_* columns and
+        # NEVER touch the pipeline's ACMG_* columns. The UI shows both
+        # side by side (pipeline ACMG on the main row, GeneBe class +
+        # score in small grey text below).
+        for col in ("GENEBE_ACMG_SCORE", "GENEBE_ACMG_CRITERIA",
+                     "GENEBE_ACMG_CLASS"):
             if col not in fieldnames:
                 fieldnames.append(col)
         with open(target, "w", encoding="utf-8", newline="") as fo:
@@ -173,17 +183,10 @@ def merge_into_tsv(
                 gbt = gb.get(key)
                 if gbt:
                     score, crit, cls = gbt
-                    changed = False
-                    if not (row.get("ACMG_POINTS") or "").strip() and score:
-                        row["ACMG_POINTS"] = score
-                        changed = True
-                    if not (row.get("ACMG_EVIDENCE") or "").strip() and crit:
-                        row["ACMG_EVIDENCE"] = crit
-                        changed = True
-                    if not (row.get("ACMG_CLASS") or "").strip() and cls:
-                        row["ACMG_CLASS"] = cls
-                        changed = True
-                    if changed:
+                    if score: row["GENEBE_ACMG_SCORE"]    = score
+                    if crit:  row["GENEBE_ACMG_CRITERIA"] = crit
+                    if cls:   row["GENEBE_ACMG_CLASS"]    = cls
+                    if score or crit or cls:
                         n_filled += 1
                 writer.writerow(row)
     if overwriting:

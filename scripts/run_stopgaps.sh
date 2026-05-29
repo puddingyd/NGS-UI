@@ -5,16 +5,21 @@
 # Runs every stop-gap on a single snv_indel.annotated.tsv in the
 # order they make sense:
 #
-#   1. annotate_clinvar.py      — backfill CLINVAR_SIG/STARS/DN/SIGCONF
-#   2. filter_snv_tsv.py        — filter MODIFIER / common / alt-contig / *
-#   3. annotate_acmg_genebe.py  — backfill ACMG_* via GeneBe REST
-#   4. annotate_extra_vep.py    — re-run VEP for MetaRNN (+ SpliceAI)
-#   5. AnnotSV CNV/SV — DRAGEN siblings (--dragen-cnv-source) or
+#   1. filter_snv_tsv.py        — filter MODIFIER / common / alt-contig / *
+#   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
+#                                  columns (pipeline's ACMG_* untouched)
+#   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
+#   4. AnnotSV CNV/SV — DRAGEN siblings (--dragen-cnv-source) or
 #                       in-house gcnv + delly (--inhouse-cnv-vcf /
 #                       --inhouse-sv-vcf). Skipped if none supplied.
 #
-# Steps 1-4 are idempotent fill-empty-only. Step 5 produces fresh
-# cnv.annotated.tsv / sv.annotated.tsv whenever DRAGEN CNV VCFs are
+# (ClinVar annotation was a stop-gap before the new pipeline shipped
+#  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
+#  pipeline now owns it; the legacy annotate_clinvar.py is left on
+#  disk for emergencies.)
+#
+# All steps are idempotent fill-or-augment. Step 4 produces fresh
+# cnv.annotated.tsv / sv.annotated.tsv whenever CNV VCFs are
 # pointed to; pass --skip-cnv to bypass.
 #
 # Before step 1 we snapshot the TSV to <tsv>.raw (only the first time)
@@ -78,34 +83,29 @@ echo "================================================================"
 
 # 0. Snapshot.
 if [ "$NO_BACKUP" -eq 0 ] && [ ! -f "$TSV.raw" ]; then
-  echo "[stopgaps] 0/5  snapshot → ${TSV}.raw"
+  echo "[stopgaps] 0/4  snapshot → ${TSV}.raw"
   cp -v "$TSV" "$TSV.raw"
 else
-  echo "[stopgaps] 0/5  snapshot skipped (already exists or --no-backup)"
+  echo "[stopgaps] 0/4  snapshot skipped (already exists or --no-backup)"
 fi
 
-# 1. ClinVar.
+# 1. Filter.
 echo
-echo "[stopgaps] 1/5  annotate_clinvar.py"
-"$SCRIPT_DIR/annotate_clinvar.py" --tsv "$TSV"
-
-# 2. Filter.
-echo
-echo "[stopgaps] 2/5  filter_snv_tsv.py"
+echo "[stopgaps] 1/4  filter_snv_tsv.py"
 "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
 
-# 3. GeneBe ACMG.
+# 2. GeneBe ACMG (writes to GENEBE_* columns; pipeline ACMG_* preserved).
 echo
-echo "[stopgaps] 3/5  annotate_acmg_genebe.py"
+echo "[stopgaps] 2/4  annotate_acmg_genebe.py"
 if [ -z "${GENEBE_USER:-}" ] || [ -z "${GENEBE_API_KEY:-}" ]; then
   echo "ERROR: GENEBE_USER + GENEBE_API_KEY must be exported" >&2
   exit 2
 fi
 "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV"
 
-# 4. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
+# 3. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
 echo
-echo "[stopgaps] 4/5  annotate_extra_vep.py"
+echo "[stopgaps] 3/4  annotate_extra_vep.py"
 if [ "$SKIP_EXTRA_VEP" -eq 1 ]; then
   echo "  - skipped (--skip-extra-vep)"
 else
@@ -123,13 +123,13 @@ else
   "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}"
 fi
 
-# 5. CNV/SV via AnnotSV. Dispatch by which input flag was passed:
-#    --dragen-cnv-source           → DRAGEN sibling discovery + subtraction
-#    --inhouse-cnv-vcf / --sv-vcf  → explicit gcnv + delly files (no subtract)
+# 4. CNV/SV via AnnotSV. Dispatch by which input flag was passed:
+#    --dragen-cnv-source           → DRAGEN sibling discovery
+#    --inhouse-cnv-vcf / --sv-vcf  → explicit gcnv + delly files
 #    Otherwise skipped.
 SAMPLE_DIR="$(dirname "$TSV")"
 echo
-echo "[stopgaps] 5/5  AnnotSV CNV/SV"
+echo "[stopgaps] 4/4  AnnotSV CNV/SV"
 if [ "$SKIP_CNV" -eq 1 ]; then
   echo "  - skipped (--skip-cnv)"
 elif [ -n "$DRAGEN_VCF" ]; then
