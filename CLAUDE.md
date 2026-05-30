@@ -1,10 +1,14 @@
-# CLAUDE.md — 給 Claude（與接手者）的權威參考
+# CLAUDE.md 
 
-成大醫院基因醫學部 **NGS 分析平台**（repo `puddingyd/NGS-UI`）。這份文件記錄整個系統的流程、結構、慣例與踩雷點，讓新的 session / auto-compact 後也能完全接續工作。**有任何架構變動，順手更新這份。**
+如果對話窗輸入 go，請做以下:
+請只讀「待處理事項.md」，先不要讀其他文件，先判斷哪些是必要讀的文件，然後再去讀和處理「待處理事項.md」中的事項。
+完成後請在「處理紀錄.md」摘要你做了什麼，並從「待處理事項.txt」 清掉已經完成的項目（若尚未完成，請留著那個項目，並加註尚未完成的部分）。
 
 ---
 
 ## 0. 一句話總覽
+
+成大醫院基因醫學部 **NGS 分析平台**（repo `puddingyd/NGS-UI`）。這份文件記錄整個系統的流程、結構、慣例與踩雷點，讓新的 session / auto-compact 後也能完全接續工作。**有任何架構變動，順手更新這份。**
 
 醫院內部的 NGS 三級分析判讀工具：FastAPI 後端 + 原生 JS 前端（無 build step），部署在內網 `192.168.84.91:8765`。次級 pipeline（Nextflow，在另一台 compute cluster）產出 per-sample 的 TSV 丟進 `tertiary_output/{LIS_ID}/`；reviewer 在這個 UI 裡載入個案、看 SNV/Indel + CNV/SV + Mitochondria 的變異卡片、標記 causative/other/candidate、寫 comment、匯出診斷報告 (docx)。另有一個獨立的「輸入臨床表徵 (HPO/panel)」工具掛在 `/phenotype/`，和「上傳個案清單」功能建立 LIS_ID↔MRN↔姓名 對應。
 
