@@ -5,6 +5,9 @@
   POST /api/dragen/jobs            spawn a worker; returns job_id
   GET  /api/dragen/jobs            list known jobs (for topbar status)
   GET  /api/dragen/jobs/{jid}      state + log tail for one job
+  GET  /api/dragen/outputs         list pipeline output sample directories
+  GET  /api/dragen/outputs/{sid}/log
+  DELETE /api/dragen/outputs/{sid}
 """
 from __future__ import annotations
 
@@ -129,3 +132,32 @@ def get_dragen_job(job_id: str):
     state["running"]  = dragen_jobs.is_running(job_id)
     state["log_tail"] = dragen_jobs.tail_log(job_id, n=80)
     return state
+
+
+@router.get("/outputs")
+def get_pipeline_outputs():
+    return dragen_jobs.list_pipeline_outputs()
+
+
+@router.get("/outputs/{sample_id}/log")
+def get_pipeline_output_log(sample_id: str):
+    try:
+        return dragen_jobs.get_pipeline_output_log(sample_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.delete("/outputs/{sample_id}")
+def delete_pipeline_output(sample_id: str):
+    try:
+        return dragen_jobs.delete_pipeline_output(sample_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"刪除失敗：{e}")

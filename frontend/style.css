@@ -2135,6 +2135,43 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 13px;
   margin-bottom: 6px;
 }
+.dragen-log-toggle {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.dragen-log-toggle:hover { color: var(--fg); }
+.dragen-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dragen-progress-track {
+  flex: 1;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eaeef2;
+}
+.dragen-progress-bar {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #2da44e;
+  transition: width 0.25s ease;
+}
+.dragen-progress-bar.failed { background: #cf222e; }
+.dragen-progress-text {
+  min-width: 34px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 .dragen-job-log {
   background: #1f2328;
   color: #e6edf3;
@@ -2197,6 +2234,46 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .dragen-siblings .sib-ok   { color: #1a7f37; }
 .dragen-siblings .sib-miss { color: #cf222e; }
+
+/* ─── 三級分析清單 modal ───────────────────────────────────── */
+#pipeline-list-modal .modal-card-wide { max-width: 900px; }
+.pipeline-list-table {
+  max-height: 440px;
+  overflow: auto;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.pipeline-list-table table { width: 100%; border-collapse: collapse; }
+.pipeline-list-table th,
+.pipeline-list-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  white-space: nowrap;
+}
+.pipeline-list-table th {
+  position: sticky;
+  top: 0;
+  background: #f6f8fa;
+  color: #555;
+  font-size: 11px;
+}
+.pipeline-list-table tr:last-child td { border-bottom: none; }
+.pipeline-list-log-panel {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.pipeline-list-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
 
 /* ─── 上傳個案清單 modal ───────────────────────────────────── */
 #patient-list-modal .modal-card-wide { max-width: 820px; }

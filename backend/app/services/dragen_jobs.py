@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import time
@@ -25,7 +26,8 @@ from pathlib import Path
 from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
                        LEGACY_DRAGEN_JOBS_DIR, TERTIARY_JOBS_DIR,
                        PIPELINE_VCF_INDEX_PATH,
-                       PIPELINE_VCF_INDEX_TTL_HOURS, REPO_ROOT)
+                       PIPELINE_VCF_INDEX_TTL_HOURS, PIPELINE_OUT_ROOT,
+                       REPO_ROOT)
 
 # Final pipeline steps, in order — the worker writes the current one
 # into state.json so the UI can show progress.
@@ -37,10 +39,19 @@ PIPELINE_STEPS = [
     "stop-gaps",
     "done",
 ]
+_SAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _validate_sample_id(sample_id: str) -> str:
+    if not _SAMPLE_ID_RE.match(sample_id or ""):
+        raise ValueError(
+            "sample_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+        )
+    return sample_id
 
 
 # ── VCF discovery ──────────────────────────────────────────────────
@@ -322,6 +333,78 @@ def list_jobs(limit: int = 50) -> list[dict]:
     return jobs[:limit]
 
 
+# ── Finished pipeline output management ───────────────────────────
+
+def _latest_job_for_sample(sample_id: str) -> dict | None:
+    jobs = [j for j in list_jobs(limit=1000) if j.get("sample_id") == sample_id]
+    return jobs[0] if jobs else None
+
+
+def list_pipeline_outputs() -> list[dict]:
+    """List sample directories under /home/pipeline/tertiary_output."""
+    out: list[dict] = []
+    if not PIPELINE_OUT_ROOT.is_dir():
+        return out
+    latest_jobs: dict[str, dict] = {}
+    for job in list_jobs(limit=1000):
+        sample_id = job.get("sample_id", "")
+        if sample_id and sample_id not in latest_jobs:
+            latest_jobs[sample_id] = job
+    for child in PIPELINE_OUT_ROOT.iterdir():
+        if not child.is_dir() or child.name.startswith("_"):
+            continue
+        try:
+            _validate_sample_id(child.name)
+            st = child.stat()
+        except (ValueError, OSError):
+            continue
+        acmg_dir = child / "03_acmg"
+        has_acmg = acmg_dir.is_dir() and any(acmg_dir.glob("*.snv_indel.acmg.tsv"))
+        job = latest_jobs.get(child.name)
+        job_id = (job or {}).get("job_id", "")
+        out.append({
+            "sample_id":     child.name,
+            "mtime":         st.st_mtime,
+            "has_acmg":      has_acmg,
+            "job_id":        job_id,
+            "job_state":     (job or {}).get("state", ""),
+            "log_available": bool(job_id and _log_path(job_id).is_file()),
+        })
+    out.sort(key=lambda row: row["mtime"], reverse=True)
+    return out
+
+
+def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
+    """Return the most recent NGS-UI job log associated with a sample."""
+    _validate_sample_id(sample_id)
+    sample_dir = PIPELINE_OUT_ROOT / sample_id
+    if not sample_dir.is_dir():
+        raise FileNotFoundError(f"pipeline output not found: {sample_id}")
+    job = _latest_job_for_sample(sample_id)
+    if not job:
+        return {"sample_id": sample_id, "job_id": "", "log": ""}
+    job_id = job.get("job_id", "")
+    return {
+        "sample_id": sample_id,
+        "job_id": job_id,
+        "job_state": job.get("state", ""),
+        "log": tail_log(job_id, n=max(1, min(n, 2000))),
+    }
+
+
+def delete_pipeline_output(sample_id: str) -> dict:
+    """Delete one pipeline output directory unless its job is active."""
+    _validate_sample_id(sample_id)
+    sample_dir = PIPELINE_OUT_ROOT / sample_id
+    if not sample_dir.is_dir():
+        raise FileNotFoundError(f"pipeline output not found: {sample_id}")
+    job = _latest_job_for_sample(sample_id)
+    if job and job.get("state") in ("queued", "running") and is_running(job.get("job_id", "")):
+        raise RuntimeError(f"pipeline output is still in use: {sample_id}")
+    shutil.rmtree(sample_dir)
+    return {"sample_id": sample_id, "deleted": str(sample_dir)}
+
+
 # ── Job spawn ──────────────────────────────────────────────────────
 
 def start_job(
@@ -352,11 +435,13 @@ def start_job(
         raise FileNotFoundError(f"VCF not found: {vcf_path}")
     if not sample_id:
         raise ValueError("sample_id required")
+    _validate_sample_id(sample_id)
 
     job_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     jdir = _job_dir(job_id)
     jdir.mkdir(parents=True, exist_ok=True)
 
+    created_at = _now()
     save_state(job_id, {
         "job_id":         job_id,
         "mode":           mode,
@@ -368,10 +453,12 @@ def start_job(
         "mito_vcf":       mito_vcf,
         "state":          "queued",
         "step":           "queued",
-        "created_at":     _now(),
+        "created_at":     created_at,
         "started_at":     None,
         "finished_at":    None,
         "error":          None,
+        "step_started_at": created_at,
+        "step_history":   [{"step": "queued", "started_at": created_at}],
     })
 
     log_fh = _log_path(job_id).open("w", buffering=1)

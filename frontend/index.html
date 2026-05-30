@@ -19,6 +19,7 @@
       <button id="btn-logout" class="btn btn-ghost" hidden>登出</button>
       <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
       <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 或 in-house ensemble Nextflow 輸出啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
+      <button id="btn-pipeline-list" class="btn btn-ghost" type="button" hidden>三級分析清單</button>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
       <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" hidden />
     </div>
@@ -616,8 +617,34 @@
           <strong>進度</strong>
           <span id="dragen-job-step" class="muted"></span>
           <span id="dragen-job-state" class="muted"></span>
+          <button id="dragen-job-log-toggle" class="dragen-log-toggle" type="button" aria-expanded="false">▶ Log</button>
         </div>
-        <pre id="dragen-job-log" class="dragen-job-log"></pre>
+        <div class="dragen-progress-row">
+          <div class="dragen-progress-track">
+            <div id="dragen-job-progress-bar" class="dragen-progress-bar"></div>
+          </div>
+          <span id="dragen-job-progress-text" class="dragen-progress-text">0%</span>
+        </div>
+        <pre id="dragen-job-log" class="dragen-job-log" hidden></pre>
+      </div>
+    </div>
+  </div>
+
+  <div id="pipeline-list-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide">
+      <h2>三級分析清單</h2>
+      <p class="muted">管理 <code>/home/pipeline/tertiary_output/</code> 下的 sample 資料夾。</p>
+      <div id="pipeline-list-status" class="muted"></div>
+      <div id="pipeline-list-table" class="pipeline-list-table"></div>
+      <div id="pipeline-list-log-panel" class="pipeline-list-log-panel" hidden>
+        <div class="pipeline-list-log-head">
+          <strong id="pipeline-list-log-title"></strong>
+          <button id="pipeline-list-log-close" class="btn btn-ghost" type="button">收合 Log</button>
+        </div>
+        <pre id="pipeline-list-log" class="dragen-job-log"></pre>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="pipeline-list-modal">關閉</button>
       </div>
     </div>
   </div>

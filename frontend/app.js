@@ -1850,6 +1850,8 @@ function setLoggedInUser(username) {
   if (cases) cases.hidden = !username;
   const dr = document.getElementById("btn-dragen-launch");
   if (dr) dr.hidden = !username;
+  const pipelineList = document.getElementById("btn-pipeline-list");
+  if (pipelineList) pipelineList.hidden = !username;
   // #btn-phenotype-tool is intentionally always visible — the HPO/panel
   // tool needs no login (it runs on the intranet), so the link stays
   // reachable even before sign-in.
@@ -6840,7 +6842,9 @@ async function loadDragenVcfList({ force = false } = {}) {
 }
 
 function _dragenSetJob(state) {
+  const isNewJob = state?.job_id && state.job_id !== _DRAGEN_STATE.job?.job_id;
   _DRAGEN_STATE.job = state;
+  const pct = _dragenProgressPercent(state);
   // Topbar status
   const top = document.getElementById("topbar-job-status");
   if (top) {
@@ -6850,7 +6854,7 @@ function _dragenSetJob(state) {
     } else {
       top.hidden = false;
       const mode = state.mode === "inhouse" ? "in-house" : "dragen";
-      top.textContent = `· 三級分析 [${mode}]: ${state.sample_id} (${state.step})`;
+      top.textContent = `· 三級分析 [${mode}]: ${state.sample_id} (${pct}%)`;
     }
   }
   // Modal panel
@@ -6858,15 +6862,52 @@ function _dragenSetJob(state) {
   const stepEl  = document.getElementById("dragen-job-step");
   const stateEl = document.getElementById("dragen-job-state");
   const logEl   = document.getElementById("dragen-job-log");
+  const logToggle = document.getElementById("dragen-job-log-toggle");
+  const progressBar = document.getElementById("dragen-job-progress-bar");
+  const progressText = document.getElementById("dragen-job-progress-text");
   if (panel && state) {
     panel.hidden = false;
-    if (stepEl)  stepEl.textContent  = `step: ${state.step || ""}`;
+    if (stepEl)  stepEl.textContent  = state.step || "";
     if (stateEl) stateEl.textContent = state.error
-      ? `state: failed — ${state.error}`
-      : `state: ${state.state}`;
+      ? `failed — ${state.error}`
+      : state.state;
+    if (progressBar) progressBar.style.width = `${pct}%`;
+    if (progressText) progressText.textContent = `${pct}%`;
+    if (progressBar) progressBar.classList.toggle("failed", state.state === "failed");
+    if (isNewJob && logEl) logEl.hidden = true;
+    if (isNewJob && logToggle) {
+      logToggle.textContent = "▶ Log";
+      logToggle.setAttribute("aria-expanded", "false");
+    }
     if (logEl)   logEl.textContent   = state.log_tail || "";
     if (logEl)   logEl.scrollTop     = logEl.scrollHeight;
   }
+}
+
+function _dragenProgressPercent(state) {
+  if (!state) return 0;
+  if (state.state === "done") return 100;
+  const byStep = {
+    queued: 3,
+    mito: 10,
+    "detect-pipeline-output": 20,
+    stage: 30,
+    nextflow: 45,
+    "copy-pipeline-tsv": 78,
+    "stop-gaps": 85,
+    done: 100,
+  };
+  return byStep[state.step] ?? 0;
+}
+
+function _toggleDragenLog() {
+  const log = document.getElementById("dragen-job-log");
+  const btn = document.getElementById("dragen-job-log-toggle");
+  if (!log || !btn) return;
+  log.hidden = !log.hidden;
+  btn.textContent = log.hidden ? "▶ Log" : "▼ Log";
+  btn.setAttribute("aria-expanded", log.hidden ? "false" : "true");
+  if (!log.hidden) log.scrollTop = log.scrollHeight;
 }
 
 function _dragenStartPolling(jobId) {
@@ -7006,13 +7047,110 @@ function setupDragenButton() {
     finally { if (b) { b.disabled = false; b.textContent = "🔄 更新索引"; } }
   });
   document.getElementById("dragen-start-btn")?.addEventListener("click", _dragenStart);
+  document.getElementById("dragen-job-log-toggle")?.addEventListener("click", _toggleDragenLog);
   document.getElementById("topbar-job-status")?.addEventListener("click", () => {
     showModal("dragen-modal");
   });
   _dragenRecoverActiveJob();
 }
 
+async function _renderPipelineList() {
+  const host = document.getElementById("pipeline-list-table");
+  const status = document.getElementById("pipeline-list-status");
+  if (!host) return;
+  host.innerHTML = `<div class="muted" style="padding:10px">載入中…</div>`;
+  try {
+    const rows = await apiFetch("/dragen/outputs") || [];
+    if (!rows.length) {
+      host.innerHTML = `<div class="muted" style="padding:10px">（尚無三級分析資料夾）</div>`;
+      return;
+    }
+    const head = `
+      <tr>
+        <th>Sample</th>
+        <th>狀態</th>
+        <th>最近更新</th>
+        <th>Log</th>
+        <th></th>
+      </tr>`;
+    const body = rows.map(row => {
+      const ready = row.has_acmg ? "完成" : "未完成";
+      const state = row.job_state ? ` · ${row.job_state}` : "";
+      return `
+        <tr>
+          <td>${escapeHtml(row.sample_id || "")}</td>
+          <td>${escapeHtml(ready + state)}</td>
+          <td>${escapeHtml(_dragenFmtMtime(row.mtime) || "—")}</td>
+          <td><button type="button" class="btn btn-ghost pipeline-log-view"
+            data-sample-id="${escapeAttr(row.sample_id || "")}">查看 Log</button></td>
+          <td><button type="button" class="btn btn-danger pipeline-output-delete"
+            data-sample-id="${escapeAttr(row.sample_id || "")}">刪除</button></td>
+        </tr>`;
+    }).join("");
+    host.innerHTML = `<table>${head}${body}</table>`;
+    if (status) status.textContent = "";
+  } catch (e) {
+    host.innerHTML = `<div class="muted" style="padding:10px">載入失敗：${escapeHtml(String(e))}</div>`;
+  }
+}
+
+function setupPipelineList() {
+  const btn = document.getElementById("btn-pipeline-list");
+  const host = document.getElementById("pipeline-list-table");
+  const status = document.getElementById("pipeline-list-status");
+  const logPanel = document.getElementById("pipeline-list-log-panel");
+  if (!btn || !host) return;
+  btn.addEventListener("click", async () => {
+    showModal("pipeline-list-modal");
+    if (status) status.textContent = "";
+    if (logPanel) logPanel.hidden = true;
+    await _renderPipelineList();
+  });
+  host.addEventListener("click", async ev => {
+    const logBtn = ev.target.closest?.(".pipeline-log-view");
+    const delBtn = ev.target.closest?.(".pipeline-output-delete");
+    const sid = (logBtn || delBtn)?.dataset.sampleId || "";
+    if (!sid) return;
+    if (logBtn) {
+      const title = document.getElementById("pipeline-list-log-title");
+      const log = document.getElementById("pipeline-list-log");
+      if (title) title.textContent = `${sid} Log`;
+      if (log) log.textContent = "載入中…";
+      if (logPanel) logPanel.hidden = false;
+      try {
+        const data = await apiFetch(`/dragen/outputs/${encodeURIComponent(sid)}/log`);
+        if (log) log.textContent = data?.log || "（沒有可用的 NGS-UI 三級分析 Log）";
+      } catch (e) {
+        if (log) log.textContent = `讀取失敗：${e.message || e}`;
+      }
+      return;
+    }
+    if (!confirm(`確定刪除三級分析原始檔案？\n\n/home/pipeline/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
+    delBtn.disabled = true;
+    if (status) status.textContent = `刪除 ${sid} 中…`;
+    try {
+      const resp = await fetch(`${API_BASE}/dragen/outputs/${encodeURIComponent(sid)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (resp.status === 401) { showLoginModal(); throw new Error("尚未登入"); }
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+      if (status) status.textContent = `已刪除 ${sid}。`;
+      if (logPanel) logPanel.hidden = true;
+      await _renderPipelineList();
+    } catch (e) {
+      if (status) status.textContent = `刪除失敗：${e.message || e}`;
+      delBtn.disabled = false;
+    }
+  });
+  document.getElementById("pipeline-list-log-close")?.addEventListener("click", () => {
+    if (logPanel) logPanel.hidden = true;
+  });
+}
+
 // Wire it up at boot — sits alongside setupCombobox / setupGeneSearch.
 document.addEventListener("DOMContentLoaded", () => {
   try { setupDragenButton(); } catch (_e) {}
+  try { setupPipelineList(); } catch (_e) {}
 });

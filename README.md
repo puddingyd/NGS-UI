@@ -135,7 +135,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 4. **標記與判讀** — 在每個變異上標 causative / candidate / other，編輯 ACMG/分類、寫 comment；變更會自動存到 `tertiary_output/{LIS}/analyses/{ver}/analysis.json`。
 5. **匯出報告** — `GET /api/samples/{LIS}/report.docx`（UI 上的「匯出」按鈕），目前涵蓋 SNV/Indel；CNV/SV/Mito 的 docx 匯出在 TODO（見 `CLAUDE.md`）。
 
-三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead 輸入格；點入輸入格即展開全部 VCF，輸入 sample / run / path 後即時縮小候選清單。新 job 狀態寫在 `data/jobs/tertiary/`；舊版 `data/jobs/dragen/` 紀錄仍可讀取。`run_stopgaps.sh` 不再建立 `.raw` snapshot；GeneBe VCF 會帶 contig header，AnnotSV 成功執行時只保留摘要 log。
+三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead 輸入格；點入輸入格即展開全部 VCF，輸入 sample / run / path 後即時縮小候選清單。執行進度以 step-based 進度條顯示，詳細 log 預設收合。worker-owned log 行會帶 ISO timestamp，子程序完成時另記錄 elapsed seconds；`state.json` 的 `step_history` 可供後續依實測耗時調整百分比。topbar 的「三級分析清單」會掃描 `/home/pipeline/tertiary_output/`，可查看 sample 的 NGS-UI job log 或刪除 pipeline output；執行中的 sample 不可刪除。新 job 狀態寫在 `data/jobs/tertiary/`；舊版 `data/jobs/dragen/` 紀錄仍可讀取。`run_stopgaps.sh` 不再建立 `.raw` snapshot；GeneBe VCF 會帶 contig header，AnnotSV 成功執行時只保留摘要 log。
 
 ### 臨床表徵工具 `/phenotype/`
 

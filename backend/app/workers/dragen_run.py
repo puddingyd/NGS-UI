@@ -45,6 +45,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -159,15 +160,36 @@ def _update(job_id: str, **kw) -> None:
     dragen_jobs.save_state(job_id, st)
 
 
+def _log(message: str = "") -> None:
+    """Write one worker-owned log line with an ISO timestamp."""
+    prefix = f"[{_now()}]"
+    print(f"{prefix} {message}" if message else prefix, flush=True)
+
+
+def _set_step(job_id: str, step: str, **kw) -> None:
+    """Persist and log step transitions for post-run timing analysis."""
+    now = _now()
+    st = dragen_jobs.load_state(job_id) or {}
+    history = list(st.get("step_history") or [])
+    history.append({"step": step, "started_at": now})
+    st.update(kw)
+    st.update(step=step, step_started_at=now, step_history=history)
+    dragen_jobs.save_state(job_id, st)
+    _log(f"[step] {step}")
+
+
 def _run(cmd: list[str], *, label: str) -> None:
     """Stream a subprocess's stdout/stderr into this worker's stdout
     (which is already redirected to log.txt by dragen_jobs.start_job).
     Raises on non-zero exit so the outer try/except records failure.
     """
-    print(f"\n========================= [{label}] =========================",
-          flush=True)
-    print("$", " ".join(cmd), flush=True)
+    started = time.monotonic()
+    _log()
+    _log(f"========================= [{label}] =========================")
+    _log("$ " + " ".join(cmd))
     proc = subprocess.run(cmd, check=False)
+    elapsed = time.monotonic() - started
+    _log(f"[command] {label} finished exit={proc.returncode} elapsed={elapsed:.1f}s")
     if proc.returncode != 0:
         raise RuntimeError(f"{label} failed (exit {proc.returncode})")
 
@@ -206,12 +228,12 @@ def main() -> int:
     mito_in = args.mito_vcf if (mode == "inhouse" and args.mito_vcf) else vcf
     seq_type = "WGS" if mode == "dragen" else "WES"
 
-    _update(job_id, state="running", step="mito", started_at=_now())
+    started_at = _now()
+    _set_step(job_id, "mito", state="running", started_at=started_at)
     try:
         # 1. Mito
         if mode == "inhouse" and not args.mito_vcf:
-            print("[mito] skipped — in-house mode but --mito-vcf empty",
-                  flush=True)
+            _log("[mito] skipped — in-house mode but --mito-vcf empty")
         else:
             _run([str(scripts / "annotate_mito_vcf.sh"),
                   "--in",     mito_in,
@@ -221,14 +243,12 @@ def main() -> int:
 
         # 2. Reuse existing pipeline output if the production pipeline
         # has already processed this sample (sid or its stripped base).
-        _update(job_id, step="detect-pipeline-output")
+        _set_step(job_id, "detect-pipeline-output")
         existing = _find_pipeline_acmg_tsv(sid)
         if existing is not None:
-            print(f"\n[detect] reusing existing pipeline TSV: {existing}",
-                  flush=True)
+            _log(f"[detect] reusing existing pipeline TSV: {existing}")
         else:
-            print("\n[detect] no existing pipeline TSV — running nextflow",
-                  flush=True)
+            _log("[detect] no existing pipeline TSV — running nextflow")
 
             # 3. Stage. DRAGEN's 5M-row hard-filter VCF still goes
             # through the full stager (gnomAD AF<0.01 + gene-body BED
@@ -237,11 +257,11 @@ def main() -> int:
             # already small (~40k rows) AND already 2-sample, so we
             # just symlink them straight into the nf_stage layout
             # without any filtering — Nextflow sees every variant.
-            _update(job_id, step="stage")
+            _set_step(job_id, "stage")
             if mode == "inhouse":
                 _symlink_inhouse_into_nf_stage(Path(vcf), sid, nf_stage)
-                print(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
-                      f"{sid}.ensemble.fixed.vcf.gz (no filter)", flush=True)
+                _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
+                     f"{sid}.ensemble.fixed.vcf.gz (no filter)")
             else:
                 _run([str(scripts / "stage_dragen_for_tertiary.sh"),
                       "--in",     vcf,
@@ -249,7 +269,7 @@ def main() -> int:
                      label="2a/4 stage")
 
             # 4. Nextflow → /home/pipeline/tertiary_output/<SID>/...
-            _update(job_id, step="nextflow")
+            _set_step(job_id, "nextflow")
             _run([
                 "nextflow",
                 "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
@@ -270,13 +290,13 @@ def main() -> int:
                 )
 
         # 5. Copy pipeline TSV → NGS-UI side; record source audit.
-        _update(job_id, step="copy-pipeline-tsv")
+        _set_step(job_id, "copy-pipeline-tsv")
         shutil.copyfile(existing, gui_tsv)
         _track_pipeline_source(sample_dir, existing)
-        print(f"[copy] {existing} → {gui_tsv}", flush=True)
+        _log(f"[copy] {existing} → {gui_tsv}")
 
         # 6. Stop-gap chain (no ClinVar; pipeline already populates it).
-        _update(job_id, step="stop-gaps")
+        _set_step(job_id, "stop-gaps")
         stop_args = [str(scripts / "run_stopgaps.sh"),
                      "--tsv",    str(gui_tsv),
                      "--sample", sid]
@@ -291,8 +311,9 @@ def main() -> int:
             stop_args.append("--skip-extra-vep")
         _run(stop_args, label="3/4 stop-gaps")
 
-        _update(job_id, state="done", step="done", finished_at=_now())
-        print("\n[tertiary_run] DONE.", flush=True)
+        finished_at = _now()
+        _set_step(job_id, "done", state="done", finished_at=finished_at)
+        _log("[tertiary_run] DONE.")
         return 0
 
     except Exception as e:
@@ -301,7 +322,7 @@ def main() -> int:
                 state="failed",
                 error=str(e),
                 finished_at=_now())
-        print(f"\n[tertiary_run] FAILED: {e}", flush=True)
+        _log(f"[tertiary_run] FAILED: {e}")
         return 1
 
 
