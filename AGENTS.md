@@ -85,7 +85,7 @@ UI 流程：
                                           + (write_version side-effect 寫 pheno_score.tsv) + 重寫 SNV TSV 的 IN_PANEL 欄
   個案清單 (modal) → DELETE /api/samples/{id}?delete_pipeline_output={bool}
                   → 刪 NGS_UI_HOME/tertiary_output/{id}/
-                  → 可選擇同時刪 /home/pipeline/tertiary_output/{id}/
+                  → 三選一確認：同時刪 /home/pipeline/tertiary_output/{id}/、保留三級分析原始檔案、取消全部刪除
   選樣本 (combobox) → GET /api/samples/{id}  (核心 payload，aux_pending=true)
                     → 背景 GET /api/samples/{id}/cnv-sv 和 /mito
                     → GET /api/samples/{id}/report  (reviewer 編輯狀態)

@@ -478,11 +478,28 @@
   <div id="case-list-modal" class="modal hidden">
     <div class="modal-card modal-card-wide">
       <h2>個案清單</h2>
-      <p class="muted">刪除會移除 NGS-UI 儲存的個案資料夾；操作前會再次確認是否連三級分析輸出一起刪除。</p>
+      <p class="muted">刪除前可選擇是否一併移除三級分析原始檔案。</p>
       <div id="case-list-status" class="muted"></div>
       <div id="case-list-table" class="case-list-table"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" data-close="case-list-modal">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="case-delete-modal" class="modal hidden">
+    <div class="modal-card case-delete-card">
+      <h2>刪除個案</h2>
+      <p>確定要刪除個案 <strong id="case-delete-sid"></strong>？</p>
+      <p class="muted">請選擇是否一併刪除三級分析原始檔案：</p>
+      <div class="case-delete-paths">
+        <code id="case-delete-ui-path"></code>
+        <code id="case-delete-pipeline-path"></code>
+      </div>
+      <div class="modal-actions case-delete-actions">
+        <button type="button" class="btn btn-ghost" id="case-delete-cancel">取消</button>
+        <button type="button" class="btn btn-ghost" id="case-delete-keep-pipeline">保留三級分析原始檔案</button>
+        <button type="button" class="btn btn-danger" id="case-delete-all">確認刪除</button>
       </div>
     </div>
   </div>

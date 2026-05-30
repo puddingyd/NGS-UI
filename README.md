@@ -118,7 +118,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；
    - HPO / gene panel 可在這裡選；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
    - 勾「登錄後開始分析」會順便把 Exomiser/LIRICAL 排入佇列。
-   - 旁邊的「個案清單」可查看已載入個案並刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時會另外詢問是否同步刪除 `/home/pipeline/tertiary_output/{LIS_ID}/`。
+   - 旁邊的「個案清單」可查看已載入個案並刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時可選擇同步刪除或保留 `/home/pipeline/tertiary_output/{LIS_ID}/`，按取消則完全不刪除。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV 與 Mitochondria 在背景載完後補上：
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
    - SNV/Indel 顯示 filter 預設啟用 `In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。

@@ -1740,6 +1740,8 @@ function setupCaseList() {
   const btn = document.getElementById("btn-case-list");
   const host = document.getElementById("case-list-table");
   const status = document.getElementById("case-list-status");
+  let pendingSid = "";
+  let pendingDeleteButton = null;
   if (!btn || !host) return;
   btn.addEventListener("click", async () => {
     showModal("case-list-modal");
@@ -1750,11 +1752,29 @@ function setupCaseList() {
     const del = ev.target.closest?.(".case-list-delete");
     if (!del) return;
     const sid = del.dataset.sampleId || "";
-    if (!sid || !confirm(`確定要刪除個案 ${sid}？\n\n將刪除 NGS_UI/tertiary_output/${sid}/。`)) return;
-    const deletePipeline = confirm(
-      `是否同時刪除三級分析資料？\n\n/home/pipeline/tertiary_output/${sid}/`
-    );
-    del.disabled = true;
+    if (!sid) return;
+    pendingSid = sid;
+    pendingDeleteButton = del;
+    document.getElementById("case-delete-sid").textContent = sid;
+    document.getElementById("case-delete-ui-path").textContent = `NGS_UI/tertiary_output/${sid}/`;
+    document.getElementById("case-delete-pipeline-path").textContent = `/home/pipeline/tertiary_output/${sid}/`;
+    showModal("case-delete-modal");
+  });
+
+  const cancelDelete = () => {
+    pendingSid = "";
+    pendingDeleteButton = null;
+    hideModal("case-delete-modal");
+  };
+
+  async function deletePendingCase(deletePipeline) {
+    const sid = pendingSid;
+    const del = pendingDeleteButton;
+    if (!sid) return;
+    hideModal("case-delete-modal");
+    pendingSid = "";
+    pendingDeleteButton = null;
+    if (del) del.disabled = true;
     if (status) status.textContent = `刪除 ${sid} 中…`;
     try {
       const resp = await fetch(
@@ -1779,8 +1799,16 @@ function setupCaseList() {
       await _renderCaseList();
     } catch (e) {
       if (status) status.textContent = `刪除失敗：${e.message || e}`;
-      del.disabled = false;
+      if (del) del.disabled = false;
     }
+  }
+
+  document.getElementById("case-delete-cancel")?.addEventListener("click", cancelDelete);
+  document.getElementById("case-delete-keep-pipeline")?.addEventListener("click", () => {
+    deletePendingCase(false);
+  });
+  document.getElementById("case-delete-all")?.addEventListener("click", () => {
+    deletePendingCase(true);
   });
 }
 

@@ -2267,5 +2267,17 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 11px;
 }
 .case-list-table tr:last-child td { border-bottom: none; }
+.case-delete-card { max-width: 620px; }
+.case-delete-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 10px;
+  border-radius: 6px;
+  background: #f6f8fa;
+  font-size: 12px;
+}
+.case-delete-actions { flex-wrap: wrap; }
 .btn-danger { color: #cf222e; border-color: #cf222e; background: #fff; }
 .btn-danger:hover { color: #fff; background: #cf222e; }
