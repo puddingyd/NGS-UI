@@ -212,7 +212,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 /* Search */
 .search-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: end;
 }
