@@ -6954,10 +6954,12 @@ function _dragenSuggestSid(vcfSid, mode) {
 function _dragenWireCombobox(mode) {
   const input = document.getElementById(`dragen-vcf-${mode}`);
   const list = document.getElementById(`dragen-vcf-${mode}-dropdown`);
-  const listBtn = document.getElementById(`dragen-vcf-${mode}-list`);
-  if (!input || !list || !listBtn) return;
+  if (!input || !list) return;
   let activeIdx = -1;
-  input.addEventListener("focus", () => _dragenRenderDropdown(mode));
+  input.addEventListener("focus", () => {
+    activeIdx = -1;
+    _dragenRenderDropdown(mode, { showAll: true });
+  });
   input.addEventListener("input", () => {
     activeIdx = -1;
     _DRAGEN_STATE.selected[mode] = "";
@@ -6985,10 +6987,6 @@ function _dragenWireCombobox(mode) {
     } else if (ev.key === "Escape") {
       _dragenHideDropdown(mode);
     }
-  });
-  listBtn.addEventListener("click", () => {
-    activeIdx = -1;
-    _dragenRenderDropdown(mode, { showAll: true });
   });
 }
 

@@ -2091,11 +2091,6 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.dragen-vcf-list-btn {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  font-size: 12px;
-}
 .dragen-vcf-dropdown {
   right: 0;
   min-width: 100%;
