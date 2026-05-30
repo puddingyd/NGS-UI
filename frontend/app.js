@@ -1525,13 +1525,28 @@ function _startJobPolling(sid, jobId) {
 // ---------- Render: variant card -----------------------------------
 
 function statusOptions(kind) {
-  // kind: "candidate" → causative/other/candidate/skip/reject mapped to
-  //                     1 / 2 / C / 0 / X. "C" routes the variant into
-  //                     the Candidate variants report section.
-  //       "panel"     → ACMG SF / Proactive / Carrier → V/0/X.
-  // "0" = reviewed but kept on the page (surfaces nowhere in Report).
-  if (kind === "panel") return ["", "V", "0", "X"];
-  return ["", "1", "2", "C", "0", "X"];
+  // kind: "candidate" → 1 / 2 / C / 0
+  //                     1 = Causative · 2 = Other · C = Candidate · 0 = reviewed
+  //       "panel"     → ACMG SF / Proactive / Carrier → V / 0
+  // X was dropped — reviewers asked to mark-only, not hide.
+  if (kind === "panel") return ["V", "0"];
+  return ["1", "2", "C", "0"];
+}
+
+// Render the four status options as radio chips (clickable circles)
+// instead of a dropdown — saves a click per status change and the
+// available choices are visible at a glance. `panelAttr` carries the
+// optional data-panel="..." string for panel-scoped statuses (ACMG
+// SF / Proactive / Carrier).
+function _renderStatusRadio(id, curStatus, opts, panelAttr = "") {
+  const groupName = `status-${id}${panelAttr ? "-" + panelAttr.replace(/[^A-Za-z0-9]/g, "") : ""}`;
+  return `<span class="status-radio" data-id="${escapeAttr(id)}" ${panelAttr}>` +
+    opts.map(o => {
+      const checked = o === curStatus ? " checked" : "";
+      const cls = `status-radio-chip status-radio-${o.toLowerCase()}`;
+      return `<label class="${cls}"><input type="radio" name="${escapeAttr(groupName)}" value="${escapeAttr(o)}"${checked} /><span>${escapeHtml(o)}</span></label>`;
+    }).join("") +
+  `</span>`;
 }
 
 function getStatus(id) {
@@ -1543,7 +1558,12 @@ function setStatus(id, val) {
   if (val) state.reports.status[id] = val;
   else     delete state.reports.status[id];
   state.dirty = true;
-  renderAll();
+  // Scoped re-render: status only affects which Causative / Other /
+  // Candidate section the variant lands in. Skip the full renderAll
+  // (which re-builds sample meta, phenotype, every tier panel, etc.)
+  // so flipping a status pill feels instant instead of taking ~1 s.
+  renderReportSections();
+  updateSaveHint();
 }
 
 // Panel-specific status (per panel category, so V in proactive doesn't surface in carrier)
@@ -1593,9 +1613,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
         <span class="muted">⚠️ 此 variant 在最新分析結果中不存在</span>
         <span class="hgvs">${escapeHtml(id)}</span>
-        <select class="status-select" data-id="${escapeAttr(id)}" ${panelAttr}>
-          ${options.map(s => `<option value="${s}" ${s===curStatus?"selected":""}>${s||"—"}</option>`).join("")}
-        </select>
+        ${_renderStatusRadio(id, curStatus, options, panelAttr)}
       </div>`;
     return card;
   }
@@ -1685,9 +1703,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   card.innerHTML = `
     <div class="variant-head">
       ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
-      <select class="status-select" data-id="${escapeAttr(id)}" ${panelAttr}>
-        ${options.map(s => `<option value="${s}" ${s===curStatus?"selected":""}>${s||"—"}</option>`).join("")}
-      </select>
+      ${_renderStatusRadio(id, curStatus, options, panelAttr)}
       <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(v.HGVS || id)}<button class="btn-copy" data-copy="${escapeAttr(v.HGVS || id)}" title="複製 HGVS">${COPY_ICON_SVG}</button> <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
       <span class="ext-links">${links}</span>
     </div>
@@ -1706,7 +1722,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       <div>
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
         <span class="k">Read depth (VAF)</span><span class="v ${v.low_depth ? "sig-lp" : ""}" title="${v.low_depth ? `Low DP (DP ${v.depth || "?"}) — 建議 IGV / Sanger 確認` : ""}">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
-        <span class="k">Consequence</span><span class="v">${fmtTxt(v.Consequence)}</span>
+        <span class="k">Consequence</span><span class="v">${_renderConsequenceCell(v.Consequence)}</span>
         <div class="more-extras hidden">
           <span class="k">Exon / Intron</span><span class="v">${fmtExonIntron(v)}</span>
           <span class="k">Phase</span><span class="v">${fmtPhase(v)}</span>
@@ -1800,6 +1816,25 @@ function renderVariantBadges(v) {
 // user can see which co-segregating variants share the same haplotype.
 // VEP EXON/INTRON come through as "current/total" (e.g. "6/10"); show
 // whichever the variant falls in, "—" when both are blank.
+
+// Consequence cell — VEP joins multiple SO terms with "&"
+// (e.g. "missense_variant&splice_region_variant"). Show only the
+// first term by default + a tiny ▾ button to expand the rest;
+// reviewers don't usually need to see every joined consequence and
+// the column is narrow.
+function _renderConsequenceCell(raw) {
+  const s = (raw || "").toString().trim();
+  if (!s) return "—";
+  const parts = s.split("&").map(p => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return escapeHtml(s);
+  const first = parts[0];
+  const rest  = parts.slice(1).join(" & ");
+  return `<span class="consequence-multi">
+    <span class="consequence-first">${escapeHtml(first)}</span>
+    <button class="consequence-toggle" type="button" title="展開其餘 ${parts.length - 1} 個 consequence">▾</button>
+    <span class="consequence-rest hidden"> &amp; ${escapeHtml(rest)}</span>
+  </span>`;
+}
 
 // "舊格式，請重跑新版 pipeline" banner — shown inside the SNV card
 // whenever sample_loader rejected the TSV (old-format detection
@@ -2516,10 +2551,7 @@ function _mitoExternalLinks(v) {
 
 function _mitoReviewerStatusSel(id) {
   const status = (state.reports?.status?.[id]) || "";
-  const opts = ["", "1", "2", "C", "0", "X"];
-  return `<select class="status-select" data-id="${escapeAttr(id)}" title="判定">${
-    opts.map(s => `<option value="${s}" ${s===status?"selected":""}>${s||"—"}</option>`).join("")
-  }</select>`;
+  return _renderStatusRadio(id, status, statusOptions("candidate"));
 }
 
 function _mitoHeteroplasmy(v) {
@@ -2747,10 +2779,7 @@ function _renderCnvSvHeader(v, id, opts) {
   // state.reports.status dict + the same options as SNV — picking C
   // routes the variant into the Candidate variants report section.
   const status = (state.reports?.status?.[id]) || "";
-  const options = ["", "1", "2", "C", "0", "X"];
-  const statusSel = `<select class="status-select" data-id="${escapeAttr(id)}">${
-    options.map(s => `<option value="${s}" ${s===status?"selected":""}>${s||"—"}</option>`).join("")
-  }</select>`;
+  const statusSel = _renderStatusRadio(id, status, statusOptions("candidate"));
   const idxTxt = opts.index ? `<span class="card-idx">#${opts.index}</span>` : "";
   const links = _cnvSvExternalLinks(v).map(l =>
     `<a href="${escapeAttr(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`
@@ -3570,6 +3599,15 @@ document.addEventListener("click", ev => {
   } else if (t.closest(".btn-copy")) {
     ev.stopPropagation();
     copyToClipboard(t.closest(".btn-copy"));
+  } else if (t.matches(".consequence-toggle")) {
+    ev.stopPropagation();
+    const wrap = t.closest(".consequence-multi");
+    const rest = wrap?.querySelector(".consequence-rest");
+    if (rest) {
+      const willHide = !rest.classList.contains("hidden");
+      rest.classList.toggle("hidden", willHide);
+      t.textContent = willHide ? "▾" : "▴";
+    }
   } else if (t.matches(".btn-more")) {
     ev.stopPropagation();
     toggleVariantExtras(t);
@@ -3652,7 +3690,16 @@ function toggleVariantExtras(btn) {
 
 document.addEventListener("change", ev => {
   const t = ev.target;
-  if (t.matches(".status-select")) {
+  // New radio-chip status widget (replaces the old <select.status-select>).
+  // The input lives inside <span.status-radio data-id="…" data-panel="…">.
+  if (t.matches('.status-radio input[type="radio"]')) {
+    const wrap = t.closest(".status-radio");
+    if (!wrap) return;
+    const panel = wrap.dataset.panel;
+    if (panel) setPanelStatus(wrap.dataset.id, panel, t.value);
+    else       setStatus(wrap.dataset.id, t.value);
+  } else if (t.matches(".status-select")) {
+    // Legacy fallback for any straggling <select> instance.
     const panel = t.dataset.panel;
     if (panel) setPanelStatus(t.dataset.id, panel, t.value);
     else       setStatus(t.dataset.id, t.value);
@@ -6251,10 +6298,13 @@ async function _dragenStart() {
 }
 
 function _dragenSuggestSid(vcfSid, mode) {
-  // Append -dragen / -inhouse suffix unless the operator already added it.
+  // DRAGEN adds -dragen suffix to disambiguate from production runs;
+  // in-house keeps the original SID since the production pipeline
+  // writes to the same /home/pipeline/tertiary_output/<SID>/ path
+  // and we want to reuse that output when it exists.
   if (!vcfSid) return "";
-  const suffix = mode === "inhouse" ? "-inhouse" : "-dragen";
-  return vcfSid.endsWith(suffix) ? vcfSid : `${vcfSid}${suffix}`;
+  if (mode !== "dragen") return vcfSid;
+  return vcfSid.endsWith("-dragen") ? vcfSid : `${vcfSid}-dragen`;
 }
 
 function _dragenWireSelect(selId, mode, otherSelId) {

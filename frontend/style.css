@@ -707,6 +707,61 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .acmg-class-row .acmg-paren { color: var(--muted); }
 .acmg-class-row .acmg-score { width: 3em; flex: none; text-align: center; font-family: ui-monospace, monospace; }
 
+/* Status radio chips on every variant card — replaces the old
+   <select.status-select>. Reviewer clicks 1 / 2 / C / 0; the four
+   options each carry the same colour as the report section they
+   route the variant into. Native <input type=radio> hidden; the
+   surrounding <label> is the chip. */
+.status-radio {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.status-radio-chip {
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 22px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--fg);
+  text-align: center;
+}
+.status-radio-chip input { display: none; }
+.status-radio-chip:hover { background: #f0f3f6; }
+/* Tier-specific tints applied when the radio is :checked. */
+.status-radio-chip.status-radio-1:has(input:checked) { background: #ef9a9a; border-color: #c62828; color: #5a0010; }
+.status-radio-chip.status-radio-2:has(input:checked) { background: #ffe0b2; border-color: #ef6c00; color: #5c2a00; }
+.status-radio-chip.status-radio-c:has(input:checked) { background: #fff4a3; border-color: #c0a800; color: #5a4400; }
+.status-radio-chip.status-radio-0:has(input:checked) { background: #e0e0e0; border-color: #757575; color: #2b2b2b; }
+.status-radio-chip.status-radio-v:has(input:checked) { background: #c5e1a5; border-color: #558b2f; color: #1b3d04; }
+
+/* Consequence cell — first SO term + tiny ▾ to expand the rest.
+   .consequence-rest is .hidden by default; click ▾ removes the
+   hidden class. The triangle flips to ▴ when expanded. */
+.consequence-multi {
+  display: inline;
+  white-space: normal;
+}
+.consequence-toggle {
+  display: inline-block;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1;
+}
+.consequence-toggle:hover { color: var(--fg); }
+.consequence-rest.hidden { display: none; }
+
 /* Old-format TSV banner in the SNV card — wide yellow stripe. */
 .snv-tsv-error {
   background: #fff8c5;
