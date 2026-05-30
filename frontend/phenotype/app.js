@@ -18,6 +18,14 @@ let panelList = [];          // gene panel names
 let panelFuse = null;
 let generatedContent = "";
 
+// Fixed panel index from /api/phenotype-tool/fixed-panels — WES-I /
+// WES-II / WGS tabs are driven entirely by this. Keys look like
+// "WES-I__皮膚科__EB" and match a file written into GENE_PANELS_DIR,
+// so phenotype_scorer consumes them with no extra plumbing.
+let fixedPanelIndex = { series: [] };
+const fixedPanelKeys = new Set();          // all known keys (for load() dispatch)
+const selectedFixedPanels = new Map();      // key → weight (default 1)
+
 // ============================================================
 // Data loading
 // ============================================================
@@ -33,7 +41,9 @@ async function loadHPOData() {
   document.getElementById("loading-overlay").classList.add("hidden");
   initRows();
   initPanelRows();
+  initPanelTabs();
   loadPanelList();
+  loadFixedPanels();
 }
 
 async function loadPanelList() {
@@ -241,7 +251,7 @@ function createPanelRow() {
 }
 
 function clearAllPanelRows() { document.getElementById("panel-rows").innerHTML = ""; panelRowCount = 0; }
-function initPanelRows() { for (let i = 0; i < 3; i++) createPanelRow(); }
+function initPanelRows() { createPanelRow(); }
 function addPanelRow() { const r = createPanelRow(); r.querySelector(".search-input")?.focus(); }
 function removePanelRow(num) { document.getElementById(`panel-row-${num}`)?.remove(); }
 
@@ -297,6 +307,95 @@ function selectPanel(rowNum, name) {
 }
 
 // ============================================================
+// Fixed panels (WES-I / WES-II / WGS tabs)
+// ============================================================
+
+function initPanelTabs() {
+  document.querySelectorAll(".panel-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.tab;
+      document.querySelectorAll(".panel-tab").forEach((b) =>
+        b.classList.toggle("is-active", b === btn));
+      document.querySelectorAll(".panel-tab-body").forEach((body) =>
+        body.classList.toggle("is-active", body.dataset.tabBody === target));
+    });
+  });
+}
+
+async function loadFixedPanels() {
+  try {
+    const resp = await fetch("/api/phenotype-tool/fixed-panels");
+    if (!resp.ok) throw new Error(resp.statusText);
+    fixedPanelIndex = await resp.json();
+  } catch {
+    fixedPanelIndex = { series: [] };
+  }
+  fixedPanelKeys.clear();
+  for (const s of (fixedPanelIndex.series || [])) {
+    for (const g of (s.groups || [])) {
+      for (const p of (g.panels || [])) fixedPanelKeys.add(p.key);
+    }
+  }
+  renderFixedPanelHosts();
+}
+
+function renderFixedPanelHosts() {
+  const seriesByKey = {};
+  for (const s of (fixedPanelIndex.series || [])) seriesByKey[s.key] = s;
+  document.querySelectorAll(".fixed-panel-host").forEach((host) => {
+    const skey = host.dataset.series;
+    const s = seriesByKey[skey];
+    if (!s || !(s.groups || []).length) {
+      host.innerHTML = '<div class="muted">尚未匯入此系列的 panel（dev 機執行 <code>scripts/import_fixed_panels.py</code>）</div>';
+      return;
+    }
+    host.innerHTML = s.groups.map((g) => `
+      <div class="fp-group">
+        <div class="fp-group-title">${escapeText(g.category)}</div>
+        <div class="fp-chips">
+          ${(g.panels || []).map((p) => `
+            <label class="fp-chip" data-key="${escapeAttr(p.key)}" title="${escapeAttr(p.key)}">
+              <input type="checkbox" class="fp-chip-cb" value="${escapeAttr(p.key)}">
+              <span class="fp-chip-label">${escapeText(p.name)}</span>
+              <span class="fp-chip-count">(${p.gene_count || 0})</span>
+            </label>
+          `).join("")}
+        </div>
+      </div>
+    `).join("");
+  });
+  // Wire chip toggles (one listener per checkbox is simplest here).
+  document.querySelectorAll(".fp-chip-cb").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedFixedPanels.set(cb.value, 1);
+      else selectedFixedPanels.delete(cb.value);
+      cb.closest(".fp-chip").classList.toggle("is-selected", cb.checked);
+    });
+  });
+  syncFixedPanelUiFromState();
+}
+
+function syncFixedPanelUiFromState() {
+  document.querySelectorAll(".fp-chip-cb").forEach((cb) => {
+    const on = selectedFixedPanels.has(cb.value);
+    cb.checked = on;
+    cb.closest(".fp-chip").classList.toggle("is-selected", on);
+  });
+}
+
+function clearSelectedFixedPanels() {
+  selectedFixedPanels.clear();
+  syncFixedPanelUiFromState();
+}
+
+function escapeText(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escapeAttr(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+// ============================================================
 // Load existing phenotype from the server (by LIS_ID then MRN)
 // ============================================================
 
@@ -317,7 +416,8 @@ async function loadPatient() {
     const lines = content.trim().split("\n");
     clearAllRows();
     clearAllPanelRows();
-    let termCount = 0, panelCount = 0;
+    clearSelectedFixedPanels();
+    let termCount = 0, panelCount = 0, fixedCount = 0;
     for (let i = 1; i < lines.length; i++) {
       const parts = lines[i].split("\t");
       if (parts.length < 1 || !parts[0]) continue;
@@ -333,6 +433,10 @@ async function loadPatient() {
         selectTerm(num, col1, label, genes);
         row.querySelector(".weight-input").value = weight;
         termCount++;
+      } else if (fixedPanelKeys.has(col1)) {
+        // Pre-imported WES-I / WES-II / WGS panel → toggle the chip on.
+        const w = parseFloat(weight); selectedFixedPanels.set(col1, Number.isFinite(w) ? w : 1);
+        fixedCount++;
       } else {
         const row = createPanelRow();
         const num = parseInt(row.id.replace("panel-row-", ""), 10);
@@ -341,12 +445,13 @@ async function loadPatient() {
         panelCount++;
       }
     }
+    syncFixedPanelUiFromState();
     // Pad back to the default empty-row count for convenience.
     while (document.querySelectorAll(".phenotype-row:not(.panel-row)").length < 5) createRow();
-    while (document.querySelectorAll(".panel-row").length < 3) createPanelRow();
+    while (document.querySelectorAll(".panel-row").length < 1) createPanelRow();
     if (body.code && !code) document.getElementById("patient-code").value = body.code;
     if (body.mrn  && !mrn)  document.getElementById("patient-mrn").value  = body.mrn;
-    showStatus(`已載入：${termCount} 個 HPO term、${panelCount} 個 panel（來源 ${body.filename}）`, "success");
+    showStatus(`已載入：${termCount} 個 HPO term、${fixedCount} 個 fixed panel、${panelCount} 個自由 panel（${body.filename}）`, "success");
   } catch (e) {
     showStatus("讀取失敗：" + (e.message || e), "error");
   }
@@ -404,12 +509,28 @@ function _collectHpoAndPanelLines() {
     const weight = row.querySelector(".weight-input").value || "1";
     if (hpId && hpName) lines.push(`${hpId}\t${hpName}\t${weight}`);
   });
+  // Selected WES-I / WES-II / WGS chips — same wire format as a
+  // free-text panel row, the key matches the file in GENE_PANELS_DIR.
+  for (const [key, weight] of selectedFixedPanels.entries()) {
+    lines.push(`${key}\t\t${weight || 1}`);
+  }
   document.querySelectorAll(".panel-row").forEach((row) => {
     const panelName = row.dataset.panelName;
     const weight = row.querySelector(".weight-input").value || "1";
     if (panelName) lines.push(`${panelName}\t\t${weight}`);
   });
   return lines;
+}
+
+function _fixedPanelDisplayName(key) {
+  for (const s of (fixedPanelIndex.series || [])) {
+    for (const g of (s.groups || [])) {
+      for (const p of (g.panels || [])) {
+        if (p.key === key) return `${s.key} · ${g.category} · ${p.name}`;
+      }
+    }
+  }
+  return key;
 }
 
 // Preview is reviewer-facing — no tabs, no weights, just the
@@ -422,6 +543,9 @@ function _collectPreviewLines(customPanelNames) {
     const hpId = row.dataset.hpId, hpName = row.dataset.hpName;
     if (hpId && hpName) lines.push(`${hpName} ${hpId}`);
   });
+  for (const key of selectedFixedPanels.keys()) {
+    lines.push(_fixedPanelDisplayName(key));
+  }
   document.querySelectorAll(".panel-row").forEach((row) => {
     const panelName = row.dataset.panelName;
     if (panelName) lines.push(panelName);
@@ -443,7 +567,7 @@ async function generateFile() {
   if (incomplete) { showStatus("有自訂 panel 列只填了名稱或基因其中一項，請補齊或移除該列。", "error"); return; }
 
   const baseLines = _collectHpoAndPanelLines();
-  if (baseLines.length === 0 && customPanels.length === 0) {
+  if (baseLines.length === 0 && customPanels.length === 0 && selectedFixedPanels.size === 0) {
     showStatus("尚未選擇任何 HPO term、panel 或自訂 panel。", "error"); return;
   }
 

@@ -189,6 +189,81 @@ button:hover, .btn:hover { background: #eaeef2; }
 
 #row-controls, #panel-controls, #custom-panel-controls { margin-top: 4px; }
 
+/* ── Gene-panel tabs (WES-I / WES-II / WGS / Other panel) ───────── */
+.panel-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.panel-tab {
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 13px;
+  margin-bottom: -1px;
+}
+.panel-tab:hover { background: #f3f4f6; color: var(--fg); }
+.panel-tab.is-active {
+  background: var(--card-bg);
+  color: var(--fg);
+  border-color: var(--border);
+  border-bottom-color: var(--card-bg);
+  font-weight: 600;
+}
+.panel-tab-body { display: none; }
+.panel-tab-body.is-active { display: block; }
+
+.fixed-panel-host .muted { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
+.fp-group { margin-bottom: 14px; }
+.fp-group:last-child { margin-bottom: 0; }
+.fp-group-title {
+  font-size: 12px; font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--border);
+}
+.fp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fp-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f6f8fa;
+  cursor: pointer;
+  font-size: 13px;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.fp-chip:hover { background: #eaeef2; }
+.fp-chip input.fp-chip-cb {
+  appearance: none; -webkit-appearance: none;
+  width: 12px; height: 12px; margin: 0;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+}
+.fp-chip input.fp-chip-cb:checked {
+  border-color: var(--ok);
+  background: var(--ok);
+  box-shadow: inset 0 0 0 2px var(--card-bg);
+}
+.fp-chip.is-selected {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.fp-chip-label { font-weight: 500; }
+.fp-chip-count { color: var(--muted); font-size: 11px; }
+.fp-chip.is-selected .fp-chip-count { color: var(--ok); opacity: 0.85; }
+
 /* Custom-panel rows: name input + gene-list textarea + weight + remove. */
 .custom-panel-row {
   display: flex; align-items: flex-start; gap: 10px;

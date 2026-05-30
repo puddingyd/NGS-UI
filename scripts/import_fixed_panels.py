@@ -271,7 +271,12 @@ def _write_panels(records: list[dict], out_root: Path) -> None:
 
     # Plus: drop a panel file in GENE_PANELS_DIR so phenotype_scorer's
     # existing loader picks them up — the panel name = the unique key.
+    # Clear stale series files first so renamed/removed panels disappear.
     GENE_PANELS_DIR.mkdir(parents=True, exist_ok=True)
+    for prefix in ("WES-I__", "WES-II__", "WGS__"):
+        for f in GENE_PANELS_DIR.glob(f"{prefix}*.txt"):
+            try: f.unlink()
+            except OSError: pass
     for rec in records:
         (GENE_PANELS_DIR / f"{rec['key']}.txt").write_text(
             "\n".join(rec["genes"]) + "\n", encoding="utf-8")

@@ -45,6 +45,24 @@ def list_panels_public():
     return phenotype_scorer.list_panels()
 
 
+@router.get("/fixed-panels")
+def list_fixed_panels():
+    """Index of the WES-I / WES-II / WGS fixed panels for the new
+    Gene-panels UI tabs. Built once by scripts/import_fixed_panels.py
+    into PHENO_DATA_DIR/fixed_panels/index.json; we just stream it.
+    Returns {"series": []} on a clean dev box (no panels imported).
+    """
+    import json
+    from ..config import PHENO_DATA_DIR
+    idx = PHENO_DATA_DIR / "fixed_panels" / "index.json"
+    if not idx.is_file():
+        return {"series": []}
+    try:
+        return json.loads(idx.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"series": []}
+
+
 _GENE_SPLIT_RE = re.compile(r"[,\s]+")
 _MAX_PANEL_GENES = 5000
 
