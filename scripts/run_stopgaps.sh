@@ -12,6 +12,7 @@
 #   4. AnnotSV CNV/SV — DRAGEN siblings (--dragen-cnv-source) or
 #                       in-house gcnv + delly (--inhouse-cnv-vcf /
 #                       --inhouse-sv-vcf). Skipped if none supplied.
+#   5. build_snv_review_tsv.py  — pre-build the compact main-screen TSV
 #
 # (ClinVar annotation was a stop-gap before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
@@ -166,6 +167,10 @@ if [ "$TSV" != "$GUI_TSV" ]; then
   echo "[stopgaps] copy → $GUI_TSV  (GUI-expected path)"
   cp -v "$TSV" "$GUI_TSV"
 fi
+
+echo
+echo "[stopgaps] review TSV  build_snv_review_tsv.py"
+"$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV"
 
 echo
 echo "================================================================"

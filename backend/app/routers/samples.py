@@ -1,4 +1,5 @@
 from urllib.parse import quote
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -14,6 +15,9 @@ from ..services import (
 )
 
 router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
+_snv_cache_warm_executor = ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="snv-cache-warm",
+)
 
 
 @router.get("/samples/{sample_id}/report.docx")
@@ -208,6 +212,11 @@ def register_sample(
             job_id = rec.get("job_id")
         except Exception:
             job_id = None
+    # Parse the complete TSV in the background so the first modal gene
+    # search normally hits the raw-SNV cache. Do not hold up registration.
+    _snv_cache_warm_executor.submit(
+        sample_loader.warm_raw_snv_cache, lis_id, "default",
+    )
     return {
         "sample_id": lis_id,
         "meta": meta,
@@ -225,6 +234,11 @@ def get_sample(sample_id: str, version: str | None = None):
     payload = sample_loader.load_sample(sample_id, version=version, include_aux=False)
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")
+    # Existing samples also need a warm raw cache after a service
+    # restart. Keep the compact main response on the foreground path.
+    _snv_cache_warm_executor.submit(
+        sample_loader.warm_raw_snv_cache, sample_id, version,
+    )
     return payload
 
 
@@ -241,6 +255,22 @@ def get_sample_cnv_sv(sample_id: str, version: str | None = None):
 def get_sample_mito(sample_id: str, version: str | None = None):
     """Mitochondria side-channel for the staged loader."""
     payload = sample_loader.load_sample_mito(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
+@router.get("/samples/{sample_id}/snv-search")
+def search_sample_snv(sample_id: str, genes: str, version: str | None = None):
+    """Search the complete source TSV, not the compact main-screen TSV."""
+    gene_list = [g.strip() for g in genes.split(",") if g.strip()]
+    if not gene_list:
+        raise HTTPException(400, "genes is required")
+    if len(gene_list) > 100:
+        raise HTTPException(400, "最多一次搜尋 100 個 genes")
+    payload = sample_loader.search_snv_by_genes(
+        sample_id, gene_list, version=version,
+    )
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")
     return payload

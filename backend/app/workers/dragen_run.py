@@ -15,6 +15,7 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
                                           snv_indel.annotated.tsv
                                           + pipeline_source.json (audit)
     6. run_stopgaps.sh                → filter / GeneBe / extra-VEP / CNV-AnnotSV
+                                          + pre-build snv_indel.review.tsv
                                           (ClinVar removed — pipeline already
                                            does it; GeneBe writes a SECOND
                                            opinion to GENEBE_* columns)

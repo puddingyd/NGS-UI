@@ -23,7 +23,8 @@ NGS_UI/                    ← NGS_UI_HOME
 ├── vcf/                   ← per-sample VCF
 ├── tertiary_output/       ← per-sample TSV + sidecar（不進 git）
 │   ├── _index.json        ← 個案清單快取（在 tertiary_output 旁，往上一層）
-│   └── {LIS_ID}/          ← snv_indel.annotated.tsv, cnv.annotated.tsv,
+│   └── {LIS_ID}/          ← snv_indel.annotated.tsv, snv_indel.review.tsv,
+│                             cnv.annotated.tsv,
 │                             sv.annotated.tsv, mito.annotated.tsv,
 │                             sample_metadata.json, qc_summary.json,
 │                             roh_summary.json, analyses/{ver}/...
@@ -121,7 +122,9 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
    - SNV/Indel 顯示 filter 預設啟用 `In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。
    - TSV stop-gap 只移除 `REF/ALT=*` 與非 primary contig；DRAGEN staging 仍會先移除 `AF > 0.01` 的 common variants。
-   - SNV/Indel 與 CNV/SV gene 搜尋支援多個基因，以 `,` 或 `、` 分隔；搜尋 modal 的 SNV 結果預設套用可取消的 `gnomAD_G_AF < 0.01`。
+   - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：保留 `GNOMAD_G_AF < 0.05`、AF 缺值、ClinVar P/LP rescue 與 reviewer 已標記點。`run_stopgaps.sh` 在三級分析結尾先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。
+   - SNV tier 只在點開時建立該 tier 的卡片 DOM，避免一次 render 全部卡片。
+   - SNV/Indel 與 CNV/SV gene 搜尋支援多個基因，以 `,` 或 `、` 分隔；SNV 搜尋由 `/api/samples/{id}/snv-search` 查完整原始 TSV。登錄新個案或載入既有個案後都會在背景預熱 raw TSV cache；modal 預設勾選 `gnomAD_G_AF < 0.01`，取消後才顯示全部搜尋結果。
    - CNV：`CNV-1A`（Clinical）、`CNV-1B`（Pathogenic）；SV：`SV-2A / SV-2B`
    - Mitochondria：`MITO-1`（Pathogenic）、`MITO-2`（Disease-associated）— 只列 `FILTER=PASS` 且具 MITOMAP 疾病關聯/致病性的位點
 4. **標記與判讀** — 在每個變異上標 causative / candidate / other，編輯 ACMG/分類、寫 comment；變更會自動存到 `tertiary_output/{LIS}/analyses/{ver}/analysis.json`。
@@ -178,3 +181,4 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 - `phenotype_data/` 必須放對位置（`NGS_UI_PHENO_DATA_DIR` 沒有 fallback）；正式環境記得 `mv NGS_UI/NGS-UI/phenotype_data NGS_UI/phenotype_data`。
 - EMR 相關功能預設停用，需設 `NGS_UI_EMR_CLIENT_ID` 才會啟用，且只在內網可達。
 - `/api/phenotype-tool/*` 與 `/api/healthz` 是刻意公開無認證；`/api/patient_list` 與其餘 `/api/*` 需登入。
+- 大型 JSON response 會在瀏覽器支援時自動 gzip；SNV parse + phenotype / Exomiser / LIRICAL / OMIM join 使用有上限的 process-local LRU cache，輸入 TSV 或 sidecar 更新後自動失效。

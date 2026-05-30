@@ -137,6 +137,7 @@ async function loadSample(LIS_ID) {
   if (!Array.isArray(reports.tags))          reports.tags = [];
   if (!Array.isArray(reports.manual_variants)) reports.manual_variants = [];
   state.data       = data;
+  state.snvSearchVariants = {};
   state.reports    = reports;
   state.currentLIS = LIS_ID;
   state.dirty      = false;
@@ -1057,9 +1058,22 @@ function _passesGnomadAfFilter(v) {
   return af == null || af < 0.01;
 }
 
-function _geneSearchSnv(genesUpper, { filterGnomad = true } = {}) {
+async function _geneSearchSnv(genesUpper, { filterGnomad = true } = {}) {
+  const sid = state.data?.sample_id || state.currentLIS;
+  if (sid && genesUpper.length) {
+    const params = new URLSearchParams({ genes: genesUpper.join(",") });
+    const payload = await apiFetch(`/samples/${encodeURIComponent(sid)}/snv-search?${params}`);
+    if (payload?.variants) {
+      state.snvSearchVariants = state.snvSearchVariants || {};
+      Object.assign(state.snvSearchVariants, payload.variants);
+    }
+  }
   const genes = new Set(genesUpper);
-  const matches = Object.entries(state.data?.variants || {})
+  const all = {
+    ...(state.data?.variants || {}),
+    ...(state.snvSearchVariants || {}),
+  };
+  const matches = Object.entries(all)
     .filter(([, v]) => genes.has((v.gene_symbol || "").toUpperCase()))
     .filter(([, v]) => !filterGnomad || _passesGnomadAfFilter(v));
   matches.sort((a, b) => {
@@ -1085,7 +1099,9 @@ function _geneSearchCnvSv(genesUpper) {
   return matches;
 }
 
-function renderGeneSearchResults(kind, rawGenes) {
+let _geneSearchToken = 0;
+async function renderGeneSearchResults(kind, rawGenes) {
+  const token = ++_geneSearchToken;
   const titleEl = document.getElementById("gene-search-title");
   const host    = document.getElementById("gene-search-results");
   if (!titleEl || !host) return;
@@ -1099,7 +1115,18 @@ function renderGeneSearchResults(kind, rawGenes) {
   }
   const filterGnomad = document.getElementById("gene-search-filter-gnomad-af")?.checked ?? true;
   if (kind === "all") {
-    const snvMatches = _geneSearchSnv(genesUpper, { filterGnomad });
+    host.innerHTML = `<div class="muted" style="padding:12px">搜尋中…</div>`;
+    let snvMatches;
+    try {
+      snvMatches = await _geneSearchSnv(genesUpper, { filterGnomad });
+    } catch (e) {
+      if (token === _geneSearchToken) {
+        host.innerHTML = `<div class="muted" style="padding:12px">搜尋失敗：${escapeHtml(e.message || String(e))}</div>`;
+      }
+      return;
+    }
+    if (token !== _geneSearchToken) return;
+    host.innerHTML = "";
     const cnvMatches = _geneSearchCnvSv(genesUpper);
     titleEl.textContent = `${geneLabel} 的所有變異（SNV/Indel: ${snvMatches.length}，CNV/SV: ${cnvMatches.length}）`;
     if (!snvMatches.length && !cnvMatches.length) {
@@ -1126,7 +1153,18 @@ function renderGeneSearchResults(kind, rawGenes) {
   }
   const label = kind === "snv" ? "SNV/Indel" : "CNV/SV";
   if (kind === "snv") {
-    const matches = _geneSearchSnv(genesUpper, { filterGnomad });
+    host.innerHTML = `<div class="muted" style="padding:12px">搜尋中…</div>`;
+    let matches;
+    try {
+      matches = await _geneSearchSnv(genesUpper, { filterGnomad });
+    } catch (e) {
+      if (token === _geneSearchToken) {
+        host.innerHTML = `<div class="muted" style="padding:12px">搜尋失敗：${escapeHtml(e.message || String(e))}</div>`;
+      }
+      return;
+    }
+    if (token !== _geneSearchToken) return;
+    host.innerHTML = "";
     titleEl.textContent = `${geneLabel} 的 ${label} 變異（${matches.length}）`;
     if (!matches.length) {
       host.innerHTML = `<div class="muted" style="padding:12px">找不到 ${escapeHtml(geneLabel)} 的變異。</div>`;
@@ -2051,6 +2089,7 @@ const CANDIDATE_SECTION_DEFS = [
 function lookupAnyVariant(id) {
   const d = state.data || {};
   let v = (d.variants || {})[id];
+  if (!v) v = (state.snvSearchVariants || {})[id];
   if (v) return { v, kind: "snv" };
   v = (d.mito_variants || {})[id];
   if (v) return { v, kind: "mito" };
@@ -2215,13 +2254,20 @@ function renderReportSections() {
 }
 
 function renderCandidateSections() {
+  // Select the active tab before building cards. Hidden SNV tiers stay
+  // empty until clicked, avoiding thousands of unnecessary DOM nodes.
+  renderTierTabBar();
   for (const def of CANDIDATE_SECTION_DEFS) {
+    if (def.tier && def.tier !== activeTierTab) {
+      const host = document.getElementById(def.el);
+      if (host) host.innerHTML = "";
+      continue;
+    }
     renderBlock(def, idsForCandidateSection(def), def.el);
   }
   renderPharmcatBlock("cat-pharmcat-c");
   document.getElementById("category-sections").classList.remove("hidden");
   updateInPanelCount();
-  renderTierTabBar();
   renderCnvSvTabBar();
   renderMitoTabBar();
 }
@@ -2557,7 +2603,8 @@ document.addEventListener("click", ev => {
     setActive = t => { activeMitoTab = t; }; applyActive = applyMitoTabActive;
   } else {
     barId = "tier-tab-bar"; current = activeTierTab;
-    setActive = t => { activeTierTab = t; }; applyActive = applyTierTabActive;
+    setActive = t => { activeTierTab = t; };
+    applyActive = () => renderCandidateSections();
   }
   if (tier === current) return;
   setActive(tier);
@@ -5369,8 +5416,8 @@ function setupPhenotypeEvents() {
   });
 }
 
-// SNV/Indel display filters are intentionally UI-only. The TSV keeps
-// variants so reviewers can relax a filter without rerunning the pipeline.
+// SNV/Indel display filters are UI-only within the compact main-screen
+// payload. The complete source TSV remains searchable through the modal.
 // Re-render candidate tiers so card lists and tab counts stay in sync.
 function setupSnvDisplayFilters() {
   for (const id of [

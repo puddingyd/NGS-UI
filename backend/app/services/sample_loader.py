@@ -22,12 +22,19 @@ and migration.
 from __future__ import annotations
 
 import json
+import threading
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
 from ..adapters.snv_tsv import TIERS, OldFormatError, load_snv_tsv
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store, omim_store
+from . import analyses_store, omim_store, snv_review
+
+
+_SNV_CACHE_MAX = 8
+_snv_cache: OrderedDict[tuple, tuple[dict, dict, dict, str]] = OrderedDict()
+_snv_cache_lock = threading.Lock()
 
 
 def _read_json_or(path: Path, default):
@@ -62,6 +69,128 @@ def _to_num(s):
         return int(f) if f.is_integer() else f
     except (TypeError, ValueError):
         return s
+
+
+def _file_signature(path: Path) -> tuple[str, int, int]:
+    """Cheap cache signature; absent files are represented consistently."""
+    try:
+        st = path.stat()
+        return (str(path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (str(path), 0, 0)
+
+
+def _read_pheno_scores(path: Path) -> dict[str, float]:
+    out: dict[str, float] = {}
+    if not path.exists():
+        return out
+    import csv as _csv
+    with path.open("r", encoding="utf-8", newline="") as f:
+        for row in _csv.DictReader(f, delimiter="\t"):
+            gene = (row.get("gene_symbol") or "").strip()
+            try:
+                out[gene] = float(row.get("pheno_score") or 0)
+            except ValueError:
+                pass
+    return out
+
+
+def _load_enriched_snv_cached(
+    snv_tsv: Path,
+    *,
+    sidecar_dir: Path,
+    test_type: str,
+) -> tuple[dict, dict, dict, str]:
+    """Parse + enrich SNVs once per input revision, with a bounded LRU."""
+    exo_path = sidecar_dir / "exomiser_results.tsv"
+    lir_path = sidecar_dir / "lirical_results.tsv"
+    pheno_path = sidecar_dir / "pheno_score.tsv"
+    analysis_path = sidecar_dir / "analysis.json"
+    omim_sig = omim_store.cache_signature()
+    key = (
+        _file_signature(snv_tsv),
+        _file_signature(analysis_path),
+        _file_signature(pheno_path),
+        _file_signature(exo_path),
+        _file_signature(lir_path),
+        (test_type or "WES").upper(),
+        omim_sig,
+    )
+    with _snv_cache_lock:
+        cached = _snv_cache.get(key)
+        if cached is not None:
+            _snv_cache.move_to_end(key)
+            return cached
+
+    old_format_error = ""
+    if snv_tsv.exists():
+        try:
+            variants, categories = load_snv_tsv(snv_tsv, test_type=test_type)
+        except OldFormatError as e:
+            variants, categories = {}, {t: [] for t in TIERS}
+            old_format_error = str(e)
+    else:
+        variants, categories = {}, {t: [] for t in TIERS}
+
+    exo = _read_tsv_dict(exo_path)
+    lir = _read_tsv_dict(lir_path)
+    pheno_by_gene = _read_pheno_scores(pheno_path)
+
+    def _scale_to_100(s):
+        n = _to_num(s)
+        if not isinstance(n, (int, float)):
+            return None
+        return int(round(n * 100))
+
+    # Refresh OMIM once per batch; individual variant joins use only
+    # in-memory dict lookups and no longer stat OMIM.xlsx repeatedly.
+    omim_store.ensure_loaded()
+    for vid, v in variants.items():
+        gene = v.get("gene_symbol", "")
+        pheno = pheno_by_gene.get(gene) if gene else None
+        if pheno and pheno > 0:
+            v["pheno_score"] = round(pheno, 2)
+        v["in_panel"] = bool(pheno and pheno > 0)
+        gs = v.get("geno_score")
+        ps = v.get("pheno_score")
+        if gs is not None or ps is not None:
+            v["total_score"] = (gs or 0) + (ps or 0)
+        e = exo.get(vid)
+        if e:
+            v["total_score_exomiser_variant"] = _scale_to_100(e.get("EXOMISER_GENE_COMBINED_SCORE"))
+            v["pheno_score_exomiser"]         = _scale_to_100(e.get("EXOMISER_GENE_PHENO_SCORE"))
+            v["exomiser_variant_score"]       = _scale_to_100(e.get("EXOMISER_VARIANT_SCORE"))
+            v["rank_exomiser_variant"]        = _to_num(e.get("EXOMISER_RANK"))
+        l = lir.get(vid)
+        if l:
+            v["lirical_variant_score"] = _to_num(l.get("LIRICAL_VARIANT_SCORE"))
+            v["rank_lirical_variant"]  = _to_num(l.get("RANK_LIRICAL_VARIANT"))
+            v["lirical_disease_name"]  = l.get("DISEASE_NAME") or ""
+            v["lirical_disease_curie"] = l.get("DISEASE_CURIE") or ""
+        omim_id = omim_store.parse_omim_id_from_link(v.get("OMIM_link", ""))
+        rec = omim_store.lookup_cached(omim_id=omim_id, gene=gene)
+        if rec:
+            v["OMIM_id"]      = rec.get("OMIM_id", "")
+            v["OMIM_disease"] = rec.get("OMIM_disease", "")
+            v["Inheritance"]  = rec.get("Inheritance", "")
+            for f in ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5"):
+                v[f] = rec.get(f, "")
+
+    def _ts(vid: str) -> float:
+        ts = variants.get(vid, {}).get("total_score")
+        return float(ts) if isinstance(ts, (int, float)) else float("-inf")
+    for t, ids in categories.items():
+        categories[t] = sorted(ids, key=lambda i: (-_ts(i), i))
+
+    result = (variants, categories, pheno_by_gene, old_format_error)
+    with _snv_cache_lock:
+        # Callers treat the enriched maps as read-only; keeping the same
+        # objects avoids a full deep-copy cost on large cached payloads.
+        _snv_cache[key] = result
+        _snv_cache.move_to_end(key)
+        while len(_snv_cache) > _SNV_CACHE_MAX:
+            _snv_cache.popitem(last=False)
+    return result
 
 
 def list_index() -> list[dict]:
@@ -375,27 +504,24 @@ def load_sample(sample_id: str, version: str | None = None,
     if not sub.is_dir():
         return None
 
-    snv_tsv = sub / "snv_indel.annotated.tsv"
+    raw_snv_tsv = sub / "snv_indel.annotated.tsv"
+    _meta_early = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    reported_ids = set((_meta_early.get("status") or {}).keys())
+    snv_tsv = raw_snv_tsv
+    if raw_snv_tsv.exists():
+        try:
+            snv_tsv = snv_review.ensure_review_tsv(
+                raw_snv_tsv, keep_ids=reported_ids,
+            )
+        except OSError:
+            # Read-only / temporarily full disks should not break the
+            # reviewer page. Fall back to the complete source TSV.
+            snv_tsv = raw_snv_tsv
     # Read meta early so the WES/WGS depth gate in load_snv_tsv kicks
     # in correctly. meta is re-read below for the response payload —
     # this duplicate is cheap (one small JSON) and keeps the gating
     # logic out of the adapter's API.
-    _meta_early = _read_json_or(sub / "sample_metadata.json", {}) or {}
     _test_type  = (_meta_early.get("test_type") or "WES").upper()
-    old_format_error = ""
-    if snv_tsv.exists():
-        try:
-            variants, categories = load_snv_tsv(snv_tsv, test_type=_test_type)
-        except OldFormatError as e:
-            # Pre-2026-05 layout — surface a clean error instead of
-            # silently rendering a broken card. The caller (frontend)
-            # shows "請重跑新版 pipeline" with the sample's metadata still
-            # intact so reviewers can still tag for re-analysis.
-            variants, categories = {}, {t: [] for t in TIERS}
-            old_format_error = str(e)
-    else:
-        variants, categories = {}, {t: [] for t in TIERS}
-
     meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
 
     # Decide which directory holds the sidecar TSVs for this load.
@@ -420,12 +546,6 @@ def load_sample(sample_id: str, version: str | None = None,
         hpo_list      = meta.get("hpo") or meta.get("patient_phenotype") or []
         panels_list   = meta.get("selected_panels") or []
 
-    # Join per-variant Exomiser / LIRICAL scores from the sidecar TSVs that
-    # the rerun worker writes. Either may be absent (not run yet); cards
-    # silently omit those rows when the field is None.
-    exo = _read_tsv_dict(sidecar_dir / "exomiser_results.tsv")
-    lir = _read_tsv_dict(sidecar_dir / "lirical_results.tsv")
-    pheno_by_gene: dict[str, float] = {}
     pheno_path = sidecar_dir / "pheno_score.tsv"
 
     # Lazy backfill: legacy samples + any pheno_score.tsv predating its
@@ -452,74 +572,11 @@ def load_sample(sample_id: str, version: str | None = None,
             # pheno column rather than 5xx the whole sample load.
             pass
 
-    if pheno_path.exists():
-        import csv as _csv
-        with pheno_path.open("r", encoding="utf-8", newline="") as f:
-            for row in _csv.DictReader(f, delimiter="\t"):
-                gene = (row.get("gene_symbol") or "").strip()
-                try:
-                    pheno_by_gene[gene] = float(row.get("pheno_score") or 0)
-                except ValueError:
-                    pass
-    def _scale_to_100(s):
-        n = _to_num(s)
-        if not isinstance(n, (int, float)):
-            return None
-        return int(round(n * 100))
-
-    for vid, v in variants.items():
-        gene = v.get("gene_symbol", "")
-        pheno = pheno_by_gene.get(gene) if gene else None
-        if pheno and pheno > 0:
-            v["pheno_score"] = round(pheno, 2)
-        # in_panel is the live "gene matched the active phenotype" flag —
-        # always derived from pheno_score > 0 here, so it stays in sync
-        # even when the TSV's IN_PANEL column was never (re)written
-        # (legacy samples, stop-gap-script-produced TSVs, phenotype
-        # edits that bypassed update_in_panel_column).
-        v["in_panel"] = bool(pheno and pheno > 0)
-        # Total = variant + pheno; either missing → treat as 0 in the
-        # sum but only emit a total when at least one component exists.
-        gs = v.get("geno_score")
-        ps = v.get("pheno_score")
-        if gs is not None or ps is not None:
-            v["total_score"] = (gs or 0) + (ps or 0)
-        e = exo.get(vid)
-        if e:
-            # Exomiser writes 0–1 floats; rescale to the 0–100 grid the
-            # other scores live on so the card has one consistent unit.
-            v["total_score_exomiser_variant"] = _scale_to_100(e.get("EXOMISER_GENE_COMBINED_SCORE"))
-            v["pheno_score_exomiser"]         = _scale_to_100(e.get("EXOMISER_GENE_PHENO_SCORE"))
-            v["exomiser_variant_score"]       = _scale_to_100(e.get("EXOMISER_VARIANT_SCORE"))
-            v["rank_exomiser_variant"]        = _to_num(e.get("EXOMISER_RANK"))
-        l = lir.get(vid)
-        if l:
-            v["lirical_variant_score"] = _to_num(l.get("LIRICAL_VARIANT_SCORE"))
-            v["rank_lirical_variant"]  = _to_num(l.get("RANK_LIRICAL_VARIANT"))
-            v["lirical_disease_name"]  = l.get("DISEASE_NAME") or ""
-            v["lirical_disease_curie"] = l.get("DISEASE_CURIE") or ""
-
-        # OMIM annotation (Disease1..5 + OMIM_id + OMIM_disease +
-        # Inheritance). Frontend already renders these when present;
-        # missing-file / missing-gene rows just stay empty.
-        omim_id = omim_store.parse_omim_id_from_link(v.get("OMIM_link", ""))
-        rec = omim_store.lookup(omim_id=omim_id, gene=gene)
-        if rec:
-            v["OMIM_id"]      = rec.get("OMIM_id", "")
-            v["OMIM_disease"] = rec.get("OMIM_disease", "")
-            v["Inheritance"]  = rec.get("Inheritance", "")
-            for f in ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5"):
-                v[f] = rec.get(f, "")
-
-    # Re-sort each tier by total_score desc now that pheno_score is
-    # joined. Adapter only had ACMG_POINTS available; here we have the
-    # full composite total = variant + pheno. Tie-break by id so the
-    # ordering is stable across reloads.
-    def _ts(vid: str) -> float:
-        ts = variants.get(vid, {}).get("total_score")
-        return float(ts) if isinstance(ts, (int, float)) else float("-inf")
-    for t, ids in categories.items():
-        categories[t] = sorted(ids, key=lambda i: (-_ts(i), i))
+    variants, categories, pheno_by_gene, old_format_error = (
+        _load_enriched_snv_cached(
+            snv_tsv, sidecar_dir=sidecar_dir, test_type=_test_type,
+        )
+    )
 
     # CNV / SV: load only when the AnnotSV outputs are present beside
     # the SNV TSV (pipeline drops them per-sample). Empty dicts when
@@ -627,3 +684,47 @@ def load_sample(sample_id: str, version: str | None = None,
         "active_analysis":   chosen_version,
         "analyses":          analyses_store.list_versions(sample_id),
     }
+
+
+def search_snv_by_genes(
+    sample_id: str,
+    genes: list[str],
+    *,
+    version: str | None = None,
+) -> dict | None:
+    """Search the complete raw SNV TSV while the main UI uses review.tsv."""
+    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    if not sub.is_dir():
+        return None
+    raw_tsv = sub / "snv_indel.annotated.tsv"
+    if not raw_tsv.is_file():
+        return {"variants": {}, "snv_tsv_error": ""}
+    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    chosen_version = _resolve_version(
+        sample_id, requested=version, meta_active=meta.get("active_analysis"),
+    )
+    sidecar_dir = (
+        analyses_store.version_dir(sample_id, chosen_version)
+        if chosen_version is not None else sub
+    )
+    variants, _categories, _pheno, old_format_error = _load_enriched_snv_cached(
+        raw_tsv,
+        sidecar_dir=sidecar_dir,
+        test_type=(meta.get("test_type") or "WES").upper(),
+    )
+    wanted = {g.strip().upper() for g in genes if g.strip()}
+    matches = {
+        vid: v for vid, v in variants.items()
+        if (v.get("gene_symbol") or "").upper() in wanted
+    }
+    return {"variants": matches, "snv_tsv_error": old_format_error}
+
+
+def warm_raw_snv_cache(sample_id: str, version: str | None = None) -> None:
+    """Best-effort background prewarm for the complete-TSV gene search."""
+    try:
+        search_snv_by_genes(sample_id, [], version=version)
+    except Exception:
+        # Registration already succeeded. Search falls back to a
+        # foreground parse later if this opportunistic warm-up fails.
+        pass

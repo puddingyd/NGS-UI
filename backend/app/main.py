@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
@@ -8,6 +9,10 @@ from .routers import analyses, auth, dragen, emr, jobs, phenotype, phenotype_too
 from .services import clinvar_mito, hpo_ontology, omim_store, phenotype_scorer, users
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
+
+# Large SNV JSON payloads compress well because field names repeat for
+# every variant. Browsers negotiate and decompress gzip automatically.
+app.add_middleware(GZipMiddleware, minimum_size=5000)
 
 # 8 h session cookie; SameSite=Lax keeps third-party sites from
 # silently impersonating the user while still letting the browser

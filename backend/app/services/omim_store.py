@@ -1,10 +1,10 @@
 """OMIM annotation lookup keyed by OMIM_id (primary) + gene_symbol.
 
 Reads OMIM.xlsx (path from config.OMIM_XLSX) into two in-memory
-dicts on first use, then serves O(1) lookups. The file mtime is
-checked on every lookup so the operator can drop in a refreshed
-xlsx without a server restart — a stale cache would silently serve
-old disease text otherwise.
+dicts on first use, then serves O(1) lookups. Standalone lookups check
+the file mtime so the operator can drop in a refreshed xlsx without a
+server restart. Sample loading refreshes once per batch and then uses
+lookup_cached() inside its variant loop.
 
 Workbook layout (one row per OMIM phenotype-bearing gene):
     OMIM_id | gene_symbol | OMIM_disease | Inheritance |
@@ -166,14 +166,19 @@ def parse_omim_id_from_link(link: str) -> Optional[int]:
         return None
 
 
-def lookup(*, omim_id: Optional[int] = None, gene: str = "") -> Optional[dict]:
-    """Return the joined OMIM record (OMIM_id + Disease1..5 + ...).
-
-    Prefers OMIM_id (precise; the xlsx is keyed there). Falls back to
-    gene_symbol (first hit) when OMIM_id was missing or unmatched.
-    Returns None when neither key resolves.
-    """
+def ensure_loaded() -> None:
+    """Refresh the workbook cache once before a batch of lookups."""
     _ensure_loaded()
+
+
+def cache_signature() -> tuple:
+    """Hashable workbook revision for caches that embed OMIM joins."""
+    _ensure_loaded()
+    return (_state["mtime"], len(_state["by_omim_id"]), len(_state["by_gene"]))
+
+
+def lookup_cached(*, omim_id: Optional[int] = None, gene: str = "") -> Optional[dict]:
+    """Lookup against the already-refreshed in-memory indexes."""
     by_id = _state["by_omim_id"]
     by_gene = _state["by_gene"]
     if omim_id is not None:
@@ -183,6 +188,17 @@ def lookup(*, omim_id: Optional[int] = None, gene: str = "") -> Optional[dict]:
     if gene:
         return by_gene.get(gene)
     return None
+
+
+def lookup(*, omim_id: Optional[int] = None, gene: str = "") -> Optional[dict]:
+    """Return the joined OMIM record (OMIM_id + Disease1..5 + ...).
+
+    Prefers OMIM_id (precise; the xlsx is keyed there). Falls back to
+    gene_symbol (first hit) when OMIM_id was missing or unmatched.
+    Returns None when neither key resolves.
+    """
+    _ensure_loaded()
+    return lookup_cached(omim_id=omim_id, gene=gene)
 
 
 def is_loaded() -> bool:
