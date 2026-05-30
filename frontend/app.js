@@ -1077,10 +1077,12 @@ function _initPhenoPanelTabs() {
     btn.dataset.wired = "1";
     btn.addEventListener("click", () => {
       const target = btn.dataset.phenoTab;
+      const isOpen = btn.classList.contains("is-active");
+      // Toggle: click the open tab to collapse, click any tab to switch.
       document.querySelectorAll("#phenotype-card .panel-tab").forEach((b) =>
-        b.classList.toggle("is-active", b === btn));
+        b.classList.toggle("is-active", !isOpen && b === btn));
       document.querySelectorAll("#phenotype-card .panel-tab-body").forEach((body) =>
-        body.classList.toggle("is-active", body.dataset.phenoTabBody === target));
+        body.classList.toggle("is-active", !isOpen && body.dataset.phenoTabBody === target));
     });
   });
 }
