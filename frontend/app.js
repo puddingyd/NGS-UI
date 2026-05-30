@@ -443,6 +443,198 @@ function fmtAdVaf(ad, vaf) {
   return `${adPart} (${vafPart})`;
 }
 
+// ── IGV.js integration ─────────────────────────────────────────────
+// Reviewer-side BAM viewer. Click the IGV button on any SNV / CNV /
+// SV card → modal opens with igv.js pinned to that locus, BAM auto-
+// detected from the sample's SID (sibling BAMs available as add-ons).
+// Backend serves BAM/BAI via /api/igv/file with HTTP range support.
+
+const IGV_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/igv@2/dist/igv.min.js";
+let _igvLoaded = null;       // Promise → resolves when window.igv exists
+let _igvBrowser = null;       // current igv.js Browser instance
+const _igvBams = [];          // [{label, path, sample_id, batch}]
+let _igvSiblings = [];        // candidate add-ons from same batch
+let _igvLocus = "";
+let _igvSampleId = "";
+
+function _loadIgvScript() {
+  if (_igvLoaded) return _igvLoaded;
+  _igvLoaded = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = IGV_SCRIPT_URL; s.async = true;
+    s.onload = () => res(window.igv);
+    s.onerror = () => rej(new Error("failed to load igv.js"));
+    document.head.appendChild(s);
+  });
+  return _igvLoaded;
+}
+
+function _bamUrl(path) {
+  return `${API_BASE}/igv/file?path=${encodeURIComponent(path)}`;
+}
+
+// Pick a locus string ("chr1:12345-12545") with ~100bp padding from
+// a variant payload — works for SNV (POS+REF) and CNV/SV (POS..END).
+function _igvLocusFor(v) {
+  if (!v) return "";
+  const chrom = v.CHROM || "";
+  if (!chrom) return "";
+  const start = Number(v.POS);
+  let end = v.END != null ? Number(v.END) : start + Math.max(1, (v.REF || "A").length);
+  if (!Number.isFinite(start)) return chrom;
+  const pad = (end - start) > 1000 ? 200 : 100;
+  return `${chrom}:${Math.max(1, start - pad)}-${end + pad}`;
+}
+
+async function openIgvModal(variant) {
+  const modal = document.getElementById("igv-modal");
+  if (!modal) return;
+  const sid = state.data?.sample_id || state.currentLIS || "";
+  _igvSampleId = sid;
+  _igvLocus = _igvLocusFor(variant);
+  document.getElementById("igv-title").textContent = `IGV — ${sid || "?"}`;
+  document.getElementById("igv-locus").textContent = _igvLocus || "";
+  document.getElementById("igv-bam-hint").textContent = "";
+  document.getElementById("igv-host").innerHTML = "";
+  _igvBrowser = null;
+  _igvBams.length = 0;
+  _igvSiblings = [];
+  modal.classList.remove("hidden");
+
+  // Look up the primary BAM + sibling list for this sample.
+  let bamIndex;
+  try {
+    bamIndex = await apiFetch(`/igv/bams?sample_id=${encodeURIComponent(sid)}`);
+  } catch (e) {
+    document.getElementById("igv-bam-hint").textContent = "BAM 查詢失敗：" + (e.message || e);
+    _renderIgvBamList();
+    return;
+  }
+  if (bamIndex?.primary) _igvBams.push(bamIndex.primary);
+  for (const sib of (bamIndex?.siblings || [])) _igvBams.push(sib);
+  // Build the "add another" dropdown from every sample in the same
+  // batch (so the reviewer can pull in any sibling, not just the two
+  // we surfaced).
+  const batch = bamIndex?.primary?.batch;
+  if (batch) {
+    try {
+      const more = await apiFetch(`/igv/batch-samples?batch=${encodeURIComponent(batch)}`);
+      _igvSiblings = (more?.samples || []).filter(s => s.sample_id !== sid);
+    } catch { _igvSiblings = []; }
+  }
+  _renderIgvBamList();
+
+  if (!_igvBams.length) {
+    document.getElementById("igv-bam-hint").textContent =
+      "找不到對應的 BAM（搜尋路徑：" + (bamIndex?.roots || []).join(", ") + "）";
+    return;
+  }
+  try { await _initIgvBrowser(); }
+  catch (e) {
+    document.getElementById("igv-host").textContent = "IGV 初始化失敗：" + (e.message || e);
+  }
+}
+
+function closeIgvModal() {
+  document.getElementById("igv-modal")?.classList.add("hidden");
+  if (_igvBrowser && window.igv) {
+    try { window.igv.removeBrowser(_igvBrowser); } catch {}
+  }
+  _igvBrowser = null;
+  document.getElementById("igv-host").innerHTML = "";
+}
+
+async function _initIgvBrowser() {
+  const igv = await _loadIgvScript();
+  const host = document.getElementById("igv-host");
+  host.innerHTML = "";
+  const build = state.data?.genome_build === "hg19" ? "hg19" : "hg38";
+  const tracks = _igvBams.map(b => ({
+    name: b.label,
+    type: "alignment",
+    format: "bam",
+    url: _bamUrl(b.path),
+    indexURL: _bamUrl(b.path + ".bai"),
+  }));
+  _igvBrowser = await igv.createBrowser(host, {
+    genome: build,
+    locus: _igvLocus || undefined,
+    tracks,
+  });
+}
+
+function _renderIgvBamList() {
+  const ul = document.getElementById("igv-bam-list");
+  ul.innerHTML = "";
+  _igvBams.forEach((b, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <span class="igv-bam-label">${escapeHtml(b.label)}</span>
+      <span class="igv-bam-path">${escapeHtml(b.path)}</span>
+      <button type="button" class="igv-bam-remove" data-idx="${i}" title="移除">×</button>
+    `;
+    ul.appendChild(li);
+  });
+  // Refresh the add-dropdown excluding already-loaded BAMs.
+  const sel = document.getElementById("igv-bam-add-select");
+  const loaded = new Set(_igvBams.map(b => b.path));
+  const opts = ["<option value=\"\">— 加入同 batch 的 sample —</option>"];
+  for (const s of _igvSiblings) {
+    if (loaded.has(s.path)) continue;
+    opts.push(`<option value="${escapeAttr(s.path)}">${escapeHtml(s.label)}</option>`);
+  }
+  sel.innerHTML = opts.join("");
+}
+
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("#igv-bam-list .igv-bam-remove")) {
+    const idx = Number(ev.target.dataset.idx);
+    if (!Number.isFinite(idx)) return;
+    _igvBams.splice(idx, 1);
+    _renderIgvBamList();
+    if (_igvBrowser) _initIgvBrowser().catch(() => {});
+    return;
+  }
+  if (ev.target.id === "igv-bam-add-btn") {
+    const sel = document.getElementById("igv-bam-add-select");
+    const path = sel.value;
+    if (!path) return;
+    const found = _igvSiblings.find(s => s.path === path);
+    if (!found || _igvBams.some(b => b.path === path)) return;
+    _igvBams.push(found);
+    _renderIgvBamList();
+    if (_igvBrowser) _initIgvBrowser().catch(() => {});
+    return;
+  }
+  // IGV launch buttons on variant / CNV-SV cards.
+  const igvBtn = ev.target.closest(".btn-igv");
+  if (igvBtn) {
+    ev.preventDefault();
+    const id = igvBtn.dataset.id;
+    const variant = _findVariantById(id);
+    openIgvModal(variant);
+  }
+});
+
+function _findVariantById(id) {
+  // SNV id pattern: chr-pos-ref-alt; CNV/SV id is AnnotSV_ID (string).
+  // Mito ids start with "chrM-". Search every section of state.data.
+  const buckets = [];
+  const d = state.data || {};
+  for (const [k, v] of Object.entries(d.variants || {})) buckets.push(v);
+  for (const [k, v] of Object.entries(d.cnv_sv?.variants || {})) buckets.push(v);
+  for (const [k, v] of Object.entries(d.mito?.variants || {})) buckets.push(v);
+  for (const v of buckets) {
+    if (v && (v.id === id || v.AnnotSV_ID === id)) return v;
+  }
+  // Fallback: search by dictionary key.
+  const dicts = [d.variants, d.cnv_sv?.variants, d.mito?.variants];
+  for (const dd of dicts) {
+    if (dd && dd[id]) return dd[id];
+  }
+  return null;
+}
+
 function variantUrls(v) {
   const tag = `${v.CHROM}-${v.POS}-${v.REF}-${v.ALT}`;
   // Route Varsome / Franklin / GeneBe to the matching genome build so
@@ -776,6 +968,8 @@ function renderPhenotype() {
   document.getElementById("phenotype-hint").textContent  = "";
   document.getElementById("phenotype-top10").classList.add("hidden");
   document.getElementById("phenotype-card").classList.remove("hidden");
+  _initPhenoPanelTabs();
+  renderFixedPanelHosts();  // async, but the chip area updates on its own.
   // If there's a queued/running job for this sample, pick up polling.
   _resumeJobPollingIfAny();
 }
@@ -823,14 +1017,20 @@ function renderPanelChips() {
   phenoEdit.panels.forEach((row, idx) => {
     const li = document.createElement("li");
     li.className = "chip chip-panel";
+    // Fixed-panel keys are wide; show the pretty "WES-I · 皮膚科 · EB"
+    // form when we know about it. Free-text panels render as-is.
+    const label = _fixedPanelMeta.has(row.name)
+      ? _fixedPanelDisplayName(row.name) : row.name;
     li.innerHTML = `
-      <span class="chip-label">${escapeHtml(row.name)}</span>
+      <span class="chip-label" title="${escapeAttr(row.name)}">${escapeHtml(label)}</span>
       <select class="chip-weight" data-panel-idx="${idx}" title="Weight">
         ${[1,2,3,4,5].map(n => `<option value="${n}" ${n===row.weight?"selected":""}>w=${n}</option>`).join("")}
       </select>
       <button class="chip-remove" data-panel-idx="${idx}" type="button" title="移除">×</button>`;
     ul.appendChild(li);
   });
+  // Fixed-panel chip-checkbox state mirrors phenoEdit.panels — keep in sync.
+  syncFixedPanelChipState();
 }
 
 // Cached panel list from /api/panels — fetched once per session.
@@ -839,6 +1039,104 @@ async function loadPanelOptions() {
   if (_panelOptions) return _panelOptions;
   _panelOptions = await apiFetch("/panels") || [];
   return _panelOptions;
+}
+
+// ── Fixed gene-panel tabs (WES-I / WES-II / WGS / Other) ─────────
+// Index file written by scripts/import_fixed_panels.py. Each fixed
+// panel's `key` matches a file in GENE_PANELS_DIR, so phenotype_scorer
+// consumes them via the same `phenoEdit.panels[].name` path as
+// reviewer-typed panels — toggling a chip just adds/removes the key
+// from phenoEdit.panels with weight=1.
+let _fixedPanelIndex = null;        // { series: [{key, label, groups: [...]}] }
+const _fixedPanelKeys = new Set();
+const _fixedPanelMeta = new Map();  // key → {series, category, name}
+
+async function loadFixedPanelIndex() {
+  if (_fixedPanelIndex) return _fixedPanelIndex;
+  try {
+    const resp = await fetch(`${API_BASE}/phenotype-tool/fixed-panels`,
+                             { credentials: "same-origin" });
+    _fixedPanelIndex = resp.ok ? await resp.json() : { series: [] };
+  } catch { _fixedPanelIndex = { series: [] }; }
+  _fixedPanelKeys.clear();
+  _fixedPanelMeta.clear();
+  for (const s of (_fixedPanelIndex.series || [])) {
+    for (const g of (s.groups || [])) {
+      for (const p of (g.panels || [])) {
+        _fixedPanelKeys.add(p.key);
+        _fixedPanelMeta.set(p.key, { series: s.key, category: g.category, name: p.name });
+      }
+    }
+  }
+  return _fixedPanelIndex;
+}
+
+function _initPhenoPanelTabs() {
+  document.querySelectorAll("#phenotype-card .panel-tab").forEach((btn) => {
+    if (btn.dataset.wired === "1") return;
+    btn.dataset.wired = "1";
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.phenoTab;
+      document.querySelectorAll("#phenotype-card .panel-tab").forEach((b) =>
+        b.classList.toggle("is-active", b === btn));
+      document.querySelectorAll("#phenotype-card .panel-tab-body").forEach((body) =>
+        body.classList.toggle("is-active", body.dataset.phenoTabBody === target));
+    });
+  });
+}
+
+async function renderFixedPanelHosts() {
+  await loadFixedPanelIndex();
+  const seriesByKey = {};
+  for (const s of (_fixedPanelIndex.series || [])) seriesByKey[s.key] = s;
+  document.querySelectorAll("#phenotype-card .fixed-panel-host").forEach((host) => {
+    const s = seriesByKey[host.dataset.series];
+    if (!s || !(s.groups || []).length) {
+      host.innerHTML = '<div class="muted">尚未匯入此系列的 panel</div>';
+      return;
+    }
+    host.innerHTML = s.groups.map((g) => `
+      <div class="fp-group">
+        <div class="fp-group-title">${escapeHtml(g.category)}</div>
+        <div class="fp-chips">
+          ${(g.panels || []).map((p) => `
+            <label class="fp-chip" data-key="${escapeAttr(p.key)}" title="${escapeAttr(p.key)}">
+              <input type="checkbox" class="fp-chip-cb" value="${escapeAttr(p.key)}">
+              <span class="fp-chip-label">${escapeHtml(p.name)}</span>
+              <span class="fp-chip-count">(${p.gene_count || 0})</span>
+            </label>
+          `).join("")}
+        </div>
+      </div>
+    `).join("");
+  });
+  document.querySelectorAll("#phenotype-card .fp-chip-cb").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const key = cb.value;
+      if (cb.checked) addPanel(key);
+      else {
+        const idx = phenoEdit.panels.findIndex(p => p.name === key);
+        if (idx >= 0) removePanel(idx);
+      }
+      // renderPanelChips already called inside add/remove — re-sync chip state.
+      syncFixedPanelChipState();
+    });
+  });
+  syncFixedPanelChipState();
+}
+
+function syncFixedPanelChipState() {
+  const picked = new Set(phenoEdit.panels.map(p => p.name));
+  document.querySelectorAll("#phenotype-card .fp-chip-cb").forEach((cb) => {
+    const on = picked.has(cb.value);
+    cb.checked = on;
+    cb.closest(".fp-chip").classList.toggle("is-selected", on);
+  });
+}
+
+function _fixedPanelDisplayName(key) {
+  const m = _fixedPanelMeta.get(key);
+  return m ? `${m.series} · ${m.category} · ${m.name}` : key;
 }
 
 // HPO + panel typeaheads use delegated listeners on `document` so they
@@ -900,10 +1198,12 @@ async function _runPanelSearch(q) {
   const dropdown = document.getElementById("panel-search-dropdown");
   if (!dropdown) return;
   const opts = await loadPanelOptions();
+  await loadFixedPanelIndex();   // populates _fixedPanelKeys
   const ql = (q || "").trim().toLowerCase();
   const picked = new Set(phenoEdit.panels.map(p => p.name));
   const matches = opts
-    .filter(p => !picked.has(p.name) && (!ql || p.name.toLowerCase().includes(ql)))
+    .filter(p => !picked.has(p.name) && !_fixedPanelKeys.has(p.name)
+                 && (!ql || p.name.toLowerCase().includes(ql)))
     .slice(0, 30);
   if (!matches.length) {
     dropdown.innerHTML = '<li class="muted" style="padding:6px 10px">（無結果）</li>';
@@ -1696,6 +1996,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   card.dataset.inPanel = v.in_panel ? "true" : "false";
 
   const links = [
+    `<a href="#" class="btn-igv" data-id="${escapeAttr(id)}" title="在 IGV 內檢視">IGV</a>`,
     `<a href="${urls.varsome}"  target="_blank" rel="noopener">Varsome</a>`,
     `<a href="${urls.franklin}" target="_blank" rel="noopener">Franklin</a>`,
     `<a href="${urls.genebe}"   target="_blank" rel="noopener">GeneBe</a>`,
@@ -2866,9 +3167,10 @@ function _renderCnvSvHeader(v, id, opts) {
   const status = (state.reports?.status?.[id]) || "";
   const statusSel = _renderStatusRadio(id, status, statusOptions("candidate"));
   const idxTxt = opts.index ? `<span class="card-idx">#${opts.index}</span>` : "";
-  const links = _cnvSvExternalLinks(v).map(l =>
+  const extLinks = _cnvSvExternalLinks(v).map(l =>
     `<a href="${escapeAttr(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`
   ).join("");
+  const igvLink = `<a href="#" class="btn-igv" data-id="${escapeAttr(id)}" title="在 IGV 內檢視">IGV</a>`;
 
   return `<div class="variant-head">
     ${idxTxt}
@@ -2879,7 +3181,7 @@ function _renderCnvSvHeader(v, id, opts) {
       ${lengthPart ? ` <span class="muted" style="font-size:11px">· ${escapeHtml(lengthPart)}</span>` : ""}
       ${cytoBoth ? ` <span class="muted" style="font-size:11px">· ${escapeHtml(cytoBoth)}</span>` : ""}
     </span>
-    <span class="ext-links">${links}</span>
+    <span class="ext-links">${igvLink}${extLinks}</span>
   </div>`;
 }
 
@@ -5504,6 +5806,8 @@ function showModal(id) {
 }
 function hideModal(id) {
   document.getElementById(id)?.classList.add("hidden");
+  // IGV needs an explicit browser teardown to stop background fetches.
+  if (id === "igv-modal" && typeof closeIgvModal === "function") closeIgvModal();
 }
 
 // Wire every modal's close button + outside-click + ESC.
@@ -5516,9 +5820,9 @@ document.addEventListener("click", ev => {
   }
   // Click on the dim backdrop closes the modal too. The form card
   // is the only direct child; everything else (the dim) is the modal
-  // itself.
+  // itself. Route through hideModal() so per-modal teardown runs.
   if (t.matches?.(".modal")) {
-    t.classList.add("hidden");
+    hideModal(t.id);
   }
 });
 document.addEventListener("keydown", ev => {

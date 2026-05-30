@@ -1761,6 +1761,119 @@ body.sidebar-collapsed .container { margin-left: auto; }
   grid-template-columns: 0.6fr 1.4fr 1fr;
 }
 
+/* ── Gene-panel tabs (WES-I / WES-II / WGS / Other) inside the
+   Patient phenotype card. Same chip language as the standalone
+   /phenotype/ tool. ────────────────────────────────────────────── */
+.phenotype-row-tabs .panel-tabs-wrap { min-width: 0; }
+.panel-tabs {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.panel-tab {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.panel-tab:hover { background: #f3f4f6; color: var(--fg); }
+.panel-tab.is-active {
+  background: #fff;
+  color: var(--fg);
+  border-color: var(--border);
+  border-bottom-color: #fff;
+  font-weight: 600;
+}
+.panel-tab-body { display: none; }
+.panel-tab-body.is-active { display: block; }
+.fixed-panel-host .muted { color: var(--muted); font-size: 12px; padding: 6px 0; }
+
+.fp-group { margin-bottom: 10px; }
+.fp-group:last-child { margin-bottom: 0; }
+.fp-group-title {
+  font-size: 11px; font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px dashed var(--border);
+  letter-spacing: 0.04em;
+}
+.fp-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.fp-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f6f8fa;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.fp-chip:hover { background: #eaeef2; }
+.fp-chip input.fp-chip-cb {
+  appearance: none; -webkit-appearance: none;
+  width: 11px; height: 11px; margin: 0;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.fp-chip input.fp-chip-cb:checked {
+  border-color: #166534;
+  background: #166534;
+  box-shadow: inset 0 0 0 2px #fff;
+}
+.fp-chip.is-selected {
+  background: #dcfce7;
+  border-color: #166534;
+  color: #166534;
+}
+.fp-chip-label { font-weight: 500; }
+.fp-chip-count { color: var(--muted); font-size: 10px; }
+.fp-chip.is-selected .fp-chip-count { color: #166534; opacity: 0.85; }
+
+/* ── IGV modal ────────────────────────────────────────────────── */
+.igv-card { width: 90vw; max-width: 1400px; }
+.igv-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.igv-head h2 { margin: 0; font-size: 15px; }
+#igv-locus { font-family: ui-monospace, monospace; font-size: 12px; }
+
+.igv-bams {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 10px; margin-bottom: 10px;
+  background: #fafbfc;
+}
+.igv-bams-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+#igv-bam-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#igv-bam-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px;
+  background: #fff; border: 1px solid var(--border); border-radius: 4px;
+  font-size: 12px;
+}
+#igv-bam-list .igv-bam-label { font-weight: 500; }
+#igv-bam-list .igv-bam-path { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#igv-bam-list .igv-bam-remove {
+  border: 0; background: transparent; cursor: pointer; color: var(--muted);
+  font-size: 14px; padding: 0 4px;
+}
+#igv-bam-list .igv-bam-remove:hover { color: var(--danger); }
+.igv-bam-add { display: flex; gap: 6px; align-items: center; }
+.igv-bam-add select { flex: 1; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+
+.igv-host {
+  min-height: 480px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: #fff;
+}
+
 .phenotype-actions {
   display: flex;
   align-items: center;

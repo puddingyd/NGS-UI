@@ -196,11 +196,39 @@
       </div>
 
       <div class="phenotype-row">
-        <label class="phenotype-label">Custom panels</label>
+        <label class="phenotype-label">Gene panels</label>
         <ul id="panel-chips" class="phenotype-chips"></ul>
-        <div class="hpo-add">
-          <input id="panel-search" type="text" placeholder="輸入 panel 名稱搜尋（69 個可用）…" autocomplete="off" />
-          <ul id="panel-search-dropdown" class="combobox-dropdown hidden"></ul>
+      </div>
+
+      <div class="phenotype-row phenotype-row-tabs">
+        <label class="phenotype-label">&nbsp;</label>
+        <div class="panel-tabs-wrap">
+          <div class="panel-tabs" role="tablist">
+            <button class="panel-tab is-active" data-pheno-tab="WES-I"  type="button">WES-I</button>
+            <button class="panel-tab"           data-pheno-tab="WES-II" type="button">WES-II</button>
+            <button class="panel-tab"           data-pheno-tab="WGS"    type="button">WGS</button>
+            <button class="panel-tab"           data-pheno-tab="other"  type="button">Other panel</button>
+          </div>
+          <div class="panel-tab-bodies">
+            <div class="panel-tab-body is-active" data-pheno-tab-body="WES-I">
+              <div class="fixed-panel-host" data-series="WES-I"><div class="muted">載入中…</div></div>
+            </div>
+            <div class="panel-tab-body" data-pheno-tab-body="WES-II">
+              <div class="fixed-panel-host" data-series="WES-II"><div class="muted">載入中…</div></div>
+            </div>
+            <div class="panel-tab-body" data-pheno-tab-body="WGS">
+              <div class="fixed-panel-host" data-series="WGS"><div class="muted">載入中…</div></div>
+            </div>
+            <div class="panel-tab-body" data-pheno-tab-body="other">
+              <div class="hpo-add">
+                <input id="panel-search" type="text" placeholder="輸入 panel 名稱搜尋（自訂或匯入的 panel）…" autocomplete="off" />
+                <ul id="panel-search-dropdown" class="combobox-dropdown hidden"></ul>
+              </div>
+              <p class="hint-line muted" style="margin-top:8px;font-size:12px">
+                自訂 panel 請到「<a href="/phenotype/" target="_blank" rel="noopener">輸入臨床表徵 (HPO/panel)</a>」工具建立，建立後會出現在這個搜尋裡。
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -574,8 +602,33 @@
     </div>
   </div>
 
+  <!-- IGV.js modal — embedded igv.js browser pinned at the variant
+       locus with proxied BAM URLs (/api/igv/file?path=…). Reviewer can
+       add/remove BAMs at any time. -->
+  <div id="igv-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide igv-card">
+      <div class="igv-head">
+        <h2 id="igv-title">IGV</h2>
+        <span id="igv-locus" class="muted"></span>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-ghost" data-close="igv-modal">關閉</button>
+      </div>
+      <div class="igv-bams">
+        <div class="igv-bams-title">BAM tracks</div>
+        <ul id="igv-bam-list"></ul>
+        <div class="igv-bam-add">
+          <select id="igv-bam-add-select"><option value="">— 選一個同 batch 的 sample 加進來 —</option></select>
+          <button type="button" id="igv-bam-add-btn" class="btn btn-secondary">+ 加入</button>
+          <span id="igv-bam-hint" class="muted"></span>
+        </div>
+      </div>
+      <div id="igv-host" class="igv-host"></div>
+    </div>
+  </div>
+
   <!-- jsPDF (used by exportScreeningReport — Chinese font fetched on demand) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <!-- IGV.js (loaded lazily — see openIgvModal). -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>
