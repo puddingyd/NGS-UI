@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -32,8 +33,16 @@ _BAM_ROOTS = [
     ).split(":") if p
 ]
 
+# Reference genome dir (fasta + .fai). Shipped to igv.js as a custom
+# genome config so we can stay on hospital intranet — the default
+# igv.js hg38 config points at AWS S3, which is firewalled here.
+_REF_DIR = Path(os.environ.get(
+    "NGS_UI_IGV_REF_DIR",
+    "/home/pipeline/reference/hg38")).resolve()
+
 _SID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
-_ALLOWED_SUFFIXES = (".bam", ".bai", ".cram", ".crai")
+_ALLOWED_SUFFIXES = (".bam", ".bai", ".cram", ".crai",
+                     ".fa", ".fai", ".fasta", ".dict", ".gzi", ".2bit")
 _CHUNK = 1024 * 1024
 _SIBLING_LIMIT = 2
 
@@ -55,7 +64,7 @@ def _path_ok(p: Path) -> bool:
         rp = p.resolve()
     except OSError:
         return False
-    for root in _BAM_ROOTS:
+    for root in (*_BAM_ROOTS, _REF_DIR):
         try:
             rp.relative_to(root)
             return True
@@ -124,6 +133,62 @@ def list_batch_samples(batch: str = Query(...)):
             if p:
                 out.append(_bam_entry(d.name, bd, p))
     return {"batch": batch, "samples": out}
+
+
+# Common file names we've seen for the hg38 reference. First match wins.
+_REF_FASTA_NAMES = (
+    "hg38.fa", "hg38.fasta",
+    "Homo_sapiens_assembly38.fasta",
+    "GRCh38.fa", "GRCh38.fasta",
+    "GRCh38.primary_assembly.genome.fa",
+)
+
+
+@router.get("/genome")
+def igv_genome(build: str = Query("hg38")):
+    """Return an igv.js custom-genome config pointing at our proxied
+    reference fasta — hg38 only for now. The default igv.js hg38
+    config points at AWS S3, which is blocked on the hospital network.
+
+    Returns {ok: bool, config: {...}|null, fasta_path, fai_path, ...}.
+    """
+    if build != "hg38":
+        raise HTTPException(400, "only hg38 supported")
+    if not _REF_DIR.is_dir():
+        return {"ok": False, "reason": f"ref dir not found: {_REF_DIR}"}
+    fasta = None
+    for name in _REF_FASTA_NAMES:
+        p = _REF_DIR / name
+        if p.is_file():
+            fasta = p
+            break
+    if fasta is None:
+        # last-ditch: any .fa / .fasta in the dir
+        for p in sorted(_REF_DIR.iterdir()):
+            if p.suffix.lower() in (".fa", ".fasta") and p.is_file():
+                fasta = p
+                break
+    if fasta is None:
+        return {"ok": False, "reason": f"no fasta under {_REF_DIR}"}
+    fai = fasta.with_suffix(fasta.suffix + ".fai")
+    if not fai.is_file():
+        # Some refs are named hg38.fa + hg38.fai (no double-suffix).
+        alt = fasta.with_suffix(".fai")
+        if alt.is_file(): fai = alt
+    if not fai.is_file():
+        return {"ok": False, "reason": f"no .fai next to {fasta.name}"}
+    return {
+        "ok": True,
+        "config": {
+            "id":        "hg38",
+            "name":      "Human (GRCh38/hg38)",
+            "fastaURL":  f"/api/igv/file?path={quote(str(fasta), safe='')}",
+            "indexURL":  f"/api/igv/file?path={quote(str(fai),   safe='')}",
+        },
+        "fasta_path": str(fasta),
+        "fai_path":   str(fai),
+        "ref_dir":    str(_REF_DIR),
+    }
 
 
 @router.get("/file")

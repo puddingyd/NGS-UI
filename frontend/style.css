@@ -1867,6 +1867,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
 #igv-bam-list .igv-bam-remove:hover { color: var(--danger); }
 .igv-bam-add { display: flex; gap: 6px; align-items: center; }
 .igv-bam-add select { flex: 1; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.igv-load-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+#igv-load-status { font-size: 12px; }
 
 .igv-host {
   min-height: 480px;

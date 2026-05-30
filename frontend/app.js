@@ -495,7 +495,11 @@ async function openIgvModal(variant) {
   document.getElementById("igv-title").textContent = `IGV — ${sid || "?"}`;
   document.getElementById("igv-locus").textContent = _igvLocus || "";
   document.getElementById("igv-bam-hint").textContent = "";
+  document.getElementById("igv-load-status").textContent = "";
   document.getElementById("igv-host").innerHTML = "";
+  const loadBtn = document.getElementById("igv-load-btn");
+  loadBtn.disabled = true;
+  loadBtn.textContent = "載入 IGV";
   _igvBrowser = null;
   _igvBams.length = 0;
   _igvSiblings = [];
@@ -512,9 +516,6 @@ async function openIgvModal(variant) {
   }
   if (bamIndex?.primary) _igvBams.push(bamIndex.primary);
   for (const sib of (bamIndex?.siblings || [])) _igvBams.push(sib);
-  // Build the "add another" dropdown from every sample in the same
-  // batch (so the reviewer can pull in any sibling, not just the two
-  // we surfaced).
   const batch = bamIndex?.primary?.batch;
   if (batch) {
     try {
@@ -529,10 +530,8 @@ async function openIgvModal(variant) {
       "找不到對應的 BAM（搜尋路徑：" + (bamIndex?.roots || []).join(", ") + "）";
     return;
   }
-  try { await _initIgvBrowser(); }
-  catch (e) {
-    document.getElementById("igv-host").textContent = "IGV 初始化失敗：" + (e.message || e);
-  }
+  loadBtn.disabled = false;
+  document.getElementById("igv-load-status").textContent = "確認 BAM 列表後按「載入 IGV」開始載入";
 }
 
 function closeIgvModal() {
@@ -556,9 +555,25 @@ async function _initIgvBrowser() {
     url: _bamUrl(b.path),
     indexURL: _bamUrl(b.path + ".bai"),
   }));
+  // igv.js's default hg38 reference is hosted on AWS S3, which is
+  // blocked on the hospital intranet. Ask the backend for a custom
+  // genome config pointing at our proxied local fasta + fai. hg19 is
+  // not in scope yet — falls through to the default string config.
+  let genomeOpt = build;
+  if (build === "hg38") {
+    try {
+      const g = await apiFetch(`/igv/genome?build=hg38`);
+      if (g?.ok && g.config) genomeOpt = g.config;
+      else throw new Error(g?.reason || "no local hg38 reference");
+    } catch (e) {
+      throw new Error("無法載入本機 hg38 reference：" + (e.message || e)
+        + "（在伺服器設 NGS_UI_IGV_REF_DIR 指向 hg38.fa + hg38.fa.fai）");
+    }
+  }
   _igvBrowser = await igv.createBrowser(host, {
-    genome: build,
-    locus: _igvLocus || undefined,
+    reference: typeof genomeOpt === "string" ? undefined : genomeOpt,
+    genome:    typeof genomeOpt === "string" ? genomeOpt : undefined,
+    locus:     _igvLocus || undefined,
     tracks,
   });
 }
@@ -592,6 +607,8 @@ document.addEventListener("click", (ev) => {
     if (!Number.isFinite(idx)) return;
     _igvBams.splice(idx, 1);
     _renderIgvBamList();
+    // If IGV is already loaded, reflect the change live; otherwise the
+    // edit only affects the next 載入 IGV click.
     if (_igvBrowser) _initIgvBrowser().catch(() => {});
     return;
   }
@@ -604,6 +621,26 @@ document.addEventListener("click", (ev) => {
     _igvBams.push(found);
     _renderIgvBamList();
     if (_igvBrowser) _initIgvBrowser().catch(() => {});
+    return;
+  }
+  if (ev.target.id === "igv-load-btn") {
+    const btn = ev.target;
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const status = document.getElementById("igv-load-status");
+    status.textContent = "載入中…";
+    _initIgvBrowser()
+      .then(() => {
+        status.textContent = "已載入 ✓";
+        btn.textContent = "重新載入";
+        btn.disabled = false;
+      })
+      .catch((e) => {
+        document.getElementById("igv-host").textContent =
+          "IGV 初始化失敗：" + (e.message || e);
+        status.textContent = "";
+        btn.disabled = false;
+      });
     return;
   }
   // IGV launch buttons on variant / CNV-SV cards.
