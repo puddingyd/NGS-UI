@@ -486,14 +486,37 @@ function _igvLocusFor(v) {
   return `${chrom}:${Math.max(1, start - pad)}-${end + pad}`;
 }
 
+function _igvVariantTitleFor(v) {
+  if (!v) return { label: "", coordinate: "" };
+  const build = state.data?.genome_build || "hg38";
+  if (v.REF != null && v.ALT != null) {
+    const id = v.id || `${v.CHROM}-${v.POS}-${v.REF}-${v.ALT}`;
+    return {
+      label: v.HGVS || id,
+      coordinate: `[${build}] ${id}`,
+    };
+  }
+  const source = (v.source || "SV").toUpperCase();
+  const svType = v.sv_type || "";
+  const annotSvId = v.AnnotSV_ID || v.id || "";
+  return {
+    label: [source, svType, annotSvId].filter(Boolean).join(" "),
+    coordinate: `[${build}] ${v.CHROM || "?"}:${v.POS || "?"}-${v.END || "?"}`,
+  };
+}
+
 async function openIgvModal(variant) {
   const modal = document.getElementById("igv-modal");
   if (!modal) return;
   const sid = state.data?.sample_id || state.currentLIS || "";
   _igvSampleId = sid;
   _igvLocus = _igvLocusFor(variant);
+  const variantTitle = _igvVariantTitleFor(variant);
   document.getElementById("igv-title").textContent = `IGV — ${sid || "?"}`;
-  document.getElementById("igv-locus").textContent = _igvLocus || "";
+  document.getElementById("igv-locus").textContent = _igvLocus ? `(${_igvLocus})` : "";
+  document.getElementById("igv-variant-title").textContent = variantTitle.label;
+  document.getElementById("igv-variant-coordinate").textContent =
+    variantTitle.coordinate ? `(${variantTitle.coordinate})` : "";
   document.getElementById("igv-bam-hint").textContent = "";
   document.getElementById("igv-load-status").textContent = "";
   document.getElementById("igv-host").innerHTML = "";

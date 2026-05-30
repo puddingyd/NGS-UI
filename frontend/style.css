@@ -1841,9 +1841,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
 
 /* ── IGV modal ────────────────────────────────────────────────── */
 .igv-card { width: 90vw; max-width: 1400px; }
-.igv-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.igv-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .igv-head h2 { margin: 0; font-size: 15px; }
-#igv-locus { font-family: ui-monospace, monospace; font-size: 12px; }
+#igv-locus { color: #0969da; font-family: ui-monospace, monospace; font-size: 12px; font-weight: 600; }
+#igv-variant-title { color: var(--fg); font-family: ui-monospace, monospace; font-size: 12px; font-weight: 600; }
+#igv-variant-coordinate { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; }
 
 .igv-bams {
   border: 1px solid var(--border); border-radius: 6px;

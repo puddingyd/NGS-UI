@@ -42,6 +42,8 @@
 | OMIM.xlsx | `NGS_UI_HOME/OMIM/OMIM.xlsx` | `NGS_UI_OMIM_XLSX` |
 | Exomiser/LIRICAL CLI | `NGS_UI_HOME/biotools/` | `NGS_UI_BIOTOOLS_DIR` |
 | VCF（per-sample） | `NGS_UI_HOME/vcf/` | `NGS_UI_VCF_DIR` |
+| IGV BAM 搜尋根目錄 | `/home/datalake_Intermediate/pipeline/nextflow_output` | `NGS_UI_BAM_ROOT`（可用 `:` 分隔多個 root） |
+| IGV hg38 reference（FASTA + `.fai`） | `/home/pipeline/reference/hg38` | `NGS_UI_IGV_REF_DIR` |
 | Exomiser/LIRICAL 輸入模板 | `REPO_ROOT/phenotype_reference/`（**在 repo 裡，不在 NGS_UI_HOME**） | — |
 | 前端靜態檔 | `REPO_ROOT/frontend/` | `FRONTEND_DIR` |
 | EMR client id（NCKU intranet） | — | `NGS_UI_EMR_CLIENT_ID`（空 = 整套 EMR 功能關閉） |
@@ -126,6 +128,7 @@ UI 流程：
 - **Staged loading**：`GET /samples/{id}` 只回核心（meta + reports + review TSV 的 SNV + analyses + has_phenotype，`aux_pending: true`，CNV/SV/Mito 是空 dict）。前端 `loadSample` render 完後背景 `GET /samples/{id}/cnv-sv` 和 `/mito`，回來後 merge 進 `state.data` + re-render 那張卡。`state._auxLoadToken` 防 race（切樣本後晚到的回應丟掉）。等待時 CNV/SV、Mito panel 顯示「載入中…」、tab count「…」。SNV tier 只 render active tab，切 tab 時才建立該 tier 卡片 DOM。
 - **SNV 顯示 filter**：分析區標題列依序是 `In panel only`（預設勾）、`gnomAD_G_AF < 0.01`（預設勾；缺值保留）、`VAF ≥ 0.2`（預設勾；缺值隱藏）、`impact=MODIFIER`（預設不勾；勾後才顯示 MODIFIER）、OMIM 顯示 toggle。這些都是 UI-only，不刪原始 TSV；主畫面另有 review TSV 的寬鬆 AF<0.05 預載層，超過者仍可用 gene search 查回。`IMPACT=LOW` 一律保留。tier tab count 跟著 filter 重算。
 - **Gene 搜尋**：SNV/Indel 與 CNV/SV 標題列右側各有一個 gene 搜尋框，支援以 `,`、`，`、`、` 或空白分隔多個基因；SNV 那邊還多 LIRICAL / Exomiser 兩顆按鈕 → 跳 `#gene-search-modal`（`max-width:1100px`，重用 `renderVariantCard`/`renderCnvSvCard`，所以卡片完整可互動）。SNV 會打 `GET /samples/{id}/snv-search?genes=...` 查完整 `snv_indel.annotated.tsv`，不受 review TSV 影響；搜尋 modal 預設勾選 `gnomAD_G_AF < 0.01`，取消後才顯示全部搜尋結果。純 CNV/SV 搜尋不顯示該 toggle。登錄新個案完成後及每次載入既有個案時，都用背景 thread 預熱 raw TSV cache，不阻塞 foreground response。
+- **IGV.js modal**：SNV/Indel 與 CNV/SV 卡片的 ext-links 最左側有 `IGV`。點擊後標題顯示 sample、padded locus、variant HGVS/類型與原始 `[build]` 座標；先列 primary BAM + 同 batch 最多 2 個 sibling，可增刪 track，確認後才按「載入 IGV」。`routers/igv.py` 的 `GET /api/igv/bams`、`/batch-samples`、`/genome`、`/file` 全部需登入；`/file` 支援 HTTP range，且只允許 `NGS_UI_BAM_ROOT` 下的 BAM/BAI/CRAM/CRAI 與 `NGS_UI_IGV_REF_DIR` 下的 reference 檔。本機 hg38 FASTA + `.fai` 避免 igv.js 連 hospital intranet 擋住的 AWS S3。
 - **載入效能**：`snv_review.ensure_review_tsv()` 自動維護 `snv_indel.review.tsv`，主畫面只預載 `GNOMAD_G_AF < 0.05`、AF 缺值、ClinVar P/LP rescue 與 reviewer 已標記點。`run_stopgaps.sh` 在三級分析結尾先執行 `build_snv_review_tsv.py`；載入時 lazy rebuild 僅作為舊樣本 fallback。`sample_loader` 的 process-local bounded LRU 依 TSV / analysis / pheno / Exomiser / LIRICAL / OMIM signature 自動失效；大型 JSON response 用 gzip。OMIM enrichment 每批只檢查一次 xlsx mtime。
 - **三級分析 modal / job log**：in-house 與 DRAGEN VCF 各自使用單一 typeahead 輸入格，可依 sample / run / path 即時搜尋並展開候選項目；旁邊的「VCF清單」按鈕可直接列出全部。新 job 狀態寫到 `data/jobs/tertiary/`；舊版 `data/jobs/dragen/` 僅作 read-only fallback。`run_stopgaps.sh` 不再建立 `.raw` snapshot；GeneBe 暫存 VCF 帶 primary contig header，AnnotSV 成功執行時只寫摘要 log，失敗才附尾端診斷。
 - **共用 class**：`.variant-head`（`#index` span + `.status-select` + ...）、`.btn-copy`（`COPY_ICON_SVG`）、`.ext-links`（Varsome 那種按鈕樣式）、`.cnv-sv-detail-box`（灰底兩行 + 折疊區）、`.cnv-sv-reasoning`、`.cnv-sv-comment-text`、`.acmg-class` + `.sig-p/.sig-lp/.sig-vus/.sig-lb/.sig-b` 五級色。**`.modal-card input[type=text]` 那條 catch-all（width:100%）被 `.variant-card`/`.cnv-sv-card` 裡的 input 排除**（不然 gene-search modal 裡的 ACMG points 那 3em 格會被撐爆）。
@@ -167,6 +170,8 @@ CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一
 ## 8. 輸入臨床表徵工具（`/phenotype/`）
 
 `frontend/phenotype/`（從舊的 GitHub-backed hpo-docs 改寫，砍掉 GitHub OAuth/terminal/run-analysis）。**不需登入**，由 NGS-UI 伺服器靜態服務在 `/phenotype/`（`main.py` 加 `GET /phenotype` → 307 redirect `/phenotype/`，註冊在 StaticFiles mount 之前）。功能：HPO term 搜尋（Fuse.js + 本地 `hpo_data.json` 3.5MB，**在 repo 裡** `frontend/phenotype/`）；Gene Panels 搜尋（打 `GET /api/phenotype-tool/panels`）；**Custom panel**（名稱 + 基因清單 textarea + weight；按「產生 phenotype.txt」時 POST `/api/phenotype-tool/custom-panel` 建檔到 `gene_panels/`、即時更新 `phenotype_scorer` 記憶體、名稱自動清理成 `[A-Za-z0-9_-]{1,64}`、衝突 409、基因**不大寫**（`C7orf50` 保留小寫）、case-sensitive 去重）。「產生 phenotype.txt」一鍵：建 custom panel → 組 TSV → POST `/api/phenotype-tool/save` 寫到 `patient_phenotype/`。MRN 或 LIS_ID 至少填一個；檔名：兩個都填 `{code}_{mrn}_phenotype.txt`、只 LIS_ID `{code}_phenotype.txt`、只 MRN `{mrn}_phenotype.txt`。「載入既有資料」用 `GET /api/phenotype-tool/load?code=&mrn=`。phenotype.txt 格式：`phenotype\thpo_name\tweight` 表頭 + `HP:xxxxxxx\t<name>\t<weight>` / `<panel_name>\t\t<weight>` 列（`phenotype_io.parse` 讀這個）。
+
+主畫面的 Patient phenotype card 也有 `WES-I / WES-II / WGS / Other panel` tabs；固定 panel chip 由 `GET /api/phenotype-tool/fixed-panels` 載入，勾選後以 weight=1 寫入同一份 `phenoEdit.panels`，Other panel typeahead 則排除固定 panel key，避免同一個 panel 出現兩個入口。
 
 `routers/phenotype_tool.py`：`GET /api/phenotype-tool/panels`、`POST /api/phenotype-tool/save`、`GET /api/phenotype-tool/load`、`POST /api/phenotype-tool/custom-panel` —— **全公開無 auth**（intranet 信任 + 嚴格驗證：token 限 `[A-Za-z0-9_-]{1,32}`、檔名從驗證過的 token 拼、內容 ≤64KB、panel 基因 ≤5000）。
 
