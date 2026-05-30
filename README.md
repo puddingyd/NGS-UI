@@ -119,6 +119,9 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 勾「登錄後開始分析」會順便把 Exomiser/LIRICAL 排入佇列。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV 與 Mitochondria 在背景載完後補上：
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
+   - SNV/Indel 顯示 filter 預設啟用 `In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。
+   - TSV stop-gap 只移除 `REF/ALT=*` 與非 primary contig；DRAGEN staging 仍會先移除 `AF > 0.01` 的 common variants。
+   - SNV/Indel 與 CNV/SV gene 搜尋支援多個基因，以 `,` 或 `、` 分隔；搜尋 modal 的 SNV 結果預設套用可取消的 `gnomAD_G_AF < 0.01`。
    - CNV：`CNV-1A`（Clinical）、`CNV-1B`（Pathogenic）；SV：`SV-2A / SV-2B`
    - Mitochondria：`MITO-1`（Pathogenic）、`MITO-2`（Disease-associated）— 只列 `FILTER=PASS` 且具 MITOMAP 疾病關聯/致病性的位點
 4. **標記與判讀** — 在每個變異上標 causative / candidate / other，編輯 ACMG/分類、寫 comment；變更會自動存到 `tertiary_output/{LIS}/analyses/{ver}/analysis.json`。

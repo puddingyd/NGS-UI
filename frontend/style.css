@@ -1219,7 +1219,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .gene-search-card { width: 95%; max-width: 1100px; }
 .gene-search-head {
   display: flex; align-items: center; gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .gene-search-head h2 { margin: 0; flex: 1; font-size: 16px; }
 #gene-search-modal-input {
@@ -1227,6 +1227,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
   padding: 4px 8px;
   border: 1px solid var(--border); border-radius: 4px;
   width: 16em;
+}
+.gene-search-filter-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
 }
 #gene-search-results { max-height: 70vh; overflow-y: auto; }
 .analysis-card-empty {
@@ -1610,9 +1615,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .mane-table tr:last-child td { border-bottom: 0; }
 .mane-tx { font-family: ui-monospace, monospace; }
 
-/* ---- "In panel only" filter toggle ---- */
+/* ---- SNV display filter toggles ---- */
 .section-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin: 16px 0 8px;
@@ -1635,9 +1641,6 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .filter-toggle input { margin: 0; cursor: pointer; }
 .filter-toggle #in-panel-count { font-family: ui-monospace, monospace; font-size: 11px; }
 
-#category-sections.filter-in-panel-only .variant-card[data-in-panel="false"] {
-  display: none;
-}
 #category-sections.hide-omim .disease-list { display: none; }
 
 /* ---- Phase A/B: phenotype + panel editor ----------------------- */

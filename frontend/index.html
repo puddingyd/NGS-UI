@@ -278,6 +278,18 @@
           <span>In panel only</span>
           <span id="in-panel-count" class="muted"></span>
         </label>
+        <label class="filter-toggle">
+          <input id="filter-gnomad-af" type="checkbox" checked />
+          <span>gnomAD_G_AF &lt; 0.01</span>
+        </label>
+        <label class="filter-toggle">
+          <input id="filter-vaf" type="checkbox" checked />
+          <span>VAF ≥ 0.2</span>
+        </label>
+        <label class="filter-toggle">
+          <input id="filter-impact-modifier" type="checkbox" />
+          <span>impact=MODIFIER</span>
+        </label>
         <label class="filter-toggle filter-omim-toggle" title="顯示變異卡片下方的 OMIM 疾病資訊">
           <input id="filter-omim" type="checkbox" checked />
         </label>
@@ -288,7 +300,7 @@
           <span></span>
           <span class="ac-title">SNV / Indel</span>
           <span class="ac-gene-search">
-            <input type="text" class="gene-search-input" data-kind="snv" placeholder="搜尋基因…" autocomplete="off" title="輸入基因名稱按 Enter，列出該基因所有 SNV/Indel 變異" />
+            <input type="text" class="gene-search-input" data-kind="snv" placeholder="搜尋基因…" autocomplete="off" title="輸入一或多個基因名稱，以 , 或 、 分隔，按 Enter 列出 SNV/Indel 變異" />
             <button type="button" class="btn btn-ghost ac-tool-btn" data-tool="lirical" title="LIRICAL rank 1–20 的變異">LIRICAL</button>
             <button type="button" class="btn btn-ghost ac-tool-btn" data-tool="exomiser" title="Exomiser rank 1–20 的變異">Exomiser</button>
           </span>
@@ -308,7 +320,7 @@
           <span></span>
           <span class="ac-title">CNV / SV</span>
           <span class="ac-gene-search">
-            <input type="text" class="gene-search-input" data-kind="cnv-sv" placeholder="搜尋基因…" autocomplete="off" title="輸入基因名稱按 Enter，列出涵蓋該基因的所有 CNV/SV" />
+            <input type="text" class="gene-search-input" data-kind="cnv-sv" placeholder="搜尋基因…" autocomplete="off" title="輸入一或多個基因名稱，以 , 或 、 分隔，按 Enter 列出涵蓋基因的 CNV/SV" />
           </span>
         </div>
         <div id="cnv-sv-tab-bar" class="tier-tab-bar"></div>
@@ -475,8 +487,14 @@
     <div class="modal-card modal-card-wide gene-search-card">
       <div class="gene-search-head">
         <h2 id="gene-search-title">基因變異搜尋</h2>
-        <input id="gene-search-modal-input" type="text" placeholder="輸入基因名稱，按 Enter 搜尋…" autocomplete="off" />
+        <input id="gene-search-modal-input" type="text" placeholder="輸入基因名稱，以 , 或 、 分隔…" autocomplete="off" />
         <button type="button" class="btn btn-ghost" data-close="gene-search-modal">關閉</button>
+      </div>
+      <div id="gene-search-filter-row" class="gene-search-filter-row">
+        <label class="filter-toggle">
+          <input id="gene-search-filter-gnomad-af" type="checkbox" checked />
+          <span>gnomAD_G_AF &lt; 0.01</span>
+        </label>
       </div>
       <div id="gene-search-results"></div>
     </div>

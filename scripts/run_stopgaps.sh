@@ -5,7 +5,7 @@
 # Runs every stop-gap on a single snv_indel.annotated.tsv in the
 # order they make sense:
 #
-#   1. filter_snv_tsv.py        — filter MODIFIER / common / alt-contig / *
+#   1. filter_snv_tsv.py        — filter alt-contig / * only
 #   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
 #                                  columns (pipeline's ACMG_* untouched)
 #   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns

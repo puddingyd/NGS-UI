@@ -1,10 +1,10 @@
-# CLAUDE.md 
+# AGENTS.md
 
 如果對話窗輸入 go，請做以下：
 
 請只讀 **「待處理事項.md」**，先不要讀其他文件，先判斷哪些是必要讀的文件，然後再去讀和處理「待處理事項.md」中的事項。完成後請在 **「處理紀錄.md」** 摘要你做了什麼，並從「待處理事項.txt」 清掉已經完成的項目（若尚未完成，請留著那個項目，並加註尚未完成的部分）。
 
-**有任何架構變動或功能增減，請順手更新這份 CLAUDE.md 和 README.md。**
+**有任何架構變動或功能增減，請順手更新這份 AGENTS.md 和 README.md。**
 
 ---
 
@@ -18,8 +18,8 @@
 
 ## 1. Git 工作流（重要）
 
-- 開發在這個 sandbox；推到分支 **`claude/plan-ngs-ui-RQW8J`**。
-- **推 `main` 會被 proxy 擋 HTTP 403** —— 一律 `git push origin claude/plan-ngs-ui-RQW8J`。
+- 開發在這個 sandbox；推到分支 **`Codex/plan-ngs-ui-RQW8J`**。
+- **推 `main` 會被 proxy 擋 HTTP 403** —— 一律 `git push origin Codex/plan-ngs-ui-RQW8J`。
 - dev 機（`n102968@server`，repo 在 `~/NGS_UI/NGS-UI`，remote 設成 SSH `git@github.com:puddingyd/NGS-UI.git`）從那個分支 `git pull`；如需進 `main` 由使用者在 GitHub 開 PR 合併。
 - push 失敗（網路）retry 最多 4 次 exponential backoff（2/4/8/16s）。不要建 PR 除非使用者明說。
 

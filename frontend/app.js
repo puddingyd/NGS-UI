@@ -1031,16 +1031,37 @@ function hideLoginModal() {
 // ---------- Gene search modal -------------------------------------
 //
 // The SNV / Indel and CNV / SV card headers each carry a gene search
-// box. Typing a symbol + Enter opens a modal listing every variant
-// of that gene as cards — the same renderers (renderVariantCard /
+// box. Typing one or more symbols + Enter opens a modal listing every
+// matching variant as cards — the same renderers (renderVariantCard /
 // renderCnvSvCard) the tier tables use, so the cards are fully
 // interactive (status dropdown, disease list, comment, …). The
 // modal's own input lets the reviewer pivot to another gene without
 // closing it.
 
-function _geneSearchSnv(geneUpper) {
+function _parseGeneSearch(raw) {
+  return Array.from(new Set(
+    String(raw || "").toUpperCase().split(/[,，、或\s]+/)
+      .map(g => g.trim()).filter(Boolean)
+  ));
+}
+
+function _numericValue(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s || s === "." || s.toUpperCase() === "NA" || s.toUpperCase() === "N/A") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function _passesGnomadAfFilter(v) {
+  const af = _numericValue(v?.AF);
+  return af == null || af < 0.01;
+}
+
+function _geneSearchSnv(genesUpper, { filterGnomad = true } = {}) {
+  const genes = new Set(genesUpper);
   const matches = Object.entries(state.data?.variants || {})
-    .filter(([, v]) => (v.gene_symbol || "").toUpperCase() === geneUpper);
+    .filter(([, v]) => genes.has((v.gene_symbol || "").toUpperCase()))
+    .filter(([, v]) => !filterGnomad || _passesGnomadAfFilter(v));
   matches.sort((a, b) => {
     const sa = Number(a[1].total_score), sb = Number(b[1].total_score);
     return (Number.isFinite(sb) ? sb : -Infinity) - (Number.isFinite(sa) ? sa : -Infinity);
@@ -1048,13 +1069,14 @@ function _geneSearchSnv(geneUpper) {
   return matches;
 }
 
-function _geneSearchCnvSv(geneUpper) {
+function _geneSearchCnvSv(genesUpper) {
+  const genes = new Set(genesUpper);
   const all = [
     ...Object.entries(state.data?.cnv_variants || {}),
     ...Object.entries(state.data?.sv_variants  || {}),
   ];
   const matches = all.filter(([, v]) =>
-    (v.gene_list || []).some(g => String(g).toUpperCase() === geneUpper)
+    (v.gene_list || []).some(g => genes.has(String(g).toUpperCase()))
   );
   matches.sort((a, b) => {
     const ra = Number(a[1].ranking_score), rb = Number(b[1].ranking_score);
@@ -1063,22 +1085,25 @@ function _geneSearchCnvSv(geneUpper) {
   return matches;
 }
 
-function renderGeneSearchResults(kind, geneUpper) {
+function renderGeneSearchResults(kind, rawGenes) {
   const titleEl = document.getElementById("gene-search-title");
   const host    = document.getElementById("gene-search-results");
   if (!titleEl || !host) return;
   host.innerHTML = "";
-  if (!geneUpper) {
+  const genesUpper = _parseGeneSearch(rawGenes);
+  const geneLabel = genesUpper.join("、");
+  if (!genesUpper.length) {
     titleEl.textContent = "基因變異搜尋";
     host.innerHTML = `<div class="muted" style="padding:12px">輸入基因名稱以搜尋。</div>`;
     return;
   }
+  const filterGnomad = document.getElementById("gene-search-filter-gnomad-af")?.checked ?? true;
   if (kind === "all") {
-    const snvMatches = _geneSearchSnv(geneUpper);
-    const cnvMatches = _geneSearchCnvSv(geneUpper);
-    titleEl.textContent = `${geneUpper} 的所有變異（SNV/Indel: ${snvMatches.length}，CNV/SV: ${cnvMatches.length}）`;
+    const snvMatches = _geneSearchSnv(genesUpper, { filterGnomad });
+    const cnvMatches = _geneSearchCnvSv(genesUpper);
+    titleEl.textContent = `${geneLabel} 的所有變異（SNV/Indel: ${snvMatches.length}，CNV/SV: ${cnvMatches.length}）`;
     if (!snvMatches.length && !cnvMatches.length) {
-      host.innerHTML = `<div class="muted" style="padding:12px">找不到 ${escapeHtml(geneUpper)} 的變異。</div>`;
+      host.innerHTML = `<div class="muted" style="padding:12px">找不到 ${escapeHtml(geneLabel)} 的變異。</div>`;
       return;
     }
     if (snvMatches.length) {
@@ -1101,20 +1126,20 @@ function renderGeneSearchResults(kind, geneUpper) {
   }
   const label = kind === "snv" ? "SNV/Indel" : "CNV/SV";
   if (kind === "snv") {
-    const matches = _geneSearchSnv(geneUpper);
-    titleEl.textContent = `${geneUpper} 的 ${label} 變異（${matches.length}）`;
+    const matches = _geneSearchSnv(genesUpper, { filterGnomad });
+    titleEl.textContent = `${geneLabel} 的 ${label} 變異（${matches.length}）`;
     if (!matches.length) {
-      host.innerHTML = `<div class="muted" style="padding:12px">找不到 ${escapeHtml(geneUpper)} 的變異。</div>`;
+      host.innerHTML = `<div class="muted" style="padding:12px">找不到 ${escapeHtml(geneLabel)} 的變異。</div>`;
       return;
     }
     matches.forEach(([id, v], i) => {
       host.appendChild(renderVariantCard(v, id, "candidate", { index: i + 1, diseaseCheckbox: true }));
     });
   } else {
-    const matches = _geneSearchCnvSv(geneUpper);
-    titleEl.textContent = `${geneUpper} 的 ${label} 變異（${matches.length}）`;
+    const matches = _geneSearchCnvSv(genesUpper);
+    titleEl.textContent = `${geneLabel} 的 ${label} 變異（${matches.length}）`;
     if (!matches.length) {
-      host.innerHTML = `<div class="muted" style="padding:12px">找不到涵蓋 ${escapeHtml(geneUpper)} 的 CNV/SV。</div>`;
+      host.innerHTML = `<div class="muted" style="padding:12px">找不到涵蓋 ${escapeHtml(geneLabel)} 的 CNV/SV。</div>`;
       return;
     }
     matches.forEach(([id, v], i) => {
@@ -1132,12 +1157,14 @@ function openSameGeneModal(gene) {
 
 function openGeneSearchModal(kind, gene) {
   const inp = document.getElementById("gene-search-modal-input");
+  document.getElementById("gene-search-filter-row")
+    ?.classList.toggle("hidden", kind === "cnv-sv");
   if (inp) {
     inp.style.display = "";
     inp.value = gene || "";
     inp.dataset.kind = kind;
   }
-  renderGeneSearchResults(kind, (gene || "").trim().toUpperCase());
+  renderGeneSearchResults(kind, gene || "");
   showModal("gene-search-modal");
   inp?.focus();
 }
@@ -1149,6 +1176,7 @@ function openToolRankModal(tool) {
   const titleEl = document.getElementById("gene-search-title");
   const host    = document.getElementById("gene-search-results");
   const inp      = document.getElementById("gene-search-modal-input");
+  document.getElementById("gene-search-filter-row")?.classList.add("hidden");
   if (inp) inp.style.display = "none";   // re-search input is meaningless in rank mode
   const rankKey  = tool === "lirical" ? "rank_lirical_variant" : "rank_exomiser_variant";
   const toolName = tool === "lirical" ? "LIRICAL" : "Exomiser";
@@ -1197,7 +1225,13 @@ function setupGeneSearch() {
     if (ev.key !== "Enter") return;
     ev.preventDefault();
     const inp = ev.currentTarget;
-    renderGeneSearchResults(inp.dataset.kind || "snv", inp.value.trim().toUpperCase());
+    renderGeneSearchResults(inp.dataset.kind || "snv", inp.value);
+  });
+  document.getElementById("gene-search-filter-gnomad-af")?.addEventListener("change", () => {
+    const inp = document.getElementById("gene-search-modal-input");
+    if (inp && inp.style.display !== "none") {
+      renderGeneSearchResults(inp.dataset.kind || "snv", inp.value);
+    }
   });
 }
 
@@ -2070,16 +2104,20 @@ function idsForReportSection(def) {
 
 function idsForCandidateSection(def) {
   const ids = state.data.categories?.[def.category] || [];
-  // Common-variant filter: gnomAD genome global AF > 0.01 means the
-  // variant is too frequent to be causative. Tier 1A keeps these (those
-  // are already-curated P/LP★ calls, kept for visibility), every other
-  // section drops them. Missing AF is treated as rare.
-  if (def.tier === "1A") return ids;
-  const COMMON_AF = 0.01;
-  return ids.filter(id => {
-    const af = Number(state.data.variants?.[id]?.AF);
-    return !Number.isFinite(af) || af <= COMMON_AF;
-  });
+  return ids.filter(id => _passesMainSnvDisplayFilters(state.data.variants?.[id]));
+}
+
+function _passesMainSnvDisplayFilters(v) {
+  if (!v) return false;
+  if (document.getElementById("filter-in-panel-only")?.checked && !v.in_panel) return false;
+  if (document.getElementById("filter-gnomad-af")?.checked && !_passesGnomadAfFilter(v)) return false;
+  if (document.getElementById("filter-vaf")?.checked) {
+    const vaf = _numericValue(v.alt_af);
+    if (vaf == null || vaf < 0.2) return false;
+  }
+  if (!document.getElementById("filter-impact-modifier")?.checked
+      && String(v.impact || "").toUpperCase() === "MODIFIER") return false;
+  return true;
 }
 
 function renderBlock(def, ids, openKey) {
@@ -5274,7 +5312,7 @@ async function bootAfterAuth() {
 
 (async function boot() {
   setupCombobox();
-  setupInPanelFilter();
+  setupSnvDisplayFilters();
   setupOmimFilter();
   setupHpoSearchInput();
   setupPanelSearchInput();
@@ -5331,20 +5369,20 @@ function setupPhenotypeEvents() {
   });
 }
 
-// "In panel only" toggle: pure presentational filter that hides variant
-// cards whose data-in-panel attribute is "false". Re-render is not
-// needed because cards are tagged at render time; flipping the checkbox
-// just toggles a class on #category-sections that drives a CSS rule.
-function setupInPanelFilter() {
-  const cb = document.getElementById("filter-in-panel-only");
-  if (!cb) return;
-  // Apply once at boot so the initial render honours the checked default.
-  document.getElementById("category-sections")
-    ?.classList.toggle("filter-in-panel-only", cb.checked);
-  cb.addEventListener("change", () => {
-    document.getElementById("category-sections")
-      .classList.toggle("filter-in-panel-only", cb.checked);
-  });
+// SNV/Indel display filters are intentionally UI-only. The TSV keeps
+// variants so reviewers can relax a filter without rerunning the pipeline.
+// Re-render candidate tiers so card lists and tab counts stay in sync.
+function setupSnvDisplayFilters() {
+  for (const id of [
+    "filter-in-panel-only",
+    "filter-gnomad-af",
+    "filter-vaf",
+    "filter-impact-modifier",
+  ]) {
+    document.getElementById(id)?.addEventListener("change", () => {
+      if (state.data) renderCandidateSections();
+    });
+  }
 }
 
 // OMIM-display toggle: unchecked → hide the .disease-list block under
