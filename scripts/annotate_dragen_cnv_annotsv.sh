@@ -77,15 +77,20 @@ run_annotsv() {
   local tmp_out="$OUT_DIR/_annotsv_${kind}"
   rm -rf "$tmp_out"; mkdir -p "$tmp_out"
   local out_name="${SID}.${kind}.annotated.tsv"
+  local tool_log="$tmp_out/AnnotSV.log"
 
-  "$ANNOTSV_BIN" \
+  if ! "$ANNOTSV_BIN" \
     -SVinputFile "$input_vcf" \
     -outputDir "$tmp_out" \
     -outputFile "$out_name" \
     -genomeBuild GRCh38 \
     -annotationsDir "$ANNOTSV_ANNOTATIONS" \
     -SVinputInfo 1 \
-    >&2 || { echo "[annotsv] $kind: AnnotSV failed (see stderr)" >&2; return 1; }
+    >"$tool_log" 2>&1; then
+    echo "[annotsv] $kind: AnnotSV failed; last log lines:" >&2
+    tail -n 40 "$tool_log" >&2
+    return 1
+  fi
 
   # AnnotSV may name the output as supplied or with subtle variations
   # (.annotated.tsv suffix is standard but check defensively).

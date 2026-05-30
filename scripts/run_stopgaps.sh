@@ -23,9 +23,6 @@
 # cnv.annotated.tsv / sv.annotated.tsv whenever CNV VCFs are
 # pointed to; pass --skip-cnv to bypass.
 #
-# Before step 1 we snapshot the TSV to <tsv>.raw (only the first time)
-# so you can always restart from scratch with `cp <tsv>.raw <tsv>`.
-#
 # Usage:
 #   scripts/run_stopgaps.sh \\
 #       --tsv tertiary_output/<SID>/<SID>.snv_indel.annotated.tsv \\
@@ -39,7 +36,6 @@
 #   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 4
 #   --skip-cnv                         — disable AnnotSV step 5 even
 #                                         when --dragen-cnv-source is set
-#   --no-backup                        — don't write .raw snapshot
 # =========================================================
 set -euo pipefail
 
@@ -50,7 +46,6 @@ SID=""
 DRAGEN_VCF=""
 INHOUSE_CNV_VCF=""
 INHOUSE_SV_VCF=""
-NO_BACKUP=0
 SKIP_SPLICEAI=0
 SKIP_EXTRA_VEP=0
 SKIP_CNV=0
@@ -68,7 +63,6 @@ while [ $# -gt 0 ]; do
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
     --skip-extra-vep)     SKIP_EXTRA_VEP=1; shift;;
     --skip-cnv)           SKIP_CNV=1; shift;;
-    --no-backup)          NO_BACKUP=1; shift;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -81,14 +75,6 @@ if [ -z "$SID" ]; then SID="$(basename "$(dirname "$TSV")")"; fi
 echo "================================================================"
 echo "  run_stopgaps : $TSV"
 echo "================================================================"
-
-# 0. Snapshot.
-if [ "$NO_BACKUP" -eq 0 ] && [ ! -f "$TSV.raw" ]; then
-  echo "[stopgaps] 0/5  snapshot → ${TSV}.raw"
-  cp -v "$TSV" "$TSV.raw"
-else
-  echo "[stopgaps] 0/5  snapshot skipped (already exists or --no-backup)"
-fi
 
 # 1. ClinVar fallback. The new pipeline's CLINVAR_SIG column has been
 # flaky (often blank); annotate_clinvar.py is fill-empty-only, so

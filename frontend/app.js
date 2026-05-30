@@ -1949,8 +1949,12 @@ function statusOptions(kind) {
 // available choices are visible at a glance. `panelAttr` carries the
 // optional data-panel="..." string for panel-scoped statuses (ACMG
 // SF / Proactive / Carrier).
+let _statusRadioSeq = 0;
 function _renderStatusRadio(id, curStatus, opts, panelAttr = "") {
-  const groupName = `status-${id}${panelAttr ? "-" + panelAttr.replace(/[^A-Za-z0-9]/g, "") : ""}`;
+  // A variant can be rendered in both the analysis area and report
+  // sections. Give each widget its own browser radio group, then keep
+  // duplicates synchronized explicitly when the reviewer changes one.
+  const groupName = `status-${id}-${++_statusRadioSeq}${panelAttr ? "-" + panelAttr.replace(/[^A-Za-z0-9]/g, "") : ""}`;
   return `<span class="status-radio" data-id="${escapeAttr(id)}" ${panelAttr}>` +
     opts.map(o => {
       const checked = o === curStatus ? " checked" : "";
@@ -1964,6 +1968,15 @@ function getStatus(id) {
   return (state.reports.status && state.reports.status[id]) || "";
 }
 
+function _syncStatusRadios(id, panel, val) {
+  document.querySelectorAll(".status-radio").forEach(wrap => {
+    if (wrap.dataset.id !== id || (wrap.dataset.panel || "") !== (panel || "")) return;
+    wrap.querySelectorAll('input[type="radio"]').forEach(input => {
+      input.checked = !!val && input.value === val;
+    });
+  });
+}
+
 function setStatus(id, val) {
   state.reports.status = state.reports.status || {};
   if (val) state.reports.status[id] = val;
@@ -1974,6 +1987,7 @@ function setStatus(id, val) {
   // (which re-builds sample meta, phenotype, every tier panel, etc.)
   // so flipping a status pill feels instant instead of taking ~1 s.
   renderReportSections();
+  _syncStatusRadios(id, "", val);
   updateSaveHint();
 }
 
@@ -1993,6 +2007,7 @@ function setPanelStatus(id, panel, val) {
   }
   state.dirty = true;
   renderAll();
+  _syncStatusRadios(id, panel, val);
 }
 
 function getEdit(id, field) {
@@ -4113,6 +4128,26 @@ function toggleVariantExtras(btn) {
   blocks.forEach(b => b.classList.toggle("hidden", willHide));
   btn.textContent = willHide ? "▾ More" : "▴ Less";
 }
+
+// Native radio inputs cannot normally be unchecked. Remember whether
+// the pressed chip was already active so a second click can clear it.
+document.addEventListener("pointerdown", ev => {
+  const chip = ev.target.closest?.(".status-radio-chip");
+  const input = chip?.querySelector('input[type="radio"]');
+  if (input) input.dataset.wasChecked = input.checked ? "1" : "0";
+});
+
+document.addEventListener("click", ev => {
+  const chip = ev.target.closest?.(".status-radio-chip");
+  const input = chip?.querySelector('input[type="radio"]');
+  if (!input || input.dataset.wasChecked !== "1") return;
+  ev.preventDefault();
+  const wrap = input.closest(".status-radio");
+  if (!wrap) return;
+  const panel = wrap.dataset.panel;
+  if (panel) setPanelStatus(wrap.dataset.id, panel, "");
+  else       setStatus(wrap.dataset.id, "");
+});
 
 document.addEventListener("change", ev => {
   const t = ev.target;
@@ -6579,15 +6614,22 @@ function _dragenRenderSiblings() {
 function _dragenRenderOneList(selId, mode, emptyHint) {
   const sel = document.getElementById(selId);
   if (!sel) return;
-  const list = _dragenCurrentList(mode);
+  const selected = sel.value;
+  const query = (document.getElementById(`dragen-search-${mode}`)?.value || "").trim().toLowerCase();
+  const list = _dragenCurrentList(mode).filter(v => {
+    if (!query || v.path === selected) return true;
+    return [v.sample_id, v.run, v.path, v.cnv_vcf, v.sv_vcf, v.mito_vcf]
+      .some(value => String(value || "").toLowerCase().includes(query));
+  });
   if (!list.length) {
-    sel.innerHTML = `<option value="">${emptyHint}</option>`;
+    sel.innerHTML = `<option value="">${query ? "（沒有符合搜尋條件的 VCF）" : emptyHint}</option>`;
     return;
   }
   sel.innerHTML = `<option value="">— 請選擇 —</option>` + list.map(v => {
     const label = `${v.sample_id} · ${v.run || ""} · ${_dragenFmtSize(v.size)} · ${_dragenFmtMtime(v.mtime)}`;
     return `<option value="${escapeAttr(v.path)}" data-sid="${escapeAttr(v.sample_id)}">${escapeHtml(label)}</option>`;
   }).join("");
+  if (selected && list.some(v => v.path === selected)) sel.value = selected;
 }
 
 function _dragenRenderList() {
@@ -6764,6 +6806,8 @@ function setupDragenButton() {
   });
   _dragenWireSelect("dragen-vcf-inhouse", "inhouse", "dragen-vcf-dragen");
   _dragenWireSelect("dragen-vcf-dragen",  "dragen",  "dragen-vcf-inhouse");
+  document.getElementById("dragen-search-inhouse")?.addEventListener("input", _dragenRenderList);
+  document.getElementById("dragen-search-dragen")?.addEventListener("input", _dragenRenderList);
   document.getElementById("dragen-refresh-btn")?.addEventListener("click", async (ev) => {
     const b = ev.currentTarget;
     if (b) { b.disabled = true; b.textContent = "🔄 更新中…"; }

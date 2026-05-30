@@ -162,8 +162,11 @@ DRAGEN_VCF_ROOTS = [
         "/home/datalake_Raw/Novaseq",
     ).split(":") if p
 ]
-DRAGEN_JOBS_DIR = DATA_ROOT / "jobs" / "dragen"
-DRAGEN_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+TERTIARY_JOBS_DIR = DATA_ROOT / "jobs" / "tertiary"
+TERTIARY_JOBS_DIR.mkdir(parents=True, exist_ok=True)
+# Existing deployments may still have completed jobs here. New runs
+# write to TERTIARY_JOBS_DIR; the service keeps this path read-only.
+LEGACY_DRAGEN_JOBS_DIR = DATA_ROOT / "jobs" / "dragen"
 
 # In-house Nextflow ensemble pipeline outputs scanned by
 # /api/dragen/vcfs under mode=inhouse. Per-sample layout:

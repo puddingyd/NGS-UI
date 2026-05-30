@@ -49,8 +49,8 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import (DRAGEN_JOBS_DIR, NGS_UI_HOME, PIPELINE_OUT_ROOT,
-                       REPO_ROOT, TERTIARY_OUTPUT_ROOT)
+from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
+                       TERTIARY_OUTPUT_ROOT)
 from ..services import dragen_jobs
 
 
@@ -292,7 +292,7 @@ def main() -> int:
         _run(stop_args, label="3/4 stop-gaps")
 
         _update(job_id, state="done", step="done", finished_at=_now())
-        print("\n[dragen_run] DONE.", flush=True)
+        print("\n[tertiary_run] DONE.", flush=True)
         return 0
 
     except Exception as e:
@@ -301,7 +301,7 @@ def main() -> int:
                 state="failed",
                 error=str(e),
                 finished_at=_now())
-        print(f"\n[dragen_run] FAILED: {e}", flush=True)
+        print(f"\n[tertiary_run] FAILED: {e}", flush=True)
         return 1
 
 

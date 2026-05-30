@@ -94,6 +94,13 @@ def tsv_to_sites(
     with open(tsv_in, "r", encoding="utf-8", newline="") as fi, \
          open(vcf_out, "w", encoding="utf-8") as fo:
         fo.write("##fileformat=VCFv4.2\n")
+        # GeneBe's VCF parser warns once per chromosome when a contig
+        # appears in records but is absent from the header.
+        for contig in [
+            *(f"chr{i}" for i in range(1, 23)), "chrX", "chrY", "chrM", "chrMT",
+            *(str(i) for i in range(1, 23)), "X", "Y", "M", "MT",
+        ]:
+            fo.write(f"##contig=<ID={contig}>\n")
         fo.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
         for row in csv.DictReader(fi, delimiter="\t"):
             chrom = (row.get("CHROM") or "").strip()

@@ -1,6 +1,6 @@
 """DRAGEN pipeline job management.
 
-State lives under DRAGEN_JOBS_DIR/{job_id}/:
+State lives under TERTIARY_JOBS_DIR/{job_id}/:
     state.json     job metadata + current step (atomically rewritten)
     log.txt        combined stdout/stderr from the chain
     pid            spawned worker PID (for `is_running` check)
@@ -22,7 +22,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import (DRAGEN_JOBS_DIR, DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
+from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
+                       LEGACY_DRAGEN_JOBS_DIR, TERTIARY_JOBS_DIR,
                        PIPELINE_VCF_INDEX_PATH,
                        PIPELINE_VCF_INDEX_TTL_HOURS, REPO_ROOT)
 
@@ -225,7 +226,11 @@ def index_is_stale(idx: dict | None) -> bool:
 # ── Job state I/O ──────────────────────────────────────────────────
 
 def _job_dir(job_id: str) -> Path:
-    return DRAGEN_JOBS_DIR / job_id
+    current = TERTIARY_JOBS_DIR / job_id
+    if current.exists():
+        return current
+    legacy = LEGACY_DRAGEN_JOBS_DIR / job_id
+    return legacy if legacy.exists() else current
 
 
 def _state_path(job_id: str) -> Path:
@@ -301,16 +306,18 @@ def tail_log(job_id: str, n: int = 50) -> str:
 
 
 def list_jobs(limit: int = 50) -> list[dict]:
-    if not DRAGEN_JOBS_DIR.is_dir():
-        return []
     jobs: list[dict] = []
-    for child in DRAGEN_JOBS_DIR.iterdir():
-        if not child.is_dir():
+    seen: set[str] = set()
+    for root in (TERTIARY_JOBS_DIR, LEGACY_DRAGEN_JOBS_DIR):
+        if not root.is_dir():
             continue
-        st = load_state(child.name)
-        if not st:
-            continue
-        jobs.append(st)
+        for child in root.iterdir():
+            if not child.is_dir() or child.name in seen:
+                continue
+            seen.add(child.name)
+            st = load_state(child.name)
+            if st:
+                jobs.append(st)
     jobs.sort(key=lambda j: j.get("created_at", ""), reverse=True)
     return jobs[:limit]
 
@@ -336,7 +343,7 @@ def start_job(
                        are the explicit sibling paths from the index).
 
     Returns the job_id. The worker writes state.json + log.txt under
-    DRAGEN_JOBS_DIR/<job_id>/; the route polls.
+    TERTIARY_JOBS_DIR/<job_id>/; the route polls.
     """
     if mode not in ("dragen", "inhouse"):
         raise ValueError(f"unknown mode: {mode}")

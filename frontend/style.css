@@ -2072,6 +2072,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
   min-width: 80px;
 }
 .dragen-extra-toggle { /* same chip style as the In panel only toggle */ }
+.dragen-vcf-search,
 .dragen-select {
   width: 100%;
   padding: 6px 8px;
