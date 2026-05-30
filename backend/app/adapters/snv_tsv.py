@@ -143,7 +143,13 @@ def classify_tier(row: dict) -> str:
         return "1A"
     if loftee_hc:
         return "1B"
-    points = _to_num(_coalesce(row.get("ACMG_SCORE"),
+    # ACMG_SCORE priority mirrors the UI's display priority: prefer
+    # the GeneBe second-opinion score when present, fall back to the
+    # pipeline's classifier (ACMG_SCORE) and then to the legacy
+    # ACMG_POINTS column. Keeps tier classification consistent with
+    # what the reviewer sees on the card.
+    points = _to_num(_coalesce(row.get("GENEBE_ACMG_SCORE"),
+                                row.get("ACMG_SCORE"),
                                 row.get("ACMG_POINTS"))) or 0
     if isinstance(points, (int, float)) and points >= 4:
         return "1C"
@@ -503,8 +509,12 @@ def _row_to_variant(row: dict) -> dict:
         "genebe_acmg_notes":   (row.get("GENEBE_ACMG_NOTES") or "").strip(),
         # "Score" pill: pipeline ACMG_SCORE rescaled to 0-100 (same
         # transform regardless of which source the class came from).
+        # Same GeneBe-first cascade as classify_tier above so the Score
+        # pill on the card matches the tier the variant lands in.
         "geno_score":          _acmg_to_geno_score(_to_num(_coalesce(
-                                   row.get("ACMG_SCORE"), row.get("ACMG_POINTS")))),
+                                   row.get("GENEBE_ACMG_SCORE"),
+                                   row.get("ACMG_SCORE"),
+                                   row.get("ACMG_POINTS")))),
         # New display fields from the 65-col pipeline output.
         "rs_id":               (row.get("RS_ID") or "").strip(),
         "hgnc_id":             (row.get("HGNC_ID") or "").strip(),
