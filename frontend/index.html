@@ -71,6 +71,7 @@
           <ul id="q-lis-dropdown" class="combobox-dropdown hidden"></ul>
         </label>
         <button id="btn-new-case" class="btn btn-primary">載入新個案</button>
+        <button id="btn-case-list" class="btn btn-primary">個案清單</button>
       </div>
       <div id="search-status" class="muted"></div>
     </section>
@@ -472,6 +473,20 @@
     </form>
   </div>
 
+  <!-- Registered case list: reviewers can remove the UI copy and
+       optionally the in-house tertiary pipeline output directory. -->
+  <div id="case-list-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide">
+      <h2>個案清單</h2>
+      <p class="muted">刪除會移除 NGS-UI 儲存的個案資料夾；操作前會再次確認是否連三級分析輸出一起刪除。</p>
+      <div id="case-list-status" class="muted"></div>
+      <div id="case-list-table" class="case-list-table"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="case-list-modal">關閉</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Re-analyze target picker (opens when ▶ 開始分析 is clicked). -->
   <div id="reanalyze-modal" class="modal hidden">
     <form id="reanalyze-form" class="modal-card">
@@ -549,21 +564,27 @@
              whichever list has a selected value. -->
         <div class="dragen-caller-block">
           <label class="dragen-form-label">In-house ensemble VCF</label>
-          <input id="dragen-search-inhouse" class="dragen-vcf-search" type="search"
-                 placeholder="搜尋 sample / run / path" autocomplete="off" />
-          <select id="dragen-vcf-inhouse" class="dragen-select" data-mode="inhouse">
-            <option value="">— 載入中… —</option>
-          </select>
+          <div class="dragen-vcf-picker">
+            <label class="combobox-wrap dragen-vcf-combobox">
+              <input id="dragen-vcf-inhouse" class="dragen-vcf-input" type="text"
+                     placeholder="輸入 sample / run / path 搜尋" autocomplete="off" />
+              <ul id="dragen-vcf-inhouse-dropdown" class="combobox-dropdown dragen-vcf-dropdown hidden"></ul>
+            </label>
+            <button id="dragen-vcf-inhouse-list" class="btn btn-ghost dragen-vcf-list-btn" type="button">VCF清單</button>
+          </div>
           <div id="dragen-siblings" class="dragen-siblings" hidden></div>
         </div>
 
         <div class="dragen-caller-block">
           <label class="dragen-form-label">DRAGEN germline VCF</label>
-          <input id="dragen-search-dragen" class="dragen-vcf-search" type="search"
-                 placeholder="搜尋 sample / run / path" autocomplete="off" />
-          <select id="dragen-vcf-dragen" class="dragen-select" data-mode="dragen">
-            <option value="">— 載入中… —</option>
-          </select>
+          <div class="dragen-vcf-picker">
+            <label class="combobox-wrap dragen-vcf-combobox">
+              <input id="dragen-vcf-dragen" class="dragen-vcf-input" type="text"
+                     placeholder="輸入 sample / run / path 搜尋" autocomplete="off" />
+              <ul id="dragen-vcf-dragen-dropdown" class="combobox-dropdown dragen-vcf-dropdown hidden"></ul>
+            </label>
+            <button id="dragen-vcf-dragen-list" class="btn btn-ghost dragen-vcf-list-btn" type="button">VCF清單</button>
+          </div>
         </div>
 
         <div class="dragen-sample-row">

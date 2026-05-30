@@ -78,6 +78,21 @@ def list_unregistered_samples():
     return sample_loader.list_unregistered()
 
 
+@router.delete("/samples/{sample_id}")
+def delete_sample(sample_id: str, delete_pipeline_output: bool = False):
+    """Remove one UI sample directory and optionally its pipeline output."""
+    try:
+        return patient_store.delete(
+            sample_id, delete_pipeline_output=delete_pipeline_output,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    except OSError as e:
+        raise HTTPException(500, f"刪除失敗：{e}")
+
+
 @router.post("/patient_list")
 async def upload_patient_list(file: UploadFile = File(...)):
     """Ingest a 未完成報告清單 xlsx → archive it + merge into roster.json.

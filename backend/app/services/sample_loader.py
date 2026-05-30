@@ -37,6 +37,12 @@ _snv_cache: OrderedDict[tuple, tuple[dict, dict, dict, str]] = OrderedDict()
 _snv_cache_lock = threading.Lock()
 
 
+def clear_snv_cache() -> None:
+    """Drop parsed SNV payloads after a sample directory is removed."""
+    with _snv_cache_lock:
+        _snv_cache.clear()
+
+
 def _read_json_or(path: Path, default):
     if not path.exists():
         return default

@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import TERTIARY_OUTPUT_ROOT
+from ..config import PIPELINE_OUT_ROOT, TERTIARY_OUTPUT_ROOT
 from . import analyses_store, emr_client, phenotype_io, vcf_writer
 
 
@@ -50,6 +51,38 @@ def sample_exists(lis_id: str) -> bool:
 
 def is_registered(lis_id: str) -> bool:
     return (TERTIARY_OUTPUT_ROOT / lis_id / "sample_metadata.json").is_file()
+
+
+def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
+    """Remove one UI sample directory and optionally its pipeline output."""
+    _validate_lis_id(lis_id)
+    ui_dir = TERTIARY_OUTPUT_ROOT / lis_id
+    if not ui_dir.is_dir():
+        raise FileNotFoundError(f"sample not found: {lis_id}")
+
+    pipeline_dir = PIPELINE_OUT_ROOT / lis_id
+    same_dir = pipeline_dir.resolve() == ui_dir.resolve()
+    deleted = []
+    pipeline_output_error = ""
+    shutil.rmtree(ui_dir)
+    deleted.append(str(ui_dir))
+    if delete_pipeline_output and pipeline_dir.is_dir() and not same_dir:
+        try:
+            shutil.rmtree(pipeline_dir)
+            deleted.append(str(pipeline_dir))
+        except OSError as e:
+            pipeline_output_error = str(e)
+
+    from . import sample_loader
+    sample_loader.clear_snv_cache()
+    sample_loader.list_index()
+    return {
+        "sample_id": lis_id,
+        "deleted": deleted,
+        "pipeline_output_requested": delete_pipeline_output,
+        "pipeline_output_deleted": same_dir or str(pipeline_dir) in deleted,
+        "pipeline_output_error": pipeline_output_error,
+    }
 
 
 def register(

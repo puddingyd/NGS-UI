@@ -1697,6 +1697,93 @@ function setupPatientListUpload() {
   });
 }
 
+// 個案清單: lists registered NGS-UI samples and allows an intentional
+// removal of the UI copy, with a separate opt-in prompt for pipeline data.
+async function _renderCaseList() {
+  const host = document.getElementById("case-list-table");
+  const status = document.getElementById("case-list-status");
+  if (!host) return;
+  host.innerHTML = `<div class="muted" style="padding:10px">載入中…</div>`;
+  try {
+    const rows = await apiFetch("/samples") || [];
+    if (!rows.length) {
+      host.innerHTML = `<div class="muted" style="padding:10px">（尚無已載入個案）</div>`;
+      return;
+    }
+    const head = `
+      <tr>
+        <th>LIS_ID</th>
+        <th>姓名</th>
+        <th>病歷號</th>
+        <th>Test type</th>
+        <th>載入時間</th>
+        <th></th>
+      </tr>`;
+    const body = rows.map(r => `
+      <tr>
+        <td>${escapeHtml(r.lis_id || r.sample_id || "")}</td>
+        <td>${escapeHtml(r.name || "—")}</td>
+        <td>${escapeHtml(r.mrn || "—")}</td>
+        <td>${escapeHtml(r.test_type || "—")}</td>
+        <td>${escapeHtml(_fmtUploadTime(r.created_at))}</td>
+        <td><button type="button" class="btn btn-danger case-list-delete"
+          data-sample-id="${escapeAttr(r.lis_id || r.sample_id || "")}">刪除</button></td>
+      </tr>`).join("");
+    host.innerHTML = `<table>${head}${body}</table>`;
+    if (status) status.textContent = "";
+  } catch (e) {
+    host.innerHTML = `<div class="muted" style="padding:10px">載入失敗：${escapeHtml(String(e))}</div>`;
+  }
+}
+
+function setupCaseList() {
+  const btn = document.getElementById("btn-case-list");
+  const host = document.getElementById("case-list-table");
+  const status = document.getElementById("case-list-status");
+  if (!btn || !host) return;
+  btn.addEventListener("click", async () => {
+    showModal("case-list-modal");
+    if (status) status.textContent = "";
+    await _renderCaseList();
+  });
+  host.addEventListener("click", async ev => {
+    const del = ev.target.closest?.(".case-list-delete");
+    if (!del) return;
+    const sid = del.dataset.sampleId || "";
+    if (!sid || !confirm(`確定要刪除個案 ${sid}？\n\n將刪除 NGS_UI/tertiary_output/${sid}/。`)) return;
+    const deletePipeline = confirm(
+      `是否同時刪除三級分析資料？\n\n/home/pipeline/tertiary_output/${sid}/`
+    );
+    del.disabled = true;
+    if (status) status.textContent = `刪除 ${sid} 中…`;
+    try {
+      const resp = await fetch(
+        `${API_BASE}/samples/${encodeURIComponent(sid)}?delete_pipeline_output=${deletePipeline}`,
+        { method: "DELETE", credentials: "same-origin" },
+      );
+      if (resp.status === 401) { showLoginModal(); throw new Error("尚未登入"); }
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+      await loadIndex();
+      if (state.currentLIS === sid) {
+        window.location.reload();
+        return;
+      }
+      if (status) {
+        status.textContent = body.pipeline_output_error
+          ? `已刪除 ${sid}，但三級分析資料刪除失敗：${body.pipeline_output_error}`
+          : deletePipeline
+            ? `已刪除 ${sid}，三級分析資料${body.pipeline_output_deleted ? "已一併刪除" : "不存在"}。`
+            : `已刪除 ${sid}。`;
+      }
+      await _renderCaseList();
+    } catch (e) {
+      if (status) status.textContent = `刪除失敗：${e.message || e}`;
+      del.disabled = false;
+    }
+  });
+}
+
 function setLoggedInUser(username) {
   const span = document.getElementById("topbar-user");
   const btn  = document.getElementById("btn-logout");   // doubles as the 登入 button when signed out
@@ -1708,6 +1795,8 @@ function setLoggedInUser(username) {
   }
   const up = document.getElementById("btn-upload-list");
   if (up) up.hidden = !username;
+  const cases = document.getElementById("btn-case-list");
+  if (cases) cases.hidden = !username;
   const dr = document.getElementById("btn-dragen-launch");
   if (dr) dr.hidden = !username;
   // #btn-phenotype-tool is intentionally always visible — the HPO/panel
@@ -5748,6 +5837,7 @@ async function bootAfterAuth() {
     else showLoginModal();
   });
   setupPatientListUpload();
+  setupCaseList();
   setupGeneSearch();
 
   // Probe /auth/me; show login modal if no session, otherwise boot the
@@ -6539,12 +6629,12 @@ function maybeShowVersionPicker(onPick) {
 // ─────────────────────────────────────────────────────────────────
 
 const _DRAGEN_STATE = {
-  // mode is now *derived* — whichever of the two stacked <select>s
-  // (in-house / dragen) carries a non-empty value at the moment of
-  // 開始分析. Tracked here only so siblings render against the right
-  // list during reviewer interaction.
+  // mode is derived from the combobox that has a picked VCF path.
+  // The input itself contains a reviewer-friendly label; selected
+  // keeps the actual path used when starting the worker.
   mode: "",             // ""    | dragen | inhouse
   index: null,          // {meta, dragen: [...], inhouse: [...]}
+  selected: { inhouse: "", dragen: "" },
   job: null,            // current job state, polled
   pollTimer: null,
 };
@@ -6569,12 +6659,10 @@ function _dragenCurrentList(mode = _DRAGEN_STATE.mode) {
   return (mode === "inhouse" ? idx.inhouse : idx.dragen) || [];
 }
 
-// Which of the two <select>s currently carries a non-empty selection.
+// Which of the two comboboxes currently carries a picked VCF.
 function _dragenActiveMode() {
-  const inhouse = document.getElementById("dragen-vcf-inhouse");
-  const dragen  = document.getElementById("dragen-vcf-dragen");
-  if (inhouse?.value) return "inhouse";
-  if (dragen?.value)  return "dragen";
+  if (_DRAGEN_STATE.selected.inhouse) return "inhouse";
+  if (_DRAGEN_STATE.selected.dragen)  return "dragen";
   return "";
 }
 
@@ -6592,11 +6680,11 @@ function _dragenRenderMeta() {
 function _dragenRenderSiblings() {
   const box = document.getElementById("dragen-siblings");
   if (!box) return;
-  const sel = document.getElementById("dragen-vcf-inhouse");
-  if (!sel?.value) {
+  const path = _DRAGEN_STATE.selected.inhouse;
+  if (!path) {
     box.hidden = true; box.innerHTML = ""; return;
   }
-  const row = _dragenCurrentList("inhouse").find(v => v.path === sel.value);
+  const row = _dragenCurrentList("inhouse").find(v => v.path === path);
   if (!row) { box.hidden = true; return; }
   const line = (key, path) => {
     const cls = path ? "sib-ok" : "sib-miss";
@@ -6611,56 +6699,93 @@ function _dragenRenderSiblings() {
   box.hidden = false;
 }
 
-function _dragenRenderOneList(selId, mode, emptyHint) {
-  const sel = document.getElementById(selId);
-  if (!sel) return;
-  const selected = sel.value;
-  const query = (document.getElementById(`dragen-search-${mode}`)?.value || "").trim().toLowerCase();
-  const list = _dragenCurrentList(mode).filter(v => {
-    if (!query || v.path === selected) return true;
-    return [v.sample_id, v.run, v.path, v.cnv_vcf, v.sv_vcf, v.mito_vcf]
-      .some(value => String(value || "").toLowerCase().includes(query));
-  });
-  if (!list.length) {
-    sel.innerHTML = `<option value="">${query ? "（沒有符合搜尋條件的 VCF）" : emptyHint}</option>`;
-    return;
-  }
-  sel.innerHTML = `<option value="">— 請選擇 —</option>` + list.map(v => {
-    const label = `${v.sample_id} · ${v.run || ""} · ${_dragenFmtSize(v.size)} · ${_dragenFmtMtime(v.mtime)}`;
-    return `<option value="${escapeAttr(v.path)}" data-sid="${escapeAttr(v.sample_id)}">${escapeHtml(label)}</option>`;
-  }).join("");
-  if (selected && list.some(v => v.path === selected)) sel.value = selected;
+function _dragenVcfLabel(v) {
+  return `${v.sample_id} · ${v.run || ""} · ${_dragenFmtSize(v.size)} · ${_dragenFmtMtime(v.mtime)}`;
 }
 
-function _dragenRenderList() {
-  _dragenRenderOneList("dragen-vcf-inhouse", "inhouse",
-    "（找不到 04_snv_indel/*.ensemble.fixed.vcf.gz — 試試 🔄 更新索引）");
-  _dragenRenderOneList("dragen-vcf-dragen",  "dragen",
-    "（找不到 *.hard-filtered.vcf.gz — 試試 🔄 更新索引）");
+function _dragenMatchVcfs(mode, query, { showAll = false } = {}) {
+  const q = showAll ? "" : (query || "").trim().toLowerCase();
+  if (!q && !showAll) return [];
+  return _dragenCurrentList(mode).filter(v => {
+    if (!q) return true;
+    return [v.sample_id, v.run, v.path, v.cnv_vcf, v.sv_vcf, v.mito_vcf]
+      .some(value => String(value || "").toLowerCase().includes(q));
+  });
+}
+
+function _dragenRenderDropdown(mode, { showAll = false } = {}) {
+  const input = document.getElementById(`dragen-vcf-${mode}`);
+  const list  = document.getElementById(`dragen-vcf-${mode}-dropdown`);
+  if (!input || !list) return;
+  const rows = _dragenMatchVcfs(mode, input.value, { showAll });
+  list.innerHTML = "";
+  if (!rows.length) {
+    if (input.value.trim() || showAll) {
+      list.innerHTML = `<li class="combobox-option dragen-vcf-option muted">（沒有符合條件的 VCF）</li>`;
+      list.classList.remove("hidden");
+    } else {
+      list.classList.add("hidden");
+    }
+    return;
+  }
+  rows.forEach(row => {
+    const li = document.createElement("li");
+    li.className = "combobox-option dragen-vcf-option";
+    li.dataset.path = row.path || "";
+    li.innerHTML = `<span>${escapeHtml(row.sample_id || "")}</span>` +
+      `<span class="opt-vcf-meta">${escapeHtml(row.run || "")} · ${escapeHtml(_dragenFmtSize(row.size))} · ${escapeHtml(_dragenFmtMtime(row.mtime))}</span>`;
+    li.title = row.path || "";
+    li.addEventListener("mousedown", ev => {
+      ev.preventDefault();
+      _dragenPickVcf(mode, row);
+    });
+    list.appendChild(li);
+  });
+  list.classList.remove("hidden");
+}
+
+function _dragenHideDropdown(mode) {
+  document.getElementById(`dragen-vcf-${mode}-dropdown`)?.classList.add("hidden");
+}
+
+function _dragenPickVcf(mode, row) {
+  const otherMode = mode === "inhouse" ? "dragen" : "inhouse";
+  const input = document.getElementById(`dragen-vcf-${mode}`);
+  const other = document.getElementById(`dragen-vcf-${otherMode}`);
+  _DRAGEN_STATE.selected[mode] = row.path || "";
+  _DRAGEN_STATE.selected[otherMode] = "";
+  _DRAGEN_STATE.mode = mode;
+  if (input) input.value = _dragenVcfLabel(row);
+  if (other) other.value = "";
+  _dragenHideDropdown(mode);
+  _dragenHideDropdown(otherMode);
+  const sidIn = document.getElementById("dragen-sample-id");
+  if (sidIn && row.sample_id) sidIn.value = _dragenSuggestSid(row.sample_id, mode);
   _dragenRenderSiblings();
 }
 
 async function loadDragenVcfList({ force = false } = {}) {
-  const inhouseSel = document.getElementById("dragen-vcf-inhouse");
-  const dragenSel  = document.getElementById("dragen-vcf-dragen");
-  if (!inhouseSel || !dragenSel) return;
+  const inhouseInput = document.getElementById("dragen-vcf-inhouse");
+  const dragenInput  = document.getElementById("dragen-vcf-dragen");
+  if (!inhouseInput || !dragenInput) return;
   if (!force && _DRAGEN_STATE.index) {
-    _dragenRenderList(); _dragenRenderMeta(); return;
+    _dragenRenderMeta(); return;
   }
-  inhouseSel.innerHTML = `<option value="">— 載入中… —</option>`;
-  dragenSel.innerHTML  = `<option value="">— 載入中… —</option>`;
+  inhouseInput.placeholder = "VCF 清單載入中…";
+  dragenInput.placeholder  = "VCF 清單載入中…";
   try {
     const idx = await apiFetch(force ? "/dragen/index/refresh" : "/dragen/vcfs", {
       method: force ? "POST" : "GET",
     });
     _DRAGEN_STATE.index = idx;
-    _dragenRenderList();
     _dragenRenderMeta();
   } catch (e) {
-    const msg = `<option value="">（載入失敗：${escapeHtml(String(e))}）</option>`;
-    inhouseSel.innerHTML = msg;
-    dragenSel.innerHTML  = msg;
+    inhouseInput.placeholder = `載入失敗：${String(e)}`;
+    dragenInput.placeholder  = `載入失敗：${String(e)}`;
+    return;
   }
+  inhouseInput.placeholder = "輸入 sample / run / path 搜尋";
+  dragenInput.placeholder  = "輸入 sample / run / path 搜尋";
 }
 
 function _dragenSetJob(state) {
@@ -6725,14 +6850,12 @@ async function _dragenRecoverActiveJob() {
 async function _dragenStart() {
   const mode = _dragenActiveMode();
   if (!mode) { alert("請先從上面 In-house 或下面 DRAGEN 任一清單挑一個 VCF"); return; }
-  const sel = document.getElementById(
-    mode === "inhouse" ? "dragen-vcf-inhouse" : "dragen-vcf-dragen");
   const sidIn = document.getElementById("dragen-sample-id");
   const extra = document.getElementById("dragen-extra-vep");
-  const path  = sel?.value || "";
+  const path  = _DRAGEN_STATE.selected[mode] || "";
   if (!path) { alert("請先選一個 VCF"); return; }
-  const opt = sel.options[sel.selectedIndex];
-  const sid = (sidIn?.value || opt?.dataset.sid || "").trim();
+  const selectedRow = _dragenCurrentList(mode).find(v => v.path === path);
+  const sid = (sidIn?.value || selectedRow?.sample_id || "").trim();
   if (!sid) { alert("Sample ID 必填"); return; }
   const body = {
     mode,
@@ -6777,23 +6900,44 @@ function _dragenSuggestSid(vcfSid, mode) {
   return vcfSid.endsWith("-dragen") ? vcfSid : `${vcfSid}-dragen`;
 }
 
-function _dragenWireSelect(selId, mode, otherSelId) {
-  const sel = document.getElementById(selId);
-  if (!sel) return;
-  sel.addEventListener("change", () => {
-    if (sel.value) {
-      // Picking from this list auto-clears the other one — only one
-      // caller mode at a time.
-      const other = document.getElementById(otherSelId);
-      if (other) other.value = "";
-      _DRAGEN_STATE.mode = mode;
-      const opt = sel.options[sel.selectedIndex];
-      const sidIn = document.getElementById("dragen-sample-id");
-      if (sidIn && opt?.dataset?.sid) sidIn.value = _dragenSuggestSid(opt.dataset.sid, mode);
-    } else {
-      _DRAGEN_STATE.mode = _dragenActiveMode();
-    }
+function _dragenWireCombobox(mode) {
+  const input = document.getElementById(`dragen-vcf-${mode}`);
+  const list = document.getElementById(`dragen-vcf-${mode}-dropdown`);
+  const listBtn = document.getElementById(`dragen-vcf-${mode}-list`);
+  if (!input || !list || !listBtn) return;
+  let activeIdx = -1;
+  input.addEventListener("focus", () => _dragenRenderDropdown(mode));
+  input.addEventListener("input", () => {
+    activeIdx = -1;
+    _DRAGEN_STATE.selected[mode] = "";
+    _DRAGEN_STATE.mode = _dragenActiveMode();
     _dragenRenderSiblings();
+    _dragenRenderDropdown(mode);
+  });
+  input.addEventListener("blur", () => {
+    setTimeout(() => _dragenHideDropdown(mode), 120);
+  });
+  input.addEventListener("keydown", ev => {
+    const opts = Array.from(list.querySelectorAll(".dragen-vcf-option[data-path]"));
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      activeIdx = Math.min(opts.length - 1, activeIdx + 1);
+      opts.forEach((el, i) => el.classList.toggle("active", i === activeIdx));
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      activeIdx = Math.max(0, activeIdx - 1);
+      opts.forEach((el, i) => el.classList.toggle("active", i === activeIdx));
+    } else if (ev.key === "Enter" && activeIdx >= 0 && opts[activeIdx]) {
+      ev.preventDefault();
+      const row = _dragenCurrentList(mode).find(v => v.path === opts[activeIdx].dataset.path);
+      if (row) _dragenPickVcf(mode, row);
+    } else if (ev.key === "Escape") {
+      _dragenHideDropdown(mode);
+    }
+  });
+  listBtn.addEventListener("click", () => {
+    activeIdx = -1;
+    _dragenRenderDropdown(mode, { showAll: true });
   });
 }
 
@@ -6804,10 +6948,8 @@ function setupDragenButton() {
     showModal("dragen-modal");
     await loadDragenVcfList();
   });
-  _dragenWireSelect("dragen-vcf-inhouse", "inhouse", "dragen-vcf-dragen");
-  _dragenWireSelect("dragen-vcf-dragen",  "dragen",  "dragen-vcf-inhouse");
-  document.getElementById("dragen-search-inhouse")?.addEventListener("input", _dragenRenderList);
-  document.getElementById("dragen-search-dragen")?.addEventListener("input", _dragenRenderList);
+  _dragenWireCombobox("inhouse");
+  _dragenWireCombobox("dragen");
   document.getElementById("dragen-refresh-btn")?.addEventListener("click", async (ev) => {
     const b = ev.currentTarget;
     if (b) { b.disabled = true; b.textContent = "🔄 更新中…"; }

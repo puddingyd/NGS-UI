@@ -118,6 +118,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；
    - HPO / gene panel 可在這裡選；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
    - 勾「登錄後開始分析」會順便把 Exomiser/LIRICAL 排入佇列。
+   - 旁邊的「個案清單」可查看已載入個案並刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時會另外詢問是否同步刪除 `/home/pipeline/tertiary_output/{LIS_ID}/`。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV 與 Mitochondria 在背景載完後補上：
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
    - SNV/Indel 顯示 filter 預設啟用 `In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。
@@ -131,7 +132,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 4. **標記與判讀** — 在每個變異上標 causative / candidate / other，編輯 ACMG/分類、寫 comment；變更會自動存到 `tertiary_output/{LIS}/analyses/{ver}/analysis.json`。
 5. **匯出報告** — `GET /api/samples/{LIS}/report.docx`（UI 上的「匯出」按鈕），目前涵蓋 SNV/Indel；CNV/SV/Mito 的 docx 匯出在 TODO（見 `CLAUDE.md`）。
 
-三級分析 modal 的 in-house 與 DRAGEN VCF 清單都可用 sample / run / path 搜尋。新 job 狀態寫在 `data/jobs/tertiary/`；舊版 `data/jobs/dragen/` 紀錄仍可讀取。`run_stopgaps.sh` 不再建立 `.raw` snapshot；GeneBe VCF 會帶 contig header，AnnotSV 成功執行時只保留摘要 log。
+三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead 輸入格，可依 sample / run / path 即時搜尋並展開候選項目；旁邊的「VCF清單」按鈕可直接列出全部。新 job 狀態寫在 `data/jobs/tertiary/`；舊版 `data/jobs/dragen/` 紀錄仍可讀取。`run_stopgaps.sh` 不再建立 `.raw` snapshot；GeneBe VCF 會帶 contig header，AnnotSV 成功執行時只保留摘要 log。
 
 ### 臨床表徵工具 `/phenotype/`
 
