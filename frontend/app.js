@@ -2701,6 +2701,17 @@ function idsForCandidateSection(def, { ignoreInPanelOnly = false } = {}) {
   ));
 }
 
+function candidateIdsForSection(def) {
+  const countIds = idsForCandidateSection(def, { ignoreInPanelOnly: true });
+  if (!document.getElementById("filter-in-panel-only")?.checked) {
+    return { displayIds: countIds, countIds };
+  }
+  return {
+    displayIds: countIds.filter(id => state.data.variants?.[id]?.in_panel),
+    countIds,
+  };
+}
+
 function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false } = {}) {
   if (!v) return false;
   if (!ignoreInPanelOnly
@@ -2823,11 +2834,12 @@ function renderCandidateSections() {
       if (host) host.innerHTML = "";
       continue;
     }
+    const { displayIds, countIds } = candidateIdsForSection(def);
     renderBlock(
       def,
-      idsForCandidateSection(def),
+      displayIds,
       def.el,
-      idsForCandidateSection(def, { ignoreInPanelOnly: true }),
+      countIds,
     );
   }
   renderPharmcatBlock("cat-pharmcat-c");
@@ -2835,6 +2847,17 @@ function renderCandidateSections() {
   updateInPanelCount();
   renderCnvSvTabBar();
   renderMitoTabBar();
+}
+
+function renderActiveSnvTier() {
+  const def = CANDIDATE_SECTION_DEFS.find(d => d.tier === activeTierTab);
+  if (!def) {
+    applyTierTabActive();
+    return;
+  }
+  const { displayIds, countIds } = candidateIdsForSection(def);
+  renderBlock(def, displayIds, def.el, countIds);
+  applyTierTabActive();
 }
 
 // Build the SNV/Indel tier tab bar from the same defs / counts as the
@@ -2857,11 +2880,10 @@ function renderTierTabBar() {
   const counts = {};
   for (const tier of TIER_ORDER) {
     const def = CANDIDATE_SECTION_DEFS.find(d => d.tier === tier);
-    const ids = def
-      ? idsForCandidateSection(def, { ignoreInPanelOnly: true })
-      : [];
-    const visible = ids.filter(id => getStatus(id) !== "X");
-    const displayIds = def ? idsForCandidateSection(def) : [];
+    const { displayIds, countIds } = def
+      ? candidateIdsForSection(def)
+      : { displayIds: [], countIds: [] };
+    const visible = countIds.filter(id => getStatus(id) !== "X");
     const displayTotal = displayIds.filter(id => getStatus(id) !== "X").length;
     const inPanel = visible.filter(
       id => state.data.variants?.[id]?.in_panel
@@ -3173,7 +3195,7 @@ document.addEventListener("click", ev => {
   } else {
     barId = "tier-tab-bar"; current = activeTierTab;
     setActive = t => { activeTierTab = t; };
-    applyActive = () => renderCandidateSections();
+    applyActive = renderActiveSnvTier;
   }
   if (tier === current) return;
   setActive(tier);
