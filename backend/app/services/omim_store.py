@@ -10,9 +10,8 @@ Workbook layout (one row per OMIM phenotype-bearing gene):
     OMIM_id | gene_symbol | OMIM_disease | Inheritance |
     Disease1 .. Disease5 | Done
 
-`Disease1..5` originate from curator-written rich text (~9% of rows have
-Disease1; rarer for the rest). The in-memory projection keeps only the
-label through its inheritance tag. For the ~28% of genes that only have
+`Disease1..5` carry the curator-written rich text (~9% of rows have
+Disease1; rarer for the rest). For the ~28% of genes that only have
 `OMIM_disease` (multi-line, each line `<phenotype name> (<inh>)`),
 we synthesise Disease1..N from those lines so the variant card has
 something to show even when the curator hasn't filled detail yet.
@@ -84,7 +83,7 @@ def _row_to_dict(headers: tuple, row: tuple) -> dict:
     out["OMIM_disease"] = get("OMIM_disease")
     out["Inheritance"]  = get("Inheritance")
     for f in _DISEASE_FIELDS:
-        out[f] = compact_disease_label(get(f))
+        out[f] = get(f)
     return out
 
 
@@ -98,7 +97,7 @@ def _synthesize_diseases(row: dict) -> None:
         return
     lines = [ln.strip() for ln in od.splitlines() if ln.strip()]
     for i, ln in enumerate(lines[:5]):
-        row[_DISEASE_FIELDS[i]] = compact_disease_label(ln)
+        row[_DISEASE_FIELDS[i]] = ln
 
 
 def _load(path: Path) -> tuple[dict, dict]:

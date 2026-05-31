@@ -152,7 +152,9 @@ def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
     out = []
     for idx in range(1, 6):
         if picked.get(str(idx)) or picked.get(idx):
-            disease = (rec.get(f"Disease{idx}") or "").strip()
+            disease = omim_store.compact_disease_label(
+                rec.get(f"Disease{idx}") or ""
+            )
             if disease and disease not in out:
                 out.append(disease)
     return out

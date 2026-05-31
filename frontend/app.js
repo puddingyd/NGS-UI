@@ -2571,20 +2571,13 @@ function updateManualVariant(mid, field, value) {
   state.dirty = true;
 }
 
-function compactDiseaseLabel(value) {
-  const text = String(value || "").trim();
-  const match = text.match(/\((?:AD|AR|XLD|XLR|XL|YL|MT|DD|IC)(?:\s*[\/,;]\s*(?:AD|AR|XLD|XLR|XL|YL|MT|DD|IC))*\)/i);
-  return match ? text.slice(0, match.index + match[0].length).trim() : text;
-}
-
 function renderDiseaseList(v, id, withCheckbox) {
   const rows = [];
   const picked = (getEdit(id, "report_diseases") || {});
   for (let i = 1; i <= 5; i++) {
     const d = v[`Disease${i}`];
     if (!d || d === "NA") continue;
-    const label = compactDiseaseLabel(d);
-    const summary = (label.split("\n")[0] || "").slice(0, 120);
+    const summary = (String(d).split("\n")[0] || "").slice(0, 120);
     const checked = picked[i] ? "checked" : "";
     const checkbox = withCheckbox
       ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${i}" ${checked} title="報告要發這個疾病" />`
@@ -2592,7 +2585,7 @@ function renderDiseaseList(v, id, withCheckbox) {
     rows.push(`
       <details class="disease-row">
         <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}</span></summary>
-        <div class="disease-detail">${escapeHtml(label)}<button type="button" class="disease-collapse">▴ 收合</button></div>
+        <div class="disease-detail">${escapeHtml(String(d))}<button type="button" class="disease-collapse">▴ 收合</button></div>
       </details>`);
   }
   if (!rows.length) return "";
