@@ -1,0 +1,214 @@
+[2026-05-31T00:00:05+00:00] [step] mito
+[2026-05-31T00:00:05+00:00]
+[2026-05-31T00:00:05+00:00] ========================= [1/4 mito] =========================
+[2026-05-31T00:00:05+00:00] $ /home/n102968/NGS_UI/NGS-UI/scripts/annotate_mito_vcf.sh --in /home/datalake_Intermediate/pipeline/nextflow_output/260603_ped_WES/26WE0055/07_mitochondria/26WE0055.mito.vcf.gz --sample 26WE0055 --outdir /home/n102968/NGS_UI/tertiary_output/26WE0055
+[mito] 26WE0055  parse ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/mito.annotated.tsv
+[parse_mito_vcf] 194 variants ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/mito.annotated.tsv
+[mito] 26WE0055  done ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/mito.annotated.tsv
+[2026-05-31T00:00:05+00:00] [command] 1/4 mito finished exit=0 elapsed=0.1s
+[2026-05-31T00:00:05+00:00] [step] detect-pipeline-output
+[2026-05-31T00:00:05+00:00] [detect] no existing pipeline TSV ¡X running nextflow
+[2026-05-31T00:00:05+00:00] [step] stage
+[2026-05-31T00:00:05+00:00] [stage] in-house symlink ¡÷ /home/n102968/NGS_UI/nf_stage/26WE0055/04_snv_indel/26WE0055.ensemble.fixed.vcf.gz (no filter)
+[2026-05-31T00:00:05+00:00] [step] nextflow
+[2026-05-31T00:00:05+00:00]
+[2026-05-31T00:00:05+00:00] ========================= [2b/4 nextflow] =========================
+[2026-05-31T00:00:05+00:00] $ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config run /home/pipeline/tertiary_code/main_tertiary.nf -profile dgm -work-dir /home/n102968/NGS_UI/nf_work/26WE0055 --sample_id 26WE0055 --input_dir /home/n102968/NGS_UI/nf_stage/26WE0055 --seq_type WES --out_dir /home/pipeline/tertiary_output
+Nextflow 26.04.3 is available - Please consider updating your version to it
+
+ N E X T F L O W   ~  version 25.04.3
+
+Launching `/home/pipeline/tertiary_code/main_tertiary.nf` [thirsty_hirsch] DSL2 - revision: 803785e10f
+
+WARN: [WARN] gene_moi.tsv.gz ¤£¦s¦b¡G/home/pipeline/reference/hg38/tertiary/clingen/gene_moi.tsv.gz
+       PM2 ±N¨Ï¥Î¯Â AF ìH­È§PÂ_
+
+_¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤_
+_         Á{§É¤T¯Å¤ÀªR Pipeline  v1.0.0                _
+_¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤¢¤_
+¼Ë¥» ID   : 26WE0055
+©w§ÇÃþ«¬  : WES
+¿é¤J¥Ø¿ý  : /home/n102968/NGS_UI/nf_stage/26WE0055
+¿é¥X¥Ø¿ý  : /home/pipeline/tertiary_output
+HPO ¿é¤J  : ¡]¥¼´£¨Ñ¡^
+Run Evo2  : false
+Run Phase : false
+®e¾¹¥Ø¿ý  : /home/pipeline/nextflow_containers
+VEP cache : /home/pipeline/reference/hg38/tertiary/vep_cache
+dbNSFP    : /home/pipeline/reference/hg38/tertiary/dbnsfp/dbNSFP4.9c_with_pknn_grch38.gz
+ClinVar   : /home/pipeline/reference/hg38/tertiary/clinvar/clinvar_20260510.vcf.gz
+ClinGen HI: /home/pipeline/reference/hg38/tertiary/clingen/ClinGen_gene_curation_list_GRCh38.tsv
+Gene MOI  : /home/pipeline/reference/hg38/tertiary/clingen/gene_moi.tsv.gz
+
+[-        ] PREPARE_VCF:ADD_CALLERS_TAG    -
+[-        ] PREÿ_VCF:FILTER_FOR_ANNOTATION -
+[-        ] SNV_ANNOTATE:VEP_ANNOTATE      -
+[-        ] SNV_ANNOTATE:PANGOLIN_SCORE    -
+
+[-        ] PREPARE_VCF:ADD_CALLERS_TAG    | 0 of 1
+[-        ] PREÿ_VCF:FILTER_FOR_ANNOTATION -
+[-        ] SNV_ANNOTATE:VEP_ANNOTATE      -
+[-        ] SNV_ANNOTATE:PANGOLIN_SCORE    -
+[-        ] PARSE_VEP_CSQ:PARSE_CSQ        -
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (1)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 0 of 1
+[-        ] PREÿ_VCF:FILTER_FOR_ANNOTATION -
+[-        ] SNV_ANNOTATE:VEP_ANNOTATE      -
+[-        ] SNV_ANNOTATE:PANGOLIN_SCORE    -
+[-        ] PARSE_VEP_CSQ:PARSE_CSQ        -
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (2)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 0 of 1
+[-        ] SNV_ANNOTATE:VEP_ANNOTATE      -
+[-        ] SNV_ANNOTATE:PANGOLIN_SCORE    -
+[-        ] PARSE_VEP_CSQ:PARSE_CSQ        -
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (3)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 0 of 1
+[-        ] SNV_ANNOTATE:PANGOLIN_SCORE    -
+[-        ] PARSE_VEP_CSQ:PARSE_CSQ        -
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (4)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 1 of 1 _
+[c3/757b32] SNVÿNNOTATE:PANGOLIN_SCORE (1) | 0 of 1
+[-        ] PARSE_VEP_CSQ:PARSE_CSQ        -
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (4)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 1 of 1 _
+[c3/757b32] SNVÿNNOTATE:PANGOLIN_SCORE (1) | 0 of 1
+[-        ] PARSE_VEP_CSQ:PARSE_CSQ        -
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (5)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 1 of 1 _
+[c3/757b32] SNVÿNNOTATE:PANGOLIN_SCORE (1) | 1 of 1 _
+[57/c9e35a] PARSE_VEP_CSQ:PARSE_CSQ (1)    | 0 of 1
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (5)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 1 of 1 _
+[c3/757b32] SNVÿNNOTATE:PANGOLIN_SCORE (1) | 1 of 1 _
+[57/c9e35a] PARSE_VEP_CSQ:PARSE_CSQ (1)    | 0 of 1
+[-        ] ACMG_CLASSIFY                  -
+
+executor >  local (6)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 1 of 1 _
+[c3/757b32] SNVÿNNOTATE:PANGOLIN_SCORE (1) | 1 of 1 _
+[57/c9e35a] PARSE_VEP_CSQ:PARSE_CSQ (1)    | 1 of 1 _
+[17/892b97] ACMG_CLASSIFY (1)              | 0 of 1
+
+executor >  local (6)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 1 of 1 _
+[c3/757b32] SNVÿNNOTATE:PANGOLIN_SCORE (1) | 1 of 1 _
+[57/c9e35a] PARSE_VEP_CSQ:PARSE_CSQ (1)    | 1 of 1 _
+[17/892b97] ACMG_CLASSIFY (1)              | 1 of 1 _
+
+executor >  local (6)
+[aa/fb4312] PREÿRE_VCF:ADD_CALLERS_TAG (1) | 1 of 1 _
+[33/f36854] PREÿ:FILTER_FOR_ANNOTATION (1) | 1 of 1 _
+[ac/5a34d0] SNV_ANNOTATE:VEP_ANNOTATE (1)  | 1 of 1 _
+[c3/757b32] SNVÿNNOTATE:PANGOLIN_SCORE (1) | 1 of 1 _
+[57/c9e35a] PARSE_VEP_CSQ:PARSE_CSQ (1)    | 1 of 1 _
+[17/892b97] ACMG_CLASSIFY (1)              | 1 of 1 _
+Completed at: 31-May-2026 00:08:50
+Duration    : 8m 43s
+CPU hours   : 0.9
+Succeeded   : 6
+
+
+[2026-05-31T00:08:50+00:00] [command] 2b/4 nextflow finished exit=0 elapsed=525.5s
+[2026-05-31T00:08:50+00:00] [step] copy-pipeline-tsv
+[2026-05-31T00:08:50+00:00] [copy] /home/pipeline/tertiary_output/26WE0055/03_acmg/26WE0055.snv_indel.acmg.tsv ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+[2026-05-31T00:08:50+00:00] [step] stop-gaps
+[2026-05-31T00:08:50+00:00]
+[2026-05-31T00:08:50+00:00] ========================= [3/4 stop-gaps] =========================
+[2026-05-31T00:08:50+00:00] $ /home/n102968/NGS_UI/NGS-UI/scripts/run_stopgaps.sh --tsv /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv --sample 26WE0055 --inhouse-cnv-vcf /home/datalake_Intermediate/pipeline/nextflow_output/260603_ped_WES/26WE0055/05_cnv_sv/26WE0055.gcnv.vcf.gz --inhouse-sv-vcf /home/datalake_Intermediate/pipeline/nextflow_output/260603_ped_WES/26WE0055/05_cnv_sv/26WE0055.delly.vcf.gz
+================================================================
+  run_stopgaps : /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+================================================================
+
+[stopgaps] 1/5  annotate_clinvar.py (fill-empty fallback)
+[clinvar] tsv : /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+[clinvar] out : /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+[clinvar] db  : /home/pipeline/reference/hg38/tertiary/clinvar/clinvar_20260510.vcf.gz
+[clinvar] pass 1/2: collecting keys from TSV ...
+[clinvar]          34500 unique sites in TSV
+[clinvar] pass 2/2: scanning ClinVar VCF ...
+[clinvar] scanned 4433366 VCF rows total; matched 11566
+[clinvar] backfilled CLINVAR_* for 11518/34057 TSV rows  (matched 11566 sites)
+[clinvar] done ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+
+[stopgaps] 2/5  filter_snv_tsv.py
+[filter] in  : /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+[filter] out : /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+[filter] rule: drop '*' alleles and non-primary contigs only
+[filter] read         34057 rows
+[filter] kept         34057 rows
+[filter] drop *           0
+[filter] drop ctg        0  (alt/random/decoy contigs)
+
+[stopgaps] 3/5  annotate_acmg_genebe.py
+[genebe] 2311 unique sites ¡÷ sites.vcf  (dropped 31746 above AF 0.01; skipped 0 with '*')
+[genebe] running pygenebe (sites=sites.vcf)
+
+"0it [00:00, ?it/s]WARNING:root:you will log in i54996195@gs.ncku.edu.tw"
+
+"1000it [00:07, 142.15it/s]WARNING:root:you will log in i54996195@gs.ncku.edu.tw"
+
+"2000it [00:14, 139.68it/s]WARNING:root:you will log in i54996195@gs.ncku.edu.tw"
+
+"2311it [00:17, 124.24it/s]"
+"2311it [00:17, 129.51it/s]"
+[genebe] backfilled ACMG for 2311/34057 TSV rows (GeneBe annotated 2311 sites)
+[genebe] done ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+
+[stopgaps] 4/5  annotate_extra_vep.py
+  + SpliceAI enabled (/home/n102968/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz)
+[extra-vep] 34057 unique sites ¡÷ /tmp/extra-vep-k10dmwq2/sites.vcf
+[extra-vep] running vep on sites.vcf ÿ
+"[extra-vep] SpliceAI plugin enabled (snv=/home/n102968/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz, indel=/home/n102968/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz)"
+[extra-vep] backfilled 28089/34057 rows from VEP (34500 sites annotated)
+[extra-vep] done ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+
+[stopgaps] 5/5  AnnotSV CNV/SV
+[annotsv] cnv: /home/datalake_Intermediate/pipeline/nextflow_output/260603_ped_WES/26WE0055/05_cnv_sv/26WE0055.gcnv.vcf.gz
+[annotsv] cnv ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/cnv.annotated.tsv  (155 rows)
+[annotsv] sv: /home/datalake_Intermediate/pipeline/nextflow_output/260603_ped_WES/26WE0055/05_cnv_sv/26WE0055.delly.vcf.gz
+[annotsv] sv ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/sv.annotated.tsv  (63498 rows)
+-rw-r--r-- 1 n102968 dgm_nckuh   204986 May 31 00:14 /home/n102968/NGS_UI/tertiary_output/26WE0055/cnv.annotated.tsv
+-rw-r--r-- 1 n102968 dgm_nckuh 68974488 May 31 00:16 /home/n102968/NGS_UI/tertiary_output/26WE0055/sv.annotated.tsv
+
+[stopgaps] review TSV  build_snv_review_tsv.py
+[review-tsv] /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv ¡÷ /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.review.tsv
+
+================================================================
+  done. final TSV: /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+================================================================
+34058 /home/n102968/NGS_UI/tertiary_output/26WE0055/snv_indel.annotated.tsv
+-rw-r--r-- 1 n102968 dgm_nckuh   204986 May 31 00:14 /home/n102968/NGS_UI/tertiary_output/26WE0055/cnv.annotated.tsv
+-rw-r--r-- 1 n102968 dgm_nckuh    23432 May 31 00:00 /home/n102968/NGS_UI/tertiary_output/26WE0055/mito.annotated.tsv
+-rw-r--r-- 1 n102968 dgm_nckuh 68974488 May 31 00:16 /home/n102968/NGS_UI/tertiary_output/26WE0055/sv.annotated.tsv
+[2026-05-31T00:16:35+00:00] [command] 3/4 stop-gaps finished exit=0 elapsed=464.7s
+[2026-05-31T00:16:35+00:00] [step] done
+[2026-05-31T00:16:35+00:00] [tertiary_run] DONE.
