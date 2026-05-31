@@ -703,22 +703,10 @@ document.addEventListener("click", (ev) => {
 });
 
 function _findVariantById(id) {
-  // SNV id pattern: chr-pos-ref-alt; CNV/SV id is AnnotSV_ID (string).
-  // Mito ids start with "chrM-". Search every section of state.data.
-  const buckets = [];
-  const d = state.data || {};
-  for (const [k, v] of Object.entries(d.variants || {})) buckets.push(v);
-  for (const [k, v] of Object.entries(d.cnv_sv?.variants || {})) buckets.push(v);
-  for (const [k, v] of Object.entries(d.mito?.variants || {})) buckets.push(v);
-  for (const v of buckets) {
-    if (v && (v.id === id || v.AnnotSV_ID === id)) return v;
-  }
-  // Fallback: search by dictionary key.
-  const dicts = [d.variants, d.cnv_sv?.variants, d.mito?.variants];
-  for (const dd of dicts) {
-    if (dd && dd[id]) return dd[id];
-  }
-  return null;
+  // Keep IGV launch lookup aligned with the report renderers. CNV/SV
+  // staged loading merges flat `cnv_variants` / `sv_variants` maps
+  // into state.data; older nested cnv_sv maps are no longer used.
+  return lookupAnyVariant(id).v;
 }
 
 function variantUrls(v) {
