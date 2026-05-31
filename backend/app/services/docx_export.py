@@ -672,30 +672,35 @@ def _picked_disease_for_snv(v: dict, edits: dict) -> str:
     return (v.get("OMIM_disease") or "").strip()
 
 
-def _disease_name_and_inheritance(disease: str) -> tuple[str, str]:
-    """Parse the disease-specific inheritance tag from the first line."""
+def _disease_info(disease: str) -> tuple[str, str, str]:
+    """Parse disease name, disease-specific inheritance, and phenotype MIM."""
     first_line = (disease or "").splitlines()[0].strip()
-    match = re.search(
+    inheritance_match = re.search(
         r"\((AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol)"
         r"(?:\s*[/,;]\s*(?:AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol))*\)",
         first_line,
         re.IGNORECASE,
     )
-    if not match:
-        return first_line, ""
-    name = first_line[:match.start()].rstrip(" :,;")
-    return name, match.group(0)[1:-1]
+    phenotype_mim_match = re.search(r"\((\d{6})\)", first_line)
+    inheritance = inheritance_match.group(0)[1:-1] if inheritance_match else ""
+    phenotype_mim = phenotype_mim_match.group(1) if phenotype_mim_match else ""
+    metadata_starts = [
+        match.start() for match in (phenotype_mim_match, inheritance_match)
+        if match
+    ]
+    name = first_line[:min(metadata_starts)] if metadata_starts else first_line
+    return name.rstrip(" :,;").strip(), inheritance, phenotype_mim
 
 
 def _omim_block_for_snv(v: dict, edits: dict) -> str:
     """『GENE 為 DISEASE 的致病基因之一，其遺傳模式屬於 X
     (Phenotype MIM number: M)』 — fall back to whatever is present."""
     gene = v.get("gene_symbol") or v.get("GENE") or "?"
-    disease_str, inheritance = _disease_name_and_inheritance(
+    disease_str, inheritance, phenotype_mim = _disease_info(
         _picked_disease_for_snv(v, edits)
     )
     inh_zh = _inheritance_zh(inheritance)
-    mim = (v.get("OMIM_id") or "").strip()
+    mim = phenotype_mim or (v.get("OMIM_id") or "").strip()
 
     parts = [f"{gene}為"]
     if disease_str:
@@ -736,9 +741,6 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
 
     _add_paragraph(doc, f"    1. {_omim_block_for_snv(v, edits)}")
     _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
-    cmt = (edits.get("comment") or "").strip()
-    if cmt:
-        _add_paragraph(doc, f"    3. {cmt}")
 
     _blank(doc)
     _add_paragraph(doc, "  參考資料:")
@@ -821,10 +823,6 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
                         "（1）異質性，即致病變異及正常粒線體 DNA 存在量的比例（2）變異的粒線體 DNA 於組織的"
                         "分布情形（3）限界效應（Threshold effect），即每種組織對於氧化壓力代謝影響的易受性。"
                         "由於患者情況各異，此檢驗結果須由臨床醫師判讀檢驗結果與受檢者臨床症狀的相關性。")
-    cmt = (edits.get("comment") or "").strip()
-    if cmt:
-        _add_paragraph(doc, f"    5. {cmt}")
-
     _blank(doc)
     _add_paragraph(doc, "  參考資料:")
     _add_paragraph(doc, _mito_reference_text(v, edits))
@@ -1002,9 +1000,13 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         loc_zh = _location_zh(g)
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {_gene_loc_phrase(gname, loc_zh)}。")
         # 2. OMIM phenotype + inheritance, per-gene
-        ph  = (g.get("omim_phenotype") or "").strip()
-        inh = _inheritance_zh(g.get("omim_inheritance", "") or "")
-        mim = (g.get("omim_id") or "").strip()
+        ph, ph_inheritance, phenotype_mim = _disease_info(
+            (g.get("omim_phenotype") or "").strip()
+        )
+        inh = _inheritance_zh(
+            ph_inheritance or g.get("omim_inheritance", "") or ""
+        )
+        mim = phenotype_mim or (g.get("omim_id") or "").strip()
         bits = [f"{gname}為"]
         bits.append(f"{ph}的致病基因之一" if ph else "此疾病的致病基因之一")
         if inh: bits.append(f"，其遺傳模式屬於{inh}")
@@ -1014,9 +1016,6 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
                             f"包含 {', '.join(names)} 等 OMIM 疾病基因。")
-        cmt = (edits.get("comment") or "").strip()
-        if cmt:
-            _add_paragraph(doc, f"    2. {cmt}")
     else:
         # No OMIM-tagged gene in this CNV — list whatever genes are
         # present so the reviewer has context, but skip the OMIM line.
