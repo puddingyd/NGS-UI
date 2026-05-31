@@ -131,7 +131,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - SNV/Indel 與 CNV/SV gene 搜尋支援多個基因，以 `,` 或 `、` 分隔；SNV 搜尋由 `/api/samples/{id}/snv-search` 查完整原始 TSV。登錄新個案或載入既有個案後都會在背景預熱 raw TSV cache；modal 預設勾選 `gnomAD_G_AF < 0.01`，取消後才顯示全部搜尋結果。
    - Variant 狀態用 `1 / 2 / C / 0` 圓形按鈕；再次點擊已選項目可清空狀態。同一個 variant 在分析區、報告區與搜尋 modal 的按鈕會同步上色。
    - Variant 卡片保留 OMIM `Disease1..5` 完整內容；「個案清單」中的疾病摘要才截到第一個可辨識的遺傳模式括號（例如 `(AD)`、`(AR)`）為止。
-   - SNV/Indel 與 CNV/SV 卡片有 `IGV` 按鈕：modal 標題會顯示 sample、padded locus、variant 註解與原始座標。先確認 primary BAM 與同 batch sibling tracks，再按「載入 IGV」；BAM range request 與 hg38 FASTA 都由後端在內網 proxy。
+   - SNV/Indel 與 CNV/SV 卡片有 `IGV` 按鈕：modal 標題會顯示 sample、padded locus、variant 註解與原始座標；alignment 預設用 squished 模式。SNV/Indel 顯示前後 100bp，CNV/SV 顯示原區間前後各 20% flanking area，並在 IGV 上標出實際 CNV/SV 區間。先確認 primary BAM 與同 batch sibling tracks，再按「載入 IGV」；BAM range request 與 hg38 FASTA 都由後端在內網 proxy。
    - CNV：`CNV-1A`（Clinical）、`CNV-1B`（Pathogenic）；SV：`SV-2A / SV-2B`
    - Mitochondria：`MITO-1`（Pathogenic）、`MITO-2`（Disease-associated）— 只列 `FILTER=PASS` 且具 MITOMAP 疾病關聯/致病性的位點
 4. **標記與判讀** — 在每個變異上標 causative / candidate / other，編輯 ACMG/分類、寫 comment；變更會自動存到 `tertiary_output/{LIS}/analyses/{ver}/analysis.json`。

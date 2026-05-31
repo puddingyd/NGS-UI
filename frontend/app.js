@@ -459,6 +459,7 @@ const _igvBams = [];          // [{label, path, sample_id, batch}]
 let _igvSiblings = [];        // candidate add-ons from same batch
 let _igvLocus = "";
 let _igvSampleId = "";
+let _igvVariant = null;
 
 function _loadIgvScript() {
   if (_igvLoaded) return _igvLoaded;
@@ -476,17 +477,35 @@ function _bamUrl(path) {
   return `${API_BASE}/igv/file?path=${encodeURIComponent(path)}`;
 }
 
-// Pick a locus string ("chr1:12345-12545") with ~100bp padding from
-// a variant payload — works for SNV (POS+REF) and CNV/SV (POS..END).
+// Pick a locus string ("chr1:12345-12545") with padding from a variant
+// payload. SNV/Indel gets ~100bp context; CNV/SV gets 20% flanks so the
+// reviewer can compare coverage around both breakpoints.
 function _igvLocusFor(v) {
   if (!v) return "";
-  const chrom = v.CHROM || "";
+  const chrom = _normalizeChrom(v.CHROM || "");
   if (!chrom) return "";
   const start = Number(v.POS);
-  let end = v.END != null ? Number(v.END) : start + Math.max(1, (v.REF || "A").length);
+  const isCnvSv = v.END != null && v.REF == null && v.ALT == null;
+  const end = isCnvSv ? Number(v.END) : start + Math.max(1, (v.REF || "A").length);
   if (!Number.isFinite(start)) return chrom;
-  const pad = (end - start) > 1000 ? 200 : 100;
+  if (!Number.isFinite(end)) return chrom;
+  const pad = isCnvSv ? Math.max(1, Math.ceil((end - start) * 0.2)) : 100;
   return `${chrom}:${Math.max(1, start - pad)}-${end + pad}`;
+}
+
+function _igvRoiFor(v) {
+  if (!v || v.END == null || v.REF != null || v.ALT != null) return undefined;
+  const chr = _normalizeChrom(v.CHROM || "");
+  const start = Number(v.POS);
+  const end = Number(v.END);
+  if (!chr || !Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+  const source = (v.source || "SV").toUpperCase();
+  const svType = v.sv_type || "";
+  return [{
+    name: `${source} ${svType} ${chr}:${start}-${end}`.trim(),
+    color: "rgba(220, 38, 38, 0.18)",
+    features: [{ chr, start: Math.max(0, start - 1), end }],
+  }];
 }
 
 function _igvVariantTitleFor(v) {
@@ -504,7 +523,7 @@ function _igvVariantTitleFor(v) {
   const annotSvId = v.AnnotSV_ID || v.id || "";
   return {
     label: [source, svType, annotSvId].filter(Boolean).join(" "),
-    coordinate: `[${build}] ${v.CHROM || "?"}:${v.POS || "?"}-${v.END || "?"}`,
+    coordinate: `[${build}] ${_normalizeChrom(v.CHROM || "?")}:${v.POS || "?"}-${v.END || "?"}`,
   };
 }
 
@@ -513,6 +532,7 @@ async function openIgvModal(variant) {
   if (!modal) return;
   const sid = state.data?.sample_id || state.currentLIS || "";
   _igvSampleId = sid;
+  _igvVariant = variant;
   _igvLocus = _igvLocusFor(variant);
   const variantTitle = _igvVariantTitleFor(variant);
   document.getElementById("igv-title").textContent = `IGV — ${sid || "?"}`;
@@ -566,6 +586,7 @@ function closeIgvModal() {
     try { window.igv.removeBrowser(_igvBrowser); } catch {}
   }
   _igvBrowser = null;
+  _igvVariant = null;
   document.getElementById("igv-host").innerHTML = "";
 }
 
@@ -578,6 +599,7 @@ async function _initIgvBrowser() {
     name: b.label,
     type: "alignment",
     format: "bam",
+    displayMode: "SQUISHED",
     url: _bamUrl(b.path),
     indexURL: _bamUrl(b.path + ".bai"),
   }));
@@ -600,6 +622,7 @@ async function _initIgvBrowser() {
     reference: typeof genomeOpt === "string" ? undefined : genomeOpt,
     genome:    typeof genomeOpt === "string" ? genomeOpt : undefined,
     locus:     _igvLocus || undefined,
+    roi:       _igvRoiFor(_igvVariant) || undefined,
     tracks,
   });
 }
