@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -178,7 +179,7 @@ def _set_step(job_id: str, step: str, **kw) -> None:
     _log(f"[step] {step}")
 
 
-def _run(cmd: list[str], *, label: str) -> None:
+def _run(cmd: list[str], *, label: str, on_line=None) -> None:
     """Stream a subprocess's stdout/stderr into this worker's stdout
     (which is already redirected to log.txt by dragen_jobs.start_job).
     Raises on non-zero exit so the outer try/except records failure.
@@ -187,7 +188,20 @@ def _run(cmd: list[str], *, label: str) -> None:
     _log()
     _log(f"========================= [{label}] =========================")
     _log("$ " + " ".join(cmd))
-    proc = subprocess.run(cmd, check=False)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        print(line, end="", flush=True)
+        if on_line is not None:
+            on_line(line)
+    proc.wait()
     elapsed = time.monotonic() - started
     _log(f"[command] {label} finished exit={proc.returncode} elapsed={elapsed:.1f}s")
     if proc.returncode != 0:
@@ -270,6 +284,26 @@ def main() -> int:
 
             # 4. Nextflow → /home/pipeline/tertiary_output/<SID>/...
             _set_step(job_id, "nextflow")
+            nextflow_stages = [
+                ("add-callers-tag", "ADD_CALLERS_TAG"),
+                ("filter-for-annotation", "FILTER_FOR_ANNOTATION"),
+                ("vep-annotate", "VEP_ANNOTATE"),
+                ("pangolin-score", "PANGOLIN_SCORE"),
+                ("parse-csq", "PARSE_CSQ"),
+                ("acmg-classify", "ACMG_CLASSIFY"),
+            ]
+            nextflow_stage_rank = -1
+
+            def track_nextflow(line: str) -> None:
+                nonlocal nextflow_stage_rank
+                if not re.search(r"\|\s*[01]\s+of\s+1", line):
+                    return
+                for rank, (slug, token) in enumerate(nextflow_stages):
+                    if token in line and rank > nextflow_stage_rank:
+                        nextflow_stage_rank = rank
+                        _set_step(job_id, f"nextflow:{slug}")
+                        return
+
             _run([
                 "nextflow",
                 "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
@@ -280,7 +314,7 @@ def main() -> int:
                 "--input_dir", str(nf_stage),
                 "--seq_type",  seq_type,
                 "--out_dir",   str(PIPELINE_OUT_ROOT),
-            ], label="2b/4 nextflow")
+            ], label="2b/4 nextflow", on_line=track_nextflow)
 
             existing = _find_pipeline_acmg_tsv(sid)
             if existing is None:
@@ -309,7 +343,12 @@ def main() -> int:
                 stop_args += ["--inhouse-sv-vcf",  args.sv_vcf]
         if not args.with_extra_vep:
             stop_args.append("--skip-extra-vep")
-        _run(stop_args, label="3/4 stop-gaps")
+        def track_stopgaps(line: str) -> None:
+            match = re.search(r"\[stopgaps-step]\s+([a-z0-9-]+)\s+start", line)
+            if match:
+                _set_step(job_id, f"stop-gaps:{match.group(1)}")
+
+        _run(stop_args, label="3/4 stop-gaps", on_line=track_stopgaps)
 
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)

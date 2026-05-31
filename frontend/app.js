@@ -15,6 +15,7 @@ const state = {
   currentLIS:   null,
   dirty:        false,
 };
+const sampleTestFilters = new Set(["WES", "WGS"]);
 
 // Tracks blocks the user has manually toggled (by host id).
 // If a block id is in this set, we respect its wasOpen dataset;
@@ -91,8 +92,9 @@ async function loadIndex() {
 function matchSamples(q) {
   if (!state.index) return [];
   const s = (q || "").trim().toLowerCase();
-  if (!s) return state.index.slice(0, 50);
   return state.index.filter(r => {
+    if (!sampleTestFilters.has((r.Test || "").toUpperCase())) return false;
+    if (!s) return true;
     return ["LIS_ID", "Name", "MRN"].some(k => {
       const v = (r[k] || "").toString().toLowerCase();
       return v && v.includes(s);
@@ -104,12 +106,13 @@ function resolveLIS(query) {
   if (!state.index) return null;
   const s = (query || "").trim();
   if (!s) return null;
+  const visible = state.index.filter(r => sampleTestFilters.has((r.Test || "").toUpperCase()));
   // Exact match on LIS_ID first, then MRN, then single-hit Name
-  const hitLis = state.index.find(r => (r.LIS_ID || "").trim() === s);
+  const hitLis = visible.find(r => (r.LIS_ID || "").trim() === s);
   if (hitLis) return hitLis;
-  const hitMrn = state.index.find(r => (r.MRN || "").trim() === s);
+  const hitMrn = visible.find(r => (r.MRN || "").trim() === s);
   if (hitMrn) return hitMrn;
-  const hitNames = state.index.filter(r => (r.Name || "").trim() === s);
+  const hitNames = visible.filter(r => (r.Name || "").trim() === s);
   if (hitNames.length === 1) return hitNames[0];
   if (hitNames.length > 1) throw new Error(`找到 ${hitNames.length} 筆同名樣本，請改用 LIS_ID 或病歷號`);
   // Fallback: single partial match across fields
@@ -5819,6 +5822,13 @@ function setupCombobox() {
       list.classList.add("hidden");
     }
   });
+  document.querySelectorAll(".sample-test-chip input").forEach(filter => {
+    filter.addEventListener("change", () => {
+      if (filter.checked) sampleTestFilters.add(filter.value);
+      else sampleTestFilters.delete(filter.value);
+      renderOptions(currentRows());
+    });
+  });
 }
 
 // EMR sync: re-fetch from EMR for the current sample and merge into
@@ -6888,13 +6898,25 @@ function _dragenProgressPercent(state) {
   if (!state) return 0;
   if (state.state === "done") return 100;
   const byStep = {
-    queued: 3,
-    mito: 10,
-    "detect-pipeline-output": 20,
-    stage: 30,
-    nextflow: 45,
-    "copy-pipeline-tsv": 78,
-    "stop-gaps": 85,
+    queued: 1,
+    mito: 1,
+    "detect-pipeline-output": 2,
+    stage: 2,
+    nextflow: 3,
+    "nextflow:add-callers-tag": 3,
+    "nextflow:filter-for-annotation": 8,
+    "nextflow:vep-annotate": 13,
+    "nextflow:pangolin-score": 26,
+    "nextflow:parse-csq": 49,
+    "nextflow:acmg-classify": 52,
+    "copy-pipeline-tsv": 55,
+    "stop-gaps": 55,
+    "stop-gaps:clinvar": 55,
+    "stop-gaps:filter-snv": 65,
+    "stop-gaps:genebe": 66,
+    "stop-gaps:extra-vep": 70,
+    "stop-gaps:annotsv": 78,
+    "stop-gaps:review-tsv": 98,
     done: 100,
   };
   return byStep[state.step] ?? 0;
@@ -7042,9 +7064,9 @@ function setupDragenButton() {
   _dragenWireCombobox("dragen");
   document.getElementById("dragen-refresh-btn")?.addEventListener("click", async (ev) => {
     const b = ev.currentTarget;
-    if (b) { b.disabled = true; b.textContent = "🔄 更新中…"; }
+    if (b) { b.disabled = true; b.textContent = "↻ 更新中…"; }
     try { await loadDragenVcfList({ force: true }); }
-    finally { if (b) { b.disabled = false; b.textContent = "🔄 更新索引"; } }
+    finally { if (b) { b.disabled = false; b.textContent = "↻ 更新索引"; } }
   });
   document.getElementById("dragen-start-btn")?.addEventListener("click", _dragenStart);
   document.getElementById("dragen-job-log-toggle")?.addEventListener("click", _toggleDragenLog);

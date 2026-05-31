@@ -19,7 +19,6 @@
       <button id="btn-logout" class="btn btn-ghost" hidden>登出</button>
       <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
       <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 或 in-house ensemble Nextflow 輸出啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
-      <button id="btn-pipeline-list" class="btn btn-ghost" type="button" hidden>三級分析清單</button>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
       <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" hidden />
     </div>
@@ -66,11 +65,14 @@
     <!-- Search -->
     <section class="card">
       <div class="search-row">
-        <label class="combobox-wrap">
-          檢體編號 (LIS_ID / 姓名 / 病歷號)
-          <input id="q-lis" type="text" autocomplete="off" placeholder="輸入以搜尋…" />
+        <div class="combobox-wrap search-combobox">
+          <span class="sample-test-filters">
+            <label class="sample-test-chip"><input type="checkbox" value="WES" checked /><span>WES</span></label>
+            <label class="sample-test-chip"><input type="checkbox" value="WGS" checked /><span>WGS</span></label>
+          </span>
+          <input id="q-lis" type="text" autocomplete="off" placeholder="輸入檢體編號 (LIS_ID) / 姓名 / 病歷號以搜尋…" />
           <ul id="q-lis-dropdown" class="combobox-dropdown hidden"></ul>
-        </label>
+        </div>
         <button id="btn-new-case" class="btn btn-primary">載入新個案</button>
         <button id="btn-case-list" class="btn btn-primary">個案清單</button>
       </div>
@@ -573,8 +575,10 @@
           <span id="dragen-index-meta" class="muted dragen-index-meta"></span>
           <label class="filter-toggle dragen-extra-toggle" title="勾選 → 跑完主 pipeline 後額外用 VEP 補 MetaRNN + SpliceAI 兩欄">
             <input id="dragen-extra-vep" type="checkbox" checked />
+            <span>Extra VEP</span>
           </label>
-          <button id="dragen-refresh-btn" class="btn btn-ghost dragen-refresh-btn" type="button" title="重新掃描所有 root 目錄">🔄 更新索引</button>
+          <button id="dragen-refresh-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="重新掃描所有 root 目錄">↻ 更新索引</button>
+          <button id="btn-pipeline-list" class="btn btn-ghost dragen-toolbar-btn" type="button">三級分析清單</button>
         </div>
 
         <!-- Two stacked caller lists: pick from one and the other is

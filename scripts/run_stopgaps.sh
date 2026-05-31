@@ -41,6 +41,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+timestamp() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+step_start() {
+  STOPGAP_STEP="$1"
+  STOPGAP_STEP_STARTED="$(date +%s)"
+  echo "[$(timestamp)] [stopgaps-step] $STOPGAP_STEP start"
+}
+step_done() {
+  local ended
+  ended="$(date +%s)"
+  echo "[$(timestamp)] [stopgaps-step] $STOPGAP_STEP done elapsed=$((ended - STOPGAP_STEP_STARTED))s"
+}
+
 TSV=""
 SID=""
 DRAGEN_VCF=""
@@ -82,25 +94,32 @@ echo "================================================================"
 # ClinVar step is reliable this step turns into a no-op.
 echo
 echo "[stopgaps] 1/5  annotate_clinvar.py (fill-empty fallback)"
+step_start "clinvar"
 "$SCRIPT_DIR/annotate_clinvar.py" --tsv "$TSV"
+step_done
 
 # 2. Filter.
 echo
 echo "[stopgaps] 2/5  filter_snv_tsv.py"
+step_start "filter-snv"
 "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
+step_done
 
 # 3. GeneBe ACMG (writes to GENEBE_* columns; pipeline ACMG_* preserved).
 echo
 echo "[stopgaps] 3/5  annotate_acmg_genebe.py"
+step_start "genebe"
 if [ -z "${GENEBE_USER:-}" ] || [ -z "${GENEBE_API_KEY:-}" ]; then
   echo "ERROR: GENEBE_USER + GENEBE_API_KEY must be exported" >&2
   exit 2
 fi
 "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV"
+step_done
 
 # 4. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
 echo
 echo "[stopgaps] 4/5  annotate_extra_vep.py"
+step_start "extra-vep"
 if [ "$SKIP_EXTRA_VEP" -eq 1 ]; then
   echo "  - skipped (--skip-extra-vep)"
 else
@@ -117,6 +136,7 @@ else
   fi
   "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}"
 fi
+step_done
 
 # 5. CNV/SV via AnnotSV. Dispatch by which input flag was passed:
 #    --dragen-cnv-source           → DRAGEN sibling discovery
@@ -125,6 +145,7 @@ fi
 SAMPLE_DIR="$(dirname "$TSV")"
 echo
 echo "[stopgaps] 5/5  AnnotSV CNV/SV"
+step_start "annotsv"
 if [ "$SKIP_CNV" -eq 1 ]; then
   echo "  - skipped (--skip-cnv)"
 elif [ -n "$DRAGEN_VCF" ]; then
@@ -145,6 +166,7 @@ elif [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; then
 else
   echo "  - skipped (no --dragen-cnv-source / --inhouse-*-vcf)"
 fi
+step_done
 
 # Drop a copy at the GUI-expected path (no sample prefix).
 GUI_TSV="$SAMPLE_DIR/snv_indel.annotated.tsv"
@@ -156,7 +178,9 @@ fi
 
 echo
 echo "[stopgaps] review TSV  build_snv_review_tsv.py"
+step_start "review-tsv"
 "$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV"
+step_done
 
 echo
 echo "================================================================"

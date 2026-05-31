@@ -222,6 +222,43 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 12px;
   color: var(--muted);
 }
+.search-combobox {
+  display: flex;
+  flex-direction: column;
+}
+.sample-test-filters {
+  display: inline-flex;
+  flex-direction: row;
+  gap: 4px;
+  align-items: center;
+  min-height: 22px;
+}
+.sample-test-chip {
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+.sample-test-chip input { display: none; }
+.sample-test-chip span {
+  display: inline-block;
+  min-width: 38px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--fg);
+  text-align: center;
+}
+.sample-test-chip span::before { content: "○ "; }
+.sample-test-chip:hover span { background: #f0f3f6; }
+.sample-test-chip input:checked + span {
+  border-color: #0969da;
+  background: #ddf4ff;
+  color: #0550ae;
+}
+.sample-test-chip input:checked + span::before { content: "● "; }
 .search-row input {
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -2073,7 +2110,14 @@ body.sidebar-collapsed .container { margin-left: auto; }
   color: var(--muted);
   min-width: 80px;
 }
-.dragen-extra-toggle { /* same chip style as the In panel only toggle */ }
+.dragen-extra-toggle,
+.dragen-toolbar-btn {
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
 .dragen-vcf-picker {
   display: flex;
   align-items: stretch;
@@ -2197,10 +2241,6 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .dragen-index-meta {
   font-size: 11px;
   margin-left: auto;
-}
-.dragen-refresh-btn {
-  font-size: 12px;
-  padding: 2px 8px;
 }
 .dragen-siblings {
   background: #f6f8fa;
