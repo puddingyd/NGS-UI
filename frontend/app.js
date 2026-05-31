@@ -1725,15 +1725,33 @@ function setupPatientListUpload() {
 
 // 個案清單: lists registered NGS-UI samples and allows an intentional
 // removal of the UI copy, with a separate opt-in prompt for pipeline data.
-async function _renderCaseList() {
+let _caseListRows = [];
+const _caseListTestFilters = new Set(["WES", "WGS"]);
+
+function _caseListVisibleRows() {
+  const query = (document.getElementById("case-list-search")?.value || "").trim().toLowerCase();
+  return _caseListRows.filter(row => {
+    const testType = (row.test_type || "").toUpperCase();
+    if (!_caseListTestFilters.has(testType)) return false;
+    if (!query) return true;
+    return Object.values(row).some(value => String(value ?? "").toLowerCase().includes(query));
+  });
+}
+
+async function _renderCaseList({ refresh = true } = {}) {
   const host = document.getElementById("case-list-table");
   const status = document.getElementById("case-list-status");
   if (!host) return;
-  host.innerHTML = `<div class="muted" style="padding:10px">載入中…</div>`;
+  if (refresh) host.innerHTML = `<div class="muted" style="padding:10px">載入中…</div>`;
   try {
-    const rows = await apiFetch("/samples") || [];
-    if (!rows.length) {
+    if (refresh) _caseListRows = await apiFetch("/samples") || [];
+    const rows = _caseListVisibleRows();
+    if (!_caseListRows.length) {
       host.innerHTML = `<div class="muted" style="padding:10px">（尚無已載入個案）</div>`;
+      return;
+    }
+    if (!rows.length) {
+      host.innerHTML = `<div class="muted" style="padding:10px">（沒有符合篩選條件的個案）</div>`;
       return;
     }
     const head = `
@@ -1742,6 +1760,11 @@ async function _renderCaseList() {
         <th>姓名</th>
         <th>病歷號</th>
         <th>Test type</th>
+        <th>Causative variant</th>
+        <th>Disease</th>
+        <th>Other variant</th>
+        <th>Comment</th>
+        <th>簽收時間</th>
         <th>載入時間</th>
         <th></th>
       </tr>`;
@@ -1751,7 +1774,12 @@ async function _renderCaseList() {
         <td>${escapeHtml(r.name || "—")}</td>
         <td>${escapeHtml(r.mrn || "—")}</td>
         <td>${escapeHtml(r.test_type || "—")}</td>
-        <td>${escapeHtml(_fmtUploadTime(r.created_at))}</td>
+        <td class="case-list-long">${escapeHtml(r.causative_variants || "—")}</td>
+        <td class="case-list-long">${escapeHtml(r.diseases || "—")}</td>
+        <td class="case-list-long">${escapeHtml(r.other_variants || "—")}</td>
+        <td class="case-list-long">${escapeHtml(r.comment || "—")}</td>
+        <td class="case-list-date">${escapeHtml(_fmtUploadTime(r.sign_received_at))}</td>
+        <td class="case-list-date">${escapeHtml(_fmtUploadTime(r.created_at))}</td>
         <td><button type="button" class="btn btn-danger case-list-delete"
           data-sample-id="${escapeAttr(r.lis_id || r.sample_id || "")}">刪除</button></td>
       </tr>`).join("");
@@ -1766,6 +1794,7 @@ function setupCaseList() {
   const btn = document.getElementById("btn-case-list");
   const host = document.getElementById("case-list-table");
   const status = document.getElementById("case-list-status");
+  const search = document.getElementById("case-list-search");
   let pendingSid = "";
   let pendingDeleteButton = null;
   if (!btn || !host) return;
@@ -1773,6 +1802,14 @@ function setupCaseList() {
     showModal("case-list-modal");
     if (status) status.textContent = "";
     await _renderCaseList();
+  });
+  search?.addEventListener("input", () => _renderCaseList({ refresh: false }));
+  document.querySelectorAll(".case-list-test-filters input").forEach(filter => {
+    filter.addEventListener("change", () => {
+      if (filter.checked) _caseListTestFilters.add(filter.value);
+      else _caseListTestFilters.delete(filter.value);
+      _renderCaseList({ refresh: false });
+    });
   });
   host.addEventListener("click", async ev => {
     const del = ev.target.closest?.(".case-list-delete");
@@ -5822,7 +5859,7 @@ function setupCombobox() {
       list.classList.add("hidden");
     }
   });
-  document.querySelectorAll(".sample-test-chip input").forEach(filter => {
+  document.querySelectorAll(".search-combobox .sample-test-chip input").forEach(filter => {
     filter.addEventListener("change", () => {
       if (filter.checked) sampleTestFilters.add(filter.value);
       else sampleTestFilters.delete(filter.value);

@@ -482,6 +482,14 @@
     <div class="modal-card modal-card-wide">
       <h2>個案清單</h2>
       <p class="muted">刪除前可選擇是否一併移除三級分析原始檔案。</p>
+      <div class="case-list-toolbar">
+        <span class="sample-test-filters case-list-test-filters">
+          <label class="sample-test-chip"><input type="checkbox" value="WES" checked /><span>WES</span></label>
+          <label class="sample-test-chip"><input type="checkbox" value="WGS" checked /><span>WGS</span></label>
+        </span>
+        <input id="case-list-search" type="text"
+               placeholder="搜尋 ID、姓名、病歷號、variant、疾病、comment 或年份…" autocomplete="off" />
+      </div>
       <div id="case-list-status" class="muted"></div>
       <div id="case-list-table" class="case-list-table"></div>
       <div class="modal-actions">
@@ -573,9 +581,8 @@
       <div class="dragen-form">
         <div class="dragen-form-row dragen-vcf-row">
           <span id="dragen-index-meta" class="muted dragen-index-meta"></span>
-          <label class="filter-toggle dragen-extra-toggle" title="勾選 → 跑完主 pipeline 後額外用 VEP 補 MetaRNN + SpliceAI 兩欄">
+          <label class="filter-toggle dragen-extra-toggle" title="勾選 → 對 GNOMAD_G_AF ≤ 0.01 的候選點額外用 VEP 補 MetaRNN + SpliceAI 兩欄">
             <input id="dragen-extra-vep" type="checkbox" checked />
-            <span>Extra VEP</span>
           </label>
           <button id="dragen-refresh-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="重新掃描所有 root 目錄">↻ 更新索引</button>
           <button id="btn-pipeline-list" class="btn btn-ghost dragen-toolbar-btn" type="button">三級分析清單</button>

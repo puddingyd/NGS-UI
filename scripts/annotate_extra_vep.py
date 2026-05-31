@@ -8,7 +8,8 @@ DANN, PHACTboost, phyloP100way, GERP++_RS, gnomAD_exomes). This
 script re-runs VEP on the small filtered set with MetaRNN (and
 optionally SpliceAI when a scores VCF is available) added to the
 dbNSFP/Plugin extract list, then joins those extra columns back
-into the TSV.
+into the TSV. Like the GeneBe stop-gap, it keeps missing AF values
+eligible and skips sites whose GNOMAD_G_AF exceeds 0.01 by default.
 
 Workflow:
     1. Read TSV → build sites VCF (CHROM/POS/REF/ALT, sorted).
@@ -59,9 +60,30 @@ def _open_vcf(path):
     return gzip.open(path, "rt") if str(path).endswith(".gz") else open(path, "r")
 
 
-def tsv_to_sites(tsv_in: Path, vcf_out: Path) -> int:
+def _row_max_af(row: dict, cols: list[str]) -> float:
+    """Largest numeric AF across selected columns; missing values stay eligible."""
+    out = 0.0
+    for col in cols:
+        raw = str(row.get(col) or "").strip()
+        if not raw or raw.upper() in ("NA", "N/A", "."):
+            continue
+        try:
+            out = max(out, float(raw))
+        except ValueError:
+            continue
+    return out
+
+
+def tsv_to_sites(
+    tsv_in: Path,
+    vcf_out: Path,
+    *,
+    max_af: float | None,
+    af_cols: list[str],
+) -> tuple[int, int]:
     seen: set = set()
     rows: list = []
+    n_af = 0
     with open(tsv_in, "r", encoding="utf-8", newline="") as fi:
         for r in csv.DictReader(fi, delimiter="\t"):
             chrom = (r.get("CHROM") or "").strip()
@@ -75,6 +97,9 @@ def tsv_to_sites(tsv_in: Path, vcf_out: Path) -> int:
             key = (chrom, pos, ref, alt)
             if key in seen:
                 continue
+            if max_af is not None and _row_max_af(r, af_cols) > max_af:
+                n_af += 1
+                continue
             seen.add(key)
             rows.append((chrom, int(pos), ref, alt))
     rows.sort(key=lambda r: (r[0], r[1]))
@@ -83,7 +108,7 @@ def tsv_to_sites(tsv_in: Path, vcf_out: Path) -> int:
         fo.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
         for chrom, pos, ref, alt in rows:
             fo.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
-    return len(rows)
+    return len(rows), n_af
 
 
 def run_vep(args, sites: Path, vep_out: Path) -> None:
@@ -331,6 +356,11 @@ def main() -> int:
     ap.add_argument("--ref-fasta", default=None,
                     help="default $REF_DIR/Homo_sapiens_assembly38.fasta")
     ap.add_argument("--fork", type=int, default=4)
+    ap.add_argument("--max-af", type=float, default=0.01,
+                    help="Drop sites whose selected gnomAD AF exceeds this "
+                         "(default 0.01; matches GeneBe)")
+    ap.add_argument("--af-cols", default="GNOMAD_G_AF",
+                    help="Comma-separated AF columns checked by --max-af")
     ap.add_argument("--spliceai-snv",
                     help="Path to spliceai_scores.raw.snv.hg38.vcf.gz "
                          "(if absent, SpliceAI step is skipped)")
@@ -361,8 +391,12 @@ def main() -> int:
     try:
         sites   = wd / "sites.vcf"
         vep_vcf = wd / "sites.vep.vcf.gz"
-        n = tsv_to_sites(in_tsv, sites)
-        print(f"[extra-vep] {n} unique sites → {sites}", file=sys.stderr)
+        af_cols = [col.strip() for col in args.af_cols.split(",") if col.strip()]
+        n, n_af = tsv_to_sites(
+            in_tsv, sites, max_af=args.max_af, af_cols=af_cols,
+        )
+        print(f"[extra-vep] {n} unique sites → {sites}  "
+              f"(dropped {n_af} above AF {args.max_af})", file=sys.stderr)
         if n == 0:
             print("ERROR: 0 sites", file=sys.stderr)
             return 1

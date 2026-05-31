@@ -2356,7 +2356,24 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .patient-list-history tr:last-child td { border-bottom: none; }
 
 /* ─── 個案清單 modal ─────────────────────────────────────────── */
-#case-list-modal .modal-card-wide { max-width: 860px; }
+#case-list-modal .modal-card-wide {
+  width: min(96vw, 1600px);
+  max-width: 1600px;
+}
+.case-list-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0 4px;
+}
+.case-list-toolbar input[type="text"] {
+  flex: 1;
+  min-width: 260px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
 .case-list-table {
   max-height: 520px;
   overflow: auto;
@@ -2365,7 +2382,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 6px;
   font-size: 12px;
 }
-.case-list-table table { width: 100%; border-collapse: collapse; }
+.case-list-table table {
+  width: 100%;
+  min-width: 1560px;
+  border-collapse: collapse;
+}
 .case-list-table th,
 .case-list-table td {
   padding: 6px 8px;
@@ -2381,6 +2402,16 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 11px;
 }
 .case-list-table tr:last-child td { border-bottom: none; }
+.case-list-table td.case-list-long {
+  min-width: 190px;
+  max-width: 320px;
+  white-space: normal;
+  line-height: 1.45;
+}
+.case-list-table td.case-list-date {
+  color: var(--muted);
+  font-size: 11px;
+}
 .case-delete-card { max-width: 620px; }
 .case-delete-paths {
   display: flex;

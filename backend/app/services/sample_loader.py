@@ -27,7 +27,7 @@ from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
-from ..adapters.snv_tsv import TIERS, OldFormatError, load_snv_tsv
+from ..adapters.snv_tsv import TIERS, OldFormatError, _row_to_variant, load_snv_tsv
 from ..config import TERTIARY_OUTPUT_ROOT
 from . import analyses_store, omim_store, snv_review
 
@@ -35,12 +35,17 @@ from . import analyses_store, omim_store, snv_review
 _SNV_CACHE_MAX = 8
 _snv_cache: OrderedDict[tuple, tuple[dict, dict, dict, str]] = OrderedDict()
 _snv_cache_lock = threading.Lock()
+_CASE_SUMMARY_CACHE_MAX = 128
+_case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
+_case_summary_cache_lock = threading.Lock()
 
 
 def clear_snv_cache() -> None:
     """Drop parsed SNV payloads after a sample directory is removed."""
     with _snv_cache_lock:
         _snv_cache.clear()
+    with _case_summary_cache_lock:
+        _case_summary_cache.clear()
 
 
 def _read_json_or(path: Path, default):
@@ -99,6 +104,124 @@ def _read_pheno_scores(path: Path) -> dict[str, float]:
             except ValueError:
                 pass
     return out
+
+
+_ACMG_SHORT = {
+    "pathogenic": "P",
+    "likely pathogenic": "LP",
+    "pathogenic/likely pathogenic": "P/LP",
+    "likely pathogenic/pathogenic": "P/LP",
+    "uncertain significance": "VUS",
+    "vus": "VUS",
+    "likely benign": "LB",
+    "benign": "B",
+}
+
+
+def _case_variant_label(variant: dict, edits: dict) -> str:
+    """Compact SNV label for the case-management table."""
+    acmg = (
+        edits.get("ACMG_classification")
+        or variant.get("ACMG_classification")
+        or ""
+    ).strip()
+    acmg_short = _ACMG_SHORT.get(acmg.lower().replace("_", " "), acmg)
+    raw_zyg = (variant.get("zygosity") or "").strip()
+    zyg_key = raw_zyg.lower().replace("_", " ")
+    if zyg_key in ("heterozygous", "heterozygote", "het"):
+        zyg = "het"
+    elif zyg_key in ("homozygous", "homozygote", "hom"):
+        zyg = "hom"
+    elif zyg_key in ("hemizygous", "hemizygote", "hemi"):
+        zyg = "hemi"
+    else:
+        zyg = raw_zyg
+    return ", ".join(x for x in (variant.get("HGVS", ""), acmg_short, zyg) if x)
+
+
+def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
+    """Return only OMIM diseases explicitly selected by the reviewer."""
+    picked = edits.get("report_diseases") or {}
+    if not isinstance(picked, dict) or not any(bool(v) for v in picked.values()):
+        return []
+    omim_id = omim_store.parse_omim_id_from_link(variant.get("OMIM_link", ""))
+    rec = omim_store.lookup_cached(
+        omim_id=omim_id,
+        gene=variant.get("gene_symbol", ""),
+    ) or {}
+    out = []
+    for idx in range(1, 6):
+        if picked.get(str(idx)) or picked.get(idx):
+            disease = (rec.get(f"Disease{idx}") or "").strip()
+            if disease and disease not in out:
+                out.append(disease)
+    return out
+
+
+def _case_management_summary(
+    sample_dir: Path,
+    meta: dict,
+    *,
+    omim_sig: tuple | None = None,
+) -> dict[str, str]:
+    """Summarize marked SNVs for the lightweight case-list modal."""
+    snv_tsv = sample_dir / "snv_indel.annotated.tsv"
+    key = (
+        _file_signature(sample_dir / "sample_metadata.json"),
+        _file_signature(snv_tsv),
+        omim_sig if omim_sig is not None else omim_store.cache_signature(),
+    )
+    with _case_summary_cache_lock:
+        cached = _case_summary_cache.get(key)
+        if cached is not None:
+            _case_summary_cache.move_to_end(key)
+            return cached
+
+    statuses = meta.get("status") or {}
+    wanted = {
+        vid for vid, status in statuses.items()
+        if str(status).strip() in ("1", "2")
+    }
+    edits_by_id = meta.get("edits") or {}
+    causative: list[str] = []
+    diseases: list[str] = []
+    other: list[str] = []
+    if wanted and snv_tsv.exists():
+        import csv as _csv
+        omim_store.ensure_loaded()
+        with snv_tsv.open("r", encoding="utf-8", newline="") as f:
+            for row in _csv.DictReader(f, delimiter="\t"):
+                try:
+                    variant = _row_to_variant(row)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                vid = variant["id"]
+                if vid not in wanted:
+                    continue
+                edits = edits_by_id.get(vid) or {}
+                label = _case_variant_label(variant, edits)
+                if str(statuses.get(vid, "")).strip() == "1":
+                    if label:
+                        causative.append(label)
+                    for disease in _case_selected_diseases(variant, edits):
+                        if disease not in diseases:
+                            diseases.append(disease)
+                elif label:
+                    other.append(label)
+
+    result = {
+        "causative_variants": "; ".join(causative),
+        "diseases": "; ".join(diseases),
+        "other_variants": "; ".join(other),
+        "comment": str(meta.get("comment") or ""),
+        "sign_received_at": str(meta.get("sign_received_at") or ""),
+    }
+    with _case_summary_cache_lock:
+        _case_summary_cache[key] = result
+        _case_summary_cache.move_to_end(key)
+        while len(_case_summary_cache) > _CASE_SUMMARY_CACHE_MAX:
+            _case_summary_cache.popitem(last=False)
+    return result
 
 
 def _load_enriched_snv_cached(
@@ -213,6 +336,7 @@ def list_index() -> list[dict]:
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():
         return out
+    omim_sig = omim_store.cache_signature()
     for sub in sorted(TERTIARY_OUTPUT_ROOT.iterdir()):
         if not sub.is_dir() or sub.name.startswith("_"):
             continue
@@ -222,6 +346,7 @@ def list_index() -> list[dict]:
             # surfaces through /samples/unregistered, not the search bar.
             continue
         meta = _read_json_or(meta_path, {}) or {}
+        summary = _case_management_summary(sub, meta, omim_sig=omim_sig)
         out.append({
             "sample_id":     meta.get("sample_id") or sub.name,
             "lis_id":        meta.get("lis_id") or sub.name,
@@ -235,6 +360,7 @@ def list_index() -> list[dict]:
             "tags":          meta.get("tags", []),
             "has_completed": (sub / "snv_indel.annotated.tsv").exists(),
             "tertiary_dir":  sub.name,
+            **summary,
         })
     # Sort newest-first by registration date; samples without a stored
     # created_at fall to the bottom (stable order by lis_id thereafter).
