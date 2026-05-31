@@ -91,6 +91,7 @@ _INHERITANCE_ZH: dict[str, str] = {
     "XLD":  "X 染色體連鎖顯性遺傳",
     "XLR":  "X 染色體連鎖隱性遺傳",
     "YL":   "Y 染色體連鎖遺傳",
+    "MT":   "粒線體遺傳",
     "Mi":   "粒線體遺傳",
     "DR":   "雙基因隱性遺傳",
     "DD":   "雙基因顯性遺傳",
@@ -588,7 +589,7 @@ def _afs_str(variant: dict) -> str:
 
 def _clinvar_label(variant: dict) -> str:
     sig = (variant.get("CLNSIG") or "").strip()
-    return sig.replace("_", " ") if sig else "—"
+    return sig.replace("_", " ") if sig and sig != "." else "—"
 
 
 def _acmg_label(variant: dict, edits_for_v: dict) -> str:
@@ -655,20 +656,49 @@ def _patho_sentence(acmg_class: str) -> str:
     return "此變異位點之臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。"
 
 
-def _omim_block_for_snv(v: dict) -> str:
+def _picked_disease_for_snv(v: dict, edits: dict) -> str:
+    """Return the reviewer-picked Disease cell, falling back to the first."""
+    picked = edits.get("report_diseases") or {}
+    if isinstance(picked, dict):
+        for idx in range(1, 6):
+            if picked.get(str(idx)) or picked.get(idx):
+                disease = (v.get(f"Disease{idx}") or "").strip()
+                if disease and disease != "NA":
+                    return disease
+    for idx in range(1, 6):
+        disease = (v.get(f"Disease{idx}") or "").strip()
+        if disease and disease != "NA":
+            return disease
+    return (v.get("OMIM_disease") or "").strip()
+
+
+def _disease_name_and_inheritance(disease: str) -> tuple[str, str]:
+    """Parse the disease-specific inheritance tag from the first line."""
+    first_line = (disease or "").splitlines()[0].strip()
+    match = re.search(
+        r"\((AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol)"
+        r"(?:\s*[/,;]\s*(?:AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol))*\)",
+        first_line,
+        re.IGNORECASE,
+    )
+    if not match:
+        return first_line, ""
+    name = first_line[:match.start()].rstrip(" :,;")
+    return name, match.group(0)[1:-1]
+
+
+def _omim_block_for_snv(v: dict, edits: dict) -> str:
     """『GENE 為 DISEASE 的致病基因之一，其遺傳模式屬於 X
     (Phenotype MIM number: M)』 — fall back to whatever is present."""
     gene = v.get("gene_symbol") or v.get("GENE") or "?"
-    disease = (v.get("Disease1") or v.get("OMIM_disease") or "").splitlines()
-    disease_str = disease[0].strip() if disease else ""
-    inh_zh = _inheritance_zh(v.get("Inheritance", "") or "")
+    disease_str, inheritance = _disease_name_and_inheritance(
+        _picked_disease_for_snv(v, edits)
+    )
+    inh_zh = _inheritance_zh(inheritance)
     mim = (v.get("OMIM_id") or "").strip()
 
     parts = [f"{gene}為"]
     if disease_str:
-        # Disease strings sometimes carry a trailing inheritance tag in
-        # parens — strip "(AD)" etc. so we don't double-print.
-        disease_str = re.sub(r"\s*\([A-Za-z?;,/ ]+\)\s*$", "", disease_str)
         parts.append(f"{disease_str}的致病基因之一")
     else:
         parts.append("此疾病的致病基因之一")
@@ -704,7 +734,7 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
         ("ACMG&AMP指引", 13, "token"),
     ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
 
-    _add_paragraph(doc, f"    1. {_omim_block_for_snv(v)}")
+    _add_paragraph(doc, f"    1. {_omim_block_for_snv(v, edits)}")
     _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
     cmt = (edits.get("comment") or "").strip()
     if cmt:
@@ -734,7 +764,7 @@ def _snv_reference_text(v: dict, edits: dict) -> str:
         else "該變異位點在族群資料庫 gnomAD 中未報導過發生率，顯示其為罕見變異位點"
     clnv_sent = (f"在疾病資料庫 (ClinVar) 中此變異位點被報導為「{clinvar}」"
                  if clinvar and clinvar != "—" else
-                 "在疾病資料庫 (ClinVar) 中尚未有此變異位點之紀錄")
+                 "在疾病資料庫 (ClinVar) 中未被報導過")
 
     # PubMed sentence intentionally omitted — the new pipeline carries
     # no HGMD reported-cases column.
@@ -811,7 +841,7 @@ def _mito_reference_text(v: dict, edits: dict) -> str:
     acmg    = _acmg_label(v, edits)
     clnv_sent = (f"在疾病資料庫 (ClinVar) 中此變異位點被報導為「{clinvar}」"
                  if clinvar and clinvar != "—"
-                 else "在疾病資料庫 (ClinVar) 中尚未有此變異位點之紀錄")
+                 else "在疾病資料庫 (ClinVar) 中未被報導過")
     return (
         f"    在個案之檢體中，檢測到1個位於基因{gene}的變異位點。"
         f"變異位點 {nuc} 為{cq_zh}"

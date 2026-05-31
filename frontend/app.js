@@ -595,11 +595,15 @@ async function _initIgvBrowser() {
   const host = document.getElementById("igv-host");
   host.innerHTML = "";
   const build = state.data?.genome_build === "hg19" ? "hg19" : "hg38";
+  const coverageAutoscaleGroup = _igvRoiFor(_igvVariant)
+    ? "ngs-ui-cnv-sv-coverage"
+    : undefined;
   const tracks = _igvBams.map(b => ({
     name: b.label,
     type: "alignment",
     format: "bam",
     displayMode: "SQUISHED",
+    autoscaleGroup: coverageAutoscaleGroup,
     url: _bamUrl(b.path),
     indexURL: _bamUrl(b.path + ".bai"),
   }));
@@ -2689,14 +2693,19 @@ function idsForReportSection(def) {
   return [];
 }
 
-function idsForCandidateSection(def) {
+function idsForCandidateSection(def, { ignoreInPanelOnly = false } = {}) {
   const ids = state.data.categories?.[def.category] || [];
-  return ids.filter(id => _passesMainSnvDisplayFilters(state.data.variants?.[id]));
+  return ids.filter(id => _passesMainSnvDisplayFilters(
+    state.data.variants?.[id],
+    { ignoreInPanelOnly },
+  ));
 }
 
-function _passesMainSnvDisplayFilters(v) {
+function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false } = {}) {
   if (!v) return false;
-  if (document.getElementById("filter-in-panel-only")?.checked && !v.in_panel) return false;
+  if (!ignoreInPanelOnly
+      && document.getElementById("filter-in-panel-only")?.checked
+      && !v.in_panel) return false;
   if (document.getElementById("filter-gnomad-af")?.checked && !_passesGnomadAfFilter(v)) return false;
   if (document.getElementById("filter-vaf")?.checked) {
     const vaf = _numericValue(v.alt_af);
@@ -2707,7 +2716,7 @@ function _passesMainSnvDisplayFilters(v) {
   return true;
 }
 
-function renderBlock(def, ids, openKey) {
+function renderBlock(def, ids, openKey, countIds = ids) {
   const host = document.getElementById(def.el);
   host.innerHTML = "";
   host.dataset.openKey = openKey;
@@ -2715,6 +2724,9 @@ function renderBlock(def, ids, openKey) {
   const isPanel = def.dropdown === "panel" && !!def.category;
   // Skip X-marked variants — panel sections use panel-specific X, others use global
   const visibleIds = ids.filter(id => isPanel
+    ? getPanelStatus(id, def.category) !== "X"
+    : getStatus(id) !== "X");
+  const countVisibleIds = countIds.filter(id => isPanel
     ? getPanelStatus(id, def.category) !== "X"
     : getStatus(id) !== "X");
   const wasOpen = toggledBlocks.has(def.el)
@@ -2726,10 +2738,10 @@ function renderBlock(def, ids, openKey) {
   header.className = "block-header" + (wasOpen ? " open" : "");
   // Counts: "In panel X / Total Y" so reviewers can see at a glance how
   // much of the section overlaps the requested panel.
-  const inPanelCount = visibleIds.filter(
+  const inPanelCount = countVisibleIds.filter(
     id => state.data.variants?.[id]?.in_panel
   ).length;
-  const countLabel = `In panel ${inPanelCount} / Total ${visibleIds.length}`;
+  const countLabel = `In panel ${inPanelCount} / Total ${countVisibleIds.length}`;
   header.innerHTML = `
     <span><span class="arrow"></span><span class="title">${escapeHtml(def.title)}</span></span>
     <span class="count">${escapeHtml(countLabel)}</span>`;
@@ -2811,7 +2823,12 @@ function renderCandidateSections() {
       if (host) host.innerHTML = "";
       continue;
     }
-    renderBlock(def, idsForCandidateSection(def), def.el);
+    renderBlock(
+      def,
+      idsForCandidateSection(def),
+      def.el,
+      idsForCandidateSection(def, { ignoreInPanelOnly: true }),
+    );
   }
   renderPharmcatBlock("cat-pharmcat-c");
   document.getElementById("category-sections").classList.remove("hidden");
@@ -2840,19 +2857,23 @@ function renderTierTabBar() {
   const counts = {};
   for (const tier of TIER_ORDER) {
     const def = CANDIDATE_SECTION_DEFS.find(d => d.tier === tier);
-    const ids = def ? idsForCandidateSection(def) : [];
+    const ids = def
+      ? idsForCandidateSection(def, { ignoreInPanelOnly: true })
+      : [];
     const visible = ids.filter(id => getStatus(id) !== "X");
+    const displayIds = def ? idsForCandidateSection(def) : [];
+    const displayTotal = displayIds.filter(id => getStatus(id) !== "X").length;
     const inPanel = visible.filter(
       id => state.data.variants?.[id]?.in_panel
     ).length;
-    counts[tier] = { total: visible.length, inPanel };
+    counts[tier] = { total: visible.length, inPanel, displayTotal };
   }
 
   // Pick the active tier: keep what was active if it still exists,
   // else first tier with variants, else 1A so the bar is never blank.
   if (!TIER_ORDER.includes(activeTierTab)) activeTierTab = null;
   if (!activeTierTab) {
-    activeTierTab = TIER_ORDER.find(t => counts[t].total > 0) || "1A";
+    activeTierTab = TIER_ORDER.find(t => counts[t].displayTotal > 0) || "1A";
   }
 
   const titles = {
@@ -5051,11 +5072,12 @@ function variantClinSig(v) {
   // ClinVar exports use underscores in CLNSIG values (e.g. "Likely_pathogenic",
   // "Pathogenic/Likely_pathogenic"). Render with spaces in the report.
   const raw = v.CLNSIG || v.CLINSIG || v.CLNSIGn || "";
-  return String(raw).replace(/_/g, " ");
+  const sig = String(raw).trim();
+  return sig === "." ? "" : sig.replace(/_/g, " ");
 }
 function clinvarText(v) {
   const sig = variantClinSig(v);
-  if (!sig) return "此變異位點未在疾病資料庫 (ClinVar) 中報導。";
+  if (!sig) return "在疾病資料庫 (ClinVar) 中未被報導過。";
   return `在疾病資料庫 (ClinVar) 中此變異位點被報導為「${sig}」。`;
 }
 function acmgGuidelineText(v) {
