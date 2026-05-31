@@ -10,8 +10,9 @@ Workbook layout (one row per OMIM phenotype-bearing gene):
     OMIM_id | gene_symbol | OMIM_disease | Inheritance |
     Disease1 .. Disease5 | Done
 
-`Disease1..5` carry the curator-written rich text (~9% of rows have
-Disease1; rarer for the rest). For the ~28% of genes that only have
+`Disease1..5` originate from curator-written rich text (~9% of rows have
+Disease1; rarer for the rest). The in-memory projection keeps only the
+label through its inheritance tag. For the ~28% of genes that only have
 `OMIM_disease` (multi-line, each line `<phenotype name> (<inh>)`),
 we synthesise Disease1..N from those lines so the variant card has
 something to show even when the curator hasn't filled detail yet.
@@ -31,6 +32,11 @@ from ..config import OMIM_XLSX
 
 _DISEASE_FIELDS = ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5")
 _OMIM_URL_RE = re.compile(r"/entry/(\d+)\b")
+_INHERITANCE_CODES = r"(?:AD|AR|XLD|XLR|XL|YL|MT|DD|IC)"
+_INHERITANCE_TAG_RE = re.compile(
+    rf"\({_INHERITANCE_CODES}(?:\s*[/,;]\s*{_INHERITANCE_CODES})*\)",
+    re.IGNORECASE,
+)
 
 _lock = threading.Lock()
 _state: dict = {
@@ -50,6 +56,19 @@ def _empty_row() -> dict:
     }
 
 
+def compact_disease_label(value: str) -> str:
+    """Keep a disease label through its first inheritance tag.
+
+    Curated Disease1..5 cells may append a prose OMIM description after
+    the label, e.g. ``Name (AD) Name is characterized by ...``. Match a
+    known inheritance tag instead of the first closing parenthesis so a
+    phenotype acronym inside the name is not accidentally truncated.
+    """
+    text = str(value or "").strip()
+    match = _INHERITANCE_TAG_RE.search(text)
+    return text[:match.end()].strip() if match else text
+
+
 def _row_to_dict(headers: tuple, row: tuple) -> dict:
     """Project an xlsx row to the fields we expose. Missing columns
     just stay empty so future column re-orderings don't crash."""
@@ -65,7 +84,7 @@ def _row_to_dict(headers: tuple, row: tuple) -> dict:
     out["OMIM_disease"] = get("OMIM_disease")
     out["Inheritance"]  = get("Inheritance")
     for f in _DISEASE_FIELDS:
-        out[f] = get(f)
+        out[f] = compact_disease_label(get(f))
     return out
 
 
@@ -79,7 +98,7 @@ def _synthesize_diseases(row: dict) -> None:
         return
     lines = [ln.strip() for ln in od.splitlines() if ln.strip()]
     for i, ln in enumerate(lines[:5]):
-        row[_DISEASE_FIELDS[i]] = ln
+        row[_DISEASE_FIELDS[i]] = compact_disease_label(ln)
 
 
 def _load(path: Path) -> tuple[dict, dict]:
