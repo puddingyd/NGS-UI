@@ -940,6 +940,24 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .login-hint-code { background: transparent; color: #fff; font-size: 10px; }
 .modal-actions { margin-top: 16px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
 .modal-card-wide { max-width: 760px; }
+.sample-loading-modal { z-index: 140; }
+.sample-loading-card {
+  width: min(360px, 86vw);
+  text-align: center;
+  padding: 28px 24px 22px;
+}
+.sample-loading-card h2 { margin: 10px 0 4px; }
+.sample-loading-card p { margin: 0; }
+.loading-spinner {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto;
+  border: 3px solid #d1d5db;
+  border-top-color: #166534;
+  border-radius: 50%;
+  animation: loading-spin 0.8s linear infinite;
+}
+@keyframes loading-spin { to { transform: rotate(360deg); } }
 
 /* Three-column form grid for the load-new-case modal. Row 1 holds
    姓名 / MRN / 性別; row 2 holds Test type / Genome build / Category. */
@@ -1829,6 +1847,12 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .panel-tab-body { display: none; }
 .panel-tab-body.is-active { display: block; }
+.phenotype-tool-link {
+  color: #166534;
+  font-weight: 600;
+  text-decoration-color: #86a98e;
+}
+.phenotype-tool-link:hover { color: #14532d; }
 .fixed-panel-host .muted { color: var(--muted); font-size: 12px; padding: 6px 0; }
 
 .fp-group { margin-bottom: 10px; }

@@ -211,7 +211,7 @@
             <button class="panel-tab" data-pheno-tab="WES-I"  type="button">WES-I</button>
             <button class="panel-tab" data-pheno-tab="WES-II" type="button">WES-II</button>
             <button class="panel-tab" data-pheno-tab="WGS"    type="button">WGS</button>
-            <button class="panel-tab" data-pheno-tab="other"  type="button">Other panel</button>
+            <button class="panel-tab is-active" data-pheno-tab="other"  type="button">Other panel</button>
           </div>
           <div class="panel-tab-bodies">
             <div class="panel-tab-body" data-pheno-tab-body="WES-I">
@@ -223,13 +223,13 @@
             <div class="panel-tab-body" data-pheno-tab-body="WGS">
               <div class="fixed-panel-host" data-series="WGS"><div class="muted">載入中…</div></div>
             </div>
-            <div class="panel-tab-body" data-pheno-tab-body="other">
+            <div class="panel-tab-body is-active" data-pheno-tab-body="other">
               <div class="hpo-add">
                 <input id="panel-search" type="text" placeholder="輸入 panel 名稱搜尋（自訂或匯入的 panel）…" autocomplete="off" />
                 <ul id="panel-search-dropdown" class="combobox-dropdown hidden"></ul>
               </div>
               <p class="hint-line muted" style="margin-top:8px;font-size:12px">
-                自訂 panel 請到「<a href="/phenotype/" target="_blank" rel="noopener">輸入臨床表徵 (HPO/panel)</a>」工具建立，建立後會出現在這個搜尋裡。
+                自訂 panel 請到「<a class="phenotype-tool-link" href="/phenotype/" target="_blank" rel="noopener">輸入臨床表徵 (HPO/panel)</a>」工具建立，建立後會出現在這個搜尋裡。
               </p>
             </div>
           </div>
@@ -456,11 +456,35 @@
           </div>
         </div>
         <div class="phenotype-row">
-          <label class="phenotype-label">Custom panels</label>
+          <label class="phenotype-label">Gene panels</label>
           <ul id="new-case-panel-chips" class="phenotype-chips"></ul>
-          <div class="hpo-add">
-            <input id="new-case-panel-search" type="text" placeholder="輸入 panel 名稱搜尋…" autocomplete="off" />
-            <ul id="new-case-panel-search-dropdown" class="combobox-dropdown hidden"></ul>
+        </div>
+        <div class="phenotype-row phenotype-row-tabs">
+          <label class="phenotype-label">&nbsp;</label>
+          <div class="panel-tabs-wrap">
+            <div class="panel-tabs" role="tablist">
+              <button class="panel-tab" data-nc-pheno-tab="WES-I"  type="button">WES-I</button>
+              <button class="panel-tab" data-nc-pheno-tab="WES-II" type="button">WES-II</button>
+              <button class="panel-tab" data-nc-pheno-tab="WGS"    type="button">WGS</button>
+              <button class="panel-tab is-active" data-nc-pheno-tab="other" type="button">Other panel</button>
+            </div>
+            <div class="panel-tab-bodies">
+              <div class="panel-tab-body" data-nc-pheno-tab-body="WES-I">
+                <div class="fixed-panel-host" data-series="WES-I"><div class="muted">載入中…</div></div>
+              </div>
+              <div class="panel-tab-body" data-nc-pheno-tab-body="WES-II">
+                <div class="fixed-panel-host" data-series="WES-II"><div class="muted">載入中…</div></div>
+              </div>
+              <div class="panel-tab-body" data-nc-pheno-tab-body="WGS">
+                <div class="fixed-panel-host" data-series="WGS"><div class="muted">載入中…</div></div>
+              </div>
+              <div class="panel-tab-body is-active" data-nc-pheno-tab-body="other">
+                <div class="hpo-add">
+                  <input id="new-case-panel-search" type="text" placeholder="輸入 panel 名稱搜尋（自訂或匯入的 panel）…" autocomplete="off" />
+                  <ul id="new-case-panel-search-dropdown" class="combobox-dropdown hidden"></ul>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -474,6 +498,14 @@
         <button type="submit" class="btn btn-primary">載入</button>
       </div>
     </form>
+  </div>
+
+  <div id="sample-loading-modal" class="modal sample-loading-modal hidden" aria-live="polite" aria-busy="true">
+    <div class="modal-card sample-loading-card">
+      <div class="loading-spinner" aria-hidden="true"></div>
+      <h2>個案載入中</h2>
+      <p class="muted">正在整理分析資料，請稍候，不需要重複點擊。</p>
+    </div>
   </div>
 
   <!-- Registered case list: reviewers can remove the UI copy and

@@ -121,7 +121,19 @@ function resolveLIS(query) {
   return null;
 }
 
-async function loadSample(LIS_ID) {
+let _sampleLoadingDepth = 0;
+function showSampleLoading() {
+  _sampleLoadingDepth += 1;
+  document.getElementById("sample-loading-modal")?.classList.remove("hidden");
+}
+function hideSampleLoading() {
+  _sampleLoadingDepth = Math.max(0, _sampleLoadingDepth - 1);
+  if (!_sampleLoadingDepth) {
+    document.getElementById("sample-loading-modal")?.classList.add("hidden");
+  }
+}
+
+async function _loadSample(LIS_ID) {
   // The combobox carries the row's `sample_id` (which equals LIS_ID for
   // legacy samples). Look it up so we use the directory name the backend
   // wants on the URL path.
@@ -193,6 +205,15 @@ async function loadSample(LIS_ID) {
   } else {
     state.cnvSvPending = false;
     state.mitoPending  = false;
+  }
+}
+
+async function loadSample(LIS_ID) {
+  showSampleLoading();
+  try {
+    return await _loadSample(LIS_ID);
+  } finally {
+    hideSampleLoading();
   }
 }
 
@@ -1165,30 +1186,32 @@ function _initPhenoPanelTabs() {
   });
 }
 
+function _fixedPanelHostHtml(series) {
+  if (!series || !(series.groups || []).length) {
+    return '<div class="muted">尚未匯入此系列的 panel</div>';
+  }
+  return series.groups.map((g) => `
+    <div class="fp-group">
+      <div class="fp-group-title">${escapeHtml(g.category)}</div>
+      <div class="fp-chips">
+        ${(g.panels || []).map((p) => `
+          <label class="fp-chip" data-key="${escapeAttr(p.key)}" title="${escapeAttr(p.key)}">
+            <input type="checkbox" class="fp-chip-cb" value="${escapeAttr(p.key)}">
+            <span class="fp-chip-label">${escapeHtml(p.name)}</span>
+            <span class="fp-chip-count">(${p.gene_count || 0})</span>
+          </label>
+        `).join("")}
+      </div>
+    </div>
+  `).join("");
+}
+
 async function renderFixedPanelHosts() {
   await loadFixedPanelIndex();
   const seriesByKey = {};
   for (const s of (_fixedPanelIndex.series || [])) seriesByKey[s.key] = s;
   document.querySelectorAll("#phenotype-card .fixed-panel-host").forEach((host) => {
-    const s = seriesByKey[host.dataset.series];
-    if (!s || !(s.groups || []).length) {
-      host.innerHTML = '<div class="muted">尚未匯入此系列的 panel</div>';
-      return;
-    }
-    host.innerHTML = s.groups.map((g) => `
-      <div class="fp-group">
-        <div class="fp-group-title">${escapeHtml(g.category)}</div>
-        <div class="fp-chips">
-          ${(g.panels || []).map((p) => `
-            <label class="fp-chip" data-key="${escapeAttr(p.key)}" title="${escapeAttr(p.key)}">
-              <input type="checkbox" class="fp-chip-cb" value="${escapeAttr(p.key)}">
-              <span class="fp-chip-label">${escapeHtml(p.name)}</span>
-              <span class="fp-chip-count">(${p.gene_count || 0})</span>
-            </label>
-          `).join("")}
-        </div>
-      </div>
-    `).join("");
+    host.innerHTML = _fixedPanelHostHtml(seriesByKey[host.dataset.series]);
   });
   document.querySelectorAll("#phenotype-card .fp-chip-cb").forEach((cb) => {
     cb.addEventListener("change", () => {
@@ -1208,6 +1231,57 @@ async function renderFixedPanelHosts() {
 function syncFixedPanelChipState() {
   const picked = new Set(phenoEdit.panels.map(p => p.name));
   document.querySelectorAll("#phenotype-card .fp-chip-cb").forEach((cb) => {
+    const on = picked.has(cb.value);
+    cb.checked = on;
+    cb.closest(".fp-chip").classList.toggle("is-selected", on);
+  });
+}
+
+function _initNewCasePanelTabs() {
+  document.querySelectorAll("#new-case-form .panel-tab").forEach((btn) => {
+    if (btn.dataset.wired === "1") return;
+    btn.dataset.wired = "1";
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.ncPhenoTab;
+      const isOpen = btn.classList.contains("is-active");
+      document.querySelectorAll("#new-case-form .panel-tab").forEach((b) =>
+        b.classList.toggle("is-active", !isOpen && b === btn));
+      document.querySelectorAll("#new-case-form .panel-tab-body").forEach((body) =>
+        body.classList.toggle("is-active", !isOpen && body.dataset.ncPhenoTabBody === target));
+    });
+  });
+}
+
+function _resetNewCasePanelTabs() {
+  document.querySelectorAll("#new-case-form .panel-tab").forEach((btn) =>
+    btn.classList.toggle("is-active", btn.dataset.ncPhenoTab === "other"));
+  document.querySelectorAll("#new-case-form .panel-tab-body").forEach((body) =>
+    body.classList.toggle("is-active", body.dataset.ncPhenoTabBody === "other"));
+}
+
+async function renderNewCaseFixedPanelHosts() {
+  await loadFixedPanelIndex();
+  const seriesByKey = {};
+  for (const s of (_fixedPanelIndex.series || [])) seriesByKey[s.key] = s;
+  document.querySelectorAll("#new-case-form .fixed-panel-host").forEach((host) => {
+    host.innerHTML = _fixedPanelHostHtml(seriesByKey[host.dataset.series]);
+  });
+  document.querySelectorAll("#new-case-form .fp-chip-cb").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const key = cb.value;
+      const idx = newCaseEdit.panels.findIndex(p => p.name === key);
+      if (cb.checked && idx < 0) newCaseEdit.panels.push({ name: key, weight: 1 });
+      if (!cb.checked && idx >= 0) newCaseEdit.panels.splice(idx, 1);
+      _markNewCaseEdited();
+      renderNewCasePhenoEditor();
+    });
+  });
+  syncNewCaseFixedPanelChipState();
+}
+
+function syncNewCaseFixedPanelChipState() {
+  const picked = new Set((newCaseEdit.panels || []).map(p => p.name));
+  document.querySelectorAll("#new-case-form .fp-chip-cb").forEach((cb) => {
     const on = picked.has(cb.value);
     cb.checked = on;
     cb.closest(".fp-chip").classList.toggle("is-selected", on);
@@ -6141,12 +6215,13 @@ document.addEventListener("click", ev => {
   // is the only direct child; everything else (the dim) is the modal
   // itself. Route through hideModal() so per-modal teardown runs.
   if (t.matches?.(".modal")) {
+    if (t.id === "sample-loading-modal") return;
     hideModal(t.id);
   }
 });
 document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") {
-    document.querySelectorAll(".modal:not(.hidden)").forEach(m => m.classList.add("hidden"));
+    document.querySelectorAll(".modal:not(.hidden):not(#sample-loading-modal)").forEach(m => m.classList.add("hidden"));
   }
 });
 
@@ -6221,6 +6296,9 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   // first so the just-finished pipeline output sits at the top.
   const select = document.getElementById("new-case-lis-id");
   select.innerHTML = `<option value="">— 載入中… —</option>`;
+  _initNewCasePanelTabs();
+  _resetNewCasePanelTabs();
+  renderNewCaseFixedPanelHosts();
   showModal("new-case-modal");
   try {
     const list = await apiFetch("/samples/unregistered") || [];
@@ -6368,6 +6446,7 @@ function renderNewCasePhenoEditor() {
         + `</li>`;
     }).join("");
   }
+  syncNewCaseFixedPanelChipState();
 }
 
 function renderNewCaseEmrRef() {
@@ -6460,8 +6539,13 @@ async function _ncRunPanelSearch(q) {
   if (!drop) return;
   q = (q || "").trim();
   let rows = [];
-  try { rows = await apiFetch("/panels") || []; }
+  try {
+    rows = await apiFetch("/panels") || [];
+    await loadFixedPanelIndex();
+  }
   catch { rows = []; }
+  const picked = new Set((newCaseEdit.panels || []).map(p => p.name));
+  rows = rows.filter(r => !picked.has(r.name) && !_fixedPanelKeys.has(r.name));
   if (q) {
     const ql = q.toLowerCase();
     rows = rows.filter(r => (r.name || "").toLowerCase().includes(ql));
@@ -6471,7 +6555,7 @@ async function _ncRunPanelSearch(q) {
   drop.innerHTML = rows.map(r =>
     `<li class="combobox-option" data-nc-panel-pick='${escapeAttr(JSON.stringify(r))}'>`
     + `<span class="opt-name">${escapeHtml(r.name || "")}</span>`
-    + (r.n_genes ? `<span class="opt-mrn">${r.n_genes} genes</span>` : "")
+    + `<span class="opt-mrn">${Number(r.gene_count ?? r.n_genes ?? 0)} genes</span>`
     + `</li>`
   ).join("");
   drop.classList.remove("hidden");
@@ -6528,6 +6612,7 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
   // run_analysis=true so backend enqueues exomiser/lirical right
   // after register, regardless of whether chips were edited.
   fd.set("run_analysis", "true");
+  showSampleLoading();
   try {
     const resp = await fetch(`${API_BASE}/samples`, {
       method: "POST",
@@ -6557,6 +6642,8 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
   } catch (e) {
     errEl.textContent = e.message;
     errEl.classList.remove("hidden");
+  } finally {
+    hideSampleLoading();
   }
 });
 
@@ -6804,7 +6891,13 @@ function _dragenFmtSize(b) {
 
 function _dragenFmtMtime(t) {
   if (!t) return "";
-  try { return new Date(t * 1000).toISOString().slice(0, 16).replace("T", " "); }
+  try {
+    return new Intl.DateTimeFormat("zh-TW", {
+      timeZone: "Asia/Taipei",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(new Date(t * 1000));
+  }
   catch { return ""; }
 }
 
