@@ -69,7 +69,7 @@ process ADD_CALLERS_TAG {
     script:
     """
     # 執行 add_callers_tag.py
-    # --sample 傳入 sample_id，腳本會自動尋找 {sample_id}_DV 和 {sample_id}_HC column
+    # --sample 是輸出 ID；若 VCF 內 prefix 不同，腳本會採用唯一的 DV/HC 配對
     python3 ${params.scripts_dir}/add_callers_tag.py \\
         --input  ${ensemble_vcf} \\
         --sample ${sample_id} \\

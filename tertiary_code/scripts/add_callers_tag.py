@@ -200,6 +200,35 @@ def get_vaf(variant, sample_idx: int) -> str:
         return "."
 
 
+def resolve_caller_samples(samples: list[str], sample_id: str) -> tuple[str, str]:
+    """Resolve the DV/HC FORMAT columns without coupling them to the output ID."""
+    expected = (f"{sample_id}_DV", f"{sample_id}_HC")
+    if expected[0] in samples and expected[1] in samples:
+        return expected
+
+    dv_prefixes = {name[:-3] for name in samples if name.endswith("_DV")}
+    hc_prefixes = {name[:-3] for name in samples if name.endswith("_HC")}
+    paired_prefixes = sorted(dv_prefixes & hc_prefixes)
+    if len(paired_prefixes) == 1:
+        prefix = paired_prefixes[0]
+        print(
+            f"[WARN] 輸出 sample ID {sample_id} 與 VCF column prefix {prefix} 不同；"
+            "沿用 VCF 內唯一的 DV/HC 配對",
+            file=sys.stderr,
+        )
+        return f"{prefix}_DV", f"{prefix}_HC"
+
+    available = ", ".join(samples) or "（無 sample column）"
+    if not paired_prefixes:
+        detail = "找不到完整的 *_DV / *_HC 配對"
+    else:
+        detail = f"找到多組 DV/HC 配對：{', '.join(paired_prefixes)}"
+    raise ValueError(
+        f"無法為輸出 sample ID {sample_id} 判定 VCF caller columns：{detail}。"
+        f"VCF sample columns：{available}"
+    )
+
+
 # ──────────────────────────────────────────────
 # 主要處理函式
 # ──────────────────────────────────────────────
@@ -215,17 +244,14 @@ def add_callers_tag(input_path: str, sample_id: str, output_path: str):
     vcf_in = VCF(input_path)
 
     # ── 確認 sample column ────────────────────
-    expected_dv = f"{sample_id}_DV"
-    expected_hc = f"{sample_id}_HC"
     samples = vcf_in.samples
 
     print(f"[INFO] VCF 中的 sample columns：{samples}", file=sys.stderr)
 
-    if expected_dv not in samples:
-        print(f"[ERROR] 找不到 DV sample column：{expected_dv}", file=sys.stderr)
-        sys.exit(1)
-    if expected_hc not in samples:
-        print(f"[ERROR] 找不到 HC sample column：{expected_hc}", file=sys.stderr)
+    try:
+        expected_dv, expected_hc = resolve_caller_samples(samples, sample_id)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
     dv_idx = samples.index(expected_dv)

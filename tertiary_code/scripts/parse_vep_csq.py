@@ -345,6 +345,36 @@ def parse_gt_field(format_str: str, sample_str: str, field: str) -> str:
     return values[idx] if idx < len(values) else "."
 
 
+def resolve_caller_columns(columns: list[str], sample_id: str) -> tuple[int, int]:
+    """Resolve DV/HC columns while allowing the output ID to be an alias."""
+    sample_columns = columns[9:] if len(columns) > 9 else []
+    expected = (f"{sample_id}_DV", f"{sample_id}_HC")
+    if expected[0] in sample_columns and expected[1] in sample_columns:
+        return columns.index(expected[0]), columns.index(expected[1])
+
+    dv_prefixes = {name[:-3] for name in sample_columns if name.endswith("_DV")}
+    hc_prefixes = {name[:-3] for name in sample_columns if name.endswith("_HC")}
+    paired_prefixes = sorted(dv_prefixes & hc_prefixes)
+    if len(paired_prefixes) == 1:
+        prefix = paired_prefixes[0]
+        print(
+            f"[parse_vep_csq] WARNING：輸出 sample ID {sample_id} 與 VCF column "
+            f"prefix {prefix} 不同；沿用 VCF 內唯一的 DV/HC 配對",
+            file=sys.stderr,
+        )
+        return columns.index(f"{prefix}_DV"), columns.index(f"{prefix}_HC")
+
+    available = ", ".join(sample_columns) or "（無 sample column）"
+    if not paired_prefixes:
+        detail = "找不到完整的 *_DV / *_HC 配對"
+    else:
+        detail = f"找到多組 DV/HC 配對：{', '.join(paired_prefixes)}"
+    raise ValueError(
+        f"無法為輸出 sample ID {sample_id} 判定 VCF caller columns：{detail}。"
+        f"VCF sample columns：{available}"
+    )
+
+
 # ──────────────────────────────────────────────────────────────
 # 主解析流程
 # ──────────────────────────────────────────────────────────────
@@ -388,9 +418,6 @@ def parse_vep_vcf(vep_vcf: str, pangolin_scores: dict,
     ]
 
     opener = gzip.open if vep_vcf.endswith(".gz") else open
-    sample_dv = f"{sample_id}_DV"
-    sample_hc = f"{sample_id}_HC"
-
     # sample column index（從 #CHROM 行解析）
     col_dv = None
     col_hc = None
@@ -408,10 +435,7 @@ def parse_vep_vcf(vep_vcf: str, pangolin_scores: dict,
             # 從 #CHROM 行取 sample column 位置
             if line.startswith("#CHROM"):
                 cols = line.split("\t")
-                if sample_dv in cols:
-                    col_dv = cols.index(sample_dv)
-                if sample_hc in cols:
-                    col_hc = cols.index(sample_hc)
+                col_dv, col_hc = resolve_caller_columns(cols, sample_id)
                 continue
 
             if line.startswith("#"):
