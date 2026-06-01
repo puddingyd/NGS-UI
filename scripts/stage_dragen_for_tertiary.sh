@@ -32,7 +32,7 @@
 #     --sample VAL-58-dragen \
 #     [--stage-home $HOME/NGS_UI/nf_stage] \
 #     [--ref-fasta /home/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta] \
-#     [--skip-norm]
+#     [--skip-norm] [--keep-chrm]
 #
 # After this:
 #   nextflow ... --sample_id $SID --input_dir $STAGE_HOME/$SID ...
@@ -54,6 +54,7 @@ STAGE_HOME="${STAGE_HOME:-$HOME/NGS_UI/nf_stage}"
 SKIP_NORM=0
 SKIP_BED=0
 SKIP_GNOMAD=0
+KEEP_CHRM=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --in)              IN="$2"; shift 2;;
@@ -66,6 +67,7 @@ while [ $# -gt 0 ]; do
     --skip-norm)       SKIP_NORM=1; shift;;
     --skip-bed)        SKIP_BED=1; shift;;
     --skip-gnomad)     SKIP_GNOMAD=1; shift;;
+    --keep-chrm)       KEEP_CHRM=1; shift;;
     -h|--help)         sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -96,6 +98,7 @@ mkdir -p "$STAGE_DIR"
 OUT="$STAGE_DIR/${SID}.ensemble.fixed.vcf.gz"
 TMP="$STAGE_DIR/.${SID}.stage.tmp.vcf"
 MID="$STAGE_DIR/.${SID}.stage.mid.vcf.gz"
+rm -f "$OUT" "$OUT.tbi" "$TMP" "$TMP.synth" "$TMP.synth.gz" "$MID" "$MID.tbi"
 
 echo "[stage] in            : $IN"
 echo "[stage] out           : $OUT"
@@ -106,6 +109,8 @@ echo "[stage] sample        : $SID  (→ ${SID}_DV + empty ${SID}_HC)"
                          || echo "[stage] gene BED      : OFF (--skip-bed)"
 [ "$SKIP_GNOMAD" -eq 0 ] && echo "[stage] gnomAD filter : on  (drop AF > $GNOMAD_AF_CUTOFF; $GNOMAD_AF_VCF)" \
                          || echo "[stage] gnomAD filter : OFF (no $GNOMAD_AF_VCF — build with scripts/build_gnomad_af_vcf.sh)"
+[ "$KEEP_CHRM" -eq 1 ]    && echo "[stage] chrM          : keep" \
+                         || echo "[stage] chrM          : drop"
 
 # Inspect the input sample names
 SAMPLES=$(apptainer exec --bind /home,"$STAGE_HOME" "$BCF_SIF" \
@@ -155,13 +160,15 @@ BIND_DIRS="/home,$STAGE_HOME,$(dirname "$REF_FASTA"),$(dirname "$GENE_BED")"
 # "unknown file type") when many bcftools processes share a single
 # stdin chain in some container builds.
 echo "[stage] phase 1: drop chrM → gene-body BED → norm → bgzipped intermediate"
+CHRM_STEP="-t ^chrM,^MT"
+[ "$KEEP_CHRM" -eq 1 ] && CHRM_STEP=""
 BED_STEP=""
 [ "$SKIP_BED" -eq 0 ]  && BED_STEP="| bcftools view -T '$GENE_BED' -"
 NORM_STEP=""
 [ "$SKIP_NORM" -eq 0 ] && NORM_STEP="| bcftools norm -f '$REF_FASTA' -m -any --check-ref w --keep-sum AD"
 apptainer exec --bind "$BIND_DIRS" "$BCF_SIF" bash -c "
   set -e
-  bcftools view --regions-overlap pos -t ^chrM,^MT '$IN' \
+  bcftools view --regions-overlap pos $CHRM_STEP '$IN' \
     $BED_STEP \
     $NORM_STEP \
     -Oz -o '$MID'

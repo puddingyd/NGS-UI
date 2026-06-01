@@ -52,7 +52,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
-                       TERTIARY_OUTPUT_ROOT, TERTIARY_PIPELINE_SCRIPTS_DIR)
+                       TERTIARY_OUTPUT_ROOT)
 from ..services import dragen_jobs
 
 
@@ -273,9 +273,20 @@ def main() -> int:
             # without any filtering — Nextflow sees every variant.
             _set_step(job_id, "stage")
             if mode == "inhouse":
-                _symlink_inhouse_into_nf_stage(Path(vcf), sid, nf_stage)
-                _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
-                     f"{sid}.ensemble.fixed.vcf.gz (no filter)")
+                source_sid = Path(vcf).name.removesuffix(".ensemble.fixed.vcf.gz")
+                if source_sid == sid:
+                    _symlink_inhouse_into_nf_stage(Path(vcf), sid, nf_stage)
+                    _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
+                         f"{sid}.ensemble.fixed.vcf.gz (no filter)")
+                else:
+                    _run([str(scripts / "stage_dragen_for_tertiary.sh"),
+                          "--in",         vcf,
+                          "--sample",     sid,
+                          "--skip-norm",
+                          "--skip-bed",
+                          "--skip-gnomad",
+                          "--keep-chrm"],
+                         label="2a/4 stage in-house alias")
             else:
                 _run([str(scripts / "stage_dragen_for_tertiary.sh"),
                       "--in",     vcf,
@@ -314,7 +325,6 @@ def main() -> int:
                 "--input_dir", str(nf_stage),
                 "--seq_type",  seq_type,
                 "--out_dir",   str(PIPELINE_OUT_ROOT),
-                "--scripts_dir", str(TERTIARY_PIPELINE_SCRIPTS_DIR),
             ], label="2b/4 nextflow", on_line=track_nextflow)
 
             existing = _find_pipeline_acmg_tsv(sid)

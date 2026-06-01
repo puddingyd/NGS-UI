@@ -183,14 +183,6 @@ INHOUSE_VCF_ROOTS = [
     ).split(":") if p
 ]
 
-# The worker runs the production Nextflow workflow/config from
-# /home/pipeline/tertiary_code, but helper scripts that are coupled to
-# NGS-UI behaviour should follow this checkout on each git pull.
-TERTIARY_PIPELINE_SCRIPTS_DIR = Path(os.environ.get(
-    "NGS_UI_TERTIARY_SCRIPTS_DIR",
-    REPO_ROOT / "tertiary_code" / "scripts",
-))
-
 # Cached scan results for both DRAGEN + in-house VCF discovery. find(1)
 # across the datalake can take 1–30 s; the modal reads this file
 # directly so it opens instantly. A 🔄 button POSTs to
