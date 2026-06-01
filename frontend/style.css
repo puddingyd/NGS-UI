@@ -1848,11 +1848,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .panel-tab-body { display: none; }
 .panel-tab-body.is-active { display: block; }
 .phenotype-tool-link {
-  color: #166534;
+  color: #111;
   font-weight: 600;
-  text-decoration-color: #86a98e;
+  text-decoration: underline;
 }
-.phenotype-tool-link:hover { color: #14532d; }
+.phenotype-tool-link:hover { color: #000; }
 .fixed-panel-host .muted { color: var(--muted); font-size: 12px; padding: 6px 0; }
 
 .fp-group { margin-bottom: 10px; }
