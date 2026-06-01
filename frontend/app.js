@@ -6032,6 +6032,7 @@ document.getElementById("btn-emr-sync")?.addEventListener("click", async () => {
 });
 
 async function bootAfterAuth() {
+  showSampleLoading();
   try {
     await loadIndex();
     const n = state.index ? state.index.length : 0;
@@ -6039,6 +6040,8 @@ async function bootAfterAuth() {
       n ? `索引已載入：${n} 筆樣本` : "索引為空";
   } catch (e) {
     document.getElementById("search-status").textContent = "載入索引失敗: " + e.message;
+  } finally {
+    hideSampleLoading();
   }
   // Probe whether the EMR client_id is configured server-side. The
   // 🔄 EMR sync button stays hidden when disabled so the UI doesn't

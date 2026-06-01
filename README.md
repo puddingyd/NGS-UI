@@ -123,7 +123,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` 篩選並全文搜尋；表格會摘要 causative / other variant、已勾選 OMIM disease、主畫面 comment、簽收與載入時間。也可刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時可選擇同步刪除或保留 `/home/pipeline/tertiary_output/{LIS_ID}/`，按取消則完全不刪除。
    - 主畫面搜尋框上方有可複選的 `WES` / `WGS` 圓形 filter，取消勾選後對應 test type 不出現在搜尋清單。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV 與 Mitochondria 在背景載完後補上：
-   - 個案核心資料載入期間會顯示不可誤關閉的「個案載入中」遮罩，避免重複點擊。
+   - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
    - SNV/Indel 顯示 filter 預設啟用 `In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。
    - TSV stop-gap 只移除 `REF/ALT=*` 與非 primary contig；DRAGEN staging 仍會先移除 `AF > 0.01` 的 common variants。
