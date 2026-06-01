@@ -5109,7 +5109,7 @@ const CONSEQUENCE_CH = {
 // ACMG / ClinVar 5-tier classifier → 中文 (used in the "此為...之變異位點" sentence).
 const ACMG_CH = {
   "Pathogenic":             "致病性",
-  "Likely pathogenic":      "可能致病性",
+  "Likely pathogenic":      "疑似致病性",
   "Uncertain significance": "不確定意義",
   "Likely benign":          "可能良性",
   "Benign":                 "良性",
@@ -5122,7 +5122,7 @@ const INHERITANCE_LABELS = {
   AR:  "體染色體隱性遺傳",
   XLD: "性染色體顯性遺傳",
   XLR: "性染色體隱性遺傳",
-  XL:  "性染色體遺傳",
+  XL:  "性聯遺傳",
   YL:  "Y 染色體遺傳",
   MT:  "粒線體遺傳",
   DD:  "雙等位基因顯性遺傳",
@@ -5475,7 +5475,7 @@ function buildClinicalTXT() {
   lines.push("五、檢測結果注釋");
   lines.push(`  1. 本檢測結果比對參考序列為人類 ${build} 版本。`);
   lines.push(...wrapText(
-    `2. ClinVar 及 ACMG&AMP 指引: 引用 ClinVar 資料庫截至 ${clinvarDate} 更新的註解，及美國醫學遺傳學暨基因體學學會 (ACMG) 與分子病理學學會 (AMP) 2015 年頒佈的指引，並且主要列入致病 (Pathogenic) 及可能致病 (Likely pathogenic) 變異；其他類別變異經醫師判斷認為與疾病相關時亦可列入。`,
+    `2. ClinVar 及 ACMG&AMP 指引: 引用 ClinVar 資料庫截至 ${clinvarDate} 更新的註解，及美國醫學遺傳學暨基因體學學會 (ACMG) 與分子病理學學會 (AMP) 2015 年頒佈的指引，並且主要列入致病 (Pathogenic) 及疑似致病 (Likely pathogenic) 變異；其他類別變異經醫師判斷認為與疾病相關時亦可列入。`,
     74, 2));
   lines.push("  3. 參考資料:");
   lines.push("     a. 疾病資料庫: OMIM、ClinVar");
@@ -5957,7 +5957,7 @@ async function buildScreeningPDF() {
   w.heading("檢測結果注釋", 2);
   const noteLines = [
     "1. 本檢測結果比對參考序列為人類 hg38 版本。",
-    `2. ClinVar 及 ACMG&AMP 指引: 引用 ClinVar 資料庫截至 ${clinvarDate} 更新的註解，及美國醫學遺傳學暨基因體學學會 (ACMG) 與分子病理學學會 (AMP) 2015 年頒佈的指引，並且主要列入致病 (Pathogenic) 及可能致病 (Likely pathogenic) 變異；其他類別變異經醫師判斷認為與疾病相關時亦可列入。`,
+    `2. ClinVar 及 ACMG&AMP 指引: 引用 ClinVar 資料庫截至 ${clinvarDate} 更新的註解，及美國醫學遺傳學暨基因體學學會 (ACMG) 與分子病理學學會 (AMP) 2015 年頒佈的指引，並且主要列入致病 (Pathogenic) 及疑似致病 (Likely pathogenic) 變異；其他類別變異經醫師判斷認為與疾病相關時亦可列入。`,
     "3. 參考資料:",
     "     a. 疾病資料庫: OMIM、ClinVar",
     "     b. 族群資料庫: gnomAD (v4.1 genome)",
@@ -7417,7 +7417,7 @@ async function _renderPipelineList() {
         <th></th>
       </tr>`;
     const body = rows.map(row => {
-      const ready = row.has_acmg ? "完成" : "未完成";
+      const ready = row.has_acmg ? "完成" : (row.has_output ? "未完成" : "無輸出");
       const state = row.job_state ? ` · ${row.job_state}` : "";
       return `
         <tr>
@@ -7468,7 +7468,7 @@ function setupPipelineList() {
       }
       return;
     }
-    if (!confirm(`確定刪除三級分析原始檔案？\n\n/home/pipeline/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
+    if (!confirm(`確定刪除三級分析原始檔案與 NGS-UI job log？\n\n/home/pipeline/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
     delBtn.disabled = true;
     if (status) status.textContent = `刪除 ${sid} 中…`;
     try {

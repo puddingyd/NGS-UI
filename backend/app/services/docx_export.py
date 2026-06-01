@@ -87,9 +87,9 @@ _CONSEQUENCE_ZH: dict[str, str] = {
 _INHERITANCE_ZH: dict[str, str] = {
     "AD":   "體染色體顯性遺傳",
     "AR":   "體染色體隱性遺傳",
-    "XL":   "X 染色體連鎖遺傳",
-    "XLD":  "X 染色體連鎖顯性遺傳",
-    "XLR":  "X 染色體連鎖隱性遺傳",
+    "XL":   "性聯遺傳",
+    "XLD":  "性染色體顯性遺傳",
+    "XLR":  "性染色體隱性遺傳",
     "YL":   "Y 染色體連鎖遺傳",
     "MT":   "粒線體遺傳",
     "Mi":   "粒線體遺傳",
@@ -352,17 +352,18 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
         return out or [""]
 
     if mode == "hgvs":
-        # Split nucleotide HGVS so the protein notation lands on its
-        # own line: "c.4393C>T(p.Arg1465Ter)" → "c.4393C>T" / "(p.Arg
-        # 1465Ter)" when both pieces fit. Falls back to char wrap when
-        # the c./p. portion alone exceeds the column.
+        # Keep one blank display column between HGVS content and the next
+        # table cell. Protein notation always starts on its own line.
+        content_width = max(1, width - 1)
         m = re.search(r"(\(p\.[^)]*\)?)$", s)
         if m and m.start() > 0:
             prefix = s[: m.start()]
             suffix = m.group(1)
-            if _str_width(prefix) <= width and _str_width(suffix) <= width:
-                return [prefix, suffix]
-        return _wrap_to_cols(s, width, mode="char")
+            return (
+                _wrap_to_cols(prefix, content_width, mode="char")
+                + _wrap_to_cols(suffix, content_width, mode="char")
+            )
+        return _wrap_to_cols(s, content_width, mode="char")
 
     out, cur, cur_w = [], "", 0
     for c in s:
@@ -548,6 +549,14 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
                         "以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或"
                         "相關資料庫更新，可能影響變異位點ACMG判讀結果。")
     _blank(doc)
+    referenced = bucket1 + bucket2
+    if referenced:
+        _add_paragraph(doc, "  參考資料:")
+        for kind, v in referenced:
+            _add_paragraph(doc, _variant_reference_text(
+                kind, v, edits=edits.get(v.get("id", ""), {}), is_wgs=is_wgs,
+            ))
+            _blank(doc)
 
 
 def _render_variant(doc, kind: str, v: dict, *, tier: str, edits: dict,
@@ -558,6 +567,22 @@ def _render_variant(doc, kind: str, v: dict, *, tier: str, edits: dict,
         _mito_variant_block(doc, v, tier=tier, edits=edits)
     else:  # cnv / sv share the same template
         _cnv_variant_block(doc, v, tier=tier, is_wgs=is_wgs, edits=edits)
+    _blank(doc)
+
+
+def _variant_reference_text(kind: str, v: dict, *, edits: dict,
+                            is_wgs: bool) -> str:
+    if kind == "snv":
+        return _snv_reference_text(v, edits)
+    if kind == "mito":
+        return _mito_reference_text(v, edits)
+    omim_genes = _omim_genes(v)
+    report_genes = edits.get("report_genes") or {}
+    if isinstance(report_genes, dict):
+        kept = [g for g in omim_genes if report_genes.get(g.get("gene"))]
+        if kept:
+            omim_genes = kept
+    return _cnv_reference_text(v, edits, omim_genes, _sv_kind_zh(v), is_wgs)
 
 
 def _render_manual_variant(doc, m: dict) -> None:
@@ -636,9 +661,9 @@ def _patho_sentence(acmg_class: str) -> str:
     if cls == "pathogenic":
         return "此為致病性之變異位點，與臨床症狀相關。"
     if cls in ("likely pathogenic",):
-        return "此為可能致病性之變異位點，與臨床症狀相關。"
+        return "此為疑似致病性之變異位點，與臨床症狀相關。"
     if "pathogenic/likely" in cls or "likely pathogenic/pathogenic" in cls:
-        return "此為致病性 / 可能致病性之變異位點，與臨床症狀相關。"
+        return "此為致病性 / 疑似致病性之變異位點，與臨床症狀相關。"
     if cls in ("uncertain significance", "vus"):
         return ("此為不確定意義之變異位點，其臨床意義須由醫師配合其他"
                 "相關資料進行最佳綜合判斷。")
@@ -718,7 +743,7 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     gene = v.get("gene_symbol") or "?"
     tx   = v.get("transcript")  or v.get("MANE_SELECT") or ""
     _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
-    rs    = ""   # pipeline doesn't carry rsID yet — leave blank
+    rs    = v.get("rs_id") or v.get("RS_ID") or ""
     struc = _structure_label(v)
     hgvs_c = _strip_tx_prefix(v.get("hgvs_c") or v.get("HGVS_C") or "")
     hgvs_p = _strip_tx_prefix(v.get("hgvs_p") or v.get("HGVS_P") or "")
@@ -741,12 +766,6 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
 
     _add_paragraph(doc, f"    1. {_omim_block_for_snv(v, edits)}")
     _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
-
-    _blank(doc)
-    _add_paragraph(doc, "  參考資料:")
-    _add_paragraph(doc, _snv_reference_text(v, edits))
-    _blank(doc)
-
 
 def _snv_reference_text(v: dict, edits: dict) -> str:
     gene = v.get("gene_symbol") or "?"
@@ -803,7 +822,7 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("基因",          9),
-        ("核苷酸",       15, "hgvs"),
+        ("核苷酸",       14, "hgvs"),
         ("異質性比例",   13),
         ("ClinVar",      13, "token"),
         ("ACMG&AMP指引", 13, "token"),
@@ -823,12 +842,6 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
                         "（1）異質性，即致病變異及正常粒線體 DNA 存在量的比例（2）變異的粒線體 DNA 於組織的"
                         "分布情形（3）限界效應（Threshold effect），即每種組織對於氧化壓力代謝影響的易受性。"
                         "由於患者情況各異，此檢驗結果須由臨床醫師判讀檢驗結果與受檢者臨床症狀的相關性。")
-    _blank(doc)
-    _add_paragraph(doc, "  參考資料:")
-    _add_paragraph(doc, _mito_reference_text(v, edits))
-    _blank(doc)
-
-
 def _mito_reference_text(v: dict, edits: dict) -> str:
     gene = v.get("gene_symbol") or "?"
     hgvs_m = v.get("HGVS_M") or v.get("id") or ""
@@ -1037,12 +1050,6 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
                             "若缺失片段之斷點(Breakpoints)發生於內含子(Intron) ，"
                             "則無法明確判別起始及末端位置。")
 
-    _blank(doc)
-    _add_paragraph(doc, "  參考資料:")
-    _add_paragraph(doc, _cnv_reference_text(v, edits, omim_genes, kind_zh, is_wgs))
-    _blank(doc)
-
-
 def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
                         kind_zh: str, is_wgs: bool) -> str:
     coords = _coords_str(v, is_wgs) or _build_coords(v)
@@ -1110,7 +1117,7 @@ def _section_annotations(doc, sample: dict, gene_list_mode: str) -> None:
     _add_paragraph(doc, "  1. 本檢測結果比對參考序列為人類hg38版本。")
     _add_paragraph(doc, f"  2. ClinVar及ACMG&AMP指引：引用ClinVar資料庫截至{CLINVAR_DATE_HUMN}更新的註解，"
                         "及美國醫學遺傳學暨基因體學學會 (ACMG) 與分子病理學學會 (AMP) 2015年頒佈的指引，"
-                        "並且主要列入致病(Pathogenic) 及可能致病 (Likely pathogenic) 變異；"
+                        "並且主要列入致病(Pathogenic) 及疑似致病 (Likely pathogenic) 變異；"
                         "其他類別變異經醫師判斷認為與疾病相關時亦可列入。")
     _add_paragraph(doc, "  3. 參考資料:")
     _add_paragraph(doc, f"     a. 疾病資料庫: OMIM、ClinVar ({CLINVAR_DATE})")
@@ -1147,7 +1154,7 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         label = r.get("label") or _hpo_label_for(hid)
         if not hid: continue
         genes = _genes_for_term_or_panel(hid)
-        sections.append((f"{label} ({hid})", genes))
+        sections.append((label, genes))
     for entry in panel_entries:
         pname = entry.get("name") if isinstance(entry, dict) else str(entry)
         if not pname: continue
@@ -1163,16 +1170,16 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         for _, gs in sections:
             merged |= set(gs)
         gene_str = ", ".join(sorted(merged))
-        _add_paragraph(doc, f"    {gene_str}")
+        _add_paragraph(doc, gene_str)
         return
 
     # grouped (default)
     for name, gs in sections:
-        _add_paragraph(doc, f"    {name}:")
+        _add_paragraph(doc, f"{name}:")
         if gs:
-            _add_paragraph(doc, f"    {', '.join(gs)}")
+            _add_paragraph(doc, ", ".join(gs))
         else:
-            _add_paragraph(doc, "    （無對應基因）")
+            _add_paragraph(doc, "（無對應基因）")
 
 
 # ── Top-level entrypoint ──────────────────────────────────────────

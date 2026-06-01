@@ -349,31 +349,55 @@ def _latest_job_for_sample(sample_id: str) -> dict | None:
     return jobs[0] if jobs else None
 
 
+def _job_mtime(job: dict) -> float:
+    for key in ("finished_at", "started_at", "created_at"):
+        raw = job.get(key)
+        if not raw:
+            continue
+        try:
+            return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+    return 0.0
+
+
 def list_pipeline_outputs() -> list[dict]:
-    """List sample directories under /home/pipeline/tertiary_output."""
+    """List pipeline sample directories plus NGS-UI jobs without output."""
     out: list[dict] = []
-    if not PIPELINE_OUT_ROOT.is_dir():
-        return out
     latest_jobs: dict[str, dict] = {}
     for job in list_jobs(limit=1000):
         sample_id = job.get("sample_id", "")
         if sample_id and sample_id not in latest_jobs:
             latest_jobs[sample_id] = job
-    for child in PIPELINE_OUT_ROOT.iterdir():
-        if not child.is_dir() or child.name.startswith("_"):
-            continue
+
+    sample_dirs: dict[str, Path] = {}
+    if PIPELINE_OUT_ROOT.is_dir():
+        for child in PIPELINE_OUT_ROOT.iterdir():
+            if not child.is_dir() or child.name.startswith("_"):
+                continue
+            try:
+                _validate_sample_id(child.name)
+            except ValueError:
+                continue
+            sample_dirs[child.name] = child
+
+    for sample_id in set(sample_dirs) | set(latest_jobs):
+        child = sample_dirs.get(sample_id)
+        job = latest_jobs.get(sample_id)
         try:
-            _validate_sample_id(child.name)
-            st = child.stat()
-        except (ValueError, OSError):
-            continue
-        acmg_dir = child / "03_acmg"
-        has_acmg = acmg_dir.is_dir() and any(acmg_dir.glob("*.snv_indel.acmg.tsv"))
-        job = latest_jobs.get(child.name)
+            output_mtime = child.stat().st_mtime if child else 0.0
+        except OSError:
+            output_mtime = 0.0
+        acmg_dir = child / "03_acmg" if child else None
+        has_acmg = bool(
+            acmg_dir and acmg_dir.is_dir()
+            and any(acmg_dir.glob("*.snv_indel.acmg.tsv"))
+        )
         job_id = (job or {}).get("job_id", "")
         out.append({
-            "sample_id":     child.name,
-            "mtime":         st.st_mtime,
+            "sample_id":     sample_id,
+            "mtime":         max(output_mtime, _job_mtime(job or {})),
+            "has_output":    child is not None,
             "has_acmg":      has_acmg,
             "job_id":        job_id,
             "job_state":     (job or {}).get("state", ""),
@@ -386,11 +410,11 @@ def list_pipeline_outputs() -> list[dict]:
 def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
     """Return the most recent NGS-UI job log associated with a sample."""
     _validate_sample_id(sample_id)
-    sample_dir = PIPELINE_OUT_ROOT / sample_id
-    if not sample_dir.is_dir():
-        raise FileNotFoundError(f"pipeline output not found: {sample_id}")
     job = _latest_job_for_sample(sample_id)
     if not job:
+        sample_dir = PIPELINE_OUT_ROOT / sample_id
+        if not sample_dir.is_dir():
+            raise FileNotFoundError(f"pipeline output or job not found: {sample_id}")
         return {"sample_id": sample_id, "job_id": "", "log": ""}
     job_id = job.get("job_id", "")
     return {
@@ -402,16 +426,26 @@ def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
 
 
 def delete_pipeline_output(sample_id: str) -> dict:
-    """Delete one pipeline output directory unless its job is active."""
+    """Delete pipeline output and all NGS-UI job logs unless one is active."""
     _validate_sample_id(sample_id)
     sample_dir = PIPELINE_OUT_ROOT / sample_id
-    if not sample_dir.is_dir():
-        raise FileNotFoundError(f"pipeline output not found: {sample_id}")
-    job = _latest_job_for_sample(sample_id)
-    if job and job.get("state") in ("queued", "running") and is_running(job.get("job_id", "")):
-        raise RuntimeError(f"pipeline output is still in use: {sample_id}")
-    shutil.rmtree(sample_dir)
-    return {"sample_id": sample_id, "deleted": str(sample_dir)}
+    jobs = [j for j in list_jobs(limit=1000) if j.get("sample_id") == sample_id]
+    if not sample_dir.is_dir() and not jobs:
+        raise FileNotFoundError(f"pipeline output or job not found: {sample_id}")
+    for job in jobs:
+        job_id = job.get("job_id", "")
+        if job.get("state") in ("queued", "running") and is_running(job_id):
+            raise RuntimeError(f"pipeline output is still in use: {sample_id}")
+    deleted: list[str] = []
+    if sample_dir.is_dir():
+        shutil.rmtree(sample_dir)
+        deleted.append(str(sample_dir))
+    for job in jobs:
+        job_dir = _job_dir(job.get("job_id", ""))
+        if job_dir.is_dir():
+            shutil.rmtree(job_dir)
+            deleted.append(str(job_dir))
+    return {"sample_id": sample_id, "deleted": deleted}
 
 
 # ── Job spawn ──────────────────────────────────────────────────────

@@ -325,7 +325,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
    The cell stays 1/5 of the grid (equal width); only its internal
    height grows. align-items:start on .sample-meta keeps the other
    cells anchored at the top so the row looks tidy. */
-.m-mrn-cell { align-items: flex-start; }
+.sample-meta-row > .m-mrn-cell { align-items: flex-start; }
 .m-mrn-stack {
   display: flex;
   flex-direction: column;
@@ -2137,10 +2137,12 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .dragen-extra-toggle,
 .dragen-toolbar-btn {
   box-sizing: border-box;
+  height: 28px;
   min-height: 28px;
   padding: 4px 10px;
   font-size: 12px;
   line-height: 18px;
+  white-space: nowrap;
 }
 .dragen-vcf-picker {
   display: flex;
