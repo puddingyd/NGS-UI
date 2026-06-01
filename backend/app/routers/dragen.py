@@ -85,6 +85,7 @@ def post_dragen_job(payload: dict = Body(...)):
       mode:           "dragen" (default) | "inhouse"
       vcf_path:       path to the SNV/Indel VCF (the anchor)
       sample_id:      e.g. VAL-58-dragen / VAL-31-inhouse
+      source_sample_id: original sequencing sample ID from the VCF index
       with_extra_vep: bool (default true)
       cnv_vcf:        in-house: gcnv VCF       (ignored for dragen)
       sv_vcf:         in-house: delly VCF      (ignored for dragen)
@@ -93,6 +94,7 @@ def post_dragen_job(payload: dict = Body(...)):
     mode = (payload.get("mode") or "dragen").strip()
     vcf  = (payload.get("vcf_path") or "").strip()
     sid  = (payload.get("sample_id") or "").strip()
+    source_sid = (payload.get("source_sample_id") or "").strip()
     with_extra_vep = bool(payload.get("with_extra_vep", True))
     cnv_vcf  = (payload.get("cnv_vcf")  or "").strip()
     sv_vcf   = (payload.get("sv_vcf")   or "").strip()
@@ -104,6 +106,7 @@ def post_dragen_job(payload: dict = Body(...)):
     try:
         job_id = dragen_jobs.start_job(
             vcf, sid,
+            source_sample_id=source_sid,
             mode=mode,
             with_extra_vep=with_extra_vep,
             cnv_vcf=cnv_vcf,

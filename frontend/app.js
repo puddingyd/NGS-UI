@@ -587,7 +587,8 @@ async function openIgvModal(variant) {
   if (batch) {
     try {
       const more = await apiFetch(`/igv/batch-samples?batch=${encodeURIComponent(batch)}`);
-      _igvSiblings = (more?.samples || []).filter(s => s.sample_id !== sid);
+      const resolvedSid = bamIndex?.resolved_sample_id || sid;
+      _igvSiblings = (more?.samples || []).filter(s => s.sample_id !== resolvedSid);
     } catch { _igvSiblings = []; }
   }
   _renderIgvBamList();
@@ -2135,6 +2136,7 @@ function printReportCards() {
     .block-header .arrow { display: none; }
     .variant-card { break-inside: avoid; page-break-inside: avoid; }
     .print-field { display: inline-block; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .disease-row summary { line-height: 1.15; padding-top: 1px; padding-bottom: 1px; }
     details > summary { list-style: none; }
     details > summary::before { display: none !important; }
     @media print {
@@ -7293,6 +7295,7 @@ async function _dragenStart() {
     mode,
     vcf_path:       path,
     sample_id:      sid,
+    source_sample_id: selectedRow?.sample_id || "",
     with_extra_vep: !!extra?.checked,
   };
   if (mode === "inhouse") {

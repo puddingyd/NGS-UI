@@ -83,7 +83,13 @@ def _find_pipeline_acmg_tsv(sid: str) -> Path | None:
     return None
 
 
-def _track_pipeline_source(sample_dir: Path, source: Path) -> None:
+def _track_pipeline_source(
+    sample_dir: Path,
+    source: Path,
+    *,
+    source_sample_id: str,
+    source_vcf_path: str,
+) -> None:
     """Write a small audit record so the reviewer (and a future
     re-sync endpoint) can tell where the SNV TSV originated.
     Lives alongside sample_metadata.json so register() doesn't
@@ -96,6 +102,8 @@ def _track_pipeline_source(sample_dir: Path, source: Path) -> None:
     rec = {
         "source_path":  str(source),
         "source_mtime": mtime,
+        "source_sample_id": source_sample_id,
+        "source_vcf_path": source_vcf_path,
         "copied_at":    _now(),
     }
     (sample_dir / "pipeline_source.json").write_text(
@@ -213,6 +221,7 @@ def main() -> int:
     ap.add_argument("--job-id", required=True)
     ap.add_argument("--vcf",    required=True)
     ap.add_argument("--sample", required=True)
+    ap.add_argument("--source-sample", required=True)
     ap.add_argument("--mode",   default="dragen", choices=["dragen", "inhouse"])
     ap.add_argument("--with-extra-vep", action="store_true")
     # In-house only — explicit sibling VCF paths from the index.
@@ -226,6 +235,7 @@ def main() -> int:
     job_id = args.job_id
     vcf    = args.vcf
     sid    = args.sample
+    source_sid = args.source_sample
     mode   = args.mode
     sample_dir = TERTIARY_OUTPUT_ROOT / sid
     sample_dir.mkdir(parents=True, exist_ok=True)
@@ -337,7 +347,12 @@ def main() -> int:
         # 5. Copy pipeline TSV → NGS-UI side; record source audit.
         _set_step(job_id, "copy-pipeline-tsv")
         shutil.copyfile(existing, gui_tsv)
-        _track_pipeline_source(sample_dir, existing)
+        _track_pipeline_source(
+            sample_dir,
+            existing,
+            source_sample_id=source_sid,
+            source_vcf_path=vcf,
+        )
         _log(f"[copy] {existing} → {gui_tsv}")
 
         # 6. Stop-gap chain (no ClinVar; pipeline already populates it).

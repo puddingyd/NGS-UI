@@ -54,6 +54,15 @@ def _validate_sample_id(sample_id: str) -> str:
     return sample_id
 
 
+def infer_source_sample_id(vcf: Path, mode: str) -> str:
+    """Return the sequencing sample ID encoded in the selected VCF name."""
+    name = vcf.name
+    suffix = (".ensemble.fixed.vcf.gz" if mode == "inhouse"
+              else ".hard-filtered.vcf.gz")
+    sid = name.removesuffix(suffix)
+    return _validate_sample_id(sid)
+
+
 # ── VCF discovery ──────────────────────────────────────────────────
 
 _DRAGEN_VCF_GLOBS = [
@@ -411,6 +420,7 @@ def start_job(
     vcf_path: str,
     sample_id: str,
     *,
+    source_sample_id: str = "",
     mode: str = "dragen",
     with_extra_vep: bool = True,
     cnv_vcf: str = "",
@@ -436,6 +446,8 @@ def start_job(
     if not sample_id:
         raise ValueError("sample_id required")
     _validate_sample_id(sample_id)
+    source_sample_id = source_sample_id or infer_source_sample_id(vcf, mode)
+    _validate_sample_id(source_sample_id)
 
     job_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     jdir = _job_dir(job_id)
@@ -447,6 +459,7 @@ def start_job(
         "mode":           mode,
         "vcf_path":       str(vcf),
         "sample_id":      sample_id,
+        "source_sample_id": source_sample_id,
         "with_extra_vep": with_extra_vep,
         "cnv_vcf":        cnv_vcf,
         "sv_vcf":         sv_vcf,
@@ -467,6 +480,7 @@ def start_job(
         "--job-id",  job_id,
         "--vcf",     str(vcf),
         "--sample",  sample_id,
+        "--source-sample", source_sample_id,
         "--mode",    mode,
     ]
     if with_extra_vep:

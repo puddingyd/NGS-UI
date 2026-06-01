@@ -142,6 +142,8 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 
 服務啟動時會以 daemon thread 在背景預熱 HPO、phenotype gene map、OMIM 與 mito ClinVar cache，避免解析大型 `phenotype_to_genes.txt` 期間擋住 HTTP port。完整 SNV TSV 的 gene-search cache 也由單一 daemon queue 預熱；重啟服務時不會等待尚未完成的預熱工作。
 
+三級分析另保存 `source_sample_id`（原始 sequencing sample ID）到 job state 與 `pipeline_source.json`。IGV 先以目前個案 ID 找 BAM；自訂輸出 ID 找不到時，會用 sidecar 回查原始 BAM ID。舊個案缺少 sidecar 欄位時，僅在移除已知 suffix 後得到唯一 BAM 命中才採用 fallback。
+
 ### 臨床表徵工具 `/phenotype/`
 
 獨立頁面（內網信任、無需登入）：搜尋 HPO term、套用 / 自訂 gene panel、把結果存成 token 之後在「載入新個案」帶入。Token 限 `[A-Za-z0-9_-]{1,32}`，內容 ≤64KB，panel ≤5000 個基因；自訂 panel 的基因 symbol 不會被轉大寫（`C7orf50` 保持原樣）。

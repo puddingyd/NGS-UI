@@ -9,6 +9,7 @@ proxy. Login required (same as the rest of /api).
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -18,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from ..auth import current_user
+from ..config import TERTIARY_OUTPUT_ROOT
 
 router = APIRouter(
     prefix="/api/igv",
@@ -40,11 +42,12 @@ _REF_DIR = Path(os.environ.get(
     "NGS_UI_IGV_REF_DIR",
     "/home/pipeline/reference/hg38")).resolve()
 
-_SID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+_SID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _ALLOWED_SUFFIXES = (".bam", ".bai", ".cram", ".crai",
                      ".fa", ".fai", ".fasta", ".dict", ".gzi", ".2bit")
 _CHUNK = 1024 * 1024
 _SIBLING_LIMIT = 2
+_LEGACY_ALIAS_SUFFIXES = ("-dragen", "-inhouse", "-WES", "-WGS")
 
 
 def _validate_sid(sid: str) -> str:
@@ -82,14 +85,8 @@ def _bam_entry(sid: str, batch: Path, path: Path) -> dict:
     }
 
 
-@router.get("/bams")
-def list_bams(sample_id: str = Query(...)):
-    """Find the BAM for `sample_id` plus up to 2 sibling BAMs from the
-    same batch (for trio / comparison viewing). The frontend can add /
-    remove / swap these in the IGV modal."""
-    sid = _validate_sid(sample_id)
-    primary = None
-    siblings: list[dict] = []
+def _bam_hits(sid: str) -> list[dict]:
+    out: list[dict] = []
     for root in _BAM_ROOTS:
         if not root.is_dir():
             continue
@@ -97,21 +94,79 @@ def list_bams(sample_id: str = Query(...)):
             if not batch.is_dir():
                 continue
             p = _bam_for(sid, batch)
-            if not p:
+            if p:
+                out.append(_bam_entry(sid, batch, p))
+    return out
+
+
+def _source_sid_from_sidecar(sid: str) -> str:
+    path = TERTIARY_OUTPUT_ROOT / sid / "pipeline_source.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    source_sid = str(data.get("source_sample_id") or "").strip()
+    return source_sid if _SID_RE.match(source_sid) else ""
+
+
+def _legacy_source_sid(sid: str) -> str:
+    """Resolve old alias cases only when exactly one BAM matches."""
+    candidates = [
+        sid.removesuffix(suffix)
+        for suffix in _LEGACY_ALIAS_SUFFIXES
+        if sid.endswith(suffix)
+    ]
+    hits = [
+        hit
+        for candidate in candidates
+        for hit in _bam_hits(candidate)
+    ]
+    return hits[0]["sample_id"] if len(hits) == 1 else ""
+
+
+def _resolve_primary_bam(sid: str) -> tuple[dict | None, str, str]:
+    direct = _bam_hits(sid)
+    if direct:
+        return direct[0], sid, "exact"
+    source_sid = _source_sid_from_sidecar(sid)
+    if source_sid:
+        hits = _bam_hits(source_sid)
+        if hits:
+            return hits[0], source_sid, "pipeline_source"
+    legacy_sid = _legacy_source_sid(sid)
+    if legacy_sid:
+        hits = _bam_hits(legacy_sid)
+        if hits:
+            return hits[0], legacy_sid, "legacy_suffix"
+    return None, sid, "not_found"
+
+
+@router.get("/bams")
+def list_bams(sample_id: str = Query(...)):
+    """Find the BAM for `sample_id` plus up to 2 sibling BAMs from the
+    same batch (for trio / comparison viewing). The frontend can add /
+    remove / swap these in the IGV modal."""
+    sid = _validate_sid(sample_id)
+    primary, resolved_sid, resolution = _resolve_primary_bam(sid)
+    siblings: list[dict] = []
+    if primary:
+        batch = Path(primary["path"]).parents[2]
+        for sib in sorted(batch.iterdir()):
+            if not sib.is_dir() or sib.name == resolved_sid:
                 continue
-            primary = _bam_entry(sid, batch, p)
-            for sib in sorted(batch.iterdir()):
-                if not sib.is_dir() or sib.name == sid:
-                    continue
-                sp = _bam_for(sib.name, batch)
-                if sp:
-                    siblings.append(_bam_entry(sib.name, batch, sp))
-                if len(siblings) >= _SIBLING_LIMIT:
-                    break
-            break
-        if primary:
-            break
-    return {"primary": primary, "siblings": siblings, "roots": [str(r) for r in _BAM_ROOTS]}
+            sp = _bam_for(sib.name, batch)
+            if sp:
+                siblings.append(_bam_entry(sib.name, batch, sp))
+            if len(siblings) >= _SIBLING_LIMIT:
+                break
+    return {
+        "primary": primary,
+        "siblings": siblings,
+        "requested_sample_id": sid,
+        "resolved_sample_id": resolved_sid,
+        "resolution": resolution,
+        "roots": [str(r) for r in _BAM_ROOTS],
+    }
 
 
 @router.get("/batch-samples")
