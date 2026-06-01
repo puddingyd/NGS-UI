@@ -11,6 +11,7 @@ memory). Search ranks results by:
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -45,6 +46,7 @@ class HpoTerm:
 _TERMS: dict[str, HpoTerm] = {}
 _NAME_INDEX: list[tuple[str, str]] = []  # (lowercased_name, hpo_id)
 _SYN_INDEX:  list[tuple[str, str]] = []  # (lowercased_synonym, hpo_id)
+_LOAD_LOCK = threading.Lock()
 
 
 def _parse_obo(path: Path) -> dict[str, HpoTerm]:
@@ -103,12 +105,15 @@ def load(path: Path = HP_OBO_PATH) -> int:
     """Idempotent loader. Returns the term count."""
     if _TERMS:
         return len(_TERMS)
-    if not path.exists():
-        return 0
-    parsed = _parse_obo(path)
-    _TERMS.update(parsed)
-    _build_indexes(_TERMS)
-    return len(_TERMS)
+    with _LOAD_LOCK:
+        if _TERMS:
+            return len(_TERMS)
+        if not path.exists():
+            return 0
+        parsed = _parse_obo(path)
+        _TERMS.update(parsed)
+        _build_indexes(_TERMS)
+        return len(_TERMS)
 
 
 def get(hpo_id: str) -> HpoTerm | None:

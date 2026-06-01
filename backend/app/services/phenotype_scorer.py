@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import csv
 import re
+import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
@@ -35,6 +36,7 @@ _HPO_TO_GENES: dict[str, set[str]] = defaultdict(set)
 # panel_name → set[gene_symbol]
 _PANEL_TO_GENES: dict[str, set[str]] = {}
 _LOADED = False
+_LOAD_LOCK = threading.Lock()
 
 
 def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[str]]:
@@ -81,18 +83,21 @@ def load() -> tuple[int, int]:
     global _LOADED
     if _LOADED:
         return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
-    hpo_map = _load_phenotype_to_genes()
-    _HPO_TO_GENES.clear()
-    _HPO_TO_GENES.update(hpo_map)
-    panels = _load_panels()
-    _PANEL_TO_GENES.clear()
-    _PANEL_TO_GENES.update(panels)
-    # Fold panels into the same lookup table — panel name acts as a
-    # synthetic hpo_id, mirroring the R script's `rbind(custom_panels_df, hp_db)`.
-    for panel_name, genes in panels.items():
-        _HPO_TO_GENES[panel_name] |= genes
-    _LOADED = True
-    return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
+    with _LOAD_LOCK:
+        if _LOADED:
+            return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
+        hpo_map = _load_phenotype_to_genes()
+        panels = _load_panels()
+        # Fold panels into the same lookup table — panel name acts as a
+        # synthetic hpo_id, mirroring the R script's `rbind(custom_panels_df, hp_db)`.
+        for panel_name, genes in panels.items():
+            hpo_map.setdefault(panel_name, set()).update(genes)
+        _HPO_TO_GENES.clear()
+        _HPO_TO_GENES.update(hpo_map)
+        _PANEL_TO_GENES.clear()
+        _PANEL_TO_GENES.update(panels)
+        _LOADED = True
+        return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
 
 
 def reload_db() -> tuple[int, int]:

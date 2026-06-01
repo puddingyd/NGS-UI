@@ -1,3 +1,6 @@
+import logging
+import threading
+
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +12,7 @@ from .routers import analyses, auth, dragen, emr, igv, jobs, phenotype, phenotyp
 from .services import clinvar_mito, hpo_ontology, omim_store, phenotype_scorer, users
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
+logger = logging.getLogger(__name__)
 
 # Large SNV JSON payloads compress well because field names repeat for
 # every variant. Browsers negotiate and decompress gzip automatically.
@@ -27,8 +31,7 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def _warm_caches():
+def _warm_caches() -> None:
     # Parse hp.obo (~17 k terms) and load phenotype_to_genes.txt (~1 M
     # rows) once so subsequent requests don't pay the I/O cost.
     hpo_ontology.load()
@@ -49,6 +52,21 @@ def _warm_caches():
         clinvar_mito._load()
     except Exception:
         pass
+
+
+@app.on_event("startup")
+def _start_cache_warm() -> None:
+    # Keep HTTP startup fast: phenotype_to_genes.txt can take more than
+    # a minute to parse on the deployment host. Loaders are thread-safe
+    # and still fall back to synchronous loading if a request arrives
+    # before this best-effort warm-up finishes.
+    thread = threading.Thread(
+        target=_warm_caches,
+        name="startup-cache-warm",
+        daemon=True,
+    )
+    thread.start()
+    logger.info("started background cache warm-up")
 
 
 @app.get("/api/healthz")

@@ -1,5 +1,6 @@
 from urllib.parse import quote
-from concurrent.futures import ThreadPoolExecutor
+import queue
+import threading
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -15,9 +16,37 @@ from ..services import (
 )
 
 router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
-_snv_cache_warm_executor = ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="snv-cache-warm",
+_snv_cache_warm_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
+_snv_cache_warm_pending: set[tuple[str, str | None]] = set()
+_snv_cache_warm_lock = threading.Lock()
+
+
+def _run_snv_cache_warm_queue() -> None:
+    while True:
+        item = _snv_cache_warm_queue.get()
+        try:
+            sample_loader.warm_raw_snv_cache(*item)
+        finally:
+            with _snv_cache_warm_lock:
+                _snv_cache_warm_pending.discard(item)
+            _snv_cache_warm_queue.task_done()
+
+
+_snv_cache_warm_thread = threading.Thread(
+    target=_run_snv_cache_warm_queue,
+    name="snv-cache-warm",
+    daemon=True,
 )
+_snv_cache_warm_thread.start()
+
+
+def _schedule_snv_cache_warm(sample_id: str, version: str | None = None) -> None:
+    item = (sample_id, version)
+    with _snv_cache_warm_lock:
+        if item in _snv_cache_warm_pending:
+            return
+        _snv_cache_warm_pending.add(item)
+    _snv_cache_warm_queue.put(item)
 
 
 @router.get("/samples/{sample_id}/report.docx")
@@ -229,9 +258,7 @@ def register_sample(
             job_id = None
     # Parse the complete TSV in the background so the first modal gene
     # search normally hits the raw-SNV cache. Do not hold up registration.
-    _snv_cache_warm_executor.submit(
-        sample_loader.warm_raw_snv_cache, lis_id, "default",
-    )
+    _schedule_snv_cache_warm(lis_id, "default")
     return {
         "sample_id": lis_id,
         "meta": meta,
@@ -251,9 +278,7 @@ def get_sample(sample_id: str, version: str | None = None):
         raise HTTPException(404, f"sample not found: {sample_id}")
     # Existing samples also need a warm raw cache after a service
     # restart. Keep the compact main response on the foreground path.
-    _snv_cache_warm_executor.submit(
-        sample_loader.warm_raw_snv_cache, sample_id, version,
-    )
+    _schedule_snv_cache_warm(sample_id, version)
     return payload
 
 
