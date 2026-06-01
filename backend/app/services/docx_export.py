@@ -332,6 +332,8 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
                    after "/" so "Pathogenic/Likely pathogenic" becomes
                    3 lines (Pathogenic/ · Likely · pathogenic).
                    Tokens longer than `width` fall back to char wrap.
+    mode="buffered" → greedy char wrap with one trailing display column
+                      reserved as whitespace before the next table cell.
     """
     if text is None:
         return [""]
@@ -364,6 +366,9 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
                 + _wrap_to_cols(suffix, content_width, mode="char")
             )
         return _wrap_to_cols(s, content_width, mode="char")
+
+    if mode == "buffered":
+        return _wrap_to_cols(s, max(1, width - 1), mode="char")
 
     out, cur, cur_w = [], "", 0
     for c in s:
@@ -699,7 +704,8 @@ def _picked_disease_for_snv(v: dict, edits: dict) -> str:
 
 def _disease_info(disease: str) -> tuple[str, str, str]:
     """Parse disease name, disease-specific inheritance, and phenotype MIM."""
-    first_line = (disease or "").splitlines()[0].strip()
+    lines = (disease or "").splitlines()
+    first_line = lines[0].strip() if lines else ""
     inheritance_match = re.search(
         r"\((AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol)"
         r"(?:\s*[/,;]\s*(?:AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol))*\)",
@@ -756,7 +762,7 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("基因",          9),
-        ("RS ID",         8),
+        ("RS ID",         8, "buffered"),
         ("結構",          9),
         ("核苷酸",       14, "hgvs"),
         ("基因型",       13),
@@ -1174,7 +1180,9 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         return
 
     # grouped (default)
-    for name, gs in sections:
+    for idx, (name, gs) in enumerate(sections):
+        if idx:
+            _blank(doc)
         _add_paragraph(doc, f"{name}:")
         if gs:
             _add_paragraph(doc, ", ".join(gs))
