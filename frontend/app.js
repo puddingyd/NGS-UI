@@ -2050,7 +2050,22 @@ function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
     ".btn-add-manual", ".btn-remove-manual", ".same-gene-btn",
     ".disease-detail", ".disease-collapse",
     ".cnv-sv-reasoning", ".cnv-sv-gene-overflow",
+    ".block-header .count",
   ].join(",")).forEach(el => el.remove());
+  clone.querySelectorAll(".cnv-sv-section-title").forEach(title => {
+    if (["已知致病區域重疊", "已知良性區域重疊"].includes(title.textContent.trim())) {
+      title.closest(".cnv-sv-section")?.remove();
+    }
+  });
+  clone.querySelectorAll(".disease-summary-text").forEach(summary => {
+    const text = summary.textContent || "";
+    const inheritance = text.match(
+      /\((?:AD|AR|XLD|XLR|XL|YL|MT|MI|DR|DD|SMU|MU|ISOL)(?:\s*[/,;]\s*(?:AD|AR|XLD|XLR|XL|YL|MT|MI|DR|DD|SMU|MU|ISOL))*\)/i,
+    );
+    if (inheritance) {
+      summary.textContent = text.slice(0, inheritance.index + inheritance[0].length);
+    }
+  });
   clone.querySelectorAll(".manual-row").forEach(row => {
     if (row.querySelector(".manual-comment")) row.remove();
   });
@@ -2075,6 +2090,11 @@ function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
   return clone.outerHTML;
 }
 
+function _printReportTimestamp(now = new Date()) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
 function printReportCards() {
   if (!state.currentLIS || !state.data) return;
   const popup = window.open("", "_blank");
@@ -2087,8 +2107,9 @@ function printReportCards() {
   // status choices even when auto-save has not fired yet.
   renderReportSections();
   const meta = state.data.meta || {};
-  const date = todayYmd().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
   const sid = meta.LIS_ID || state.currentLIS;
+  const printHeader = `${sid}_report_${_printReportTimestamp()}`;
+  const printHeaderCss = JSON.stringify(printHeader);
   const stylesheet = document.querySelector('link[rel="stylesheet"]')?.href || "";
   const sections = [
     _reportPrintBlock("sec-causative"),
@@ -2105,11 +2126,9 @@ function printReportCards() {
   ${stylesheet ? `<link rel="stylesheet" href="${escapeAttr(stylesheet)}" />` : ""}
   <style>
     body { margin: 0; background: #fff; color: #24292f; font-family: Arial, "Noto Sans TC", sans-serif; }
-    .print-page { max-width: 1080px; margin: 0 auto; padding: 20px 24px; }
+    .print-page { max-width: 1180px; margin: 0 auto; padding: 16px 14px; }
     .print-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
-    .print-title { margin: 0 0 8px; font-size: 24px; }
-    .print-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; margin-bottom: 18px; font-size: 13px; }
-    .print-meta strong { display: inline-block; min-width: 76px; color: #57606a; }
+    .print-title { margin: 0 0 14px; font-size: 24px; }
     .report-block { margin-bottom: 12px; }
     .block-header, .block-body { display: block !important; }
     .block-header { pointer-events: none; }
@@ -2119,8 +2138,13 @@ function printReportCards() {
     details > summary { list-style: none; }
     details > summary::before { display: none !important; }
     @media print {
-      @page { size: A4; margin: 10mm; }
-      .print-page { max-width: none; padding: 0; }
+      @page {
+        size: A4;
+        margin: 12mm 5mm 10mm;
+        @top-right { content: ${printHeaderCss}; color: #57606a; font-size: 9px; }
+        @bottom-right { content: counter(page); color: #57606a; font-size: 9px; }
+      }
+      .print-page { max-width: none; padding: 3mm 0 0; }
       .print-toolbar { display: none; }
       .variant-card { box-shadow: none; }
     }
@@ -2129,14 +2153,7 @@ function printReportCards() {
 <body>
   <main class="print-page">
     <div class="print-toolbar"><button type="button" onclick="window.print()">列印 / 儲存 PDF</button></div>
-    <h1 class="print-title">報告</h1>
-    <div class="print-meta">
-      <div><strong>檢體編號</strong>${escapeHtml(sid)}</div>
-      <div><strong>病歷號</strong>${escapeHtml(meta.MRN || "")}</div>
-      <div><strong>姓名</strong>${escapeHtml(meta.Name || "")}</div>
-      <div><strong>檢驗類型</strong>${escapeHtml(meta.Test || "")}</div>
-      <div><strong>輸出日期</strong>${escapeHtml(date)}</div>
-    </div>
+    <h1 class="print-title">${escapeHtml(sid)} Report</h1>
     ${sections}
   </main>
   <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
