@@ -2034,6 +2034,117 @@ async function exportDiagnosticDocx() {
   }
 }
 
+function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
+  const source = document.getElementById(sectionId);
+  if (!source) return "";
+  const clone = source.cloneNode(true);
+  const cards = clone.querySelectorAll(".variant-card");
+  if (omitWhenEmpty && !cards.length) return "";
+
+  // The PDF is a reviewer-facing card summary, not an editable copy of
+  // the UI. Drop controls, comments, external links, and collapsed
+  // drill-down content before serialising the print window.
+  clone.querySelectorAll([
+    ".status-radio", ".ext-links", ".btn-copy", ".btn-more",
+    ".more-extras", ".comment-row", ".cnv-sv-comment",
+    ".btn-add-manual", ".btn-remove-manual", ".same-gene-btn",
+    ".disease-detail", ".disease-collapse",
+    ".cnv-sv-reasoning", ".cnv-sv-gene-overflow",
+  ].join(",")).forEach(el => el.remove());
+  clone.querySelectorAll(".manual-row").forEach(row => {
+    if (row.querySelector(".manual-comment")) row.remove();
+  });
+  clone.querySelectorAll("button, a").forEach(el => el.remove());
+  clone.querySelectorAll("input, select, textarea").forEach(control => {
+    if (control.matches('[type="checkbox"], [type="radio"]')) {
+      control.remove();
+      return;
+    }
+    const text = control.tagName === "SELECT"
+      ? control.options[control.selectedIndex]?.textContent || ""
+      : control.value || "";
+    const span = document.createElement("span");
+    span.className = "print-field";
+    span.textContent = text;
+    control.replaceWith(span);
+  });
+  clone.querySelectorAll("details").forEach(details => {
+    details.removeAttribute("open");
+    details.querySelectorAll(":scope > :not(summary)").forEach(el => el.remove());
+  });
+  return clone.outerHTML;
+}
+
+function printReportCards() {
+  if (!state.currentLIS || !state.data) return;
+  const popup = window.open("", "_blank");
+  if (!popup) {
+    alert("無法開啟列印視窗，請允許本站開啟彈出式視窗後再試一次。");
+    return;
+  }
+
+  // Refresh the report sections so the print copy includes the newest
+  // status choices even when auto-save has not fired yet.
+  renderReportSections();
+  const meta = state.data.meta || {};
+  const date = todayYmd().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+  const sid = meta.LIS_ID || state.currentLIS;
+  const stylesheet = document.querySelector('link[rel="stylesheet"]')?.href || "";
+  const sections = [
+    _reportPrintBlock("sec-causative"),
+    _reportPrintBlock("sec-other"),
+    _reportPrintBlock("sec-candidate", { omitWhenEmpty: true }),
+  ].join("");
+
+  popup.document.open();
+  popup.document.write(`<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(sid)}_report_${todayYmd()}</title>
+  ${stylesheet ? `<link rel="stylesheet" href="${escapeAttr(stylesheet)}" />` : ""}
+  <style>
+    body { margin: 0; background: #fff; color: #24292f; font-family: Arial, "Noto Sans TC", sans-serif; }
+    .print-page { max-width: 1080px; margin: 0 auto; padding: 20px 24px; }
+    .print-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+    .print-title { margin: 0 0 8px; font-size: 24px; }
+    .print-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; margin-bottom: 18px; font-size: 13px; }
+    .print-meta strong { display: inline-block; min-width: 76px; color: #57606a; }
+    .report-block { margin-bottom: 12px; }
+    .block-header, .block-body { display: block !important; }
+    .block-header { pointer-events: none; }
+    .block-header .arrow { display: none; }
+    .variant-card { break-inside: avoid; page-break-inside: avoid; }
+    .print-field { display: inline-block; white-space: pre-wrap; overflow-wrap: anywhere; }
+    details > summary { list-style: none; }
+    details > summary::before { display: none !important; }
+    @media print {
+      @page { size: A4; margin: 10mm; }
+      .print-page { max-width: none; padding: 0; }
+      .print-toolbar { display: none; }
+      .variant-card { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="print-page">
+    <div class="print-toolbar"><button type="button" onclick="window.print()">列印 / 儲存 PDF</button></div>
+    <h1 class="print-title">報告</h1>
+    <div class="print-meta">
+      <div><strong>檢體編號</strong>${escapeHtml(sid)}</div>
+      <div><strong>病歷號</strong>${escapeHtml(meta.MRN || "")}</div>
+      <div><strong>姓名</strong>${escapeHtml(meta.Name || "")}</div>
+      <div><strong>檢驗類型</strong>${escapeHtml(meta.Test || "")}</div>
+      <div><strong>輸出日期</strong>${escapeHtml(date)}</div>
+    </div>
+    ${sections}
+  </main>
+  <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
+</body>
+</html>`);
+  popup.document.close();
+}
+
 // Small inline modal asking how the 檢測基因清單 should appear in §五.4.
 // Returns "grouped" | "merged" | null (cancelled).
 function _pickGeneListMode() {
@@ -4341,6 +4452,8 @@ document.addEventListener("click", ev => {
     collapseCandidateSections();
   } else if (t.matches(".btn-export-clinical")) {
     exportDiagnosticDocx();
+  } else if (t.matches(".btn-print-report")) {
+    printReportCards();
   } else if (t.matches(".btn-export-html, .btn-export-screening")) {
     // Other export targets (analysis HTML / screening PDF) are not yet
     // ported from the legacy GitHub-Pages tool.
