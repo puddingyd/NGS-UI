@@ -44,6 +44,7 @@
 | VCF（per-sample） | `NGS_UI_HOME/vcf/` | `NGS_UI_VCF_DIR` |
 | IGV BAM 搜尋根目錄 | `/home/datalake_Intermediate/pipeline/nextflow_output` | `NGS_UI_BAM_ROOT`（可用 `:` 分隔多個 root） |
 | IGV hg38 reference（FASTA + `.fai`） | `/home/pipeline/reference/hg38` | `NGS_UI_IGV_REF_DIR` |
+| UI worker 使用的 tertiary helper scripts | `REPO_ROOT/tertiary_code/scripts` | `NGS_UI_TERTIARY_SCRIPTS_DIR` |
 | Exomiser/LIRICAL 輸入模板 | `REPO_ROOT/phenotype_reference/`（**在 repo 裡，不在 NGS_UI_HOME**） | — |
 | 前端靜態檔 | `REPO_ROOT/frontend/` | `FRONTEND_DIR` |
 | EMR client id（NCKU intranet） | — | `NGS_UI_EMR_CLIENT_ID`（空 = 整套 EMR 功能關閉） |
@@ -165,7 +166,7 @@ UI 流程：
 `snv_indel.annotated.tsv` 主要欄位：`CHROM POS REF ALT GENE TRANSCRIPT TRANSCRIPT_TYPE HGVS_C HGVS_P CONSEQUENCE MANE_ALL CALLERS ZYGOSITY GT_DV GT_HC AD VAF CLINVAR_SIG CLINVAR_STARS CLINVAR_DN CLINVAR_CONF GNOMAD_G_AF GNOMAD_G_EAS_AF GNOMAD_E_AF GNOMAD_E_EAS_AF TWB_AF PKNN_LLR REVEL BAYESDEL ALPHAMISSENSE METARNN ESM2_SCORE EVO2_SCORE SPLICEAI_MAX CADD_PHRED LOFTEE_HC LOFTEE_FILTER LOFTEE_FLAGS ACMG_EVIDENCE ACMG_POINTS ACMG_CLASS PHASE_GROUP PHASE_RESULT IN_ROH IN_PANEL IN_BLACKLIST OMIM_LINK GNOMAD_LINK CLINVAR_LINK REPORT_CLASS`。
 CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一列、split=每 gene 一列；adapter `annotsv_tsv.py` 用 index-based 解析只取 ~30 欄、聚合 full+split）。
 
-`tertiary_code/` 裡有次級 pipeline 的 Nextflow（`main_tertiary.nf`、`modules/`、`scripts/parse_vep_csq.py` 等）+ config（`dgm` profile = NCKU 正式環境 `/home/pipeline/reference/hg38`、`/home/pipeline/nextflow_containers`、`--bind /home`；`local` profile = `/scratch/pylin1991/...`、`/data/pylin1991/nf-containers`）—— 純參考用，這個 repo 不跑它。
+`tertiary_code/` 裡有次級 pipeline 的 Nextflow（`main_tertiary.nf`、`modules/`、`scripts/parse_vep_csq.py` 等）+ config（`dgm` profile = NCKU 正式環境 `/home/pipeline/reference/hg38`、`/home/pipeline/nextflow_containers`、`--bind /home`；`local` profile = `/scratch/pylin1991/...`、`/data/pylin1991/nf-containers`）。UI worker 仍使用正式環境 `/home/pipeline/tertiary_code/{main_tertiary.nf,nextflow_tertiary.config}`，但會用 `--scripts_dir REPO_ROOT/tertiary_code/scripts` 覆寫 helper scripts，讓 `git pull` 後立即套用與 UI 耦合的修正。
 
 ---
 

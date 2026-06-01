@@ -52,7 +52,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
-                       TERTIARY_OUTPUT_ROOT)
+                       TERTIARY_OUTPUT_ROOT, TERTIARY_PIPELINE_SCRIPTS_DIR)
 from ..services import dragen_jobs
 
 
@@ -314,6 +314,7 @@ def main() -> int:
                 "--input_dir", str(nf_stage),
                 "--seq_type",  seq_type,
                 "--out_dir",   str(PIPELINE_OUT_ROOT),
+                "--scripts_dir", str(TERTIARY_PIPELINE_SCRIPTS_DIR),
             ], label="2b/4 nextflow", on_line=track_nextflow)
 
             existing = _find_pipeline_acmg_tsv(sid)

@@ -105,6 +105,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_BIOTOOLS_DIR` | `$NGS_UI_HOME/biotools` | Exomiser / LIRICAL |
 | `NGS_UI_BAM_ROOT` | `/home/datalake_Intermediate/pipeline/nextflow_output` | IGV 搜尋 BAM 的根目錄；可用 `:` 分隔多個 root |
 | `NGS_UI_IGV_REF_DIR` | `/home/pipeline/reference/hg38` | IGV 本機 hg38 FASTA + `.fai` |
+| `NGS_UI_TERTIARY_SCRIPTS_DIR` | `REPO_ROOT/tertiary_code/scripts` | UI worker 啟動正式 Nextflow 時覆寫的 helper scripts；隨 git pull 更新 |
 | `EXOMISER_HOME` / `LIRICAL_HOME` / `EXOMISER_DATA_HG38` ... | `biotools/...` | 工具與 data 路徑 |
 | `JAVA_BIN` / `JAVA_OPTS` | `java` / `-Xms4g -Xmx16g` | 跑 Exomiser/LIRICAL 用 |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | RQ 佇列 |
