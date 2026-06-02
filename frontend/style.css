@@ -2107,29 +2107,6 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .cnv-sv-cluster-alts > summary:hover { color: var(--fg); }
 .cnv-sv-cluster-alt-body { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .cnv-sv-card.cnv-sv-cluster-alt { opacity: 0.92; }
-.cnv-sv-merge-suggestions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.cnv-sv-merge-suggestion {
-  padding: 8px 10px;
-  border: 1px solid #f0b429;
-  border-radius: 6px;
-  background: #fff8c5;
-  font-size: 12px;
-}
-.cnv-sv-merge-suggestion .btn { margin-left: 8px; padding: 3px 8px; font-size: 12px; }
-.btn-remove-cnv-sv-merge {
-  margin-left: 8px;
-  border: 0;
-  background: transparent;
-  color: #cf222e;
-  cursor: pointer;
-  font-size: 12px;
-}
-.btn-remove-cnv-sv-merge:hover { text-decoration: underline; }
 
 /* ─── 三級分析 modal (DRAGEN VCF kicker) ───────────────────── */
 .topbar-job-status {

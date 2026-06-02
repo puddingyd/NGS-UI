@@ -1,7 +1,9 @@
-"""Rebuild reviewer-confirmed CNV/SV parent records from original segments."""
+"""Build parent CNV/SV records by joining compatible nearby segments."""
 from __future__ import annotations
 
 from copy import deepcopy
+
+MERGE_GAP_THRESHOLD = 100_000
 
 
 def _merge_id(source: str, chrom: str, start: int, end: int, sv_type: str) -> str:
@@ -59,22 +61,102 @@ def build_parent(merge: dict, variants: dict[str, dict]) -> dict | None:
     return parent
 
 
+def _compatible(a: dict, b: dict) -> bool:
+    if str(a.get("CHROM") or "") != str(b.get("CHROM") or ""):
+        return False
+    if str(a.get("sv_type") or "").upper() != str(b.get("sv_type") or "").upper():
+        return False
+    if str(a.get("sv_type") or "").upper() not in ("DEL", "DUP"):
+        return False
+    acn, bcn = a.get("copy_number"), b.get("copy_number")
+    return acn is None or bcn is None or str(acn) == str(bcn)
+
+
+def automatic_merges(variants: dict[str, dict], source: str) -> list[dict]:
+    """Group same-type adjacent DEL/DUP segments using a 100 kb max gap."""
+    sorted_vars = sorted(
+        variants.values(),
+        key=lambda v: (
+            str(v.get("CHROM") or ""),
+            str(v.get("sv_type") or "").upper(),
+            int(v.get("POS") or 0),
+        ),
+    )
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    for variant in sorted_vars:
+        previous = current[-1] if current else None
+        gap = (
+            int(variant.get("POS") or 0) - int(previous.get("END") or 0)
+            if previous else MERGE_GAP_THRESHOLD + 1
+        )
+        if previous and _compatible(previous, variant) and 0 <= gap <= MERGE_GAP_THRESHOLD:
+            current.append(variant)
+        else:
+            if len(current) >= 2:
+                groups.append(current)
+            current = [variant]
+    if len(current) >= 2:
+        groups.append(current)
+    return [{
+        "id": _merge_id(
+            source,
+            str(group[0].get("CHROM") or ""),
+            min(int(v["POS"]) for v in group),
+            max(int(v["END"]) for v in group),
+            str(group[0].get("sv_type") or ""),
+        ),
+        "source": source,
+        "member_ids": [str(v["id"]) for v in group],
+    } for group in groups]
+
+
 def apply_confirmed_merges(
     cnv_variants: dict[str, dict],
     sv_variants: dict[str, dict],
     merges: list[dict] | None,
 ) -> tuple[dict[str, dict], dict[str, dict]]:
-    """Return copies where confirmed parents replace their member segments."""
+    """Return copies where automatic parents replace nearby member segments."""
     cnv_out = dict(cnv_variants or {})
     sv_out = dict(sv_variants or {})
-    for merge in merges or []:
+    automatic = automatic_merges(cnv_out, "cnv") + automatic_merges(sv_out, "sv")
+    # Keep saved definitions readable for data created by the earlier
+    # reviewer-confirmation version, while automatic grouping is now default.
+    all_merges = automatic + list(merges or [])
+    accepted: dict[str, list[tuple[dict, dict]]] = {"cnv": [], "sv": []}
+    consumed: set[str] = set()
+    for merge in all_merges:
         if not isinstance(merge, dict):
+            continue
+        member_ids = merge.get("member_ids") or []
+        if any(member_id in consumed for member_id in member_ids):
             continue
         source = str(merge.get("source") or "cnv").lower()
         target = cnv_out if source == "cnv" else sv_out
         parent = build_parent(merge, target)
         if parent:
-            for member_id in merge.get("member_ids") or []:
-                target.pop(member_id, None)
-            target[parent["id"]] = parent
-    return cnv_out, sv_out
+            for member_id in member_ids:
+                consumed.add(member_id)
+            accepted[source].append((merge, parent))
+
+    def replace_in_order(source: str, variants: dict[str, dict]) -> dict[str, dict]:
+        parent_by_member: dict[str, dict] = {}
+        first_members: set[str] = set()
+        for merge, parent in accepted[source]:
+            members = [mid for mid in (merge.get("member_ids") or []) if mid in variants]
+            if not members:
+                continue
+            first = min(members, key=lambda mid: list(variants).index(mid))
+            first_members.add(first)
+            for member_id in members:
+                parent_by_member[member_id] = parent
+        out: dict[str, dict] = {}
+        for vid, variant in variants.items():
+            if vid in first_members:
+                parent = parent_by_member[vid]
+                out[parent["id"]] = parent
+            elif vid not in parent_by_member:
+                out[vid] = variant
+        return out
+
+    return replace_in_order("cnv", cnv_out), replace_in_order("sv", sv_out)

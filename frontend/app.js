@@ -475,6 +475,7 @@ function fmtAdVaf(ad, vaf) {
 // Backend serves BAM/BAI via /api/igv/file with HTTP range support.
 
 const IGV_SCRIPT_URL = "https://cdn.jsdelivr.net/npm/igv@2/dist/igv.min.js";
+const IGV_ALIGNMENT_VISIBILITY_WINDOW = 5000000;
 let _igvLoaded = null;       // Promise → resolves when window.igv exists
 let _igvBrowser = null;       // current igv.js Browser instance
 const _igvBams = [];          // [{label, path, sample_id, batch}]
@@ -511,7 +512,13 @@ function _igvLocusFor(v) {
   const end = isCnvSv ? Number(v.END) : start + Math.max(1, (v.REF || "A").length);
   if (!Number.isFinite(start)) return chrom;
   if (!Number.isFinite(end)) return chrom;
-  const pad = isCnvSv ? Math.max(1, Math.ceil((end - start) * 0.2)) : 100;
+  let pad = isCnvSv ? Math.max(1, Math.ceil((end - start) * 0.2)) : 100;
+  // Keep <=5 Mb CNV/SV events inside the alignment track's default
+  // load window. Use as much flanking context as fits without forcing
+  // the reviewer to zoom in before BAM coverage appears.
+  if (isCnvSv && end - start <= IGV_ALIGNMENT_VISIBILITY_WINDOW) {
+    pad = Math.min(pad, Math.max(0, Math.floor((IGV_ALIGNMENT_VISIBILITY_WINDOW - (end - start)) / 2)));
+  }
   return `${chrom}:${Math.max(1, start - pad)}-${end + pad}`;
 }
 
@@ -626,6 +633,7 @@ async function _initIgvBrowser() {
     type: "alignment",
     format: "bam",
     displayMode: "SQUISHED",
+    visibilityWindow: IGV_ALIGNMENT_VISIBILITY_WINDOW,
     autoscaleGroup: coverageAutoscaleGroup,
     url: _bamUrl(b.path),
     indexURL: _bamUrl(b.path + ".bai"),
@@ -3200,7 +3208,7 @@ function _cnvSvBuildParent(merge) {
 
 function _cnvSvVirtualParents() {
   const out = {};
-  _confirmedCnvSvMerges().forEach(merge => {
+  _effectiveCnvSvMerges().forEach(merge => {
     const parent = _cnvSvBuildParent(merge);
     if (parent) out[parent.id] = parent;
   });
@@ -3212,16 +3220,23 @@ function _cnvSvIdsForTier(tier) {
     ? state.data?.cnv_categories
     : state.data?.sv_categories;
   const ids = [...((cats && cats[tier]) || [])];
-  const idSet = new Set(ids);
+  const replacements = new Map();
   const suppressed = new Set();
-  const parents = [];
-  _confirmedCnvSvMerges().forEach(merge => {
-    if (!(merge.member_ids || []).some(id => idSet.has(id))) return;
-    (merge.member_ids || []).forEach(id => suppressed.add(id));
+  _effectiveCnvSvMerges().forEach(merge => {
+    const tierMembers = (merge.member_ids || []).filter(id => ids.includes(id));
+    if (!tierMembers.length) return;
     const parent = _cnvSvBuildParent(merge);
-    if (parent) parents.push(parent.id);
+    if (!parent) return;
+    tierMembers.forEach(id => suppressed.add(id));
+    const anchor = tierMembers.reduce((best, id) => ids.indexOf(id) < ids.indexOf(best) ? id : best);
+    replacements.set(anchor, parent.id);
   });
-  return [...ids.filter(id => !suppressed.has(id)), ...parents];
+  const out = [];
+  ids.forEach(id => {
+    if (replacements.has(id)) out.push(replacements.get(id));
+    if (!suppressed.has(id)) out.push(id);
+  });
+  return out;
 }
 
 // ---------- CNV/SV near-duplicate clustering ----------------------
@@ -3298,9 +3313,11 @@ function _cnvSvCompatibleSegments(a, b) {
 }
 
 function _cnvSvAdjacentMergeGroups(ids) {
-  const confirmedMembers = new Set(_confirmedCnvSvMerges().flatMap(m => m.member_ids || []));
-  const sorted = ids.map(_cnvSvBaseVariantById).filter(v => v && !confirmedMembers.has(v.id))
-    .sort((a, b) => String(a.CHROM).localeCompare(String(b.CHROM)) || Number(a.POS) - Number(b.POS));
+  const sorted = ids.map(_cnvSvBaseVariantById).filter(Boolean)
+    .sort((a, b) => String(a.source).localeCompare(String(b.source))
+      || String(a.CHROM).localeCompare(String(b.CHROM))
+      || String(a.sv_type).localeCompare(String(b.sv_type))
+      || Number(a.POS) - Number(b.POS));
   const groups = [];
   let current = [];
   sorted.forEach(v => {
@@ -3317,11 +3334,12 @@ function _cnvSvAdjacentMergeGroups(ids) {
   return groups;
 }
 
-function _cnvSvMergeSuggestion(groups) {
-  if (!groups.length) return null;
-  const wrap = document.createElement("div");
-  wrap.className = "cnv-sv-merge-suggestions";
-  wrap.innerHTML = groups.map(segments => {
+function _automaticCnvSvMerges() {
+  const variants = [
+    ...Object.values(state.data?.cnv_variants || {}),
+    ...Object.values(state.data?.sv_variants || {}),
+  ];
+  return _cnvSvAdjacentMergeGroups(variants.map(v => v.id)).map(segments => {
     const first = segments[0], last = segments[segments.length - 1];
     const source = first.source || "cnv";
     const chrom = first.CHROM || "";
@@ -3329,15 +3347,19 @@ function _cnvSvMergeSuggestion(groups) {
     const svType = first.sv_type || "";
     const id = _cnvSvMergeId(source, chrom, start, end, svType);
     const memberIds = segments.map(v => v.id);
-    return `<div class="cnv-sv-merge-suggestion">
-      <strong>候選合併：</strong> ${escapeHtml(_normalizeChrom(chrom))}:${escapeHtml(String(start))}-${escapeHtml(String(end))} ${escapeHtml(svType)}
-      <span class="muted">（${segments.length} 段，相鄰 gap ≤ ${CNV_SV_MERGE_GAP_THRESHOLD / 1000} kb）</span>
-      <button type="button" class="btn btn-primary btn-confirm-cnv-sv-merge"
-        data-merge-id="${escapeAttr(id)}" data-source="${escapeAttr(source)}"
-        data-member-ids="${escapeAttr(JSON.stringify(memberIds))}">確認合併</button>
-    </div>`;
-  }).join("");
-  return wrap;
+    return { id, source, member_ids: memberIds };
+  });
+}
+
+function _effectiveCnvSvMerges() {
+  const out = [];
+  const consumed = new Set();
+  [..._automaticCnvSvMerges(), ..._confirmedCnvSvMerges()].forEach(merge => {
+    if ((merge.member_ids || []).some(id => consumed.has(id))) return;
+    out.push(merge);
+    (merge.member_ids || []).forEach(id => consumed.add(id));
+  });
+  return out;
 }
 
 function renderCnvSvTabBar() {
@@ -3384,8 +3406,6 @@ function renderCnvSvTabBar() {
     }
     const body = document.createElement("div");
     body.className = "block-body open";
-    const suggestion = _cnvSvMergeSuggestion(_cnvSvAdjacentMergeGroups(ids));
-    if (suggestion) body.appendChild(suggestion);
     const { reps, members } = _cnvSvClusterIds(ids);
     reps.forEach((repId, i) => {
       const v = _cnvSvVariantById(repId);
@@ -3394,9 +3414,7 @@ function renderCnvSvTabBar() {
       if (v.is_merged_parent) {
         const det = document.createElement("details");
         det.className = "cnv-sv-cluster-alts";
-        det.innerHTML = `<summary>顯示合併前 ${v.merged_segment_ids.length} 個原始片段
-          <button type="button" class="btn-remove-cnv-sv-merge" data-merge-id="${escapeAttr(v.id)}">取消合併</button>
-        </summary>`;
+        det.innerHTML = `<summary>顯示自動整合前 ${v.merged_segment_ids.length} 個原始片段</summary>`;
         const altBody = document.createElement("div");
         altBody.className = "cnv-sv-cluster-alt-body";
         v.merged_segment_ids.forEach(mid => {
@@ -4645,36 +4663,6 @@ document.addEventListener("click", ev => {
   } else if (t.matches(".btn-remove-manual")) {
     ev.stopPropagation();
     removeManualVariant(t.dataset.mid);
-  } else if (t.matches(".btn-confirm-cnv-sv-merge")) {
-    ev.stopPropagation();
-    const memberIds = JSON.parse(t.dataset.memberIds || "[]");
-    const childStatuses = Array.from(new Set(memberIds.map(id => getStatus(id)).filter(Boolean)));
-    state.reports.cnv_sv_merges = _confirmedCnvSvMerges();
-    state.reports.cnv_sv_merges.push({
-      id: t.dataset.mergeId,
-      source: t.dataset.source || "cnv",
-      member_ids: memberIds,
-    });
-    state.reports.status = state.reports.status || {};
-    memberIds.forEach(id => { delete state.reports.status?.[id]; });
-    if (childStatuses.length === 1) {
-      state.reports.status[t.dataset.mergeId] = childStatuses[0];
-    }
-    state.dirty = true;
-    renderCnvSvTabBar();
-    renderReportSections();
-    updateSaveHint();
-  } else if (t.matches(".btn-remove-cnv-sv-merge")) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    const mergeId = t.dataset.mergeId;
-    state.reports.cnv_sv_merges = _confirmedCnvSvMerges().filter(m => m.id !== mergeId);
-    delete state.reports.status?.[mergeId];
-    delete state.reports.edits?.[mergeId];
-    state.dirty = true;
-    renderCnvSvTabBar();
-    renderReportSections();
-    updateSaveHint();
   } else if (t.matches(".disease-pick")) {
     // Don't let clicking the checkbox also toggle its <details> container.
     ev.stopPropagation();
