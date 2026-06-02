@@ -2920,7 +2920,7 @@ const CANDIDATE_SECTION_DEFS = [
   { el: "cat-tier-1b", title: "1B — Frameshift / Nonsense (LOFTEE HC)", category: "1B", dropdown: "candidate", tier: "1B", defaultOpen: true },
   { el: "cat-tier-1c", title: "1C — ACMG points ≥ 4",          category: "1C", dropdown: "candidate", tier: "1C", defaultOpen: true },
   { el: "cat-tier-2",  title: "2 — ClinVar P/LP 0★ or Conflicting (含 P)", category: "2", dropdown: "candidate", tier: "2" },
-  { el: "cat-tier-3",  title: "3 — ACMG points < 4",           category: "3",  dropdown: "candidate", tier: "3"  },
+  { el: "cat-tier-3",  title: "3 - Other",                     category: "3",  dropdown: "candidate", tier: "3"  },
   { el: "cat-acmg-sf-c",   title: "ACMG SF",          category: "acmg_sf",   dropdown: "panel" },
   { el: "cat-proactive-c", title: "Proactive",        category: "proactive", dropdown: "panel" },
   { el: "cat-carrier-c",   title: "Carrier screening", category: "carrier",  dropdown: "panel" },
@@ -3193,7 +3193,7 @@ function renderTierTabBar() {
     "1B": "1B — Frameshift / Nonsense",
     "1C": "1C — ACMG points ≥ 4",
     "2":  "2 — ClinVar P/LP 0★ or CONF",
-    "3":  "3 — ACMG points < 4",
+    "3":  "3 - Other",
   };
   bar.innerHTML = TIER_ORDER.map(t => {
     const c = counts[t];
