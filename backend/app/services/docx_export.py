@@ -23,7 +23,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
 from ..config import TERTIARY_OUTPUT_ROOT  # noqa: F401 (kept for callers)
-from . import hpo_ontology, phenotype_scorer, report_store, sample_loader
+from . import cnv_sv_merge, hpo_ontology, phenotype_scorer, report_store, sample_loader
 
 # 細明體 (MingLiU) — the *monospace* CJK family. (新細明體 = PMingLiU
 # is proportional, which would break the ASCII tables below.) Word
@@ -495,8 +495,11 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     is_wgs   = (test_type or "").upper() == "WGS"
 
     snv_vars  = sample.get("variants", {})       or {}
-    cnv_vars  = sample.get("cnv_variants", {})   or {}
-    sv_vars   = sample.get("sv_variants",  {})   or {}
+    cnv_vars, sv_vars = cnv_sv_merge.apply_confirmed_merges(
+        sample.get("cnv_variants", {}) or {},
+        sample.get("sv_variants", {}) or {},
+        report.get("cnv_sv_merges") or [],
+    )
     mito_vars = sample.get("mito_variants", {})  or {}
 
     # Group by reviewer status. Each entry is ("kind", variant_dict).
@@ -629,8 +632,9 @@ def _acmg_label(variant: dict, edits_for_v: dict) -> str:
       1. Mito reviewer manual entry   (edits.ACMG_classification_mito)
       2. SNV reviewer override        (edits.ACMG_classification)
       3. CNV/SV reviewer override     (edits.ACMG_class_sv → int 1-5)
-      4. SNV pipeline value           (variant.ACMG_classification)
-      5. CNV/SV pipeline value, int   (variant.acmg_class 1-5)
+      4. SNV GeneBe value             (variant.genebe_acmg_class)
+      5. SNV pipeline value           (variant.ACMG_classification)
+      6. CNV/SV pipeline value, int   (variant.acmg_class 1-5)
     Mito has no automated ACMG source — when no manual entry is set
     the function returns an empty string so the report's table cell
     renders blank, per spec.
@@ -649,6 +653,9 @@ def _acmg_label(variant: dict, edits_for_v: dict) -> str:
                 return _CNV_ACMG_INT_TO_LABEL[n]
         except ValueError:
             return raw_cnv
+    cls = (variant.get("genebe_acmg_class") or "").strip()
+    if cls:
+        return cls
     cls = (variant.get("ACMG_classification") or "").strip()
     if cls:
         return cls
@@ -969,6 +976,11 @@ def _sv_kind_zh(v: dict) -> str:
     return _CNV_KIND_ZH.get((v.get("sv_type") or "").upper(), "變異")
 
 
+def _cnv_report_disease(edits: dict) -> str:
+    """Reviewer-entered CNV/SV disease label for the formal report."""
+    return str(edits.get("disease") or "").strip()
+
+
 def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
                        edits: dict) -> None:
     coords    = _coords_str(v, is_wgs)
@@ -1013,6 +1025,8 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
 
     kind_zh = _CNV_KIND_ZH.get((v.get("sv_type") or "").upper(), "變異")
 
+    next_idx = 2
+    disease_override = _cnv_report_disease(edits)
     if len(omim_genes) == 1:
         g = omim_genes[0]
         gname = g.get("gene") or "?"
@@ -1020,7 +1034,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {_gene_loc_phrase(gname, loc_zh)}。")
         # 2. OMIM phenotype + inheritance, per-gene
         ph, ph_inheritance, phenotype_mim = _disease_info(
-            (g.get("omim_phenotype") or "").strip()
+            disease_override or (g.get("omim_phenotype") or "").strip()
         )
         inh = _inheritance_zh(
             ph_inheritance or g.get("omim_inheritance", "") or ""
@@ -1031,28 +1045,23 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         if inh: bits.append(f"，其遺傳模式屬於{inh}")
         if mim: bits.append(f" (Phenotype MIM number: {mim})")
         _add_paragraph(doc, f"    2. {''.join(bits)}。")
+        next_idx = 3
     elif len(omim_genes) > 1:
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
                             f"包含 {', '.join(names)} 等 OMIM 疾病基因。")
     else:
-        # No OMIM-tagged gene in this CNV — list whatever genes are
-        # present so the reviewer has context, but skip the OMIM line.
-        all_names = [
-            g.get("gene", "") for g in (v.get("genes") or [])
-            if isinstance(g, dict) and g.get("gene")
-        ][:10]
-        if all_names:
-            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
-                                f"涵蓋 {', '.join(all_names)} 等基因區域（無 OMIM 疾病基因紀錄）。")
-        else:
-            _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上。")
+        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
+                            "未涵蓋 OMIM 疾病相關基因。")
 
-    note_idx = 3
-    _add_paragraph(doc, f"    {note_idx}. {_patho_sentence(acmg)}")
-    note_idx += 1
+    if disease_override and len(omim_genes) != 1:
+        _add_paragraph(doc, f"    {next_idx}. 相關疾病：{disease_override}。")
+        next_idx += 1
+
+    _add_paragraph(doc, f"    {next_idx}. {_patho_sentence(acmg)}")
+    next_idx += 1
     if not is_wgs:
-        _add_paragraph(doc, f"    {note_idx}. 由於此檢驗技術為全外顯子定序，"
+        _add_paragraph(doc, f"    {next_idx}. 由於此檢驗技術為全外顯子定序，"
                             "若缺失片段之斷點(Breakpoints)發生於內含子(Intron) ，"
                             "則無法明確判別起始及末端位置。")
 
@@ -1078,16 +1087,14 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         span_desc = f"此段{kind_zh}涵蓋 {', '.join(names)} 等 OMIM 疾病基因"
     else:
-        all_names = [
-            g.get("gene", "") for g in (v.get("genes") or [])
-            if isinstance(g, dict) and g.get("gene")
-        ][:10]
-        span_desc = (f"此段{kind_zh}涵蓋 {', '.join(all_names)} 等基因區域（無 OMIM 疾病基因紀錄）"
-                     if all_names else "此段未涵蓋已知疾病基因")
+        span_desc = f"此段{kind_zh}未涵蓋 OMIM 疾病相關基因"
 
+    disease = _cnv_report_disease(edits)
+    disease_sent = f"此變異與「{disease}」相關。" if disease else ""
     return (
         f"    在個案之檢體中，檢測到位於 {coords} {zyg_phrase}片段{kind_zh}變異，"
         f"{span_desc}。"
+        f"{disease_sent}"
         "根據美國醫學遺傳學暨基因體學學會 (American College of Medical "
         "Genetics and Genomics) 與分子病理學學會 (Association for Molecular "
         "Pathology) 於2015年發表之準則，並參照ClinGen 及Riggs等人於 2020 年發布之"

@@ -122,6 +122,7 @@ def _case_variant_label(variant: dict, edits: dict) -> str:
     """Compact SNV label for the case-management table."""
     acmg = (
         edits.get("ACMG_classification")
+        or variant.get("genebe_acmg_class")
         or variant.get("ACMG_classification")
         or ""
     ).strip()
@@ -160,17 +161,39 @@ def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
     return out
 
 
+def _case_cnv_sv_label(variant: dict, edits: dict) -> str:
+    """Compact CNV/SV label for the case-management table."""
+    raw_acmg = edits.get("ACMG_class_sv")
+    try:
+        acmg_num = int(raw_acmg) if raw_acmg not in (None, "") else variant.get("acmg_class")
+    except (TypeError, ValueError):
+        acmg_num = None
+    acmg = {
+        1: "B", 2: "LB", 3: "VUS", 4: "LP", 5: "P",
+    }.get(acmg_num, str(raw_acmg or ""))
+    chrom = str(variant.get("CHROM") or "")
+    if chrom and not chrom.startswith("chr"):
+        chrom = "chr" + chrom
+    start = variant.get("POS")
+    end = variant.get("END")
+    coords = f"{chrom}:{start}-{end}" if chrom and start is not None and end is not None else ""
+    sv_type = str(variant.get("sv_type") or "").upper()
+    return ", ".join(x for x in (f"{coords} {sv_type}".strip(), acmg) if x)
+
+
 def _case_management_summary(
     sample_dir: Path,
     meta: dict,
     *,
     omim_sig: tuple | None = None,
 ) -> dict[str, str]:
-    """Summarize marked SNVs for the lightweight case-list modal."""
+    """Summarize marked SNV/CNV/SV variants for the case-list modal."""
     snv_tsv = sample_dir / "snv_indel.annotated.tsv"
     key = (
         _file_signature(sample_dir / "sample_metadata.json"),
         _file_signature(snv_tsv),
+        _file_signature(sample_dir / "cnv.annotated.tsv"),
+        _file_signature(sample_dir / "sv.annotated.tsv"),
         omim_sig if omim_sig is not None else omim_store.cache_signature(),
     )
     with _case_summary_cache_lock:
@@ -211,10 +234,41 @@ def _case_management_summary(
                 elif label:
                     other.append(label)
 
+    if wanted:
+        from ..adapters.annotsv_tsv import load_annotsv_tsv
+        from . import cnv_sv_merge
+        aux: dict[str, dict[str, dict]] = {}
+        for source, path in (
+            ("cnv", sample_dir / "cnv.annotated.tsv"),
+            ("sv", sample_dir / "sv.annotated.tsv"),
+        ):
+            if not path.exists():
+                aux[source] = {}
+                continue
+            variants, _ = load_annotsv_tsv(path, source=source)
+            aux[source] = variants
+        cnv_vars, sv_vars = cnv_sv_merge.apply_confirmed_merges(
+            aux.get("cnv", {}), aux.get("sv", {}), meta.get("cnv_sv_merges") or [],
+        )
+        for variants in (cnv_vars, sv_vars):
+            for vid, variant in variants.items():
+                if vid not in wanted:
+                    continue
+                edits = edits_by_id.get(vid) or {}
+                label = _case_cnv_sv_label(variant, edits)
+                if str(statuses.get(vid, "")).strip() == "1":
+                    if label:
+                        causative.append(label)
+                    disease = str(edits.get("disease") or "").strip()
+                    if disease and disease not in diseases:
+                        diseases.append(disease)
+                elif label:
+                    other.append(label)
+
     result = {
-        "causative_variants": "; ".join(causative),
-        "diseases": "; ".join(diseases),
-        "other_variants": "; ".join(other),
+        "causative_variants": "\n".join(causative),
+        "diseases": "\n".join(diseases),
+        "other_variants": "\n".join(other),
         "comment": str(meta.get("comment") or ""),
         "sign_received_at": str(meta.get("sign_received_at") or ""),
     }

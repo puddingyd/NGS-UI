@@ -151,6 +151,7 @@ async function _loadSample(LIS_ID) {
   if (reports.comment == null)               reports.comment = "";
   if (!Array.isArray(reports.tags))          reports.tags = [];
   if (!Array.isArray(reports.manual_variants)) reports.manual_variants = [];
+  if (!Array.isArray(reports.cnv_sv_merges)) reports.cnv_sv_merges = [];
   state.data       = data;
   state.snvSearchVariants = {};
   state.reports    = reports;
@@ -1864,9 +1865,9 @@ async function _renderCaseList({ refresh = true } = {}) {
         <td>${escapeHtml(r.name || "—")}</td>
         <td>${escapeHtml(r.mrn || "—")}</td>
         <td>${escapeHtml(r.test_type || "—")}</td>
-        <td class="case-list-long">${escapeHtml(r.causative_variants || "—")}</td>
-        <td class="case-list-long">${escapeHtml(r.diseases || "—")}</td>
-        <td class="case-list-long">${escapeHtml(r.other_variants || "—")}</td>
+        <td class="case-list-long case-list-variant">${escapeHtml(r.causative_variants || "—")}</td>
+        <td class="case-list-long case-list-disease">${escapeHtml(r.diseases || "—")}</td>
+        <td class="case-list-long case-list-variant">${escapeHtml(r.other_variants || "—")}</td>
         <td class="case-list-long">${escapeHtml(r.comment || "—")}</td>
         <td class="case-list-date">${escapeHtml(_fmtUploadTime(r.sign_received_at))}</td>
         <td class="case-list-date">${escapeHtml(_fmtUploadTime(r.created_at))}</td>
@@ -2175,7 +2176,7 @@ function _pickGeneListMode() {
       <div class="modal-card" style="max-width:520px">
         <h2>匯出診斷報告</h2>
         <p style="margin:8px 0 12px;font-size:13px;color:#555">
-          §五.4「本次檢測基因包括」要怎麼呈現？
+          「本次檢測基因包括」要怎麼呈現？
         </p>
         <label class="gene-list-mode-opt" style="display:block;margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer">
           <input type="radio" name="gene-list-mode" value="grouped" checked />
@@ -2462,15 +2463,13 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   // > pipeline. GeneBe ACMG_CLASS / SCORE / CRITERIA tend to be tighter
   // calibrated than the pipeline's per-rule classifier, so use them
   // when present and fall back to pipeline otherwise.
-  const editAcmgClass = getEdit(id, "ACMG_classification")
-                     ?? v.genebe_acmg_class
-                     ?? v.ACMG_classification ?? "";
-  const editAcmgCrit  = getEdit(id, "ACMG_criteria")
-                     ?? v.genebe_acmg_criteria
-                     ?? v.ACMG_criteria ?? "";
-  const editAcmgScore = getEdit(id, "ACMG_score")
-                     ?? v.genebe_acmg_score
-                     ?? (v.ACMG_score ?? "");
+  const firstNonBlank = (...values) => values.find(x => x !== null && x !== undefined && x !== "") ?? "";
+  const editAcmgClass = firstNonBlank(getEdit(id, "ACMG_classification"),
+                                      v.genebe_acmg_class, v.ACMG_classification);
+  const editAcmgCrit  = firstNonBlank(getEdit(id, "ACMG_criteria"),
+                                      v.genebe_acmg_criteria, v.ACMG_criteria);
+  const editAcmgScore = firstNonBlank(getEdit(id, "ACMG_score"),
+                                      v.genebe_acmg_score, v.ACMG_score);
   const editComment   = getEdit(id, "comment")             ?? "";
 
   const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
@@ -2849,10 +2848,8 @@ function lookupAnyVariant(id) {
   if (v) return { v, kind: "snv" };
   v = (d.mito_variants || {})[id];
   if (v) return { v, kind: "mito" };
-  v = (d.cnv_variants || {})[id];
-  if (v) return { v, kind: "cnv" };
-  v = (d.sv_variants || {})[id];
-  if (v) return { v, kind: "sv" };
+  v = _cnvSvVariantById(id);
+  if (v) return { v, kind: v.source === "sv" ? "sv" : "cnv" };
   return { v: null, kind: null };
 }
 
@@ -3153,16 +3150,78 @@ let activeCnvSvTab = null;
 // state.data and dispatches each variant id to the right tier panel
 // renderer. Tier counts on the tab bar reflect the actual list size.
 function _cnvSvVariantById(id) {
+  return _cnvSvBaseVariantById(id)
+      || _cnvSvVirtualParents()[id]
+      || null;
+}
+
+function _cnvSvBaseVariantById(id) {
   return (state.data?.cnv_variants?.[id])
       || (state.data?.sv_variants?.[id])
       || null;
+}
+
+function _confirmedCnvSvMerges() {
+  return Array.isArray(state.reports?.cnv_sv_merges) ? state.reports.cnv_sv_merges : [];
+}
+
+function _cnvSvMergeId(source, chrom, start, end, svType) {
+  return `MERGED-${String(source || "cnv").toUpperCase()}-${chrom}-${start}-${end}-${String(svType || "").toUpperCase()}`;
+}
+
+function _cnvSvBuildParent(merge) {
+  const segments = (merge.member_ids || []).map(_cnvSvBaseVariantById).filter(Boolean);
+  if (segments.length < 2) return null;
+  const chrom = segments[0].CHROM || "";
+  const svType = String(segments[0].sv_type || "").toUpperCase();
+  const source = String(merge.source || segments[0].source || "cnv").toLowerCase();
+  if (!chrom || !["DEL", "DUP"].includes(svType)) return null;
+  if (segments.some(v => v.CHROM !== chrom || String(v.sv_type || "").toUpperCase() !== svType)) return null;
+  const start = Math.min(...segments.map(v => Number(v.POS)));
+  const end = Math.max(...segments.map(v => Number(v.END)));
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  const rep = segments.slice().sort((a, b) => Number(b.ranking_score || -999) - Number(a.ranking_score || -999))[0];
+  const genes = [];
+  const seenGenes = new Set();
+  segments.forEach(seg => [...(seg.genes || []), ...(seg.genes_overflow || [])].forEach(g => {
+    if (!g?.gene || seenGenes.has(g.gene)) return;
+    seenGenes.add(g.gene);
+    genes.push(g);
+  }));
+  return {
+    ...rep,
+    id: merge.id || _cnvSvMergeId(source, chrom, start, end, svType),
+    source, CHROM: chrom, POS: start, END: end, length: end - start,
+    gene_count: genes.length, genes, genes_overflow: [], genes_compact: [],
+    genes_total: genes.length, merged_segment_ids: segments.map(v => v.id),
+    is_merged_parent: true,
+  };
+}
+
+function _cnvSvVirtualParents() {
+  const out = {};
+  _confirmedCnvSvMerges().forEach(merge => {
+    const parent = _cnvSvBuildParent(merge);
+    if (parent) out[parent.id] = parent;
+  });
+  return out;
 }
 
 function _cnvSvIdsForTier(tier) {
   const cats = tier.startsWith("CNV-")
     ? state.data?.cnv_categories
     : state.data?.sv_categories;
-  return (cats && cats[tier]) || [];
+  const ids = [...((cats && cats[tier]) || [])];
+  const idSet = new Set(ids);
+  const suppressed = new Set();
+  const parents = [];
+  _confirmedCnvSvMerges().forEach(merge => {
+    if (!(merge.member_ids || []).some(id => idSet.has(id))) return;
+    (merge.member_ids || []).forEach(id => suppressed.add(id));
+    const parent = _cnvSvBuildParent(merge);
+    if (parent) parents.push(parent.id);
+  });
+  return [...ids.filter(id => !suppressed.has(id)), ...parents];
 }
 
 // ---------- CNV/SV near-duplicate clustering ----------------------
@@ -3181,6 +3240,7 @@ function _cnvSvIdsForTier(tier) {
 // ships this clustering naturally becomes a no-op.
 
 const CNV_SV_CLUSTER_OVERLAP_THRESHOLD = 0.8;
+const CNV_SV_MERGE_GAP_THRESHOLD = 100000;
 
 function _cnvSvSpan(v) {
   const s = Number(v?.POS);
@@ -3227,6 +3287,59 @@ function _cnvSvClusterIds(ids) {
   return { reps, members };
 }
 
+function _cnvSvCompatibleSegments(a, b) {
+  if (!a || !b) return false;
+  if (!["DEL", "DUP"].includes(String(a.sv_type || "").toUpperCase())) return false;
+  if ((a.source || "") !== (b.source || "")) return false;
+  if ((a.CHROM || "") !== (b.CHROM || "")) return false;
+  if ((a.sv_type || "") !== (b.sv_type || "")) return false;
+  const acn = a.copy_number, bcn = b.copy_number;
+  return acn == null || bcn == null || String(acn) === String(bcn);
+}
+
+function _cnvSvAdjacentMergeGroups(ids) {
+  const confirmedMembers = new Set(_confirmedCnvSvMerges().flatMap(m => m.member_ids || []));
+  const sorted = ids.map(_cnvSvBaseVariantById).filter(v => v && !confirmedMembers.has(v.id))
+    .sort((a, b) => String(a.CHROM).localeCompare(String(b.CHROM)) || Number(a.POS) - Number(b.POS));
+  const groups = [];
+  let current = [];
+  sorted.forEach(v => {
+    const prev = current[current.length - 1];
+    const gap = prev ? Number(v.POS) - Number(prev.END) : Infinity;
+    if (prev && _cnvSvCompatibleSegments(prev, v) && gap >= 0 && gap <= CNV_SV_MERGE_GAP_THRESHOLD) {
+      current.push(v);
+    } else {
+      if (current.length >= 2) groups.push(current);
+      current = [v];
+    }
+  });
+  if (current.length >= 2) groups.push(current);
+  return groups;
+}
+
+function _cnvSvMergeSuggestion(groups) {
+  if (!groups.length) return null;
+  const wrap = document.createElement("div");
+  wrap.className = "cnv-sv-merge-suggestions";
+  wrap.innerHTML = groups.map(segments => {
+    const first = segments[0], last = segments[segments.length - 1];
+    const source = first.source || "cnv";
+    const chrom = first.CHROM || "";
+    const start = Number(first.POS), end = Number(last.END);
+    const svType = first.sv_type || "";
+    const id = _cnvSvMergeId(source, chrom, start, end, svType);
+    const memberIds = segments.map(v => v.id);
+    return `<div class="cnv-sv-merge-suggestion">
+      <strong>候選合併：</strong> ${escapeHtml(_normalizeChrom(chrom))}:${escapeHtml(String(start))}-${escapeHtml(String(end))} ${escapeHtml(svType)}
+      <span class="muted">（${segments.length} 段，相鄰 gap ≤ ${CNV_SV_MERGE_GAP_THRESHOLD / 1000} kb）</span>
+      <button type="button" class="btn btn-primary btn-confirm-cnv-sv-merge"
+        data-merge-id="${escapeAttr(id)}" data-source="${escapeAttr(source)}"
+        data-member-ids="${escapeAttr(JSON.stringify(memberIds))}">確認合併</button>
+    </div>`;
+  }).join("");
+  return wrap;
+}
+
 function renderCnvSvTabBar() {
   const bar = document.getElementById("cnv-sv-tab-bar");
   if (!bar) return;
@@ -3271,11 +3384,31 @@ function renderCnvSvTabBar() {
     }
     const body = document.createElement("div");
     body.className = "block-body open";
+    const suggestion = _cnvSvMergeSuggestion(_cnvSvAdjacentMergeGroups(ids));
+    if (suggestion) body.appendChild(suggestion);
     const { reps, members } = _cnvSvClusterIds(ids);
     reps.forEach((repId, i) => {
       const v = _cnvSvVariantById(repId);
       if (!v) return;
       body.appendChild(renderCnvSvCard(v, repId, { tier, index: i + 1 }));
+      if (v.is_merged_parent) {
+        const det = document.createElement("details");
+        det.className = "cnv-sv-cluster-alts";
+        det.innerHTML = `<summary>顯示合併前 ${v.merged_segment_ids.length} 個原始片段
+          <button type="button" class="btn-remove-cnv-sv-merge" data-merge-id="${escapeAttr(v.id)}">取消合併</button>
+        </summary>`;
+        const altBody = document.createElement("div");
+        altBody.className = "cnv-sv-cluster-alt-body";
+        v.merged_segment_ids.forEach(mid => {
+          const mv = _cnvSvBaseVariantById(mid);
+          if (!mv) return;
+          const altCard = renderCnvSvCard(mv, mid, { tier });
+          altCard.classList.add("cnv-sv-cluster-alt");
+          altBody.appendChild(altCard);
+        });
+        det.appendChild(altBody);
+        body.appendChild(det);
+      }
       const memberIds = members[repId] || [];
       if (memberIds.length) {
         const det = document.createElement("details");
@@ -3912,6 +4045,14 @@ function _renderCnvSvComment(v, id) {
   </div>`;
 }
 
+function _renderCnvSvDisease(v, id) {
+  const disease = (getEdit(id, "disease") || "");
+  return `<div class="cnv-sv-section cnv-sv-disease">
+    <div class="cnv-sv-section-title">Disease</div>
+    <textarea class="cnv-sv-disease-text" data-id="${escapeAttr(id)}" rows="2" placeholder="疾病名稱">${escapeHtml(disease)}</textarea>
+  </div>`;
+}
+
 function renderCnvSvCard(v, id, opts = {}) {
   const card = document.createElement("div");
   card.className = "variant-card cnv-sv-card";
@@ -3922,6 +4063,7 @@ function renderCnvSvCard(v, id, opts = {}) {
     ${_renderCnvSvGeneTable(v, id)}
     ${_renderCnvSvOverlap(v)}
     ${_renderCnvSvBenign(v)}
+    ${_renderCnvSvDisease(v, id)}
     ${_renderCnvSvComment(v, id)}
   `;
   return card;
@@ -3966,10 +4108,10 @@ document.addEventListener("change", ev => {
 
 document.addEventListener("input", ev => {
   const t = ev.target;
-  if (!t.matches?.(".cnv-sv-comment-text")) return;
+  if (!t.matches?.(".cnv-sv-comment-text, .cnv-sv-disease-text")) return;
   const id = t.dataset.id;
   if (!id) return;
-  setEdit(id, "comment", t.value);
+  setEdit(id, t.matches(".cnv-sv-disease-text") ? "disease" : "comment", t.value);
 });
 
 // Click on a truncated cell (Inheritance / Phenotype) → expand it
@@ -4503,6 +4645,36 @@ document.addEventListener("click", ev => {
   } else if (t.matches(".btn-remove-manual")) {
     ev.stopPropagation();
     removeManualVariant(t.dataset.mid);
+  } else if (t.matches(".btn-confirm-cnv-sv-merge")) {
+    ev.stopPropagation();
+    const memberIds = JSON.parse(t.dataset.memberIds || "[]");
+    const childStatuses = Array.from(new Set(memberIds.map(id => getStatus(id)).filter(Boolean)));
+    state.reports.cnv_sv_merges = _confirmedCnvSvMerges();
+    state.reports.cnv_sv_merges.push({
+      id: t.dataset.mergeId,
+      source: t.dataset.source || "cnv",
+      member_ids: memberIds,
+    });
+    state.reports.status = state.reports.status || {};
+    memberIds.forEach(id => { delete state.reports.status?.[id]; });
+    if (childStatuses.length === 1) {
+      state.reports.status[t.dataset.mergeId] = childStatuses[0];
+    }
+    state.dirty = true;
+    renderCnvSvTabBar();
+    renderReportSections();
+    updateSaveHint();
+  } else if (t.matches(".btn-remove-cnv-sv-merge")) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const mergeId = t.dataset.mergeId;
+    state.reports.cnv_sv_merges = _confirmedCnvSvMerges().filter(m => m.id !== mergeId);
+    delete state.reports.status?.[mergeId];
+    delete state.reports.edits?.[mergeId];
+    state.dirty = true;
+    renderCnvSvTabBar();
+    renderReportSections();
+    updateSaveHint();
   } else if (t.matches(".disease-pick")) {
     // Don't let clicking the checkbox also toggle its <details> container.
     ev.stopPropagation();
