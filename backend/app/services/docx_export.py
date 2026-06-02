@@ -1048,15 +1048,15 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         next_idx = 3
     elif len(omim_genes) > 1:
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
+        disease_suffix = f"，與 {disease_override} 相關" if disease_override else ""
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
-                            f"包含 {', '.join(names)} 等 OMIM 疾病基因。")
+                            f"包含 {', '.join(names)} 等 OMIM 疾病基因"
+                            f"{disease_suffix}。")
     else:
+        disease_suffix = f"，與 {disease_override} 相關" if disease_override else ""
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
-                            "未涵蓋 OMIM 疾病相關基因。")
-
-    if disease_override and len(omim_genes) != 1:
-        _add_paragraph(doc, f"    {next_idx}. 相關疾病：{disease_override}。")
-        next_idx += 1
+                            "未涵蓋 OMIM 疾病相關基因"
+                            f"{disease_suffix}。")
 
     _add_paragraph(doc, f"    {next_idx}. {_patho_sentence(acmg)}")
     next_idx += 1
