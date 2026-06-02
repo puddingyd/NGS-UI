@@ -1286,6 +1286,10 @@ async function renderFixedPanelHosts() {
     });
   });
   syncFixedPanelChipState();
+  // renderPhenotype() may have drawn selected chips before the async
+  // fixed-panel index arrived. Refresh them now so reviewer-facing
+  // labels use the corrected display name instead of the stored key.
+  renderPanelChips();
 }
 
 function syncFixedPanelChipState() {
@@ -1337,6 +1341,9 @@ async function renderNewCaseFixedPanelHosts() {
     });
   });
   syncNewCaseFixedPanelChipState();
+  // Existing phenotype files can seed selected panels before the
+  // index request completes. Re-render once metadata is available.
+  renderNewCasePhenoEditor();
 }
 
 function syncNewCaseFixedPanelChipState() {
@@ -6858,8 +6865,10 @@ function renderNewCasePhenoEditor() {
     panelUl.innerHTML = (newCaseEdit.panels || []).map((p, i) => {
       const w = Number(p.weight ?? 1);
       const opts = [1,2,3,4,5].map(n => `<option value="${n}" ${n===w?"selected":""}>w=${n}</option>`).join("");
+      const name = p.name || "";
+      const label = _fixedPanelMeta.has(name) ? _fixedPanelDisplayName(name) : name;
       return `<li class="chip chip-panel">`
-        + `<span class="chip-label">${escapeHtml(p.name || "")}</span>`
+        + `<span class="chip-label" title="${escapeAttr(name)}">${escapeHtml(label)}</span>`
         + `<select class="chip-weight" data-nc-panel-idx="${i}" title="Weight">${opts}</select>`
         + `<button type="button" class="chip-remove" data-nc-panel-idx="${i}" title="移除">×</button>`
         + `</li>`;
