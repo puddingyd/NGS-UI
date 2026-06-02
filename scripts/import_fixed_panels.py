@@ -106,6 +106,37 @@ def _is_gene_symbol(cell: str) -> bool:
 
 # ── WES-I / WES-II xlsx readers ───────────────────────────────────
 
+_PANEL_NAME_CORRECTIONS = {
+    # Typo in the source spreadsheet. Keep UI labels reviewer-friendly.
+    "Syndromic hearing losss": "Syndromic hearing loss",
+}
+
+
+def _panel_display_name(label: str) -> str:
+    """Drop the spreadsheet's specialty / tier prefix without
+    truncating meaningful hyphenated panel names such as
+    ``Non-syndromic hearing loss``.
+    """
+    display = re.sub(r"^[^-]+-(?:I|II)-", "", label.strip())
+    # WES-II's pediatric metabolism panel uses a specialty-only prefix.
+    display = re.sub(r"^婦兒科-", "", display)
+    display = display.strip()
+    return _PANEL_NAME_CORRECTIONS.get(display, display)
+
+
+def _find_gene_list_row(rows: list[tuple]) -> int | None:
+    """Return the first row containing the gene-panel-list marker.
+
+    The marker row also contains the first gene in each panel column,
+    so callers must include it in the data range.
+    """
+    for row_idx, row in enumerate(rows):
+        marker = re.sub(r"\s+", "", str(row[0] if row else "")).lower()
+        if "panel" in marker and "list" in marker:
+            return row_idx
+    return None
+
+
 def _read_wes_xlsx(path: Path, series_key: str) -> list[dict]:
     """Return one record per panel column across all sheets.
     Each record: {series, category, name, key, genes: [...] }."""
@@ -124,29 +155,34 @@ def _read_wes_xlsx(path: Path, series_key: str) -> list[dict]:
         headers = list(rows[0])
         # Strip the row's leading label cell ("範本名稱" / similar) — it's
         # not a panel name itself.
-        panel_cols: list[tuple[int, str]] = []
+        panel_cols: list[tuple[int, str, str]] = []
         for col_idx, h in enumerate(headers):
             if col_idx == 0:
                 continue
             label = ("" if h is None else str(h)).strip()
             if not label:
                 continue
-            # Use everything after the last `-` as the short display
-            # name when the cell is shaped like "皮膚科-I-EB". Reviewer
-            # sees "EB"; the category is already shown by the tab.
-            display = label.split("-")[-1].strip() or label
-            panel_cols.append((col_idx, display))
+            # Remove the known specialty / tier prefix only. Splitting
+            # on the final `-` corrupts names like "Non-syndromic".
+            display = _panel_display_name(label) or label
+            # Keep the historical key stable because analyses persist
+            # it in sample metadata. The corrected display name is a
+            # separate UI concern.
+            key_name = label.split("-")[-1].strip() or label
+            panel_cols.append((col_idx, display, key_name))
         if not panel_cols:
             continue
 
-        # Walk all data rows, collect gene symbols per panel column.
-        # Skip rows 1-3 (disease name / references / "genepanellist↓"
-        # header) — be tolerant: any cell that looks like a gene
-        # passes; everything else (Chinese disease text, URLs, …) is
-        # silently dropped.
-        per_panel_genes: dict[int, list[str]] = {col: [] for col, _ in panel_cols}
-        for r in rows[1:]:
-            for col_idx, _ in panel_cols:
+        # Walk the explicit gene-list block only. Disease labels and
+        # references can contain gene-looking tokens (for example
+        # HPO, OMIM, or journal abbreviations), so parsing every row
+        # silently inflates panel counts.
+        gene_list_row = _find_gene_list_row(rows)
+        if gene_list_row is None:
+            continue
+        per_panel_genes: dict[int, list[str]] = {col: [] for col, _, _ in panel_cols}
+        for r in rows[gene_list_row:]:
+            for col_idx, _, _ in panel_cols:
                 if col_idx >= len(r):
                     continue
                 cell = r[col_idx]
@@ -159,11 +195,11 @@ def _read_wes_xlsx(path: Path, series_key: str) -> list[dict]:
                     if _is_gene_symbol(tok):
                         per_panel_genes[col_idx].append(tok)
 
-        for col_idx, name in panel_cols:
+        for col_idx, name, key_name in panel_cols:
             genes = sorted(set(per_panel_genes[col_idx]))
             if not genes:
                 continue
-            key = f"{series_key}__{category}__{_slug(name)}"
+            key = f"{series_key}__{category}__{_slug(key_name)}"
             out.append({
                 "series":   series_key,
                 "category": category,
@@ -251,6 +287,11 @@ def _write_panels(records: list[dict], out_root: Path) -> None:
     inside the existing GENE_PANELS_DIR so phenotype_scorer can load
     them without any code change."""
     from app.config import GENE_PANELS_DIR
+
+    keys = [rec["key"] for rec in records]
+    if len(keys) != len(set(keys)):
+        duplicates = sorted({key for key in keys if keys.count(key) > 1})
+        raise ValueError(f"duplicate fixed-panel keys: {', '.join(duplicates)}")
 
     if out_root.is_dir():
         shutil.rmtree(out_root)
