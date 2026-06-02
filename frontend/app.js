@@ -298,6 +298,10 @@ const TOOL_CUTOFFS = {
   //   -7.65 ≤ LLR < -1.99 → sig-lb (Moderate / Supporting B → light green)
   //   LLR < -7.65         → sig-b   (Strong B)
   pknn:          { p: 7.65, lp: 1.99, vus: -1.99, lb: -7.65 },
+  // ESM1b LLR — lower values predict a more damaging protein effect.
+  // Bergquist et al. 2025 ClinGen SVI calibration, compressed into
+  // the same five display buckets as the other predictors.
+  esm1b:         { p: -24.0, lp: -10.7, vus: -6.2, lb: 8.7 },
 };
 
 // In-silico predictors in display order. The first three tools with
@@ -318,7 +322,7 @@ const IN_SILICO_TOOLS = [
   // we still display the signed number so reviewers see the direction.
   { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score",                                       cutoffs: "pangolin", absForColor: true },
   // -- everything below this line lives in More --
-  { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
+  { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred",         cutoffs: "esm1b", lowerIsPathogenic: true },
   { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
   { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred",      cutoffs: "bayesdel" },
   { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score",                                       cutoffs: "spliceai" },
@@ -341,7 +345,9 @@ function _renderInSilicoCell(v, tool) {
   const pred = tool.predField ? (v[tool.predField] || "").trim() : "";
   const cutoffs = tool.cutoffs ? TOOL_CUTOFFS[tool.cutoffs] : null;
   const scoreForCls = (has && tool.absForColor) ? Math.abs(Number(score)) : score;
-  const cls = has && cutoffs ? (classifyByThresholds(scoreForCls, cutoffs) || "") : "";
+  const cls = has && cutoffs
+    ? ((tool.lowerIsPathogenic ? classifyByLowerThresholds(scoreForCls, cutoffs) : classifyByThresholds(scoreForCls, cutoffs)) || "")
+    : "";
   const valueTxt = has
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
@@ -360,6 +366,17 @@ function classifyByThresholds(score, cutoffs) {
   // (real pathogenicity scores) get the dark-green B chip; tools that
   // omit `lb` (e.g. SpliceAI) leave low-end scores uncoloured.
   return cutoffs.lb == null ? null : "sig-b";
+}
+
+function classifyByLowerThresholds(score, cutoffs) {
+  if (score == null || score === "") return null;
+  const x = Number(score);
+  if (!Number.isFinite(x)) return null;
+  if (cutoffs.p   != null && x <= cutoffs.p)   return "sig-p";
+  if (cutoffs.lp  != null && x <= cutoffs.lp)  return "sig-lp";
+  if (cutoffs.vus != null && x <= cutoffs.vus) return "sig-vus";
+  if (cutoffs.lb  != null && x <= cutoffs.lb)  return "sig-lb";
+  return "sig-b";
 }
 
 // LoGoFunc emits strings like "GOF (0.123)*", "LOF (0.456)", or "Neutral (...)".
@@ -540,6 +557,12 @@ function _igvRoiFor(v) {
 function _igvVariantTitleFor(v) {
   if (!v) return { label: "", coordinate: "" };
   const build = state.data?.genome_build || "hg38";
+  if (v.igv_label) {
+    return {
+      label: v.igv_label,
+      coordinate: `[${build}] ${_normalizeChrom(v.CHROM || "?")}:${v.POS || "?"}-${v.END || "?"}`,
+    };
+  }
   if (v.REF != null && v.ALT != null) {
     const id = v.id || `${v.CHROM}-${v.POS}-${v.REF}-${v.ALT}`;
     return {
@@ -554,6 +577,15 @@ function _igvVariantTitleFor(v) {
     label: [source, svType, annotSvId].filter(Boolean).join(" "),
     coordinate: `[${build}] ${_normalizeChrom(v.CHROM || "?")}:${v.POS || "?"}-${v.END || "?"}`,
   };
+}
+
+function _sryIgvRegion() {
+  // SRY gene coordinates from the reference assemblies used by the UI.
+  // Keep this as a lightweight pseudo-variant so it follows the same
+  // modal, BAM lookup, sibling-track and local-reference path as cards.
+  return state.data?.genome_build === "hg19"
+    ? { source: "gene", sv_type: "SRY", igv_label: "SRY", CHROM: "chrY", POS: 2654896, END: 2655723 }
+    : { source: "gene", sv_type: "SRY", igv_label: "SRY", CHROM: "chrY", POS: 2786855, END: 2787682 };
 }
 
 async function openIgvModal(variant) {
@@ -725,6 +757,10 @@ document.addEventListener("click", (ev) => {
         status.textContent = "";
         btn.disabled = false;
       });
+    return;
+  }
+  if (ev.target.id === "btn-igv-sry") {
+    openIgvModal(_sryIgvRegion());
     return;
   }
   // IGV launch buttons on variant / CNV-SV cards.
@@ -2367,16 +2403,29 @@ function statusOptions(kind) {
 let _statusRadioSeq = 0;
 function _renderStatusRadio(id, curStatus, opts, panelAttr = "") {
   // A variant can be rendered in both the analysis area and report
-  // sections. Give each widget its own browser radio group, then keep
-  // duplicates synchronized explicitly when the reviewer changes one.
+  // sections. Candidate widgets use checkboxes because C and 0 may
+  // coexist; panel widgets remain radio groups. Duplicate widgets are
+  // synchronized explicitly when the reviewer changes one.
   const groupName = `status-${id}-${++_statusRadioSeq}${panelAttr ? "-" + panelAttr.replace(/[^A-Za-z0-9]/g, "") : ""}`;
+  const inputType = panelAttr ? "radio" : "checkbox";
   return `<span class="status-radio" data-id="${escapeAttr(id)}" ${panelAttr}>` +
     opts.map(o => {
-      const checked = o === curStatus ? " checked" : "";
+      const checked = _statusHas(curStatus, o) ? " checked" : "";
       const cls = `status-radio-chip status-radio-${o.toLowerCase()}`;
-      return `<label class="${cls}"><input type="radio" name="${escapeAttr(groupName)}" value="${escapeAttr(o)}"${checked} /><span>${escapeHtml(o)}</span></label>`;
+      return `<label class="${cls}"><input type="${inputType}" name="${escapeAttr(groupName)}" value="${escapeAttr(o)}"${checked} /><span>${escapeHtml(o)}</span></label>`;
     }).join("") +
   `</span>`;
+}
+
+function _statusValues(raw) {
+  if (Array.isArray(raw)) return raw.map(String);
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  return text.split(",").map(s => s.trim()).filter(Boolean);
+}
+
+function _statusHas(raw, option) {
+  return _statusValues(raw).includes(option);
 }
 
 function getStatus(id) {
@@ -2386,8 +2435,8 @@ function getStatus(id) {
 function _syncStatusRadios(id, panel, val) {
   document.querySelectorAll(".status-radio").forEach(wrap => {
     if (wrap.dataset.id !== id || (wrap.dataset.panel || "") !== (panel || "")) return;
-    wrap.querySelectorAll('input[type="radio"]').forEach(input => {
-      input.checked = !!val && input.value === val;
+    wrap.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+      input.checked = _statusHas(val, input.value);
     });
   });
 }
@@ -2404,6 +2453,19 @@ function setStatus(id, val) {
   renderReportSections();
   _syncStatusRadios(id, "", val);
   updateSaveHint();
+}
+
+function toggleStatus(id, option, checked) {
+  let next = "";
+  if (option === "1" || option === "2") {
+    next = checked ? option : "";
+  } else {
+    const values = new Set(_statusValues(getStatus(id)).filter(v => v === "C" || v === "0"));
+    if (checked) values.add(option);
+    else values.delete(option);
+    next = ["C", "0"].filter(v => values.has(v)).join(",");
+  }
+  setStatus(id, next);
 }
 
 // Panel-specific status (per panel category, so V in proactive doesn't surface in carrier)
@@ -2828,7 +2890,7 @@ function renderDiseaseList(v, id, withCheckbox) {
 const REPORT_SECTION_DEFS = [
   { el: "sec-causative", title: "Causative variants", match: id => getStatus(id) === "1", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "1" },
   { el: "sec-other",     title: "Other variants",     match: id => getStatus(id) === "2", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "2" },
-  { el: "sec-candidate", title: "Candidate variants", match: id => getStatus(id) === "C", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "C" },
+  { el: "sec-candidate", title: "Candidate variants", match: id => _statusHas(getStatus(id), "C"), dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "C" },
   // ACMG SF / Proactive / Carrier / PharmCat all live inside the
   // Secondary findings collapsible group in the HTML; they render
   // the same way as before, just nested in a different container.
@@ -3962,13 +4024,15 @@ function _renderCnvSvGeneTable(v, id) {
     <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
     <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th><th></th>
   </tr></thead>`;
-  const visibleRows = genes.map(rowHtml).join("");
+  const relevantGenes = genes.filter(g => g.in_panel);
+  const hiddenFullGenes = genes.filter(g => !g.in_panel);
+  const visibleRows = relevantGenes.map(rowHtml).join("");
 
   // Overflow body is rendered lazily on first <details> open. For
   // SVs that span 1500+ genes, eagerly building the chip DOM was
   // adding ~100 ms per card even though the panel was hidden.
   const genesOverflow = v.genes_overflow || [];
-  const overflowCount = genesOverflow.length + genesCompact.length;
+  const overflowCount = hiddenFullGenes.length + genesOverflow.length + genesCompact.length;
   let overflowHtml = "";
   if (overflowCount) {
     overflowHtml = `<details class="cnv-sv-gene-overflow" data-id="${escapeAttr(id)}" data-rendered="0">
@@ -4184,7 +4248,10 @@ document.addEventListener("toggle", ev => {
   const id = det.dataset.id;
   const v = _cnvSvVariantById(id);
   if (!v) return;
-  const overflowFull = v.genes_overflow || [];
+  const overflowFull = [
+    ...(v.genes || []).filter(g => !g.in_panel),
+    ...(v.genes_overflow || []),
+  ];
   const compact      = v.genes_compact  || [];
   const body = det.querySelector(".gene-overflow-body");
   if (!body) return;
@@ -4769,8 +4836,9 @@ function toggleVariantExtras(btn) {
   btn.textContent = willHide ? "▾ More" : "▴ Less";
 }
 
-// Native radio inputs cannot normally be unchecked. Remember whether
-// the pressed chip was already active so a second click can clear it.
+// Panel-status radio inputs cannot normally be unchecked. Remember
+// whether the pressed chip was already active so a second click clears
+// it. Main 1/2/C/0 chips are checkboxes with custom exclusivity below.
 document.addEventListener("pointerdown", ev => {
   const chip = ev.target.closest?.(".status-radio-chip");
   const input = chip?.querySelector('input[type="radio"]');
@@ -4791,14 +4859,14 @@ document.addEventListener("click", ev => {
 
 document.addEventListener("change", ev => {
   const t = ev.target;
-  // New radio-chip status widget (replaces the old <select.status-select>).
-  // The input lives inside <span.status-radio data-id="…" data-panel="…">.
-  if (t.matches('.status-radio input[type="radio"]')) {
+  // Status chips replace the old <select.status-select>. Main chips
+  // use checkboxes (C + 0 may coexist); panel chips remain radio inputs.
+  if (t.matches('.status-radio input[type="radio"], .status-radio input[type="checkbox"]')) {
     const wrap = t.closest(".status-radio");
     if (!wrap) return;
     const panel = wrap.dataset.panel;
     if (panel) setPanelStatus(wrap.dataset.id, panel, t.value);
-    else       setStatus(wrap.dataset.id, t.value);
+    else       toggleStatus(wrap.dataset.id, t.value, t.checked);
   } else if (t.matches(".status-select")) {
     // Legacy fallback for any straggling <select> instance.
     const panel = t.dataset.panel;

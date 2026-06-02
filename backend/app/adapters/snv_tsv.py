@@ -241,6 +241,32 @@ def _max_multi(v) -> float | None:
     return best
 
 
+def _min_multi(v) -> float | None:
+    """Min numeric value across a `&`-separated multi-value cell.
+
+    ESM1b uses the opposite direction from the other protein-effect
+    predictors: lower scores are more damaging. Take the minimum so
+    multi-transcript rows surface the most pathogenic prediction.
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s in (".", "NA", "N/A"):
+        return None
+    best: float | None = None
+    for part in s.split("&"):
+        p = part.strip()
+        if not p or p in (".", "NA", "N/A"):
+            continue
+        try:
+            x = float(p)
+        except ValueError:
+            continue
+        if best is None or x < best:
+            best = x
+    return best
+
+
 def _first_str(v) -> str:
     """First non-blank/non-NA part of a `&`-separated cell."""
     if v is None:
@@ -472,7 +498,7 @@ def _row_to_variant(row: dict) -> dict:
         "Pangolin_detail":     (row.get("PANGOLIN_DETAIL") or "").strip(),
         # ESM1b is the model the new pipeline uses (NOT ESM2 — different
         # protein language model). Payload key renamed to match.
-        "ESM1b_score":         _max_multi(row.get("ESM1B")),
+        "ESM1b_score":         _min_multi(row.get("ESM1B")),
         "ESM1b_pred":          _first_str(row.get("ESM1B_PRED")),
         "VARITY_R":            _max_multi(row.get("VARITY_R")),
         "BayesDel":            _max_multi(row.get("BAYESDEL_NOAF")),
