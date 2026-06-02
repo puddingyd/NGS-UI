@@ -27,6 +27,7 @@ _REVIEWER_FIELDS = {
     "clinical_description",
     "genetic_counseling",
     "category",
+    "sry_confirmed",
     "yield",
 }
 
@@ -41,6 +42,7 @@ _DEFAULT = {
     "clinical_description": "",
     "genetic_counseling": "",
     "category": None,
+    "sry_confirmed": False,
     "yield": 0,
     "updated_at": None,
 }

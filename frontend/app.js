@@ -144,7 +144,7 @@ async function _loadSample(LIS_ID) {
   const reports = await apiFetch(`/samples/${encodeURIComponent(sid)}/report`) || {
     status: {}, edits: {}, panels: {}, clinical_description: "",
     genetic_counseling: "", comment: "",
-    category: null, yield: 0, updated_at: null,
+    category: null, sry_confirmed: false, yield: 0, updated_at: null,
   };
   if (reports.clinical_description == null) reports.clinical_description = "";
   if (reports.genetic_counseling   == null) reports.genetic_counseling   = data.genetic_counseling || "";
@@ -500,6 +500,7 @@ let _igvSiblings = [];        // candidate add-ons from same batch
 let _igvLocus = "";
 let _igvSampleId = "";
 let _igvVariant = null;
+let _igvIsSry = false;
 
 function _loadIgvScript() {
   if (_igvLoaded) return _igvLoaded;
@@ -584,8 +585,8 @@ function _sryIgvRegion() {
   // Keep this as a lightweight pseudo-variant so it follows the same
   // modal, BAM lookup, sibling-track and local-reference path as cards.
   return state.data?.genome_build === "hg19"
-    ? { source: "gene", sv_type: "SRY", igv_label: "SRY", CHROM: "chrY", POS: 2654896, END: 2655723 }
-    : { source: "gene", sv_type: "SRY", igv_label: "SRY", CHROM: "chrY", POS: 2786855, END: 2787682 };
+    ? { source: "gene", sv_type: "SRY", igv_label: "SRY", igv_mode: "sry", CHROM: "chrY", POS: 2654896, END: 2655723 }
+    : { source: "gene", sv_type: "SRY", igv_label: "SRY", igv_mode: "sry", CHROM: "chrY", POS: 2786855, END: 2787682 };
 }
 
 async function openIgvModal(variant) {
@@ -594,6 +595,7 @@ async function openIgvModal(variant) {
   const sid = state.data?.sample_id || state.currentLIS || "";
   _igvSampleId = sid;
   _igvVariant = variant;
+  _igvIsSry = variant?.igv_mode === "sry";
   _igvLocus = _igvLocusFor(variant);
   const variantTitle = _igvVariantTitleFor(variant);
   document.getElementById("igv-title").textContent = `IGV — ${sid || "?"}`;
@@ -622,14 +624,22 @@ async function openIgvModal(variant) {
     return;
   }
   if (bamIndex?.primary) _igvBams.push(bamIndex.primary);
-  for (const sib of (bamIndex?.siblings || [])) _igvBams.push(sib);
+  if (_igvIsSry) {
+    _igvSiblings = [...(bamIndex?.siblings || [])];
+  } else {
+    for (const sib of (bamIndex?.siblings || [])) _igvBams.push(sib);
+  }
   const batch = bamIndex?.primary?.batch;
   if (batch) {
     try {
       const more = await apiFetch(`/igv/batch-samples?batch=${encodeURIComponent(batch)}`);
       const resolvedSid = bamIndex?.resolved_sample_id || sid;
-      _igvSiblings = (more?.samples || []).filter(s => s.sample_id !== resolvedSid);
-    } catch { _igvSiblings = []; }
+      const candidates = [..._igvSiblings, ...(more?.samples || [])]
+        .filter(s => s.sample_id !== resolvedSid);
+      _igvSiblings = Array.from(new Map(candidates.map(s => [s.path, s])).values());
+    } catch {
+      if (!_igvIsSry) _igvSiblings = [];
+    }
   }
   _renderIgvBamList();
 
@@ -649,6 +659,7 @@ function closeIgvModal() {
   }
   _igvBrowser = null;
   _igvVariant = null;
+  _igvIsSry = false;
   document.getElementById("igv-host").innerHTML = "";
 }
 
@@ -667,6 +678,8 @@ async function _initIgvBrowser() {
     displayMode: "SQUISHED",
     visibilityWindow: IGV_ALIGNMENT_VISIBILITY_WINDOW,
     autoscaleGroup: coverageAutoscaleGroup,
+    autoscale: _igvIsSry ? false : undefined,
+    max: _igvIsSry ? 100 : undefined,
     url: _bamUrl(b.path),
     indexURL: _bamUrl(b.path + ".bai"),
   }));
@@ -844,6 +857,7 @@ function renderSampleMeta() {
   document.getElementById("m-test").value  = m.Test || "";
   document.getElementById("m-build").value = state.data.genome_build || "";
   document.getElementById("m-sex").value   = m.Sex || "";
+  document.getElementById("m-sry-confirmed").checked = !!state.reports.sry_confirmed;
   // 科別 / 開單醫師 — <select> populated from /api/patient_list/options
   // (cached). Reviewer picks an existing value or "＋ 新增…" which
   // prompts for a free-text value; the new value is added in-place
@@ -4872,6 +4886,10 @@ document.addEventListener("change", ev => {
     const panel = t.dataset.panel;
     if (panel) setPanelStatus(t.dataset.id, panel, t.value);
     else       setStatus(t.dataset.id, t.value);
+  } else if (t.matches("#m-sry-confirmed")) {
+    state.reports.sry_confirmed = t.checked;
+    state.dirty = true;
+    updateSaveHint();
   } else if (t.matches("#m-category")) {
     state.reports.category = t.value || null;
     state.dirty = true;
