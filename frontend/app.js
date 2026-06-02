@@ -1900,6 +1900,10 @@ function setupCaseList() {
   btn.addEventListener("click", async () => {
     showModal("case-list-modal");
     if (status) status.textContent = "";
+    if (!await flushPendingSave()) {
+      if (status) status.textContent = `儲存失敗：${_saveError || "尚未完成儲存"}`;
+      return;
+    }
     await _renderCaseList();
   });
   search?.addEventListener("input", () => _renderCaseList({ refresh: false }));
@@ -2033,6 +2037,7 @@ async function exportDiagnosticDocx() {
   if (!mode) return;   // cancelled
 
   try {
+    if (!await flushPendingSave()) throw new Error(_saveError || "尚未完成儲存");
     const url = `${API_BASE}/samples/${encodeURIComponent(sid)}/report.docx?gene_list_mode=${mode}`;
     const resp = await fetch(url, { credentials: "same-origin" });
     if (resp.status === 401) { showLoginModal(); return; }
@@ -4147,6 +4152,7 @@ document.addEventListener("input", ev => {
   const id = t.dataset.id;
   if (!id) return;
   setEdit(id, t.matches(".cnv-sv-disease-text") ? "disease" : "comment", t.value);
+  updateSaveHint();
 });
 
 // Click on a truncated cell (Inheritance / Phenotype) → expand it
@@ -4603,6 +4609,21 @@ function scheduleAutoSave(delayMs = 1500) {
 async function _doAutoSave() {
   if (!state.dirty || !state.currentLIS || _saveInflight) return;
   await saveChanges({ silent: true });
+}
+
+async function flushPendingSave(timeoutMs = 10000) {
+  clearTimeout(_autoSaveTimer);
+  const deadline = Date.now() + timeoutMs;
+  while (_saveInflight && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  if (state.dirty && !_saveInflight) {
+    await saveChanges({ silent: true });
+  }
+  while (_saveInflight && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return !state.dirty && !_saveInflight;
 }
 
 function updateSaveHint() {
