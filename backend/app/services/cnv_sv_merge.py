@@ -142,11 +142,12 @@ def apply_confirmed_merges(
     def replace_in_order(source: str, variants: dict[str, dict]) -> dict[str, dict]:
         parent_by_member: dict[str, dict] = {}
         first_members: set[str] = set()
+        positions = {variant_id: index for index, variant_id in enumerate(variants)}
         for merge, parent in accepted[source]:
             members = [mid for mid in (merge.get("member_ids") or []) if mid in variants]
             if not members:
                 continue
-            first = min(members, key=lambda mid: list(variants).index(mid))
+            first = min(members, key=positions.__getitem__)
             first_members.add(first)
             for member_id in members:
                 parent_by_member[member_id] = parent

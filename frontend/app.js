@@ -3206,13 +3206,37 @@ function _cnvSvBuildParent(merge) {
   };
 }
 
-function _cnvSvVirtualParents() {
-  const out = {};
-  _effectiveCnvSvMerges().forEach(merge => {
-    const parent = _cnvSvBuildParent(merge);
-    if (parent) out[parent.id] = parent;
+let _cnvSvMergeViewCache = null;
+
+function _cnvSvMergeView() {
+  const cnvVariants = state.data?.cnv_variants || null;
+  const svVariants = state.data?.sv_variants || null;
+  const savedMerges = state.reports?.cnv_sv_merges || null;
+  if (_cnvSvMergeViewCache
+      && _cnvSvMergeViewCache.cnvVariants === cnvVariants
+      && _cnvSvMergeViewCache.svVariants === svVariants
+      && _cnvSvMergeViewCache.savedMerges === savedMerges) {
+    return _cnvSvMergeViewCache;
+  }
+
+  const merges = [];
+  const consumed = new Set();
+  [..._automaticCnvSvMerges(), ..._confirmedCnvSvMerges()].forEach(merge => {
+    if ((merge.member_ids || []).some(id => consumed.has(id))) return;
+    merges.push(merge);
+    (merge.member_ids || []).forEach(id => consumed.add(id));
   });
-  return out;
+  const parents = {};
+  merges.forEach(merge => {
+    const parent = _cnvSvBuildParent(merge);
+    if (parent) parents[parent.id] = parent;
+  });
+  _cnvSvMergeViewCache = { cnvVariants, svVariants, savedMerges, merges, parents };
+  return _cnvSvMergeViewCache;
+}
+
+function _cnvSvVirtualParents() {
+  return _cnvSvMergeView().parents;
 }
 
 function _cnvSvIdsForTier(tier) {
@@ -3352,14 +3376,7 @@ function _automaticCnvSvMerges() {
 }
 
 function _effectiveCnvSvMerges() {
-  const out = [];
-  const consumed = new Set();
-  [..._automaticCnvSvMerges(), ..._confirmedCnvSvMerges()].forEach(merge => {
-    if ((merge.member_ids || []).some(id => consumed.has(id))) return;
-    out.push(merge);
-    (merge.member_ids || []).forEach(id => consumed.add(id));
-  });
-  return out;
+  return _cnvSvMergeView().merges;
 }
 
 function renderCnvSvTabBar() {
