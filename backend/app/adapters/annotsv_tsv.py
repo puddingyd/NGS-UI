@@ -26,6 +26,8 @@ import csv
 from pathlib import Path
 from typing import Iterable
 
+from ..services import panel_deadzone
+
 # Tier names mirror the frontend's CNV_SV_TIER_ORDER.
 CNV_TIERS = ["CNV-1A", "CNV-1B"]
 SV_TIERS  = ["SV-2A",  "SV-2B"]
@@ -133,7 +135,7 @@ def _split_row_to_gene(
     by the UI to render the fraction) all describe the same per-gene
     value at different stages of normalisation.
     """
-    gene = (row.get("Gene_name") or "").strip()
+    gene, _hid = panel_deadzone.canonical_gene_symbol(row.get("Gene_name", ""))
     score = pheno_by_gene.get(gene)
     matched = pheno_matched.get(gene, 0.0) if pheno_matched else 0.0
     return {
@@ -191,8 +193,13 @@ def _full_row_to_variant(
         "sv_type":           sv_type,
         "cytoband":          (full_row.get("CytoBand") or "").strip(),
         "gene_count":        _to_int(full_row.get("Gene_count")),
-        "gene_symbol":       (_split_genes(full_row.get("Gene_name") or "") or [""])[0],
-        "gene_list":         _split_genes(full_row.get("Gene_name") or ""),
+        "gene_symbol":       panel_deadzone.canonical_gene_symbol(
+                                (_split_genes(full_row.get("Gene_name") or "") or [""])[0]
+                              )[0],
+        "gene_list":         [
+                                panel_deadzone.canonical_gene_symbol(g)[0]
+                                for g in _split_genes(full_row.get("Gene_name") or "")
+                              ],
         "genes":             [],   # filled from split rows
         "acmg_class":        _parse_acmg_class(full_row.get("ACMG_class") or ""),
         "ranking_score":     _to_float(full_row.get("AnnotSV_ranking_score")),

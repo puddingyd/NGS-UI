@@ -15,7 +15,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from ..config import REPO_ROOT
+from ..services import panel_deadzone
 
 
 class OldFormatError(ValueError):
@@ -33,43 +33,6 @@ _PLP_SIGS = {
     "Pathogenic/Likely_pathogenic",
     "Likely_pathogenic/Pathogenic",
 }
-
-# VEP 115 cache uses older HGNC symbols for ~15 panel genes (e.g.
-# GAS8 → DRC4, NAT8L → ASPNAT). The companion `vep_alias_map.tsv` —
-# see docs/panel_alignment/panel_annotation.md — maps the VEP-emitted
-# symbol back to the HGNC-current name we want in clinical reports.
-#
-# We only apply the `vep_uses_old_symbol` rows here (HGNC_ID matches
-# the panel, so the translation is unambiguous). `vep_missing_gene`
-# rows require an HGNC_ID column to disambiguate — wire those in once
-# the tertiary TSV starts carrying HGNC_ID per variant.
-_VEP_ALIAS_MAP: dict[str, str] | None = None
-
-
-def _load_vep_alias_map() -> dict[str, str]:
-    """Lazy-load on first SNV TSV load; cached for the process lifetime."""
-    global _VEP_ALIAS_MAP
-    if _VEP_ALIAS_MAP is not None:
-        return _VEP_ALIAS_MAP
-    out: dict[str, str] = {}
-    path = REPO_ROOT / "docs" / "panel_alignment" / "vep_alias_map.tsv"
-    try:
-        with path.open("r", encoding="utf-8", newline="") as fh:
-            r = csv.DictReader(fh, delimiter="\t")
-            for row in r:
-                if row.get("kind") != "vep_uses_old_symbol":
-                    continue
-                vep_sym   = (row.get("vep_symbol") or "").strip()
-                panel_sym = (row.get("panel_hgnc_symbol") or "").strip()
-                if vep_sym and panel_sym and vep_sym != panel_sym:
-                    out[vep_sym] = panel_sym
-    except OSError:
-        # Map missing / unreadable — skip translation silently. Anyone
-        # looking at the report will see VEP's older symbol; nobody
-        # crashes.
-        out = {}
-    _VEP_ALIAS_MAP = out
-    return out
 
 # Genes whose SNV/Indel calls are NOT clinically meaningful from this
 # pipeline — they're either repeat-expansion disease genes (where the
@@ -363,14 +326,8 @@ def _row_to_variant(row: dict) -> dict:
     alt = row["ALT"]
     vid = f"{chrom}-{pos}-{ref}-{alt}"
 
-    gene = row.get("GENE", "")
-    # Translate VEP's older HGNC symbol → current HGNC symbol so the
-    # UI / report / OMIM join all use the canonical name. Only applies
-    # to the 15 known `vep_uses_old_symbol` cases; other GENE values
-    # pass through unchanged.
-    alias_map = _load_vep_alias_map()
-    if gene and gene in alias_map:
-        gene = alias_map[gene]
+    hgnc_id = (row.get("HGNC_ID") or "").strip()
+    gene, hgnc_id = panel_deadzone.canonical_gene_symbol(row.get("GENE", ""), hgnc_id)
     transcript = row.get("TRANSCRIPT", "")
     # New pipeline ships HGVS_P with URL-encoded characters (e.g.
     # `p.Gly282%3D` for synonymous changes). Decode so the UI renders
@@ -543,7 +500,8 @@ def _row_to_variant(row: dict) -> dict:
                                    row.get("ACMG_POINTS")))),
         # New display fields from the 65-col pipeline output.
         "rs_id":               (row.get("RS_ID") or "").strip(),
-        "hgnc_id":             (row.get("HGNC_ID") or "").strip(),
+        "hgnc_id":             hgnc_id,
+        "disease_associated":  panel_deadzone.is_disease_associated_gene(gene, hgnc_id),
         "clinvar_variation_id": (row.get("CLINVAR_VARIATION_ID") or "").strip(),
         "omim_ids":            (row.get("OMIM_IDS") or "").strip(),
         "domains":             (row.get("DOMAINS") or "").strip(),
@@ -604,8 +562,10 @@ def load_snv_tsv(tsv_path: Path,
                 "為舊格式，請以新版 pipeline 重跑此樣本。"
             )
         for row in reader:
-            raw_gene = (row.get("GENE") or "").strip()
-            canonical_gene = _load_vep_alias_map().get(raw_gene, raw_gene)
+            canonical_gene, _ = panel_deadzone.canonical_gene_symbol(
+                row.get("GENE", ""),
+                row.get("HGNC_ID", ""),
+            )
             if canonical_gene in EXCLUDED_GENES:
                 continue
             v = _row_to_variant(row)

@@ -281,6 +281,7 @@ def write_pheno_table(
 def update_in_panel_column(sample_id: str, in_panel_genes: set[str]) -> int:
     """Rewrite IN_PANEL column of snv_indel.annotated.tsv. Returns rows updated."""
     from ..config import TERTIARY_OUTPUT_ROOT
+    from . import panel_deadzone
     tsv = TERTIARY_OUTPUT_ROOT / sample_id / "snv_indel.annotated.tsv"
     if not tsv.exists():
         return 0
@@ -293,12 +294,15 @@ def update_in_panel_column(sample_id: str, in_panel_genes: set[str]) -> int:
             inpanel_idx = header.index("IN_PANEL")
         except ValueError:
             return 0
+        hgnc_idx = header.index("HGNC_ID") if "HGNC_ID" in header else -1
         rows.append(header)
         n_updated = 0
         for r in reader:
             if len(r) <= max(gene_idx, inpanel_idx):
                 rows.append(r); continue
-            new_val = "true" if r[gene_idx] in in_panel_genes else "false"
+            raw_hgnc = r[hgnc_idx] if hgnc_idx >= 0 and len(r) > hgnc_idx else ""
+            gene, _ = panel_deadzone.canonical_gene_symbol(r[gene_idx], raw_hgnc)
+            new_val = "true" if gene in in_panel_genes else "false"
             if r[inpanel_idx] != new_val:
                 r[inpanel_idx] = new_val
                 n_updated += 1

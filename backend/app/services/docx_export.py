@@ -23,7 +23,14 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
 from ..config import TERTIARY_OUTPUT_ROOT  # noqa: F401 (kept for callers)
-from . import cnv_sv_merge, hpo_ontology, phenotype_scorer, report_store, sample_loader
+from . import (
+    cnv_sv_merge,
+    hpo_ontology,
+    panel_deadzone,
+    phenotype_scorer,
+    report_store,
+    sample_loader,
+)
 
 # 細明體 (MingLiU) — the *monospace* CJK family. (新細明體 = PMingLiU
 # is proportional, which would break the ASCII tables below.) Word
@@ -1148,7 +1155,17 @@ def _hpo_label_for(hid: str) -> str:
 def _genes_for_term_or_panel(key: str) -> list[str]:
     """phenotype_scorer._HPO_TO_GENES is the union of HPO→gene map and
     every panel's gene set (HPO ids + panel names live in the same dict)."""
-    return sorted(phenotype_scorer._HPO_TO_GENES.get(key, set()))
+    genes = []
+    for raw in phenotype_scorer._HPO_TO_GENES.get(key, set()):
+        gene, _hid = panel_deadzone.canonical_gene_symbol(raw)
+        if panel_deadzone.is_disease_associated_gene(gene):
+            genes.append(gene)
+    return sorted(set(genes))
+
+
+def _gene_list_label(gene: str, test_type: str) -> str:
+    suffix = panel_deadzone.dead_zone_suffix(gene, test_type)
+    return f"{gene}（{suffix}）" if suffix else gene
 
 
 def _render_gene_list(doc, sample: dict, mode: str) -> None:
@@ -1159,6 +1176,8 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
     # selected_panels is a list of {name, weight} dicts (see
     # phenotype_io.parse) — pull the name field.
     panel_entries: list = sample.get("selected_panels") or []
+    test_type = ((sample.get("meta") or {}).get("Test") or "WES").upper()
+    threshold = panel_deadzone.dead_zone_threshold(test_type)
 
     # Build [(display_name, [genes...])] preserving order.
     sections: list[tuple[str, list[str]]] = []
@@ -1182,17 +1201,19 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         merged: set[str] = set()
         for _, gs in sections:
             merged |= set(gs)
-        gene_str = ", ".join(sorted(merged))
+        _add_paragraph(doc, f"    括號中標示之 exon 為 cohort dead-zone，代表該 exon coverage 低於本檢測判讀門檻（<{threshold}X）。")
+        gene_str = ", ".join(_gene_list_label(g, test_type) for g in sorted(merged))
         _add_paragraph(doc, gene_str)
         return
 
     # grouped (default)
+    _add_paragraph(doc, f"    括號中標示之 exon 為 cohort dead-zone，代表該 exon coverage 低於本檢測判讀門檻（<{threshold}X）。")
     for idx, (name, gs) in enumerate(sections):
         if idx:
             _blank(doc)
         _add_paragraph(doc, f"{name}:")
         if gs:
-            _add_paragraph(doc, ", ".join(gs))
+            _add_paragraph(doc, ", ".join(_gene_list_label(g, test_type) for g in gs))
         else:
             _add_paragraph(doc, "（無對應基因）")
 

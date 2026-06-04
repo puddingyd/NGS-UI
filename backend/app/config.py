@@ -85,6 +85,14 @@ PHENO_DATA_DIR = Path(os.environ.get(
 ))
 GENE_PANELS_DIR = Path(os.environ.get("NGS_UI_GENE_PANELS_DIR", PHENO_DATA_DIR / "gene_panels"))
 
+# Delivered panel/HGNC/dead-zone package. It is intentionally small enough
+# to live in the repo, but can be swapped at deploy time after panel/HGNC
+# refreshes without touching application code.
+NGS_PANEL_DEADZONE_DIR = Path(os.environ.get(
+    "NGS_UI_PANEL_DEADZONE_DIR",
+    REPO_ROOT / "ngs_panel_deadzone",
+))
+
 BIOTOOLS_DIR = Path(os.environ.get(
     "NGS_UI_BIOTOOLS_DIR",
     NGS_UI_HOME / "biotools",

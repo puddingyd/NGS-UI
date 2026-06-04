@@ -263,6 +263,15 @@
       </details>
     </section>
 
+    <!-- Cohort-level panel dead-zone warning for selected HPO/panel genes. -->
+    <section id="dead-zone-card" class="card hidden">
+      <div class="dead-zone-header">
+        <h2>Dead zone</h2>
+        <span id="dead-zone-threshold" class="muted"></span>
+      </div>
+      <div id="dead-zone-body" class="dead-zone-body"></div>
+    </section>
+
     <!-- Comment (free-text; syncs to NGS_list.xlsx Comment column) +
          Tag picker (multi-select, syncs to NGS_list.xlsx Tag column) -->
     <section id="comment-card" class="card hidden">
@@ -323,6 +332,11 @@
       <div class="section-header">
         <h2>分析</h2>
         <label class="filter-toggle">
+          <input id="filter-disease-associated" type="checkbox" checked />
+          <span>Disease-associated</span>
+          <span id="disease-associated-count" class="muted"></span>
+        </label>
+        <label class="filter-toggle">
           <input id="filter-in-panel-only" type="checkbox" checked />
           <span>In panel only</span>
           <span id="in-panel-count" class="muted"></span>
@@ -343,6 +357,7 @@
           <input id="filter-omim" type="checkbox" checked />
         </label>
       </div>
+      <div id="disease-associated-warning" class="panel-warning hidden"></div>
       <!-- SNV/Indel tier tabs: clicking a tab shows that tier full-width below. -->
       <div id="card-snv" class="analysis-card">
         <div class="analysis-card-header has-gene-search">

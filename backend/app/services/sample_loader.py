@@ -29,7 +29,7 @@ from pathlib import Path
 
 from ..adapters.snv_tsv import TIERS, OldFormatError, _row_to_variant, load_snv_tsv
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store, omim_store, snv_review
+from . import analyses_store, omim_store, panel_deadzone, snv_review
 
 
 _SNV_CACHE_MAX = 8
@@ -830,6 +830,7 @@ def load_sample(sample_id: str, version: str | None = None,
 
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
+    dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
 
     return {
         "meta": {
@@ -854,6 +855,10 @@ def load_sample(sample_id: str, version: str | None = None,
         "vcf_path":          meta.get("vcf_path", ""),
         "qc_summary":        qc,
         "roh_summary":       roh,
+        "dead_zone": {
+            "threshold": panel_deadzone.dead_zone_threshold(_test_type),
+            "entries": list(dead_zone_hits.values()),
+        },
         "variants":          variants,
         # When non-empty, the SNV/Indel TSV is in the pre-2026-05
         # layout and load_snv_tsv refused to parse it. Frontend uses

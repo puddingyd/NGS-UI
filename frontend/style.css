@@ -2072,6 +2072,45 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .qc-level { color: var(--muted); text-transform: uppercase; font-size: 10px; padding-top: 2px; }
 .qc-reason { color: #444; }
 
+.dead-zone-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.dead-zone-header h2 { margin: 0; font-size: 14px; }
+.dead-zone-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.dead-zone-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 8px;
+  background: var(--warn-bg);
+  border-left: 3px solid var(--warn-border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.dead-zone-gene {
+  min-width: 90px;
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+}
+.panel-warning {
+  margin: 8px 0 10px;
+  padding: 7px 10px;
+  border-left: 3px solid var(--warn-border);
+  border-radius: 4px;
+  background: var(--warn-bg);
+  color: #444;
+  font-size: 12px;
+}
+
 /* ---- Floating 全部收合 button (collapses ACMG SF / Proactive /
    Carrier / PharmCat panels) -------------------------------------- */
 .btn-floating-close {

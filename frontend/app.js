@@ -985,10 +985,9 @@ async function _populateRosterOptions(curDept, curPhys) {
   fill(docs, _rosterOptions.physicians,  curPhys || "");
 }
 
-// Generic renderer for collapsible free-text cards (Clinical presentation,
-// Comment). Both default to collapsed; user-toggled state is remembered
-// across re-renders via toggledBlocks.
-function renderCollapsibleCard(cardId, headerId, bodyId, taId, value) {
+// Generic renderer for collapsible free-text cards. User-toggled state is
+// remembered across re-renders via toggledBlocks.
+function renderCollapsibleCard(cardId, headerId, bodyId, taId, value, defaultOpen = false) {
   const card   = document.getElementById(cardId);
   const header = document.getElementById(headerId);
   const body   = document.getElementById(bodyId);
@@ -997,7 +996,7 @@ function renderCollapsibleCard(cardId, headerId, bodyId, taId, value) {
   ta.value = value || "";
   const open = toggledBlocks.has(cardId)
     ? card.dataset.wasOpen === "1"
-    : false;
+    : defaultOpen;
   card.dataset.wasOpen = open ? "1" : "0";
   header.classList.toggle("open", open);
   body.classList.toggle("open", open);
@@ -1033,8 +1032,61 @@ function renderGeneticCounseling() {
 
 function renderComment() {
   renderCollapsibleCard("comment-card", "comment-header", "comment-body",
-                        "comment-text", state.reports.comment);
+                        "comment-text", state.reports.comment, true);
   renderTagPicker();
+}
+
+function renderDeadZoneCard() {
+  const card = document.getElementById("dead-zone-card");
+  const body = document.getElementById("dead-zone-body");
+  const thrEl = document.getElementById("dead-zone-threshold");
+  if (!card || !body) return;
+  const dz = state.data?.dead_zone || {};
+  const threshold = dz.threshold || "";
+  const entries = Array.isArray(dz.entries) ? dz.entries : [];
+  if (thrEl) {
+    thrEl.textContent = threshold ? `clinical threshold: ${threshold}X` : "";
+  }
+  card.classList.remove("hidden");
+  if (!entries.length) {
+    body.innerHTML = `<div class="muted">目前 HPO / panel 基因沒有 cohort dead-zone 註記。</div>`;
+    return;
+  }
+  body.innerHTML = `<ul class="dead-zone-list">${entries.map(e => {
+    const gene = e.gene || "";
+    const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
+    const thr = e.threshold || threshold || "";
+    return `<li><span class="dead-zone-gene">${escapeHtml(gene)}</span>
+      <span>exon ${escapeHtml(label)} &lt;${escapeHtml(String(thr))}X</span></li>`;
+  }).join("")}</ul>`;
+}
+
+function _reportedOutOfDiseaseAssociatedSnvs() {
+  const variants = state.data?.variants || {};
+  const status = state.reports?.status || {};
+  const rows = [];
+  for (const [id, rawStatus] of Object.entries(status)) {
+    const vals = _statusValues(rawStatus).filter(v => v === "1" || v === "2" || v === "C");
+    if (!vals.length) continue;
+    const v = variants[id];
+    if (!v || v.disease_associated) continue;
+    rows.push({ id, gene: v.gene_symbol || "?", status: vals.join("/") });
+  }
+  rows.sort((a, b) => a.gene.localeCompare(b.gene) || a.id.localeCompare(b.id));
+  return rows;
+}
+
+function renderDiseaseAssociatedReportWarning() {
+  const el = document.getElementById("disease-associated-warning");
+  if (!el) return;
+  const rows = _reportedOutOfDiseaseAssociatedSnvs();
+  el.classList.toggle("hidden", rows.length === 0);
+  if (!rows.length) {
+    el.innerHTML = "";
+    return;
+  }
+  const genes = Array.from(new Set(rows.map(r => r.gene))).join(", ");
+  el.innerHTML = `<strong>提醒：</strong>已標記的 SNV/Indel 有基因不在 disease-associated gene list，DOCX 的 §五.4 基因清單不會列出這些基因：${escapeHtml(genes)}`;
 }
 
 // Known tag suggestions = tags pulled from the Tag column of every loaded
@@ -2475,6 +2527,7 @@ function setStatus(id, val) {
   // (which re-builds sample meta, phenotype, every tier panel, etc.)
   // so flipping a status pill feels instant instead of taking ~1 s.
   renderReportSections();
+  renderDiseaseAssociatedReportWarning();
   _syncStatusRadios(id, "", val);
   updateSaveHint();
 }
@@ -3003,17 +3056,17 @@ function idsForCandidateSection(def, { ignoreInPanelOnly = false } = {}) {
 
 function candidateIdsForSection(def) {
   const countIds = idsForCandidateSection(def, { ignoreInPanelOnly: true });
-  if (!document.getElementById("filter-in-panel-only")?.checked) {
-    return { displayIds: countIds, countIds };
-  }
-  return {
-    displayIds: countIds.filter(id => state.data.variants?.[id]?.in_panel),
-    countIds,
-  };
+  const displayIds = countIds.filter(id =>
+    _passesMainSnvDisplayFilters(state.data.variants?.[id])
+  );
+  return { displayIds, countIds };
 }
 
-function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false } = {}) {
+function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false, ignoreDiseaseAssociated = false } = {}) {
   if (!v) return false;
+  if (!ignoreDiseaseAssociated
+      && document.getElementById("filter-disease-associated")?.checked
+      && !v.disease_associated) return false;
   if (!ignoreInPanelOnly
       && document.getElementById("filter-in-panel-only")?.checked
       && !v.in_panel) return false;
@@ -4395,15 +4448,17 @@ document.getElementById("btn-sidebar-toggle")?.addEventListener("click", () => {
   _setSidebarToggleAria(!collapsed);
 });
 
-// Tally how many of the currently-loaded SNV variants flagged the in_panel
-// bit, then render that next to the "In panel only" toggle so the user
-// can tell at a glance whether the filter is doing anything useful.
+// Tally how many currently-loaded SNV variants pass each high-level gene
+// scope flag so reviewers can tell whether the filters are doing work.
 function updateInPanelCount() {
   const variants = state.data?.variants || {};
   const total = Object.keys(variants).length;
   const inPanel = Object.values(variants).filter(v => v.in_panel).length;
+  const diseaseAssociated = Object.values(variants).filter(v => v.disease_associated).length;
   const el = document.getElementById("in-panel-count");
   if (el) el.textContent = total ? `(${inPanel} / ${total})` : "";
+  const daEl = document.getElementById("disease-associated-count");
+  if (daEl) daEl.textContent = total ? `(${diseaseAssociated} / ${total})` : "";
 }
 
 function renderPharmcatBlock(hostId) {
@@ -4676,9 +4731,11 @@ function renderAll() {
   renderClinicalDescription();
   renderPhenotype();
   renderVersionPicker();
+  renderDeadZoneCard();
   renderComment();
   renderReportSections();
   renderCandidateSections();
+  renderDiseaseAssociatedReportWarning();
   updateSaveHint();
 }
 
@@ -6610,6 +6667,7 @@ function setupPhenotypeEvents() {
 // Re-render candidate tiers so card lists and tab counts stay in sync.
 function setupSnvDisplayFilters() {
   for (const id of [
+    "filter-disease-associated",
     "filter-in-panel-only",
     "filter-gnomad-af",
     "filter-vaf",

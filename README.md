@@ -31,6 +31,7 @@ NGS_UI/                    ← NGS_UI_HOME
 ├── patient_phenotype/     ← {LIS_ID}_{MRN}_phenotype.txt（自動帶入 HPO）
 ├── patient_list/          ← 上傳的「未完成報告清單」xlsx + 衍生 roster.json
 ├── phenotype_data/        ← hp.obo, phenotype_to_genes.txt, gene_panels/*.txt
+├── ngs_panel_deadzone/    ← panel_loose、HGNC alias map、dead-zone tables
 ├── OMIM/OMIM.xlsx         ← OMIM 疾病註解表（缺檔則 Disease 欄留空）
 └── data/                  ← server runtime state（users.db, jobs/, ...）
 ```
@@ -101,6 +102,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt` |
 | `NGS_UI_PATIENT_LIST_DIR` | `$NGS_UI_HOME/patient_list` | 上傳清單 + roster.json |
 | `NGS_UI_PHENO_DATA_DIR` | `$NGS_UI_HOME/phenotype_data` | hp.obo / phenotype_to_genes / gene_panels |
+| `NGS_UI_PANEL_DEADZONE_DIR` | `REPO_ROOT/ngs_panel_deadzone` | panel_loose、HGNC alias map、WES/WGS dead-zone tables |
 | `NGS_UI_OMIM_XLSX` | `$NGS_UI_HOME/OMIM/OMIM.xlsx` | OMIM 疾病註解（缺檔 = 停用） |
 | `NGS_UI_BIOTOOLS_DIR` | `$NGS_UI_HOME/biotools` | Exomiser / LIRICAL |
 | `NGS_UI_BAM_ROOT` | `/home/datalake_Intermediate/pipeline/nextflow_output` | IGV 搜尋 BAM 的根目錄；可用 `:` 分隔多個 root |
@@ -125,7 +127,8 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV 與 Mitochondria 在背景載完後補上：
    - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
-   - SNV/Indel 顯示 filter 預設啟用 `In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。
+   - Patient phenotype 與 Comment 之間的 Dead zone 卡片會依目前 HPO + panel gene set 顯示 cohort-level dead exons；WES 用 20X，WGS（含 in-house / DRAGEN）用 DRAGEN 15X。
+   - SNV/Indel 顯示 filter 預設啟用 `Disease-associated`（限 `ngs_panel_deadzone/panel/panel_loose.hgnc_canonical.txt`）、`In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。CNV/SV 與 gene search modal 不受 `Disease-associated` filter 限制。
    - TSV stop-gap 只移除 `REF/ALT=*` 與非 primary contig；DRAGEN staging 仍會先移除 `AF > 0.01` 的 common variants。
    - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：保留 `GNOMAD_G_AF < 0.05`、AF 缺值、ClinVar P/LP rescue 與 reviewer 已標記點。`run_stopgaps.sh` 在三級分析結尾先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。
    - SNV tier 只在點開時建立該 tier 的卡片 DOM，避免一次 render 全部卡片。
@@ -139,7 +142,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 4. **標記與判讀** — 在每個變異上標 causative / candidate / other，編輯 ACMG/分類、寫 comment；SNV/Indel ACMG 優先序為 reviewer override → GeneBe → pipeline `ACMG_CLASS`。CNV/SV 卡片另有 Disease 欄供 DOCX 與個案清單使用。變更會自動存到 `tertiary_output/{LIS}/sample_metadata.json`；開啟個案清單或匯出 DOCX 前會先 flush 尚未完成的自動儲存。
 
 SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越低越偏致病，多 transcript TSV 會取最低分作為 worst case。
-5. **匯出報告** — 「匯出診斷報告」下載 `GET /api/samples/{LIS}/report.docx`；DOCX 依序輸出第一類、第二類、固定建議文字，再集中列出各 variant 的參考資料。CNV/SV Disease 欄會優先覆蓋單基因預設疾病，也可為片段型 CNV/SV 指定發報告疾病；多基因或無 OMIM gene 的片段會把 Disease 直接接在第 1 點位置描述，不另列一點。未涵蓋 OMIM 疾病相關基因時不再列出一般基因清單。SNV/Indel 會帶 TSV 的 `RS_ID`，RS ID 欄會預留尾端空格；SNV/Indel 與 Mito 核苷酸欄每行最多 13 字元且蛋白質括號另起一行。§五.4 grouped gene list 的 HPO/panel 區塊之間會留空行。旁邊的「輸出 PDF」會開啟列印視窗，輸出報告區的 causative / other / candidate 卡片摘要，可由瀏覽器另存為 PDF。列印版會略過 comment、More、Secondary findings 與 CNV/SV overlap 明細。
+5. **匯出報告** — 「匯出診斷報告」下載 `GET /api/samples/{LIS}/report.docx`；DOCX 依序輸出第一類、第二類、固定建議文字，再集中列出各 variant 的參考資料。CNV/SV Disease 欄會優先覆蓋單基因預設疾病，也可為片段型 CNV/SV 指定發報告疾病；多基因或無 OMIM gene 的片段會把 Disease 直接接在第 1 點位置描述，不另列一點。未涵蓋 OMIM 疾病相關基因時不再列出一般基因清單。SNV/Indel 會帶 TSV 的 `RS_ID`，RS ID 欄會預留尾端空格；SNV/Indel 與 Mito 核苷酸欄每行最多 13 字元且蛋白質括號另起一行。§五.4 grouped gene list 的 HPO/panel 區塊之間會留空行，且只列 `panel_loose` disease-associated genes；若基因有 dead-zone exon，會以 `GENE（exon 2, 4-6 <20X）` 這類短括號標註，段落第一行會先解釋括號意義。旁邊的「輸出 PDF」會開啟列印視窗，輸出報告區的 causative / other / candidate 卡片摘要，可由瀏覽器另存為 PDF。列印版會略過 comment、More、Secondary findings 與 CNV/SV overlap 明細。
 
 三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead 輸入格；點入輸入格即展開全部 VCF，輸入 sample / run / path 後即時縮小候選清單。Sample ID 可修改作為輸出資料夾與檔名前綴；in-house VCF 內部的 `_DV` / `_HC` column prefix 不必跟著修改。若輸出 ID 與 VCF 原始 ID 不同，worker 會先建立不過濾、不 normalize 的 reheader staging VCF，再交給正式 Nextflow scripts。VCF 建立時間來自檔案 `mtime` Unix timestamp，前端固定以台北時區（UTC+8）顯示。工具列的 Extra VEP 僅顯示 checkbox，與不換行的 `↻ 更新索引`、`三級分析清單` 使用固定高度；tooltip 只描述補 SpliceAI 註解，pipeline 仍照常處理既有 annotation。Extra VEP 與 GeneBe 一樣只送 `GNOMAD_G_AF ≤ 0.01` 或 AF 缺值的候選點執行，再把結果 merge 回完整 TSV。執行進度以 step-based 進度條顯示，Nextflow 會從 stdout 追蹤六個內部 process，stop-gaps 會追蹤 ClinVar / filter / GeneBe / extra VEP / AnnotSV / review TSV；詳細 log 預設收合。worker-owned log 行與 stop-gaps 子步驟帶 ISO timestamp，子程序完成時另記錄 elapsed seconds；`state.json` 的 `step_history` 可供後續依實測耗時調整百分比。「三級分析清單」會合併 `/home/pipeline/tertiary_output/` 與 NGS-UI job state，因此失敗且尚未建立 output 的 sample 仍會顯示 log；刪除時會一併刪除 pipeline output、`$NGS_UI_HOME/tertiary_output/{sample}/` 與該 sample 的 NGS-UI job log 目錄，執行中的 sample 不可刪除。新 job 狀態寫在 `data/jobs/tertiary/`；舊版 `data/jobs/dragen/` 紀錄仍可讀取。`run_stopgaps.sh` 不再建立 `.raw` snapshot；GeneBe VCF 會帶 contig header，AnnotSV 成功執行時只保留摘要 log。
 
