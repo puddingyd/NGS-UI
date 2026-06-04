@@ -90,7 +90,10 @@ def post_dragen_job(payload: dict = Body(...)):
       cnv_vcf:        in-house: gcnv VCF       (ignored for dragen)
       sv_vcf:         in-house: delly VCF      (ignored for dragen)
       mito_vcf:       in-house: mito VCF       (ignored for dragen)
+      samples:        optional batch list of the same fields; all rows must
+                      share one mode/pipeline_type.
     """
+    samples = payload.get("samples")
     mode = (payload.get("mode") or "dragen").strip()
     vcf  = (payload.get("vcf_path") or "").strip()
     sid  = (payload.get("sample_id") or "").strip()
@@ -99,9 +102,12 @@ def post_dragen_job(payload: dict = Body(...)):
     cnv_vcf  = (payload.get("cnv_vcf")  or "").strip()
     sv_vcf   = (payload.get("sv_vcf")   or "").strip()
     mito_vcf = (payload.get("mito_vcf") or "").strip()
-    if not vcf:
+    if samples is not None:
+        if not isinstance(samples, list) or not samples:
+            raise HTTPException(400, "samples must be a non-empty list")
+    elif not vcf:
         raise HTTPException(400, "vcf_path required")
-    if not sid:
+    if samples is None and not sid:
         raise HTTPException(400, "sample_id required")
     try:
         job_id = dragen_jobs.start_job(
@@ -112,6 +118,7 @@ def post_dragen_job(payload: dict = Body(...)):
             cnv_vcf=cnv_vcf,
             sv_vcf=sv_vcf,
             mito_vcf=mito_vcf,
+            samples=samples,
         )
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))

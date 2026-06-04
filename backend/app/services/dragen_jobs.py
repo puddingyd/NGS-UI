@@ -34,7 +34,8 @@ from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
 PIPELINE_STEPS = [
     "queued",
     "mito",
-    "stage",
+    "samplesheet",
+    "stage",  # legacy fallback only
     "nextflow",
     "stop-gaps",
     "done",
@@ -108,6 +109,7 @@ def list_dragen_vcfs() -> list[dict]:
                         continue
                     run = parent.name
                     break
+                input_dir = str(p.parent.parent if p.parent.name == "vcf.gz" else p.parent)
                 try:
                     st = p.stat()
                 except OSError:
@@ -116,6 +118,7 @@ def list_dragen_vcfs() -> list[dict]:
                     "path": sp,
                     "sample_id": sid,
                     "run": run,
+                    "input_dir": input_dir,
                     "size": st.st_size,
                     "mtime": st.st_mtime,
                 })
@@ -185,6 +188,7 @@ def list_inhouse_vcfs() -> list[dict]:
                 "path":        sp,
                 "sample_id":   sid,
                 "sample_dir":  str(sample_dir),
+                "input_dir":   str(sample_dir),
                 "run":         run,
                 "cnv_vcf":     cnv,
                 "sv_vcf":      sv,
@@ -344,8 +348,39 @@ def list_jobs(limit: int = 50) -> list[dict]:
 
 # ── Finished pipeline output management ───────────────────────────
 
+def _job_samples(job: dict) -> list[dict]:
+    samples = job.get("samples")
+    if isinstance(samples, list) and samples:
+        out = []
+        for sample in samples:
+            if not isinstance(sample, dict):
+                continue
+            sample_id = sample.get("sample_id", "")
+            source_sample_id = sample.get("source_sample_id", "")
+            if sample_id:
+                out.append({
+                    "sample_id": sample_id,
+                    "source_sample_id": source_sample_id or sample_id,
+                })
+        if out:
+            return out
+    sample_id = job.get("sample_id", "")
+    if not sample_id:
+        return []
+    return [{
+        "sample_id": sample_id,
+        "source_sample_id": job.get("source_sample_id", sample_id) or sample_id,
+    }]
+
+
 def _latest_job_for_sample(sample_id: str) -> dict | None:
-    jobs = [j for j in list_jobs(limit=1000) if j.get("sample_id") == sample_id]
+    jobs = [
+        j for j in list_jobs(limit=1000)
+        if any(
+            s["sample_id"] == sample_id or s["source_sample_id"] == sample_id
+            for s in _job_samples(j)
+        )
+    ]
     return jobs[0] if jobs else None
 
 
@@ -365,12 +400,17 @@ def list_pipeline_outputs() -> list[dict]:
     """List pipeline sample directories plus NGS-UI jobs without output."""
     out: list[dict] = []
     latest_jobs: dict[str, dict] = {}
+    jobs_by_source: dict[str, tuple[dict, str]] = {}
     for job in list_jobs(limit=1000):
-        sample_id = job.get("sample_id", "")
-        if sample_id and sample_id not in latest_jobs:
-            latest_jobs[sample_id] = job
+        for sample in _job_samples(job):
+            sample_id = sample["sample_id"]
+            source_sample_id = sample["source_sample_id"]
+            if sample_id and sample_id not in latest_jobs:
+                latest_jobs[sample_id] = job
+            if source_sample_id and source_sample_id not in jobs_by_source:
+                jobs_by_source[source_sample_id] = (job, sample_id)
 
-    sample_dirs: dict[str, Path] = {}
+    sample_dirs: dict[str, tuple[Path, str]] = {}
     if PIPELINE_OUT_ROOT.is_dir():
         for child in PIPELINE_OUT_ROOT.iterdir():
             if not child.is_dir() or child.name.startswith("_"):
@@ -379,10 +419,14 @@ def list_pipeline_outputs() -> list[dict]:
                 _validate_sample_id(child.name)
             except ValueError:
                 continue
-            sample_dirs[child.name] = child
+            job_entry = jobs_by_source.get(child.name)
+            ui_sample_id = job_entry[1] if job_entry else child.name
+            sample_dirs[ui_sample_id] = (child, child.name)
 
     for sample_id in set(sample_dirs) | set(latest_jobs):
-        child = sample_dirs.get(sample_id)
+        sample_entry = sample_dirs.get(sample_id)
+        child = sample_entry[0] if sample_entry else None
+        pipeline_sample_id = sample_entry[1] if sample_entry else ""
         job = latest_jobs.get(sample_id)
         try:
             output_mtime = child.stat().st_mtime if child else 0.0
@@ -394,8 +438,16 @@ def list_pipeline_outputs() -> list[dict]:
             and any(acmg_dir.glob("*.snv_indel.acmg.tsv"))
         )
         job_id = (job or {}).get("job_id", "")
+        job_sample = None
+        if job:
+            job_sample = next(
+                (s for s in _job_samples(job) if s["sample_id"] == sample_id),
+                None,
+            )
         out.append({
             "sample_id":     sample_id,
+            "source_sample_id": (job_sample or {}).get("source_sample_id", pipeline_sample_id),
+            "pipeline_sample_id": pipeline_sample_id,
             "mtime":         max(output_mtime, _job_mtime(job or {})),
             "has_output":    child is not None,
             "has_acmg":      has_acmg,
@@ -428,9 +480,27 @@ def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
 def delete_pipeline_output(sample_id: str) -> dict:
     """Delete UI/pipeline output and all NGS-UI job logs unless one is active."""
     _validate_sample_id(sample_id)
-    sample_dir = PIPELINE_OUT_ROOT / sample_id
-    ui_dir = TERTIARY_OUTPUT_ROOT / sample_id
-    jobs = [j for j in list_jobs(limit=1000) if j.get("sample_id") == sample_id]
+    jobs = [
+        j for j in list_jobs(limit=1000)
+        if any(
+            s["sample_id"] == sample_id or s["source_sample_id"] == sample_id
+            for s in _job_samples(j)
+        )
+    ]
+    primary_job = jobs[0] if jobs else None
+    matched_sample = None
+    if primary_job:
+        matched_sample = next(
+            (
+                s for s in _job_samples(primary_job)
+                if s["sample_id"] == sample_id or s["source_sample_id"] == sample_id
+            ),
+            None,
+        )
+    ui_sample_id = (matched_sample or {}).get("sample_id") or sample_id
+    pipeline_sample_id = (matched_sample or {}).get("source_sample_id") or sample_id
+    sample_dir = PIPELINE_OUT_ROOT / pipeline_sample_id
+    ui_dir = TERTIARY_OUTPUT_ROOT / ui_sample_id
     if not sample_dir.is_dir() and not ui_dir.is_dir() and not jobs:
         raise FileNotFoundError(f"pipeline output or job not found: {sample_id}")
     for job in jobs:
@@ -445,13 +515,42 @@ def delete_pipeline_output(sample_id: str) -> dict:
         shutil.rmtree(ui_dir)
         deleted.append(str(ui_dir))
     for job in jobs:
+        if (job.get("sample_count") or 1) > 1:
+            remaining = [
+                sample for sample in (job.get("samples") or [])
+                if not (
+                    sample.get("sample_id") == ui_sample_id
+                    or sample.get("source_sample_id") == pipeline_sample_id
+                )
+            ]
+            job_id = job.get("job_id", "")
+            if remaining:
+                job = dict(job)
+                job["samples"] = remaining
+                job["sample_ids"] = [s.get("sample_id", "") for s in remaining if s.get("sample_id")]
+                job["source_sample_ids"] = [
+                    s.get("source_sample_id", "") for s in remaining if s.get("source_sample_id")
+                ]
+                job["sample_count"] = len(remaining)
+                job["sample_id"] = job["sample_ids"][0] if job["sample_ids"] else ""
+                job["source_sample_id"] = (
+                    job["source_sample_ids"][0] if job["source_sample_ids"] else job["sample_id"]
+                )
+                save_state(job_id, job)
+                deleted.append(f"{_job_dir(job_id)}/state.json sample entry")
+            else:
+                job_dir = _job_dir(job_id)
+                if job_dir.is_dir():
+                    shutil.rmtree(job_dir)
+                    deleted.append(str(job_dir))
+            continue
         job_dir = _job_dir(job.get("job_id", ""))
         if job_dir.is_dir():
             shutil.rmtree(job_dir)
             deleted.append(str(job_dir))
     from . import sample_loader
     sample_loader.invalidate_sample_cache(ui_dir)
-    return {"sample_id": sample_id, "deleted": deleted}
+    return {"sample_id": ui_sample_id, "source_sample_id": pipeline_sample_id, "deleted": deleted}
 
 
 # ── Job spawn ──────────────────────────────────────────────────────
@@ -466,40 +565,96 @@ def start_job(
     cnv_vcf: str = "",
     sv_vcf: str = "",
     mito_vcf: str = "",
+    samples: list[dict] | None = None,
 ) -> str:
     """Spawn a detached worker that runs the chosen pipeline chain.
 
-    mode = "dragen" → DRAGEN germline (single hard-filtered VCF; siblings
-                       cnv.vcf.gz / cnv_sv.vcf.gz auto-discovered).
-    mode = "inhouse" → in-house ensemble Nextflow output (vcf_path is the
-                       ensemble.fixed.vcf.gz; cnv_vcf / sv_vcf / mito_vcf
-                       are the explicit sibling paths from the index).
+    mode = "dragen" → DRAGEN germline; v3.1 sample sheet uses
+                       {input_dir}/vcf.gz/{source_sample_id}.hard-filtered.vcf.gz.
+    mode = "inhouse" → NCKUH ensemble output; v3.1 sample sheet uses
+                       {input_dir}/04_snv_indel/{source_sample_id}.ensemble.fixed.vcf.gz.
+                       cnv_vcf / sv_vcf / mito_vcf are still passed for
+                       NGS-UI stop-gaps until pipeline Phase 2/3 lands.
 
     Returns the job_id. The worker writes state.json + log.txt under
     TERTIARY_JOBS_DIR/<job_id>/; the route polls.
     """
-    if mode not in ("dragen", "inhouse"):
-        raise ValueError(f"unknown mode: {mode}")
-    vcf = Path(vcf_path)
-    if not vcf.is_file():
-        raise FileNotFoundError(f"VCF not found: {vcf_path}")
-    if not sample_id:
-        raise ValueError("sample_id required")
-    _validate_sample_id(sample_id)
-    source_sample_id = source_sample_id or infer_source_sample_id(vcf, mode)
-    _validate_sample_id(source_sample_id)
+    batch_samples: list[dict] = []
+    if samples is not None:
+        if not samples:
+            raise ValueError("samples must not be empty")
+        for item in samples:
+            if not isinstance(item, dict):
+                raise ValueError("each sample must be an object")
+            sample_mode = (item.get("mode") or mode or "dragen").strip()
+            if sample_mode not in ("dragen", "inhouse"):
+                raise ValueError(f"unknown mode: {sample_mode}")
+            sample_vcf = Path((item.get("vcf_path") or "").strip())
+            if not sample_vcf.is_file():
+                raise FileNotFoundError(f"VCF not found: {sample_vcf}")
+            sample_id_i = (item.get("sample_id") or "").strip()
+            if not sample_id_i:
+                raise ValueError("sample_id required")
+            _validate_sample_id(sample_id_i)
+            source_id_i = (item.get("source_sample_id") or "").strip() or infer_source_sample_id(sample_vcf, sample_mode)
+            _validate_sample_id(source_id_i)
+            batch_samples.append({
+                "mode": sample_mode,
+                "vcf_path": str(sample_vcf),
+                "sample_id": sample_id_i,
+                "source_sample_id": source_id_i,
+                "seq_type": item.get("seq_type") or ("WGS" if sample_mode == "dragen" else "WES"),
+                "cnv_vcf": (item.get("cnv_vcf") or "").strip(),
+                "sv_vcf": (item.get("sv_vcf") or "").strip(),
+                "mito_vcf": (item.get("mito_vcf") or "").strip(),
+            })
+        modes = {s["mode"] for s in batch_samples}
+        if len(modes) != 1:
+            raise ValueError("samples in one job must all use the same mode")
+        mode = batch_samples[0]["mode"]
+        vcf = Path(batch_samples[0]["vcf_path"])
+        sample_id = batch_samples[0]["sample_id"]
+        source_sample_id = batch_samples[0]["source_sample_id"]
+    else:
+        if mode not in ("dragen", "inhouse"):
+            raise ValueError(f"unknown mode: {mode}")
+        vcf = Path(vcf_path)
+        if not vcf.is_file():
+            raise FileNotFoundError(f"VCF not found: {vcf_path}")
+        if not sample_id:
+            raise ValueError("sample_id required")
+        _validate_sample_id(sample_id)
+        source_sample_id = source_sample_id or infer_source_sample_id(vcf, mode)
+        _validate_sample_id(source_sample_id)
+        batch_samples = [{
+            "mode": mode,
+            "vcf_path": str(vcf),
+            "sample_id": sample_id,
+            "source_sample_id": source_sample_id,
+            "seq_type": "WGS" if mode == "dragen" else "WES",
+            "cnv_vcf": cnv_vcf,
+            "sv_vcf": sv_vcf,
+            "mito_vcf": mito_vcf,
+        }]
 
     job_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     jdir = _job_dir(job_id)
     jdir.mkdir(parents=True, exist_ok=True)
 
     created_at = _now()
+    sample_ids = [s["sample_id"] for s in batch_samples]
+    source_sample_ids = [s["source_sample_id"] for s in batch_samples]
     save_state(job_id, {
         "job_id":         job_id,
         "mode":           mode,
         "vcf_path":       str(vcf),
         "sample_id":      sample_id,
         "source_sample_id": source_sample_id,
+        "sample_ids":     sample_ids,
+        "source_sample_ids": source_sample_ids,
+        "sample_count":   len(batch_samples),
+        "samples":        batch_samples,
+        "pipeline_type":  "dragen" if mode == "dragen" else "nckuh",
         "with_extra_vep": with_extra_vep,
         "cnv_vcf":        cnv_vcf,
         "sv_vcf":         sv_vcf,
@@ -515,12 +670,15 @@ def start_job(
     })
 
     log_fh = _log_path(job_id).open("w", buffering=1)
+    batch_path = _job_dir(job_id) / "batch.json"
+    batch_path.write_text(
+        json.dumps({"samples": batch_samples}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     cmd = [
         "python3", "-m", "app.workers.dragen_run",
         "--job-id",  job_id,
-        "--vcf",     str(vcf),
-        "--sample",  sample_id,
-        "--source-sample", source_sample_id,
+        "--batch-json", str(batch_path),
         "--mode",    mode,
     ]
     if with_extra_vep:

@@ -8,9 +8,10 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
     2. detect existing pipeline output
        ├ HIT  → skip 3+4, reuse the pre-existing .acmg.tsv
        └ MISS → run 3+4 below
-    3. stage_dragen_for_tertiary.sh   → nf_stage/<SID>/04_snv_indel/...
-    4. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<SID>/
-                                          03_acmg/<SID>.snv_indel.acmg.tsv
+    3. write one-row v3.1 samplesheet → data/jobs/tertiary/<job>/samplesheet.csv
+       (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
+    4. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<source SID>/
+                                          03_acmg/<source SID>.snv_indel.acmg.tsv
     5. copy pipeline TSV              → NGS_UI/tertiary_output/<SID>/
                                           snv_indel.annotated.tsv
                                           + pipeline_source.json (audit)
@@ -22,9 +23,13 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
 
 Mode differences:
   dragen  — step 1 reads the hard-filtered VCF (extracts chrM);
+            step 3 sample sheet uses pipeline_type=dragen and the
+            DRAGEN run folder as input_dir;
             step 6's CNV/SV branch auto-discovers sibling
             <SID>.cnv.vcf.gz + <SID>.sv.vcf.gz from the same dir.
   inhouse — step 1 reads the explicit <SID>.mito.vcf.gz;
+            step 3 sample sheet uses pipeline_type=nckuh and the
+            in-house sample output folder as input_dir;
             step 6 runs AnnotSV separately on gcnv + delly.
 
 Existing-output detection (step 2): tries
@@ -40,9 +45,11 @@ Started by `python3 -m app.workers.dragen_run --job-id … --vcf …`.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -52,7 +59,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
-                       TERTIARY_OUTPUT_ROOT)
+                       TERTIARY_JOBS_DIR, TERTIARY_OUTPUT_ROOT)
 from ..services import dragen_jobs
 
 
@@ -66,21 +73,135 @@ def _strip_sid_suffix(sid: str) -> str:
     return sid
 
 
-def _find_pipeline_acmg_tsv(sid: str) -> Path | None:
-    """Look for an existing <SID>.snv_indel.acmg.tsv under the pipeline
-    production output root. Tries the full (suffixed) SID first; falls
-    back to the stripped base SID so production runs by the pipeline
-    team (no caller suffix) are reused.
+def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
+    """Look for a v3.1 <SID>.snv_indel.acmg.tsv under production output.
+
+    The UI sample ID may intentionally differ from the source VCF sample
+    ID (for example, adding "-dragen" to avoid collisions). The pipeline
+    itself must run under the source sample ID because v3.1 composes input
+    paths from sample_id + input_dir, so try source IDs first and then the
+    UI ID / stripped legacy aliases.
     """
-    candidates = [sid]
-    base = _strip_sid_suffix(sid)
-    if base != sid:
-        candidates.append(base)
+    candidates: list[str] = []
+    for sid in sample_ids:
+        if not sid:
+            continue
+        for s in (sid, _strip_sid_suffix(sid)):
+            if s and s not in candidates:
+                candidates.append(s)
     for s in candidates:
         p = PIPELINE_OUT_ROOT / s / "03_acmg" / f"{s}.snv_indel.acmg.tsv"
         if p.is_file():
             return p
     return None
+
+
+def _pipeline_input_dir(vcf: Path, mode: str) -> Path:
+    """Return the sample-sheet input_dir for the v3.1 pipeline."""
+    if mode == "dragen":
+        # guide v3.1: {input_dir}/vcf.gz/{sample_id}.hard-filtered.vcf.gz
+        return vcf.parent.parent if vcf.parent.name == "vcf.gz" else vcf.parent
+    # guide v3.1: {input_dir}/04_snv_indel/{sample_id}.ensemble.fixed.vcf.gz
+    if vcf.parent.name == "04_snv_indel" and len(vcf.parents) >= 2:
+        return vcf.parents[1]
+    return vcf.parent
+
+
+def _write_samplesheet(
+    job_id: str,
+    *,
+    samples: list[dict],
+) -> Path:
+    """Create a v3.1 sample sheet for the selected source VCFs."""
+    path = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=["sample_id", "pipeline_type", "input_dir", "seq_type", "hpo"],
+        )
+        writer.writeheader()
+        for sample in samples:
+            mode = sample["mode"]
+            writer.writerow({
+                "sample_id": sample["source_sample_id"],
+                "pipeline_type": "dragen" if mode == "dragen" else "nckuh",
+                "input_dir": str(_pipeline_input_dir(Path(sample["vcf_path"]), mode)),
+                "seq_type": sample["seq_type"],
+                "hpo": "",
+            })
+    return path
+
+
+def _validate_acmg_tsv(path: Path, *, strict_v31: bool) -> None:
+    """Catch stale/partial tertiary outputs before copying them into UI."""
+    try:
+        header = path.open(encoding="utf-8").readline().rstrip("\n").split("\t")
+    except OSError as e:
+        raise RuntimeError(f"cannot read pipeline TSV: {path}") from e
+    required = {"HGNC_ID", "ACMG_CRITERIA", "ACMG_SCORE", "ACMG_CLASS", "ACMG_NOTES"}
+    missing = sorted(required - set(header))
+    if missing:
+        raise RuntimeError(
+            f"pipeline TSV missing v3.1 required columns: {', '.join(missing)}"
+        )
+    if strict_v31 and len(header) < 65:
+        raise RuntimeError(
+            f"pipeline TSV has {len(header)} columns; v3.1 guide expects at least 65"
+        )
+    if len(header) != 65:
+        _log(f"[validate] warning: pipeline TSV has {len(header)} columns (v3.1 guide: 65)")
+
+
+def _sample_from_args(args: argparse.Namespace) -> dict:
+    mode = args.mode
+    return {
+        "mode": mode,
+        "vcf_path": args.vcf,
+        "sample_id": args.sample,
+        "source_sample_id": args.source_sample,
+        "seq_type": "WGS" if mode == "dragen" else "WES",
+        "cnv_vcf": args.cnv_vcf,
+        "sv_vcf": args.sv_vcf,
+        "mito_vcf": args.mito_vcf,
+    }
+
+
+def _load_samples(args: argparse.Namespace) -> list[dict]:
+    if args.batch_json:
+        raw = json.loads(Path(args.batch_json).read_text(encoding="utf-8"))
+        samples = raw.get("samples") if isinstance(raw, dict) else raw
+        if not isinstance(samples, list) or not samples:
+            raise ValueError("--batch-json must contain a non-empty samples list")
+    else:
+        samples = [_sample_from_args(args)]
+
+    out: list[dict] = []
+    for sample in samples:
+        if not isinstance(sample, dict):
+            raise ValueError("batch sample must be an object")
+        mode = (sample.get("mode") or args.mode or "dragen").strip()
+        if mode not in ("dragen", "inhouse"):
+            raise ValueError(f"unknown mode in batch: {mode}")
+        sample_id = (sample.get("sample_id") or "").strip()
+        source_sample_id = (sample.get("source_sample_id") or "").strip()
+        vcf_path = (sample.get("vcf_path") or sample.get("vcf") or "").strip()
+        if not sample_id or not source_sample_id or not vcf_path:
+            raise ValueError("batch sample requires sample_id, source_sample_id, and vcf_path")
+        out.append({
+            "mode": mode,
+            "vcf_path": vcf_path,
+            "sample_id": sample_id,
+            "source_sample_id": source_sample_id,
+            "seq_type": sample.get("seq_type") or ("WGS" if mode == "dragen" else "WES"),
+            "cnv_vcf": (sample.get("cnv_vcf") or "").strip(),
+            "sv_vcf": (sample.get("sv_vcf") or "").strip(),
+            "mito_vcf": (sample.get("mito_vcf") or "").strip(),
+        })
+    modes = {s["mode"] for s in out}
+    if len(modes) != 1:
+        raise ValueError("batch samples must all use the same mode/pipeline_type")
+    return out
 
 
 def _track_pipeline_source(
@@ -219,9 +340,10 @@ def _run(cmd: list[str], *, label: str, on_line=None) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--job-id", required=True)
-    ap.add_argument("--vcf",    required=True)
-    ap.add_argument("--sample", required=True)
-    ap.add_argument("--source-sample", required=True)
+    ap.add_argument("--vcf",    default="")
+    ap.add_argument("--sample", default="")
+    ap.add_argument("--source-sample", default="")
+    ap.add_argument("--batch-json", default="")
     ap.add_argument("--mode",   default="dragen", choices=["dragen", "inhouse"])
     ap.add_argument("--with-extra-vep", action="store_true")
     # In-house only — explicit sibling VCF paths from the index.
@@ -233,79 +355,114 @@ def main() -> int:
     _load_secrets()
 
     job_id = args.job_id
-    vcf    = args.vcf
-    sid    = args.sample
-    source_sid = args.source_sample
-    mode   = args.mode
-    sample_dir = TERTIARY_OUTPUT_ROOT / sid
-    sample_dir.mkdir(parents=True, exist_ok=True)
-    # NGS-UI side TSV path the adapter reads (no SID prefix).
-    gui_tsv = sample_dir / "snv_indel.annotated.tsv"
+    samples = _load_samples(args)
+    mode = samples[0]["mode"]
+    sample_ids = [sample["sample_id"] for sample in samples]
 
     scripts = REPO_ROOT / "scripts"
-    nf_work  = NGS_UI_HOME / "nf_work" / sid
-    nf_stage = NGS_UI_HOME / "nf_stage" / sid
-
-    # In-house mode reads chrM from the explicit mito VCF; DRAGEN mode
-    # extracts chrM from the hard-filtered VCF (the worker's --vcf is
-    # the whole-genome input there).
-    mito_in = args.mito_vcf if (mode == "inhouse" and args.mito_vcf) else vcf
-    seq_type = "WGS" if mode == "dragen" else "WES"
+    batch_slug = sample_ids[0] if len(sample_ids) == 1 else f"batch-{job_id}"
+    nf_work  = NGS_UI_HOME / "nf_work" / batch_slug
+    pipeline_type = "dragen" if mode == "dragen" else "nckuh"
+    legacy_staging = os.environ.get("NGS_UI_TERTIARY_LEGACY_STAGING", "").strip().lower() in {
+        "1", "true", "yes", "y", "on"
+    }
 
     started_at = _now()
     _set_step(job_id, "mito", state="running", started_at=started_at)
     try:
         # 1. Mito
-        if mode == "inhouse" and not args.mito_vcf:
-            _log("[mito] skipped — in-house mode but --mito-vcf empty")
-        else:
+        for sample in samples:
+            sid = sample["sample_id"]
+            sample_dir = TERTIARY_OUTPUT_ROOT / sid
+            sample_dir.mkdir(parents=True, exist_ok=True)
+            mito_in = sample["mito_vcf"] if (mode == "inhouse" and sample["mito_vcf"]) else sample["vcf_path"]
+            if mode == "inhouse" and not sample["mito_vcf"]:
+                _log(f"[mito] skipped {sid} — in-house mode but mito_vcf empty")
+                continue
+            _log(f"[mito] {sid}")
             _run([str(scripts / "annotate_mito_vcf.sh"),
                   "--in",     mito_in,
                   "--sample", sid,
                   "--outdir", str(sample_dir)],
-                 label="1/4 mito")
+                 label=f"1/4 mito {sid}")
 
         # 2. Reuse existing pipeline output if the production pipeline
-        # has already processed this sample (sid or its stripped base).
+        # has already processed each source sample.
         _set_step(job_id, "detect-pipeline-output")
-        existing = _find_pipeline_acmg_tsv(sid)
-        if existing is not None:
-            _log(f"[detect] reusing existing pipeline TSV: {existing}")
-        else:
-            _log("[detect] no existing pipeline TSV — running nextflow")
+        existing_by_sid: dict[str, Path] = {}
+        pending_samples: list[dict] = []
+        for sample in samples:
+            sid = sample["sample_id"]
+            source_sid = sample["source_sample_id"]
+            existing = _find_pipeline_acmg_tsv(source_sid, sid)
+            if existing is not None:
+                existing_by_sid[sid] = existing
+                _log(f"[detect] {sid}: reusing existing pipeline TSV: {existing}")
+            else:
+                pending_samples.append(sample)
+                _log(f"[detect] {sid}: no existing pipeline TSV")
 
-            # 3. Stage. DRAGEN's 5M-row hard-filter VCF still goes
-            # through the full stager (gnomAD AF<0.01 + gene-body BED
-            # filter + DV+HC synthesis) so Pangolin doesn't segfault
-            # on the splice candidate set. In-house ensemble VCFs are
-            # already small (~40k rows) AND already 2-sample, so we
-            # just symlink them straight into the nf_stage layout
-            # without any filtering — Nextflow sees every variant.
-            _set_step(job_id, "stage")
-            if mode == "inhouse":
-                source_sid = Path(vcf).name.removesuffix(".ensemble.fixed.vcf.gz")
-                if source_sid == sid:
-                    _symlink_inhouse_into_nf_stage(Path(vcf), sid, nf_stage)
-                    _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
-                         f"{sid}.ensemble.fixed.vcf.gz (no filter)")
+        if pending_samples:
+            _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
+
+            # 3. v3.1 pipeline input. The official pipeline now owns
+            # PREPARE_VCF / PREPARE_VCF_DRAGEN, so the default path is
+            # a one-row sample sheet. Keep the old staging route behind
+            # an env switch for deployments that have not upgraded yet.
+            if legacy_staging:
+                if len(pending_samples) != 1:
+                    raise RuntimeError(
+                        "batch jobs require the v3.1 samplesheet pipeline; "
+                        "unset NGS_UI_TERTIARY_LEGACY_STAGING or run one sample at a time"
+                    )
+                sample = pending_samples[0]
+                sid = sample["sample_id"]
+                source_sid = sample["source_sample_id"]
+                vcf = sample["vcf_path"]
+                vcf_path = Path(vcf)
+                nf_stage = NGS_UI_HOME / "nf_stage" / sid
+                _set_step(job_id, "stage")
+                _log("[stage] legacy staging enabled by NGS_UI_TERTIARY_LEGACY_STAGING")
+                if mode == "inhouse":
+                    if source_sid == sid:
+                        _symlink_inhouse_into_nf_stage(vcf_path, sid, nf_stage)
+                        _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
+                             f"{sid}.ensemble.fixed.vcf.gz (no filter)")
+                    else:
+                        _run([str(scripts / "stage_dragen_for_tertiary.sh"),
+                              "--in",         vcf,
+                              "--sample",     sid,
+                              "--skip-norm",
+                              "--skip-bed",
+                              "--skip-gnomad",
+                              "--keep-chrm"],
+                             label="2a/4 stage in-house alias")
                 else:
                     _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-                          "--in",         vcf,
-                          "--sample",     sid,
-                          "--skip-norm",
-                          "--skip-bed",
-                          "--skip-gnomad",
-                          "--keep-chrm"],
-                         label="2a/4 stage in-house alias")
+                          "--in",     vcf,
+                          "--sample", sid],
+                         label="2a/4 stage")
             else:
-                _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-                      "--in",     vcf,
-                      "--sample", sid],
-                     label="2a/4 stage")
+                _set_step(job_id, "samplesheet")
+                samplesheet = _write_samplesheet(
+                    job_id,
+                    samples=pending_samples,
+                )
+                _log(f"[samplesheet] {samplesheet}")
+                for sample in pending_samples:
+                    _log(
+                        "[samplesheet] "
+                        f"source_sample_id={sample['source_sample_id']} "
+                        f"ui_sample_id={sample['sample_id']} "
+                        f"pipeline_type={pipeline_type} "
+                        f"input_dir={_pipeline_input_dir(Path(sample['vcf_path']), mode)}"
+                    )
 
-            # 4. Nextflow → /home/pipeline/tertiary_output/<SID>/...
+            # 4. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
             _set_step(job_id, "nextflow")
             nextflow_stages = [
+                ("prepare-vcf-dragen", "PREPARE_VCF_DRAGEN"),
+                ("prepare-vcf", "PREPARE_VCF"),
                 ("add-callers-tag", "ADD_CALLERS_TAG"),
                 ("filter-for-annotation", "FILTER_FOR_ANNOTATION"),
                 ("vep-annotate", "VEP_ANNOTATE"),
@@ -317,7 +474,7 @@ def main() -> int:
 
             def track_nextflow(line: str) -> None:
                 nonlocal nextflow_stage_rank
-                if not re.search(r"\|\s*[01]\s+of\s+1", line):
+                if not re.search(r"\|\s*\d+\s+of\s+\d+", line):
                     return
                 for rank, (slug, token) in enumerate(nextflow_stages):
                     if token in line and rank > nextflow_stage_rank:
@@ -325,60 +482,101 @@ def main() -> int:
                         _set_step(job_id, f"nextflow:{slug}")
                         return
 
-            _run([
-                "nextflow",
-                "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
-                "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
-                "-profile", "dgm",
-                "-work-dir", str(nf_work),
-                "--sample_id", sid,
-                "--input_dir", str(nf_stage),
-                "--seq_type",  seq_type,
-                "--out_dir",   str(PIPELINE_OUT_ROOT),
-            ], label="2b/4 nextflow", on_line=track_nextflow)
+            if legacy_staging:
+                sample = pending_samples[0]
+                sid = sample["sample_id"]
+                nextflow_cmd = [
+                    "nextflow",
+                    "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
+                    "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
+                    "-profile", "dgm",
+                    "-work-dir", str(nf_work),
+                    "--sample_id", sid,
+                    "--input_dir", str(nf_stage),
+                    "--seq_type",  seq_type,
+                    "--out_dir",   str(PIPELINE_OUT_ROOT),
+                    "-resume",
+                ]
+                _run(nextflow_cmd, label="2b/4 nextflow legacy", on_line=track_nextflow)
+            else:
+                samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
+                inner = " ".join(shlex.quote(part) for part in [
+                    "nextflow",
+                    "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
+                    "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
+                    "-profile", "dgm",
+                    "-work-dir", str(nf_work),
+                    "--pipeline_type", pipeline_type,
+                    "--samplesheet", str(samplesheet),
+                    "--out_dir", str(PIPELINE_OUT_ROOT),
+                    "-resume",
+                ])
+                env_script = "/home/pipeline/pipeline_code/DGM_NGS2ndAnalysis.sh"
+                _run([
+                    "bash",
+                    "-lc",
+                    f"source {shlex.quote(env_script)} && {inner}",
+                ], label="2b/4 nextflow v3.1", on_line=track_nextflow)
 
-            existing = _find_pipeline_acmg_tsv(sid)
-            if existing is None:
-                raise RuntimeError(
-                    "nextflow finished but expected acmg.tsv not found under "
-                    f"{PIPELINE_OUT_ROOT}/{sid}/03_acmg/"
-                )
+            for sample in pending_samples:
+                sid = sample["sample_id"]
+                source_sid = sample["source_sample_id"]
+                existing = _find_pipeline_acmg_tsv(source_sid, sid)
+                if existing is None:
+                    raise RuntimeError(
+                        "nextflow finished but expected acmg.tsv not found under "
+                        f"{PIPELINE_OUT_ROOT}/{source_sid}/03_acmg/"
+                    )
+                existing_by_sid[sid] = existing
 
         # 5. Copy pipeline TSV → NGS-UI side; record source audit.
         _set_step(job_id, "copy-pipeline-tsv")
-        shutil.copyfile(existing, gui_tsv)
-        _track_pipeline_source(
-            sample_dir,
-            existing,
-            source_sample_id=source_sid,
-            source_vcf_path=vcf,
-        )
-        _log(f"[copy] {existing} → {gui_tsv}")
+        for sample in samples:
+            sid = sample["sample_id"]
+            source_sid = sample["source_sample_id"]
+            source_vcf = sample["vcf_path"]
+            sample_dir = TERTIARY_OUTPUT_ROOT / sid
+            gui_tsv = sample_dir / "snv_indel.annotated.tsv"
+            existing = existing_by_sid.get(sid)
+            if existing is None:
+                raise RuntimeError(f"internal error: no pipeline TSV for {sid}")
+            _validate_acmg_tsv(existing, strict_v31=not legacy_staging)
+            shutil.copyfile(existing, gui_tsv)
+            _track_pipeline_source(
+                sample_dir,
+                existing,
+                source_sample_id=source_sid,
+                source_vcf_path=source_vcf,
+            )
+            _log(f"[copy] {sid}: {existing} → {gui_tsv}")
 
         # 6. Stop-gap chain (no ClinVar; pipeline already populates it).
         _set_step(job_id, "stop-gaps")
-        stop_args = [str(scripts / "run_stopgaps.sh"),
-                     "--tsv",    str(gui_tsv),
-                     "--sample", sid]
-        if mode == "dragen":
-            stop_args += ["--dragen-cnv-source", vcf]
-        elif mode == "inhouse":
-            if args.cnv_vcf:
-                stop_args += ["--inhouse-cnv-vcf", args.cnv_vcf]
-            if args.sv_vcf:
-                stop_args += ["--inhouse-sv-vcf",  args.sv_vcf]
-        if not args.with_extra_vep:
-            stop_args.append("--skip-extra-vep")
         def track_stopgaps(line: str) -> None:
             match = re.search(r"\[stopgaps-step]\s+([a-z0-9-]+)\s+start", line)
             if match:
                 _set_step(job_id, f"stop-gaps:{match.group(1)}")
 
-        _run(stop_args, label="3/4 stop-gaps", on_line=track_stopgaps)
+        for sample in samples:
+            sid = sample["sample_id"]
+            gui_tsv = TERTIARY_OUTPUT_ROOT / sid / "snv_indel.annotated.tsv"
+            stop_args = [str(scripts / "run_stopgaps.sh"),
+                         "--tsv",    str(gui_tsv),
+                         "--sample", sid]
+            if mode == "dragen":
+                stop_args += ["--dragen-cnv-source", sample["vcf_path"]]
+            elif mode == "inhouse":
+                if sample["cnv_vcf"]:
+                    stop_args += ["--inhouse-cnv-vcf", sample["cnv_vcf"]]
+                if sample["sv_vcf"]:
+                    stop_args += ["--inhouse-sv-vcf",  sample["sv_vcf"]]
+            if not args.with_extra_vep:
+                stop_args.append("--skip-extra-vep")
+            _run(stop_args, label=f"3/4 stop-gaps {sid}", on_line=track_stopgaps)
 
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)
-        _log("[tertiary_run] DONE.")
+        _log(f"[tertiary_run] DONE. samples={','.join(sample_ids)}")
         return 0
 
     except Exception as e:

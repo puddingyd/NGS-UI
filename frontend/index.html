@@ -635,7 +635,7 @@
     </div>
   </div>
 
-  <!-- 三級分析 — DRAGEN VCF → mito + SNV/Indel + CNV/SV chain.
+  <!-- 三級分析 — selected VCF → v3.1 sample sheet → SNV/Indel + NGS-UI stop-gaps.
        Lists *.hard-filtered.vcf.gz under NGS_UI_DRAGEN_VCF_ROOTS,
        reviewer picks one, kicks off the worker. Progress shows up in
        the topbar (.topbar-job-status) and in the log pane here. -->
@@ -681,7 +681,9 @@
         <div class="dragen-sample-row">
           <label for="dragen-sample-id" class="dragen-form-label-sub">Sample ID</label>
           <input id="dragen-sample-id" type="text" placeholder="自動從 VCF 檔名抽出；可修改輸出 Sample ID" />
+          <button id="dragen-add-batch-btn" class="btn btn-ghost" type="button">加入批次</button>
         </div>
+        <div id="dragen-batch-list" class="dragen-batch-list" hidden></div>
         <div class="dragen-actions">
           <button id="dragen-start-btn" class="btn btn-primary" type="button">開始分析</button>
           <button type="button" class="btn btn-ghost" data-close="dragen-modal">關閉</button>

@@ -2307,6 +2307,50 @@ body.sidebar-collapsed .container { margin-left: auto; }
   border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+.dragen-batch-list {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f6f8fa;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.dragen-batch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+.dragen-batch-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(0, 1.6fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-top: 1px solid #d8dee4;
+}
+.dragen-batch-row:first-of-type { border-top: 0; }
+.dragen-batch-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.dragen-batch-path {
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dragen-batch-remove {
+  border: 0;
+  background: transparent;
+  color: #cf222e;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+}
 .dragen-actions {
   display: flex;
   gap: 8px;
