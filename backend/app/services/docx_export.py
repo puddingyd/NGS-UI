@@ -1168,6 +1168,11 @@ def _gene_list_label(gene: str, test_type: str) -> str:
     return f"{gene}（{suffix}）" if suffix else gene
 
 
+def _add_dead_zone_gene_list_note(doc, threshold: int) -> None:
+    _blank(doc)
+    _add_paragraph(doc, f"註：括號中標示之 exon 為 cohort dead-zone，代表該 exon coverage 低於本檢測判讀門檻（<{threshold}X）。")
+
+
 def _render_gene_list(doc, sample: dict, mode: str) -> None:
     """mode = 'grouped' → one paragraph per HPO term / panel,
        mode = 'merged'  → single deduped list.
@@ -1201,13 +1206,12 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         merged: set[str] = set()
         for _, gs in sections:
             merged |= set(gs)
-        _add_paragraph(doc, f"    括號中標示之 exon 代表該 exon 之 coverage 低於本檢測判讀門檻（<{threshold}X）。")
         gene_str = ", ".join(_gene_list_label(g, test_type) for g in sorted(merged))
         _add_paragraph(doc, gene_str)
+        _add_dead_zone_gene_list_note(doc, threshold)
         return
 
     # grouped (default)
-    _add_paragraph(doc, f"    括號中標示之 exon 代表該 exon 之 coverage 低於本檢測判讀門檻（<{threshold}X）。")
     for idx, (name, gs) in enumerate(sections):
         if idx:
             _blank(doc)
@@ -1216,6 +1220,7 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
             _add_paragraph(doc, ", ".join(_gene_list_label(g, test_type) for g in gs))
         else:
             _add_paragraph(doc, "（無對應基因）")
+    _add_dead_zone_gene_list_note(doc, threshold)
 
 
 # ── Top-level entrypoint ──────────────────────────────────────────
