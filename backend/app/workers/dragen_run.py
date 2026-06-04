@@ -511,11 +511,20 @@ def main() -> int:
                     "--out_dir", str(PIPELINE_OUT_ROOT),
                     "-resume",
                 ])
-                env_script = "/home/pipeline/pipeline_code/DGM_NGS2ndAnalysis.sh"
+                env_script = os.environ.get(
+                    "NGS_UI_TERTIARY_ENV_SCRIPT",
+                    "/home/pipeline/pipeline_code/NGS2ndAnalysis_env.sh",
+                )
+                shell_cmd = (
+                    f"if [ -f {shlex.quote(env_script)} ]; then "
+                    f"source {shlex.quote(env_script)}; "
+                    "else echo '[nextflow] env script not found; using current environment'; fi; "
+                    f"{inner}"
+                )
                 _run([
                     "bash",
                     "-lc",
-                    f"source {shlex.quote(env_script)} && {inner}",
+                    shell_cmd,
                 ], label="2b/4 nextflow v3.1", on_line=track_nextflow)
 
             for sample in pending_samples:
