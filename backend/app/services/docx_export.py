@@ -1201,13 +1201,13 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         merged: set[str] = set()
         for _, gs in sections:
             merged |= set(gs)
-        _add_paragraph(doc, f"    括號中標示之 exon 為 cohort dead-zone，代表該 exon coverage 低於本檢測判讀門檻（<{threshold}X）。")
+        _add_paragraph(doc, f"    括號中標示之 exon 代表該 exon 之 coverage 低於本檢測判讀門檻（<{threshold}X）。")
         gene_str = ", ".join(_gene_list_label(g, test_type) for g in sorted(merged))
         _add_paragraph(doc, gene_str)
         return
 
     # grouped (default)
-    _add_paragraph(doc, f"    括號中標示之 exon 為 cohort dead-zone，代表該 exon coverage 低於本檢測判讀門檻（<{threshold}X）。")
+    _add_paragraph(doc, f"    括號中標示之 exon 代表該 exon 之 coverage 低於本檢測判讀門檻（<{threshold}X）。")
     for idx, (name, gs) in enumerate(sections):
         if idx:
             _blank(doc)

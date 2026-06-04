@@ -2076,7 +2076,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .dead-zone-header h2 { margin: 0; font-size: 14px; }
 .dead-zone-list {
@@ -2084,22 +2084,29 @@ body.sidebar-collapsed .container { margin-left: auto; }
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 14px;
+  row-gap: 2px;
 }
 .dead-zone-list li {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: baseline;
-  padding: 4px 8px;
-  background: var(--warn-bg);
-  border-left: 3px solid var(--warn-border);
-  border-radius: 4px;
+  min-width: 0;
+  padding: 1px 0;
   font-size: 12px;
+  line-height: 1.35;
 }
 .dead-zone-gene {
-  min-width: 90px;
+  flex: 0 0 auto;
   font-family: ui-monospace, monospace;
   font-weight: 700;
+}
+@media (max-width: 900px) {
+  .dead-zone-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .dead-zone-list { grid-template-columns: 1fr; }
 }
 .panel-warning {
   margin: 8px 0 10px;

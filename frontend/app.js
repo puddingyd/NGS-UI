@@ -1055,9 +1055,8 @@ function renderDeadZoneCard() {
   body.innerHTML = `<ul class="dead-zone-list">${entries.map(e => {
     const gene = e.gene || "";
     const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
-    const thr = e.threshold || threshold || "";
     return `<li><span class="dead-zone-gene">${escapeHtml(gene)}</span>
-      <span>exon ${escapeHtml(label)} &lt;${escapeHtml(String(thr))}X</span></li>`;
+      <span>exon ${escapeHtml(label)}</span></li>`;
   }).join("")}</ul>`;
 }
 
