@@ -79,6 +79,12 @@
       <div id="search-status" class="muted"></div>
     </section>
 
+    <section id="welcome-card" class="card welcome-card">
+      <div id="welcome-version-content" class="welcome-version-content">
+        <div class="muted">版本資訊載入中…</div>
+      </div>
+    </section>
+
     <!-- Sample info -->
     <section id="sample-card" class="card hidden">
       <div class="sample-meta">
@@ -521,11 +527,10 @@
   </div>
 
   <!-- Registered case list: reviewers can remove the UI copy and
-       optionally the in-house tertiary pipeline output directory. -->
+       optionally the in-house tertiary pipeline output + job logs. -->
   <div id="case-list-modal" class="modal hidden">
     <div class="modal-card modal-card-wide">
       <h2>個案清單</h2>
-      <p class="muted">刪除前可選擇是否一併移除三級分析原始檔案。</p>
       <div class="case-list-toolbar">
         <span class="sample-test-filters case-list-test-filters">
           <label class="sample-test-chip"><input type="checkbox" value="WES" checked /><span>WES</span></label>
@@ -688,7 +693,7 @@
   <div id="pipeline-list-modal" class="modal hidden">
     <div class="modal-card modal-card-wide">
       <h2>三級分析清單</h2>
-      <p class="muted">管理 <code>/home/pipeline/tertiary_output/</code> 下的 sample 資料夾。</p>
+      <p class="muted">刪除會一併移除 pipeline output、NGS-UI 個案資料與 job log。</p>
       <div id="pipeline-list-status" class="muted"></div>
       <div id="pipeline-list-table" class="pipeline-list-table"></div>
       <div id="pipeline-list-log-panel" class="pipeline-list-log-panel" hidden>

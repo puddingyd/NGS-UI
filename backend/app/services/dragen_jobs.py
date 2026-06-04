@@ -27,7 +27,7 @@ from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
                        LEGACY_DRAGEN_JOBS_DIR, TERTIARY_JOBS_DIR,
                        PIPELINE_VCF_INDEX_PATH,
                        PIPELINE_VCF_INDEX_TTL_HOURS, PIPELINE_OUT_ROOT,
-                       REPO_ROOT)
+                       REPO_ROOT, TERTIARY_OUTPUT_ROOT)
 
 # Final pipeline steps, in order — the worker writes the current one
 # into state.json so the UI can show progress.
@@ -426,11 +426,12 @@ def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
 
 
 def delete_pipeline_output(sample_id: str) -> dict:
-    """Delete pipeline output and all NGS-UI job logs unless one is active."""
+    """Delete UI/pipeline output and all NGS-UI job logs unless one is active."""
     _validate_sample_id(sample_id)
     sample_dir = PIPELINE_OUT_ROOT / sample_id
+    ui_dir = TERTIARY_OUTPUT_ROOT / sample_id
     jobs = [j for j in list_jobs(limit=1000) if j.get("sample_id") == sample_id]
-    if not sample_dir.is_dir() and not jobs:
+    if not sample_dir.is_dir() and not ui_dir.is_dir() and not jobs:
         raise FileNotFoundError(f"pipeline output or job not found: {sample_id}")
     for job in jobs:
         job_id = job.get("job_id", "")
@@ -440,11 +441,16 @@ def delete_pipeline_output(sample_id: str) -> dict:
     if sample_dir.is_dir():
         shutil.rmtree(sample_dir)
         deleted.append(str(sample_dir))
+    if ui_dir.is_dir() and ui_dir.resolve() != sample_dir.resolve():
+        shutil.rmtree(ui_dir)
+        deleted.append(str(ui_dir))
     for job in jobs:
         job_dir = _job_dir(job.get("job_id", ""))
         if job_dir.is_dir():
             shutil.rmtree(job_dir)
             deleted.append(str(job_dir))
+    from . import sample_loader
+    sample_loader.invalidate_sample_cache(ui_dir)
     return {"sample_id": sample_id, "deleted": deleted}
 
 

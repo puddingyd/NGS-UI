@@ -62,26 +62,28 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
 
     pipeline_dir = PIPELINE_OUT_ROOT / lis_id
     same_dir = pipeline_dir.resolve() == ui_dir.resolve()
+    if delete_pipeline_output:
+        from . import dragen_jobs
+        result = dragen_jobs.delete_pipeline_output(lis_id)
+        return {
+            **result,
+            "pipeline_output_requested": True,
+            "pipeline_output_deleted": same_dir or str(pipeline_dir) in result["deleted"],
+            "pipeline_output_error": "",
+        }
+
     deleted = []
-    pipeline_output_error = ""
     shutil.rmtree(ui_dir)
     deleted.append(str(ui_dir))
-    if delete_pipeline_output and pipeline_dir.is_dir() and not same_dir:
-        try:
-            shutil.rmtree(pipeline_dir)
-            deleted.append(str(pipeline_dir))
-        except OSError as e:
-            pipeline_output_error = str(e)
 
     from . import sample_loader
-    sample_loader.clear_snv_cache()
-    sample_loader.list_index()
+    sample_loader.invalidate_sample_cache(ui_dir)
     return {
         "sample_id": lis_id,
         "deleted": deleted,
-        "pipeline_output_requested": delete_pipeline_output,
-        "pipeline_output_deleted": same_dir or str(pipeline_dir) in deleted,
-        "pipeline_output_error": pipeline_output_error,
+        "pipeline_output_requested": False,
+        "pipeline_output_deleted": False,
+        "pipeline_output_error": "",
     }
 
 

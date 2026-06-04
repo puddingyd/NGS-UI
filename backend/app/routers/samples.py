@@ -118,6 +118,8 @@ def delete_sample(sample_id: str, delete_pipeline_output: bool = False):
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, f"sample not found: {sample_id}")
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
     except OSError as e:
         raise HTTPException(500, f"刪除失敗：{e}")
 

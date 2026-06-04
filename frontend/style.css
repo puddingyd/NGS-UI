@@ -180,6 +180,50 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .muted { color: var(--muted); font-size: 12px; }
 .error { color: var(--danger); font-size: 13px; margin: 8px 0; }
 
+.welcome-card {
+  padding: 0;
+  overflow: hidden;
+}
+.welcome-version-content {
+  max-width: 920px;
+  padding: 22px 28px 26px;
+}
+.welcome-version-content h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  line-height: 1.25;
+}
+.welcome-version-content h2 {
+  margin: 24px 0 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 18px;
+}
+.welcome-version-content h3 {
+  margin: 18px 0 6px;
+  font-size: 15px;
+}
+.welcome-version-content p {
+  max-width: 76ch;
+  margin: 8px 0;
+  color: #3f3f46;
+}
+.welcome-version-content ul {
+  margin: 6px 0 12px 1.2em;
+  padding: 0;
+}
+.welcome-version-content li {
+  margin: 4px 0;
+  color: #3f3f46;
+}
+.welcome-version-content code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #f6f8fa;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
 /* Buttons */
 .btn {
   border: 1px solid var(--border);

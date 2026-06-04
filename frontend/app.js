@@ -87,6 +87,7 @@ async function loadIndex() {
   state.options = opts && typeof opts === "object"
     ? opts
     : { category_options: [], tag_suggestions: [] };
+  return list;
 }
 
 function matchSamples(q) {
@@ -212,7 +213,9 @@ async function _loadSample(LIS_ID) {
 async function loadSample(LIS_ID) {
   showSampleLoading();
   try {
-    return await _loadSample(LIS_ID);
+    const result = await _loadSample(LIS_ID);
+    updateWelcomeVisibility();
+    return result;
   } finally {
     hideSampleLoading();
   }
@@ -2007,11 +2010,12 @@ function setupCaseList() {
       if (resp.status === 401) { showLoginModal(); throw new Error("尚未登入"); }
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
-      await loadIndex();
       if (state.currentLIS === sid) {
         window.location.reload();
         return;
       }
+      _caseListRows = await loadIndex();
+      await _renderCaseList({ refresh: false });
       if (status) {
         status.textContent = body.pipeline_output_error
           ? `已刪除 ${sid}，但三級分析資料刪除失敗：${body.pipeline_output_error}`
@@ -2019,7 +2023,6 @@ function setupCaseList() {
             ? `已刪除 ${sid}，三級分析資料${body.pipeline_output_deleted ? "已一併刪除" : "不存在"}。`
             : `已刪除 ${sid}。`;
       }
-      await _renderCaseList();
     } catch (e) {
       if (status) status.textContent = `刪除失敗：${e.message || e}`;
       if (del) del.disabled = false;
@@ -4667,6 +4670,7 @@ function renderPharmcatGeneDetails(g) {
 
 function renderAll() {
   if (!state.data) return;
+  updateWelcomeVisibility();
   renderSampleMeta();
   renderGeneticCounseling();
   renderClinicalDescription();
@@ -4676,6 +4680,68 @@ function renderAll() {
   renderReportSections();
   renderCandidateSections();
   updateSaveHint();
+}
+
+// ---------- Welcome / version notes --------------------------------
+
+function updateWelcomeVisibility() {
+  document.getElementById("welcome-card")?.classList.toggle("hidden", !!state.data);
+}
+
+async function loadWelcomeVersion() {
+  const host = document.getElementById("welcome-version-content");
+  if (!host) return;
+  try {
+    const resp = await fetch("./VERSION.md", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    const text = await resp.text();
+    host.innerHTML = renderSimpleMarkdown(text);
+  } catch (e) {
+    host.innerHTML = `<div class="muted">版本資訊載入失敗：${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+function renderSimpleMarkdown(text) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  let listOpen = false;
+  const closeList = () => {
+    if (listOpen) {
+      out.push("</ul>");
+      listOpen = false;
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    const h = line.match(/^(#{1,3})\s+(.+)$/);
+    if (h) {
+      closeList();
+      const level = h[1].length;
+      out.push(`<h${level}>${renderMarkdownInline(h[2])}</h${level}>`);
+      continue;
+    }
+    const item = line.match(/^-\s+(.+)$/);
+    if (item) {
+      if (!listOpen) {
+        out.push("<ul>");
+        listOpen = true;
+      }
+      out.push(`<li>${renderMarkdownInline(item[1])}</li>`);
+      continue;
+    }
+    closeList();
+    out.push(`<p>${renderMarkdownInline(line)}</p>`);
+  }
+  closeList();
+  return out.join("");
+}
+
+function renderMarkdownInline(text) {
+  return escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
 // Auto-save state. Every dirty edit schedules a debounced background
@@ -6479,6 +6545,8 @@ async function bootAfterAuth() {
 
 (async function boot() {
   setupCombobox();
+  loadWelcomeVersion();
+  updateWelcomeVisibility();
   setupSnvDisplayFilters();
   setupOmimFilter();
   setupHpoSearchInput();
@@ -7761,7 +7829,7 @@ function setupPipelineList() {
       }
       return;
     }
-    if (!confirm(`確定刪除三級分析原始檔案與 NGS-UI job log？\n\n/home/pipeline/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
+    if (!confirm(`確定刪除三級分析原始檔案、NGS-UI 個案資料與 job log？\n\n/home/pipeline/tertiary_output/${sid}/\nNGS_UI/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
     delBtn.disabled = true;
     if (status) status.textContent = `刪除 ${sid} 中…`;
     try {

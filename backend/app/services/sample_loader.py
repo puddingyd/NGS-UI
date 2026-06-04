@@ -48,6 +48,19 @@ def clear_snv_cache() -> None:
         _case_summary_cache.clear()
 
 
+def invalidate_sample_cache(sample_dir: Path) -> None:
+    """Drop cached payloads for one sample without cold-starting every case."""
+    sample_dir = Path(sample_dir)
+    with _snv_cache_lock:
+        for key in list(_snv_cache):
+            if Path(key[0][0]).parent == sample_dir:
+                del _snv_cache[key]
+    with _case_summary_cache_lock:
+        for key in list(_case_summary_cache):
+            if Path(key[0][0]).parent == sample_dir:
+                del _case_summary_cache[key]
+
+
 def _read_json_or(path: Path, default):
     if not path.exists():
         return default
