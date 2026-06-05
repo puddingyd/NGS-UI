@@ -31,8 +31,12 @@
 #
 # Env / flags:
 #   GENEBE_USER / GENEBE_API_KEY       — required (step 3)
+#   NGS_UI_CDS_CANDIDATE_BED           — optional, default
+#                                         $HOME/NGS_UI/biotools/cds_combined.bed
 #   --spliceai-snv / --spliceai-indel  — optional, default
 #                                         $HOME/NGS_UI/biotools/spliceai/...
+#   --candidate-bed / --skip-candidate-bed
+#                                      — restrict GeneBe/Extra VEP candidates
 #   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 4
 #   --skip-cnv                         — disable AnnotSV step 5 even
 #                                         when --dragen-cnv-source is set
@@ -60,9 +64,11 @@ INHOUSE_CNV_VCF=""
 INHOUSE_SV_VCF=""
 SKIP_SPLICEAI=0
 SKIP_EXTRA_VEP=0
+SKIP_CANDIDATE_BED=0
 SKIP_CNV=0
 SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
 SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
+CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$HOME/NGS_UI/biotools/cds_combined.bed}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --tsv)                TSV="$2"; shift 2;;
@@ -72,6 +78,8 @@ while [ $# -gt 0 ]; do
     --inhouse-sv-vcf)     INHOUSE_SV_VCF="$2"; shift 2;;
     --spliceai-snv)       SPLICEAI_SNV="$2"; shift 2;;
     --spliceai-indel)     SPLICEAI_INDEL="$2"; shift 2;;
+    --candidate-bed)      CANDIDATE_BED="$2"; shift 2;;
+    --skip-candidate-bed) SKIP_CANDIDATE_BED=1; shift;;
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
     --skip-extra-vep)     SKIP_EXTRA_VEP=1; shift;;
     --skip-cnv)           SKIP_CNV=1; shift;;
@@ -87,6 +95,16 @@ if [ -z "$SID" ]; then SID="$(basename "$(dirname "$TSV")")"; fi
 echo "================================================================"
 echo "  run_stopgaps : $TSV"
 echo "================================================================"
+
+CANDIDATE_BED_ARGS=()
+if [ "$SKIP_CANDIDATE_BED" -eq 1 ]; then
+  echo "  candidate BED: skipped (--skip-candidate-bed)"
+elif [ -f "$CANDIDATE_BED" ]; then
+  CANDIDATE_BED_ARGS=(--candidate-bed "$CANDIDATE_BED")
+  echo "  candidate BED: $CANDIDATE_BED"
+else
+  echo "  candidate BED: not found at $CANDIDATE_BED (GeneBe/Extra VEP use AF-only candidates)"
+fi
 
 # 1. ClinVar fallback. The new pipeline's CLINVAR_SIG column has been
 # flaky (often blank); annotate_clinvar.py is fill-empty-only, so
@@ -113,7 +131,7 @@ if [ -z "${GENEBE_USER:-}" ] || [ -z "${GENEBE_API_KEY:-}" ]; then
   echo "ERROR: GENEBE_USER + GENEBE_API_KEY must be exported" >&2
   exit 2
 fi
-"$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV"
+"$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV" "${CANDIDATE_BED_ARGS[@]}"
 step_done
 
 # 4. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
@@ -134,7 +152,7 @@ else
       echo "  - SpliceAI VCFs not found at $SPLICEAI_SNV — MetaRNN only"
     fi
   fi
-  "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}"
+  "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}" "${CANDIDATE_BED_ARGS[@]}"
 fi
 step_done
 

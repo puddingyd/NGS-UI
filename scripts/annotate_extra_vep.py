@@ -32,6 +32,7 @@ nextflow_tertiary.config; flags below let you override.
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import gzip
 import os
@@ -54,6 +55,7 @@ EXTRA_DBNSFP_FIELDS = ["MetaRNN_score", "MetaRNN_pred"]
 TSV_COL_METARNN_SCORE = "METARNN"
 TSV_COL_METARNN_PRED  = "METARNN_PRED"
 TSV_COL_SPLICEAI      = "SPLICEAI_MAX"
+BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 
 def _open_vcf(path):
@@ -74,16 +76,92 @@ def _row_max_af(row: dict, cols: list[str]) -> float:
     return out
 
 
+def _norm_chrom(chrom: str) -> str:
+    s = chrom.strip()
+    if s.lower().startswith("chr"):
+        s = s[3:]
+    if s in ("M", "MT", "m", "mt"):
+        return "MT"
+    return s.upper() if s.upper() in ("X", "Y") else s
+
+
+def load_bed(path: Path) -> BedIndex:
+    """Load and merge a BED file into a small interval index."""
+    raw: dict[str, list[tuple[int, int]]] = {}
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip() or line.startswith(("#", "track", "browser")):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 3:
+                continue
+            try:
+                start = int(parts[1])
+                end = int(parts[2])
+            except ValueError:
+                continue
+            if end <= start:
+                continue
+            raw.setdefault(_norm_chrom(parts[0]), []).append((start, end))
+
+    out: BedIndex = {}
+    for chrom, intervals in raw.items():
+        intervals.sort()
+        merged: list[tuple[int, int]] = []
+        for start, end in intervals:
+            if not merged or start > merged[-1][1]:
+                merged.append((start, end))
+            else:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        out[chrom] = ([start for start, _ in merged], merged)
+    return out
+
+
+def _variant_span_0based(pos: str, ref: str) -> tuple[int, int] | None:
+    try:
+        start = int(pos) - 1
+    except ValueError:
+        return None
+    if start < 0:
+        return None
+    return start, start + max(1, len(ref or ""))
+
+
+def _overlaps_bed(
+    bed: BedIndex | None,
+    chrom: str,
+    pos: str,
+    ref: str,
+) -> bool:
+    if bed is None:
+        return True
+    span = _variant_span_0based(pos, ref)
+    if span is None:
+        return False
+    start, end = span
+    item = bed.get(_norm_chrom(chrom))
+    if not item:
+        return False
+    starts, intervals = item
+    i = bisect.bisect_right(starts, start) - 1
+    if i >= 0 and intervals[i][1] > start:
+        return True
+    j = i + 1
+    return j < len(intervals) and intervals[j][0] < end
+
+
 def tsv_to_sites(
     tsv_in: Path,
     vcf_out: Path,
     *,
     max_af: float | None,
     af_cols: list[str],
-) -> tuple[int, int]:
+    candidate_bed: BedIndex | None = None,
+) -> tuple[int, int, int]:
     seen: set = set()
     rows: list = []
     n_af = 0
+    n_bed = 0
     with open(tsv_in, "r", encoding="utf-8", newline="") as fi:
         for r in csv.DictReader(fi, delimiter="\t"):
             chrom = (r.get("CHROM") or "").strip()
@@ -100,6 +178,9 @@ def tsv_to_sites(
             if max_af is not None and _row_max_af(r, af_cols) > max_af:
                 n_af += 1
                 continue
+            if not _overlaps_bed(candidate_bed, chrom, pos, ref):
+                n_bed += 1
+                continue
             seen.add(key)
             rows.append((chrom, int(pos), ref, alt))
     rows.sort(key=lambda r: (r[0], r[1]))
@@ -108,7 +189,7 @@ def tsv_to_sites(
         fo.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
         for chrom, pos, ref, alt in rows:
             fo.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
-    return len(rows), n_af
+    return len(rows), n_af, n_bed
 
 
 def run_vep(args, sites: Path, vep_out: Path) -> None:
@@ -361,6 +442,9 @@ def main() -> int:
                          "(default 0.01; matches GeneBe)")
     ap.add_argument("--af-cols", default="GNOMAD_G_AF",
                     help="Comma-separated AF columns checked by --max-af")
+    ap.add_argument("--candidate-bed",
+                    help="BED regions eligible for the Extra VEP candidate VCF "
+                         "(0-based half-open; variants outside are skipped)")
     ap.add_argument("--spliceai-snv",
                     help="Path to spliceai_scores.raw.snv.hg38.vcf.gz "
                          "(if absent, SpliceAI step is skipped)")
@@ -380,6 +464,16 @@ def main() -> int:
         print(f"ERROR: --tsv 找不到：{in_tsv}", file=sys.stderr)
         return 2
     out_tsv = Path(args.out_tsv).resolve() if args.out_tsv else in_tsv
+    candidate_bed = None
+    if args.candidate_bed:
+        bed_path = Path(args.candidate_bed).resolve()
+        if not bed_path.is_file():
+            print(f"ERROR: --candidate-bed 找不到：{bed_path}", file=sys.stderr)
+            return 2
+        candidate_bed = load_bed(bed_path)
+        n_intervals = sum(len(intervals) for _, intervals in candidate_bed.values())
+        print(f"[extra-vep] candidate BED enabled: {bed_path} "
+              f"({n_intervals} merged intervals)", file=sys.stderr)
 
     if args.workdir:
         wd = Path(args.workdir); wd.mkdir(parents=True, exist_ok=True)
@@ -392,11 +486,13 @@ def main() -> int:
         sites   = wd / "sites.vcf"
         vep_vcf = wd / "sites.vep.vcf.gz"
         af_cols = [col.strip() for col in args.af_cols.split(",") if col.strip()]
-        n, n_af = tsv_to_sites(
+        n, n_af, n_bed = tsv_to_sites(
             in_tsv, sites, max_af=args.max_af, af_cols=af_cols,
+            candidate_bed=candidate_bed,
         )
         print(f"[extra-vep] {n} unique sites → {sites}  "
-              f"(dropped {n_af} above AF {args.max_af})", file=sys.stderr)
+              f"(dropped {n_af} above AF {args.max_af}; "
+              f"dropped {n_bed} outside candidate BED)", file=sys.stderr)
         if n == 0:
             print("ERROR: 0 sites", file=sys.stderr)
             return 1
