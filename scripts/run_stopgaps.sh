@@ -13,6 +13,7 @@
 #                       in-house gcnv + delly (--inhouse-cnv-vcf /
 #                       --inhouse-sv-vcf). Skipped if none supplied.
 #   5. build_snv_review_tsv.py  — pre-build the compact main-screen TSV
+#   6. build_snv_gene_index.py  — pre-build complete-TSV gene search index
 #
 # (ClinVar annotation was a stop-gap before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
@@ -198,6 +199,12 @@ echo
 echo "[stopgaps] review TSV  build_snv_review_tsv.py"
 step_start "review-tsv"
 "$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV"
+step_done
+
+echo
+echo "[stopgaps] gene index  build_snv_gene_index.py"
+step_start "gene-index"
+"$SCRIPT_DIR/build_snv_gene_index.py" --tsv "$GUI_TSV"
 step_done
 
 echo

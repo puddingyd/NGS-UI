@@ -225,14 +225,15 @@ async function _loadSample(LIS_ID) {
   }
 }
 
-async function loadSample(LIS_ID) {
-  showSampleLoading();
+async function loadSample(LIS_ID, opts = {}) {
+  const showLoading = opts.showLoading !== false;
+  if (showLoading) showSampleLoading();
   try {
     const result = await _loadSample(LIS_ID);
     updateWelcomeVisibility();
     return result;
   } finally {
-    hideSampleLoading();
+    if (showLoading) hideSampleLoading();
   }
 }
 
@@ -2480,8 +2481,9 @@ function _startJobPolling(sid, jobId) {
         clearInterval(_jobPollTimer);
         if (status === "succeeded") {
           _setJobStatus(`完成 · Exomiser ${j.n_exomiser_variants ?? 0} / LIRICAL ${j.n_lirical_variants ?? 0} variants`, false);
-          // Reload sample so cards pick up the new score columns.
-          await loadSample(state.currentLIS);
+          // Reload sample so cards pick up the new score columns,
+          // without blocking the reviewer behind the global loading modal.
+          await loadSample(state.currentLIS, { showLoading: false });
           renderAll();
         } else {
           _setJobStatus(`失敗 (${j.step || ""}) — 看 analysis_files/rerun.log`, false);

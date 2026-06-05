@@ -28,9 +28,18 @@ from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
-from ..adapters.snv_tsv import TIERS, OldFormatError, _row_to_variant, load_snv_tsv
+from ..adapters.snv_tsv import (
+    EXCLUDED_GENES,
+    TIERS,
+    OldFormatError,
+    _DP_HARD_FLOOR_WES,
+    _DP_LOW_FLAG_WES,
+    _DP_LOW_FLAG_WGS,
+    _row_to_variant,
+    load_snv_tsv,
+)
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store, omim_store, panel_deadzone, snv_review
+from . import analyses_store, omim_store, panel_deadzone, snv_gene_index, snv_review
 
 
 _SNV_CACHE_MAX = 8
@@ -361,6 +370,41 @@ def _load_enriched_snv_cached(
     parse_elapsed = time.perf_counter() - parse_started
 
     enrich_started = time.perf_counter()
+    pheno_by_gene = _enrich_snv_variants(variants, sidecar_dir)
+    for t, ids in categories.items():
+        categories[t] = sorted(ids, key=lambda i: (-_variant_total_score(variants, i), i))
+
+    result = (variants, categories, pheno_by_gene, old_format_error)
+    with _snv_cache_lock:
+        # Callers treat the enriched maps as read-only; keeping the same
+        # objects avoids a full deep-copy cost on large cached payloads.
+        _snv_cache[key] = result
+        _snv_cache.move_to_end(key)
+        while len(_snv_cache) > _SNV_CACHE_MAX:
+            _snv_cache.popitem(last=False)
+    _log_perf(
+        "snv.enriched_cache",
+        started,
+        cache="miss",
+        tsv=snv_tsv.name,
+        size=_fmt_size(snv_tsv),
+        variants=len(variants),
+        parse=f"{parse_elapsed:.3f}s",
+        enrich=f"{time.perf_counter() - enrich_started:.3f}s",
+    )
+    return result
+
+
+def _variant_total_score(variants: dict, vid: str) -> float:
+    ts = variants.get(vid, {}).get("total_score")
+    return float(ts) if isinstance(ts, (int, float)) else float("-inf")
+
+
+def _enrich_snv_variants(variants: dict[str, dict], sidecar_dir: Path) -> dict[str, float]:
+    """Join pheno / Exomiser / LIRICAL / OMIM data into variant payloads."""
+    exo_path = sidecar_dir / "exomiser_results.tsv"
+    lir_path = sidecar_dir / "lirical_results.tsv"
+    pheno_path = sidecar_dir / "pheno_score.tsv"
     exo = _read_tsv_dict(exo_path)
     lir = _read_tsv_dict(lir_path)
     pheno_by_gene = _read_pheno_scores(pheno_path)
@@ -404,32 +448,7 @@ def _load_enriched_snv_cached(
             v["Inheritance"]  = rec.get("Inheritance", "")
             for f in ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5"):
                 v[f] = rec.get(f, "")
-
-    def _ts(vid: str) -> float:
-        ts = variants.get(vid, {}).get("total_score")
-        return float(ts) if isinstance(ts, (int, float)) else float("-inf")
-    for t, ids in categories.items():
-        categories[t] = sorted(ids, key=lambda i: (-_ts(i), i))
-
-    result = (variants, categories, pheno_by_gene, old_format_error)
-    with _snv_cache_lock:
-        # Callers treat the enriched maps as read-only; keeping the same
-        # objects avoids a full deep-copy cost on large cached payloads.
-        _snv_cache[key] = result
-        _snv_cache.move_to_end(key)
-        while len(_snv_cache) > _SNV_CACHE_MAX:
-            _snv_cache.popitem(last=False)
-    _log_perf(
-        "snv.enriched_cache",
-        started,
-        cache="miss",
-        tsv=snv_tsv.name,
-        size=_fmt_size(snv_tsv),
-        variants=len(variants),
-        parse=f"{parse_elapsed:.3f}s",
-        enrich=f"{time.perf_counter() - enrich_started:.3f}s",
-    )
-    return result
+    return pheno_by_gene
 
 
 def list_index() -> list[dict]:
@@ -1055,23 +1074,51 @@ def search_snv_by_genes(
         analyses_store.version_dir(sample_id, chosen_version)
         if chosen_version is not None else sub
     )
-    variants, _categories, _pheno, old_format_error = _load_enriched_snv_cached(
-        raw_tsv,
-        sidecar_dir=sidecar_dir,
-        test_type=(meta.get("test_type") or "WES").upper(),
-    )
     wanted = {g.strip().upper() for g in genes if g.strip()}
-    matches = {
-        vid: v for vid, v in variants.items()
-        if (v.get("gene_symbol") or "").upper() in wanted
-    }
+    test_type = (meta.get("test_type") or "WES").upper()
+    indexed_rows = snv_gene_index.query_rows(raw_tsv, genes)
+    old_format_error = ""
+    if indexed_rows is not None:
+        variants: dict[str, dict] = {}
+        is_wes = test_type == "WES"
+        low_flag = _DP_LOW_FLAG_WES if is_wes else _DP_LOW_FLAG_WGS
+        for row in indexed_rows:
+            canonical_gene, _ = panel_deadzone.canonical_gene_symbol(
+                row.get("GENE", ""),
+                row.get("HGNC_ID", ""),
+            )
+            if canonical_gene in EXCLUDED_GENES:
+                continue
+            v = _row_to_variant(row)
+            dp = v.get("depth") or 0
+            if is_wes and dp < _DP_HARD_FLOOR_WES:
+                continue
+            v["low_depth"] = bool(dp and dp < low_flag)
+            variants[v["id"]] = v
+        _enrich_snv_variants(variants, sidecar_dir)
+        matches = variants
+        search_source = "gene_index"
+        raw_variant_count = "indexed"
+    else:
+        variants, _categories, _pheno, old_format_error = _load_enriched_snv_cached(
+            raw_tsv,
+            sidecar_dir=sidecar_dir,
+            test_type=test_type,
+        )
+        matches = {
+            vid: v for vid, v in variants.items()
+            if (v.get("gene_symbol") or "").upper() in wanted
+        }
+        search_source = "raw_tsv_fallback"
+        raw_variant_count = len(variants)
     _log_perf(
         "sample.snv_search",
         started,
         sample=sample_id,
         genes=len(wanted),
+        source=search_source,
         raw_size=_fmt_size(raw_tsv),
-        raw_variants=len(variants),
+        raw_variants=raw_variant_count,
         matches=len(matches),
     )
     return {"variants": matches, "snv_tsv_error": old_format_error}

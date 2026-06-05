@@ -11,6 +11,8 @@
 - 三級分析改接 v3.1 sample sheet pipeline。
 - 三級分析支援批次送出同一來源類型的多個 sample，產生多列 sample sheet。
 - 主畫面 SNV review TSV 預載層改為 AF < 0.01 且限 CDS ±50 bp 候選區域，ClinVar P/LP 與已標記變異仍會保留。
+- Exomiser/LIRICAL 完成後改為背景刷新卡片，不再跳出全頁載入遮罩；WGS raw TSV 不再於載入個案時自動背景預熱。
+- 三級分析完成時預建 `snv_gene_index.sqlite`，SNV gene search 改查 gene index，避免搜尋時重新解析 WGS 完整 TSV。
 
 ### v4.3 — 2026-06-04
 
