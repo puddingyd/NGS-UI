@@ -1164,6 +1164,8 @@ def _genes_for_term_or_panel(key: str) -> list[str]:
 
 
 def _gene_list_label(gene: str, test_type: str) -> str:
+    if (test_type or "").upper() != "WGS":
+        return gene
     suffix = panel_deadzone.dead_zone_suffix(gene, test_type)
     return f"{gene}（{suffix}）" if suffix else gene
 
@@ -1183,6 +1185,7 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
     panel_entries: list = sample.get("selected_panels") or []
     test_type = ((sample.get("meta") or {}).get("Test") or "WES").upper()
     threshold = panel_deadzone.dead_zone_threshold(test_type)
+    include_docx_dead_zone = test_type == "WGS"
 
     # Build [(display_name, [genes...])] preserving order.
     sections: list[tuple[str, list[str]]] = []
@@ -1208,7 +1211,8 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
             merged |= set(gs)
         gene_str = ", ".join(_gene_list_label(g, test_type) for g in sorted(merged))
         _add_paragraph(doc, gene_str)
-        _add_dead_zone_gene_list_note(doc, threshold)
+        if include_docx_dead_zone:
+            _add_dead_zone_gene_list_note(doc, threshold)
         return
 
     # grouped (default)
@@ -1220,7 +1224,8 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
             _add_paragraph(doc, ", ".join(_gene_list_label(g, test_type) for g in gs))
         else:
             _add_paragraph(doc, "（無對應基因）")
-    _add_dead_zone_gene_list_note(doc, threshold)
+    if include_docx_dead_zone:
+        _add_dead_zone_gene_list_note(doc, threshold)
 
 
 # ── Top-level entrypoint ──────────────────────────────────────────

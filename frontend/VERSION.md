@@ -16,7 +16,7 @@
 - 新增 `Disease-associated` 標籤，預設只顯示 disease-associated gene list 內的基因。
 - 改用 HGNC gene symbol 顯示，降低 VEP 舊基因名稱造成的判讀落差。
 - 新增 Dead zone 提醒，依目前 HPO / panel 基因列出 coverage 低於判讀門檻的 exon；WES 使用 20X，WGS 使用 15X。
-- 診斷報告之基因清單限制在 disease-associated gene list 中，並於有 dead-zone 的基因後以括號標註。
+- 診斷報告之基因清單限制在 disease-associated gene list 中；WGS 報告會在有 dead-zone 的基因後以括號標註，WES 報告僅在主畫面顯示 Dead zone。
 
 ### v4.2 — 2026-05-30
 
