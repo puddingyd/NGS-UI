@@ -3493,9 +3493,7 @@ function _cnvSvCompatibleSegments(a, b) {
   if (!["DEL", "DUP"].includes(String(a.sv_type || "").toUpperCase())) return false;
   if ((a.source || "") !== (b.source || "")) return false;
   if ((a.CHROM || "") !== (b.CHROM || "")) return false;
-  if ((a.sv_type || "") !== (b.sv_type || "")) return false;
-  const acn = a.copy_number, bcn = b.copy_number;
-  return acn == null || bcn == null || String(acn) === String(bcn);
+  return String(a.sv_type || "").toUpperCase() === String(b.sv_type || "").toUpperCase();
 }
 
 function _cnvSvAdjacentMergeGroups(ids) {

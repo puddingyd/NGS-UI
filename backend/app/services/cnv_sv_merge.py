@@ -66,10 +66,7 @@ def _compatible(a: dict, b: dict) -> bool:
         return False
     if str(a.get("sv_type") or "").upper() != str(b.get("sv_type") or "").upper():
         return False
-    if str(a.get("sv_type") or "").upper() not in ("DEL", "DUP"):
-        return False
-    acn, bcn = a.get("copy_number"), b.get("copy_number")
-    return acn is None or bcn is None or str(acn) == str(bcn)
+    return str(a.get("sv_type") or "").upper() in ("DEL", "DUP")
 
 
 def automatic_merges(variants: dict[str, dict], source: str) -> list[dict]:
