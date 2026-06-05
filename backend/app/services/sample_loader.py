@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,24 @@ _snv_cache_lock = threading.Lock()
 _CASE_SUMMARY_CACHE_MAX = 128
 _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
+
+
+def _fmt_size(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return "missing"
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f}{unit}" if unit != "B" else f"{size}B"
+        size /= 1024
+    return f"{size:.1f}GB"
+
+
+def _log_perf(event: str, started: float, **fields) -> None:
+    parts = [f"[perf] {event}", f"elapsed={time.perf_counter() - started:.3f}s"]
+    parts.extend(f"{key}={value}" for key, value in fields.items())
+    print(" ".join(parts), flush=True)
 
 
 def clear_snv_cache() -> None:
@@ -300,6 +319,7 @@ def _load_enriched_snv_cached(
     test_type: str,
 ) -> tuple[dict, dict, dict, str]:
     """Parse + enrich SNVs once per input revision, with a bounded LRU."""
+    started = time.perf_counter()
     exo_path = sidecar_dir / "exomiser_results.tsv"
     lir_path = sidecar_dir / "lirical_results.tsv"
     pheno_path = sidecar_dir / "pheno_score.tsv"
@@ -318,9 +338,18 @@ def _load_enriched_snv_cached(
         cached = _snv_cache.get(key)
         if cached is not None:
             _snv_cache.move_to_end(key)
+            _log_perf(
+                "snv.enriched_cache",
+                started,
+                cache="hit",
+                tsv=snv_tsv.name,
+                size=_fmt_size(snv_tsv),
+                variants=len(cached[0]),
+            )
             return cached
 
     old_format_error = ""
+    parse_started = time.perf_counter()
     if snv_tsv.exists():
         try:
             variants, categories = load_snv_tsv(snv_tsv, test_type=test_type)
@@ -329,7 +358,9 @@ def _load_enriched_snv_cached(
             old_format_error = str(e)
     else:
         variants, categories = {}, {t: [] for t in TIERS}
+    parse_elapsed = time.perf_counter() - parse_started
 
+    enrich_started = time.perf_counter()
     exo = _read_tsv_dict(exo_path)
     lir = _read_tsv_dict(lir_path)
     pheno_by_gene = _read_pheno_scores(pheno_path)
@@ -388,6 +419,16 @@ def _load_enriched_snv_cached(
         _snv_cache.move_to_end(key)
         while len(_snv_cache) > _SNV_CACHE_MAX:
             _snv_cache.popitem(last=False)
+    _log_perf(
+        "snv.enriched_cache",
+        started,
+        cache="miss",
+        tsv=snv_tsv.name,
+        size=_fmt_size(snv_tsv),
+        variants=len(variants),
+        parse=f"{parse_elapsed:.3f}s",
+        enrich=f"{time.perf_counter() - enrich_started:.3f}s",
+    )
     return result
 
 
@@ -647,6 +688,7 @@ def _load_pheno_context(sample_id: str, version: str | None):
 def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader: just the CNV/SV side-channels for a sample.
     {cnv_variants, cnv_categories, sv_variants, sv_categories} or None."""
+    started = time.perf_counter()
     ctx = _load_pheno_context(sample_id, version)
     from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS, SV_TIERS
     if ctx is None:
@@ -666,6 +708,15 @@ def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | Non
                          pheno_matched=pheno_matched, pheno_total=pheno_total)
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
+    _log_perf(
+        "sample.cnv_sv",
+        started,
+        sample=sample_id,
+        cnv_size=_fmt_size(cnv_path),
+        cnv_variants=len(cnv_variants),
+        sv_size=_fmt_size(sv_path),
+        sv_variants=len(sv_variants),
+    )
     return {
         "cnv_variants": cnv_variants, "cnv_categories": cnv_categories,
         "sv_variants": sv_variants,   "sv_categories": sv_categories,
@@ -674,6 +725,7 @@ def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | Non
 
 def load_sample_cnv(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader: CNV side-channel only."""
+    started = time.perf_counter()
     ctx = _load_pheno_context(sample_id, version)
     from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS
     if ctx is None:
@@ -687,11 +739,19 @@ def load_sample_cnv(sample_id: str, version: str | None = None) -> dict | None:
                          pheno_matched=pheno_matched, pheno_total=pheno_total)
         if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
     )
+    _log_perf(
+        "sample.cnv",
+        started,
+        sample=sample_id,
+        size=_fmt_size(cnv_path),
+        variants=len(cnv_variants),
+    )
     return {"cnv_variants": cnv_variants, "cnv_categories": cnv_categories}
 
 
 def load_sample_sv(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader: SV side-channel only."""
+    started = time.perf_counter()
     ctx = _load_pheno_context(sample_id, version)
     from ..adapters.annotsv_tsv import load_annotsv_tsv, SV_TIERS
     if ctx is None:
@@ -705,12 +765,20 @@ def load_sample_sv(sample_id: str, version: str | None = None) -> dict | None:
                          pheno_matched=pheno_matched, pheno_total=pheno_total)
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
+    _log_perf(
+        "sample.sv",
+        started,
+        sample=sample_id,
+        size=_fmt_size(sv_path),
+        variants=len(sv_variants),
+    )
     return {"sv_variants": sv_variants, "sv_categories": sv_categories}
 
 
 def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader: just the Mitochondria side-channel for a sample.
     {mito_variants, mito_categories} or None."""
+    started = time.perf_counter()
     ctx = _load_pheno_context(sample_id, version)
     from ..adapters.mito_tsv import load_mito_tsv, MITO_TIERS
     if ctx is None:
@@ -720,6 +788,13 @@ def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
     mv, mc = (
         load_mito_tsv(mito_path, pheno_by_gene=pheno_by_gene)
         if mito_path.exists() else ({}, {t: [] for t in MITO_TIERS})
+    )
+    _log_perf(
+        "sample.mito",
+        started,
+        sample=sample_id,
+        size=_fmt_size(mito_path),
+        variants=len(mv),
     )
     return {"mito_variants": mv, "mito_categories": mc}
 
@@ -737,6 +812,7 @@ def load_sample(sample_id: str, version: str | None = None,
     pulls those from /samples/{id}/cnv, /samples/{id}/sv, and /samples/{id}/mito so
     the SNV/Indel view appears without waiting on the rest.
     """
+    started = time.perf_counter()
     sub = TERTIARY_OUTPUT_ROOT / sample_id
     if not sub.is_dir():
         return None
@@ -747,13 +823,30 @@ def load_sample(sample_id: str, version: str | None = None,
     snv_tsv = raw_snv_tsv
     if raw_snv_tsv.exists():
         try:
+            review_started = time.perf_counter()
             snv_tsv = snv_review.ensure_review_tsv(
                 raw_snv_tsv, keep_ids=reported_ids,
+            )
+            _log_perf(
+                "sample.review_tsv",
+                review_started,
+                sample=sample_id,
+                selected=snv_tsv.name,
+                raw_size=_fmt_size(raw_snv_tsv),
+                review_size=_fmt_size(snv_tsv),
             )
         except OSError:
             # Read-only / temporarily full disks should not break the
             # reviewer page. Fall back to the complete source TSV.
             snv_tsv = raw_snv_tsv
+            _log_perf(
+                "sample.review_tsv",
+                review_started,
+                sample=sample_id,
+                selected=snv_tsv.name,
+                error="fallback_raw",
+                raw_size=_fmt_size(raw_snv_tsv),
+            )
     # Read meta early so the WES/WGS depth gate in load_snv_tsv kicks
     # in correctly. meta is re-read below for the response payload —
     # this duplicate is cheap (one small JSON) and keeps the gating
@@ -868,7 +961,7 @@ def load_sample(sample_id: str, version: str | None = None,
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
 
-    return {
+    payload = {
         "meta": {
             "LIS_ID":         meta.get("lis_id") or meta.get("sample_id") or sample_id,
             "Name":           meta.get("name", ""),
@@ -926,6 +1019,18 @@ def load_sample(sample_id: str, version: str | None = None,
         "active_analysis":   chosen_version,
         "analyses":          analyses_store.list_versions(sample_id),
     }
+    _log_perf(
+        "sample.load",
+        started,
+        sample=sample_id,
+        include_aux=include_aux,
+        snv_tsv=snv_tsv.name,
+        snv_variants=len(variants),
+        cnv_variants=len(cnv_variants),
+        sv_variants=len(sv_variants),
+        mito_variants=len(mito_variants),
+    )
+    return payload
 
 
 def search_snv_by_genes(
@@ -935,6 +1040,7 @@ def search_snv_by_genes(
     version: str | None = None,
 ) -> dict | None:
     """Search the complete raw SNV TSV while the main UI uses review.tsv."""
+    started = time.perf_counter()
     sub = TERTIARY_OUTPUT_ROOT / sample_id
     if not sub.is_dir():
         return None
@@ -959,14 +1065,26 @@ def search_snv_by_genes(
         vid: v for vid, v in variants.items()
         if (v.get("gene_symbol") or "").upper() in wanted
     }
+    _log_perf(
+        "sample.snv_search",
+        started,
+        sample=sample_id,
+        genes=len(wanted),
+        raw_size=_fmt_size(raw_tsv),
+        raw_variants=len(variants),
+        matches=len(matches),
+    )
     return {"variants": matches, "snv_tsv_error": old_format_error}
 
 
 def warm_raw_snv_cache(sample_id: str, version: str | None = None) -> None:
     """Best-effort background prewarm for the complete-TSV gene search."""
+    started = time.perf_counter()
     try:
         search_snv_by_genes(sample_id, [], version=version)
+        _log_perf("sample.raw_snv_warm", started, sample=sample_id, status="ok")
     except Exception:
         # Registration already succeeded. Search falls back to a
         # foreground parse later if this opportunistic warm-up fails.
+        _log_perf("sample.raw_snv_warm", started, sample=sample_id, status="failed")
         pass

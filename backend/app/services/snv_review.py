@@ -11,6 +11,7 @@ import bisect
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 REVIEW_TSV_NAME = "snv_indel.review.tsv"
@@ -19,6 +20,24 @@ DEFAULT_CANDIDATE_BED = Path.home() / "NGS_UI" / "biotools" / "cds_combined.bed"
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 _PATHOGENIC_RE = re.compile(r"(?:^|[/|,; ])(?:likely[_ ]?)?pathogenic(?:$|[/|,; ])", re.I)
+
+
+def _fmt_size(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return "missing"
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f}{unit}" if unit != "B" else f"{size}B"
+        size /= 1024
+    return f"{size:.1f}GB"
+
+
+def _log_perf(event: str, started: float, **fields) -> None:
+    parts = [f"[perf] {event}", f"elapsed={time.perf_counter() - started:.3f}s"]
+    parts.extend(f"{key}={value}" for key, value in fields.items())
+    print(" ".join(parts), flush=True)
 
 
 def _to_float(raw: str) -> float | None:
@@ -131,6 +150,7 @@ def _keep_row(row: dict[str, str], bed: BedIndex | None) -> bool:
 
 def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Path:
     """Return an up-to-date compact review TSV derived from *raw_tsv*."""
+    started = time.perf_counter()
     keep_ids = keep_ids or set()
     review_tsv = raw_tsv.with_name(REVIEW_TSV_NAME)
     manifest = review_tsv.with_suffix(review_tsv.suffix + ".source.json")
@@ -146,12 +166,22 @@ def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Pat
     if review_tsv.is_file() and manifest.is_file():
         try:
             if json.loads(manifest.read_text(encoding="utf-8")) == source:
+                _log_perf(
+                    "snv_review.ensure",
+                    started,
+                    action="hit",
+                    raw_size=_fmt_size(raw_tsv),
+                    review_size=_fmt_size(review_tsv),
+                    keep_ids=len(keep_ids),
+                )
                 return review_tsv
         except (OSError, json.JSONDecodeError):
             pass
 
     tmp = review_tsv.with_suffix(review_tsv.suffix + ".tmp")
     manifest_tmp = manifest.with_suffix(manifest.suffix + ".tmp")
+    kept = 0
+    scanned = 0
     with raw_tsv.open("r", encoding="utf-8", newline="") as src:
         reader = csv.DictReader(src, delimiter="\t")
         fieldnames = reader.fieldnames or []
@@ -162,15 +192,28 @@ def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Pat
             )
             writer.writeheader()
             for row in reader:
+                scanned += 1
                 vid = "-".join(
                     (row.get(k) or "").strip() for k in ("CHROM", "POS", "REF", "ALT")
                 )
                 if vid in keep_ids or _keep_row(row, candidate_bed):
                     writer.writerow(row)
+                    kept += 1
     os.replace(tmp, review_tsv)
     manifest_tmp.write_text(
         json.dumps(source, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     os.replace(manifest_tmp, manifest)
+    _log_perf(
+        "snv_review.ensure",
+        started,
+        action="rebuild",
+        raw_size=_fmt_size(raw_tsv),
+        review_size=_fmt_size(review_tsv),
+        scanned=scanned,
+        kept=kept,
+        keep_ids=len(keep_ids),
+        bed_exists=bool(candidate_bed),
+    )
     return review_tsv
