@@ -41,8 +41,12 @@ def build_parent(merge: dict, variants: dict[str, dict]) -> dict | None:
     if len(starts) != len(segments) or len(ends) != len(segments):
         return None
     start, end = min(starts), max(ends)
-    parent = deepcopy(max(segments, key=lambda v: v.get("ranking_score") or -999))
+    parent = deepcopy(max(segments, key=lambda v: v.get("cnv_sv_sort_score") or -999))
     genes = _dedupe_genes(segments)
+    best_rank = max((v.get("ranking_score") or -999) for v in segments)
+    best_scaled = max((v.get("ranking_score_scaled") or 0) for v in segments)
+    best_pheno = max((v.get("max_pheno_score") or 0) for v in segments)
+    best_combined = max((v.get("cnv_sv_sort_score") or -999) for v in segments)
     parent.update({
         "id": str(merge.get("id") or _merge_id(source, chrom, start, end, sv_type)),
         "source": source,
@@ -55,6 +59,10 @@ def build_parent(merge: dict, variants: dict[str, dict]) -> dict | None:
         "genes_overflow": [],
         "genes_compact": [],
         "genes_total": len(genes),
+        "ranking_score": best_rank if best_rank != -999 else parent.get("ranking_score"),
+        "ranking_score_scaled": best_scaled,
+        "max_pheno_score": best_pheno or parent.get("max_pheno_score"),
+        "cnv_sv_sort_score": best_combined if best_combined != -999 else parent.get("cnv_sv_sort_score"),
         "merged_segment_ids": list(member_ids),
         "is_merged_parent": True,
     })

@@ -171,13 +171,14 @@ async function _loadSample(LIS_ID) {
   // stale response that arrives after the user switched samples.
   if (data.aux_pending) {
     const token = (state._auxLoadToken = (state._auxLoadToken || 0) + 1);
-    state.cnvSvPending = true;
+    state.cnvPending = true;
+    state.svPending = true;
     state.mitoPending  = true;
-    apiFetch(`/samples/${encodeURIComponent(sid)}/cnv-sv`)
+    apiFetch(`/samples/${encodeURIComponent(sid)}/cnv`)
       .then(aux => {
         if (token !== state._auxLoadToken || !state.data) return;
         if (aux) Object.assign(state.data, aux);
-        state.cnvSvPending = false;
+        state.cnvPending = false;
         try { renderCnvSvTabBar(); } catch (_e) {}
         // Causative / Other sections may carry CNV/SV ids from
         // state.reports.status that were rendered as "missing
@@ -186,7 +187,20 @@ async function _loadSample(LIS_ID) {
       })
       .catch(() => {
         if (token !== state._auxLoadToken) return;
-        state.cnvSvPending = false;
+        state.cnvPending = false;
+        try { renderCnvSvTabBar(); } catch (_e) {}
+      });
+    apiFetch(`/samples/${encodeURIComponent(sid)}/sv`)
+      .then(aux => {
+        if (token !== state._auxLoadToken || !state.data) return;
+        if (aux) Object.assign(state.data, aux);
+        state.svPending = false;
+        try { renderCnvSvTabBar(); } catch (_e) {}
+        try { renderReportSections(); } catch (_e) {}
+      })
+      .catch(() => {
+        if (token !== state._auxLoadToken) return;
+        state.svPending = false;
         try { renderCnvSvTabBar(); } catch (_e) {}
       });
     apiFetch(`/samples/${encodeURIComponent(sid)}/mito`)
@@ -205,7 +219,8 @@ async function _loadSample(LIS_ID) {
         try { renderMitoTabBar(); } catch (_e) {}
       });
   } else {
-    state.cnvSvPending = false;
+    state.cnvPending = false;
+    state.svPending = false;
     state.mitoPending  = false;
   }
 }
@@ -1687,7 +1702,7 @@ function _geneSearchCnvSv(genesUpper) {
     (v.gene_list || []).some(g => genes.has(String(g).toUpperCase()))
   );
   matches.sort((a, b) => {
-    const ra = Number(a[1].ranking_score), rb = Number(b[1].ranking_score);
+    const ra = Number(a[1].cnv_sv_sort_score), rb = Number(b[1].cnv_sv_sort_score);
     return (Number.isFinite(rb) ? rb : -Infinity) - (Number.isFinite(ra) ? ra : -Infinity);
   });
   return matches;
@@ -3023,6 +3038,18 @@ function lookupAnyVariant(id) {
   return { v: null, kind: null };
 }
 
+function _annotSvSortScore(v) {
+  const n = Number(v?.cnv_sv_sort_score);
+  return Number.isFinite(n) ? n : -Infinity;
+}
+
+function _reportVariantSortScore(id) {
+  const { v, kind } = lookupAnyVariant(id);
+  if (kind === "cnv" || kind === "sv") return _annotSvSortScore(v);
+  const n = Number(v?.total_score);
+  return Number.isFinite(n) ? n : -Infinity;
+}
+
 function idsForReportSection(def) {
   const d = state.data || {};
   const known = [
@@ -3036,18 +3063,15 @@ function idsForReportSection(def) {
   const all = Array.from(new Set([...known, ...reported, ...panelReported]));
 
   if (def.match) {
-    // Causative / Other / Candidate report sections: sort by
-    // total_score desc, then cluster same-gene variants together.
+    // Causative / Other / Candidate report sections: SNV keeps
+    // total_score desc; CNV/SV uses combined phenotype + AnnotSV score. Then
+    // cluster same-gene variants together.
     // The gene with the highest-scored variant leads; its lower-
     // scored siblings get pulled up directly behind it instead of
     // scattering down the list. Manual entries (no gene_symbol)
     // stay put as singleton clusters.
     const sorted = all.filter(def.match).sort((a, b) => {
-      const sa = Number(lookupAnyVariant(a).v?.total_score);
-      const sb = Number(lookupAnyVariant(b).v?.total_score);
-      const va = Number.isFinite(sa) ? sa : -Infinity;
-      const vb = Number.isFinite(sb) ? sb : -Infinity;
-      return vb - va;
+      return _reportVariantSortScore(b) - _reportVariantSortScore(a);
     });
     const groups = new Map();
     for (const id of sorted) {
@@ -3350,7 +3374,11 @@ function _cnvSvBuildParent(merge) {
   const start = Math.min(...segments.map(v => Number(v.POS)));
   const end = Math.max(...segments.map(v => Number(v.END)));
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  const rep = segments.slice().sort((a, b) => Number(b.ranking_score || -999) - Number(a.ranking_score || -999))[0];
+  const rep = segments.slice().sort((a, b) => Number(b.cnv_sv_sort_score || -999) - Number(a.cnv_sv_sort_score || -999))[0];
+  const bestRank = Math.max(...segments.map(v => Number(v.ranking_score)).filter(Number.isFinite));
+  const bestScaledRank = Math.max(0, ...segments.map(v => Number(v.ranking_score_scaled)).filter(Number.isFinite));
+  const bestPheno = Math.max(0, ...segments.map(v => Number(v.max_pheno_score)).filter(Number.isFinite));
+  const bestCombined = Math.max(...segments.map(v => Number(v.cnv_sv_sort_score)).filter(Number.isFinite));
   const genes = [];
   const seenGenes = new Set();
   segments.forEach(seg => [...(seg.genes || []), ...(seg.genes_overflow || [])].forEach(g => {
@@ -3363,6 +3391,10 @@ function _cnvSvBuildParent(merge) {
     id: merge.id || _cnvSvMergeId(source, chrom, start, end, svType),
     source, CHROM: chrom, POS: start, END: end, length: end - start,
     gene_count: genes.length, genes, genes_overflow: [], genes_compact: [],
+    ranking_score: Number.isFinite(bestRank) ? bestRank : rep.ranking_score,
+    ranking_score_scaled: bestScaledRank,
+    max_pheno_score: bestPheno || rep.max_pheno_score,
+    cnv_sv_sort_score: Number.isFinite(bestCombined) ? bestCombined : rep.cnv_sv_sort_score,
     genes_total: genes.length, merged_segment_ids: segments.map(v => v.id),
     is_merged_parent: true,
   };
@@ -3422,7 +3454,10 @@ function _cnvSvIdsForTier(tier) {
     if (replacements.has(id)) out.push(replacements.get(id));
     if (!suppressed.has(id)) out.push(id);
   });
-  return out;
+  return out.sort((a, b) => {
+    const diff = _annotSvSortScore(_cnvSvVariantById(b)) - _annotSvSortScore(_cnvSvVariantById(a));
+    return diff || String(a).localeCompare(String(b));
+  });
 }
 
 // ---------- CNV/SV near-duplicate clustering ----------------------
@@ -3545,10 +3580,10 @@ function renderCnvSvTabBar() {
   if (!CNV_SV_TIER_ORDER.includes(activeCnvSvTab)) activeCnvSvTab = null;
   if (!activeCnvSvTab) activeCnvSvTab = "CNV-1A";
 
-  const loading = !!state.cnvSvPending;
   bar.innerHTML = CNV_SV_TIER_ORDER.map(t => {
     const active = t === activeCnvSvTab ? " active" : "";
     const ids = _cnvSvIdsForTier(t);
+    const loading = t.startsWith("CNV-") ? !!state.cnvPending : !!state.svPending;
     return `<button type="button" class="tier-tab ${CNV_SV_TIER_CLASS[t]}${active}" data-tier="${t}">
               <span class="tier-tab-title">${escapeHtml(CNV_SV_TITLES[t])}</span>
               <span class="tier-tab-count">${loading ? "…" : "Total " + ids.length}</span>
@@ -3563,6 +3598,7 @@ function renderCnvSvTabBar() {
     const panel = document.querySelector(`#cnv-sv-tab-panels .tier-panel[data-tier="${tier}"]`);
     if (!panel) return;
     const ids = _cnvSvIdsForTier(tier);
+    const loading = tier.startsWith("CNV-") ? !!state.cnvPending : !!state.svPending;
     const isClinical = tier.endsWith("-1A") || tier.endsWith("-2A");
     panel.innerHTML = "";
     if (loading) {

@@ -293,6 +293,24 @@ def get_sample_cnv_sv(sample_id: str, version: str | None = None):
     return payload
 
 
+@router.get("/samples/{sample_id}/cnv")
+def get_sample_cnv(sample_id: str, version: str | None = None):
+    """CNV side-channel for the staged loader."""
+    payload = sample_loader.load_sample_cnv(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
+@router.get("/samples/{sample_id}/sv")
+def get_sample_sv(sample_id: str, version: str | None = None):
+    """SV side-channel for the staged loader."""
+    payload = sample_loader.load_sample_sv(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
 @router.get("/samples/{sample_id}/mito")
 def get_sample_mito(sample_id: str, version: str | None = None):
     """Mitochondria side-channel for the staged loader."""

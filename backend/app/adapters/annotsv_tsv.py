@@ -8,7 +8,7 @@ carrying per-gene transcript / OMIM / Location info.
 
 This adapter aggregates by AnnotSV_ID into one variant record per SV,
 classifies into the 4 reviewer-facing tiers, and joins per-gene
-pheno_score for the Clinical-block sort.
+pheno_score for card display.
 
 Tier rules (independent slices — a variant can live in both):
     *-Clinical    : at least one overlapped gene has score > 0 in
@@ -255,6 +255,31 @@ def _classify(v: dict, source: str) -> list[str]:
     return out
 
 
+def _assign_sort_scores(variants: dict[str, dict]) -> None:
+    """Attach a combined CNV/SV sort score.
+
+    max_pheno_score is already 0-100. AnnotSV_ranking_score is scaled
+    to 0-100 within this TSV, then the two signals are summed so either
+    clinical fit or AnnotSV evidence can pull a variant upward.
+    """
+    ranks = [
+        float(v["ranking_score"])
+        for v in variants.values()
+        if isinstance(v.get("ranking_score"), (int, float))
+    ]
+    max_rank = max(ranks) if ranks else 0.0
+    for v in variants.values():
+        rank = v.get("ranking_score")
+        rank_scaled = (
+            100.0 * float(rank) / max_rank
+            if isinstance(rank, (int, float)) and max_rank > 0
+            else 0.0
+        )
+        pheno = v.get("max_pheno_score") or 0.0
+        v["ranking_score_scaled"] = round(rank_scaled, 2)
+        v["cnv_sv_sort_score"] = round(float(pheno) + rank_scaled, 2)
+
+
 # Columns we actually consume. Pre-computing the {col: index} map
 # after reading the header lets each row build a ~30-key dict instead
 # of a 128-key one (AnnotSV emits a lot of provenance fields we don't
@@ -325,10 +350,9 @@ def load_annotsv_tsv(
 ) -> tuple[dict[str, dict], dict[str, list[str]]]:
     """Read AnnotSV output → ({annotsv_id: variant}, {tier: [ids]}).
 
-    Tier ordering inside each list: Clinical sorts by max pheno_score
-    desc (then ranking_score, then id); Pathogenic sorts by
-    ranking_score desc (then id). Tie-break is the AnnotSV_ID for
-    stable ordering across reloads.
+    Tier ordering inside each list follows
+    max_pheno_score + scaled AnnotSV_ranking_score desc, then AnnotSV_ID
+    for stable ordering across reloads.
     """
     pheno_by_gene = pheno_by_gene or {}
     pheno_matched = pheno_matched or {}
@@ -416,22 +440,15 @@ def load_annotsv_tsv(
         v["genes_compact"]      = ov_compact
         v["genes_total"]        = total
 
-    # Sort each tier.
-    def _clinical_key(aid: str) -> tuple:
-        v = variants[aid]
-        score = v.get("max_pheno_score") or -1
-        rank  = v.get("ranking_score") or -999
-        return (-float(score), -float(rank), aid)
+    _assign_sort_scores(variants)
 
-    def _pathogenic_key(aid: str) -> tuple:
+    # Sort each tier by combined phenotype + AnnotSV score.
+    def _combined_key(aid: str) -> tuple:
         v = variants[aid]
-        rank = v.get("ranking_score") or -999
-        return (-float(rank), aid)
+        score = v.get("cnv_sv_sort_score") or -999
+        return (-float(score), aid)
 
     for tier in categories:
-        if tier.endswith("-1A") or tier.endswith("-2A"):
-            categories[tier].sort(key=_clinical_key)
-        else:
-            categories[tier].sort(key=_pathogenic_key)
+        categories[tier].sort(key=_combined_key)
 
     return variants, categories

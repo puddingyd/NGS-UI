@@ -672,6 +672,42 @@ def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | Non
     }
 
 
+def load_sample_cnv(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader: CNV side-channel only."""
+    ctx = _load_pheno_context(sample_id, version)
+    from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS
+    if ctx is None:
+        return None
+    sub, _sd, hpo_list, panels_list, pheno_by_gene = ctx
+    from . import phenotype_scorer
+    pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(hpo_list, panels_list)
+    cnv_path = sub / "cnv.annotated.tsv"
+    cnv_variants, cnv_categories = (
+        load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene,
+                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+        if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
+    )
+    return {"cnv_variants": cnv_variants, "cnv_categories": cnv_categories}
+
+
+def load_sample_sv(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader: SV side-channel only."""
+    ctx = _load_pheno_context(sample_id, version)
+    from ..adapters.annotsv_tsv import load_annotsv_tsv, SV_TIERS
+    if ctx is None:
+        return None
+    sub, _sd, hpo_list, panels_list, pheno_by_gene = ctx
+    from . import phenotype_scorer
+    pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(hpo_list, panels_list)
+    sv_path = sub / "sv.annotated.tsv"
+    sv_variants, sv_categories = (
+        load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene,
+                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+        if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
+    )
+    return {"sv_variants": sv_variants, "sv_categories": sv_categories}
+
+
 def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader: just the Mitochondria side-channel for a sample.
     {mito_variants, mito_categories} or None."""
@@ -698,7 +734,7 @@ def load_sample(sample_id: str, version: str | None = None,
 
     `include_aux=False` skips the CNV/SV and Mito TSV parsing (returns
     empty dicts for them + `aux_pending: True`); the frontend then
-    pulls those from /samples/{id}/cnv-sv and /samples/{id}/mito so
+    pulls those from /samples/{id}/cnv, /samples/{id}/sv, and /samples/{id}/mito so
     the SNV/Indel view appears without waiting on the rest.
     """
     sub = TERTIARY_OUTPUT_ROOT / sample_id
@@ -782,8 +818,8 @@ def load_sample(sample_id: str, version: str | None = None,
     # CNV / SV: load only when the AnnotSV outputs are present beside
     # the SNV TSV (pipeline drops them per-sample). Empty dicts when
     # absent → frontend just shows "（無資料）" placeholders. When
-    # include_aux is False these are deferred to /samples/{id}/cnv-sv
-    # and /samples/{id}/mito (staged loading).
+    # include_aux is False these are deferred to /samples/{id}/cnv,
+    # /samples/{id}/sv, and /samples/{id}/mito (staged loading).
     from ..adapters.annotsv_tsv import load_annotsv_tsv, CNV_TIERS, SV_TIERS
     from ..adapters.mito_tsv import load_mito_tsv, MITO_TIERS
     if include_aux:
@@ -878,7 +914,7 @@ def load_sample(sample_id: str, version: str | None = None,
         "mito_categories":   mito_categories,
         # When True the CNV/SV + Mito side-channels above are empty
         # placeholders; the frontend fetches them from the dedicated
-        # /samples/{id}/cnv-sv and /samples/{id}/mito endpoints.
+        # /samples/{id}/cnv, /samples/{id}/sv, and /samples/{id}/mito endpoints.
         "aux_pending":       not include_aux,
         # Whether the sample has phenotype configured at all — the
         # frontend uses this to show a "Clinical 區塊空白是因為沒有

@@ -511,14 +511,24 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
 
     # Group by reviewer status. Each entry is ("kind", variant_dict).
     # Insertion order = (snv → mito → cnv → sv), so 第一類/第二類 list
-    # SNVs first (the most common case in past reports).
+    # SNVs first (the most common case in past reports). CNV/SV entries
+    # are sorted inside their source by combined phenotype + AnnotSV score.
+    def _ranked_items(src: dict, kind: str):
+        items = list(src.items())
+        if kind in {"cnv", "sv"}:
+            items.sort(key=lambda item: (
+                -float(item[1].get("cnv_sv_sort_score") or -999),
+                str(item[0]),
+            ))
+        return items
+
     def _collect(status: str) -> list[tuple[str, dict]]:
         out: list[tuple[str, dict]] = []
         for src_kind, src in (("snv",  snv_vars),
                               ("mito", mito_vars),
                               ("cnv",  cnv_vars),
                               ("sv",   sv_vars)):
-            for vid, v in src.items():
+            for vid, v in _ranked_items(src, src_kind):
                 if (statuses.get(vid) or "").strip() == status:
                     out.append((src_kind, v))
         return out
