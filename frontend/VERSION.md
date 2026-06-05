@@ -23,7 +23,7 @@
 
 - 新增 IGV 視窗，可從分析平台直接查看 BAM 檔中的 SNV/Indel 及 CNV/SV 。
 - 新增 SRY 確認流程，支援性別確認。
-- 整合相鄰 CNV/SV 片段，改用整合後的 variant。
+- 整合相鄰 CNV/SV 片段，改用整合後的 variant；相鄰 gap 門檻調整為 250 kb。
 - 固定 panel 改為 WES-I / WES-II / WGS / Other panel 分頁。
 - 調整匯出報告細節，改善 CNV/SV 疾病描述、基因清單與版面呈現。
 

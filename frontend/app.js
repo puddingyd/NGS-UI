@@ -3441,7 +3441,7 @@ function _cnvSvIdsForTier(tier) {
 // ships this clustering naturally becomes a no-op.
 
 const CNV_SV_CLUSTER_OVERLAP_THRESHOLD = 0.8;
-const CNV_SV_MERGE_GAP_THRESHOLD = 100000;
+const CNV_SV_MERGE_GAP_THRESHOLD = 250000;
 
 function _cnvSvSpan(v) {
   const s = Number(v?.POS);

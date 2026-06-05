@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-MERGE_GAP_THRESHOLD = 100_000
+MERGE_GAP_THRESHOLD = 250_000
 
 
 def _merge_id(source: str, chrom: str, start: int, end: int, sv_type: str) -> str:
@@ -73,7 +73,7 @@ def _compatible(a: dict, b: dict) -> bool:
 
 
 def automatic_merges(variants: dict[str, dict], source: str) -> list[dict]:
-    """Group same-type adjacent DEL/DUP segments using a 100 kb max gap."""
+    """Group same-type adjacent DEL/DUP segments using a 250 kb max gap."""
     sorted_vars = sorted(
         variants.values(),
         key=lambda v: (
