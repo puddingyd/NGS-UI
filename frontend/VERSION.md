@@ -10,6 +10,9 @@
 
 - 三級分析改接 v3.1 sample sheet pipeline；NGS-UI 會以原始 source sample ID 執行正式 pipeline。
 - 三級分析支援批次送出同一來源類型的多個 sample，一次產生多列 sample sheet。
+- 保留舊版 staging fallback：若正式環境尚未切換 v3.1，可設定 `NGS_UI_TERTIARY_LEGACY_STAGING=1` 暫時使用舊流程。
+- 三級分析進度更新為 samplesheet / PREPARE_VCF / PREPARE_VCF_DRAGEN / VEP / Pangolin / ACMG / stop-gaps。
+- Dead zone 卡片預設只顯示前 10 列，可用小三角形展開全部。
 
 ### v4.3 — 2026-06-04
 

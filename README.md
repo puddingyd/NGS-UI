@@ -127,7 +127,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV 與 Mitochondria 在背景載完後補上：
    - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
-   - Patient phenotype 與 Comment 之間的 Dead zone 卡片會依目前 HPO + panel gene set 顯示 cohort-level dead exons；WES 用 20X，WGS（含 in-house / DRAGEN）用 DRAGEN 15X。
+   - Patient phenotype 與 Comment 之間的 Dead zone 卡片會依目前 HPO + panel gene set 顯示 cohort-level dead exons；WES 用 20X，WGS（含 in-house / DRAGEN）用 DRAGEN 15X。主畫面預設只顯示前 10 列，可用小三角形展開全部。
    - SNV/Indel 顯示 filter 預設啟用 `Disease-associated`（限 `ngs_panel_deadzone/panel/panel_loose.hgnc_canonical.txt`）、`In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。CNV/SV 與 gene search modal 不受 `Disease-associated` filter 限制。
    - TSV stop-gap 只移除 `REF/ALT=*` 與非 primary contig；正式 v3.1 pipeline 會自行處理 NCKUH/DRAGEN 前處理與 PASS/chrM 分流，舊版 DRAGEN staging 僅在 `NGS_UI_TERTIARY_LEGACY_STAGING=1` 時啟用。
    - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：保留 `GNOMAD_G_AF < 0.05`、AF 缺值、ClinVar P/LP rescue 與 reviewer 已標記點。`run_stopgaps.sh` 在三級分析結尾先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。

@@ -1050,14 +1050,33 @@ function renderDeadZoneCard() {
   card.classList.remove("hidden");
   if (!entries.length) {
     body.innerHTML = `<div class="muted">目前 HPO / panel 基因沒有 cohort dead-zone 註記。</div>`;
+    body.dataset.expanded = "0";
+    body.dataset.deadZoneKey = "";
     return;
   }
-  body.innerHTML = `<ul class="dead-zone-list">${entries.map(e => {
+  const key = entries.map(e => `${e.gene || ""}:${e.exons_label || ""}`).join("|");
+  if (body.dataset.deadZoneKey !== key) {
+    body.dataset.deadZoneKey = key;
+    body.dataset.expanded = "0";
+  }
+  const expanded = body.dataset.expanded === "1";
+  const limit = 10;
+  const visibleEntries = expanded ? entries : entries.slice(0, limit);
+  const hiddenCount = Math.max(0, entries.length - visibleEntries.length);
+  body.innerHTML = `<ul class="dead-zone-list">${visibleEntries.map(e => {
     const gene = e.gene || "";
     const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
     return `<li><span class="dead-zone-gene">${escapeHtml(gene)}</span>
       <span>exon ${escapeHtml(label)}</span></li>`;
-  }).join("")}</ul>`;
+  }).join("")}</ul>${entries.length > limit ? `
+    <button id="dead-zone-toggle" class="dead-zone-toggle" type="button" aria-expanded="${expanded ? "true" : "false"}">
+      <span class="dead-zone-toggle-arrow">${expanded ? "▾" : "▸"}</span>
+      ${expanded ? "收合" : `展開全部（另 ${hiddenCount} 列）`}
+    </button>` : ""}`;
+  document.getElementById("dead-zone-toggle")?.addEventListener("click", () => {
+    body.dataset.expanded = expanded ? "0" : "1";
+    renderDeadZoneCard();
+  });
 }
 
 function _reportedOutOfDiseaseAssociatedSnvs() {

@@ -2102,6 +2102,20 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-family: ui-monospace, monospace;
   font-weight: 700;
 }
+.dead-zone-toggle {
+  margin-top: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.dead-zone-toggle:hover { color: var(--fg); }
+.dead-zone-toggle-arrow {
+  display: inline-block;
+  width: 1em;
+}
 @media (max-width: 900px) {
   .dead-zone-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
