@@ -92,12 +92,11 @@ def update_phenotype(sample_id: str, payload: dict):
 
     # 2. Compute pheno_score (analyses_store.write_version already
     # wrote pheno_score.tsv as a side effect; recompute here only to
-    # produce the in-panel set + the response stats below).
+    # produce response stats). SNV loads and gene search apply
+    # in-panel state dynamically from pheno_score.tsv; do not rewrite
+    # the large raw TSV here.
     scores = phenotype_scorer.compute_pheno_score(hpo_in, panels_in)
-
-    # 3. Rewrite IN_PANEL column (in_panel iff score > 0)
     in_panel_genes = {g for g, s in scores.items() if s > 0}
-    n_updated = phenotype_scorer.update_in_panel_column(sample_id, in_panel_genes)
 
     # 5. Stats for UI
     top10 = sorted(scores.items(), key=lambda kv: -kv[1])[:10]
@@ -109,6 +108,5 @@ def update_phenotype(sample_id: str, payload: dict):
         "n_in_panel_genes":  len(in_panel_genes),
         "top_score":         max(scores.values(), default=0.0),
         "top10":             [{"gene": g, "score": round(s, 2)} for g, s in top10],
-        "tsv_rows_updated":  n_updated,
         "updated_at":        meta["phenotype_updated_at"],
     }

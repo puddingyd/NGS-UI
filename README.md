@@ -128,7 +128,10 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 2. **載入新個案** — 點「載入新個案」：
    - LIS_ID 下拉會列出 pipeline 已丟進 `tertiary_output/` 但尚未登錄的目錄；
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；
+   - 若來源為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，Test type 會預設為 `WGS`；送出前仍可手動改回 `WES`；
    - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
+   - 登錄新個案不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；若 VCF 尚不存在，Exomiser/LIRICAL 背景 job 開始前會自動建立或刷新。
+   - HPO/panel 的 in-panel 狀態來自 `pheno_score.tsv` 動態補值，不再寫回大型 `snv_indel.annotated.tsv` 的 `IN_PANEL` 欄。
    - 勾「登錄後開始分析」會順便把 Exomiser/LIRICAL 排入佇列。
    - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` 篩選並全文搜尋；表格會摘要 causative / other SNV、CNV、SV，已勾選 OMIM disease、CNV/SV reviewer 輸入的 Disease、主畫面 comment、簽收與載入時間。多個 variant / disease 會逐行顯示，長 HGVS 可自動折行。也可刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時可選擇同步刪除或保留 `/home/pipeline/tertiary_output/{LIS_ID}/`，按取消則完全不刪除。
    - 主畫面搜尋框上方有可複選的 `WES` / `WGS` 圓形 filter，取消勾選後對應 test type 不出現在搜尋清單。
@@ -156,7 +159,7 @@ SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越�
 
 可用 `scripts/compare_genebe_spliceai_coverage.py` 抽樣 GeneBe 本機資料庫（例如 `/home/n102968/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz`），再走目前 extra-VEP 的 VEP SpliceAI plugin 路徑產生對照，輸出 `summary.tsv`、`summary_by_kind.tsv`、`mismatches.tsv` 與 `run_metadata.tsv`，評估 GeneBe DB 的 SpliceAI 覆蓋率是否足以取代 extra-VEP / GeneBe API。正式估計建議使用 `--max-sites 100000 --sample-mode chrom-balanced`，避免只取 TSV 前段或讓大型染色體主導結果；未指定 `--seed` 時會由系統亂數產生並記錄在 metadata。
 
-服務啟動時會以 daemon thread 在背景預熱 HPO、phenotype gene map、OMIM 與 mito ClinVar cache，避免解析大型 `phenotype_to_genes.txt` 期間擋住 HTTP port。完整 SNV TSV 的 gene search 走 per-sample `snv_gene_index.sqlite`；index 由 tertiary job / `run_stopgaps.sh` 預建，載入個案後不再自動掃描 WGS raw TSV。刪除個案時只 invalidate 該 sample 的 SNV 與個案摘要 cache，不會同步重掃全部清單。
+服務啟動時會以 daemon thread 在背景預熱 HPO、phenotype gene map、OMIM 與 mito ClinVar cache，避免解析大型 `phenotype_to_genes.txt` 期間擋住 HTTP port。完整 SNV TSV 的 gene search 走 per-sample `snv_gene_index.sqlite`；index 由 tertiary job / `run_stopgaps.sh` 預建，載入個案後不再自動掃描 WGS raw TSV。`in_panel` / `pheno_score` 由 active analysis 的 `pheno_score.tsv` 在載入與搜尋時補入，不再為 HPO/panel 變更重寫完整 raw TSV。刪除個案時只 invalidate 該 sample 的 SNV 與個案摘要 cache，不會同步重掃全部清單。
 
 三級分析另保存 `source_sample_id`（原始 sequencing sample ID）到 job state 與 `pipeline_source.json`。IGV 先以目前個案 ID 找 BAM；自訂輸出 ID 找不到時，會用 sidecar 回查原始 BAM ID。舊個案缺少 sidecar 欄位時，僅在移除已知 suffix 後得到唯一 BAM 命中才採用 fallback。
 

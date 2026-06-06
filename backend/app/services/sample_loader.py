@@ -860,6 +860,22 @@ def list_unregistered() -> list[dict]:
                     "panels": panels,
                 }
 
+        source_info = {}
+        source_vcf_path = ""
+        source_vcf_size = 0
+        pipeline_source = sub / "pipeline_source.json"
+        if pipeline_source.is_file():
+            try:
+                source_info = json.loads(pipeline_source.read_text(encoding="utf-8")) or {}
+            except (OSError, json.JSONDecodeError):
+                source_info = {}
+            source_vcf_path = str(source_info.get("source_vcf_path") or "")
+            if source_vcf_path:
+                try:
+                    source_vcf_size = Path(source_vcf_path).stat().st_size
+                except OSError:
+                    source_vcf_size = 0
+
         try:
             mtime = sub.stat().st_mtime
         except OSError:
@@ -868,6 +884,10 @@ def list_unregistered() -> list[dict]:
             "lis_id":     lis_id,
             "tsv_size":   tsv.stat().st_size if tsv.exists() else 0,
             "mtime":      mtime,
+            "pipeline_type": str(source_info.get("pipeline_type") or ""),
+            "source_sample_id": str(source_info.get("source_sample_id") or ""),
+            "source_vcf_path": source_vcf_path,
+            "source_vcf_size": source_vcf_size,
             "phenotype":  pheno_payload,
             # Roster-sourced identifiers (None when the LIS_ID isn't on
             # any uploaded clinic list yet).

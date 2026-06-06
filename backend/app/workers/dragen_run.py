@@ -210,6 +210,7 @@ def _track_pipeline_source(
     *,
     source_sample_id: str,
     source_vcf_path: str,
+    pipeline_type: str,
 ) -> None:
     """Write a small audit record so the reviewer (and a future
     re-sync endpoint) can tell where the SNV TSV originated.
@@ -225,6 +226,7 @@ def _track_pipeline_source(
         "source_mtime": mtime,
         "source_sample_id": source_sample_id,
         "source_vcf_path": source_vcf_path,
+        "pipeline_type": pipeline_type,
         "copied_at":    _now(),
     }
     (sample_dir / "pipeline_source.json").write_text(
@@ -556,6 +558,7 @@ def main() -> int:
                 existing,
                 source_sample_id=source_sid,
                 source_vcf_path=source_vcf,
+                pipeline_type=mode,
             )
             _log(f"[copy] {sid}: {existing} → {gui_tsv}")
 

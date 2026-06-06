@@ -189,16 +189,18 @@ def register(
         dob_from_emr = ""
     genetic_counseling = consult.get("text", "") or ""
 
-    # Generate the minimal VCF Exomiser/LIRICAL will consume. The path
-    # is convention-driven (tertiary_output/{lis_id}/vcf_from_tsv.vcf.gz)
-    # so we don't ask the reviewer to fill it in.
+    # Exomiser/LIRICAL uses a convention-driven VCF path under the
+    # sample directory. Building it scans the full raw TSV on WGS, so
+    # registration only records an already-existing VCF. The worker
+    # creates or refreshes it in the background before analysis.
     vcf_started = time.perf_counter()
-    vcf_out = vcf_writer.from_tsv(lis_id)
+    vcf_out = vcf_writer.vcf_path_for(lis_id)
+    vcf_path = str(vcf_out) if vcf_out.is_file() else ""
     _log_perf(
-        "patient_store.register.vcf_from_tsv",
+        "patient_store.register.vcf_path",
         vcf_started,
         sample=lis_id,
-        out=vcf_out.name,
+        exists=int(bool(vcf_path)),
     )
 
     # Seed sample_metadata.json with basic info + empty reviewer state.
@@ -216,7 +218,7 @@ def register(
         "department":           department or "",
         "physician":            physician or "",
         "sign_received_at":     sign_received_at or "",
-        "vcf_path":             str(vcf_out),
+        "vcf_path":             vcf_path,
         "run_date":             now,
         "active_analysis":      "default",
         "clinical_description": "",
@@ -258,9 +260,9 @@ def register(
             analyses_store.version_dir(lis_id, "default")
             / f"{lis_id}_{mrn}_phenotype.txt",
         )
-        # Reflect the just-computed pheno set onto the SNV TSV's
-        # IN_PANEL column so per-sample loads see the right markers
-        # immediately. (No-op when HPO+panels are both empty.)
+        # pheno_score.tsv is the source of truth for in-panel state.
+        # SNV loads and gene search apply it dynamically, so registration
+        # does not rewrite the large raw TSV.
         from . import phenotype_scorer
         score_started = time.perf_counter()
         scores = phenotype_scorer.compute_pheno_score(hpo or [], panels or [])
@@ -269,16 +271,6 @@ def register(
             score_started,
             sample=lis_id,
             genes=len(scores),
-        )
-        inpanel_started = time.perf_counter()
-        n_updated = phenotype_scorer.update_in_panel_column(
-            lis_id, {g for g, s in scores.items() if s > 0}
-        )
-        _log_perf(
-            "patient_store.register.update_in_panel",
-            inpanel_started,
-            sample=lis_id,
-            updated=n_updated,
         )
 
     _log_perf("patient_store.register.total", started, sample=lis_id)

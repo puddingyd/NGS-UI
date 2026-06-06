@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,6 +48,33 @@ LIRICAL_TEMPLATE  = REPO_ROOT / "phenotype_reference" / "lirical_input.yaml"
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _log_perf(event: str, started: float, **fields) -> None:
+    parts = [f"[perf] {event}", f"elapsed={time.perf_counter() - started:.3f}s"]
+    parts.extend(f"{key}={value}" for key, value in fields.items())
+    print(" ".join(parts), flush=True)
+
+
+def _write_meta_vcf_path(meta_path: Path, meta: dict, vcf: Path) -> None:
+    path = str(vcf)
+    try:
+        current = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+    except (OSError, json.JSONDecodeError):
+        current = dict(meta)
+    if current.get("vcf_path") == path:
+        meta.clear()
+        meta.update(current)
+        return
+    updated = dict(current)
+    updated["vcf_path"] = path
+    updated["updated_at"] = _now()
+    meta_path.write_text(
+        json.dumps(updated, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    meta.clear()
+    meta.update(updated)
 
 
 def _read_yaml(path: Path) -> dict:
@@ -131,14 +159,27 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
     meta_path = sample_root / "sample_metadata.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
-    # VCF is convention-driven: tertiary_output/{lis_id}/{lis_id}.from_tsv.vcf.gz.
-    # Regenerate if missing or older than the source TSV so a freshly-
-    # produced annotation table doesn't run against a stale VCF.
+    # VCF is convention-driven: tertiary_output/{lis_id}/vcf_from_tsv.vcf.gz.
+    # Registration no longer blocks on building it; this worker creates
+    # or refreshes it in the background before invoking the tools.
+    job_store.update(job_id, {
+        "status": "running",
+        "step": "exomiser:prepare-vcf",
+        "started_at": _now(),
+    })
+    vcf_started = time.perf_counter()
     if vcf_writer.needs_rebuild(sample_id):
         vcf_writer.from_tsv(sample_id)
     vcf = vcf_writer.vcf_path_for(sample_id)
     if not vcf.is_file():
         raise RuntimeError(f"vcf not found after rebuild attempt: {vcf}")
+    _write_meta_vcf_path(meta_path, meta, vcf)
+    _log_perf(
+        "exomiser_lirical.prepare_vcf",
+        vcf_started,
+        sample=sample_id,
+        size=vcf.stat().st_size,
+    )
 
     assembly = (meta.get("genome_build") or "hg38").lower()
     if assembly not in ("hg19", "hg38"):

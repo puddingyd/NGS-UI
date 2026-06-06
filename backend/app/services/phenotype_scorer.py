@@ -239,8 +239,7 @@ def compute_pheno_score(
     Score = 100 × matched_weight / total_input_weight. Identical to
     compute_pheno_match() followed by the per-gene normalisation —
     kept as a thin wrapper so all existing callers (SNV pheno join,
-    pheno_score.tsv writer, in-panel column rewrite) keep working
-    unchanged.
+    pheno_score.tsv writer, response stats) keep working unchanged.
     """
     matched, total = compute_pheno_match(hpo_terms, panels)
     if total <= 0 or not matched:
@@ -276,42 +275,3 @@ def write_pheno_table(
         for g, s in rows:
             f.write(f"{g}\t{s:.4f}\n")
     return out
-
-
-def update_in_panel_column(sample_id: str, in_panel_genes: set[str]) -> int:
-    """Rewrite IN_PANEL column of snv_indel.annotated.tsv. Returns rows updated."""
-    from ..config import TERTIARY_OUTPUT_ROOT
-    from . import panel_deadzone
-    tsv = TERTIARY_OUTPUT_ROOT / sample_id / "snv_indel.annotated.tsv"
-    if not tsv.exists():
-        return 0
-    rows: list[list[str]] = []
-    with tsv.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.reader(f, delimiter="\t")
-        header = next(reader)
-        try:
-            gene_idx = header.index("GENE")
-            inpanel_idx = header.index("IN_PANEL")
-        except ValueError:
-            return 0
-        hgnc_idx = header.index("HGNC_ID") if "HGNC_ID" in header else -1
-        rows.append(header)
-        n_updated = 0
-        for r in reader:
-            if len(r) <= max(gene_idx, inpanel_idx):
-                rows.append(r); continue
-            raw_hgnc = r[hgnc_idx] if hgnc_idx >= 0 and len(r) > hgnc_idx else ""
-            gene, _ = panel_deadzone.canonical_gene_symbol(r[gene_idx], raw_hgnc)
-            new_val = "true" if gene in in_panel_genes else "false"
-            if r[inpanel_idx] != new_val:
-                r[inpanel_idx] = new_val
-                n_updated += 1
-            rows.append(r)
-    # Atomic-ish: write to .tmp then rename
-    tmp = tsv.with_suffix(".tsv.tmp")
-    with tmp.open("w", encoding="utf-8", newline="") as f:
-        w = csv.writer(f, delimiter="\t", lineterminator="\n")
-        for r in rows:
-            w.writerow(r)
-    tmp.replace(tsv)
-    return n_updated

@@ -165,10 +165,9 @@ def register_sample(
 
     The TSV must already live at
         tertiary_output/{lis_id}/snv_indel.annotated.tsv
-    (the pipeline puts it there). register() also generates the
-    minimal Exomiser/LIRICAL-input VCF beside it
-    ({lis_id}.from_tsv.vcf.gz) so the operator never has to point at a
-    VCF manually.
+    (the pipeline puts it there). Exomiser/LIRICAL use the conventional
+    vcf_from_tsv.vcf.gz path; register records an existing VCF, and the
+    background worker builds it when missing or stale.
 
     Phenotype is auto-loaded from
         NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt

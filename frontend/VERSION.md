@@ -11,6 +11,9 @@
 - 首頁樣本索引改為輕量載入，不再於登入後同步計算個案清單摘要。
 - 個案清單改為開啟時才載入 causative / disease / other variant 摘要，並使用 `case_summary.json` 持久化快取，降低服務重啟後的等待時間。
 - 已標記 SNV 摘要優先使用 `snv_gene_index.sqlite` 以 variant id 查找；CNV/SV 摘要只讀取目標 id，避免大型 DRAGEN TSV 每次重掃完整檔案。
+- 載入新個案不再同步掃完整 TSV 產生 Exomiser/LIRICAL VCF；若 VCF 尚未存在，會由 Exomiser/LIRICAL 背景 job 開始前建立，避免 WGS 個案登錄時等待約一分鐘。
+- 載入新個案時若來源為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，Test type 會預設為 WGS。
+- HPO/panel 的 in-panel 狀態改由 `pheno_score.tsv` 動態補入，不再因 phenotype 變更重寫大型 SNV raw TSV。
 - 新增 GeneBe 本機資料庫 SpliceAI 覆蓋率診斷 script，可協助評估是否以 GeneBe DB 取代 extra-VEP / GeneBe API stop-gap。
 
 ### v4.4 — 2026-06-05

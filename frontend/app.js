@@ -2401,9 +2401,9 @@ function _setJobStatus(text, busy = false) {
 }
 
 // 「開始分析」: instant in-house pheno_score + queued Exomiser/LIRICAL.
-// The phenotype POST returns immediately so the cards' IN_PANEL badges
-// flip right away; the Exomiser/LIRICAL job runs in the background and
-// the polling loop refreshes the sample once it lands.
+// The phenotype POST returns immediately so cards can apply the fresh
+// pheno_score.tsv-derived in-panel state; Exomiser/LIRICAL runs in the
+// background and the polling loop refreshes the sample once it lands.
 //
 // `opts.version` selects which analysis version to write into; `opts.mode`
 // is "overwrite" (clear sidecars first) or "new" (create fresh version).
@@ -2451,7 +2451,7 @@ async function startAnalysis(opts = {}) {
     ).join("");
     top10El.classList.toggle("hidden", !(result.top10 && result.top10.length));
     hint.textContent = `已重算 (${new Date().toLocaleTimeString()})`;
-    // Refresh so cards see the freshly written IN_PANEL flag right
+    // Refresh so cards see the freshly written pheno_score.tsv right
     // away, before the slower Exomiser job finishes.
     await loadSample(state.currentLIS);
     renderAll();
@@ -6877,6 +6877,21 @@ const newCaseEdit = {
   source: "",           // 'reviewer-txt' / 'EMR' / 'edited' — for the source line
 };
 
+const NEW_CASE_WGS_VCF_SIZE_BYTES = 100 * 1024 * 1024;
+
+function inferNewCaseTestType(entry) {
+  if (!entry) return "";
+  const pipelineType = String(entry.pipeline_type || "").toLowerCase();
+  const sourcePath = String(entry.source_vcf_path || "").toLowerCase();
+  const sourceSample = String(entry.source_sample_id || entry.lis_id || "").toLowerCase();
+  if (pipelineType === "dragen" || sourcePath.includes("dragen") || sourceSample.endsWith("-dragen")) {
+    return "WGS";
+  }
+  const sourceSize = Number(entry.source_vcf_size || 0);
+  if (sourceSize > NEW_CASE_WGS_VCF_SIZE_BYTES) return "WGS";
+  return "";
+}
+
 document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   const form = document.getElementById("new-case-form");
   form?.reset();
@@ -6955,7 +6970,11 @@ document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
   const fillMrn = (roster && roster.mrn) || (entry.phenotype && entry.phenotype.mrn) || "";
   if (mrnInput && !mrnInput.value && fillMrn) mrnInput.value = fillMrn;
   if (nameInput && !nameInput.value && roster && roster.name) nameInput.value = roster.name;
-  if (testSel && roster && roster.test_type) testSel.value = roster.test_type;
+  if (testSel) {
+    const inferredType = inferNewCaseTestType(entry);
+    if (inferredType) testSel.value = inferredType;
+    else if (roster && roster.test_type) testSel.value = roster.test_type;
+  }
   // Show the ordering department as a hint next to Category — the
   // canonical Category list is in English so we can't auto-pick it
   // from the Chinese 科別, but surfacing it helps the reviewer choose.
