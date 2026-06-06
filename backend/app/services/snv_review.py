@@ -159,13 +159,13 @@ def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Pat
     source = {
         "raw_mtime_ns": raw_tsv.stat().st_mtime_ns,
         "raw_size": raw_tsv.stat().st_size,
-        "keep_ids": sorted(keep_ids),
         "max_gnomad_g_af": MAX_GNOMAD_G_AF,
         "candidate_bed": _bed_signature(candidate_bed_path),
     }
     if review_tsv.is_file() and manifest.is_file():
         try:
-            if json.loads(manifest.read_text(encoding="utf-8")) == source:
+            current = json.loads(manifest.read_text(encoding="utf-8"))
+            if all(current.get(key) == value for key, value in source.items()):
                 _log_perf(
                     "snv_review.ensure",
                     started,
@@ -193,10 +193,7 @@ def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Pat
             writer.writeheader()
             for row in reader:
                 scanned += 1
-                vid = "-".join(
-                    (row.get(k) or "").strip() for k in ("CHROM", "POS", "REF", "ALT")
-                )
-                if vid in keep_ids or _keep_row(row, candidate_bed):
+                if _keep_row(row, candidate_bed):
                     writer.writerow(row)
                     kept += 1
     os.replace(tmp, review_tsv)

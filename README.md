@@ -138,7 +138,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - Patient phenotype 與 Comment 之間的 Dead zone 卡片會依目前 HPO + panel gene set 顯示 cohort-level dead exons；WES 用 20X，WGS（含 in-house / DRAGEN）用 DRAGEN 15X。主畫面預設只顯示前 10 列，可用小三角形展開全部。
    - SNV/Indel 顯示 filter 預設啟用 `Disease-associated`（限 `ngs_panel_deadzone/panel/panel_loose.hgnc_canonical.txt`）、`In panel only`、`gnomAD_G_AF < 0.01`、`VAF ≥ 0.2`；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。CNV/SV 與 gene search modal 不受 `Disease-associated` filter 限制。
    - TSV stop-gap 只移除 `REF/ALT=*` 與非 primary contig；正式 v3.1 pipeline 會自行處理 NCKUH/DRAGEN 前處理與 PASS/chrM 分流，舊版 DRAGEN staging 僅在 `NGS_UI_TERTIARY_LEGACY_STAGING=1` 時啟用。
-   - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：保留 `NGS_UI_CDS_CANDIDATE_BED` 內且 `GNOMAD_G_AF < 0.01` 或 AF 缺值的位點，並 rescue ClinVar P/LP 與 reviewer 已標記點。`run_stopgaps.sh` 在三級分析結尾先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。
+   - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：保留 `NGS_UI_CDS_CANDIDATE_BED` 內且 `GNOMAD_G_AF < 0.01` 或 AF 缺值的位點，並 rescue ClinVar P/LP。reviewer 已標記但不在 review TSV 的 SNV 會用 `snv_gene_index.sqlite` 依 variant id 補入，不會因標記狀態變動而重建 review TSV。`run_stopgaps.sh` 在三級分析結尾先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。
    - SNV tier 只在點開時建立該 tier 的卡片 DOM，避免一次 render 全部卡片。
    - SNV/Indel 與 CNV/SV gene 搜尋支援多個基因，以 `,` 或 `、` 分隔；SNV 搜尋由 `/api/samples/{id}/snv-search` 查完整原始 TSV，不受 review TSV 限制。三級分析結尾會預建 `snv_gene_index.sqlite`（gene → raw TSV byte offsets），所以 WGS gene search 不需在載入個案時掃 1–2GB raw TSV；舊樣本若缺 index 才 fallback 到 raw TSV parse。modal 預設勾選 `gnomAD_G_AF < 0.01`，取消後才顯示全部搜尋結果。
    - Variant 狀態用 `1 / 2 / C / 0` 圓形按鈕；`C` 與 `0` 可並存，`1` 或 `2` 會反選其他狀態；再次點擊已選項目可清空狀態。同一個 variant 在分析區、報告區與搜尋 modal 的按鈕會同步上色。

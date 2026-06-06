@@ -612,6 +612,73 @@ def _enrich_snv_variants(variants: dict[str, dict], sidecar_dir: Path) -> dict[s
     return pheno_by_gene
 
 
+def _variants_from_rows(rows: list[dict[str, str]], *, test_type: str) -> dict[str, dict]:
+    """Shape raw TSV rows into variant payloads without parsing the whole TSV."""
+    out: dict[str, dict] = {}
+    is_wes = (test_type or "").upper() == "WES"
+    low_flag = _DP_LOW_FLAG_WES if is_wes else _DP_LOW_FLAG_WGS
+    for row in rows:
+        canonical_gene, _ = panel_deadzone.canonical_gene_symbol(
+            row.get("GENE", ""),
+            row.get("HGNC_ID", ""),
+        )
+        if canonical_gene in EXCLUDED_GENES:
+            continue
+        v = _row_to_variant(row)
+        dp = v.get("depth") or 0
+        if is_wes and dp < _DP_HARD_FLOOR_WES:
+            continue
+        v["low_depth"] = bool(dp and dp < low_flag)
+        out[v["id"]] = v
+    return out
+
+
+def _supplement_marked_snv_variants(
+    variants: dict[str, dict],
+    categories: dict[str, list[str]],
+    raw_tsv: Path,
+    *,
+    keep_ids: set[str],
+    sidecar_dir: Path,
+    test_type: str,
+) -> None:
+    """Add reviewer-marked SNVs absent from review.tsv via the gene index.
+
+    This avoids rebuilding the compact review TSV every time status/edit
+    metadata changes. If the index is absent/stale, skip the supplement;
+    the main review TSV still renders immediately.
+    """
+    missing = {vid for vid in keep_ids if vid and vid not in variants}
+    if not missing:
+        return
+    started = time.perf_counter()
+    rows = snv_gene_index.query_rows_by_ids(raw_tsv, missing)
+    if rows is None:
+        _log_perf(
+            "sample.marked_snv_supplement",
+            started,
+            status="skipped_no_index",
+            missing=len(missing),
+        )
+        return
+    extra = _variants_from_rows(rows, test_type=test_type)
+    _enrich_snv_variants(extra, sidecar_dir)
+    for vid, variant in extra.items():
+        variants[vid] = variant
+        tier = variant.get("tier")
+        if tier in categories and vid not in categories[tier]:
+            categories[tier].append(vid)
+    for tier, ids in categories.items():
+        categories[tier] = sorted(set(ids), key=lambda i: (-_variant_total_score(variants, i), i))
+    _log_perf(
+        "sample.marked_snv_supplement",
+        started,
+        status="ok",
+        missing=len(missing),
+        added=len(extra),
+    )
+
+
 def list_index() -> list[dict]:
     """Return the sample list for the top-bar combobox.
 
@@ -1115,6 +1182,19 @@ def load_sample(sample_id: str, version: str | None = None,
             snv_tsv, sidecar_dir=sidecar_dir, test_type=_test_type,
         )
     )
+    # The cache stores shared read-only maps. Per-load supplements
+    # depend on reviewer status, so copy before adding marked variants.
+    variants = dict(variants)
+    categories = {tier: list(ids) for tier, ids in categories.items()}
+    if raw_snv_tsv.exists() and snv_tsv.name == snv_review.REVIEW_TSV_NAME:
+        _supplement_marked_snv_variants(
+            variants,
+            categories,
+            raw_snv_tsv,
+            keep_ids=reported_ids,
+            sidecar_dir=sidecar_dir,
+            test_type=_test_type,
+        )
 
     # CNV / SV: load only when the AnnotSV outputs are present beside
     # the SNV TSV (pipeline drops them per-sample). Empty dicts when
@@ -1268,22 +1348,7 @@ def search_snv_by_genes(
     indexed_rows = snv_gene_index.query_rows(raw_tsv, genes)
     old_format_error = ""
     if indexed_rows is not None:
-        variants: dict[str, dict] = {}
-        is_wes = test_type == "WES"
-        low_flag = _DP_LOW_FLAG_WES if is_wes else _DP_LOW_FLAG_WGS
-        for row in indexed_rows:
-            canonical_gene, _ = panel_deadzone.canonical_gene_symbol(
-                row.get("GENE", ""),
-                row.get("HGNC_ID", ""),
-            )
-            if canonical_gene in EXCLUDED_GENES:
-                continue
-            v = _row_to_variant(row)
-            dp = v.get("depth") or 0
-            if is_wes and dp < _DP_HARD_FLOOR_WES:
-                continue
-            v["low_depth"] = bool(dp and dp < low_flag)
-            variants[v["id"]] = v
+        variants = _variants_from_rows(indexed_rows, test_type=test_type)
         _enrich_snv_variants(variants, sidecar_dir)
         matches = variants
         search_source = "gene_index"
