@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,6 +33,12 @@ from . import analyses_store, emr_client, phenotype_io, vcf_writer
 _LIS_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 _TEST_TYPES = {"WES", "WGS"}
 _GENOME_BUILDS = {"hg19", "hg38"}
+
+
+def _log_perf(event: str, started: float, **fields) -> None:
+    parts = [f"[perf] {event}", f"elapsed={time.perf_counter() - started:.3f}s"]
+    parts.extend(f"{key}={value}" for key, value in fields.items())
+    print(" ".join(parts), flush=True)
 
 
 def _now() -> str:
@@ -119,6 +126,7 @@ def register(
     Refuses if the dir is already registered (sample_metadata.json
     present).
     """
+    started = time.perf_counter()
     _validate_lis_id(lis_id)
     if not name:
         raise ValueError("name is required")
@@ -148,6 +156,7 @@ def register(
     # per the system convention). Frontend-edited chips override
     # both — they were derived from one of these sources and may
     # have been edited.
+    pheno_started = time.perf_counter()
     if hpo is not None or panels is not None:
         hpo = list(hpo or [])
         panels = list(panels or [])
@@ -159,6 +168,13 @@ def register(
             emr_pheno = emr_payload.get("phenotype") or {}
             if emr_pheno.get("found"):
                 hpo = emr_pheno.get("hpo") or []
+    _log_perf(
+        "patient_store.register.phenotype_emr",
+        pheno_started,
+        sample=lis_id,
+        hpo=len(hpo or []),
+        panels=len(panels or []),
+    )
 
     # Sex / dob / genetic_counseling come from the consultation API.
     # Sex from EMR overwrites whatever the reviewer typed (per spec);
@@ -176,7 +192,14 @@ def register(
     # Generate the minimal VCF Exomiser/LIRICAL will consume. The path
     # is convention-driven (tertiary_output/{lis_id}/vcf_from_tsv.vcf.gz)
     # so we don't ask the reviewer to fill it in.
+    vcf_started = time.perf_counter()
     vcf_out = vcf_writer.from_tsv(lis_id)
+    _log_perf(
+        "patient_store.register.vcf_from_tsv",
+        vcf_started,
+        sample=lis_id,
+        out=vcf_out.name,
+    )
 
     # Seed sample_metadata.json with basic info + empty reviewer state.
     now = _now()
@@ -208,17 +231,27 @@ def register(
         "created_at":           now,
         "updated_at":           now,
     }
+    meta_started = time.perf_counter()
     (sample_dir / "sample_metadata.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    _log_perf("patient_store.register.metadata", meta_started, sample=lis_id)
 
     # Default analysis.json + audit copy of the parsed phenotype.txt.
     # write_version side-effects pheno_score.tsv into the version dir,
     # so the freshly-registered sample is immediately ready for the
     # Clinical-block / pheno-score lookups (no need to wait for the
     # reviewer to hit "save" in the analysis page).
+    version_started = time.perf_counter()
     analyses_store.write_version(lis_id, "default", hpo=hpo, panels=panels)
+    _log_perf(
+        "patient_store.register.write_version",
+        version_started,
+        sample=lis_id,
+        hpo=len(hpo or []),
+        panels=len(panels or []),
+    )
     if hpo or panels:
         phenotype_io.write(
             hpo, panels,
@@ -229,9 +262,24 @@ def register(
         # IN_PANEL column so per-sample loads see the right markers
         # immediately. (No-op when HPO+panels are both empty.)
         from . import phenotype_scorer
+        score_started = time.perf_counter()
         scores = phenotype_scorer.compute_pheno_score(hpo or [], panels or [])
-        phenotype_scorer.update_in_panel_column(
+        _log_perf(
+            "patient_store.register.compute_pheno_score",
+            score_started,
+            sample=lis_id,
+            genes=len(scores),
+        )
+        inpanel_started = time.perf_counter()
+        n_updated = phenotype_scorer.update_in_panel_column(
             lis_id, {g for g, s in scores.items() if s > 0}
         )
+        _log_perf(
+            "patient_store.register.update_in_panel",
+            inpanel_started,
+            sample=lis_id,
+            updated=n_updated,
+        )
 
+    _log_perf("patient_store.register.total", started, sample=lis_id)
     return meta

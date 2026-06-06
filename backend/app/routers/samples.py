@@ -1,3 +1,4 @@
+import time
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -14,6 +15,12 @@ from ..services import (
 )
 
 router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
+
+
+def _log_perf(event: str, started: float, **fields) -> None:
+    parts = [f"[perf] {event}", f"elapsed={time.perf_counter() - started:.3f}s"]
+    parts.extend(f"{key}={value}" for key, value in fields.items())
+    print(" ".join(parts), flush=True)
 
 
 @router.get("/samples/{sample_id}/report.docx")
@@ -169,6 +176,7 @@ def register_sample(
     empty hpo/panels and the response includes phenotype_loaded=false
     so the UI can hint about it.
     """
+    started = time.perf_counter()
     # Frontend-edited chips arrive as JSON strings; an empty string
     # means "no override → fall back to file/EMR" (handled inside
     # register()). Bad JSON falls back too rather than 4xxing.
@@ -199,6 +207,7 @@ def register_sample(
         sign_received_at = sign_received_at or roster_entry.get("sign_received_at", "")
 
     try:
+        register_started = time.perf_counter()
         meta = patient_store.register(
             lis_id=lis_id, name=name, mrn=mrn, sex=sex,
             test_type=test_type, genome_build=genome_build,
@@ -209,6 +218,7 @@ def register_sample(
             phenotype_text=phenotype_text,
             hpo=hpo_payload, panels=panels_payload,
         )
+        _log_perf("router.samples.post.register", register_started, sample=lis_id)
     except FileExistsError as e:
         raise HTTPException(409, str(e))
     except FileNotFoundError as e:
@@ -225,11 +235,25 @@ def register_sample(
                   or bool(hpo_payload) or bool(panels_payload))
     if should_run:
         try:
+            enqueue_started = time.perf_counter()
             from . import jobs as _jobs
             rec = _jobs._enqueue(lis_id, "exomiser_lirical", version="default")
             job_id = rec.get("job_id")
+            _log_perf(
+                "router.samples.post.enqueue",
+                enqueue_started,
+                sample=lis_id,
+                job_id=job_id or "",
+            )
         except Exception:
             job_id = None
+    _log_perf(
+        "router.samples.post.total",
+        started,
+        sample=lis_id,
+        should_run=int(bool(should_run)),
+        phenotype_loaded=int(bool(phenotype_loaded)),
+    )
     return {
         "sample_id": lis_id,
         "meta": meta,
