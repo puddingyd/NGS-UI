@@ -154,6 +154,8 @@ SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越�
 
 三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead 輸入格；點入輸入格即展開全部 VCF，輸入 sample / run / path 後即時縮小候選清單。Sample ID 可修改作為 UI 輸出資料夾與檔名前綴；選好後可按「加入批次」，同一批只能包含同一種來源（全 in-house 或全 DRAGEN），按「開始分析」後會用多列 v3.1 sample sheet 一次送出。worker 會另外保留原始 `source_sample_id`，並為 v3.1 pipeline 產生 sample sheet（`sample_id,pipeline_type,input_dir,seq_type,hpo`），再執行 `nextflow ... --samplesheet ... --pipeline_type nckuh|dragen --out_dir /home/pipeline/tertiary_output -resume`；若 `NGS_UI_TERTIARY_ENV_SCRIPT`（預設 `/home/pipeline/pipeline_code/NGS2ndAnalysis_env.sh`）存在會先 source，不存在則沿用目前環境直接執行 `nextflow`。v3.1 pipeline 輸出以 source sample ID 落在 `/home/pipeline/tertiary_output/{source_sample_id}/03_acmg/{source_sample_id}.snv_indel.acmg.tsv`，NGS-UI 再逐筆複製到 `$NGS_UI_HOME/tertiary_output/{Sample ID}/snv_indel.annotated.tsv` 並寫 `pipeline_source.json`；只有設定 `NGS_UI_TERTIARY_LEGACY_STAGING=1` 時才回到舊的 `stage_dragen_for_tertiary.sh` 單樣本 staging 流程。VCF 建立時間來自檔案 `mtime` Unix timestamp，前端固定以台北時區（UTC+8）顯示。工具列的 Extra VEP 僅顯示 checkbox，與不換行的 `↻ 更新索引`、`三級分析清單` 使用固定高度；tooltip 只描述補 SpliceAI 註解，pipeline 仍照常處理既有 annotation。Extra VEP 與 GeneBe 一樣先送 `GNOMAD_G_AF ≤ 0.01` 或 AF 缺值的候選點，再限於 `NGS_UI_CDS_CANDIDATE_BED`（預設 `$HOME/NGS_UI/biotools/cds_combined.bed`，MANE Select CDS±10bp + chrM / RefSeq supplement）內執行，最後把結果 merge 回完整 TSV。執行進度以 step-based 進度條顯示，Nextflow 會從 stdout 追蹤 PREPARE_VCF / PREPARE_VCF_DRAGEN、VEP、Pangolin、CSQ parse、ACMG 等內部 process，stop-gaps 會追蹤 ClinVar fallback / filter / GeneBe / extra VEP / AnnotSV / review TSV；詳細 log 預設收合。worker-owned log 行與 stop-gaps 子步驟帶 ISO timestamp，子程序完成時另記錄 elapsed seconds；`state.json` 的 `step_history` 可供後續依實測耗時調整百分比。「三級分析清單」會合併 `/home/pipeline/tertiary_output/` 與 NGS-UI job state，因此失敗且尚未建立 output 的 sample 仍會顯示 log；刪除時會一併刪除 pipeline output、`$NGS_UI_HOME/tertiary_output/{sample}/` 與該 sample 的 NGS-UI job log 目錄，執行中的 sample 不可刪除。新 job 狀態寫在 `data/jobs/tertiary/`；舊版 `data/jobs/dragen/` 紀錄仍可讀取。`run_stopgaps.sh` 不再建立 `.raw` snapshot；GeneBe VCF 會帶 contig header，AnnotSV 成功執行時只保留摘要 log。
 
+可用 `scripts/compare_genebe_spliceai_coverage.py` 抽樣 GeneBe 本機資料庫（例如 `/home/n102968/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz`），再走目前 extra-VEP 的 VEP SpliceAI plugin 路徑產生對照，輸出 `summary.tsv`、`summary_by_kind.tsv`、`mismatches.tsv` 與 `run_metadata.tsv`，評估 GeneBe DB 的 SpliceAI 覆蓋率是否足以取代 extra-VEP / GeneBe API。正式估計建議使用 `--max-sites 100000 --sample-mode chrom-balanced`，避免只取 TSV 前段或讓大型染色體主導結果；未指定 `--seed` 時會由系統亂數產生並記錄在 metadata。
+
 服務啟動時會以 daemon thread 在背景預熱 HPO、phenotype gene map、OMIM 與 mito ClinVar cache，避免解析大型 `phenotype_to_genes.txt` 期間擋住 HTTP port。完整 SNV TSV 的 gene search 走 per-sample `snv_gene_index.sqlite`；index 由 tertiary job / `run_stopgaps.sh` 預建，載入個案後不再自動掃描 WGS raw TSV。刪除個案時只 invalidate 該 sample 的 SNV 與個案摘要 cache，不會同步重掃全部清單。
 
 三級分析另保存 `source_sample_id`（原始 sequencing sample ID）到 job state 與 `pipeline_source.json`。IGV 先以目前個案 ID 找 BAM；自訂輸出 ID 找不到時，會用 sidecar 回查原始 BAM ID。舊個案缺少 sidecar 欄位時，僅在移除已知 suffix 後得到唯一 BAM 命中才採用 fallback。
@@ -192,7 +194,7 @@ done
 ```
 
 > 注意：MITOMAP 那兩個 TSV 是 **Latin-1** 編碼（含 0xa0 byte），不是 UTF-8。
-> 其他轉檔/遷移 script 見 `scripts/`（`convert_anno_combined_to_tertiary_tsv.py`、`migrate_layout.sh`、`migrate_to_versioned_layout.py` 等）與 `CLAUDE.md`。
+> 其他轉檔/遷移/診斷 script 見 `scripts/`（`convert_anno_combined_to_tertiary_tsv.py`、`compare_genebe_spliceai_coverage.py`、`migrate_layout.sh`、`migrate_to_versioned_layout.py` 等）與 `CLAUDE.md`。
 
 ---
 
