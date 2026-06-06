@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v4.5 — 2026-06-06
+
+- 首頁樣本索引改為輕量載入，不再於登入後同步計算個案清單摘要。
+- 個案清單改為開啟時才載入 causative / disease / other variant 摘要，並使用 `case_summary.json` 持久化快取，降低服務重啟後的等待時間。
+- 已標記 SNV 摘要優先使用 `snv_gene_index.sqlite` 以 variant id 查找；CNV/SV 摘要只讀取目標 id，避免大型 DRAGEN TSV 每次重掃完整檔案。
+
 ### v4.4 — 2026-06-05
 
 - 三級分析改接 v3.1 sample sheet pipeline。

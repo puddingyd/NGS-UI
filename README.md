@@ -27,7 +27,8 @@ NGS_UI/                    ← NGS_UI_HOME
 │                             snv_gene_index.sqlite,
 │                             cnv.annotated.tsv,
 │                             sv.annotated.tsv, mito.annotated.tsv,
-│                             sample_metadata.json, qc_summary.json,
+│                             sample_metadata.json, case_summary.json,
+│                             qc_summary.json,
 │                             roh_summary.json, analyses/{ver}/...
 ├── patient_phenotype/     ← {LIS_ID}_{MRN}_phenotype.txt（自動帶入 HPO）
 ├── patient_list/          ← 上傳的「未完成報告清單」xlsx + 衍生 roster.json
@@ -118,6 +119,12 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 ## 4. Reviewer 操作流程
 
 1. **登入** — 右上角登入（帳號由管理者用 `create-user` 建立）。
+
+### 載入效能
+
+- 首頁登入後的 `/api/samples` 只載入搜尋用的輕量樣本索引，不同步計算個案清單摘要。
+- 「個案清單」開啟時才呼叫 `/api/samples/case-summary` 載入 causative / disease / other variant 摘要。
+- 個案摘要會寫入每個 sample 目錄的 `case_summary.json`，依 metadata、TSV/index 與 OMIM 簽章自動失效；已標記 SNV 優先用 `snv_gene_index.sqlite` 依 variant id 查找，CNV/SV 只讀目標 id，避免大型 DRAGEN TSV 每次重掃。
 2. **載入新個案** — 點「載入新個案」：
    - LIS_ID 下拉會列出 pipeline 已丟進 `tertiary_output/` 但尚未登錄的目錄；
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；

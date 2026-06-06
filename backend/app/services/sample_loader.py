@@ -48,6 +48,7 @@ _snv_cache_lock = threading.Lock()
 _CASE_SUMMARY_CACHE_MAX = 128
 _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
+CASE_SUMMARY_CACHE_NAME = "case_summary.json"
 
 
 def _fmt_size(path: Path) -> str:
@@ -130,6 +131,45 @@ def _file_signature(path: Path) -> tuple[str, int, int]:
         return (str(path), st.st_mtime_ns, st.st_size)
     except OSError:
         return (str(path), 0, 0)
+
+
+def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> list:
+    return [
+        list(_file_signature(sample_dir / "sample_metadata.json")),
+        list(_file_signature(sample_dir / "snv_indel.annotated.tsv")),
+        list(_file_signature(sample_dir / "snv_gene_index.sqlite")),
+        list(_file_signature(sample_dir / "snv_indel.review.tsv")),
+        list(_file_signature(sample_dir / "cnv.annotated.tsv")),
+        list(_file_signature(sample_dir / "sv.annotated.tsv")),
+        list(omim_sig if omim_sig is not None else omim_store.cache_signature()),
+    ]
+
+
+def _case_summary_cache_path(sample_dir: Path) -> Path:
+    return sample_dir / CASE_SUMMARY_CACHE_NAME
+
+
+def _read_case_summary_disk(sample_dir: Path, signature: list) -> dict[str, str] | None:
+    data = _read_json_or(_case_summary_cache_path(sample_dir), {}) or {}
+    if data.get("signature") != signature:
+        return None
+    summary = data.get("summary")
+    return summary if isinstance(summary, dict) else None
+
+
+def _write_case_summary_disk(sample_dir: Path, signature: list, summary: dict[str, str]) -> None:
+    payload = {
+        "signature": signature,
+        "summary": summary,
+        "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    try:
+        _case_summary_cache_path(sample_dir).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
 
 
 def _read_pheno_scores(path: Path) -> dict[str, float]:
@@ -222,6 +262,149 @@ def _case_cnv_sv_label(variant: dict, edits: dict) -> str:
     return ", ".join(x for x in (f"{coords} {sv_type}".strip(), acmg) if x)
 
 
+def _scan_snv_review_rows_by_ids(tsv_path: Path, wanted: set[str]) -> list[dict[str, str]]:
+    if not wanted or not tsv_path.exists():
+        return []
+    import csv as _csv
+    out = []
+    with tsv_path.open("r", encoding="utf-8", newline="") as f:
+        for row in _csv.DictReader(f, delimiter="\t"):
+            try:
+                variant = _row_to_variant(row)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if variant.get("id") in wanted:
+                out.append(row)
+                if len(out) >= len(wanted):
+                    break
+    return out
+
+
+def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, dict]:
+    raw_tsv = sample_dir / "snv_indel.annotated.tsv"
+    if not wanted or not raw_tsv.exists():
+        return {}
+    rows = snv_gene_index.query_rows_by_ids(raw_tsv, wanted)
+    if rows is None:
+        rows = _scan_snv_review_rows_by_ids(
+            sample_dir / "snv_indel.review.tsv",
+            wanted,
+        )
+        # Small WES files are acceptable as a last-resort fallback. Avoid
+        # multi-GB DRAGEN/WGS raw scans on the case-list path.
+        try:
+            raw_size = raw_tsv.stat().st_size
+        except OSError:
+            raw_size = 0
+        if not rows and raw_size and raw_size < 100 * 1024 * 1024:
+            rows = _scan_snv_review_rows_by_ids(raw_tsv, wanted)
+    variants: dict[str, dict] = {}
+    for row in rows or []:
+        try:
+            variant = _row_to_variant(row)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if variant.get("id") in wanted:
+            variants[variant["id"]] = variant
+    if variants:
+        _enrich_snv_variants(variants, sample_dir)
+    return variants
+
+
+def _variant_from_merged_id(variant_id: str) -> dict | None:
+    parts = str(variant_id or "").split("-")
+    if len(parts) < 6 or parts[0] != "MERGED":
+        return None
+    source = parts[1].lower()
+    if source not in ("cnv", "sv"):
+        return None
+    sv_type = parts[-1]
+    try:
+        start = int(parts[-3])
+        end = int(parts[-2])
+    except ValueError:
+        return None
+    chrom = "-".join(parts[2:-3])
+    if not chrom:
+        return None
+    return {
+        "id": variant_id,
+        "source": source,
+        "CHROM": chrom,
+        "POS": start,
+        "END": end,
+        "sv_type": sv_type,
+    }
+
+
+def _case_cnv_sv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, dict]:
+    if not wanted:
+        return {}
+    variants: dict[str, dict] = {}
+    unresolved: set[str] = set()
+    for variant_id in wanted:
+        merged = _variant_from_merged_id(variant_id)
+        if merged:
+            variants[variant_id] = merged
+        else:
+            unresolved.add(variant_id)
+    if unresolved:
+        from ..adapters.annotsv_tsv import load_annotsv_variants_by_ids
+        for source, filename in (("cnv", "cnv.annotated.tsv"), ("sv", "sv.annotated.tsv")):
+            hits = load_annotsv_variants_by_ids(
+                sample_dir / filename,
+                source=source,
+                ids=unresolved,
+            )
+            variants.update(hits)
+            unresolved.difference_update(hits.keys())
+            if not unresolved:
+                break
+    merged_by_source: dict[str, list[dict]] = {"cnv": [], "sv": []}
+    for variant in variants.values():
+        if str(variant.get("id") or "").startswith("MERGED-"):
+            merged_by_source.setdefault(str(variant.get("source") or "cnv"), []).append(variant)
+    for source, merged_variants in merged_by_source.items():
+        if not merged_variants:
+            continue
+        _augment_merged_cnv_sv_acmg(
+            sample_dir / ("cnv.annotated.tsv" if source == "cnv" else "sv.annotated.tsv"),
+            merged_variants,
+        )
+    return variants
+
+
+def _augment_merged_cnv_sv_acmg(tsv_path: Path, merged_variants: list[dict]) -> None:
+    """Fill ACMG for merged parents by scanning matching full rows only."""
+    if not tsv_path.exists() or not merged_variants:
+        return
+    import csv as _csv
+    with tsv_path.open("r", encoding="utf-8", newline="") as f:
+        reader = _csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            if (row.get("Annotation_mode") or "").strip() != "full":
+                continue
+            chrom = str(row.get("SV_chrom") or "")
+            sv_type = str(row.get("SV_type") or "").upper()
+            try:
+                start = int(float(row.get("SV_start") or 0))
+                end = int(float(row.get("SV_end") or 0))
+                acmg = int(float((row.get("ACMG_class") or "").split("=")[-1]))
+            except (TypeError, ValueError):
+                continue
+            for variant in merged_variants:
+                if str(variant.get("CHROM") or "") != chrom:
+                    continue
+                if str(variant.get("sv_type") or "").upper() != sv_type:
+                    continue
+                v_start = int(variant.get("POS") or 0)
+                v_end = int(variant.get("END") or 0)
+                if v_start <= start <= v_end and v_start <= end <= v_end:
+                    current = variant.get("acmg_class")
+                    if not isinstance(current, int) or acmg > current:
+                        variant["acmg_class"] = acmg
+
+
 def _case_management_summary(
     sample_dir: Path,
     meta: dict,
@@ -229,19 +412,21 @@ def _case_management_summary(
     omim_sig: tuple | None = None,
 ) -> dict[str, str]:
     """Summarize marked SNV/CNV/SV variants for the case-list modal."""
-    snv_tsv = sample_dir / "snv_indel.annotated.tsv"
-    key = (
-        _file_signature(sample_dir / "sample_metadata.json"),
-        _file_signature(snv_tsv),
-        _file_signature(sample_dir / "cnv.annotated.tsv"),
-        _file_signature(sample_dir / "sv.annotated.tsv"),
-        omim_sig if omim_sig is not None else omim_store.cache_signature(),
-    )
+    signature = _case_summary_signature(sample_dir, omim_sig=omim_sig)
+    key = tuple(tuple(item) for item in signature)
     with _case_summary_cache_lock:
         cached = _case_summary_cache.get(key)
         if cached is not None:
             _case_summary_cache.move_to_end(key)
             return cached
+    disk_cached = _read_case_summary_disk(sample_dir, signature)
+    if disk_cached is not None:
+        with _case_summary_cache_lock:
+            _case_summary_cache[key] = disk_cached
+            _case_summary_cache.move_to_end(key)
+            while len(_case_summary_cache) > _CASE_SUMMARY_CACHE_MAX:
+                _case_summary_cache.popitem(last=False)
+        return disk_cached
 
     statuses = meta.get("status") or {}
     wanted = {
@@ -252,59 +437,34 @@ def _case_management_summary(
     causative: list[str] = []
     diseases: list[str] = []
     other: list[str] = []
-    if wanted and snv_tsv.exists():
-        import csv as _csv
-        omim_store.ensure_loaded()
-        with snv_tsv.open("r", encoding="utf-8", newline="") as f:
-            for row in _csv.DictReader(f, delimiter="\t"):
-                try:
-                    variant = _row_to_variant(row)
-                except (KeyError, TypeError, ValueError):
-                    continue
-                vid = variant["id"]
-                if vid not in wanted:
-                    continue
-                edits = edits_by_id.get(vid) or {}
-                label = _case_variant_label(variant, edits)
-                if str(statuses.get(vid, "")).strip() == "1":
-                    if label:
-                        causative.append(label)
-                    for disease in _case_selected_diseases(variant, edits):
-                        if disease not in diseases:
-                            diseases.append(disease)
-                elif label:
-                    other.append(label)
-
     if wanted:
-        from ..adapters.annotsv_tsv import load_annotsv_tsv
-        from . import cnv_sv_merge
-        aux: dict[str, dict[str, dict]] = {}
-        for source, path in (
-            ("cnv", sample_dir / "cnv.annotated.tsv"),
-            ("sv", sample_dir / "sv.annotated.tsv"),
-        ):
-            if not path.exists():
-                aux[source] = {}
-                continue
-            variants, _ = load_annotsv_tsv(path, source=source)
-            aux[source] = variants
-        cnv_vars, sv_vars = cnv_sv_merge.apply_confirmed_merges(
-            aux.get("cnv", {}), aux.get("sv", {}), meta.get("cnv_sv_merges") or [],
-        )
-        for variants in (cnv_vars, sv_vars):
-            for vid, variant in variants.items():
-                if vid not in wanted:
-                    continue
-                edits = edits_by_id.get(vid) or {}
-                label = _case_cnv_sv_label(variant, edits)
-                if str(statuses.get(vid, "")).strip() == "1":
-                    if label:
-                        causative.append(label)
-                    disease = str(edits.get("disease") or "").strip()
-                    if disease and disease not in diseases:
-                        diseases.append(disease)
-                elif label:
-                    other.append(label)
+        omim_store.ensure_loaded()
+    snv_variants = _case_snv_variants_by_id(sample_dir, wanted)
+    for vid, variant in snv_variants.items():
+        edits = edits_by_id.get(vid) or {}
+        label = _case_variant_label(variant, edits)
+        if str(statuses.get(vid, "")).strip() == "1":
+            if label:
+                causative.append(label)
+            for disease in _case_selected_diseases(variant, edits):
+                if disease not in diseases:
+                    diseases.append(disease)
+        elif label:
+            other.append(label)
+
+    cnv_sv_wanted = wanted.difference(snv_variants.keys())
+    cnv_sv_variants = _case_cnv_sv_variants_by_id(sample_dir, cnv_sv_wanted)
+    for vid, variant in cnv_sv_variants.items():
+        edits = edits_by_id.get(vid) or {}
+        label = _case_cnv_sv_label(variant, edits)
+        if str(statuses.get(vid, "")).strip() == "1":
+            if label:
+                causative.append(label)
+            disease = str(edits.get("disease") or "").strip()
+            if disease and disease not in diseases:
+                diseases.append(disease)
+        elif label:
+            other.append(label)
 
     result = {
         "causative_variants": "\n".join(causative),
@@ -318,6 +478,7 @@ def _case_management_summary(
         _case_summary_cache.move_to_end(key)
         while len(_case_summary_cache) > _CASE_SUMMARY_CACHE_MAX:
             _case_summary_cache.popitem(last=False)
+    _write_case_summary_disk(sample_dir, signature, result)
     return result
 
 
@@ -457,11 +618,56 @@ def list_index() -> list[dict]:
     Source of truth is a directory scan: every subdirectory of
     tertiary_output/ that has sample_metadata.json shows up here,
     sorted by created_at descending so newly-registered samples land
-    at the top. _index.json gets rewritten as a side-effect on every
-    scan so the file on disk stays fresh for human inspection /
-    pipeline-side enrichment, but the UI never trusts the cache for
-    correctness.
+    at the top. This endpoint is intentionally lightweight for browser
+    boot: case-management summaries are computed by list_case_summaries().
     """
+    out: list[dict] = []
+    if not TERTIARY_OUTPUT_ROOT.exists():
+        return out
+    for sub in sorted(TERTIARY_OUTPUT_ROOT.iterdir()):
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        meta_path = sub / "sample_metadata.json"
+        if not meta_path.exists():
+            # Pipeline-dropped sample that hasn't been registered yet —
+            # surfaces through /samples/unregistered, not the search bar.
+            continue
+        meta = _read_json_or(meta_path, {}) or {}
+        out.append({
+            "sample_id":     meta.get("sample_id") or sub.name,
+            "lis_id":        meta.get("lis_id") or sub.name,
+            "name":          meta.get("name", ""),
+            "mrn":           meta.get("mrn", ""),
+            "sex":           meta.get("sex", ""),
+            "test_type":     meta.get("test_type", ""),
+            "category":      meta.get("category", ""),
+            "run_date":      meta.get("run_date", ""),
+            "created_at":    meta.get("created_at", ""),
+            "tags":          meta.get("tags", []),
+            "has_completed": (sub / "snv_indel.annotated.tsv").exists(),
+            "tertiary_dir":  sub.name,
+        })
+    # Sort newest-first by registration date; samples without a stored
+    # created_at fall to the bottom (stable order by lis_id thereafter).
+    out.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
+
+    # Best-effort cache write so an operator browsing the filesystem
+    # sees an up-to-date listing. Failures are non-fatal — the read
+    # path doesn't depend on this file existing.
+    try:
+        cache_path = TERTIARY_OUTPUT_ROOT / "_index.json"
+        cache_path.write_text(
+            json.dumps(out, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+    return out
+
+
+def list_case_summaries() -> list[dict]:
+    """Return the case-list table rows, including cached variant summaries."""
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():
         return out
@@ -471,8 +677,6 @@ def list_index() -> list[dict]:
             continue
         meta_path = sub / "sample_metadata.json"
         if not meta_path.exists():
-            # Pipeline-dropped sample that hasn't been registered yet —
-            # surfaces through /samples/unregistered, not the search bar.
             continue
         meta = _read_json_or(meta_path, {}) or {}
         summary = _case_management_summary(sub, meta, omim_sig=omim_sig)
@@ -491,22 +695,7 @@ def list_index() -> list[dict]:
             "tertiary_dir":  sub.name,
             **summary,
         })
-    # Sort newest-first by registration date; samples without a stored
-    # created_at fall to the bottom (stable order by lis_id thereafter).
     out.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
-
-    # Best-effort cache write so an operator browsing the filesystem
-    # sees an up-to-date listing. Failures are non-fatal — the read
-    # path doesn't depend on this file existing.
-    try:
-        cache_path = TERTIARY_OUTPUT_ROOT / "_index.json"
-        cache_path.write_text(
-            json.dumps(out, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-
     return out
 
 

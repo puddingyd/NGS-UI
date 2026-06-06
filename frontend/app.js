@@ -1973,6 +1973,10 @@ function setupPatientListUpload() {
 let _caseListRows = [];
 const _caseListTestFilters = new Set(["WES", "WGS"]);
 
+async function loadCaseListRows() {
+  return await apiFetch("/samples/case-summary") || [];
+}
+
 function _caseListVisibleRows() {
   const query = (document.getElementById("case-list-search")?.value || "").trim().toLowerCase();
   return _caseListRows.filter(row => {
@@ -1989,7 +1993,7 @@ async function _renderCaseList({ refresh = true } = {}) {
   if (!host) return;
   if (refresh) host.innerHTML = `<div class="muted" style="padding:10px">載入中…</div>`;
   try {
-    if (refresh) _caseListRows = await apiFetch("/samples") || [];
+    if (refresh) _caseListRows = await loadCaseListRows();
     const rows = _caseListVisibleRows();
     if (!_caseListRows.length) {
       host.innerHTML = `<div class="muted" style="padding:10px">（尚無已載入個案）</div>`;
@@ -2100,7 +2104,8 @@ function setupCaseList() {
         window.location.reload();
         return;
       }
-      _caseListRows = await loadIndex();
+      await loadIndex();
+      _caseListRows = await loadCaseListRows();
       await _renderCaseList({ refresh: false });
       if (status) {
         status.textContent = body.pipeline_output_error

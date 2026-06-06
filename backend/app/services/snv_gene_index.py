@@ -203,3 +203,46 @@ def query_rows(raw_tsv: Path, genes: list[str]) -> list[dict[str, str]] | None:
         rows=len(out),
     )
     return out
+
+
+def query_rows_by_ids(raw_tsv: Path, variant_ids: set[str] | list[str]) -> list[dict[str, str]] | None:
+    """Return raw TSV rows for exact variant ids, or None when unavailable."""
+    started = time.perf_counter()
+    raw_tsv = Path(raw_tsv)
+    index_path = index_path_for(raw_tsv)
+    wanted = sorted({str(vid).strip() for vid in variant_ids if str(vid).strip()})
+    if not wanted:
+        return []
+    if not is_current(raw_tsv, index_path):
+        _log_perf(
+            "snv_gene_index.query_ids",
+            started,
+            status="missing_or_stale",
+            index=index_path.name,
+            ids=len(wanted),
+        )
+        return None
+
+    placeholders = ",".join("?" for _ in wanted)
+    with sqlite3.connect(index_path) as conn:
+        meta = _read_meta(conn)
+        header = json.loads(meta.get("header_json") or "[]")
+        rows = conn.execute(
+            f"SELECT offset, length FROM variants WHERE variant_id IN ({placeholders})",
+            wanted,
+        ).fetchall()
+    out = []
+    with raw_tsv.open("rb") as fh:
+        for offset, length in rows:
+            fh.seek(int(offset))
+            values = fh.read(int(length)).decode("utf-8").rstrip("\n\r").split("\t")
+            out.append(dict(zip(header, values)))
+    _log_perf(
+        "snv_gene_index.query_ids",
+        started,
+        status="hit",
+        index=index_path.name,
+        ids=len(wanted),
+        rows=len(out),
+    )
+    return out

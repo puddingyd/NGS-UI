@@ -452,3 +452,50 @@ def load_annotsv_tsv(
         categories[tier].sort(key=_combined_key)
 
     return variants, categories
+
+
+def load_annotsv_variants_by_ids(
+    tsv_path: Path,
+    *,
+    source: str,
+    ids: set[str] | list[str],
+) -> dict[str, dict]:
+    """Read only full-row AnnotSV records for exact ids.
+
+    Case-list summaries only need coordinates/type/ACMG for reviewer-marked
+    variants. Building the complete CNV/SV payload can be expensive for large
+    DRAGEN files, so this helper scans rows and materialises only matching full
+    records.
+    """
+    wanted = {str(vid).strip() for vid in ids if str(vid).strip()}
+    if not wanted or not tsv_path.exists():
+        return {}
+    out: dict[str, dict] = {}
+    with tsv_path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.reader(f, delimiter="\t")
+        headers = next(reader, None) or []
+        col_idx = {c: i for i, c in enumerate(headers) if c in _NEEDED_COLS}
+        try:
+            sample_idx = headers.index("FORMAT") + 1
+        except ValueError:
+            sample_idx = -1
+        for raw in reader:
+            if not raw:
+                continue
+            n = len(raw)
+            row = {c: (raw[i] if i < n else "") for c, i in col_idx.items()}
+            if (row.get("Annotation_mode") or "").strip() != "full":
+                continue
+            aid = (row.get("AnnotSV_ID") or "").strip()
+            if aid not in wanted:
+                continue
+            out[aid] = _full_row_to_variant(
+                row,
+                sample_col_idx=sample_idx,
+                fieldnames=headers,
+                raw_full_values=raw,
+                source=source,
+            )
+            if len(out) >= len(wanted):
+                break
+    return out

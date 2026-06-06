@@ -64,6 +64,11 @@ def list_samples():
     return sample_loader.list_index()
 
 
+@router.get("/samples/case-summary")
+def list_case_summaries():
+    return sample_loader.list_case_summaries()
+
+
 @router.get("/samples/unregistered")
 def list_unregistered_samples():
     """Pipeline-dropped directories not yet attached to reviewer info.
