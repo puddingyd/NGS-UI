@@ -9,9 +9,8 @@
 #   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
 #                                  columns (pipeline's ACMG_* untouched)
 #   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
-#   4. AnnotSV CNV/SV — DRAGEN siblings (--dragen-cnv-source) or
-#                       in-house gcnv + delly (--inhouse-cnv-vcf /
-#                       --inhouse-sv-vcf). Skipped if none supplied.
+#   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
+#                              gCNV + Delly VCFs. Skipped if none supplied.
 #   5. build_snv_review_tsv.py  — pre-build the compact main-screen TSV
 #   6. build_snv_gene_index.py  — pre-build complete-TSV gene search index
 #
@@ -157,33 +156,25 @@ else
 fi
 step_done
 
-# 5. CNV/SV via AnnotSV. Dispatch by which input flag was passed:
-#    --dragen-cnv-source           → DRAGEN sibling discovery
-#    --inhouse-cnv-vcf / --sv-vcf  → explicit gcnv + delly files
-#    Otherwise skipped.
+# 5. CNV/SV via AnnotSV.
 SAMPLE_DIR="$(dirname "$TSV")"
 echo
 echo "[stopgaps] 5/5  AnnotSV CNV/SV"
 step_start "annotsv"
 if [ "$SKIP_CNV" -eq 1 ]; then
   echo "  - skipped (--skip-cnv)"
-elif [ -n "$DRAGEN_VCF" ]; then
-  if [ ! -f "$DRAGEN_VCF" ]; then
-    echo "  - skipped (--dragen-cnv-source not found: $DRAGEN_VCF)"
-  else
-    "$SCRIPT_DIR/annotate_dragen_cnv_annotsv.sh" \
-      --dragen-vcf "$DRAGEN_VCF" \
-      --sample "$SID" \
-      --out-dir "$SAMPLE_DIR"
-  fi
-elif [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; then
-  "$SCRIPT_DIR/annotate_inhouse_cnv_sv_annotsv.sh" \
-    --cnv-vcf "$INHOUSE_CNV_VCF" \
-    --sv-vcf  "$INHOUSE_SV_VCF" \
-    --sample  "$SID" \
-    --out-dir "$SAMPLE_DIR"
 else
-  echo "  - skipped (no --dragen-cnv-source / --inhouse-*-vcf)"
+  ANNOTSV_ARGS=(--sample "$SID" --out-dir "$SAMPLE_DIR")
+  if [ -n "$DRAGEN_VCF" ]; then
+    ANNOTSV_ARGS+=(--dragen-cnv-source "$DRAGEN_VCF")
+  fi
+  if [ -n "$INHOUSE_CNV_VCF" ]; then
+    ANNOTSV_ARGS+=(--inhouse-cnv-vcf "$INHOUSE_CNV_VCF")
+  fi
+  if [ -n "$INHOUSE_SV_VCF" ]; then
+    ANNOTSV_ARGS+=(--inhouse-sv-vcf "$INHOUSE_SV_VCF")
+  fi
+  "$SCRIPT_DIR/run_annotsv_cnv_sv.sh" "${ANNOTSV_ARGS[@]}"
 fi
 step_done
 
