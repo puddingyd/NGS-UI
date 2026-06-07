@@ -10,9 +10,12 @@ this script reads the Mutect2-mito VCF directly (gzip), needs only
 the bundled-by-the-pipeline MITOMAP tables, and is pure Python.
 
 Input:
-  --vcf          <sample>.mito.vcf.gz  (GATK Mutect2 --mitochondria-mode,
-                 FILTER applied by FilterMutectCalls; chrM / rCRS coords;
-                 FORMAT carries AF=heteroplasmy, AD, DP)
+  --vcf          Either <sample>.mito.vcf.gz from GATK Mutect2
+                 --mitochondria-mode, or a DRAGEN *.hard-filtered.vcf.gz
+                 with mtDNA calls embedded in chrM/MT rows. chrM / rCRS
+                 coords are assumed; FORMAT/AF is heteroplasmy, FORMAT/AD
+                 and DP are copied through. Mutect2 INFO/TLOD is preferred;
+                 DRAGEN FORMAT/SQ is used when TLOD is absent.
   --mitomap_cc   mitomap_mutations_coding_control.tsv
   --mitomap_rna  mitomap_mutations_rna.tsv
   --sample_id    sample id (the FORMAT-column sample name; auto-detected if omitted)

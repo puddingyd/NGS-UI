@@ -189,6 +189,15 @@ scripts/annotate_mito_vcf.sh \
 # → tertiary_output/{LIS_ID}/mito.annotated.tsv
 ```
 
+DRAGEN run 若 mtDNA calls 直接包在 `{sample}.hard-filtered.vcf.gz` 的 `chrM/MT` rows，可在 dev 機用專用 wrapper 跑同一套 MITOMAP-only 流程：
+
+```bash
+scripts/annotate_dragen_mito_vcf.sh \
+  --in /home/datalake_Raw/Novaseq/20260428_LH00873_0015_B23NG3WLT4/vcf.gz/VAL-33.hard-filtered.vcf.gz \
+  --sample VAL-33 \
+  --outdir /home/n102968/NGS_UI/tertiary_output/VAL-33_legacy_mito
+```
+
 批次：
 
 ```bash
