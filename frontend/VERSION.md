@@ -8,37 +8,19 @@
 
 ### v4.6 — 2026-06-07
 
-- 整理 NGS-UI 目前 CNV/SV AnnotSV 呼叫流程，新增獨立入口與使用說明，方便和新版三級 pipeline 對接時確認責任邊界。
-- 三級分析的 Mitochondria 改接 pipeline v3.2 `04_mito/{sample}.mito.tsv` 輸出，複製成 UI 既有的 `mito.annotated.tsv` 路徑；adapter 相容舊欄位與 v3.2 欄位，卡片標題維持 mitochondrial `m.` 寫法，`HGVS_P` 會清成報告用 `p.xxx`。
-- Mitochondria 卡片改用 ClinVar / gnomAD-mito / MITOMAP tier 規則分成 `Pathogenic`、`Rare / reported mtDNA variant`、`Other variant` 三層；三級分析複製 v3.2 mito TSV 後會靜默回補 MITOMAP 欄位供分類使用，但卡片仍不顯示 MITOMAP。ClinVar disease 會拆成 checkbox，勾選後才進診斷報告。
-- Mitochondria 手動 ACMG 下拉現在會即時同步到報告區卡片。
-- 三級分析會接收 pipeline `06_cnv_sv/{sample}.{cnv,sv}.annotated.tsv` 的 AnnotSV 結果；兩檔都存在時會直接複製到 UI 並跳過本機 AnnotSV fallback。
-- 三級分析 job log 會記錄每個 Nextflow process 的 start/done/elapsed 時間，並修正 pipeline 成功後 UI 目標資料夾不存在造成 copy 失敗的問題。
-- 新增 `scripts/annotate_dragen_mito_vcf.sh`，可在 dev 機直接用 DRAGEN `{sample}.hard-filtered.vcf.gz` 內的 chrM calls 跑 legacy MITOMAP-only mito annotation。
-
-### v4.5 — 2026-06-06
-
-- 首頁樣本索引改為輕量載入，不再於登入後同步計算個案清單摘要。
-- 個案清單改為開啟時才載入 causative / disease / other variant 摘要，並使用 `case_summary.json` 持久化快取，降低服務重啟後的等待時間。
-- 已標記 SNV 摘要優先使用 `snv_gene_index.sqlite` 以 variant id 查找；CNV/SV 摘要只讀取目標 id，避免大型 DRAGEN TSV 每次重掃完整檔案。
-- 載入新個案不再同步掃完整 TSV 產生 Exomiser/LIRICAL VCF；若 VCF 尚未存在，會由 Exomiser/LIRICAL 背景 job 開始前建立，避免 WGS 個案登錄時等待約一分鐘。
-- 載入新個案時若來源為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，Test type 會預設為 WGS。
-- HPO/panel 的 in-panel 狀態改由 `pheno_score.tsv` 動態補入，不再因 phenotype 變更重寫大型 SNV raw TSV。
-- 新增 GeneBe 本機資料庫 SpliceAI 覆蓋率診斷 script，可協助評估是否以 GeneBe DB 取代 extra-VEP / GeneBe API stop-gap。
+- 三級分析改接 pipeline v3.2，支援 Mitochondria 及 CNV/SV Nextflow 輸出。
+- 優化首頁載入及樣本載入速度。
 
 ### v4.4 — 2026-06-05
 
 - 三級分析改接 v3.1 sample sheet pipeline。
 - 三級分析支援批次送出同一來源類型的多個 sample，產生多列 sample sheet。
 - 主畫面 SNV review TSV 預載層改為 AF < 0.01 且限 CDS ±50 bp 候選區域，ClinVar P/LP 與已標記變異仍會保留。
-- Exomiser/LIRICAL 完成後改為背景刷新卡片，不再跳出全頁載入遮罩；WGS raw TSV 不再於載入個案時自動背景預熱。
-- 三級分析完成時預建 `snv_gene_index.sqlite`，SNV gene search 改查 gene index，避免搜尋時重新解析 WGS 完整 TSV。
-- Reviewer 標記變異改由 gene index 補入主畫面，不再因標記狀態變動而重建 SNV review TSV。
 
 ### v4.3 — 2026-06-04
 
-- 新增 `Disease-associated` 標籤，預設只顯示 disease-associated gene list 內的基因。
 - 改用 HGNC gene symbol 顯示，降低 VEP 舊基因名稱造成的判讀落差。
+- 新增 `Disease-associated` 標籤，預設只顯示 disease-associated gene list 內的基因。
 - 新增 Dead zone 提醒，依目前 HPO / panel 基因列出 coverage 低於判讀門檻的 exon；WES 使用 20X，WGS 使用 15X。
 - 診斷報告之基因清單限制在 disease-associated gene list 中；WGS 報告會在有 dead-zone 的基因後以括號標註，WES 報告僅在主畫面顯示 Dead zone。
 
@@ -46,13 +28,13 @@
 
 - 新增 IGV 視窗，可從分析平台直接查看 BAM 檔中的 SNV/Indel 及 CNV/SV 。
 - 新增 SRY 確認流程，支援性別確認。
-- 整合相鄰 CNV/SV 片段，改用整合後的 variant；相鄰 gap 門檻調整為 250 kb，copy number 差異不再阻擋視覺整合。
-- CNV/SV 分析區、報告區與 DOCX 匯出改依 phenotype + scaled AnnotSV combined score 排序。
-- CNV 與 SV 改為分段背景載入，CNV 載完可先顯示，SV 繼續載入。
+- 整合相鄰 CNV/SV 片段，改用整合後的 variant；相鄰 gap 門檻調整為 250 kb。
+- CNV/SV 分析區、報告區與 DOCX 匯出改依 phenotype 與 AnnotSV score 綜合排序。
 - 固定 panel 改為 WES-I / WES-II / WGS / Other panel 分頁。
 - 調整匯出報告細節，改善 CNV/SV 疾病描述、基因清單與版面呈現。
 
 ### v4.1 — 2026-05-28
+
 - 加入匯出診斷報告功能，診斷報告依院內報告模板撰寫，包含 SNV/Mito/CNV/SV 描述。
 - 加入低 read depth 警示。
 
