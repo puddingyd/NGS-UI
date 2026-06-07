@@ -324,6 +324,34 @@ def _set_step(job_id: str, step: str, **kw) -> None:
     _log(f"[step] {step}")
 
 
+def _record_nextflow_step(
+    job_id: str,
+    slug: str,
+    process: str,
+    event: str,
+    *,
+    elapsed: float | None = None,
+) -> None:
+    now = _now()
+    st = dragen_jobs.load_state(job_id) or {}
+    history = list(st.get("nextflow_step_history") or [])
+    item = {
+        "step": slug,
+        "process": process,
+        "event": event,
+        "at": now,
+    }
+    if elapsed is not None:
+        item["elapsed_seconds"] = round(elapsed, 1)
+    history.append(item)
+    st["nextflow_step_history"] = history
+    dragen_jobs.save_state(job_id, st)
+    if elapsed is None:
+        _log(f"[nextflow-step] {slug} {event} process={process}")
+    else:
+        _log(f"[nextflow-step] {slug} {event} process={process} elapsed={elapsed:.1f}s")
+
+
 def _run(cmd: list[str], *, label: str, on_line=None) -> None:
     """Stream a subprocess's stdout/stderr into this worker's stdout
     (which is already redirected to log.txt by dragen_jobs.start_job).
@@ -460,26 +488,55 @@ def main() -> int:
             # 3. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
             _set_step(job_id, "nextflow")
             nextflow_stages = [
-                ("prepare-vcf-dragen", "PREPARE_VCF_DRAGEN"),
-                ("prepare-vcf", "PREPARE_VCF"),
-                ("add-callers-tag", "ADD_CALLERS_TAG"),
-                ("filter-for-annotation", "FILTER_FOR_ANNOTATION"),
-                ("vep-annotate", "VEP_ANNOTATE"),
-                ("pangolin-score", "PANGOLIN_SCORE"),
-                ("parse-csq", "PARSE_CSQ"),
-                ("acmg-classify", "ACMG_CLASSIFY"),
+                ("prepare-vcf-dragen", "PREPARE_VCF_DRAGEN", 0),
+                ("prepare-vcf", "PREPARE_VCF", 0),
+                ("add-callers-tag", "ADD_CALLERS_TAG", 0),
+                ("filter-for-annotation", "FILTER_FOR_ANNOTATION", 1),
+                ("mito-vep", "MITO_VEP", None),
+                ("mito-parse", "MITO_PARSE", None),
+                ("str-parse-dragen", "STR_PARSE_DRAGEN", None),
+                ("str-parse", "STR_PARSE", None),
+                ("vep-annotate", "VEP_ANNOTATE", 2),
+                ("pangolin-score", "PANGOLIN_SCORE", 3),
+                ("parse-csq", "PARSE_CSQ", 4),
+                ("acmg-classify", "ACMG_CLASSIFY", 5),
             ]
-            nextflow_stage_rank = -1
+            nextflow_progress_rank = -1
+            nextflow_running: dict[str, float] = {}
+            nextflow_seen_events: set[tuple[str, str]] = set()
 
             def track_nextflow(line: str) -> None:
-                nonlocal nextflow_stage_rank
+                nonlocal nextflow_progress_rank
                 if not re.search(r"\|\s*\d+\s+of\s+\d+", line):
                     return
-                for rank, (slug, token) in enumerate(nextflow_stages):
-                    if token in line and rank > nextflow_stage_rank:
-                        nextflow_stage_rank = rank
-                        _set_step(job_id, f"nextflow:{slug}")
+                match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", line)
+                if not match:
+                    return
+                done = int(match.group(1))
+                total = int(match.group(2))
+                for slug, token, progress_rank in nextflow_stages:
+                    if token not in line:
+                        continue
+                    if done < total:
+                        event = "start"
+                    else:
+                        event = "done"
+                    key = (slug, event)
+                    if key in nextflow_seen_events:
                         return
+                    nextflow_seen_events.add(key)
+                    process = token
+                    if event == "start":
+                        nextflow_running[slug] = time.monotonic()
+                        _record_nextflow_step(job_id, slug, process, "start")
+                        if progress_rank is not None and progress_rank > nextflow_progress_rank:
+                            nextflow_progress_rank = progress_rank
+                            _set_step(job_id, f"nextflow:{slug}")
+                    else:
+                        started = nextflow_running.get(slug)
+                        elapsed = (time.monotonic() - started) if started is not None else None
+                        _record_nextflow_step(job_id, slug, process, "done", elapsed=elapsed)
+                    return
 
             if legacy_staging:
                 sample = pending_samples[0]
@@ -544,6 +601,7 @@ def main() -> int:
             source_sid = sample["source_sample_id"]
             source_vcf = sample["vcf_path"]
             sample_dir = TERTIARY_OUTPUT_ROOT / sid
+            sample_dir.mkdir(parents=True, exist_ok=True)
             gui_tsv = sample_dir / "snv_indel.annotated.tsv"
             existing = existing_by_sid.get(sid)
             if existing is None:

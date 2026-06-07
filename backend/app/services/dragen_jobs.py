@@ -670,6 +670,7 @@ def start_job(
         "error":          None,
         "step_started_at": created_at,
         "step_history":   [{"step": "queued", "started_at": created_at}],
+        "nextflow_step_history": [],
     })
 
     log_fh = _log_path(job_id).open("w", buffering=1)

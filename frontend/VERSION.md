@@ -10,6 +10,7 @@
 
 - 整理 NGS-UI 目前 CNV/SV AnnotSV 呼叫流程，新增獨立入口與使用說明，方便和新版三級 pipeline 對接時確認責任邊界。
 - 三級分析的 Mitochondria 改接 pipeline v3.2 `04_mito/{sample}.mito.tsv` 輸出，複製成 UI 既有的 `mito.annotated.tsv` 路徑；adapter 暫時相容舊欄位與 v3.2 欄位，卡片標題維持 mitochondrial `m.` 寫法，`HGVS_P` 會清成報告用 `p.xxx`。
+- 三級分析 job log 會記錄每個 Nextflow process 的 start/done/elapsed 時間，並修正 pipeline 成功後 UI 目標資料夾不存在造成 copy 失敗的問題。
 
 ### v4.5 — 2026-06-06
 
