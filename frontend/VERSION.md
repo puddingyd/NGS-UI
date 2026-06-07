@@ -10,7 +10,7 @@
 
 - 整理 NGS-UI 目前 CNV/SV AnnotSV 呼叫流程，新增獨立入口與使用說明，方便和新版三級 pipeline 對接時確認責任邊界。
 - 三級分析的 Mitochondria 改接 pipeline v3.2 `04_mito/{sample}.mito.tsv` 輸出，複製成 UI 既有的 `mito.annotated.tsv` 路徑；adapter 相容舊欄位與 v3.2 欄位，卡片標題維持 mitochondrial `m.` 寫法，`HGVS_P` 會清成報告用 `p.xxx`。
-- Mitochondria 卡片改用 ClinVar / gnomAD-mito 規則分成 `Pathogenic`、`Rare mito variant`、`Other variant` 三層，移除 MITOMAP 顯示；ClinVar disease 會拆成 checkbox，勾選後才進診斷報告。
+- Mitochondria 卡片改用 ClinVar / gnomAD-mito / MITOMAP tier 規則分成 `Pathogenic`、`Rare / reported mtDNA variant`、`Other variant` 三層；三級分析複製 v3.2 mito TSV 後會靜默回補 MITOMAP 欄位供分類使用，但卡片仍不顯示 MITOMAP。ClinVar disease 會拆成 checkbox，勾選後才進診斷報告。
 - Mitochondria 手動 ACMG 下拉現在會即時同步到報告區卡片。
 - 三級分析會接收 pipeline `06_cnv_sv/{sample}.{cnv,sv}.annotated.tsv` 的 AnnotSV 結果；兩檔都存在時會直接複製到 UI 並跳過本機 AnnotSV fallback。
 - 三級分析 job log 會記錄每個 Nextflow process 的 start/done/elapsed 時間，並修正 pipeline 成功後 UI 目標資料夾不存在造成 copy 失敗的問題。

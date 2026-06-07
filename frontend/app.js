@@ -3681,13 +3681,14 @@ function applyCnvSvTabActive() {
 }
 
 // ---------- Mitochondria tier tabs --------------------------------
-// MITO-1 = ClinVar P/LP, MITO-2 = rare by gnomAD-mito, MITO-3 = other
-// PASS mtDNA variants. Older MITOMAP-only samples still load through the
-// same adapter, but MITOMAP is no longer part of the GUI rule set.
+// MITO-1 = ClinVar P/LP or MITOMAP confirmed/pathogenic, MITO-2 =
+// rare/not-observed or reported non-benign mtDNA variants, MITO-3 =
+// other PASS mtDNA variants. MITOMAP is used for tiering but not shown
+// on the card.
 const MITO_TIER_ORDER = ["MITO-1", "MITO-2", "MITO-3"];
 const MITO_TITLES = {
   "MITO-1": "1 Pathogenic",
-  "MITO-2": "2 Rare mito variant",
+  "MITO-2": "2 Rare / reported mtDNA variant",
   "MITO-3": "3 Other variant",
 };
 let activeMitoTab = null;
@@ -3728,8 +3729,8 @@ function renderMitoTabBar() {
       const empty = document.createElement("div");
       empty.className = "block-body";
       empty.innerHTML = `<div class="analysis-card-empty">${
-        tier === "MITO-1" ? "（無 ClinVar P/LP mtDNA 變異）"
-        : tier === "MITO-2" ? "（無 rare mtDNA 變異）"
+        tier === "MITO-1" ? "（無 pathogenic mtDNA 變異）"
+        : tier === "MITO-2" ? "（無 rare / reported mtDNA 變異）"
         : "（無其他 mtDNA 變異）"
       }</div>`;
       panel.appendChild(empty);

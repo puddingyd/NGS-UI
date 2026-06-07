@@ -149,7 +149,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - SNV/Indel 與 CNV/SV 卡片有 `IGV` 按鈕；基本資料的性別下方另有「☑ 已確認」核取方塊與「確認 SRY」按鈕。SRY 會沿用同一個 modal 開啟 hg19/hg38 對應區域，初始只載入當前 sample，仍可手動加入 sibling，coverage data range 固定 `0-100`；勾選確認狀態會寫進 reviewer metadata。一般 modal 標題會顯示 sample、padded locus、variant 註解與原始座標；alignment 預設用 squished 模式，`visibilityWindow=5 Mb`。SNV/Indel 顯示前後 100bp，CNV/SV 原則上顯示前後各 20% flanking area；若事件本身 ≤5 Mb，padding 會自動縮小以維持初始視窗 ≤5 Mb，直接載入 BAM coverage，不需先 zoom in。IGV 另以 ROI 標出實際 CNV/SV 區間。CNV/SV modal 會把所有 BAM coverage tracks 放進同一個 autoscale group，讓 y-axis data range 一致，方便和 sibling 比較 deletion/duplication。先確認 primary BAM 與同 batch sibling tracks，再按「載入 IGV」；BAM range request 與 hg38 FASTA 都由後端在內網 proxy。
    - CNV：`CNV-1A`（Clinical）、`CNV-1B`（Pathogenic）；SV：`SV-2A / SV-2B`。CNV/SV 分析區與報告區皆依 `max_pheno_score + scaled AnnotSV ranking score` 由高到低排序；CNV/SV 卡片的基因表預設只顯示 phenotype 相關基因，按小三角形才展開 phenotype score 為 0 的其餘基因。
    - 同來源、同染色體、同為 deletion 或同為 duplication，且相鄰 gap ≤ `250 kb` 的 CNV/SV 會預設自動整合；copy number 差異不再阻擋視覺整合，原始片段仍可展開查看各自 CN。UI、DOCX 與個案清單改用合併後 parent；parent 會取代最佳原始 segment 的位置，不會掉到 tier 最後。前端會依 sample payload 快取整合結果，避免卡片 render 時反覆重建 parent。
-   - Mitochondria：`MITO-1`（ClinVar P/LP）、`MITO-2`（rare mito variant）、`MITO-3`（other variant）— 若來源 TSV 有 `FILTER` 欄，只列 `FILTER=PASS`；v3.2 `04_mito/{sample}.mito.tsv` 沒有 `FILTER` 時不顯示 Filter 欄。卡片不再顯示 MITOMAP，Disease 改用 `CLINVAR_DN` 依 `&` 拆成 checkbox，勾選者才進 DOCX。
+   - Mitochondria：`MITO-1`（ClinVar P/LP 或 MITOMAP confirmed/pathogenic）、`MITO-2`（rare / reported mtDNA variant）、`MITO-3`（other variant）— 若來源 TSV 有 `FILTER` 欄，只列 `FILTER=PASS`；v3.2 `04_mito/{sample}.mito.tsv` 沒有 `FILTER` 時不顯示 Filter 欄。MITOMAP 欄位只在後端分類使用，卡片不顯示 MITOMAP；Disease 改用 `CLINVAR_DN` 依 `&` 拆成 checkbox，勾選者才進 DOCX。
 4. **標記與判讀** — 在每個變異上標 causative / candidate / other，編輯 ACMG/分類、寫 comment；SNV/Indel ACMG 優先序為 reviewer override → GeneBe → pipeline `ACMG_CLASS`。Mito ACMG 下拉會同步更新分析區與報告區卡片，CNV/SV 卡片另有 Disease 欄供 DOCX 與個案清單使用。變更會自動存到 `tertiary_output/{LIS}/sample_metadata.json`；開啟個案清單或匯出 DOCX 前會先 flush 尚未完成的自動儲存。
 
 SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越低越偏致病，多 transcript TSV 會取最低分作為 worst case。
@@ -175,7 +175,7 @@ SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越�
 
 ## 5. 新增一個個案 / mitochondrial annotation
 
-次級 pipeline 通常會直接把 `snv_indel.annotated.tsv` 等放進 `tertiary_output/{LIS_ID}/`。目前三級 pipeline v3.2 會輸出 `04_mito/{SAMPLE_ID}.mito.tsv`，NGS-UI worker 會在三級分析完成後複製成 `tertiary_output/{LIS_ID}/mito.annotated.tsv`，前端 adapter 同時相容舊欄位與 v3.2 欄位。v3.2 的 `HGVS_C` 是 transcript `c.`，所以 UI 的 mito 卡片標題改由 `POS/REF/ALT` 產生 mitochondrial `m.` 寫法；`HGVS_P` 會清成報告用的 `p.xxx`。新版 Mito 判讀不再使用 MITOMAP，改用 ClinVar P/LP、gnomAD-mito rare 與 Other variant 三層；`CLINVAR_DN` 會拆成可勾選 disease。
+次級 pipeline 通常會直接把 `snv_indel.annotated.tsv` 等放進 `tertiary_output/{LIS_ID}/`。目前三級 pipeline v3.2 會輸出 `04_mito/{SAMPLE_ID}.mito.tsv`，NGS-UI worker 會在三級分析完成後複製成 `tertiary_output/{LIS_ID}/mito.annotated.tsv`，並靜默用本地 MITOMAP 表回補 `MITOMAP_*` 欄位（不額外寫進 job log）。前端 adapter 同時相容舊欄位與 v3.2 欄位。v3.2 的 `HGVS_C` 是 transcript `c.`，所以 UI 的 mito 卡片標題改由 `POS/REF/ALT` 產生 mitochondrial `m.` 寫法；`HGVS_P` 會清成報告用的 `p.xxx`。Mito 判讀以 ClinVar P/LP、MITOMAP confirmed/pathogenic、gnomAD-mito rare 或缺值/已報告變異分成三層；`CLINVAR_DN` 會拆成可勾選 disease，MITOMAP 不顯示在卡片中。
 
 舊樣本或手動補跑時，仍可用本 repo 的 legacy script 從 GATK Mutect2 `--mitochondria-mode` 的 VCF 產生 mito TSV（純 Python，只需 VCF + 本地 MITOMAP 表，不需 VEP/bcftools）：
 

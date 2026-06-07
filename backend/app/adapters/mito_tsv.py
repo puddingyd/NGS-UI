@@ -15,13 +15,14 @@ Two screens are applied before a variant reaches the card:
      FILTER decision, so no separate TLOD threshold is needed.) Pipeline
      v3.2 mito TSVs currently omit FILTER, so this screen is skipped there.
   2. Only primary chrM/MT records with POS/REF/ALT are emitted. New v3.2
-     pipeline mito annotation no longer uses MITOMAP; tiers are based on
-     ClinVar and gnomAD-mito.
+     pipeline mito annotation uses ClinVar/gnomAD-mito, with MITOMAP
+     columns optionally appended by the NGS-UI worker after copy.
 
 Tiers:
-    MITO-1  Pathogenic   — ClinVar Pathogenic / Likely pathogenic
-    MITO-2  Rare         — not ClinVar P/LP, has gnomAD-mito AF data, and
-                           max(AF_HOM, AF_HET, AF) < 0.01
+    MITO-1  Pathogenic   — ClinVar P/LP or MITOMAP confirmed/pathogenic
+    MITO-2  Rare/reported — not ClinVar B/LB, and either not observed /
+                            rare in gnomAD-mito or reported in
+                            ClinVar/MITOMAP
     MITO-3  Other        — every other PASS mtDNA variant
 
 Within tiers, sort by in-panel, heteroplasmy, depth, and position so the
@@ -38,7 +39,10 @@ from ..services import clinvar_mito
 
 MITO_TIERS = ["MITO-1", "MITO-2", "MITO-3"]
 
-_PATHO_STATUS_RE = re.compile(r"\bCfrm\b|\bConfirmed\b|\[L?P\]", re.I)
+_PATHO_STATUS_RE = re.compile(
+    r"\bCfrm\b|\bConfirmed\b|\[(?:L?P)\]|\bLikely[_ ]pathogenic\b|\bPathogenic\b",
+    re.I,
+)
 _PATHO_MITOTIP   = {"pathogenic", "likely pathogenic"}
 _RARE_AF_CUTOFF = 0.01
 _CLINVAR_DISEASE_SKIP = {
@@ -90,6 +94,19 @@ def _is_clinvar_pathogenic(sig: str) -> bool:
         "pathogenic/likely pathogenic" in s
         or "likely pathogenic/pathogenic" in s
         or s in {"pathogenic", "likely pathogenic"}
+    )
+
+
+def _is_clinvar_benign(sig: str) -> bool:
+    s = (sig or "").strip().lower().replace("_", " ")
+    if not s or s == ".":
+        return False
+    if "conflicting" in s:
+        return False
+    return (
+        "benign/likely benign" in s
+        or "likely benign/benign" in s
+        or s in {"benign", "likely benign"}
     )
 
 
@@ -239,7 +256,12 @@ def load_mito_tsv(
             gnomad_afs = _gnomad_af_values(row)
             gnomad_max = max(gnomad_afs) if gnomad_afs else None
             clinvar_pathogenic = _is_clinvar_pathogenic(clnsig)
-            rare = (not clinvar_pathogenic) and gnomad_max is not None and gnomad_max < _RARE_AF_CUTOFF
+            clinvar_benign = _is_clinvar_benign(clnsig)
+            reported = bool(_clinvar_diseases(clinvar_dn)) or bool(disease)
+            rare_or_unobserved = gnomad_max is None or gnomad_max < _RARE_AF_CUTOFF
+            rare = (not clinvar_pathogenic) and (not pathogenic) and (not clinvar_benign) and (
+                rare_or_unobserved or reported
+            )
 
             v = {
                 "id":            vid,
@@ -284,6 +306,9 @@ def load_mito_tsv(
                 "in_panel":        in_panel,
                 "pathogenic":      clinvar_pathogenic or pathogenic,
                 "clinvar_pathogenic": clinvar_pathogenic,
+                "clinvar_benign":  clinvar_benign,
+                "mitomap_pathogenic": pathogenic,
+                "mitomap_reported": bool(disease),
                 "rare_mito":       rare,
             }
             # ClinVar — runtime lookup against the chrM-only ClinVar
@@ -295,7 +320,7 @@ def load_mito_tsv(
             v["clinvar_dn"]    = clinvar_dn
             v["CLNSIGCONF"]    = _first(row, "CLINVAR_SIGCONF") or cv.get("CLNSIGCONF", "")
             variants[vid] = v
-            if clinvar_pathogenic:
+            if clinvar_pathogenic or pathogenic:
                 categories["MITO-1"].append(vid)
             elif rare:
                 categories["MITO-2"].append(vid)

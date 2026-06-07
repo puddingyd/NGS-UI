@@ -58,7 +58,7 @@ from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_OUTPUT_ROOT)
-from ..services import dragen_jobs
+from ..services import dragen_jobs, mitomap_mito
 
 
 def _strip_sid_suffix(sid: str) -> str:
@@ -642,6 +642,10 @@ def main() -> int:
             else:
                 mito_dst = sample_dir / "mito.annotated.tsv"
                 shutil.copyfile(mito_src, mito_dst)
+                try:
+                    mitomap_mito.annotate_mito_tsv(mito_dst)
+                except Exception:
+                    pass
                 _log(f"[copy] {sid}: {mito_src} → {mito_dst}")
             for kind in ("cnv", "sv"):
                 annotsv_src = _find_pipeline_annotsv_tsv(kind, source_sid, sid)
