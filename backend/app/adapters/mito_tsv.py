@@ -14,26 +14,18 @@ Two screens are applied before a variant reaches the card:
      best-practices keep PASS only. (TLOD is already baked into the
      FILTER decision, so no separate TLOD threshold is needed.) Pipeline
      v3.2 mito TSVs currently omit FILTER, so this screen is skipped there.
-  2. Disease-relevance — the variant is either (a) pathogenic per
-     MITOMAP/MitoTIP, or (b) carries some MITOMAP disease association.
-     Polymorphisms / haplogroup variants with no MITOMAP record are
-     dropped (the raw mito VCF has ~150 variants per sample, almost
-     all of which are exactly that).
+  2. Only primary chrM/MT records with POS/REF/ALT are emitted. New v3.2
+     pipeline mito annotation no longer uses MITOMAP; tiers are based on
+     ClinVar and gnomAD-mito.
 
 Tiers:
-    MITO-1  Pathogenic   — MITOMAP status confirmed-ish ("Cfrm" /
-                           "Confirmed" / "[P]" / "[LP]") or a MitoTIP
-                           "(likely) pathogenic" call
-    MITO-2  Clinical     — has a non-empty MITOMAP_DISEASE (and isn't
-                           already in MITO-1)
+    MITO-1  Pathogenic   — ClinVar Pathogenic / Likely pathogenic
+    MITO-2  Rare         — not ClinVar P/LP, has gnomAD-mito AF data, and
+                           max(AF_HOM, AF_HET, AF) < 0.01
+    MITO-3  Other        — every other PASS mtDNA variant
 
-Both tiers sort by a "disease-relevance" key, most-relevant first:
-    (status_rank, mitotip_rank, in_panel_rank, -refs, -heteroplasmy, pos)
-where status_rank   = Cfrm/Confirmed 0 · Reported 1 · Conflicting 2 · else 3
-      mitotip_rank  = Pathogenic 0 · Likely pathogenic 1 · Possibly… 2 · else 3
-      in_panel_rank = 0 if GENE is in the patient's pheno_score gene set else 1
-heteroplasmy still tie-breaks (a *disease-associated* variant at high load
-is more likely clinically significant) but is no longer the headline sort.
+Within tiers, sort by in-panel, heteroplasmy, depth, and position so the
+most clinically useful rows float upward while preserving all variants.
 """
 from __future__ import annotations
 
@@ -44,10 +36,18 @@ from pathlib import Path
 
 from ..services import clinvar_mito
 
-MITO_TIERS = ["MITO-1", "MITO-2"]
+MITO_TIERS = ["MITO-1", "MITO-2", "MITO-3"]
 
 _PATHO_STATUS_RE = re.compile(r"\bCfrm\b|\bConfirmed\b|\[L?P\]", re.I)
 _PATHO_MITOTIP   = {"pathogenic", "likely pathogenic"}
+_RARE_AF_CUTOFF = 0.01
+_CLINVAR_DISEASE_SKIP = {
+    "not_specified",
+    "not provided",
+    "not_provided",
+    "see cases",
+    "see_cases",
+}
 
 
 def _to_float(s):
@@ -80,35 +80,17 @@ def _is_pathogenic(status: str, mitotip: str) -> bool:
     return False
 
 
-def _status_rank(status: str) -> int:
-    s = (status or "").lower()
-    if "cfrm" in s or "confirmed" in s:
-        return 0
-    if "reported" in s:
-        return 1
-    if "conflicting" in s or "disputed" in s:
-        return 2
-    return 3
-
-
-def _mitotip_rank(mitotip: str) -> int:
-    m = (mitotip or "").strip().lower()
-    if m == "pathogenic":
-        return 0
-    if m == "likely pathogenic":
-        return 1
-    if m.startswith("possibly"):
-        return 2
-    return 3
-
-
-def _refs_count(refs: str) -> int:
-    """MITOMAP "References" is usually an integer count; be lenient."""
-    n = _to_int(refs)
-    if n is not None:
-        return n
-    # fall back to counting non-empty tokens
-    return len([t for t in re.split(r"[;, ]+", refs or "") if t])
+def _is_clinvar_pathogenic(sig: str) -> bool:
+    s = (sig or "").strip().lower().replace("_", " ")
+    if not s or s == ".":
+        return False
+    if "conflicting" in s:
+        return False
+    return (
+        "pathogenic/likely pathogenic" in s
+        or "likely pathogenic/pathogenic" in s
+        or s in {"pathogenic", "likely pathogenic"}
+    )
 
 
 def _first(row: dict, *names: str) -> str:
@@ -176,6 +158,31 @@ def _clean_hgvs_p(s: str) -> str:
     return s
 
 
+def _clinvar_diseases(raw: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for part in re.split(r"[&|]", raw or ""):
+        name = unquote(part).strip().strip(";:,")
+        if not name:
+            continue
+        name = re.sub(r"\s+", " ", name.replace("_", " ")).strip()
+        key = name.lower()
+        if key in _CLINVAR_DISEASE_SKIP or key in seen:
+            continue
+        seen.add(key)
+        out.append(name)
+    return out
+
+
+def _gnomad_af_values(row: dict) -> list[float]:
+    vals: list[float] = []
+    for key in ("GNOMAD_MITO_AF_HOM", "GNOMAD_MITO_AF_HET", "GNOMAD_MITO_AF"):
+        val = _to_float(_first(row, key))
+        if val is not None:
+            vals.append(val)
+    return vals
+
+
 def load_mito_tsv(
     tsv_path: Path,
     *,
@@ -185,7 +192,7 @@ def load_mito_tsv(
 
     `id` is chrM-{pos}-{ref}-{alt} (distinct from SNV/CNV ids, so the
     one flat state.reports.{status,edits} namespace stays collision-free).
-    Only disease-relevant variants make it into the returned dicts.
+    All PASS mtDNA variants make it into the returned dicts.
     """
     pheno_by_gene = pheno_by_gene or {}
     variants: dict[str, dict] = {}
@@ -213,11 +220,6 @@ def load_mito_tsv(
             mitotip = _first(row, "MITOTIP_SCORE", "MITOMAP_MITOTIP")
             disease = _first(row, "MITOMAP_DISEASE")
             pathogenic = _is_pathogenic(status, mitotip)
-            # Only keep disease-relevant variants: pathogenic, or with
-            # any MITOMAP disease association. Everything else (the bulk
-            # — polymorphisms / haplogroup variants) is dropped.
-            if not pathogenic and not disease:
-                continue
 
             vid = f"chrM-{pos}-{ref}-{alt}"
             het = _to_float(_first(row, "HETEROPLASMY", "AF_SAMPLE"))
@@ -231,6 +233,14 @@ def load_mito_tsv(
                 if homo or hetero:
                     plasmy = f"{homo or '-'}/{hetero or '-'}"
 
+            cv = clinvar_mito.lookup(pos, ref, alt)
+            clnsig = _first(row, "CLINVAR_SIG") or cv.get("CLNSIG", "")
+            clinvar_dn = _first(row, "CLINVAR_DN") or cv.get("CLNDN", "")
+            gnomad_afs = _gnomad_af_values(row)
+            gnomad_max = max(gnomad_afs) if gnomad_afs else None
+            clinvar_pathogenic = _is_clinvar_pathogenic(clnsig)
+            rare = (not clinvar_pathogenic) and gnomad_max is not None and gnomad_max < _RARE_AF_CUTOFF
+
             v = {
                 "id":            vid,
                 "CHROM":         (row.get("CHROM") or "chrM").strip(),
@@ -238,12 +248,16 @@ def load_mito_tsv(
                 "REF":           ref,
                 "ALT":           alt,
                 "HGVS_M":        _hgvs_m(row, pos, ref, alt),
+                "HGVS_C":        _first(row, "HGVS_C"),
                 "HGVS_P":        _clean_hgvs_p(row.get("HGVS_P") or ""),
                 "gene_symbol":   gene,
                 "locus_type":    locus_type,
+                "impact":        _first(row, "IMPACT"),
+                "biotype":       _first(row, "BIOTYPE"),
                 "consequence":   _first(row, "CONSEQUENCE"),
                 "aa_change":     _first(row, "AA_CHANGE") or _clean_hgvs_p(row.get("HGVS_P") or ""),
                 "heteroplasmy":  het,                       # 0-1 fraction
+                "genotype":      _first(row, "GENOTYPE"),
                 "AD":            _first(row, "AD"),
                 "depth":         _to_int(_first(row, "DEPTH", "DP")),
                 "filter":        filt,
@@ -255,34 +269,47 @@ def load_mito_tsv(
                 "mitomap_gb_freq": _first(row, "MITOMAP_GB_FREQ"),
                 "mitomap_gb_seqs": _first(row, "MITOMAP_GB_SEQS"),
                 "gnomad_mito_af":  _first(row, "GNOMAD_MITO_AF"),
+                "gnomad_mito_af_hom": _first(row, "GNOMAD_MITO_AF_HOM"),
+                "gnomad_mito_af_het": _first(row, "GNOMAD_MITO_AF_HET"),
+                "gnomad_mito_an":  _first(row, "GNOMAD_MITO_AN"),
+                "gnomad_mito_af_max": gnomad_max,
                 "mitomap_refs":    refs_raw,
                 "mitotip_score":   mitotip,
                 "mitomap_allele":  _first(row, "MITOMAP_ALLELE"),
+                "clinvar_variation_id": _first(row, "CLINVAR_VARIATION_ID") or cv.get("VariationID", ""),
+                "clinvar_diseases": _clinvar_diseases(clinvar_dn),
+                "omim_ids":       _first(row, "OMIM_IDS"),
+                "pipeline":       _first(row, "PIPELINE"),
                 "pheno_score":     round(pheno, 2) if pheno is not None else None,
                 "in_panel":        in_panel,
-                "pathogenic":      pathogenic,
+                "pathogenic":      clinvar_pathogenic or pathogenic,
+                "clinvar_pathogenic": clinvar_pathogenic,
+                "rare_mito":       rare,
             }
             # ClinVar — runtime lookup against the chrM-only ClinVar
             # VCF (decoupled from the 三級分析 pipeline). Field names
             # match the SNV adapter so the UI / docx_export pick them
             # up uniformly; absent variants get blanks.
-            cv = clinvar_mito.lookup(pos, ref, alt)
-            v["CLNSIG"]        = _first(row, "CLINVAR_SIG") or cv.get("CLNSIG", "")
+            v["CLNSIG"]        = clnsig
             v["clinvar_stars"] = cv.get("stars", 0)
-            v["clinvar_dn"]    = _first(row, "CLINVAR_DN") or cv.get("CLNDN", "")
+            v["clinvar_dn"]    = clinvar_dn
             v["CLNSIGCONF"]    = _first(row, "CLINVAR_SIGCONF") or cv.get("CLNSIGCONF", "")
             variants[vid] = v
-            categories["MITO-1" if pathogenic else "MITO-2"].append(vid)
+            if clinvar_pathogenic:
+                categories["MITO-1"].append(vid)
+            elif rare:
+                categories["MITO-2"].append(vid)
+            else:
+                categories["MITO-3"].append(vid)
 
     def _relevance_key(vid: str) -> tuple:
         v = variants[vid]
         het = v.get("heteroplasmy")
         return (
-            _status_rank(v.get("mitomap_status", "")),
-            _mitotip_rank(v.get("mitotip_score", "")),
             0 if v.get("in_panel") else 1,
-            -_refs_count(v.get("mitomap_refs", "")),
             -(het if het is not None else -1.0),
+            -(v.get("depth") or -1),
+            v.get("gnomad_mito_af_max") if v.get("gnomad_mito_af_max") is not None else 9,
             v.get("POS") or 0,
         )
     for t in categories:

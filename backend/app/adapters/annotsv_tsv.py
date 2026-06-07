@@ -382,7 +382,7 @@ def load_annotsv_tsv(
             # Build a small dict (~30 keys) restricted to wanted cols.
             n = len(raw)
             row = {c: (raw[i] if i < n else "") for c, i in col_idx.items()}
-            mode = (row.get("Annotation_mode") or "").strip()
+            mode = (row.get("Annotation_mode") or "").strip().lower()
             aid  = (row.get("AnnotSV_ID") or "").strip()
             if not aid:
                 continue

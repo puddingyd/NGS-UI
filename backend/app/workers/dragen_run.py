@@ -110,6 +110,22 @@ def _find_pipeline_mito_tsv(*sample_ids: str) -> Path | None:
     return None
 
 
+def _find_pipeline_annotsv_tsv(kind: str, *sample_ids: str) -> Path | None:
+    """Look for v3.2 06_cnv_sv/<SID>.<kind>.annotated.tsv output."""
+    candidates: list[str] = []
+    for sid in sample_ids:
+        if not sid:
+            continue
+        for s in (sid, _strip_sid_suffix(sid)):
+            if s and s not in candidates:
+                candidates.append(s)
+    for s in candidates:
+        p = PIPELINE_OUT_ROOT / s / "06_cnv_sv" / f"{s}.{kind}.annotated.tsv"
+        if p.is_file():
+            return p
+    return None
+
+
 def _pipeline_input_dir(vcf: Path, mode: str) -> Path:
     """Return the sample-sheet input_dir for the v3.1 pipeline."""
     if mode == "dragen":
@@ -596,6 +612,7 @@ def main() -> int:
 
         # 4. Copy pipeline outputs → NGS-UI side; record source audit.
         _set_step(job_id, "copy-pipeline-tsv")
+        pipeline_annotsv_copied: dict[str, set[str]] = {}
         for sample in samples:
             sid = sample["sample_id"]
             source_sid = sample["source_sample_id"]
@@ -626,6 +643,18 @@ def main() -> int:
                 mito_dst = sample_dir / "mito.annotated.tsv"
                 shutil.copyfile(mito_src, mito_dst)
                 _log(f"[copy] {sid}: {mito_src} → {mito_dst}")
+            for kind in ("cnv", "sv"):
+                annotsv_src = _find_pipeline_annotsv_tsv(kind, source_sid, sid)
+                if annotsv_src is None:
+                    _log(
+                        f"[copy] {sid}: {kind.upper()} AnnotSV output not found under "
+                        f"{PIPELINE_OUT_ROOT}/{source_sid}/06_cnv_sv/"
+                    )
+                    continue
+                annotsv_dst = sample_dir / f"{kind}.annotated.tsv"
+                shutil.copyfile(annotsv_src, annotsv_dst)
+                pipeline_annotsv_copied.setdefault(sid, set()).add(kind)
+                _log(f"[copy] {sid}: {annotsv_src} → {annotsv_dst}")
 
         # 5. Stop-gap chain (no ClinVar; pipeline already populates it).
         _set_step(job_id, "stop-gaps")
@@ -640,7 +669,10 @@ def main() -> int:
             stop_args = [str(scripts / "run_stopgaps.sh"),
                          "--tsv",    str(gui_tsv),
                          "--sample", sid]
-            if mode == "dragen":
+            if pipeline_annotsv_copied.get(sid) == {"cnv", "sv"}:
+                stop_args += ["--skip-cnv"]
+                _log(f"[stop-gaps] {sid}: skip AnnotSV fallback; pipeline CNV/SV already copied")
+            elif mode == "dragen":
                 stop_args += ["--dragen-cnv-source", sample["vcf_path"]]
             elif mode == "inhouse":
                 if sample["cnv_vcf"]:

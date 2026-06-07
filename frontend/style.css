@@ -910,6 +910,15 @@ body.sidebar-collapsed .container { margin-left: auto; }
 /* Disease expander */
 .disease-list { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
 .disease-row { margin-bottom: 4px; }
+.disease-row.mito-clinvar-disease {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #f6f8fa;
+  font-size: 12px;
+}
 .disease-row summary {
   cursor: pointer;
   padding: 3px 6px;
@@ -926,6 +935,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .disease-row summary:hover { background: #eaeef2; }
 .disease-row .disease-pick {
   margin: 0;
+  cursor: pointer;
+  accent-color: var(--hit-patho, #d33);
+}
+.disease-row .mito-disease-pick {
+  margin: 2px 0 0;
   cursor: pointer;
   accent-color: var(--hit-patho, #d33);
 }

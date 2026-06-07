@@ -3681,13 +3681,14 @@ function applyCnvSvTabActive() {
 }
 
 // ---------- Mitochondria tier tabs --------------------------------
-// Only disease-relevant variants are shown — MITO-1 = pathogenic (per
-// MITOMAP/MitoTIP), MITO-2 = anything else with a MITOMAP disease
-// association. Polymorphisms / haplogroup variants are dropped server-side.
-const MITO_TIER_ORDER = ["MITO-1", "MITO-2"];
+// MITO-1 = ClinVar P/LP, MITO-2 = rare by gnomAD-mito, MITO-3 = other
+// PASS mtDNA variants. Older MITOMAP-only samples still load through the
+// same adapter, but MITOMAP is no longer part of the GUI rule set.
+const MITO_TIER_ORDER = ["MITO-1", "MITO-2", "MITO-3"];
 const MITO_TITLES = {
   "MITO-1": "1 Pathogenic",
-  "MITO-2": "2 Disease-associated",
+  "MITO-2": "2 Rare mito variant",
+  "MITO-3": "3 Other variant",
 };
 let activeMitoTab = null;
 
@@ -3727,7 +3728,9 @@ function renderMitoTabBar() {
       const empty = document.createElement("div");
       empty.className = "block-body";
       empty.innerHTML = `<div class="analysis-card-empty">${
-        tier === "MITO-1" ? "（無致病性 mtDNA 變異）" : "（無 disease 相關 mtDNA 變異）"
+        tier === "MITO-1" ? "（無 ClinVar P/LP mtDNA 變異）"
+        : tier === "MITO-2" ? "（無 rare mtDNA 變異）"
+        : "（無其他 mtDNA 變異）"
       }</div>`;
       panel.appendChild(empty);
       return;
@@ -3788,7 +3791,7 @@ const MITO_LOCUS_LABELS = {
 
 function _mitoExternalLinks(v) {
   // gnomAD v3 has a dedicated mtDNA dataset; M-<pos>-<ref>-<alt> works
-  // for SNVs (gnomAD normalises). MITOMAP search page as a fallback.
+  // for SNVs (gnomAD normalises).
   const links = [];
   if (v.REF && v.ALT) {
     links.push({
@@ -3796,7 +3799,12 @@ function _mitoExternalLinks(v) {
       href: `https://gnomad.broadinstitute.org/variant/M-${v.POS}-${escapeAttr(v.REF)}-${escapeAttr(v.ALT)}?dataset=gnomad_r3`,
     });
   }
-  links.push({ label: "MITOMAP", href: "https://www.mitomap.org/foswiki/bin/view/Main/SearchAllele" });
+  if (v.clinvar_variation_id) {
+    links.push({
+      label: "ClinVar",
+      href: `https://www.ncbi.nlm.nih.gov/clinvar/variation/${encodeURIComponent(v.clinvar_variation_id)}/`,
+    });
+  }
   return links;
 }
 
@@ -3812,9 +3820,39 @@ function _mitoHeteroplasmy(v) {
 }
 
 function _mitoConsequenceLabel(v) {
-  // The MITOMAP-only annotator already emits readable labels
-  // (missense / synonymous / stop_gained / non-coding (tRNA) / …).
   return (v.consequence || "—");
+}
+
+function _formatMitoAf(v) {
+  const parts = [];
+  const add = (label, val) => {
+    if (val == null || val === "" || val === ".") return;
+    const n = Number(val);
+    parts.push(Number.isFinite(n) ? `${label} ${(n * 100).toPrecision(3)}%` : `${label} ${val}`);
+  };
+  add("hom", v.gnomad_mito_af_hom);
+  add("het", v.gnomad_mito_af_het);
+  add("AF", v.gnomad_mito_af);
+  if (v.gnomad_mito_an) parts.push(`AN ${v.gnomad_mito_an}`);
+  return parts.join(" · ") || "—";
+}
+
+function _mitoClinvarDiseaseList(v, id) {
+  const diseases = Array.isArray(v.clinvar_diseases) ? v.clinvar_diseases : [];
+  if (!diseases.length) return "";
+  const picked = getEdit(id, "report_diseases_clinvar") || {};
+  const rows = diseases.map((d, i) => {
+    const key = String(i);
+    const checked = picked[key] ? "checked" : "";
+    return `<label class="disease-row mito-clinvar-disease">
+      <input type="checkbox" class="mito-disease-pick" data-id="${escapeAttr(id)}" data-idx="${escapeAttr(key)}" ${checked} title="報告要發這個 ClinVar disease" />
+      <span class="disease-summary-text">${escapeHtml(d)}</span>
+    </label>`;
+  });
+  return `<div class="cnv-sv-section">
+    <div class="cnv-sv-section-title">ClinVar disease</div>
+    <div class="disease-list">${rows.join("")}</div>
+  </div>`;
 }
 
 // Mutect2-mito FILTER flag → plain-Chinese gloss (shown as a tooltip).
@@ -3848,25 +3886,7 @@ function _renderMitoDetailBox(v, id) {
   const ad   = v.AD || "—";
   const dp   = (v.depth != null) ? v.depth : "—";
   const consL = _mitoConsequenceLabel(v);
-  // MITOMAP reasoning block: disease / status / plasmy / GenBank
-  // freq / refs / MitoTIP. Folded — most variants are polymorphisms
-  // with nothing here.
-  const hasMm = v.mitomap_disease || v.mitomap_status || v.mitomap_plasmy
-             || v.mitomap_gb_freq || v.mitotip_score;
-  const mmItems = [];
-  if (v.mitomap_disease) mmItems.push(`<li><strong>Disease:</strong> ${escapeHtml(v.mitomap_disease)}</li>`);
-  if (v.mitomap_status)  mmItems.push(`<li><strong>Status:</strong> ${escapeHtml(v.mitomap_status)}</li>`);
-  if (v.mitomap_plasmy)  mmItems.push(`<li><strong>Plasmy (homo/hetero reports):</strong> ${escapeHtml(v.mitomap_plasmy)}</li>`);
-  if (v.mitomap_gb_freq) mmItems.push(`<li><strong>GenBank freq FL(CR):</strong> ${escapeHtml(v.mitomap_gb_freq)}${v.mitomap_gb_seqs ? ` <span class="muted">(${escapeHtml(v.mitomap_gb_seqs)} seqs)</span>` : ""}</li>`);
-  if (v.mitotip_score)   mmItems.push(`<li><strong>MitoTIP:</strong> ${escapeHtml(v.mitotip_score)}</li>`);
-  if (v.mitomap_refs)    mmItems.push(`<li><strong>References:</strong> ${escapeHtml(v.mitomap_refs)}</li>`);
-  const mmBlock = hasMm
-    ? `<details class="cnv-sv-reasoning" open>
-         <summary>MITOMAP${v.mitomap_allele ? ` <span class="muted" style="font-weight:400">(${escapeHtml(v.mitomap_allele)})</span>` : ""}</summary>
-         <ul class="cnv-sv-reasoning-list">${mmItems.join("")}</ul>
-       </details>`
-    : `<div class="muted" style="font-size:12px;margin-top:6px">MITOMAP 無此變異紀錄（多為 polymorphism / haplogroup 變異）</div>`;
-  // Mito ACMG override — MITOMAP doesn't provide an ACMG class, so
+  // Mito ACMG override — the mito pipeline does not provide an ACMG class, so
   // the reviewer picks one manually here. Persisted to
   // state.reports.edits[id].ACMG_classification_mito and consumed by
   // the docx report (`_acmg_label` → mito column + note-2 wording).
@@ -3884,10 +3904,13 @@ function _renderMitoDetailBox(v, id) {
       <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
       <span><strong>類型:</strong> ${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>
       <span><strong>Heteroplasmy:</strong> ${_mitoHeteroplasmy(v)} <span class="muted">(AD ${escapeHtml(ad)} · DP ${dp})</span></span>
+      ${v.genotype ? `<span><strong>GT:</strong> ${escapeHtml(v.genotype)}</span>` : ""}
       ${filt ? `<span data-tip="${escapeAttr(_mitoFilterTitle(filt))}"><strong>Filter:</strong> ${escapeHtml(filt)} <span class="muted" style="cursor:help">ⓘ</span></span>` : ""}
     </div>
     <div class="cnv-sv-detail-row">
       <span><strong>Consequence:</strong> ${escapeHtml(consL)}</span>
+      ${v.impact ? `<span><strong>Impact:</strong> ${escapeHtml(v.impact)}</span>` : ""}
+      ${v.biotype ? `<span><strong>Biotype:</strong> ${escapeHtml(v.biotype)}</span>` : ""}
       ${v.aa_change ? `<span><strong>Protein change:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
       ${(() => {
         const sig = (v.CLNSIG || "").trim();
@@ -3897,9 +3920,9 @@ function _renderMitoDetailBox(v, id) {
           ? ` ${"★".repeat(Number(v.clinvar_stars))}` : "";
         return `<span><strong>ClinVar:</strong> <span class="acmg-class ${cls}">${escapeHtml(sig.replace(/_/g," "))}${escapeHtml(stars)}</span></span>`;
       })()}
-      <span data-tip="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>
+      <span><strong>gnomAD mito:</strong> ${escapeHtml(_formatMitoAf(v))}</span>
+      ${v.TLOD != null ? `<span data-tip="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>` : ""}
     </div>
-    ${mmBlock}
   </div>`;
 }
 
@@ -3927,6 +3950,7 @@ function renderMitoCard(v, id, opts = {}) {
       <span class="ext-links">${links}</span>
     </div>
     ${_renderMitoDetailBox(v, id)}
+    ${_mitoClinvarDiseaseList(v, id)}
     <div class="cnv-sv-section cnv-sv-comment">
       <div class="cnv-sv-section-title">Comment</div>
       <textarea class="cnv-sv-comment-text" data-id="${escapeAttr(id)}" rows="2" placeholder="備註">${escapeHtml(comment)}</textarea>
@@ -4342,6 +4366,7 @@ document.addEventListener("change", ev => {
     t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
     const sig = classifySignificance(t.value);
     if (sig) t.classList.add(sig);
+    try { renderReportSections(); } catch (_e) {}
     updateSaveHint();
   }
 });
@@ -4971,7 +4996,7 @@ document.addEventListener("click", ev => {
   } else if (t.matches(".btn-remove-manual")) {
     ev.stopPropagation();
     removeManualVariant(t.dataset.mid);
-  } else if (t.matches(".disease-pick")) {
+  } else if (t.matches(".disease-pick, .mito-disease-pick")) {
     // Don't let clicking the checkbox also toggle its <details> container.
     ev.stopPropagation();
   } else if (t.matches(".disease-collapse")) {
@@ -5105,6 +5130,13 @@ document.addEventListener("change", ev => {
     if (t.checked) picked[idx] = true;
     else           delete picked[idx];
     setEdit(t.dataset.id, "report_diseases", picked);
+    updateSaveHint();
+  } else if (t.matches(".mito-disease-pick")) {
+    const picked = { ...(getEdit(t.dataset.id, "report_diseases_clinvar") || {}) };
+    const idx = t.dataset.idx;
+    if (t.checked) picked[idx] = true;
+    else           delete picked[idx];
+    setEdit(t.dataset.id, "report_diseases_clinvar", picked);
     updateSaveHint();
   }
 });

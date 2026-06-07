@@ -769,6 +769,28 @@ def _omim_block_for_snv(v: dict, edits: dict) -> str:
     return "".join(parts) + "。"
 
 
+def _picked_clinvar_diseases_for_mito(v: dict, edits: dict) -> list[str]:
+    diseases = v.get("clinvar_diseases") or []
+    if not isinstance(diseases, list):
+        diseases = []
+    picked = edits.get("report_diseases_clinvar") or {}
+    out: list[str] = []
+    if isinstance(picked, dict):
+        for idx, disease in enumerate(diseases):
+            if picked.get(str(idx)) or picked.get(idx):
+                d = str(disease or "").strip()
+                if d:
+                    out.append(d)
+    return out
+
+
+def _mito_disease_text(v: dict, edits: dict) -> str:
+    picked = _picked_clinvar_diseases_for_mito(v, edits)
+    if picked:
+        return "、".join(picked)
+    return ""
+
+
 def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     gene = v.get("gene_symbol") or "?"
     tx   = v.get("transcript")  or v.get("MANE_SELECT") or ""
@@ -858,8 +880,8 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
         ("ACMG&AMP指引", 13, "token"),
     ], rows=[[tier, gene, nuc, het_s, clnsig, acmg]])
 
-    mt_disease = (v.get("mitomap_disease") or "").strip()
-    # 1. 致病基因之一 — MITOMAP disease name; 遺傳模式 fixed to 粒線體遺傳; no MIM
+    mt_disease = _mito_disease_text(v, edits)
+    # 1. 致病基因之一 — ClinVar disease name; 遺傳模式 fixed to 粒線體遺傳; no MIM
     if mt_disease:
         _add_paragraph(doc, f"    1. {gene}為{mt_disease}的致病基因之一，其遺傳模式屬於粒線體遺傳。")
     else:
