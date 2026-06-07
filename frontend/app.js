@@ -7542,10 +7542,13 @@ const _DRAGEN_STATE = {
   mode: "",             // ""    | dragen | inhouse
   index: null,          // {meta, dragen: [...], inhouse: [...]}
   selected: { inhouse: "", dragen: "" },
+  seqType: { inhouse: "" },
   batch: [],            // [{mode, vcf_path, sample_id, source_sample_id, ...}]
   job: null,            // current job state, polled
   pollTimer: null,
 };
+
+const DRAGEN_INHOUSE_WGS_SIZE_THRESHOLD = 100 * 1024 * 1024;
 
 function _dragenFmtSize(b) {
   if (!b) return "—";
@@ -7565,6 +7568,12 @@ function _dragenFmtMtime(t) {
     }).format(new Date(t * 1000));
   }
   catch { return ""; }
+}
+
+function _dragenInferSeqType(row) {
+  const fromIndex = String(row?.seq_type || "").trim().toUpperCase();
+  if (fromIndex === "WES" || fromIndex === "WGS") return fromIndex;
+  return Number(row?.size || 0) >= DRAGEN_INHOUSE_WGS_SIZE_THRESHOLD ? "WGS" : "WES";
 }
 
 function _dragenCurrentList(mode = _DRAGEN_STATE.mode) {
@@ -7593,10 +7602,11 @@ function _dragenRenderMeta() {
 
 function _dragenRenderSiblings() {
   const box = document.getElementById("dragen-siblings");
-  if (!box) return;
+  const body = document.getElementById("dragen-siblings-body");
+  if (!box || !body) return;
   const path = _DRAGEN_STATE.selected.inhouse;
   if (!path) {
-    box.hidden = true; box.innerHTML = ""; return;
+    box.hidden = true; body.innerHTML = ""; return;
   }
   const row = _dragenCurrentList("inhouse").find(v => v.path === path);
   if (!row) { box.hidden = true; return; }
@@ -7605,12 +7615,35 @@ function _dragenRenderSiblings() {
     const txt = path ? path : "（缺）";
     return `<div class="sib-line"><span class="sib-key">${key}</span><span class="${cls}">${escapeHtml(txt)}</span></div>`;
   };
-  box.innerHTML = [
+  body.innerHTML = [
+    line("SNV/Indel",   row.path),
     line("CNV (gcnv)",  row.cnv_vcf),
     line("SV  (delly)", row.sv_vcf),
     line("Mito",        row.mito_vcf),
   ].join("");
   box.hidden = false;
+}
+
+function _dragenRenderSeqType() {
+  const rowEl = document.getElementById("dragen-seq-type-row");
+  const meta = document.getElementById("dragen-seq-type-meta");
+  if (!rowEl) return;
+  const mode = _dragenActiveMode();
+  const path = _DRAGEN_STATE.selected.inhouse;
+  if (mode !== "inhouse" || !path) {
+    rowEl.hidden = true;
+    if (meta) meta.textContent = "";
+    return;
+  }
+  const row = _dragenCurrentList("inhouse").find(v => v.path === path);
+  const seqType = _DRAGEN_STATE.seqType.inhouse || _dragenInferSeqType(row || {});
+  _DRAGEN_STATE.seqType.inhouse = seqType;
+  rowEl.hidden = false;
+  rowEl.querySelectorAll(".dragen-seq-option").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.seqType === seqType);
+    btn.setAttribute("aria-pressed", btn.dataset.seqType === seqType ? "true" : "false");
+  });
+  if (meta) meta.textContent = row ? `${_dragenFmtSize(row.size)} → ${_dragenInferSeqType(row)}` : "";
 }
 
 function _dragenVcfLabel(v) {
@@ -7672,6 +7705,7 @@ function _dragenBuildSample(mode, row, sampleId) {
     vcf_path: row.path || "",
     sample_id: sampleId,
     source_sample_id: row.sample_id || "",
+    seq_type: mode === "inhouse" ? (_DRAGEN_STATE.seqType.inhouse || _dragenInferSeqType(row)) : "WGS",
   };
   if (mode === "inhouse") {
     sample.cnv_vcf = row.cnv_vcf || "";
@@ -7708,6 +7742,7 @@ function _dragenRenderBatch() {
     <div class="dragen-batch-row">
       <code>${escapeHtml(row.sample_id || "")}</code>
       <code>${escapeHtml(row.source_sample_id || "")}</code>
+      <code>${escapeHtml(row.seq_type || "")}</code>
       <span class="dragen-batch-path" title="${escapeAttr(row.vcf_path || "")}">${escapeHtml(row.vcf_path || "")}</span>
       <button type="button" class="dragen-batch-remove" data-idx="${idx}" title="移除">×</button>
     </div>
@@ -7763,12 +7798,15 @@ function _dragenPickVcf(mode, row) {
   _DRAGEN_STATE.selected[mode] = row.path || "";
   _DRAGEN_STATE.selected[otherMode] = "";
   _DRAGEN_STATE.mode = mode;
+  if (mode === "inhouse") _DRAGEN_STATE.seqType.inhouse = _dragenInferSeqType(row);
+  else _DRAGEN_STATE.seqType.inhouse = "";
   if (input) input.value = _dragenVcfLabel(row);
   if (other) other.value = "";
   _dragenHideDropdown(mode);
   _dragenHideDropdown(otherMode);
   const sidIn = document.getElementById("dragen-sample-id");
   if (sidIn && row.sample_id) sidIn.value = _dragenSuggestSid(row.sample_id, mode);
+  _dragenRenderSeqType();
   _dragenRenderSiblings();
 }
 
@@ -7972,6 +8010,8 @@ function _dragenWireCombobox(mode) {
     activeIdx = -1;
     _DRAGEN_STATE.selected[mode] = "";
     _DRAGEN_STATE.mode = _dragenActiveMode();
+    if (mode === "inhouse") _DRAGEN_STATE.seqType.inhouse = "";
+    _dragenRenderSeqType();
     _dragenRenderSiblings();
     _dragenRenderDropdown(mode);
   });
@@ -8007,6 +8047,14 @@ function setupDragenButton() {
   });
   _dragenWireCombobox("inhouse");
   _dragenWireCombobox("dragen");
+  document.querySelectorAll(".dragen-seq-option").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const seqType = String(btn.dataset.seqType || "").toUpperCase();
+      if (seqType !== "WES" && seqType !== "WGS") return;
+      _DRAGEN_STATE.seqType.inhouse = seqType;
+      _dragenRenderSeqType();
+    });
+  });
   document.getElementById("dragen-refresh-btn")?.addEventListener("click", async (ev) => {
     const b = ev.currentTarget;
     if (b) { b.disabled = true; b.textContent = "↻ 更新中…"; }

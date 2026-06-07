@@ -197,6 +197,13 @@ def _sample_from_args(args: argparse.Namespace) -> dict:
     }
 
 
+def _normalize_seq_type(value: str | None, *, default: str) -> str:
+    v = (value or "").strip().upper()
+    if v in {"WES", "WGS"}:
+        return v
+    return default
+
+
 def _load_samples(args: argparse.Namespace) -> list[dict]:
     if args.batch_json:
         raw = json.loads(Path(args.batch_json).read_text(encoding="utf-8"))
@@ -223,7 +230,10 @@ def _load_samples(args: argparse.Namespace) -> list[dict]:
             "vcf_path": vcf_path,
             "sample_id": sample_id,
             "source_sample_id": source_sample_id,
-            "seq_type": sample.get("seq_type") or ("WGS" if mode == "dragen" else "WES"),
+            "seq_type": _normalize_seq_type(
+                sample.get("seq_type"),
+                default=("WGS" if mode == "dragen" else "WES"),
+            ),
             "cnv_vcf": (sample.get("cnv_vcf") or "").strip(),
             "sv_vcf": (sample.get("sv_vcf") or "").strip(),
             "mito_vcf": (sample.get("mito_vcf") or "").strip(),

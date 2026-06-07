@@ -2352,7 +2352,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .dragen-batch-row {
   display: grid;
-  grid-template-columns: minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(0, 1.6fr) auto;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(110px, 0.8fr) 52px minmax(0, 1.6fr) auto;
   gap: 8px;
   align-items: center;
   padding: 4px 0;
@@ -2460,15 +2460,57 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 11px;
   margin-left: auto;
 }
+.dragen-seq-type-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+.dragen-seq-type-row[hidden] { display: none; }
+.dragen-seq-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+.dragen-seq-option {
+  width: 48px;
+  height: 28px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dragen-seq-option:last-child { border-right: 0; }
+.dragen-seq-option.active {
+  background: #0969da;
+  color: #fff;
+}
+.dragen-seq-type-meta {
+  font-size: 11px;
+}
 .dragen-siblings {
   background: #f6f8fa;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 4px 10px 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   line-height: 1.6;
   color: #555;
+}
+.dragen-siblings summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+}
+.dragen-siblings[open] summary {
+  margin-bottom: 4px;
 }
 .dragen-siblings .sib-line {
   display: flex;

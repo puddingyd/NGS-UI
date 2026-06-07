@@ -665,7 +665,18 @@
               <ul id="dragen-vcf-inhouse-dropdown" class="combobox-dropdown dragen-vcf-dropdown hidden"></ul>
             </label>
           </div>
-          <div id="dragen-siblings" class="dragen-siblings" hidden></div>
+          <div id="dragen-seq-type-row" class="dragen-seq-type-row" hidden>
+            <span class="dragen-form-label-sub">Seq type</span>
+            <div class="dragen-seq-toggle" role="group" aria-label="Seq type">
+              <button type="button" class="dragen-seq-option" data-seq-type="WES">WES</button>
+              <button type="button" class="dragen-seq-option" data-seq-type="WGS">WGS</button>
+            </div>
+            <span id="dragen-seq-type-meta" class="muted dragen-seq-type-meta"></span>
+          </div>
+          <details id="dragen-siblings" class="dragen-siblings" hidden>
+            <summary>來源檔案</summary>
+            <div id="dragen-siblings-body"></div>
+          </details>
         </div>
 
         <div class="dragen-caller-block">

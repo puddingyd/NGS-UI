@@ -129,6 +129,7 @@ def list_dragen_vcfs() -> list[dict]:
 
 _INHOUSE_SNV_REL = "04_snv_indel"
 _INHOUSE_SUFFIX_RE = re.compile(r"\.ensemble\.fixed\.vcf\.gz$", re.IGNORECASE)
+_INHOUSE_WGS_SIZE_THRESHOLD = 100 * 1024 * 1024
 
 
 def _find_inhouse_snv_vcfs(root: Path) -> list[Path]:
@@ -150,6 +151,20 @@ def _find_inhouse_snv_vcfs(root: Path) -> list[Path]:
     except OSError:
         pass
     return list(root.glob(f"**/{_INHOUSE_SNV_REL}/*.ensemble.fixed.vcf.gz"))
+
+
+def _infer_seq_type_from_size(size: int | None, *, default: str = "WES") -> str:
+    """Use the agreed UI heuristic: in-house VCF >=100 MB defaults to WGS."""
+    if size is not None and size >= _INHOUSE_WGS_SIZE_THRESHOLD:
+        return "WGS"
+    return default
+
+
+def _normalize_seq_type(value: str | None, *, default: str) -> str:
+    v = (value or "").strip().upper()
+    if v in {"WES", "WGS"}:
+        return v
+    return default
 
 
 def list_inhouse_vcfs() -> list[dict]:
@@ -185,6 +200,7 @@ def list_inhouse_vcfs() -> list[dict]:
                 st = snv.stat()
             except OSError:
                 continue
+            seq_type = _infer_seq_type_from_size(st.st_size)
             out.append({
                 "path":        sp,
                 "sample_id":   sid,
@@ -194,6 +210,8 @@ def list_inhouse_vcfs() -> list[dict]:
                 "cnv_vcf":     cnv,
                 "sv_vcf":      sv,
                 "mito_vcf":    mito,
+                "seq_type":    seq_type,
+                "seq_type_inferred_by": "size",
                 "size":        st.st_size,
                 "mtime":       st.st_mtime,
             })
@@ -562,6 +580,7 @@ def start_job(
     *,
     source_sample_id: str = "",
     mode: str = "dragen",
+    seq_type: str = "",
     with_extra_vep: bool = True,
     cnv_vcf: str = "",
     sv_vcf: str = "",
@@ -574,8 +593,9 @@ def start_job(
                        {input_dir}/vcf.gz/{source_sample_id}.hard-filtered.vcf.gz.
     mode = "inhouse" → NCKUH ensemble output; v3.x sample sheet uses
                        {input_dir}/04_snv_indel/{source_sample_id}.ensemble.fixed.vcf.gz.
-                       cnv_vcf / sv_vcf are still passed for NGS-UI
-                       AnnotSV until pipeline CNV/SV lands. mito_vcf is
+                       seq_type should be WES or WGS. cnv_vcf / sv_vcf
+                       are still passed for NGS-UI AnnotSV fallback until
+                       pipeline CNV/SV lands. mito_vcf is
                        retained in job metadata only; v3.2 pipeline output
                        04_mito/{sample}.mito.tsv is copied back to the UI.
 
@@ -601,12 +621,13 @@ def start_job(
             _validate_sample_id(sample_id_i)
             source_id_i = (item.get("source_sample_id") or "").strip() or infer_source_sample_id(sample_vcf, sample_mode)
             _validate_sample_id(source_id_i)
+            default_seq = "WGS" if sample_mode == "dragen" else _infer_seq_type_from_size(sample_vcf.stat().st_size)
             batch_samples.append({
                 "mode": sample_mode,
                 "vcf_path": str(sample_vcf),
                 "sample_id": sample_id_i,
                 "source_sample_id": source_id_i,
-                "seq_type": item.get("seq_type") or ("WGS" if sample_mode == "dragen" else "WES"),
+                "seq_type": _normalize_seq_type(item.get("seq_type"), default=default_seq),
                 "cnv_vcf": (item.get("cnv_vcf") or "").strip(),
                 "sv_vcf": (item.get("sv_vcf") or "").strip(),
                 "mito_vcf": (item.get("mito_vcf") or "").strip(),
@@ -629,12 +650,13 @@ def start_job(
         _validate_sample_id(sample_id)
         source_sample_id = source_sample_id or infer_source_sample_id(vcf, mode)
         _validate_sample_id(source_sample_id)
+        default_seq = "WGS" if mode == "dragen" else _infer_seq_type_from_size(vcf.stat().st_size)
         batch_samples = [{
             "mode": mode,
             "vcf_path": str(vcf),
             "sample_id": sample_id,
             "source_sample_id": source_sample_id,
-            "seq_type": "WGS" if mode == "dragen" else "WES",
+            "seq_type": _normalize_seq_type(seq_type, default=default_seq),
             "cnv_vcf": cnv_vcf,
             "sv_vcf": sv_vcf,
             "mito_vcf": mito_vcf,
