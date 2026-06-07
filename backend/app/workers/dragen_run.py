@@ -1,36 +1,34 @@
 """Pipeline worker — spawned by dragen_jobs.start_job().
 
-Runs the 4-script chain end-to-end on either a DRAGEN hard-filtered
+Runs the tertiary chain end-to-end on either a DRAGEN hard-filtered
 VCF (`--mode dragen`) or an in-house ensemble Nextflow output
 (`--mode inhouse`). Steps:
 
-    1. annotate_mito_vcf.sh           → NGS_UI/tertiary_output/<SID>/mito.annotated.tsv
-    2. detect existing pipeline output
-       ├ HIT  → skip 3+4, reuse the pre-existing .acmg.tsv
-       └ MISS → run 3+4 below
-    3. write one-row v3.1 samplesheet → data/jobs/tertiary/<job>/samplesheet.csv
+    1. detect existing pipeline output
+       ├ HIT  → skip Nextflow, reuse the pre-existing .acmg.tsv
+       └ MISS → run 2+3 below
+    2. write a v3.x samplesheet       → data/jobs/tertiary/<job>/samplesheet.csv
        (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
-    4. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<source SID>/
+    3. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<source SID>/
                                           03_acmg/<source SID>.snv_indel.acmg.tsv
-    5. copy pipeline TSV              → NGS_UI/tertiary_output/<SID>/
+                                          04_mito/<source SID>.mito.tsv
+    4. copy pipeline outputs          → NGS_UI/tertiary_output/<SID>/
                                           snv_indel.annotated.tsv
+                                          mito.annotated.tsv
                                           + pipeline_source.json (audit)
-    6. run_stopgaps.sh                → filter / GeneBe / extra-VEP / CNV-AnnotSV
+    5. run_stopgaps.sh                → filter / GeneBe / extra-VEP / CNV-AnnotSV
                                           + pre-build snv_indel.review.tsv
                                           (ClinVar removed — pipeline already
                                            does it; GeneBe writes a SECOND
                                            opinion to GENEBE_* columns)
 
 Mode differences:
-  dragen  — step 1 reads the hard-filtered VCF (extracts chrM);
-            step 3 sample sheet uses pipeline_type=dragen and the
-            DRAGEN run folder as input_dir;
-            step 6's CNV/SV branch auto-discovers sibling
+  dragen  — sample sheet uses pipeline_type=dragen and the DRAGEN run
+            folder as input_dir; CNV/SV AnnotSV auto-discovers sibling
             <SID>.cnv.vcf.gz + <SID>.sv.vcf.gz from the same dir.
-  inhouse — step 1 reads the explicit <SID>.mito.vcf.gz;
-            step 3 sample sheet uses pipeline_type=nckuh and the
-            in-house sample output folder as input_dir;
-            step 6 runs AnnotSV separately on gcnv + delly.
+  inhouse — sample sheet uses pipeline_type=nckuh and the in-house sample
+            output folder as input_dir; CNV/SV AnnotSV runs separately on
+            gcnv + delly VCFs.
 
 Existing-output detection (step 2): tries
     /home/pipeline/tertiary_output/<SID>/03_acmg/<SID>.snv_indel.acmg.tsv
@@ -91,6 +89,22 @@ def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
                 candidates.append(s)
     for s in candidates:
         p = PIPELINE_OUT_ROOT / s / "03_acmg" / f"{s}.snv_indel.acmg.tsv"
+        if p.is_file():
+            return p
+    return None
+
+
+def _find_pipeline_mito_tsv(*sample_ids: str) -> Path | None:
+    """Look for a v3.2 <SID>.mito.tsv under production output."""
+    candidates: list[str] = []
+    for sid in sample_ids:
+        if not sid:
+            continue
+        for s in (sid, _strip_sid_suffix(sid)):
+            if s and s not in candidates:
+                candidates.append(s)
+    for s in candidates:
+        p = PIPELINE_OUT_ROOT / s / "04_mito" / f"{s}.mito.tsv"
         if p.is_file():
             return p
     return None
@@ -370,27 +384,10 @@ def main() -> int:
     }
 
     started_at = _now()
-    _set_step(job_id, "mito", state="running", started_at=started_at)
+    _set_step(job_id, "detect-pipeline-output", state="running", started_at=started_at)
     try:
-        # 1. Mito
-        for sample in samples:
-            sid = sample["sample_id"]
-            sample_dir = TERTIARY_OUTPUT_ROOT / sid
-            sample_dir.mkdir(parents=True, exist_ok=True)
-            mito_in = sample["mito_vcf"] if (mode == "inhouse" and sample["mito_vcf"]) else sample["vcf_path"]
-            if mode == "inhouse" and not sample["mito_vcf"]:
-                _log(f"[mito] skipped {sid} — in-house mode but mito_vcf empty")
-                continue
-            _log(f"[mito] {sid}")
-            _run([str(scripts / "annotate_mito_vcf.sh"),
-                  "--in",     mito_in,
-                  "--sample", sid,
-                  "--outdir", str(sample_dir)],
-                 label=f"1/4 mito {sid}")
-
-        # 2. Reuse existing pipeline output if the production pipeline
+        # 1. Reuse existing pipeline output if the production pipeline
         # has already processed each source sample.
-        _set_step(job_id, "detect-pipeline-output")
         existing_by_sid: dict[str, Path] = {}
         pending_samples: list[dict] = []
         for sample in samples:
@@ -407,14 +404,14 @@ def main() -> int:
         if pending_samples:
             _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
 
-            # 3. v3.1 pipeline input. The official pipeline now owns
+            # 2. v3.x pipeline input. The official pipeline now owns
             # PREPARE_VCF / PREPARE_VCF_DRAGEN, so the default path is
             # a one-row sample sheet. Keep the old staging route behind
             # an env switch for deployments that have not upgraded yet.
             if legacy_staging:
                 if len(pending_samples) != 1:
                     raise RuntimeError(
-                        "batch jobs require the v3.1 samplesheet pipeline; "
+                        "batch jobs require the v3.x samplesheet pipeline; "
                         "unset NGS_UI_TERTIARY_LEGACY_STAGING or run one sample at a time"
                     )
                 sample = pending_samples[0]
@@ -460,7 +457,7 @@ def main() -> int:
                         f"input_dir={_pipeline_input_dir(Path(sample['vcf_path']), mode)}"
                     )
 
-            # 4. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
+            # 3. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
             _set_step(job_id, "nextflow")
             nextflow_stages = [
                 ("prepare-vcf-dragen", "PREPARE_VCF_DRAGEN"),
@@ -495,7 +492,7 @@ def main() -> int:
                     "-work-dir", str(nf_work),
                     "--sample_id", sid,
                     "--input_dir", str(nf_stage),
-                    "--seq_type",  seq_type,
+                    "--seq_type",  sample["seq_type"],
                     "--out_dir",   str(PIPELINE_OUT_ROOT),
                     "-resume",
                 ]
@@ -527,7 +524,7 @@ def main() -> int:
                     "bash",
                     "-lc",
                     shell_cmd,
-                ], label="2b/4 nextflow v3.1", on_line=track_nextflow)
+                ], label="2b/4 nextflow v3.x", on_line=track_nextflow)
 
             for sample in pending_samples:
                 sid = sample["sample_id"]
@@ -540,7 +537,7 @@ def main() -> int:
                     )
                 existing_by_sid[sid] = existing
 
-        # 5. Copy pipeline TSV → NGS-UI side; record source audit.
+        # 4. Copy pipeline outputs → NGS-UI side; record source audit.
         _set_step(job_id, "copy-pipeline-tsv")
         for sample in samples:
             sid = sample["sample_id"]
@@ -561,8 +558,18 @@ def main() -> int:
                 pipeline_type=mode,
             )
             _log(f"[copy] {sid}: {existing} → {gui_tsv}")
+            mito_src = _find_pipeline_mito_tsv(source_sid, sid)
+            if mito_src is None:
+                _log(
+                    f"[copy] {sid}: mito output not found under "
+                    f"{PIPELINE_OUT_ROOT}/{source_sid}/04_mito/"
+                )
+            else:
+                mito_dst = sample_dir / "mito.annotated.tsv"
+                shutil.copyfile(mito_src, mito_dst)
+                _log(f"[copy] {sid}: {mito_src} → {mito_dst}")
 
-        # 6. Stop-gap chain (no ClinVar; pipeline already populates it).
+        # 5. Stop-gap chain (no ClinVar; pipeline already populates it).
         _set_step(job_id, "stop-gaps")
         def track_stopgaps(line: str) -> None:
             match = re.search(r"\[stopgaps-step]\s+([a-z0-9-]+)\s+start", line)

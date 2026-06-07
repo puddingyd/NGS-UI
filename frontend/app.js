@@ -3843,7 +3843,7 @@ function _mitoFilterTitle(filt) {
 const _MITO_TLOD_TITLE = "Mutect2 tumor LOD：log10(變異存在 / 不存在) 的 likelihood ratio。越高 = 越確定是真變異（非測序錯誤）；一般 >6 算可靠，1-2 多為雜訊。";
 
 function _renderMitoDetailBox(v, id) {
-  const filt = v.filter && v.filter !== "." ? v.filter : "PASS";
+  const filt = v.filter && v.filter !== "." ? v.filter : "";
   const tlod = (v.TLOD != null) ? Number(v.TLOD).toFixed(2) : "—";
   const ad   = v.AD || "—";
   const dp   = (v.depth != null) ? v.depth : "—";
@@ -3884,7 +3884,7 @@ function _renderMitoDetailBox(v, id) {
       <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
       <span><strong>類型:</strong> ${escapeHtml(MITO_LOCUS_LABELS[v.locus_type] || v.locus_type || "—")}</span>
       <span><strong>Heteroplasmy:</strong> ${_mitoHeteroplasmy(v)} <span class="muted">(AD ${escapeHtml(ad)} · DP ${dp})</span></span>
-      <span data-tip="${escapeAttr(_mitoFilterTitle(filt))}"><strong>Filter:</strong> ${escapeHtml(filt)} <span class="muted" style="cursor:help">ⓘ</span></span>
+      ${filt ? `<span data-tip="${escapeAttr(_mitoFilterTitle(filt))}"><strong>Filter:</strong> ${escapeHtml(filt)} <span class="muted" style="cursor:help">ⓘ</span></span>` : ""}
     </div>
     <div class="cnv-sv-detail-row">
       <span><strong>Consequence:</strong> ${escapeHtml(consL)}</span>
@@ -7496,7 +7496,7 @@ function maybeShowVersionPicker(onPick) {
 // Button on the topbar opens a modal listing every hard-filtered
 // VCF found under the server's DRAGEN_VCF_ROOTS, reviewer picks
 // one and clicks 開始分析. Backend spawns a worker process
-// (mito → v3.1 samplesheet → nextflow → run_stopgaps). We poll
+// (samplesheet → nextflow → copy outputs → run_stopgaps). We poll
 // /api/dragen/jobs/{job_id} every 5 s and reflect the current
 // step in (a) the modal log pane and (b) a small grey status
 // label next to the "成大醫院基因醫學部 NGS 分析平台" title.
@@ -7814,7 +7814,6 @@ function _dragenProgressPercent(state) {
   if (state.state === "done") return 100;
   const byStep = {
     queued: 1,
-    mito: 1,
     "detect-pipeline-output": 2,
     samplesheet: 2,
     stage: 2,

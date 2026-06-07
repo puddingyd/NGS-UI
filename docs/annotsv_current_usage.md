@@ -6,22 +6,16 @@
 
 AnnotSV 目前預設放在 DGM/NGS-UI 本機資料樹底下：
 
-- 程式：`$HOME/NGS_UI/biotools/AnnotSV/bin/AnnotSV`
-- AnnotSV annotation database：`$HOME/NGS_UI/biotools/AnnotSV/share/AnnotSV`
+- 程式：`/home/n102968/NGS_UI/biotools/AnnotSV/bin/AnnotSV`
+- AnnotSV annotation database：`/home/n102968/NGS_UI/biotools/AnnotSV/share/AnnotSV`
 
-可以用環境變數覆寫：
 
-```bash
-export ANNOTSV_BIN=/path/to/AnnotSV
-export ANNOTSV_ANNOTATIONS=/path/to/AnnotSV/share/AnnotSV
-```
-
-NGS-UI 自己的呼叫程式在 repo 內：
+NGS-UI 自己的呼叫程式在：
 
 - `scripts/run_annotsv_cnv_sv.sh`：統一入口，依來源分派 DRAGEN 或 in-house。
 - `scripts/annotate_dragen_cnv_annotsv.sh`：DRAGEN CNV/SV VCF。
 - `scripts/annotate_inhouse_cnv_sv_annotsv.sh`：in-house gCNV + Delly VCF。
-- `backend/app/adapters/annotsv_tsv.py`：讀 AnnotSV TSV 給 GUI 卡片。
+
 
 ## 輸入
 

@@ -33,10 +33,11 @@ from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
 # into state.json so the UI can show progress.
 PIPELINE_STEPS = [
     "queued",
-    "mito",
+    "detect-pipeline-output",
     "samplesheet",
     "stage",  # legacy fallback only
     "nextflow",
+    "copy-pipeline-tsv",
     "stop-gaps",
     "done",
 ]
@@ -571,10 +572,12 @@ def start_job(
 
     mode = "dragen" → DRAGEN germline; v3.1 sample sheet uses
                        {input_dir}/vcf.gz/{source_sample_id}.hard-filtered.vcf.gz.
-    mode = "inhouse" → NCKUH ensemble output; v3.1 sample sheet uses
+    mode = "inhouse" → NCKUH ensemble output; v3.x sample sheet uses
                        {input_dir}/04_snv_indel/{source_sample_id}.ensemble.fixed.vcf.gz.
-                       cnv_vcf / sv_vcf / mito_vcf are still passed for
-                       NGS-UI stop-gaps until pipeline Phase 2/3 lands.
+                       cnv_vcf / sv_vcf are still passed for NGS-UI
+                       AnnotSV until pipeline CNV/SV lands. mito_vcf is
+                       retained in job metadata only; v3.2 pipeline output
+                       04_mito/{sample}.mito.tsv is copied back to the UI.
 
     Returns the job_id. The worker writes state.json + log.txt under
     TERTIARY_JOBS_DIR/<job_id>/; the route polls.
