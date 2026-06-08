@@ -107,7 +107,8 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_PANEL_DEADZONE_DIR` | `REPO_ROOT/ngs_panel_deadzone` | panel_loose、HGNC alias map、WES/WGS dead-zone tables |
 | `NGS_UI_OMIM_XLSX` | `$NGS_UI_HOME/OMIM/OMIM.xlsx` | OMIM 疾病註解（缺檔 = 停用） |
 | `NGS_UI_BIOTOOLS_DIR` | `$NGS_UI_HOME/biotools` | Exomiser / LIRICAL |
-| `NGS_UI_BAM_ROOT` | `/home/datalake_Intermediate/pipeline/nextflow_output` | IGV 搜尋 BAM 的根目錄；可用 `:` 分隔多個 root |
+| `NGS_UI_INHOUSE_BAM_ROOT` | `/home/datalake_Intermediate/pipeline/nextflow_output` | IGV 搜尋 in-house / Nextflow BAM 的根目錄；可用 `:` 分隔多個 root；舊 `NGS_UI_BAM_ROOT` 仍作為 fallback |
+| `NGS_UI_DRAGEN_BAM_ROOT` | `/home/datalake_Raw/Novaseq` | IGV 搜尋 DRAGEN raw BAM 的根目錄；尋找 `<run>/bam/{sample}.bam`，排除 `{sample}.repeats.bam` |
 | `NGS_UI_IGV_REF_DIR` | `/home/pipeline/reference/hg38` | IGV 本機 hg38 FASTA + `.fai` |
 | `EXOMISER_HOME` / `LIRICAL_HOME` / `EXOMISER_DATA_HG38` ... | `biotools/...` | 工具與 data 路徑 |
 | `JAVA_BIN` / `JAVA_OPTS` | `java` / `-Xms4g -Xmx16g` | 跑 Exomiser/LIRICAL 用 |
@@ -146,7 +147,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - SNV/Indel 與 CNV/SV gene 搜尋支援多個基因，以 `,` 或 `、` 分隔；SNV 搜尋由 `/api/samples/{id}/snv-search` 查完整原始 TSV，不受 review TSV 限制。三級分析結尾會預建 `snv_gene_index.sqlite`（gene → raw TSV byte offsets），所以 WGS gene search 不需在載入個案時掃 1–2GB raw TSV；舊樣本若缺 index 才 fallback 到 raw TSV parse。modal 預設勾選 `gnomAD_G_AF < 0.01`，取消後才顯示全部搜尋結果。搜尋 modal 內的 SNV 卡片也會依 `MANE_ALL` 把 ENST 顯示轉成 MANE SELECT `NM_`。
    - Variant 狀態用 `1 / 2 / C / 0` 圓形按鈕；`C` 與 `0` 可並存，`1` 或 `2` 會反選其他狀態；再次點擊已選項目可清空狀態。同一個 variant 在分析區、報告區與搜尋 modal 的按鈕會同步上色。
    - Variant 卡片保留 OMIM `Disease1..5` 完整內容；「個案清單」中的疾病摘要才截到第一個可辨識的遺傳模式括號（例如 `(AD)`、`(AR)`）為止。
-   - SNV/Indel 與 CNV/SV 卡片有 `IGV` 按鈕；基本資料的性別下方另有「☑ 已確認」核取方塊與「確認 SRY」按鈕。SRY 會沿用同一個 modal 開啟 hg19/hg38 對應區域，初始只載入當前 sample，仍可手動加入 sibling，coverage data range 固定 `0-100`；勾選確認狀態會寫進 reviewer metadata。一般 modal 標題會顯示 sample、padded locus、variant 註解與原始座標；alignment 預設用 squished 模式，`visibilityWindow=5 Mb`。SNV/Indel 顯示前後 100bp，CNV/SV 原則上顯示前後各 20% flanking area；若事件本身 ≤5 Mb，padding 會自動縮小以維持初始視窗 ≤5 Mb，直接載入 BAM coverage，不需先 zoom in。IGV 另以 ROI 標出實際 CNV/SV 區間。CNV/SV modal 會把所有 BAM coverage tracks 放進同一個 autoscale group，讓 y-axis data range 一致，方便和 sibling 比較 deletion/duplication。先確認 primary BAM 與同 batch sibling tracks，再按「載入 IGV」；若 UI sample ID 帶 `-dragen` / `-inhouse` / `-WES` / `-WGS`，BAM 查詢可 fallback 到去 suffix 的原始 sample ID；BAM range request 與 hg38 FASTA 都由後端在內網 proxy。
+   - SNV/Indel 與 CNV/SV 卡片有 `IGV` 按鈕；基本資料的性別下方另有「☑ 已確認」核取方塊與「確認 SRY」按鈕。SRY 會沿用同一個 modal 開啟 hg19/hg38 對應區域，初始只載入當前 sample，仍可手動加入 sibling，coverage data range 固定 `0-100`；勾選確認狀態會寫進 reviewer metadata。一般 modal 標題會顯示 sample、padded locus、variant 註解與原始座標；alignment 預設用 squished 模式，`visibilityWindow=5 Mb`。SNV/Indel 顯示前後 100bp，CNV/SV 原則上顯示前後各 20% flanking area；若事件本身 ≤5 Mb，padding 會自動縮小以維持初始視窗 ≤5 Mb，直接載入 BAM coverage，不需先 zoom in。IGV 另以 ROI 標出實際 CNV/SV 區間。CNV/SV modal 會把所有 BAM coverage tracks 放進同一個 autoscale group，讓 y-axis data range 一致，方便和 sibling 比較 deletion/duplication。先確認 primary BAM 與同 batch sibling tracks，再按「載入 IGV」；若 UI sample ID 帶 `-dragen` / `-inhouse` / `-WES` / `-WGS`，BAM 查詢可 fallback 到去 suffix 的原始 sample ID。DRAGEN 來源會在 raw Novaseq root 找 `<run>/bam/{sample}.bam` 並排除 `{sample}.repeats.bam`；in-house 來源維持找 Nextflow output 的 `02_alignment`。BAM range request 與 hg38 FASTA 都由後端在內網 proxy。
    - CNV：`CNV-1A`（Clinical）、`CNV-1B`（Pathogenic）；SV：`SV-2A / SV-2B`。CNV/SV 分析區與報告區皆依 `max_pheno_score + scaled AnnotSV ranking score` 由高到低排序；CNV/SV 卡片的基因表預設只顯示 phenotype 相關基因，按小三角形才展開 phenotype score 為 0 的其餘基因。
    - 同來源、同染色體、同為 deletion 或同為 duplication，且相鄰 gap ≤ `250 kb` 的 CNV/SV 會預設自動整合；copy number 差異不再阻擋視覺整合，原始片段仍可展開查看各自 CN。UI、DOCX 與個案清單改用合併後 parent；parent 會取代最佳原始 segment 的位置，不會掉到 tier 最後。前端會依 sample payload 快取整合結果，避免卡片 render 時反覆重建 parent。
    - Mitochondria：`MITO-1`（ClinVar P/LP 或 MITOMAP confirmed/pathogenic）、`MITO-2`（rare / reported mtDNA variant）、`MITO-3`（other variant）— 若來源 TSV 有 `FILTER` 欄，只列 `FILTER=PASS`；v3.2 `04_mito/{sample}.mito.tsv` 沒有 `FILTER` 時不顯示 Filter 欄。MITOMAP 欄位只在後端分類使用，卡片不顯示 MITOMAP；Disease 改用 `CLINVAR_DN` 依 `&` 拆成 checkbox，勾選者才進 DOCX。
@@ -167,7 +168,7 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 
 服務啟動時會以 daemon thread 在背景預熱 HPO、phenotype gene map、OMIM 與 mito ClinVar cache，避免解析大型 `phenotype_to_genes.txt` 期間擋住 HTTP port。完整 SNV TSV 的 gene search 走 per-sample `snv_gene_index.sqlite`；index 由 tertiary job / `run_stopgaps.sh` 預建，載入個案後不再自動掃描 WGS raw TSV。`in_panel` / `pheno_score` 由 active analysis 的 `pheno_score.tsv` 在載入與搜尋時補入，不再為 HPO/panel 變更重寫完整 raw TSV。刪除個案時只 invalidate 該 sample 的 SNV 與個案摘要 cache，不會同步重掃全部清單。
 
-三級分析另保存 `source_sample_id`（原始 sequencing sample ID）到 job state 與 `pipeline_source.json`。IGV 先以目前個案 ID 找 BAM；自訂輸出 ID 找不到時，會用 sidecar 回查原始 BAM ID。舊個案缺少 sidecar 欄位時，會移除已知 suffix（如 `-dragen`）後用原始 sample ID 搜尋 BAM，並優先使用最近的命中。
+三級分析另保存 `source_sample_id`（原始 sequencing sample ID）到 job state 與 `pipeline_source.json`。IGV 先依 `pipeline_type` 分流：DRAGEN 找 `NGS_UI_DRAGEN_BAM_ROOT/<run>/bam/{sample}.bam`，in-house 找 `NGS_UI_INHOUSE_BAM_ROOT/<batch>/{sample}/02_alignment/`。自訂輸出 ID 找不到時，會用 sidecar 回查原始 BAM ID；舊個案缺少 sidecar 欄位時，會移除已知 suffix（如 `-dragen`）後用原始 sample ID 搜尋 BAM，並優先使用最近的命中。
 
 ### 臨床表徵工具 `/phenotype/`
 

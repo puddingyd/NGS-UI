@@ -537,6 +537,11 @@ function _bamUrl(path) {
   return `${API_BASE}/igv/file?path=${encodeURIComponent(path)}`;
 }
 
+function _bamIndexUrl(bam) {
+  const indexPath = bam?.index_path || (bam?.path ? `${bam.path}.bai` : "");
+  return _bamUrl(indexPath);
+}
+
 // Pick a locus string ("chr1:12345-12545") with padding from a variant
 // payload. SNV/Indel gets ~100bp context; CNV/SV gets 20% flanks so the
 // reviewer can compare coverage around both breakpoints.
@@ -728,7 +733,7 @@ async function _initIgvBrowser() {
     autoscale: _igvIsSry ? false : undefined,
     max: _igvIsSry ? 100 : undefined,
     url: _bamUrl(b.path),
-    indexURL: _bamUrl(b.path + ".bai"),
+    indexURL: _bamIndexUrl(b),
   }));
   // igv.js's default hg38 reference is hosted on AWS S3, which is
   // blocked on the hospital intranet. Ask the backend for a custom

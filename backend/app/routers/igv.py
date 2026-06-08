@@ -2,10 +2,12 @@
 stream BAM/BAI files with HTTP range support so the browser-side
 igv.js can read alignments directly.
 
-BAMs live outside the NGS-UI tree, on the pipeline's nextflow output
-share. We constrain reads to the configured root(s) and only allow
-BAM/BAI/CRAM/CRAI extensions so this can't double as a generic file
-proxy. Login required (same as the rest of /api).
+BAMs live outside the NGS-UI tree. DRAGEN BAMs use the raw Novaseq
+layout `<run>/bam/<sample>.bam`; in-house BAMs use the Nextflow layout
+`<batch>/<sample>/02_alignment/<sample>.aligned.sorted.bam`. We
+constrain reads to the configured root(s) and only allow BAM/BAI/CRAM
+/CRAI extensions so this can't double as a generic file proxy. Login
+required (same as the rest of /api).
 """
 from __future__ import annotations
 
@@ -28,12 +30,20 @@ router = APIRouter(
 )
 
 # Where pipeline alignments live. Override via env on the dev box.
-_BAM_ROOTS = [
+_INHOUSE_BAM_ROOTS = [
     Path(p).resolve() for p in (
-        os.environ.get("NGS_UI_BAM_ROOT")
+        os.environ.get("NGS_UI_INHOUSE_BAM_ROOT")
+        or os.environ.get("NGS_UI_BAM_ROOT")
         or "/home/datalake_Intermediate/pipeline/nextflow_output"
     ).split(":") if p
 ]
+_DRAGEN_BAM_ROOTS = [
+    Path(p).resolve() for p in (
+        os.environ.get("NGS_UI_DRAGEN_BAM_ROOT")
+        or "/home/datalake_Raw/Novaseq"
+    ).split(":") if p
+]
+_ALL_BAM_ROOTS = tuple(dict.fromkeys([*_INHOUSE_BAM_ROOTS, *_DRAGEN_BAM_ROOTS]))
 
 # Reference genome dir (fasta + .fai). Shipped to igv.js as a custom
 # genome config so we can stay on hospital intranet — the default
@@ -57,7 +67,7 @@ def _validate_sid(sid: str) -> str:
     return sid
 
 
-def _bam_for(sid: str, batch: Path) -> Path | None:
+def _inhouse_bam_for(sid: str, batch: Path) -> Path | None:
     p = batch / sid / "02_alignment" / f"{sid}.aligned.sorted.bam"
     if p.is_file():
         return p
@@ -68,12 +78,42 @@ def _bam_for(sid: str, batch: Path) -> Path | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def _dragen_bam_for(sid: str, run_dir: Path) -> Path | None:
+    bam_dir = run_dir / "bam"
+    if not bam_dir.is_dir():
+        return None
+    exact = bam_dir / f"{sid}.bam"
+    if exact.is_file():
+        return exact
+    hits = [
+        p for p in sorted(bam_dir.glob(f"{sid}*.bam"))
+        if not p.name.endswith(".repeats.bam")
+    ]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _sample_id_from_dragen_bam(path: Path) -> str:
+    name = path.name
+    return name[:-len(".bam")] if name.endswith(".bam") else path.stem
+
+
+def _bam_index_for(path: Path) -> Path | None:
+    candidates = [
+        Path(str(path) + ".bai"),
+        path.with_suffix(".bai"),
+    ]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
+
+
 def _path_ok(p: Path) -> bool:
     try:
         rp = p.resolve()
     except OSError:
         return False
-    for root in (*_BAM_ROOTS, _REF_DIR):
+    for root in (*_ALL_BAM_ROOTS, _REF_DIR):
         try:
             rp.relative_to(root)
             return True
@@ -82,12 +122,15 @@ def _path_ok(p: Path) -> bool:
     return False
 
 
-def _bam_entry(sid: str, batch: Path, path: Path) -> dict:
+def _bam_entry(sid: str, batch: Path, path: Path, *, source: str) -> dict:
+    index = _bam_index_for(path)
     return {
         "label":     f"{sid} ({batch.name})",
         "sample_id": sid,
         "batch":     batch.name,
         "path":      str(path),
+        "index_path": str(index) if index else "",
+        "source":    source,
     }
 
 
@@ -98,32 +141,57 @@ def _bam_mtime(hit: dict) -> float:
         return 0.0
 
 
-def _bam_hits(sid: str) -> list[dict]:
+def _bam_hits(sid: str, *, source: str = "") -> list[dict]:
     out: list[dict] = []
-    for root in _BAM_ROOTS:
-        if not root.is_dir():
-            continue
-        for batch in sorted(root.iterdir()):
-            if not batch.is_dir():
+    if source in ("", "inhouse", "nckuh"):
+        for root in _INHOUSE_BAM_ROOTS:
+            if not root.is_dir():
                 continue
-            p = _bam_for(sid, batch)
-            if p:
-                out.append(_bam_entry(sid, batch, p))
+            for batch in sorted(root.iterdir()):
+                if not batch.is_dir():
+                    continue
+                p = _inhouse_bam_for(sid, batch)
+                if p:
+                    out.append(_bam_entry(sid, batch, p, source="inhouse"))
+    if source in ("", "dragen"):
+        for root in _DRAGEN_BAM_ROOTS:
+            if not root.is_dir():
+                continue
+            for run_dir in sorted(root.iterdir()):
+                if not run_dir.is_dir():
+                    continue
+                p = _dragen_bam_for(sid, run_dir)
+                if p:
+                    out.append(_bam_entry(sid, run_dir, p, source="dragen"))
     out.sort(key=_bam_mtime, reverse=True)
     return out
 
 
-def _source_sid_from_sidecar(sid: str) -> str:
+def _sidecar_for(sid: str) -> dict:
     path = TERTIARY_OUTPUT_ROOT / sid / "pipeline_source.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8")) or {}
     except (OSError, json.JSONDecodeError):
-        return ""
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _source_sid_from_sidecar(sid: str) -> str:
+    data = _sidecar_for(sid)
     source_sid = str(data.get("source_sample_id") or "").strip()
     return source_sid if _SID_RE.match(source_sid) else ""
 
 
-def _legacy_source_sid(sid: str) -> str:
+def _pipeline_type_from_sidecar(sid: str) -> str:
+    raw = str(_sidecar_for(sid).get("pipeline_type") or "").strip().lower()
+    if raw == "dragen":
+        return "dragen"
+    if raw in ("nckuh", "inhouse"):
+        return "inhouse"
+    return ""
+
+
+def _legacy_source_sid(sid: str, *, source: str = "") -> str:
     """Resolve UI sample aliases such as VAL-60-dragen → VAL-60."""
     candidates = [
         sid.removesuffix(suffix)
@@ -133,23 +201,24 @@ def _legacy_source_sid(sid: str) -> str:
     hits = [
         hit
         for candidate in candidates
-        for hit in _bam_hits(candidate)
+        for hit in _bam_hits(candidate, source=source)
     ]
     return hits[0]["sample_id"] if hits else ""
 
 
 def _resolve_primary_bam(sid: str) -> tuple[dict | None, str, str]:
-    direct = _bam_hits(sid)
+    preferred_source = _pipeline_type_from_sidecar(sid)
+    direct = _bam_hits(sid, source=preferred_source)
     if direct:
         return direct[0], sid, "exact"
     source_sid = _source_sid_from_sidecar(sid)
     if source_sid:
-        hits = _bam_hits(source_sid)
+        hits = _bam_hits(source_sid, source=preferred_source)
         if hits:
             return hits[0], source_sid, "pipeline_source"
-    legacy_sid = _legacy_source_sid(sid)
+    legacy_sid = _legacy_source_sid(sid, source=preferred_source)
     if legacy_sid:
-        hits = _bam_hits(legacy_sid)
+        hits = _bam_hits(legacy_sid, source=preferred_source)
         if hits:
             return hits[0], legacy_sid, "legacy_suffix"
     return None, sid, "not_found"
@@ -164,22 +233,37 @@ def list_bams(sample_id: str = Query(...)):
     primary, resolved_sid, resolution = _resolve_primary_bam(sid)
     siblings: list[dict] = []
     if primary:
-        batch = Path(primary["path"]).parents[2]
-        for sib in sorted(batch.iterdir()):
-            if not sib.is_dir() or sib.name == resolved_sid:
-                continue
-            sp = _bam_for(sib.name, batch)
-            if sp:
-                siblings.append(_bam_entry(sib.name, batch, sp))
-            if len(siblings) >= _SIBLING_LIMIT:
-                break
+        if primary.get("source") == "dragen":
+            run_dir = Path(primary["path"]).parents[1]
+            bam_dir = run_dir / "bam"
+            for sp in sorted(bam_dir.glob("*.bam")) if bam_dir.is_dir() else []:
+                if sp.name.endswith(".repeats.bam"):
+                    continue
+                sib_sid = _sample_id_from_dragen_bam(sp)
+                if sib_sid == resolved_sid:
+                    continue
+                siblings.append(_bam_entry(sib_sid, run_dir, sp, source="dragen"))
+                if len(siblings) >= _SIBLING_LIMIT:
+                    break
+        else:
+            batch = Path(primary["path"]).parents[2]
+            for sib in sorted(batch.iterdir()):
+                if not sib.is_dir() or sib.name == resolved_sid:
+                    continue
+                sp = _inhouse_bam_for(sib.name, batch)
+                if sp:
+                    siblings.append(_bam_entry(sib.name, batch, sp, source="inhouse"))
+                if len(siblings) >= _SIBLING_LIMIT:
+                    break
     return {
         "primary": primary,
         "siblings": siblings,
         "requested_sample_id": sid,
         "resolved_sample_id": resolved_sid,
         "resolution": resolution,
-        "roots": [str(r) for r in _BAM_ROOTS],
+        "roots": [str(r) for r in _ALL_BAM_ROOTS],
+        "dragen_roots": [str(r) for r in _DRAGEN_BAM_ROOTS],
+        "inhouse_roots": [str(r) for r in _INHOUSE_BAM_ROOTS],
     }
 
 
@@ -191,16 +275,26 @@ def list_batch_samples(batch: str = Query(...)):
     if not re.match(r"^[A-Za-z0-9_.\-]{1,64}$", batch):
         raise HTTPException(400, "invalid batch name")
     out: list[dict] = []
-    for root in _BAM_ROOTS:
+    for root in _INHOUSE_BAM_ROOTS:
         bd = root / batch
         if not bd.is_dir():
             continue
         for d in sorted(bd.iterdir()):
             if not d.is_dir():
                 continue
-            p = _bam_for(d.name, bd)
+            p = _inhouse_bam_for(d.name, bd)
             if p:
-                out.append(_bam_entry(d.name, bd, p))
+                out.append(_bam_entry(d.name, bd, p, source="inhouse"))
+    for root in _DRAGEN_BAM_ROOTS:
+        run_dir = root / batch
+        bam_dir = run_dir / "bam"
+        if not bam_dir.is_dir():
+            continue
+        for p in sorted(bam_dir.glob("*.bam")):
+            if p.name.endswith(".repeats.bam"):
+                continue
+            sid = _sample_id_from_dragen_bam(p)
+            out.append(_bam_entry(sid, run_dir, p, source="dragen"))
     return {"batch": batch, "samples": out}
 
 
