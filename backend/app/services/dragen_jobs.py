@@ -20,7 +20,7 @@ import signal
 import subprocess
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
@@ -44,8 +44,11 @@ PIPELINE_STEPS = [
 _SAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
+TAIPEI_TZ = timezone(timedelta(hours=8))
+
+
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(TAIPEI_TZ).isoformat(timespec="seconds")
 
 
 def _validate_sample_id(sample_id: str) -> str:
@@ -583,7 +586,7 @@ def start_job(
     source_sample_id: str = "",
     mode: str = "dragen",
     seq_type: str = "",
-    with_extra_vep: bool = True,
+    with_extra_vep: bool = False,
     cnv_vcf: str = "",
     sv_vcf: str = "",
     mito_vcf: str = "",

@@ -141,16 +141,22 @@ function onSearchKeydown(event, rowNum) {
   const items = dropdown.querySelectorAll(".dropdown-item[data-hp-id]");
   if (event.key === "ArrowDown") {
     event.preventDefault();
+    event.stopPropagation();
     dropdownHighlight = Math.min(dropdownHighlight + 1, items.length - 1);
     updateHighlight(items);
   } else if (event.key === "ArrowUp") {
     event.preventDefault();
+    event.stopPropagation();
     dropdownHighlight = Math.max(dropdownHighlight - 1, 0);
     updateHighlight(items);
   } else if (event.key === "Enter") {
     event.preventDefault();
-    if (dropdownHighlight >= 0 && items[dropdownHighlight]) items[dropdownHighlight].click();
+    event.stopPropagation();
+    const idx = dropdownHighlight >= 0 ? dropdownHighlight : 0;
+    if (items[idx]) items[idx].click();
   } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
     dropdown.classList.remove("visible");
   }
 }
@@ -282,16 +288,22 @@ function onPanelSearchKeydown(event, rowNum) {
   const items = dropdown.querySelectorAll(".dropdown-item[data-hp-id]");
   if (event.key === "ArrowDown") {
     event.preventDefault();
+    event.stopPropagation();
     dropdownHighlight = Math.min(dropdownHighlight + 1, items.length - 1);
     updateHighlight(items);
   } else if (event.key === "ArrowUp") {
     event.preventDefault();
+    event.stopPropagation();
     dropdownHighlight = Math.max(dropdownHighlight - 1, 0);
     updateHighlight(items);
   } else if (event.key === "Enter") {
     event.preventDefault();
-    if (dropdownHighlight >= 0 && items[dropdownHighlight]) items[dropdownHighlight].click();
+    event.stopPropagation();
+    const idx = dropdownHighlight >= 0 ? dropdownHighlight : 0;
+    if (items[idx]) items[idx].click();
   } else if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
     dropdown.classList.remove("visible");
   }
 }

@@ -5,7 +5,7 @@
 # Runs every stop-gap on a single snv_indel.annotated.tsv in the
 # order they make sense:
 #
-#   1. filter_snv_tsv.py        — filter alt-contig / * only
+#   1. filter_snv_tsv.py        — filter alt-contig / * only (silent)
 #   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
 #                                  columns (pipeline's ACMG_* untouched)
 #   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
@@ -30,31 +30,44 @@
 #       [--sample SID]
 #
 # Env / flags:
-#   GENEBE_USER / GENEBE_API_KEY       — required (step 3)
+#   GENEBE_USER / GENEBE_API_KEY       — required (step 2)
 #   NGS_UI_CDS_CANDIDATE_BED           — optional, default
 #                                         $HOME/NGS_UI/biotools/cds_combined.bed
 #   --spliceai-snv / --spliceai-indel  — optional, default
 #                                         $HOME/NGS_UI/biotools/spliceai/...
 #   --candidate-bed / --skip-candidate-bed
 #                                      — restrict GeneBe/Extra VEP candidates
-#   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 4
-#   --skip-cnv                         — disable AnnotSV step 5 even
+#   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 3
+#   --skip-cnv                         — disable AnnotSV step 4 even
 #                                         when --dragen-cnv-source is set
 # =========================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-timestamp() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+timestamp() { TZ=Asia/Taipei date +"%Y-%m-%dT%H:%M:%S+08:00"; }
 step_start() {
   STOPGAP_STEP="$1"
+  STOPGAP_MARKER="${2:-stopgaps-step}"
   STOPGAP_STEP_STARTED="$(date +%s)"
-  echo "[$(timestamp)] [stopgaps-step] $STOPGAP_STEP start"
+  echo "[$(timestamp)] [$STOPGAP_MARKER] $STOPGAP_STEP start"
 }
 step_done() {
   local ended
   ended="$(date +%s)"
-  echo "[$(timestamp)] [stopgaps-step] $STOPGAP_STEP done elapsed=$((ended - STOPGAP_STEP_STARTED))s"
+  echo "[$(timestamp)] [$STOPGAP_MARKER] $STOPGAP_STEP done elapsed=$((ended - STOPGAP_STEP_STARTED))s"
+}
+run_silent_step() {
+  local label="$1"
+  shift
+  local tmp_log
+  tmp_log="$(mktemp "${TMPDIR:-/tmp}/ngs-${label}.XXXXXX.log")"
+  if ! "$@" >"$tmp_log" 2>&1; then
+    cat "$tmp_log" >&2
+    rm -f "$tmp_log"
+    exit 1
+  fi
+  rm -f "$tmp_log"
 }
 
 TSV=""
@@ -106,26 +119,12 @@ else
   echo "  candidate BED: not found at $CANDIDATE_BED (GeneBe/Extra VEP use AF-only candidates)"
 fi
 
-# 1. ClinVar fallback. The new pipeline's CLINVAR_SIG column has been
-# flaky (often blank); annotate_clinvar.py is fill-empty-only, so
-# pipeline-supplied values win when present. Once the pipeline's
-# ClinVar step is reliable this step turns into a no-op.
-echo
-echo "[stopgaps] 1/5  annotate_clinvar.py (fill-empty fallback)"
-step_start "clinvar"
-"$SCRIPT_DIR/annotate_clinvar.py" --tsv "$TSV"
-step_done
+# 1. Filter. Keep the cleanup, but keep it out of the user-facing log.
+run_silent_step "filter-snv" "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
 
-# 2. Filter.
+# 2. GeneBe ACMG (writes to GENEBE_* columns; pipeline ACMG_* preserved).
 echo
-echo "[stopgaps] 2/5  filter_snv_tsv.py"
-step_start "filter-snv"
-"$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
-step_done
-
-# 3. GeneBe ACMG (writes to GENEBE_* columns; pipeline ACMG_* preserved).
-echo
-echo "[stopgaps] 3/5  annotate_acmg_genebe.py"
+echo "[stopgaps] annotate_acmg_genebe.py"
 step_start "genebe"
 if [ -z "${GENEBE_USER:-}" ] || [ -z "${GENEBE_API_KEY:-}" ]; then
   echo "ERROR: GENEBE_USER + GENEBE_API_KEY must be exported" >&2
@@ -134,13 +133,11 @@ fi
 "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV" "${CANDIDATE_BED_ARGS[@]}"
 step_done
 
-# 4. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
-echo
-echo "[stopgaps] 4/5  annotate_extra_vep.py"
-step_start "extra-vep"
-if [ "$SKIP_EXTRA_VEP" -eq 1 ]; then
-  echo "  - skipped (--skip-extra-vep)"
-else
+# 3. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
+if [ "$SKIP_EXTRA_VEP" -eq 0 ]; then
+  echo
+  echo "[stopgaps] annotate_extra_vep.py"
+  step_start "extra-vep"
   EXTRA_VEP_ARGS=(--tsv "$TSV")
   if [ "$SKIP_SPLICEAI" -eq 0 ] && [ -f "$SPLICEAI_SNV" ] && [ -f "$SPLICEAI_INDEL" ]; then
     EXTRA_VEP_ARGS+=(--spliceai-snv "$SPLICEAI_SNV" --spliceai-indel "$SPLICEAI_INDEL")
@@ -153,17 +150,15 @@ else
     fi
   fi
   "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}" "${CANDIDATE_BED_ARGS[@]}"
+  step_done
 fi
-step_done
 
-# 5. CNV/SV via AnnotSV.
+# 4. CNV/SV via AnnotSV.
 SAMPLE_DIR="$(dirname "$TSV")"
-echo
-echo "[stopgaps] 5/5  AnnotSV CNV/SV"
-step_start "annotsv"
-if [ "$SKIP_CNV" -eq 1 ]; then
-  echo "  - skipped (--skip-cnv)"
-else
+if [ "$SKIP_CNV" -eq 0 ] && { [ -n "$DRAGEN_VCF" ] || [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; }; then
+  echo
+  echo "[stopgaps] run_annotsv_cnv_sv.sh"
+  step_start "annotsv"
   ANNOTSV_ARGS=(--sample "$SID" --out-dir "$SAMPLE_DIR")
   if [ -n "$DRAGEN_VCF" ]; then
     ANNOTSV_ARGS+=(--dragen-cnv-source "$DRAGEN_VCF")
@@ -175,8 +170,8 @@ else
     ANNOTSV_ARGS+=(--inhouse-sv-vcf "$INHOUSE_SV_VCF")
   fi
   "$SCRIPT_DIR/run_annotsv_cnv_sv.sh" "${ANNOTSV_ARGS[@]}"
+  step_done
 fi
-step_done
 
 # Drop a copy at the GUI-expected path (no sample prefix).
 GUI_TSV="$SAMPLE_DIR/snv_indel.annotated.tsv"
@@ -187,15 +182,15 @@ if [ "$TSV" != "$GUI_TSV" ]; then
 fi
 
 echo
-echo "[stopgaps] review TSV  build_snv_review_tsv.py"
-step_start "review-tsv"
-"$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV"
+echo "[sample] review TSV  build_snv_review_tsv.py"
+step_start "review-tsv" "sample-step"
+run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV"
 step_done
 
 echo
-echo "[stopgaps] gene index  build_snv_gene_index.py"
-step_start "gene-index"
-"$SCRIPT_DIR/build_snv_gene_index.py" --tsv "$GUI_TSV"
+echo "[sample] gene index  build_snv_gene_index.py"
+step_start "gene-index" "sample-step"
+run_silent_step "gene-index" "$SCRIPT_DIR/build_snv_gene_index.py" --tsv "$GUI_TSV"
 step_done
 
 echo

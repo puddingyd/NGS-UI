@@ -53,7 +53,7 @@ import subprocess
 import sys
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
@@ -298,8 +298,11 @@ def _symlink_inhouse_into_nf_stage(vcf: Path, sid: str, nf_stage: Path) -> Path:
     return nf_stage
 
 
+TAIPEI_TZ = timezone(timedelta(hours=8))
+
+
 def _now():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(TAIPEI_TZ).isoformat(timespec="seconds")
 
 
 def _load_secrets() -> None:
@@ -680,9 +683,10 @@ def main() -> int:
         # 5. Stop-gap chain (no ClinVar; pipeline already populates it).
         _set_step(job_id, "stop-gaps")
         def track_stopgaps(line: str) -> None:
-            match = re.search(r"\[stopgaps-step]\s+([a-z0-9-]+)\s+start", line)
+            match = re.search(r"\[(stopgaps-step|sample-step)]\s+([a-z0-9-]+)\s+start", line)
             if match:
-                _set_step(job_id, f"stop-gaps:{match.group(1)}")
+                group = "stop-gaps" if match.group(1) == "stopgaps-step" else "sample-step"
+                _set_step(job_id, f"{group}:{match.group(2)}")
 
         stopgap_count = len(samples)
         for stopgap_index, sample in enumerate(samples):
@@ -709,7 +713,7 @@ def main() -> int:
                     stop_args += ["--inhouse-sv-vcf",  sample["sv_vcf"]]
             if not args.with_extra_vep:
                 stop_args.append("--skip-extra-vep")
-            _run(stop_args, label=f"3/4 stop-gaps {sid}", on_line=track_stopgaps)
+            _run(stop_args, label=f"stop-gaps {sid}", on_line=track_stopgaps)
 
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)

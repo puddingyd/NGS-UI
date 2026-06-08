@@ -59,7 +59,13 @@ def _validate_sid(sid: str) -> str:
 
 def _bam_for(sid: str, batch: Path) -> Path | None:
     p = batch / sid / "02_alignment" / f"{sid}.aligned.sorted.bam"
-    return p if p.is_file() else None
+    if p.is_file():
+        return p
+    align_dir = batch / sid / "02_alignment"
+    if not align_dir.is_dir():
+        return None
+    hits = sorted(align_dir.glob("*.aligned.sorted.bam"))
+    return hits[0] if len(hits) == 1 else None
 
 
 def _path_ok(p: Path) -> bool:
@@ -85,6 +91,13 @@ def _bam_entry(sid: str, batch: Path, path: Path) -> dict:
     }
 
 
+def _bam_mtime(hit: dict) -> float:
+    try:
+        return Path(hit["path"]).stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 def _bam_hits(sid: str) -> list[dict]:
     out: list[dict] = []
     for root in _BAM_ROOTS:
@@ -96,6 +109,7 @@ def _bam_hits(sid: str) -> list[dict]:
             p = _bam_for(sid, batch)
             if p:
                 out.append(_bam_entry(sid, batch, p))
+    out.sort(key=_bam_mtime, reverse=True)
     return out
 
 
@@ -110,7 +124,7 @@ def _source_sid_from_sidecar(sid: str) -> str:
 
 
 def _legacy_source_sid(sid: str) -> str:
-    """Resolve old alias cases only when exactly one BAM matches."""
+    """Resolve UI sample aliases such as VAL-60-dragen → VAL-60."""
     candidates = [
         sid.removesuffix(suffix)
         for suffix in _LEGACY_ALIAS_SUFFIXES
@@ -121,7 +135,7 @@ def _legacy_source_sid(sid: str) -> str:
         for candidate in candidates
         for hit in _bam_hits(candidate)
     ]
-    return hits[0]["sample_id"] if len(hits) == 1 else ""
+    return hits[0]["sample_id"] if hits else ""
 
 
 def _resolve_primary_bam(sid: str) -> tuple[dict | None, str, str]:

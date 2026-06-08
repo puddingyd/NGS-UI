@@ -586,7 +586,7 @@ function _igvVariantTitleFor(v) {
   if (v.REF != null && v.ALT != null) {
     const id = v.id || `${v.CHROM}-${v.POS}-${v.REF}-${v.ALT}`;
     return {
-      label: v.HGVS || id,
+      label: displaySnvHgvs(v, id),
       coordinate: `[${build}] ${id}`,
     };
   }
@@ -597,6 +597,34 @@ function _igvVariantTitleFor(v) {
     label: [source, svType, annotSvId].filter(Boolean).join(" "),
     coordinate: `[${build}] ${_normalizeChrom(v.CHROM || "?")}:${v.POS || "?"}-${v.END || "?"}`,
   };
+}
+
+function displaySnvHgvs(v, fallback = "") {
+  const raw = String(v?.HGVS || fallback || "").trim();
+  const transcript = String(v?.transcript || "").trim();
+  const parts = raw.split(":");
+  const txIndex = parts.findIndex(p => /^ENST\d+(?:\.\d+)?$/i.test(p));
+  const enst = txIndex >= 0 ? parts[txIndex] : transcript;
+  if (!/^ENST/i.test(enst || "")) return raw || fallback;
+  const enstBase = enst.split(".")[0].toUpperCase();
+  const mane = Array.isArray(v?.MANE_ALL) ? v.MANE_ALL : [];
+  const hit = mane.find(row => {
+    const type = String(row?.transcript_type || "").toUpperCase();
+    const rowEnst = String(row?.enst || "").split(".")[0].toUpperCase();
+    const nm = String(row?.transcript || "");
+    return type === "MANE_SELECT" && rowEnst === enstBase && /^NM_/i.test(nm);
+  });
+  const nm = String(hit?.transcript || "");
+  if (!nm) return raw || fallback;
+  if (txIndex >= 0) {
+    parts[txIndex] = nm;
+    return parts.map((part) => {
+      if (/^ENSP\d+(?:\.\d+)?$/i.test(part)) return "";
+      return part;
+    }).filter(Boolean).join(":");
+  }
+  if (!raw) return nm;
+  return raw.replace(enst, nm);
 }
 
 function _sryIgvRegion() {
@@ -1455,11 +1483,142 @@ function _fixedPanelDisplayName(key) {
 // dispatch sidesteps it entirely.
 let _hpoSearchAbort = null;
 let _hpoSearchTimer = null;
+const _comboActive = new WeakMap();
 
 function _hpoOpen()  { document.getElementById("hpo-search-dropdown")?.classList.remove("hidden"); }
-function _hpoClose() { document.getElementById("hpo-search-dropdown")?.classList.add("hidden"); }
+function _hpoClose() {
+  const drop = document.getElementById("hpo-search-dropdown");
+  drop?.classList.add("hidden");
+  if (drop) _comboClearActive(drop);
+}
 function _panelOpen()  { document.getElementById("panel-search-dropdown")?.classList.remove("hidden"); }
-function _panelClose() { document.getElementById("panel-search-dropdown")?.classList.add("hidden"); }
+function _panelClose() {
+  const drop = document.getElementById("panel-search-dropdown");
+  drop?.classList.add("hidden");
+  if (drop) _comboClearActive(drop);
+}
+
+function _comboOptions(dropdown) {
+  return Array.from(dropdown?.querySelectorAll(".combobox-option") || []);
+}
+
+function _comboSetActive(dropdown, idx) {
+  if (!dropdown) return;
+  const opts = _comboOptions(dropdown);
+  opts.forEach((opt, i) => opt.classList.toggle("active", i === idx));
+  if (idx >= 0 && opts[idx]) {
+    _comboActive.set(dropdown, idx);
+    opts[idx].scrollIntoView({ block: "nearest" });
+  } else {
+    _comboActive.delete(dropdown);
+  }
+}
+
+function _comboClearActive(dropdown) {
+  _comboSetActive(dropdown, -1);
+}
+
+function _comboMove(dropdown, delta) {
+  if (!dropdown) return;
+  const opts = _comboOptions(dropdown);
+  if (!opts.length) return;
+  const cur = _comboActive.has(dropdown) ? _comboActive.get(dropdown) : -1;
+  const next = Math.max(0, Math.min(opts.length - 1, cur + delta));
+  _comboSetActive(dropdown, next);
+}
+
+function _pickHpoOption(opt) {
+  if (!opt) return false;
+  addHpo(opt.dataset.id, opt.dataset.name);
+  const inp = document.getElementById("hpo-search");
+  if (inp) inp.value = "";
+  _hpoClose();
+  return true;
+}
+
+function _pickPanelOption(opt) {
+  if (!opt) return false;
+  addPanel(opt.dataset.name);
+  const inp = document.getElementById("panel-search");
+  if (inp) inp.value = "";
+  _panelClose();
+  return true;
+}
+
+function _pickNewCaseHpoOption(opt) {
+  if (!opt?.dataset.ncHpoPick) return false;
+  const r = JSON.parse(opt.dataset.ncHpoPick);
+  const id = r.hpo_id || r.phenotype || "";
+  if (!id) return false;
+  if (!newCaseEdit.hpo.some(h => h.phenotype === id)) {
+    newCaseEdit.hpo.push({phenotype: id, label: r.name || id, weight: 1});
+    _markNewCaseEdited();
+  }
+  document.getElementById("new-case-hpo-search").value = "";
+  document.getElementById("new-case-hpo-search-dropdown").classList.add("hidden");
+  _comboClearActive(document.getElementById("new-case-hpo-search-dropdown"));
+  renderNewCasePhenoEditor();
+  return true;
+}
+
+function _pickNewCasePanelOption(opt) {
+  if (!opt?.dataset.ncPanelPick) return false;
+  const r = JSON.parse(opt.dataset.ncPanelPick);
+  const name = r.name || "";
+  if (!name) return false;
+  if (!newCaseEdit.panels.some(p => p.name === name)) {
+    newCaseEdit.panels.push({name, weight: 1});
+    _markNewCaseEdited();
+  }
+  document.getElementById("new-case-panel-search").value = "";
+  document.getElementById("new-case-panel-search-dropdown").classList.add("hidden");
+  _comboClearActive(document.getElementById("new-case-panel-search-dropdown"));
+  renderNewCasePhenoEditor();
+  return true;
+}
+
+function _comboPickActive(dropdown, fallbackFirst = true) {
+  const opts = _comboOptions(dropdown);
+  if (!opts.length) return false;
+  const idx = _comboActive.has(dropdown) ? _comboActive.get(dropdown) : (fallbackFirst ? 0 : -1);
+  const opt = opts[idx];
+  if (!opt) return false;
+  if (dropdown.id === "hpo-search-dropdown") return _pickHpoOption(opt);
+  if (dropdown.id === "panel-search-dropdown") return _pickPanelOption(opt);
+  if (dropdown.id === "new-case-hpo-search-dropdown") return _pickNewCaseHpoOption(opt);
+  if (dropdown.id === "new-case-panel-search-dropdown") return _pickNewCasePanelOption(opt);
+  return false;
+}
+
+function _handleComboKeydown(ev, dropdown) {
+  if (!dropdown || dropdown.classList.contains("hidden")) return false;
+  if (ev.key === "ArrowDown") {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _comboMove(dropdown, 1);
+    return true;
+  }
+  if (ev.key === "ArrowUp") {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _comboMove(dropdown, -1);
+    return true;
+  }
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _comboPickActive(dropdown, true);
+    return true;
+  }
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    ev.stopPropagation();
+    dropdown.classList.add("hidden");
+    _comboClearActive(dropdown);
+    return true;
+  }
+  return false;
+}
 
 function setupHpoSearchInput() {
   // No-op now; kept so boot() doesn't throw if the call site is still here.
@@ -1498,6 +1657,7 @@ async function _runHpoSearch(q) {
         </li>`;
       }).join("");
     }
+    _comboClearActive(dropdown);
     _hpoOpen();
   } catch (e) {
     if (e.name !== "AbortError") console.error("HPO search failed", e);
@@ -1525,6 +1685,7 @@ async function _runPanelSearch(q) {
         <span class="opt-mrn"></span>
       </li>`).join("");
   }
+  _comboClearActive(dropdown);
   _panelOpen();
 }
 
@@ -1556,6 +1717,18 @@ document.addEventListener("focusout", ev => {
   if (ev.target.id === "panel-search")   setTimeout(_panelClose, 150);
 });
 
+document.addEventListener("keydown", ev => {
+  if (ev.target.id === "hpo-search") {
+    _handleComboKeydown(ev, document.getElementById("hpo-search-dropdown"));
+  } else if (ev.target.id === "panel-search") {
+    _handleComboKeydown(ev, document.getElementById("panel-search-dropdown"));
+  } else if (ev.target.id === "new-case-hpo-search") {
+    _handleComboKeydown(ev, document.getElementById("new-case-hpo-search-dropdown"));
+  } else if (ev.target.id === "new-case-panel-search") {
+    _handleComboKeydown(ev, document.getElementById("new-case-panel-search-dropdown"));
+  }
+});
+
 // Mousedown so the option fires before the input's blur kills the dropdown.
 document.addEventListener("mousedown", ev => {
   const opt = ev.target.closest(".combobox-option");
@@ -1563,16 +1736,10 @@ document.addEventListener("mousedown", ev => {
   const dropdown = opt.parentElement;
   if (dropdown?.id === "hpo-search-dropdown") {
     ev.preventDefault();
-    addHpo(opt.dataset.id, opt.dataset.name);
-    const inp = document.getElementById("hpo-search");
-    if (inp) inp.value = "";
-    _hpoClose();
+    _pickHpoOption(opt);
   } else if (dropdown?.id === "panel-search-dropdown") {
     ev.preventDefault();
-    addPanel(opt.dataset.name);
-    const inp = document.getElementById("panel-search");
-    if (inp) inp.value = "";
-    _panelClose();
+    _pickPanelOption(opt);
   }
 });
 
@@ -2666,6 +2833,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
 
   const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
   const clinvarLabel = clinvarDate ? `ClinVar (${escapeHtml(clinvarDate)})` : "ClinVar";
+  const hgvsLabel = displaySnvHgvs(v, id);
 
   // Extras shown only when the user clicks the "More" button. Each row is
   // pushed only when the underlying field is present in the webdata, so a
@@ -2723,7 +2891,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     <div class="variant-head">
       ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
       ${_renderStatusRadio(id, curStatus, options, panelAttr)}
-      <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(v.HGVS || id)}<button class="btn-copy" data-copy="${escapeAttr(v.HGVS || id)}" title="複製 HGVS">${COPY_ICON_SVG}</button> <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
+      <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button> <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v)}
@@ -7197,6 +7365,7 @@ async function _ncRunHpoSearch(q) {
     + (r.gene_count ? `<span class="opt-mrn">${r.gene_count} genes</span>` : "")
     + `</li>`
   ).join("");
+  _comboClearActive(drop);
   drop.classList.remove("hidden");
 }
 async function _ncRunPanelSearch(q) {
@@ -7223,6 +7392,7 @@ async function _ncRunPanelSearch(q) {
     + `<span class="opt-mrn">${Number(r.gene_count ?? r.n_genes ?? 0)} genes</span>`
     + `</li>`
   ).join("");
+  _comboClearActive(drop);
   drop.classList.remove("hidden");
 }
 document.addEventListener("mousedown", ev => {
@@ -7230,27 +7400,9 @@ document.addEventListener("mousedown", ev => {
   if (!opt) return;
   ev.preventDefault();
   if (opt.dataset.ncHpoPick) {
-    const r = JSON.parse(opt.dataset.ncHpoPick);
-    const id = r.hpo_id || r.phenotype || "";
-    if (!id) return;
-    if (!newCaseEdit.hpo.some(h => h.phenotype === id)) {
-      newCaseEdit.hpo.push({phenotype: id, label: r.name || id, weight: 1});
-      _markNewCaseEdited();
-    }
-    document.getElementById("new-case-hpo-search").value = "";
-    document.getElementById("new-case-hpo-search-dropdown").classList.add("hidden");
-    renderNewCasePhenoEditor();
+    _pickNewCaseHpoOption(opt);
   } else if (opt.dataset.ncPanelPick) {
-    const r = JSON.parse(opt.dataset.ncPanelPick);
-    const name = r.name || "";
-    if (!name) return;
-    if (!newCaseEdit.panels.some(p => p.name === name)) {
-      newCaseEdit.panels.push({name, weight: 1});
-      _markNewCaseEdited();
-    }
-    document.getElementById("new-case-panel-search").value = "";
-    document.getElementById("new-case-panel-search-dropdown").classList.add("hidden");
-    renderNewCasePhenoEditor();
+    _pickNewCasePanelOption(opt);
   }
 });
 document.addEventListener("focusout", ev => {
@@ -7892,7 +8044,8 @@ function _dragenProgressPercent(state) {
   if (state.state === "done") return 100;
   if (state.state === "cancelled") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
   if (state.state === "failed") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
-  if (String(state.step || "").startsWith("stop-gaps")) {
+  const step = String(state.step || "");
+  if (step.startsWith("stop-gaps") || step.startsWith("sample-step")) {
     return _dragenStopgapProgressPercent(state);
   }
   const byStep = {
@@ -7912,12 +8065,6 @@ function _dragenProgressPercent(state) {
     "nextflow:vep-annotate-done": 75,
     "copy-pipeline-tsv": 87,
     "stop-gaps": 87,
-    "stop-gaps:clinvar": 55,
-    "stop-gaps:filter-snv": 65,
-    "stop-gaps:genebe": 66,
-    "stop-gaps:extra-vep": 70,
-    "stop-gaps:annotsv": 78,
-    "stop-gaps:review-tsv": 98,
     done: 100,
   };
   return byStep[state.step] ?? 0;
@@ -7932,13 +8079,11 @@ function _dragenStopgapProgressPercent(state) {
   const idx = Math.max(0, Math.min(total - 1, Number(state.stopgap_sample_index || 0)));
   const sub = {
     "stop-gaps": 0,
-    "stop-gaps:clinvar": 0.05,
-    "stop-gaps:filter-snv": 0.25,
-    "stop-gaps:genebe": 0.35,
-    "stop-gaps:extra-vep": 0.58,
-    "stop-gaps:annotsv": 0.87,
-    "stop-gaps:review-tsv": 0.88,
-    "stop-gaps:gene-index": 0.94,
+    "stop-gaps:genebe": 0.20,
+    "stop-gaps:extra-vep": 0.52,
+    "stop-gaps:annotsv": 0.78,
+    "sample-step:review-tsv": 0.84,
+    "sample-step:gene-index": 0.92,
   };
   const within = sub[state.step] ?? 0;
   return _clampPct(87 + ((idx + within) / total) * 12);
