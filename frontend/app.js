@@ -517,6 +517,7 @@ let _igvBrowser = null;       // current igv.js Browser instance
 const _igvBams = [];          // [{label, path, sample_id, batch}]
 let _igvSiblings = [];        // candidate add-ons from same batch
 let _igvFolderBams = [];      // manual server-folder BAM candidates
+let _igvFolderDirs = [];      // known server-side BAM folders
 let _igvLocus = "";
 let _igvSampleId = "";
 let _igvVariant = null;
@@ -583,6 +584,14 @@ function _igvRoiFor(v) {
 function _igvVariantTitleFor(v) {
   if (!v) return { label: "", coordinate: "" };
   const build = state.data?.genome_build || "hg38";
+  if ((v.source || "").toLowerCase() === "mito" || String(v.CHROM || "").replace(/^chr/i, "").toUpperCase() === "M") {
+    const hgvs = v.HGVS_M || `m.${v.POS || "?"}${v.REF || ""}>${v.ALT || ""}`;
+    const id = v.id || `${v.CHROM}-${v.POS}-${v.REF}-${v.ALT}`;
+    return {
+      label: hgvs,
+      coordinate: `[${build}] ${id}`,
+    };
+  }
   if (v.igv_label) {
     return {
       label: v.igv_label,
@@ -660,7 +669,7 @@ async function openIgvModal(variant) {
   document.getElementById("igv-load-status").textContent = "";
   document.getElementById("igv-host").innerHTML = "";
   document.getElementById("igv-bam-folder-panel").hidden = true;
-  document.getElementById("igv-bam-folder-input").value = "";
+  document.getElementById("igv-bam-folder-dir-select").innerHTML = '<option value="">— 選擇 BAM 資料夾 —</option>';
   document.getElementById("igv-bam-folder-select").innerHTML = '<option value="">— 選擇 primary BAM —</option>';
   const loadBtn = document.getElementById("igv-load-btn");
   loadBtn.disabled = true;
@@ -669,6 +678,7 @@ async function openIgvModal(variant) {
   _igvBams.length = 0;
   _igvSiblings = [];
   _igvFolderBams = [];
+  _igvFolderDirs = [];
   modal.classList.remove("hidden");
 
   // Look up the primary BAM + sibling list for this sample.
@@ -787,13 +797,39 @@ function _renderIgvBamList() {
   sel.innerHTML = opts.join("");
 }
 
+async function _loadIgvBamFolders() {
+  const select = document.getElementById("igv-bam-folder-dir-select");
+  const hint = document.getElementById("igv-bam-hint");
+  hint.textContent = "讀取 BAM 路徑中…";
+  try {
+    const payload = await apiFetch("/igv/bam-folders");
+    _igvFolderDirs = payload?.folders || [];
+    if (!_igvFolderDirs.length) {
+      select.innerHTML = '<option value="">— 沒有可用 BAM 資料夾 —</option>';
+      hint.textContent = "找不到可用 BAM 資料夾";
+      return;
+    }
+    select.innerHTML = ['<option value="">— 選擇 BAM 資料夾 —</option>']
+      .concat(_igvFolderDirs.map((f) =>
+        `<option value="${escapeAttr(f.dir)}">${escapeHtml(f.label)} — ${escapeHtml(f.dir)}</option>`
+      )).join("");
+    hint.textContent = payload?.truncated
+      ? `顯示前 ${_igvFolderDirs.length} 個 BAM 資料夾`
+      : `找到 ${_igvFolderDirs.length} 個 BAM 資料夾`;
+  } catch (e) {
+    _igvFolderDirs = [];
+    select.innerHTML = '<option value="">— 選擇 BAM 資料夾 —</option>';
+    hint.textContent = "讀取 BAM 路徑失敗：" + (e.message || e);
+  }
+}
+
 async function _loadIgvBamFolder() {
-  const input = document.getElementById("igv-bam-folder-input");
+  const dirSelect = document.getElementById("igv-bam-folder-dir-select");
   const select = document.getElementById("igv-bam-folder-select");
   const hint = document.getElementById("igv-bam-hint");
-  const dir = (input?.value || "").trim();
+  const dir = (dirSelect?.value || "").trim();
   if (!dir) {
-    hint.textContent = "請輸入伺服器上的 BAM 資料夾路徑";
+    hint.textContent = "請先選擇 BAM 資料夾";
     return;
   }
   hint.textContent = "讀取 BAM 清單中…";
@@ -863,11 +899,14 @@ document.addEventListener("click", (ev) => {
   if (ev.target.id === "igv-bam-folder-toggle") {
     const panel = document.getElementById("igv-bam-folder-panel");
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) document.getElementById("igv-bam-folder-input")?.focus();
+    if (!panel.hidden) {
+      if (!_igvFolderDirs.length) _loadIgvBamFolders();
+      document.getElementById("igv-bam-folder-dir-select")?.focus();
+    }
     return;
   }
-  if (ev.target.id === "igv-bam-folder-list-btn") {
-    _loadIgvBamFolder();
+  if (ev.target.id === "igv-bam-folder-refresh-btn") {
+    _loadIgvBamFolders();
     return;
   }
   if (ev.target.id === "igv-bam-folder-use-btn") {
@@ -909,8 +948,13 @@ document.addEventListener("click", (ev) => {
 });
 
 document.addEventListener("keydown", (ev) => {
-  if (ev.target.id === "igv-bam-folder-input" && ev.key === "Enter") {
-    ev.preventDefault();
+  if (ev.target.id === "igv-bam-folder-dir-select" && ev.key === "Enter") {
+    _loadIgvBamFolder();
+  }
+});
+
+document.addEventListener("change", (ev) => {
+  if (ev.target.id === "igv-bam-folder-dir-select") {
     _loadIgvBamFolder();
   }
 });
@@ -4188,6 +4232,7 @@ function renderMitoCard(v, id, opts = {}) {
   const links = _mitoExternalLinks(v).map(l =>
     `<a href="${escapeAttr(l.href)}" target="_blank" rel="noopener">${escapeHtml(l.label)}</a>`
   ).join("");
+  const igvLink = `<a href="#" class="btn-igv" data-id="${escapeAttr(id)}" title="在 IGV 內檢視">IGV</a>`;
   const comment = (getEdit(id, "comment") || "");
   card.innerHTML = `
     <div class="variant-head">
@@ -4198,7 +4243,7 @@ function renderMitoCard(v, id, opts = {}) {
       </span>
       <span class="mito-het-badge" title="heteroplasmy fraction">${_mitoHeteroplasmy(v)}</span>
       <span style="flex:1"></span>
-      <span class="ext-links">${links}</span>
+      <span class="ext-links">${igvLink}${links}</span>
     </div>
     ${_renderMitoDetailBox(v, id)}
     ${_mitoClinvarDiseaseList(v, id)}

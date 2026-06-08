@@ -2020,21 +2020,17 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .igv-bam-add select { flex: 1; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
 .igv-bam-folder-panel {
   display: grid;
-  grid-template-columns: minmax(220px, 1.2fr) auto minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(260px, 1.2fr) auto minmax(220px, 1fr) auto;
   gap: 6px;
   align-items: center;
   margin-top: 8px;
 }
-.igv-bam-folder-panel input,
 .igv-bam-folder-panel select {
   min-width: 0;
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 12px;
-}
-.igv-bam-folder-panel input {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .igv-load-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
 #igv-load-status { font-size: 12px; }

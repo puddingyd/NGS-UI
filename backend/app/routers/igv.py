@@ -220,12 +220,34 @@ def _source_sid_from_sidecar(sid: str) -> str:
 
 
 def _pipeline_type_from_sidecar(sid: str) -> str:
+    sid_l = (sid or "").lower()
+    if sid_l.endswith("-dragen"):
+        return "dragen"
+    if sid_l.endswith("-inhouse"):
+        return "inhouse"
     raw = str(_sidecar_for(sid).get("pipeline_type") or "").strip().lower()
     if raw == "dragen":
         return "dragen"
     if raw in ("nckuh", "inhouse"):
         return "inhouse"
     return ""
+
+
+def _folder_has_bams(folder: Path) -> bool:
+    if not folder.is_dir():
+        return False
+    for p in folder.glob("*.bam"):
+        if p.is_file() and not p.name.endswith(".repeats.bam"):
+            return True
+    return False
+
+
+def _bam_folder_entry(folder: Path, *, source: str, label: str) -> dict:
+    return {
+        "label": label,
+        "dir": str(folder),
+        "source": source,
+    }
 
 
 def _legacy_source_sid(sid: str, *, source: str = "") -> str:
@@ -361,6 +383,49 @@ def list_bam_folder(dir: str = Query(...)):
         "samples": out,
         "roots": [str(r) for r in _ALL_BAM_ROOTS],
     }
+
+
+@router.get("/bam-folders")
+def list_bam_folders(q: str = Query("", max_length=128), limit: int = Query(1000, ge=1, le=5000)):
+    """List known server-side BAM folders for the IGV manual picker."""
+    query = (q or "").strip().lower()
+    out: list[dict] = []
+    for root in _DRAGEN_BAM_ROOTS:
+        if not root.is_dir():
+            continue
+        for run_dir in sorted(root.iterdir()):
+            if not run_dir.is_dir():
+                continue
+            bam_dir = run_dir / "bam"
+            if not _folder_has_bams(bam_dir):
+                continue
+            label = f"DRAGEN · {run_dir.name}"
+            haystack = f"{label} {bam_dir}".lower()
+            if query and query not in haystack:
+                continue
+            out.append(_bam_folder_entry(bam_dir, source="dragen", label=label))
+            if len(out) >= limit:
+                return {"folders": out, "truncated": True}
+    for root in _INHOUSE_BAM_ROOTS:
+        if not root.is_dir():
+            continue
+        for batch_dir in sorted(root.iterdir()):
+            if not batch_dir.is_dir():
+                continue
+            for sample_dir in sorted(batch_dir.iterdir()):
+                if not sample_dir.is_dir():
+                    continue
+                align_dir = sample_dir / "02_alignment"
+                if not _folder_has_bams(align_dir):
+                    continue
+                label = f"in-house · {batch_dir.name} · {sample_dir.name}"
+                haystack = f"{label} {align_dir}".lower()
+                if query and query not in haystack:
+                    continue
+                out.append(_bam_folder_entry(align_dir, source="inhouse", label=label))
+                if len(out) >= limit:
+                    return {"folders": out, "truncated": True}
+    return {"folders": out, "truncated": False}
 
 
 # Common file names we've seen for the hg38 reference. First match wins.
