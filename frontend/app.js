@@ -516,6 +516,7 @@ let _igvLoaded = null;       // Promise → resolves when window.igv exists
 let _igvBrowser = null;       // current igv.js Browser instance
 const _igvBams = [];          // [{label, path, sample_id, batch}]
 let _igvSiblings = [];        // candidate add-ons from same batch
+let _igvFolderBams = [];      // manual server-folder BAM candidates
 let _igvLocus = "";
 let _igvSampleId = "";
 let _igvVariant = null;
@@ -658,12 +659,16 @@ async function openIgvModal(variant) {
   document.getElementById("igv-bam-hint").textContent = "";
   document.getElementById("igv-load-status").textContent = "";
   document.getElementById("igv-host").innerHTML = "";
+  document.getElementById("igv-bam-folder-panel").hidden = true;
+  document.getElementById("igv-bam-folder-input").value = "";
+  document.getElementById("igv-bam-folder-select").innerHTML = '<option value="">— 選擇 primary BAM —</option>';
   const loadBtn = document.getElementById("igv-load-btn");
   loadBtn.disabled = true;
   loadBtn.textContent = "載入 IGV";
   _igvBrowser = null;
   _igvBams.length = 0;
   _igvSiblings = [];
+  _igvFolderBams = [];
   modal.classList.remove("hidden");
 
   // Look up the primary BAM + sibling list for this sample.
@@ -782,6 +787,57 @@ function _renderIgvBamList() {
   sel.innerHTML = opts.join("");
 }
 
+async function _loadIgvBamFolder() {
+  const input = document.getElementById("igv-bam-folder-input");
+  const select = document.getElementById("igv-bam-folder-select");
+  const hint = document.getElementById("igv-bam-hint");
+  const dir = (input?.value || "").trim();
+  if (!dir) {
+    hint.textContent = "請輸入伺服器上的 BAM 資料夾路徑";
+    return;
+  }
+  hint.textContent = "讀取 BAM 清單中…";
+  try {
+    const payload = await apiFetch(`/igv/bam-folder?dir=${encodeURIComponent(dir)}`);
+    _igvFolderBams = payload?.samples || [];
+    if (!_igvFolderBams.length) {
+      select.innerHTML = '<option value="">— 此資料夾沒有可用 BAM —</option>';
+      hint.textContent = "此資料夾沒有可用 BAM（會排除 .repeats.bam）";
+      return;
+    }
+    const sid = String(_igvSampleId || "").replace(/-(dragen|inhouse|WES|WGS)$/i, "");
+    const preferred = _igvFolderBams.find(b => b.sample_id === sid) || _igvFolderBams[0];
+    select.innerHTML = ['<option value="">— 選擇 primary BAM —</option>']
+      .concat(_igvFolderBams.map((b) =>
+        `<option value="${escapeAttr(b.path)}" ${b.path === preferred.path ? "selected" : ""}>${escapeHtml(b.label)} — ${escapeHtml(b.path)}</option>`
+      )).join("");
+    hint.textContent = `找到 ${_igvFolderBams.length} 個 BAM`;
+  } catch (e) {
+    _igvFolderBams = [];
+    select.innerHTML = '<option value="">— 選擇 primary BAM —</option>';
+    hint.textContent = "讀取資料夾失敗：" + (e.message || e);
+  }
+}
+
+function _useIgvBamFolderSelection() {
+  const select = document.getElementById("igv-bam-folder-select");
+  const hint = document.getElementById("igv-bam-hint");
+  const path = select?.value || "";
+  const primary = _igvFolderBams.find(b => b.path === path);
+  if (!primary) {
+    hint.textContent = "請先選擇 primary BAM";
+    return;
+  }
+  _igvBams.length = 0;
+  _igvBams.push(primary);
+  _igvSiblings = _igvFolderBams.filter(b => b.path !== primary.path);
+  _renderIgvBamList();
+  document.getElementById("igv-load-btn").disabled = false;
+  document.getElementById("igv-load-status").textContent = "確認 BAM 列表後按「載入 IGV」開始載入";
+  hint.textContent = "已改用其他路徑 BAM；同 batch 清單來自同一個資料夾";
+  if (_igvBrowser) _initIgvBrowser().catch(() => {});
+}
+
 document.addEventListener("click", (ev) => {
   if (ev.target.closest("#igv-bam-list .igv-bam-remove")) {
     const idx = Number(ev.target.dataset.idx);
@@ -802,6 +858,20 @@ document.addEventListener("click", (ev) => {
     _igvBams.push(found);
     _renderIgvBamList();
     if (_igvBrowser) _initIgvBrowser().catch(() => {});
+    return;
+  }
+  if (ev.target.id === "igv-bam-folder-toggle") {
+    const panel = document.getElementById("igv-bam-folder-panel");
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) document.getElementById("igv-bam-folder-input")?.focus();
+    return;
+  }
+  if (ev.target.id === "igv-bam-folder-list-btn") {
+    _loadIgvBamFolder();
+    return;
+  }
+  if (ev.target.id === "igv-bam-folder-use-btn") {
+    _useIgvBamFolderSelection();
     return;
   }
   if (ev.target.id === "igv-load-btn") {
@@ -835,6 +905,13 @@ document.addEventListener("click", (ev) => {
     const id = igvBtn.dataset.id;
     const variant = _findVariantById(id);
     openIgvModal(variant);
+  }
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.id === "igv-bam-folder-input" && ev.key === "Enter") {
+    ev.preventDefault();
+    _loadIgvBamFolder();
   }
 });
 

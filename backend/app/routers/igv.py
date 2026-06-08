@@ -97,6 +97,15 @@ def _sample_id_from_dragen_bam(path: Path) -> str:
     return name[:-len(".bam")] if name.endswith(".bam") else path.stem
 
 
+def _sample_id_from_bam(path: Path) -> str:
+    name = path.name
+    if name.endswith(".aligned.sorted.bam"):
+        return name[:-len(".aligned.sorted.bam")]
+    if name.endswith(".bam"):
+        return name[:-len(".bam")]
+    return path.stem
+
+
 def _bam_index_for(path: Path) -> Path | None:
     candidates = [
         Path(str(path) + ".bai"),
@@ -122,6 +131,20 @@ def _path_ok(p: Path) -> bool:
     return False
 
 
+def _dir_ok(p: Path) -> bool:
+    try:
+        rp = p.resolve()
+    except OSError:
+        return False
+    for root in _ALL_BAM_ROOTS:
+        try:
+            rp.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def _bam_entry(sid: str, batch: Path, path: Path, *, source: str) -> dict:
     index = _bam_index_for(path)
     return {
@@ -131,6 +154,20 @@ def _bam_entry(sid: str, batch: Path, path: Path, *, source: str) -> dict:
         "path":      str(path),
         "index_path": str(index) if index else "",
         "source":    source,
+    }
+
+
+def _manual_bam_entry(path: Path, folder: Path) -> dict:
+    sid = _sample_id_from_bam(path)
+    index = _bam_index_for(path)
+    batch = folder.parent.name if folder.name == "bam" else folder.name
+    return {
+        "label":     f"{sid} ({batch})",
+        "sample_id": sid,
+        "batch":     batch,
+        "path":      str(path),
+        "index_path": str(index) if index else "",
+        "source":    "manual",
     }
 
 
@@ -296,6 +333,34 @@ def list_batch_samples(batch: str = Query(...)):
             sid = _sample_id_from_dragen_bam(p)
             out.append(_bam_entry(sid, run_dir, p, source="dragen"))
     return {"batch": batch, "samples": out}
+
+
+@router.get("/bam-folder")
+def list_bam_folder(dir: str = Query(...)):
+    """List BAMs directly under a reviewer-provided server directory.
+
+    The directory must still live under one of the configured BAM roots.
+    We intentionally do not recurse; reviewers usually point this at a
+    concrete run `bam/` folder, and non-recursive listing avoids
+    accidentally sweeping unrelated data.
+    """
+    folder = Path(dir).expanduser()
+    if not folder.is_dir():
+        raise HTTPException(404, "folder not found")
+    if not _dir_ok(folder):
+        raise HTTPException(403, "folder is outside configured BAM roots")
+    out = []
+    for p in sorted(folder.glob("*.bam")):
+        if p.name.endswith(".repeats.bam"):
+            continue
+        if p.is_file():
+            out.append(_manual_bam_entry(p, folder))
+    out.sort(key=_bam_mtime, reverse=True)
+    return {
+        "dir": str(folder),
+        "samples": out,
+        "roots": [str(r) for r in _ALL_BAM_ROOTS],
+    }
 
 
 # Common file names we've seen for the hg38 reference. First match wins.

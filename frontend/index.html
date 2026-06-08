@@ -778,7 +778,14 @@
         <div class="igv-bam-add">
           <select id="igv-bam-add-select"><option value="">— 選一個同 batch 的 sample 加進來 —</option></select>
           <button type="button" id="igv-bam-add-btn" class="btn btn-secondary">+ 加入</button>
+          <button type="button" id="igv-bam-folder-toggle" class="btn btn-ghost">其他路徑</button>
           <span id="igv-bam-hint" class="muted"></span>
+        </div>
+        <div id="igv-bam-folder-panel" class="igv-bam-folder-panel" hidden>
+          <input id="igv-bam-folder-input" type="text" placeholder="/home/datalake_Raw/Novaseq/.../bam" autocomplete="off" />
+          <button type="button" id="igv-bam-folder-list-btn" class="btn btn-secondary">列出 BAM</button>
+          <select id="igv-bam-folder-select"><option value="">— 選擇 primary BAM —</option></select>
+          <button type="button" id="igv-bam-folder-use-btn" class="btn btn-secondary">使用</button>
         </div>
         <div class="igv-load-row">
           <button type="button" id="igv-load-btn" class="btn btn-primary">載入 IGV</button>
