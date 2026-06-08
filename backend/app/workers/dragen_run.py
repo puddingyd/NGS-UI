@@ -60,6 +60,11 @@ from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_OUTPUT_ROOT)
 from ..services import dragen_jobs, mitomap_mito
 
+TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
+    "NGS_UI_TERTIARY_CONFIG",
+    "/home/n102968/NGS_UI/nextflow_tertiary_no_pgx.config",
+))
+
 
 def _strip_sid_suffix(sid: str) -> str:
     """Drop the -dragen / -inhouse caller suffix the GUI adds for
@@ -579,7 +584,7 @@ def main() -> int:
                 sid = sample["sample_id"]
                 nextflow_cmd = [
                     "nextflow",
-                    "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
+                    "-c", str(TERTIARY_NEXTFLOW_CONFIG),
                     "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
                     "-profile", "dgm",
                     "-work-dir", str(nf_work),
@@ -594,7 +599,7 @@ def main() -> int:
                 samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
                 inner = " ".join(shlex.quote(part) for part in [
                     "nextflow",
-                    "-c", "/home/pipeline/tertiary_code/nextflow_tertiary.config",
+                    "-c", str(TERTIARY_NEXTFLOW_CONFIG),
                     "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
                     "-profile", "dgm",
                     "-work-dir", str(nf_work),

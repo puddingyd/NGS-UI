@@ -249,7 +249,7 @@ cat <<EOF
   export APPTAINER_CACHEDIR=\$HOME/NGS_UI/apptainer_cache
   mkdir -p \$NXF_TEMP \$APPTAINER_TMPDIR \$APPTAINER_CACHEDIR
 
-  nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \\
+  nextflow -c /home/n102968/NGS_UI/nextflow_tertiary_no_pgx.config \\
     run /home/pipeline/tertiary_code/main_tertiary.nf \\
     -profile dgm \\
     -work-dir \$HOME/NGS_UI/nf_work/$SID \\
