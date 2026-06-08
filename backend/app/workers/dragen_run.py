@@ -62,7 +62,7 @@ from ..services import dragen_jobs, mitomap_mito
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
-    "/home/n102968/NGS_UI/nextflow_tertiary_no_pgx.config",
+    "/home/pipeline/tertiary_code/nextflow_tertiary.config",
 ))
 
 
@@ -424,6 +424,7 @@ def main() -> int:
     ap.add_argument("--batch-json", default="")
     ap.add_argument("--mode",   default="dragen", choices=["dragen", "inhouse"])
     ap.add_argument("--with-extra-vep", action="store_true")
+    ap.add_argument("--without-pgx", action="store_true")
     # In-house only — explicit sibling VCF paths from the index.
     ap.add_argument("--cnv-vcf",  default="")
     ap.add_argument("--sv-vcf",   default="")
@@ -592,12 +593,14 @@ def main() -> int:
                     "--input_dir", str(nf_stage),
                     "--seq_type",  sample["seq_type"],
                     "--out_dir",   str(PIPELINE_OUT_ROOT),
-                    "-resume",
                 ]
+                if args.without_pgx:
+                    nextflow_cmd += ["--run_pgx", "false"]
+                nextflow_cmd.append("-resume")
                 _run(nextflow_cmd, label="2b/4 nextflow legacy", on_line=track_nextflow)
             else:
                 samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
-                inner = " ".join(shlex.quote(part) for part in [
+                nextflow_cmd = [
                     "nextflow",
                     "-c", str(TERTIARY_NEXTFLOW_CONFIG),
                     "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
@@ -606,8 +609,11 @@ def main() -> int:
                     "--pipeline_type", pipeline_type,
                     "--samplesheet", str(samplesheet),
                     "--out_dir", str(PIPELINE_OUT_ROOT),
-                    "-resume",
-                ])
+                ]
+                if args.without_pgx:
+                    nextflow_cmd += ["--run_pgx", "false"]
+                nextflow_cmd.append("-resume")
+                inner = " ".join(shlex.quote(part) for part in nextflow_cmd)
                 env_script = os.environ.get(
                     "NGS_UI_TERTIARY_ENV_SCRIPT",
                     "/home/pipeline/pipeline_code/NGS2ndAnalysis_env.sh",

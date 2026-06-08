@@ -242,6 +242,17 @@ def _folder_has_bams(folder: Path) -> bool:
     return False
 
 
+def _folder_has_inhouse_batch_bams(batch_dir: Path) -> bool:
+    if not batch_dir.is_dir():
+        return False
+    for sample_dir in batch_dir.iterdir():
+        if not sample_dir.is_dir():
+            continue
+        if _folder_has_bams(sample_dir / "02_alignment"):
+            return True
+    return False
+
+
 def _bam_folder_entry(folder: Path, *, source: str, label: str) -> dict:
     return {
         "label": label,
@@ -377,6 +388,16 @@ def list_bam_folder(dir: str = Query(...)):
             continue
         if p.is_file():
             out.append(_manual_bam_entry(p, folder))
+    if not out:
+        for sample_dir in sorted(folder.iterdir()):
+            if not sample_dir.is_dir():
+                continue
+            align_dir = sample_dir / "02_alignment"
+            if not align_dir.is_dir():
+                continue
+            for p in sorted(align_dir.glob("*.bam")):
+                if p.is_file():
+                    out.append(_manual_bam_entry(p, folder))
     out.sort(key=_bam_mtime, reverse=True)
     return {
         "dir": str(folder),
@@ -412,19 +433,15 @@ def list_bam_folders(q: str = Query("", max_length=128), limit: int = Query(1000
         for batch_dir in sorted(root.iterdir()):
             if not batch_dir.is_dir():
                 continue
-            for sample_dir in sorted(batch_dir.iterdir()):
-                if not sample_dir.is_dir():
-                    continue
-                align_dir = sample_dir / "02_alignment"
-                if not _folder_has_bams(align_dir):
-                    continue
-                label = f"in-house · {batch_dir.name} · {sample_dir.name}"
-                haystack = f"{label} {align_dir}".lower()
-                if query and query not in haystack:
-                    continue
-                out.append(_bam_folder_entry(align_dir, source="inhouse", label=label))
-                if len(out) >= limit:
-                    return {"folders": out, "truncated": True}
+            if not _folder_has_inhouse_batch_bams(batch_dir):
+                continue
+            label = f"in-house · {batch_dir.name}"
+            haystack = f"{label} {batch_dir}".lower()
+            if query and query not in haystack:
+                continue
+            out.append(_bam_folder_entry(batch_dir, source="inhouse", label=label))
+            if len(out) >= limit:
+                return {"folders": out, "truncated": True}
     return {"folders": out, "truncated": False}
 
 

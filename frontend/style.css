@@ -2393,6 +2393,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
   line-height: 1;
   padding: 2px 4px;
 }
+.dragen-batch-remove:disabled {
+  color: #8c959f;
+  cursor: not-allowed;
+}
 .dragen-actions {
   display: flex;
   gap: 8px;

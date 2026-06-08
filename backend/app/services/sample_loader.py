@@ -786,8 +786,9 @@ def list_unregistered() -> list[dict]:
     Sorted by directory mtime descending (newest first).
     """
     from ..config import PHENOTYPE_DIR
-    from . import patient_list_store, phenotype_io
+    from . import dragen_jobs, patient_list_store, phenotype_io
     roster = patient_list_store.load_roster()
+    active_tertiary_samples = dragen_jobs.active_sample_ids()
     out: list[dict] = []
     if not TERTIARY_OUTPUT_ROOT.exists():
         return out
@@ -799,6 +800,8 @@ def list_unregistered() -> list[dict]:
         if not tsv.exists() or meta.exists():
             continue
         lis_id = sub.name
+        if lis_id in active_tertiary_samples:
+            continue
 
         roster_entry = roster.get(lis_id)
         roster_mrn = (roster_entry or {}).get("mrn") or ""

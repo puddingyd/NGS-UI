@@ -743,6 +743,7 @@ async function _initIgvBrowser() {
     type: "alignment",
     format: "bam",
     displayMode: "SQUISHED",
+    height: String(_igvVariant?.source || "").toLowerCase() === "cnv" ? 50 : undefined,
     visibilityWindow: IGV_ALIGNMENT_VISIBILITY_WINDOW,
     autoscaleGroup: coverageAutoscaleGroup,
     autoscale: _igvIsSry ? false : undefined,
@@ -7884,24 +7885,8 @@ function _dragenRenderSiblings() {
   const box = document.getElementById("dragen-siblings");
   const body = document.getElementById("dragen-siblings-body");
   if (!box || !body) return;
-  const path = _DRAGEN_STATE.selected.inhouse;
-  if (!path) {
-    box.hidden = true; body.innerHTML = ""; return;
-  }
-  const row = _dragenCurrentList("inhouse").find(v => v.path === path);
-  if (!row) { box.hidden = true; return; }
-  const line = (key, path) => {
-    const cls = path ? "sib-ok" : "sib-miss";
-    const txt = path ? path : "（缺）";
-    return `<div class="sib-line"><span class="sib-key">${key}</span><span class="${cls}">${escapeHtml(txt)}</span></div>`;
-  };
-  body.innerHTML = [
-    line("SNV/Indel",   row.path),
-    line("CNV (gcnv)",  row.cnv_vcf),
-    line("SV  (delly)", row.sv_vcf),
-    line("Mito",        row.mito_vcf),
-  ].join("");
-  box.hidden = false;
+  box.hidden = true;
+  body.innerHTML = "";
 }
 
 function _dragenRenderSeqType() {
@@ -7923,7 +7908,7 @@ function _dragenRenderSeqType() {
     btn.classList.toggle("active", btn.dataset.seqType === seqType);
     btn.setAttribute("aria-pressed", btn.dataset.seqType === seqType ? "true" : "false");
   });
-  if (meta) meta.textContent = row ? `${_dragenFmtSize(row.size)} → ${_dragenInferSeqType(row)}` : "";
+  if (meta) meta.textContent = "";
 }
 
 function _dragenVcfLabel(v) {
@@ -7979,6 +7964,11 @@ function _dragenBatchMode() {
   return _DRAGEN_STATE.batch[0]?.mode || "";
 }
 
+function _dragenBatchLocked() {
+  const state = _DRAGEN_STATE.job?.state || "";
+  return state === "queued" || state === "running" || !!_DRAGEN_STATE.job?.running;
+}
+
 function _dragenBuildSample(mode, row, sampleId) {
   const sample = {
     mode,
@@ -8018,24 +8008,26 @@ function _dragenRenderBatch() {
     return;
   }
   const modeLabel = rows[0].mode === "inhouse" ? "in-house" : "DRAGEN";
+  const locked = _dragenBatchLocked();
   const body = rows.map((row, idx) => `
     <div class="dragen-batch-row">
       <code>${escapeHtml(row.sample_id || "")}</code>
       <code>${escapeHtml(row.source_sample_id || "")}</code>
       <code>${escapeHtml(row.seq_type || "")}</code>
       <span class="dragen-batch-path" title="${escapeAttr(row.vcf_path || "")}">${escapeHtml(row.vcf_path || "")}</span>
-      <button type="button" class="dragen-batch-remove" data-idx="${idx}" title="移除">×</button>
+      <button type="button" class="dragen-batch-remove" data-idx="${idx}" title="移除" ${locked ? "disabled" : ""}>×</button>
     </div>
   `).join("");
   box.innerHTML = `
     <div class="dragen-batch-head">
       <span>批次清單：${rows.length} 個 ${modeLabel} sample</span>
-      <button type="button" class="btn btn-ghost btn-link" id="dragen-batch-clear">清空</button>
+      <button type="button" class="btn btn-ghost btn-link" id="dragen-batch-clear" ${locked ? "disabled" : ""}>清空</button>
     </div>
     ${body}
   `;
   box.hidden = false;
   box.querySelector("#dragen-batch-clear")?.addEventListener("click", () => {
+    if (_dragenBatchLocked()) return;
     _DRAGEN_STATE.batch = [];
     _dragenRenderBatch();
   });
@@ -8043,6 +8035,7 @@ function _dragenRenderBatch() {
     btn.addEventListener("click", () => {
       const idx = Number(btn.dataset.idx);
       if (Number.isInteger(idx)) {
+        if (_dragenBatchLocked()) return;
         _DRAGEN_STATE.batch.splice(idx, 1);
         _dragenRenderBatch();
       }
@@ -8051,6 +8044,10 @@ function _dragenRenderBatch() {
 }
 
 function _dragenAddCurrentToBatch() {
+  if (_dragenBatchLocked()) {
+    alert("三級分析執行中，請等這批完成後再修改批次清單。");
+    return;
+  }
   const sample = _dragenCurrentSampleFromForm();
   if (!sample) { alert("請先選一個 VCF 並確認 Sample ID"); return; }
   const batchMode = _dragenBatchMode();
@@ -8067,6 +8064,10 @@ function _dragenAddCurrentToBatch() {
 }
 
 function _dragenPickVcf(mode, row) {
+  if (_dragenBatchLocked()) {
+    alert("三級分析執行中，請等這批完成後再修改批次清單。");
+    return;
+  }
   const batchMode = _dragenBatchMode();
   if (batchMode && batchMode !== mode) {
     alert("目前批次已選擇另一種來源；請先清空批次再切換來源。");
@@ -8163,6 +8164,7 @@ function _dragenSetJob(state) {
     }
     if (logEl)   logEl.textContent   = state.log_tail || "";
     if (logEl)   logEl.scrollTop     = logEl.scrollHeight;
+    _dragenRenderBatch();
   }
 }
 
@@ -8286,6 +8288,7 @@ async function _dragenCancelCurrentJob() {
 
 async function _dragenStart() {
   const extra = document.getElementById("dragen-extra-vep");
+  const pgx = document.getElementById("dragen-pgx");
   let samples = _DRAGEN_STATE.batch.slice();
   if (!samples.length) {
     const sample = _dragenCurrentSampleFromForm();
@@ -8297,6 +8300,7 @@ async function _dragenStart() {
   const body = {
     mode,
     with_extra_vep: !!extra?.checked,
+    with_pgx: pgx ? !!pgx.checked : true,
     samples,
   };
   const btn = document.getElementById("dragen-start-btn");
@@ -8310,10 +8314,9 @@ async function _dragenStart() {
     });
     if (!r.ok) throw new Error(await r.text());
     const { job_id } = await r.json();
-    if (_DRAGEN_STATE.batch.length) {
-      _DRAGEN_STATE.batch = [];
-      _dragenRenderBatch();
-    }
+    _DRAGEN_STATE.batch = samples.slice();
+    _DRAGEN_STATE.job = { job_id, state: "queued", running: true };
+    _dragenRenderBatch();
     _dragenStartPolling(job_id);
   } catch (e) {
     alert("啟動失敗：" + (e?.message || e));

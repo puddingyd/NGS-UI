@@ -649,6 +649,10 @@
           <label class="filter-toggle dragen-extra-toggle" title="勾選 → 對 GNOMAD_G_AF ≤ 0.01 的候選點額外用 VEP 補 SpliceAI 註解">
             <input id="dragen-extra-vep" type="checkbox" />
           </label>
+          <label class="filter-toggle dragen-extra-toggle" title="勾選 → 執行 pipeline PGx module；取消勾選會加 --run_pgx false">
+            <input id="dragen-pgx" type="checkbox" checked />
+            <span>PGx</span>
+          </label>
           <button id="dragen-refresh-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="重新掃描所有 root 目錄">↻ 更新索引</button>
           <button id="btn-pipeline-list" class="btn btn-ghost dragen-toolbar-btn" type="button">三級分析清單</button>
         </div>
@@ -673,10 +677,6 @@
             </div>
             <span id="dragen-seq-type-meta" class="muted dragen-seq-type-meta"></span>
           </div>
-          <details id="dragen-siblings" class="dragen-siblings" hidden>
-            <summary>來源檔案</summary>
-            <div id="dragen-siblings-body"></div>
-          </details>
         </div>
 
         <div class="dragen-caller-block">

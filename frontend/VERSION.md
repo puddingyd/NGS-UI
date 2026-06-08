@@ -6,10 +6,15 @@
 
 ## 版本紀錄
 
+
+### v4.6 — 2026-06-08
+
+- 三級分析改接 pipeline v3.4，支援 Pharmacogenomics 輸出。
+- 新增預設勾選的 PGx checkbox，可在需要時關閉 PGx。
+
 ### v4.5 — 2026-06-07
 
 - 三級分析改接 pipeline v3.2，支援 Mitochondria 及 CNV/SV Nextflow 輸出。
-- DOCX CNV/SV 表格的「變異位置」欄會預留一格空白，避免座標貼到後續欄位。
 - 優化首頁載入及樣本載入速度。
 
 ### v4.4 — 2026-06-05

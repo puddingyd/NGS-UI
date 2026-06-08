@@ -370,6 +370,24 @@ def list_jobs(limit: int = 50) -> list[dict]:
     return jobs[:limit]
 
 
+def active_sample_ids() -> set[str]:
+    """Return UI/source sample IDs currently owned by active tertiary jobs."""
+    active: set[str] = set()
+    for job in list_jobs(limit=1000):
+        job_id = job.get("job_id", "")
+        if not (job.get("running") or job.get("state") in ("queued", "running")):
+            continue
+        if job.get("state") in ("done", "failed", "cancelled"):
+            continue
+        if job_id and not is_running(job_id) and job.get("state") != "queued":
+            continue
+        for sample in _job_samples(job):
+            for sid in (sample.get("sample_id"), sample.get("source_sample_id")):
+                if sid:
+                    active.add(str(sid))
+    return active
+
+
 # ── Finished pipeline output management ───────────────────────────
 
 def _job_samples(job: dict) -> list[dict]:
@@ -587,6 +605,7 @@ def start_job(
     mode: str = "dragen",
     seq_type: str = "",
     with_extra_vep: bool = False,
+    with_pgx: bool = True,
     cnv_vcf: str = "",
     sv_vcf: str = "",
     mito_vcf: str = "",
@@ -686,6 +705,7 @@ def start_job(
         "samples":        batch_samples,
         "pipeline_type":  "dragen" if mode == "dragen" else "nckuh",
         "with_extra_vep": with_extra_vep,
+        "with_pgx":       with_pgx,
         "cnv_vcf":        cnv_vcf,
         "sv_vcf":         sv_vcf,
         "mito_vcf":       mito_vcf,
@@ -714,6 +734,8 @@ def start_job(
     ]
     if with_extra_vep:
         cmd.append("--with-extra-vep")
+    if not with_pgx:
+        cmd.append("--without-pgx")
     if cnv_vcf:  cmd += ["--cnv-vcf",  cnv_vcf]
     if sv_vcf:   cmd += ["--sv-vcf",   sv_vcf]
     if mito_vcf: cmd += ["--mito-vcf", mito_vcf]
