@@ -2406,6 +2406,15 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 12px;
 }
 .dragen-log-toggle:hover { color: var(--fg); }
+.dragen-cancel-btn {
+  margin-left: auto;
+  height: 28px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.dragen-cancel-btn + .dragen-log-toggle {
+  margin-left: 0;
+}
 .dragen-progress-row {
   display: flex;
   align-items: center;

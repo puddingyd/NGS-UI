@@ -360,6 +360,8 @@ def list_jobs(limit: int = 50) -> list[dict]:
             seen.add(child.name)
             st = load_state(child.name)
             if st:
+                st = dict(st)
+                st["running"] = is_running(child.name)
                 jobs.append(st)
     jobs.sort(key=lambda j: j.get("created_at", ""), reverse=True)
     return jobs[:limit]

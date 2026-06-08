@@ -34,9 +34,9 @@ Existing-output detection (step 2): tries
     /home/pipeline/tertiary_output/<SID>/03_acmg/<SID>.snv_indel.acmg.tsv
     /home/pipeline/tertiary_output/<stripped SID>/03_acmg/<stripped SID>.snv_indel.acmg.tsv
 in that order, where <stripped SID> drops the -dragen / -inhouse
-suffix. Production runs by the pipeline team don't carry our
-suffix, so the second candidate matches their output and we reuse
-it (saving ~30 min per WES sample).
+suffix. WES/WGS suffixes are test-type identifiers and must not be
+stripped, otherwise a WGS run such as VAL-24-WGS could accidentally
+reuse an older VAL-24 WES TSV.
 
 Started by `python3 -m app.workers.dragen_run --job-id … --vcf …`.
 """
@@ -65,7 +65,7 @@ def _strip_sid_suffix(sid: str) -> str:
     """Drop the -dragen / -inhouse caller suffix the GUI adds for
     directory disambiguation. Returns sid unchanged when no suffix
     matches."""
-    for suf in ("-dragen", "-inhouse", "-WES", "-WGS"):
+    for suf in ("-dragen", "-inhouse"):
         if sid.endswith(suf):
             return sid[: -len(suf)]
     return sid
@@ -526,6 +526,10 @@ def main() -> int:
                 ("pangolin-score", "PANGOLIN_SCORE", 3),
                 ("parse-csq", "PARSE_CSQ", 4),
                 ("acmg-classify", "ACMG_CLASSIFY", 5),
+                ("prepare-cnv-dragen", "PREPARE_CNV_DRAGEN", None),
+                ("annotsv-cnv-dragen", "ANNOTSV_CNV_DRAGEN", None),
+                ("prepare-sv-dragen", "PREPARE_SV_DRAGEN", None),
+                ("annotsv-sv-dragen", "ANNOTSV_SV_DRAGEN", None),
             ]
             nextflow_progress_rank = -1
             nextflow_running: dict[str, float] = {}
@@ -562,6 +566,9 @@ def main() -> int:
                         started = nextflow_running.get(slug)
                         elapsed = (time.monotonic() - started) if started is not None else None
                         _record_nextflow_step(job_id, slug, process, "done", elapsed=elapsed)
+                        if slug == "vep-annotate" and nextflow_progress_rank < 6:
+                            nextflow_progress_rank = 6
+                            _set_step(job_id, "nextflow:vep-annotate-done")
                     return
 
             if legacy_staging:
@@ -677,8 +684,15 @@ def main() -> int:
             if match:
                 _set_step(job_id, f"stop-gaps:{match.group(1)}")
 
-        for sample in samples:
+        stopgap_count = len(samples)
+        for stopgap_index, sample in enumerate(samples):
             sid = sample["sample_id"]
+            _update(
+                job_id,
+                stopgap_sample_index=stopgap_index,
+                stopgap_sample_count=stopgap_count,
+                stopgap_sample_id=sid,
+            )
             gui_tsv = TERTIARY_OUTPUT_ROOT / sid / "snv_indel.annotated.tsv"
             stop_args = [str(scripts / "run_stopgaps.sh"),
                          "--tsv",    str(gui_tsv),

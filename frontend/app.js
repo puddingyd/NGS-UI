@@ -7546,6 +7546,7 @@ const _DRAGEN_STATE = {
   batch: [],            // [{mode, vcf_path, sample_id, source_sample_id, ...}]
   job: null,            // current job state, polled
   pollTimer: null,
+  recoverTimer: null,
 };
 
 const DRAGEN_INHOUSE_WGS_SIZE_THRESHOLD = 100 * 1024 * 1024;
@@ -7861,6 +7862,7 @@ function _dragenSetJob(state) {
   const logToggle = document.getElementById("dragen-job-log-toggle");
   const progressBar = document.getElementById("dragen-job-progress-bar");
   const progressText = document.getElementById("dragen-job-progress-text");
+  const cancelBtn = document.getElementById("dragen-job-cancel-btn");
   if (panel && state) {
     panel.hidden = false;
     if (stepEl)  stepEl.textContent  = state.step || "";
@@ -7870,6 +7872,11 @@ function _dragenSetJob(state) {
     if (progressBar) progressBar.style.width = `${pct}%`;
     if (progressText) progressText.textContent = `${pct}%`;
     if (progressBar) progressBar.classList.toggle("failed", state.state === "failed");
+    if (cancelBtn) {
+      const running = state.state === "queued" || state.state === "running" || !!state.running;
+      cancelBtn.hidden = !running;
+      cancelBtn.disabled = !running;
+    }
     if (isNewJob && logEl) logEl.hidden = true;
     if (isNewJob && logToggle) {
       logToggle.textContent = "▶ Log";
@@ -7883,22 +7890,28 @@ function _dragenSetJob(state) {
 function _dragenProgressPercent(state) {
   if (!state) return 0;
   if (state.state === "done") return 100;
+  if (state.state === "cancelled") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
+  if (state.state === "failed") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
+  if (String(state.step || "").startsWith("stop-gaps")) {
+    return _dragenStopgapProgressPercent(state);
+  }
   const byStep = {
     queued: 1,
     "detect-pipeline-output": 2,
     samplesheet: 2,
     stage: 2,
     nextflow: 3,
-    "nextflow:prepare-vcf": 3,
-    "nextflow:prepare-vcf-dragen": 3,
-    "nextflow:add-callers-tag": 3,
-    "nextflow:filter-for-annotation": 8,
-    "nextflow:vep-annotate": 13,
-    "nextflow:pangolin-score": 26,
-    "nextflow:parse-csq": 49,
-    "nextflow:acmg-classify": 52,
-    "copy-pipeline-tsv": 55,
-    "stop-gaps": 55,
+    "nextflow:prepare-vcf": 4,
+    "nextflow:prepare-vcf-dragen": 4,
+    "nextflow:add-callers-tag": 4,
+    "nextflow:filter-for-annotation": 6,
+    "nextflow:vep-annotate": 12,
+    "nextflow:pangolin-score": 31,
+    "nextflow:parse-csq": 43,
+    "nextflow:acmg-classify": 45,
+    "nextflow:vep-annotate-done": 75,
+    "copy-pipeline-tsv": 87,
+    "stop-gaps": 87,
     "stop-gaps:clinvar": 55,
     "stop-gaps:filter-snv": 65,
     "stop-gaps:genebe": 66,
@@ -7908,6 +7921,27 @@ function _dragenProgressPercent(state) {
     done: 100,
   };
   return byStep[state.step] ?? 0;
+}
+
+function _clampPct(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
+function _dragenStopgapProgressPercent(state) {
+  const total = Math.max(1, Number(state.stopgap_sample_count || state.sample_count || 1));
+  const idx = Math.max(0, Math.min(total - 1, Number(state.stopgap_sample_index || 0)));
+  const sub = {
+    "stop-gaps": 0,
+    "stop-gaps:clinvar": 0.05,
+    "stop-gaps:filter-snv": 0.25,
+    "stop-gaps:genebe": 0.35,
+    "stop-gaps:extra-vep": 0.58,
+    "stop-gaps:annotsv": 0.87,
+    "stop-gaps:review-tsv": 0.88,
+    "stop-gaps:gene-index": 0.94,
+  };
+  const within = sub[state.step] ?? 0;
+  return _clampPct(87 + ((idx + within) / total) * 12);
 }
 
 function _toggleDragenLog() {
@@ -7944,9 +7978,38 @@ async function _dragenRecoverActiveJob() {
   // it in the topbar (so the user sees their previous run continuing).
   try {
     const jobs = await apiFetch("/dragen/jobs") || [];
-    const active = jobs.find(j => j.state === "queued" || j.state === "running");
-    if (active?.job_id) _dragenStartPolling(active.job_id);
+    const active = jobs.find(j => j.running || j.state === "queued" || j.state === "running");
+    if (
+      active?.job_id
+      && (active.job_id !== _DRAGEN_STATE.job?.job_id || !_DRAGEN_STATE.pollTimer)
+    ) {
+      _dragenStartPolling(active.job_id);
+    }
   } catch (_e) {}
+}
+
+function _dragenStartRecoveryPolling() {
+  if (_DRAGEN_STATE.recoverTimer) clearInterval(_DRAGEN_STATE.recoverTimer);
+  _dragenRecoverActiveJob();
+  _DRAGEN_STATE.recoverTimer = setInterval(_dragenRecoverActiveJob, 15000);
+}
+
+async function _dragenCancelCurrentJob() {
+  const jobId = _DRAGEN_STATE.job?.job_id;
+  if (!jobId) return;
+  if (!confirm("確定要終止這次三級分析？正在執行的 Nextflow / stop-gaps 會收到終止訊號。")) return;
+  const btn = document.getElementById("dragen-job-cancel-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "終止中…"; }
+  try {
+    const state = await apiFetch(`/dragen/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+    });
+    if (state) _dragenSetJob(state);
+  } catch (e) {
+    alert("終止失敗：" + (e?.message || e));
+  } finally {
+    if (btn) { btn.textContent = "終止"; }
+  }
 }
 
 async function _dragenStart() {
@@ -8064,10 +8127,11 @@ function setupDragenButton() {
   document.getElementById("dragen-start-btn")?.addEventListener("click", _dragenStart);
   document.getElementById("dragen-add-batch-btn")?.addEventListener("click", _dragenAddCurrentToBatch);
   document.getElementById("dragen-job-log-toggle")?.addEventListener("click", _toggleDragenLog);
+  document.getElementById("dragen-job-cancel-btn")?.addEventListener("click", _dragenCancelCurrentJob);
   document.getElementById("topbar-job-status")?.addEventListener("click", () => {
     showModal("dragen-modal");
   });
-  _dragenRecoverActiveJob();
+  _dragenStartRecoveryPolling();
 }
 
 async function _renderPipelineList() {

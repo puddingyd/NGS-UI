@@ -9,6 +9,9 @@
 ### v4.6 — 2026-06-07
 
 - 三級分析改接 pipeline v3.2，支援 Mitochondria 及 CNV/SV Nextflow 輸出。
+- 三級分析重用既有 pipeline output 時不再剝除 `-WES` / `-WGS` suffix，避免 WGS 樣本誤用同 base ID 的舊 WES TSV。
+- 三級分析進度條依 6-sample DRAGEN WGS batch log 重新配重；首頁會定期恢復後端正在跑的 job，其他瀏覽器或電腦登入後也能看到進度，並可在進度面板按「終止」取消當次 job。
+- DOCX CNV/SV 表格的「變異位置」欄會預留一格空白，避免座標貼到後續欄位。
 - 優化首頁載入及樣本載入速度。
 
 ### v4.4 — 2026-06-05

@@ -5,6 +5,7 @@
   POST /api/dragen/jobs            spawn a worker; returns job_id
   GET  /api/dragen/jobs            list known jobs (for topbar status)
   GET  /api/dragen/jobs/{jid}      state + log tail for one job
+  POST /api/dragen/jobs/{jid}/cancel
   GET  /api/dragen/outputs         list pipeline output sample directories
   GET  /api/dragen/outputs/{sid}/log
   DELETE /api/dragen/outputs/{sid}
@@ -143,6 +144,24 @@ def get_dragen_job(job_id: str):
         raise HTTPException(404, f"job not found: {job_id}")
     state = dict(state)
     state["running"]  = dragen_jobs.is_running(job_id)
+    state["log_tail"] = dragen_jobs.tail_log(job_id, n=80)
+    return state
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_dragen_job(job_id: str):
+    state = dragen_jobs.load_state(job_id)
+    if state is None:
+        raise HTTPException(404, f"job not found: {job_id}")
+    if state.get("state") in ("done", "failed", "cancelled"):
+        state = dict(state)
+        state["running"] = False
+        return state
+    if not dragen_jobs.cancel_job(job_id):
+        raise HTTPException(409, f"job is not running: {job_id}")
+    state = dragen_jobs.load_state(job_id) or {}
+    state = dict(state)
+    state["running"] = dragen_jobs.is_running(job_id)
     state["log_tail"] = dragen_jobs.tail_log(job_id, n=80)
     return state
 

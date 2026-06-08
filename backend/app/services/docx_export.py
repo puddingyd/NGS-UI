@@ -1042,7 +1042,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("染色體",        7),
-        ("變異位置",     26),
+        ("變異位置",     26, "buffered"),
         ("拷貝數",        7),
         ("基因型",       13),
         ("ACMG&AMP指引", 13, "token"),
