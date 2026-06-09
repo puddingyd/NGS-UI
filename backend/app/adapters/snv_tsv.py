@@ -339,17 +339,28 @@ def _row_to_variant(row: dict) -> dict:
         mane_all_raw = json.loads(row.get("MANE_ALL") or "[]")
     except json.JSONDecodeError:
         mane_all_raw = []
-    # Normalise key names (new pipeline uses tx/enst/type/hgvsc/hgvsp;
-    # frontend expects transcript/transcript_type/hgvs_c/hgvs_p).
+    def _mane_first(r: dict, *keys: str) -> str:
+        for key in keys:
+            v = r.get(key)
+            if v is not None and str(v).strip():
+                return str(v).strip()
+        return ""
+
+    # Normalise key names. Different pipeline revisions used tx/refseq/nm
+    # for the RefSeq transcript and enst/ensembl_transcript for ENST.
     mane_all = [
         {
-            "transcript":      r.get("tx")          or r.get("transcript")      or "",
-            "enst":            r.get("enst")        or "",
-            "transcript_type": r.get("type")        or r.get("transcript_type") or "",
-            "consequence":     r.get("consequence") or "",
-            "hgvs_c":          r.get("hgvsc")       or r.get("hgvs_c")          or "",
-            "hgvs_p":          r.get("hgvsp")       or r.get("hgvs_p")          or "",
-            "impact":          r.get("impact")      or "",
+            "transcript": _mane_first(
+                r, "tx", "transcript", "refseq", "refseq_transcript", "nm", "NM"
+            ),
+            "enst": _mane_first(
+                r, "enst", "ensembl", "ensembl_transcript", "transcript_id"
+            ),
+            "transcript_type": _mane_first(r, "type", "transcript_type"),
+            "consequence": _mane_first(r, "consequence"),
+            "hgvs_c": urllib.parse.unquote(_mane_first(r, "hgvsc", "hgvs_c", "HGVS_C")),
+            "hgvs_p": urllib.parse.unquote(_mane_first(r, "hgvsp", "hgvs_p", "HGVS_P")),
+            "impact": _mane_first(r, "impact"),
         }
         for r in mane_all_raw if isinstance(r, dict)
     ]

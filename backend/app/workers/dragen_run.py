@@ -5,13 +5,13 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
 (`--mode inhouse`). Steps:
 
     1. detect existing pipeline output
-       ├ HIT  → skip Nextflow, reuse the pre-existing .acmg.tsv
+       ├ HIT  → skip Nextflow only when all requested outputs exist
        └ MISS → run 2+3 below
     2. write a v3.x samplesheet       → data/jobs/tertiary/<job>/samplesheet.csv
        (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
     3. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<source SID>/
-                                          03_acmg/<source SID>.snv_indel.acmg.tsv
-                                          04_mito/<source SID>.mito.tsv
+       then mirror legacy source-ID-only output to <SID> when the UI ID
+       carries -dragen / -inhouse
     4. copy pipeline outputs          → NGS_UI/tertiary_output/<SID>/
                                           snv_indel.annotated.tsv
                                           mito.annotated.tsv
@@ -30,13 +30,10 @@ Mode differences:
             output folder as input_dir; CNV/SV AnnotSV runs separately on
             gcnv + delly VCFs.
 
-Existing-output detection (step 2): tries
-    /home/pipeline/tertiary_output/<SID>/03_acmg/<SID>.snv_indel.acmg.tsv
-    /home/pipeline/tertiary_output/<stripped SID>/03_acmg/<stripped SID>.snv_indel.acmg.tsv
-in that order, where <stripped SID> drops the -dragen / -inhouse
-suffix. WES/WGS suffixes are test-type identifiers and must not be
-stripped, otherwise a WGS run such as VAL-24-WGS could accidentally
-reuse an older VAL-24 WES TSV.
+Existing-output detection (step 2): prefers the UI sample ID, so DRAGEN
+and in-house output can coexist as <SID>-dragen / <SID>-inhouse. Older
+source-ID-only directories are treated as a legacy fallback and are
+mirrored into the suffixed directory before copying into NGS-UI.
 
 Started by `python3 -m app.workers.dragen_run --job-id … --vcf …`.
 """
@@ -76,6 +73,18 @@ def _strip_sid_suffix(sid: str) -> str:
     return sid
 
 
+def _pipeline_candidate_ids(sample_id: str, source_sample_id: str = "") -> list[str]:
+    candidates: list[str] = []
+    for sid in (sample_id, source_sample_id):
+        sid = (sid or "").strip()
+        if sid and sid not in candidates:
+            candidates.append(sid)
+    stripped = _strip_sid_suffix(sample_id or "")
+    if stripped and stripped not in candidates:
+        candidates.append(stripped)
+    return candidates
+
+
 def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
     """Look for a v3.1 <SID>.snv_indel.acmg.tsv under production output.
 
@@ -89,13 +98,17 @@ def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
     for sid in sample_ids:
         if not sid:
             continue
-        for s in (sid, _strip_sid_suffix(sid)):
-            if s and s not in candidates:
-                candidates.append(s)
+        if sid not in candidates:
+            candidates.append(sid)
     for s in candidates:
         p = PIPELINE_OUT_ROOT / s / "03_acmg" / f"{s}.snv_indel.acmg.tsv"
         if p.is_file():
             return p
+        d = PIPELINE_OUT_ROOT / s / "03_acmg"
+        if d.is_dir():
+            hit = next(d.glob("*.snv_indel.acmg.tsv"), None)
+            if hit is not None and hit.is_file():
+                return hit
     return None
 
 
@@ -105,13 +118,17 @@ def _find_pipeline_mito_tsv(*sample_ids: str) -> Path | None:
     for sid in sample_ids:
         if not sid:
             continue
-        for s in (sid, _strip_sid_suffix(sid)):
-            if s and s not in candidates:
-                candidates.append(s)
+        if sid not in candidates:
+            candidates.append(sid)
     for s in candidates:
         p = PIPELINE_OUT_ROOT / s / "04_mito" / f"{s}.mito.tsv"
         if p.is_file():
             return p
+        d = PIPELINE_OUT_ROOT / s / "04_mito"
+        if d.is_dir():
+            hit = next(d.glob("*.mito.tsv"), None)
+            if hit is not None and hit.is_file():
+                return hit
     return None
 
 
@@ -121,14 +138,116 @@ def _find_pipeline_annotsv_tsv(kind: str, *sample_ids: str) -> Path | None:
     for sid in sample_ids:
         if not sid:
             continue
-        for s in (sid, _strip_sid_suffix(sid)):
-            if s and s not in candidates:
-                candidates.append(s)
+        if sid not in candidates:
+            candidates.append(sid)
     for s in candidates:
         p = PIPELINE_OUT_ROOT / s / "06_cnv_sv" / f"{s}.{kind}.annotated.tsv"
         if p.is_file():
             return p
+        d = PIPELINE_OUT_ROOT / s / "06_cnv_sv"
+        if d.is_dir():
+            hit = next(d.glob(f"*.{kind}.annotated.tsv"), None)
+            if hit is not None and hit.is_file():
+                return hit
     return None
+
+
+def _find_pipeline_pgx_output(*sample_ids: str) -> Path | None:
+    """Return any PGx/PharmCAT-looking output file for a sample.
+
+    The formal PGx output contract is still moving, so this intentionally
+    accepts the known plan (`pgx.tsv`) plus common PharmCAT / PGx names.
+    """
+    names = [
+        "pgx.tsv",
+        "pharmcat.json",
+        "pharmcat.tsv",
+        "pharmcat.html",
+    ]
+    globs = [
+        "*pgx*.tsv", "*PGx*.tsv", "*pharmcat*.json", "*pharmcat*.tsv",
+        "*pharmcat*.html", "*PharmCAT*",
+    ]
+    subdirs = ["", "07_pgx", "pgx", "PGx", "pharmcat", "PharmCAT"]
+    for sid in sample_ids:
+        if not sid:
+            continue
+        root = PIPELINE_OUT_ROOT / sid
+        if not root.is_dir():
+            continue
+        for sub in subdirs:
+            d = root / sub if sub else root
+            if not d.is_dir():
+                continue
+            for name in names:
+                p = d / name
+                if p.is_file():
+                    return p
+            for pat in globs:
+                hit = next((p for p in d.glob(pat) if p.is_file()), None)
+                if hit is not None:
+                    return hit
+    return None
+
+
+def _pipeline_outputs_for(
+    sample_id: str,
+    source_sample_id: str,
+    *,
+    require_pgx: bool,
+) -> tuple[dict[str, Path], list[str], str]:
+    outputs: dict[str, Path] = {}
+    found_under = ""
+    for sid in _pipeline_candidate_ids(sample_id, source_sample_id):
+        checks: list[tuple[str, Path | None]] = [
+            ("snv_indel.acmg.tsv", _find_pipeline_acmg_tsv(sid)),
+            ("mito.tsv", _find_pipeline_mito_tsv(sid)),
+            ("cnv.annotated.tsv", _find_pipeline_annotsv_tsv("cnv", sid)),
+            ("sv.annotated.tsv", _find_pipeline_annotsv_tsv("sv", sid)),
+        ]
+        if require_pgx:
+            checks.append(("PGx/PharmCAT", _find_pipeline_pgx_output(sid)))
+        present = {name: path for name, path in checks if path is not None}
+        if not found_under and present:
+            found_under = sid
+        missing = [name for name, path in checks if path is None]
+        if not missing:
+            return present, [], sid
+    all_names = ["snv_indel.acmg.tsv", "mito.tsv", "cnv.annotated.tsv", "sv.annotated.tsv"]
+    if require_pgx:
+        all_names.append("PGx/PharmCAT")
+    missing = []
+    for name in all_names:
+        if name == "snv_indel.acmg.tsv":
+            path = _find_pipeline_acmg_tsv(*_pipeline_candidate_ids(sample_id, source_sample_id))
+        elif name == "mito.tsv":
+            path = _find_pipeline_mito_tsv(*_pipeline_candidate_ids(sample_id, source_sample_id))
+        elif name == "cnv.annotated.tsv":
+            path = _find_pipeline_annotsv_tsv("cnv", *_pipeline_candidate_ids(sample_id, source_sample_id))
+        elif name == "sv.annotated.tsv":
+            path = _find_pipeline_annotsv_tsv("sv", *_pipeline_candidate_ids(sample_id, source_sample_id))
+        else:
+            path = _find_pipeline_pgx_output(*_pipeline_candidate_ids(sample_id, source_sample_id))
+        if path is None:
+            missing.append(name)
+        else:
+            outputs[name] = path
+    return outputs, missing, found_under
+
+
+def _mirror_legacy_pipeline_output(sample_id: str, source_sample_id: str, legacy_sid: str) -> None:
+    """Copy old source-ID-only output into the UI-suffixed directory.
+
+    This repairs already-finished cases without deleting the legacy output.
+    """
+    if not sample_id or sample_id == legacy_sid:
+        return
+    src = PIPELINE_OUT_ROOT / legacy_sid
+    dst = PIPELINE_OUT_ROOT / sample_id
+    if not src.is_dir() or dst.exists():
+        return
+    shutil.copytree(src, dst, symlinks=True)
+    _log(f"[repair] mirrored legacy pipeline output {src} -> {dst}")
 
 
 def _pipeline_input_dir(vcf: Path, mode: str) -> Path:
@@ -307,7 +426,7 @@ TAIPEI_TZ = timezone(timedelta(hours=8))
 
 
 def _now():
-    return datetime.now(TAIPEI_TZ).isoformat(timespec="seconds")
+    return datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _load_secrets() -> None:
@@ -341,9 +460,9 @@ def _update(job_id: str, **kw) -> None:
 
 
 def _log(message: str = "") -> None:
-    """Write one worker-owned log line with an ISO timestamp."""
-    prefix = f"[{_now()}]"
-    print(f"{prefix} {message}" if message else prefix, flush=True)
+    """Write one worker-owned log line with a Taipei timestamp suffix."""
+    suffix = f"[{_now()}]"
+    print(f"{message} {suffix}" if message else suffix, flush=True)
 
 
 def _set_step(job_id: str, step: str, **kw) -> None:
@@ -365,6 +484,8 @@ def _record_nextflow_step(
     event: str,
     *,
     elapsed: float | None = None,
+    done: int | None = None,
+    total: int | None = None,
 ) -> None:
     now = _now()
     st = dragen_jobs.load_state(job_id) or {}
@@ -375,15 +496,20 @@ def _record_nextflow_step(
         "event": event,
         "at": now,
     }
+    if done is not None:
+        item["done"] = done
+    if total is not None:
+        item["total"] = total
     if elapsed is not None:
         item["elapsed_seconds"] = round(elapsed, 1)
     history.append(item)
     st["nextflow_step_history"] = history
     dragen_jobs.save_state(job_id, st)
+    progress = f" done={done}/{total}" if done is not None and total is not None else ""
     if elapsed is None:
-        _log(f"[nextflow-step] {slug} {event} process={process}")
+        _log(f"[nextflow-step] {slug} {event} process={process}{progress}")
     else:
-        _log(f"[nextflow-step] {slug} {event} process={process} elapsed={elapsed:.1f}s")
+        _log(f"[nextflow-step] {slug} {event} process={process}{progress} elapsed={elapsed:.1f}s")
 
 
 def _run(cmd: list[str], *, label: str, on_line=None) -> None:
@@ -449,20 +575,39 @@ def main() -> int:
     started_at = _now()
     _set_step(job_id, "detect-pipeline-output", state="running", started_at=started_at)
     try:
-        # 1. Reuse existing pipeline output if the production pipeline
-        # has already processed each source sample.
-        existing_by_sid: dict[str, Path] = {}
+        # 1. Reuse existing pipeline output only when every requested
+        # pipeline artifact exists. PGx is required only when the UI
+        # checkbox is enabled; otherwise old non-PGx runs remain reusable.
+        existing_by_sid: dict[str, dict[str, Path]] = {}
         pending_samples: list[dict] = []
         for sample in samples:
             sid = sample["sample_id"]
             source_sid = sample["source_sample_id"]
-            existing = _find_pipeline_acmg_tsv(source_sid, sid)
-            if existing is not None:
-                existing_by_sid[sid] = existing
-                _log(f"[detect] {sid}: reusing existing pipeline TSV: {existing}")
+            outputs, missing, found_under = _pipeline_outputs_for(
+                sid,
+                source_sid,
+                require_pgx=not args.without_pgx,
+            )
+            if not missing:
+                if found_under and found_under != sid:
+                    _mirror_legacy_pipeline_output(sid, source_sid, found_under)
+                    outputs, missing, found_under = _pipeline_outputs_for(
+                        sid,
+                        source_sid,
+                        require_pgx=not args.without_pgx,
+                    )
+                existing_by_sid[sid] = outputs
+                _log(
+                    f"[detect] {sid}: reusing complete pipeline output "
+                    f"under {PIPELINE_OUT_ROOT / (found_under or sid)}"
+                )
             else:
                 pending_samples.append(sample)
-                _log(f"[detect] {sid}: no existing pipeline TSV")
+                present = ", ".join(sorted(outputs)) or "none"
+                _log(
+                    f"[detect] {sid}: missing {', '.join(missing)} "
+                    f"(present: {present}); running Nextflow with -resume"
+                )
 
         if pending_samples:
             _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
@@ -523,61 +668,87 @@ def main() -> int:
             # 3. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
             _set_step(job_id, "nextflow")
             nextflow_stages = [
-                ("prepare-vcf-dragen", "PREPARE_VCF_DRAGEN", 0),
-                ("prepare-vcf", "PREPARE_VCF", 0),
-                ("add-callers-tag", "ADD_CALLERS_TAG", 0),
-                ("filter-for-annotation", "FILTER_FOR_ANNOTATION", 1),
-                ("mito-vep", "MITO_VEP", None),
-                ("mito-parse", "MITO_PARSE", None),
-                ("str-parse-dragen", "STR_PARSE_DRAGEN", None),
-                ("str-parse", "STR_PARSE", None),
-                ("vep-annotate", "VEP_ANNOTATE", 2),
-                ("pangolin-score", "PANGOLIN_SCORE", 3),
-                ("parse-csq", "PARSE_CSQ", 4),
-                ("acmg-classify", "ACMG_CLASSIFY", 5),
-                ("prepare-cnv-dragen", "PREPARE_CNV_DRAGEN", None),
-                ("annotsv-cnv-dragen", "ANNOTSV_CNV_DRAGEN", None),
-                ("prepare-sv-dragen", "PREPARE_SV_DRAGEN", None),
-                ("annotsv-sv-dragen", "ANNOTSV_SV_DRAGEN", None),
+                ("prepare-vcf-dragen-add-tag", "PREPARE_VCF_DRAGEN:ADD_DRAGEN_TAG"),
+                ("prepare-vcf-dragen", "PREPARE_VCF_DRAGEN"),
+                ("prepare-vcf", "PREPARE_VCF"),
+                ("mito-vep", "MITO_ANNOTATE:MITO_VEP"),
+                ("mito-parse", "MITO_ANNOTATE:MITO_PARSE"),
+                ("str-parse-dragen", "STR_PARSE_DRAGEN"),
+                ("prepare-cnv-dragen", "PREPARE_CNV_DRAGEN"),
+                ("annotsv-cnv-dragen", "ANNOTSV_CNV_DRAGEN"),
+                ("prepare-sv-dragen", "PREPARE_SV_DRAGEN"),
+                ("annotsv-sv-dragen", "ANNOTSV_SV_DRAGEN"),
+                ("vep-annotate", "SNV_ANNOTATE:VEP_ANNOTATE"),
+                ("pangolin-score", "SNV_ANNOTATE:PANGOLIN_SCORE"),
+                ("parse-csq", "PARSE_VEP_CSQ:PARSE_CSQ"),
+                ("acmg-classify", "ACMG_CLASSIFY"),
+                ("pgx-stellarpgx", "PGX_ANNOTATE:PGX_STELLARPGX"),
+                ("pgx-hla-extract", "PGX_ANNOTATE:PGX_HLA_EXTRACT"),
+                ("pgx-optitype", "PGX_ANNOTATE:PGX_OPTITYPE"),
+                ("pgx-pharmcat", "PGX_ANNOTATE:PGX_PHARMCAT"),
+                ("pgx-parse", "PGX_ANNOTATE:PGX_PARSE"),
             ]
+            if args.without_pgx:
+                nextflow_stages = [row for row in nextflow_stages if not row[0].startswith("pgx-")]
+            nextflow_stage_index = {slug: idx for idx, (slug, _token) in enumerate(nextflow_stages)}
             nextflow_progress_rank = -1
             nextflow_running: dict[str, float] = {}
-            nextflow_seen_events: set[tuple[str, str]] = set()
+            nextflow_seen_events: set[tuple[str, str, int, int]] = set()
 
             def track_nextflow(line: str) -> None:
                 nonlocal nextflow_progress_rank
-                if not re.search(r"\|\s*\d+\s+of\s+\d+", line):
+                if "[" not in line or "]" not in line:
                     return
-                match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", line)
-                if not match:
-                    return
-                done = int(match.group(1))
-                total = int(match.group(2))
-                for slug, token, progress_rank in nextflow_stages:
-                    if token not in line:
+                norm = " ".join(line.strip().split())
+                count_match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", norm)
+                done = int(count_match.group(1)) if count_match else 0
+                total = int(count_match.group(2)) if count_match else 0
+                for slug, token in nextflow_stages:
+                    if token not in norm:
                         continue
-                    if done < total:
-                        event = "start"
-                    else:
+                    if count_match and done >= total:
                         event = "done"
-                    key = (slug, event)
+                    elif "[-" in norm:
+                        event = "queued"
+                    else:
+                        event = "start"
+                    key = (slug, event, done, total)
                     if key in nextflow_seen_events:
                         return
                     nextflow_seen_events.add(key)
                     process = token
                     if event == "start":
-                        nextflow_running[slug] = time.monotonic()
-                        _record_nextflow_step(job_id, slug, process, "start")
-                        if progress_rank is not None and progress_rank > nextflow_progress_rank:
-                            nextflow_progress_rank = progress_rank
-                            _set_step(job_id, f"nextflow:{slug}")
-                    else:
+                        nextflow_running.setdefault(slug, time.monotonic())
+                    elapsed = None
+                    if event == "done":
                         started = nextflow_running.get(slug)
                         elapsed = (time.monotonic() - started) if started is not None else None
-                        _record_nextflow_step(job_id, slug, process, "done", elapsed=elapsed)
-                        if slug == "vep-annotate" and nextflow_progress_rank < 6:
-                            nextflow_progress_rank = 6
-                            _set_step(job_id, "nextflow:vep-annotate-done")
+                    _record_nextflow_step(
+                        job_id,
+                        slug,
+                        process,
+                        event,
+                        elapsed=elapsed,
+                        done=done or None,
+                        total=total or None,
+                    )
+                    stage_idx = nextflow_stage_index.get(slug, 0)
+                    fraction = (done / total) if total else (1.0 if event == "done" else 0.0)
+                    pct = 3 + ((stage_idx + fraction) / max(1, len(nextflow_stages))) * 84
+                    if stage_idx > nextflow_progress_rank or event == "done" or count_match:
+                        nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
+                        _set_step(
+                            job_id,
+                            f"nextflow:{slug}",
+                            nextflow_progress_pct=round(pct, 1),
+                            nextflow_current={
+                                "step": slug,
+                                "process": process,
+                                "event": event,
+                                "done": done,
+                                "total": total,
+                            },
+                        )
                     return
 
             if legacy_staging:
@@ -633,13 +804,24 @@ def main() -> int:
             for sample in pending_samples:
                 sid = sample["sample_id"]
                 source_sid = sample["source_sample_id"]
-                existing = _find_pipeline_acmg_tsv(source_sid, sid)
-                if existing is None:
-                    raise RuntimeError(
-                        "nextflow finished but expected acmg.tsv not found under "
-                        f"{PIPELINE_OUT_ROOT}/{source_sid}/03_acmg/"
+                outputs, missing, found_under = _pipeline_outputs_for(
+                    sid,
+                    source_sid,
+                    require_pgx=not args.without_pgx,
+                )
+                if not missing and found_under and found_under != sid:
+                    _mirror_legacy_pipeline_output(sid, source_sid, found_under)
+                    outputs, missing, found_under = _pipeline_outputs_for(
+                        sid,
+                        source_sid,
+                        require_pgx=not args.without_pgx,
                     )
-                existing_by_sid[sid] = existing
+                if missing:
+                    raise RuntimeError(
+                        "nextflow finished but expected output(s) still missing for "
+                        f"{sid}: {', '.join(missing)}"
+                    )
+                existing_by_sid[sid] = outputs
 
         # 4. Copy pipeline outputs → NGS-UI side; record source audit.
         _set_step(job_id, "copy-pipeline-tsv")
@@ -651,7 +833,8 @@ def main() -> int:
             sample_dir = TERTIARY_OUTPUT_ROOT / sid
             sample_dir.mkdir(parents=True, exist_ok=True)
             gui_tsv = sample_dir / "snv_indel.annotated.tsv"
-            existing = existing_by_sid.get(sid)
+            outputs = existing_by_sid.get(sid) or {}
+            existing = outputs.get("snv_indel.acmg.tsv")
             if existing is None:
                 raise RuntimeError(f"internal error: no pipeline TSV for {sid}")
             _validate_acmg_tsv(existing, strict_v31=not legacy_staging)
@@ -664,7 +847,7 @@ def main() -> int:
                 pipeline_type=mode,
             )
             _log(f"[copy] {sid}: {existing} → {gui_tsv}")
-            mito_src = _find_pipeline_mito_tsv(source_sid, sid)
+            mito_src = outputs.get("mito.tsv") or _find_pipeline_mito_tsv(sid, source_sid)
             if mito_src is None:
                 _log(
                     f"[copy] {sid}: mito output not found under "
@@ -679,7 +862,8 @@ def main() -> int:
                     pass
                 _log(f"[copy] {sid}: {mito_src} → {mito_dst}")
             for kind in ("cnv", "sv"):
-                annotsv_src = _find_pipeline_annotsv_tsv(kind, source_sid, sid)
+                key = f"{kind}.annotated.tsv"
+                annotsv_src = outputs.get(key) or _find_pipeline_annotsv_tsv(kind, sid, source_sid)
                 if annotsv_src is None:
                     _log(
                         f"[copy] {sid}: {kind.upper()} AnnotSV output not found under "

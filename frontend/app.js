@@ -642,6 +642,24 @@ function displaySnvHgvs(v, fallback = "") {
   return raw.replace(enst, nm);
 }
 
+function _maneDisplayTranscript(row) {
+  const nm = String(row?.transcript || "").trim();
+  const enst = String(row?.enst || "").trim();
+  if (/^NM_/i.test(nm)) return nm;
+  if (/^NM_/i.test(enst)) return enst;
+  return nm || enst;
+}
+
+function _maneDisplayHgvs(row, key) {
+  const value = String(row?.[key] || "").trim();
+  const nm = String(row?.transcript || "").trim();
+  const enst = String(row?.enst || "").trim();
+  if (/^NM_/i.test(nm) && enst && value.startsWith(`${enst}:`)) {
+    return `${nm}:${value.split(":", 2)[1] || ""}`;
+  }
+  return value;
+}
+
 function _sryIgvRegion() {
   // SRY gene coordinates from the reference assemblies used by the UI.
   // Keep this as a lightweight pseudo-variant so it follows the same
@@ -3198,9 +3216,9 @@ function renderManeAll(v) {
   const cells = rows.map(r => `
     <tr>
       <td><span class="badge badge-${(r.transcript_type || "").toLowerCase().replace(/_/g, "-")}">${escapeHtml(r.transcript_type || "")}</span></td>
-      <td class="mane-tx">${escapeHtml(r.transcript || "")}</td>
-      <td>${escapeHtml(r.hgvs_c || "")}</td>
-      <td>${escapeHtml(r.hgvs_p || "")}</td>
+      <td class="mane-tx">${escapeHtml(_maneDisplayTranscript(r))}</td>
+      <td>${escapeHtml(_maneDisplayHgvs(r, "hgvs_c"))}</td>
+      <td>${escapeHtml(_maneDisplayHgvs(r, "hgvs_p"))}</td>
       <td>${escapeHtml(r.consequence || "")}</td>
     </tr>`).join("");
   return `
@@ -8177,6 +8195,9 @@ function _dragenProgressPercent(state) {
   if (step.startsWith("stop-gaps") || step.startsWith("sample-step")) {
     return _dragenStopgapProgressPercent(state);
   }
+  if (step.startsWith("nextflow:") && Number.isFinite(Number(state.nextflow_progress_pct))) {
+    return _clampPct(state.nextflow_progress_pct);
+  }
   const byStep = {
     queued: 1,
     "detect-pipeline-output": 2,
@@ -8443,7 +8464,7 @@ async function _renderPipelineList() {
             data-sample-id="${escapeAttr(row.sample_id || "")}">查看 Log</button></td>
           <td><button type="button" class="btn btn-danger pipeline-output-delete"
             data-sample-id="${escapeAttr(row.sample_id || "")}"
-            data-source-sample-id="${escapeAttr(row.source_sample_id || row.sample_id || "")}">刪除</button></td>
+            data-pipeline-sample-id="${escapeAttr(row.pipeline_sample_id || row.source_sample_id || row.sample_id || "")}">刪除</button></td>
         </tr>`;
     }).join("");
     host.innerHTML = `<table>${head}${body}</table>`;
@@ -8484,8 +8505,8 @@ function setupPipelineList() {
       }
       return;
     }
-    const sourceSid = delBtn.dataset.sourceSampleId || sid;
-    if (!confirm(`確定刪除三級分析原始檔案、NGS-UI 個案資料與 job log？\n\n/home/pipeline/tertiary_output/${sourceSid}/\nNGS_UI/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
+    const pipelineSid = delBtn.dataset.pipelineSampleId || sid;
+    if (!confirm(`確定刪除三級分析原始檔案、NGS-UI 個案資料與 job log？\n\n/home/pipeline/tertiary_output/${pipelineSid}/\nNGS_UI/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
     delBtn.disabled = true;
     if (status) status.textContent = `刪除 ${sid} 中…`;
     try {

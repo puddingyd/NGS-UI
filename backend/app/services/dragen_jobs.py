@@ -48,7 +48,7 @@ TAIPEI_TZ = timezone(timedelta(hours=8))
 
 
 def _now() -> str:
-    return datetime.now(TAIPEI_TZ).isoformat(timespec="seconds")
+    return datetime.now(TAIPEI_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _validate_sample_id(sample_id: str) -> str:
@@ -461,8 +461,8 @@ def list_pipeline_outputs() -> list[dict]:
                 _validate_sample_id(child.name)
             except ValueError:
                 continue
-            job_entry = jobs_by_source.get(child.name)
-            ui_sample_id = job_entry[1] if job_entry else child.name
+            source_job_entry = jobs_by_source.get(child.name)
+            ui_sample_id = source_job_entry[1] if source_job_entry else child.name
             sample_dirs[ui_sample_id] = (child, child.name)
 
     for sample_id in set(sample_dirs) | set(latest_jobs):
@@ -539,8 +539,9 @@ def delete_pipeline_output(sample_id: str) -> dict:
             ),
             None,
         )
+    source_sample_id = (matched_sample or {}).get("source_sample_id") or sample_id
     ui_sample_id = (matched_sample or {}).get("sample_id") or sample_id
-    pipeline_sample_id = (matched_sample or {}).get("source_sample_id") or sample_id
+    pipeline_sample_id = ui_sample_id if (PIPELINE_OUT_ROOT / ui_sample_id).is_dir() else source_sample_id
     sample_dir = PIPELINE_OUT_ROOT / pipeline_sample_id
     ui_dir = TERTIARY_OUTPUT_ROOT / ui_sample_id
     if not sample_dir.is_dir() and not ui_dir.is_dir() and not jobs:
