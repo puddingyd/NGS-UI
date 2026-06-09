@@ -265,6 +265,8 @@ def index_is_stale(idx: dict | None) -> bool:
         ts = datetime.fromisoformat(idx["updated_at"].replace("Z", "+00:00"))
     except ValueError:
         return True
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=TAIPEI_TZ)
     age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
     return age_h >= PIPELINE_VCF_INDEX_TTL_HOURS
 
