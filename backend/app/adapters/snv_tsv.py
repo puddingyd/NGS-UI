@@ -587,6 +587,11 @@ def _row_to_variant(row: dict) -> dict:
         "in_roh": _to_bool(row.get("IN_ROH", "")),
         "in_panel": _to_bool(row.get("IN_PANEL", "")),
         "in_blacklist": _to_bool(row.get("IN_BLACKLIST", "")),
+        # GIAB genome-stratification labels (annotate_giab_strata.py):
+        # comma-separated short labels for difficult regions the variant
+        # overlaps (homopolymer / tandem_repeat / segdup / ...). Frontend
+        # renders one QC badge per label.
+        "giab_strata": [s for s in (row.get("GIAB_STRATA", "") or "").split(",") if s.strip()],
         "OMIM_link": row.get("OMIM_LINK", ""),
         "gnomAD_link": row.get("GNOMAD_LINK", ""),
         "ClinVar_link": row.get("CLINVAR_LINK", ""),

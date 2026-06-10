@@ -3109,9 +3109,22 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
 
 // ---- helpers used by renderVariantCard (Phase 4) -----------------
 
+// GIAB stratification label → badge text + tooltip. Labels come from the
+// TSV GIAB_STRATA column (written by scripts/annotate_giab_strata.py, which
+// maps each BED to a label via strata_manifest.json). Unknown labels fall
+// back to the raw label so adding a new stratum needs no frontend change.
+const GIAB_STRATA_DISPLAY = {
+  homopolymer:     { display: "Homopolymer",    tip: "GIAB: homopolymer region — low-confidence indel calls" },
+  tandem_repeat:   { display: "Tandem repeat",  tip: "GIAB: tandem / simple repeat region" },
+  segdup:          { display: "Segdup",         tip: "GIAB: segmental duplication — possible mismapping / false positives" },
+  low_mappability: { display: "Low mappability",tip: "GIAB: low-mappability region — reads hard to place uniquely" },
+  gc_extreme:      { display: "GC extreme",     tip: "GIAB: extreme GC content — coverage / calling bias" },
+  other_difficult: { display: "Other difficult",tip: "GIAB: other difficult region (MHC/KIR/VDJ, false dup, gaps, ...)" },
+};
+
 // Top-of-card chip row: TRANSCRIPT_TYPE / CALLERS / panel/ROH/blacklist
-// hits / LOFTEE HC. Empty-string entries are filtered out so the row
-// hides itself when nothing is worth showing.
+// hits / LOFTEE HC / GIAB strata. Empty-string entries are filtered out so
+// the row hides itself when nothing is worth showing.
 function renderVariantBadges(v) {
   const chips = [];
   if (v.transcript_type) {
@@ -3130,6 +3143,13 @@ function renderVariantBadges(v) {
   if (v.in_blacklist) chips.push(`<span class="badge badge-blacklist" title="Variant or gene flagged on the QC blacklist">⚠ Blacklist</span>`);
   if (v.loftee_hc === "HC") {
     chips.push(`<span class="badge badge-loftee-hc" title="LOFTEE high-confidence LoF">LOFTEE HC</span>`);
+  }
+  // GIAB genome-stratification flags — difficult regions where short-read
+  // calls are less reliable (homopolymers, repeats, segdups, ...). One
+  // amber badge per label so reviewers treat the call with care.
+  for (const label of (v.giab_strata || [])) {
+    const meta = GIAB_STRATA_DISPLAY[label] || { display: label, tip: "GIAB difficult region" };
+    chips.push(`<span class="badge badge-giab" title="${escapeAttr(meta.tip)}">${escapeHtml(meta.display)}</span>`);
   }
   // Right-aligned "搜尋同基因" — lists every SNV/Indel + CNV/SV that
   // touches this gene. Mainly for spotting compound-het / mixed-mode
