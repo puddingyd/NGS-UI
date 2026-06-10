@@ -57,7 +57,7 @@ _ALLOWED_SUFFIXES = (".bam", ".bai", ".cram", ".crai",
                      ".fa", ".fai", ".fasta", ".dict", ".gzi", ".2bit")
 _CHUNK = 1024 * 1024
 _SIBLING_LIMIT = 2
-_LEGACY_ALIAS_SUFFIXES = ("-dragen", "-inhouse", "-WES", "-WGS")
+_LEGACY_ALIAS_SUFFIXES = ("-dragen", "-nckuh", "-inhouse", "-WES", "-WGS")
 
 
 def _validate_sid(sid: str) -> str:
@@ -223,7 +223,7 @@ def _pipeline_type_from_sidecar(sid: str) -> str:
     sid_l = (sid or "").lower()
     if sid_l.endswith("-dragen"):
         return "dragen"
-    if sid_l.endswith("-inhouse"):
+    if sid_l.endswith("-nckuh") or sid_l.endswith("-inhouse"):
         return "inhouse"
     raw = str(_sidecar_for(sid).get("pipeline_type") or "").strip().lower()
     if raw == "dragen":

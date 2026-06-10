@@ -11,7 +11,7 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
        (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
     3. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<source SID>/
        then mirror legacy source-ID-only output to <SID> when the UI ID
-       carries -dragen / -inhouse
+       carries -dragen / -nckuh / -inhouse
     4. copy pipeline outputs          → NGS_UI/tertiary_output/<SID>/
                                           snv_indel.annotated.tsv
                                           mito.annotated.tsv
@@ -31,7 +31,7 @@ Mode differences:
             gcnv + delly VCFs.
 
 Existing-output detection (step 2): prefers the UI sample ID, so DRAGEN
-and in-house output can coexist as <SID>-dragen / <SID>-inhouse. Older
+and in-house output can coexist as <SID>-dragen / <SID>-nckuh. Older
 source-ID-only directories are treated as a legacy fallback and are
 mirrored into the suffixed directory before copying into NGS-UI.
 
@@ -64,10 +64,10 @@ TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
 
 
 def _strip_sid_suffix(sid: str) -> str:
-    """Drop the -dragen / -inhouse caller suffix the GUI adds for
+    """Drop the -dragen / -nckuh / -inhouse caller suffix the GUI adds for
     directory disambiguation. Returns sid unchanged when no suffix
     matches."""
-    for suf in ("-dragen", "-inhouse"):
+    for suf in ("-dragen", "-nckuh", "-inhouse"):
         if sid.endswith(suf):
             return sid[: -len(suf)]
     return sid

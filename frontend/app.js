@@ -860,7 +860,7 @@ async function _loadIgvBamFolder() {
       hint.textContent = "此資料夾沒有可用 BAM（會排除 .repeats.bam）";
       return;
     }
-    const sid = String(_igvSampleId || "").replace(/-(dragen|inhouse|WES|WGS)$/i, "");
+    const sid = String(_igvSampleId || "").replace(/-(dragen|nckuh|inhouse|WES|WGS)$/i, "");
     const preferred = _igvFolderBams.find(b => b.sample_id === sid) || _igvFolderBams[0];
     select.innerHTML = ['<option value="">— 選擇 primary BAM —</option>']
       .concat(_igvFolderBams.map((b) =>
@@ -8347,13 +8347,10 @@ async function _dragenStart() {
 }
 
 function _dragenSuggestSid(vcfSid, mode) {
-  // DRAGEN adds -dragen suffix to disambiguate from production runs;
-  // in-house keeps the original SID since the production pipeline
-  // writes to the same /home/pipeline/tertiary_output/<SID>/ path
-  // and we want to reuse that output when it exists.
   if (!vcfSid) return "";
-  if (mode !== "dragen") return vcfSid;
-  return vcfSid.endsWith("-dragen") ? vcfSid : `${vcfSid}-dragen`;
+  const suffix = mode === "dragen" ? "-dragen" : mode === "inhouse" ? "-nckuh" : "";
+  if (!suffix) return vcfSid;
+  return vcfSid.toLowerCase().endsWith(suffix) ? vcfSid : `${vcfSid}${suffix}`;
 }
 
 function _dragenWireCombobox(mode) {

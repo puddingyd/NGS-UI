@@ -6,9 +6,13 @@
 
 ## 版本紀錄
 
+### v4.8 — 2026-06-10
+
+- In-house 三級分析預設 Sample ID 改為加上 `-nckuh` 後綴，並在 pipeline output 端產生對應的 `-nckuh` 目錄，和 DRAGEN 的 `-dragen` 分流一致。
+
 ### v4.7 — 2026-06-09
 
-- 三級分析 output 改以 `-dragen` / `-inhouse` 目錄分流，避免同名 DRAGEN 與 in-house sample 混用。
+- 三級分析 output 改以 `-dragen` / in-house suffix 目錄分流，避免同名 DRAGEN 與 in-house sample 混用。
 - Nextflow reuse 改為檢查 SNV、Mito、CNV、SV 與已勾選時的 PGx/PharmCAT 輸出；缺檔會用 `-resume` 補跑。
 - 三級分析 log 改用行尾時間戳，並記錄每個 Nextflow process 的完成比例與 elapsed time。
 - SNV 同基因搜尋與 MANE 詳細資料優先顯示 RefSeq `NM_` transcript。
