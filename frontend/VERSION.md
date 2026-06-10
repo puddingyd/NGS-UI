@@ -10,6 +10,9 @@
 
 - In-house 三級分析預設 Sample ID 改為加上 `-nckuh` 後綴，並在 pipeline output 端產生對應的 `-nckuh` 目錄，和 DRAGEN 的 `-dragen` 分流一致。
 - 後端也會強制補上新 job 的來源 suffix，避免舊前端快取或手動輸入造成 output 仍落在無 suffix 目錄。
+- 三級分析 Nextflow 進度條改為單調遞增，避免 batch job 中較早 process 晚更新時造成百分比倒退。
+- SNV/Indel 同基因搜尋與 More 內的 MANE transcript 顯示改為優先使用有實際 HGVS.c/p 的 MANE_SELECT `NM_` transcript，並容忍不同 TSV 引號格式的 `MANE_ALL` 欄位。
+- 統一 SNV filter 計數字體，並讓 DRAGEN caller badge 使用和 DV/HC 一致的標籤樣式。
 
 ### v4.7 — 2026-06-09
 

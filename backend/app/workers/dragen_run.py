@@ -749,6 +749,9 @@ def main() -> int:
                     pct = 3 + ((stage_idx + fraction) / max(1, len(nextflow_stages))) * 84
                     if stage_idx > nextflow_progress_rank or event == "done" or count_match:
                         nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
+                        st = dragen_jobs.load_state(job_id) or {}
+                        previous_pct = float(st.get("nextflow_progress_pct") or 0)
+                        pct = max(previous_pct, pct)
                         _set_step(
                             job_id,
                             f"nextflow:{slug}",

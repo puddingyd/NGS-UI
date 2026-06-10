@@ -78,6 +78,74 @@ def _to_bool(v: str) -> bool:
     return str(v).strip().lower() in ("true", "1", "yes", "y", "t")
 
 
+def _parse_mane_all(raw: str) -> list[dict[str, Any]]:
+    """Parse MANE_ALL across pipeline/TSV quoting variants.
+
+    Some historical exports kept CSV-style doubled quotes inside the TSV
+    field, and copy/paste from spreadsheets can introduce smart quotes.
+    Keep this forgiving so a malformed MANE_ALL cell does not erase the
+    entire MANE detail table in the UI.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return []
+    quote_normalized = (
+        text.replace("\u201c", '"')
+            .replace("\u201d", '"')
+            .replace("\u2018", "'")
+            .replace("\u2019", "'")
+    )
+    candidates = [text]
+    if quote_normalized != text:
+        candidates.append(quote_normalized)
+    for candidate in list(candidates):
+        stripped = candidate.strip()
+        if len(stripped) >= 2 and stripped[0] == stripped[-1] == '"':
+            candidates.append(stripped[1:-1].replace('""', '"'))
+        if '""' in stripped:
+            candidates.append(stripped.replace('""', '"'))
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, list):
+            return [r for r in value if isinstance(r, dict)]
+    return []
+
+
+def _mane_impact_rank(impact: str) -> int:
+    return {
+        "HIGH": 4,
+        "MODERATE": 3,
+        "LOW": 2,
+        "MODIFIER": 1,
+    }.get((impact or "").strip().upper(), 0)
+
+
+def _pick_display_mane(mane_all: list[dict[str, str]], enst_base: str) -> dict[str, str] | None:
+    select_rows = [
+        m for m in mane_all
+        if (m.get("transcript_type") or "").upper() == "MANE_SELECT"
+        and re.match(r"^NM_", m.get("transcript") or "", flags=re.I)
+    ]
+    if not select_rows:
+        return None
+
+    def score(row: dict[str, str]) -> tuple[int, int, int, int]:
+        row_enst = (row.get("enst") or "").split(".")[0]
+        hgvs_signal = int(bool(row.get("hgvs_c") or row.get("hgvs_p")))
+        coding_signal = int(_mane_impact_rank(row.get("impact") or "") >= 2)
+        return (
+            hgvs_signal,
+            coding_signal,
+            _mane_impact_rank(row.get("impact") or ""),
+            int(bool(enst_base and row_enst == enst_base)),
+        )
+
+    return max(select_rows, key=score)
+
+
 def _loftee_hc_call(row: dict) -> bool:
     """Old pipeline emitted LOFTEE_HC ('HC' or ''); new pipeline emits
     a single LOFTEE column ('HC' / 'LC' / '.'). Accept either.
@@ -335,10 +403,6 @@ def _row_to_variant(row: dict) -> dict:
     hgvs_c = urllib.parse.unquote(row.get("HGVS_C", ""))
     hgvs_p = urllib.parse.unquote(row.get("HGVS_P", ""))
 
-    try:
-        mane_all_raw = json.loads(row.get("MANE_ALL") or "[]")
-    except json.JSONDecodeError:
-        mane_all_raw = []
     def _mane_first(r: dict, *keys: str) -> str:
         for key in keys:
             v = r.get(key)
@@ -362,24 +426,24 @@ def _row_to_variant(row: dict) -> dict:
             "hgvs_p": urllib.parse.unquote(_mane_first(r, "hgvsp", "hgvs_p", "HGVS_P")),
             "impact": _mane_first(r, "impact"),
         }
-        for r in mane_all_raw if isinstance(r, dict)
+        for r in _parse_mane_all(row.get("MANE_ALL") or "[]")
     ]
 
     # Reviewers prefer RefSeq accessions for continuity with old reports.
-    # If MANE_ALL carries a MANE_SELECT entry whose ENST matches the
-    # picked TRANSCRIPT, swap the displayed transcript + the HGVS.c
-    # accession prefix to RefSeq NM_*. HGVS.p loses its ENSP_* prefix
-    # (pipeline doesn't ship matched NP_*) — leave just `p.xxx`.
+    # Prefer the most informative MANE_SELECT row. When VEP picked a
+    # downstream/MODIFIER ENST with blank HGVS fields, this lets gene search
+    # cards show the clinically useful NM_* missense/coding transcript.
     enst_base = (transcript or "").split(".")[0]
-    refseq_nm = ""
-    for m in mane_all:
-        if (m["transcript_type"] or "").upper() != "MANE_SELECT":
-            continue
-        if (m["enst"] or "").split(".")[0] == enst_base:
-            refseq_nm = m["transcript"]
-            break
-    if refseq_nm:
+    display_mane = _pick_display_mane(mane_all, enst_base)
+    if display_mane:
+        refseq_nm = display_mane["transcript"]
         transcript = refseq_nm
+        mane_hgvs_c = display_mane.get("hgvs_c") or ""
+        mane_hgvs_p = display_mane.get("hgvs_p") or ""
+        if mane_hgvs_c:
+            hgvs_c = mane_hgvs_c
+        if mane_hgvs_p:
+            hgvs_p = mane_hgvs_p
         if hgvs_c and ":" in hgvs_c:
             hgvs_c = f"{refseq_nm}:{hgvs_c.split(':', 1)[1]}"
         if hgvs_p and ":" in hgvs_p:
