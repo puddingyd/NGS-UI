@@ -105,7 +105,7 @@ BIOTOOLS_DIR = Path(os.environ.get(
 # them (plus strata_manifest.json) under this dir via download_giab_strata.sh.
 GIAB_STRAT_DIR = Path(os.environ.get(
     "NGS_UI_GIAB_STRAT_DIR",
-    "/home/pipeline/reference/hg38/tertiary/giab_stratification",
+    BIOTOOLS_DIR / "giab_stratification",
 ))
 
 # OMIM annotation table (xlsx). Loaded once at first use and lazily

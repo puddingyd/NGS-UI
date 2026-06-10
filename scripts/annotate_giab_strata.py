@@ -52,10 +52,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Mirrors the pipeline reference layout; overridable via env / flag.
+# Under the biotools tree like cds_combined.bed / spliceai; env / flag override.
 DEFAULT_STRAT_DIR = os.environ.get(
     "NGS_UI_GIAB_STRAT_DIR",
-    "/home/pipeline/reference/hg38/tertiary/giab_stratification",
+    str(Path.home() / "NGS_UI" / "biotools" / "giab_stratification"),
 )
 DEFAULT_COLUMN = "GIAB_STRATA"
 MANIFEST_NAME = "strata_manifest.json"

@@ -21,12 +21,12 @@
 #
 # Env:
 #   NGS_UI_GIAB_STRAT_DIR      output dir (default
-#                              /home/pipeline/reference/hg38/tertiary/giab_stratification)
+#                              $HOME/NGS_UI/biotools/giab_stratification)
 #   GIAB_STRAT_TARBALL_URL     tarball URL (default v3.6 GRCh38 @all)
 # =========================================================
 set -euo pipefail
 
-OUT_DIR="${NGS_UI_GIAB_STRAT_DIR:-/home/pipeline/reference/hg38/tertiary/giab_stratification}"
+OUT_DIR="${NGS_UI_GIAB_STRAT_DIR:-$HOME/NGS_UI/biotools/giab_stratification}"
 TARBALL_URL="${GIAB_STRAT_TARBALL_URL:-https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/genome-stratifications/v3.6/genome-stratifications-GRCh38@all.tar.gz}"
 LOCAL_TARBALL=""
 KEEP_EXTRACT=0

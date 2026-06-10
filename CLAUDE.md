@@ -41,7 +41,7 @@
 | gene panels（含使用者自訂的） | `NGS_UI_HOME/phenotype_data/gene_panels/` | `NGS_UI_GENE_PANELS_DIR` |
 | panel_loose / HGNC alias / dead-zone tables | `REPO_ROOT/ngs_panel_deadzone/` | `NGS_UI_PANEL_DEADZONE_DIR` |
 | OMIM.xlsx | `NGS_UI_HOME/OMIM/OMIM.xlsx` | `NGS_UI_OMIM_XLSX` |
-| GIAB stratification BED + `strata_manifest.json` | `/home/pipeline/reference/hg38/tertiary/giab_stratification/` | `NGS_UI_GIAB_STRAT_DIR` |
+| GIAB stratification BED + `strata_manifest.json` | `NGS_UI_HOME/biotools/giab_stratification/` | `NGS_UI_GIAB_STRAT_DIR` |
 | Exomiser/LIRICAL CLI | `NGS_UI_HOME/biotools/` | `NGS_UI_BIOTOOLS_DIR` |
 | VCF（per-sample） | `NGS_UI_HOME/vcf/` | `NGS_UI_VCF_DIR` |
 | IGV in-house BAM 搜尋根目錄 | `/home/datalake_Intermediate/pipeline/nextflow_output` | `NGS_UI_INHOUSE_BAM_ROOT`（可用 `:` 分隔多個 root；舊 `NGS_UI_BAM_ROOT` 仍作 fallback） |
