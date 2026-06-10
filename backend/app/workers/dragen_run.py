@@ -73,6 +73,18 @@ def _strip_sid_suffix(sid: str) -> str:
     return sid
 
 
+def _default_ui_sample_id(sample_id: str, mode: str) -> str:
+    sid = (sample_id or "").strip()
+    if mode == "dragen":
+        return sid if sid.lower().endswith("-dragen") else f"{sid}-dragen"
+    if mode == "inhouse":
+        sid_l = sid.lower()
+        if sid_l.endswith("-nckuh") or sid_l.endswith("-inhouse"):
+            return sid
+        return f"{sid}-nckuh"
+    return sid
+
+
 def _pipeline_candidate_ids(sample_id: str, source_sample_id: str = "") -> list[str]:
     candidates: list[str] = []
     for sid in (sample_id, source_sample_id):
@@ -344,7 +356,7 @@ def _load_samples(args: argparse.Namespace) -> list[dict]:
         mode = (sample.get("mode") or args.mode or "dragen").strip()
         if mode not in ("dragen", "inhouse"):
             raise ValueError(f"unknown mode in batch: {mode}")
-        sample_id = (sample.get("sample_id") or "").strip()
+        sample_id = _default_ui_sample_id((sample.get("sample_id") or "").strip(), mode)
         source_sample_id = (sample.get("source_sample_id") or "").strip()
         vcf_path = (sample.get("vcf_path") or sample.get("vcf") or "").strip()
         if not sample_id or not source_sample_id or not vcf_path:

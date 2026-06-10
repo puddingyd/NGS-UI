@@ -9,6 +9,7 @@
 ### v4.8 — 2026-06-10
 
 - In-house 三級分析預設 Sample ID 改為加上 `-nckuh` 後綴，並在 pipeline output 端產生對應的 `-nckuh` 目錄，和 DRAGEN 的 `-dragen` 分流一致。
+- 後端也會強制補上新 job 的來源 suffix，避免舊前端快取或手動輸入造成 output 仍落在無 suffix 目錄。
 
 ### v4.7 — 2026-06-09
 

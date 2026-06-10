@@ -59,6 +59,19 @@ def _validate_sample_id(sample_id: str) -> str:
     return sample_id
 
 
+def _default_ui_sample_id(sample_id: str, mode: str) -> str:
+    """Normalize UI/output sample IDs for new tertiary jobs."""
+    sid = (sample_id or "").strip()
+    if mode == "dragen":
+        return sid if sid.lower().endswith("-dragen") else f"{sid}-dragen"
+    if mode == "inhouse":
+        sid_l = sid.lower()
+        if sid_l.endswith("-nckuh") or sid_l.endswith("-inhouse"):
+            return sid
+        return f"{sid}-nckuh"
+    return sid
+
+
 def infer_source_sample_id(vcf: Path, mode: str) -> str:
     """Return the sequencing sample ID encoded in the selected VCF name."""
     name = vcf.name
@@ -645,6 +658,7 @@ def start_job(
             sample_id_i = (item.get("sample_id") or "").strip()
             if not sample_id_i:
                 raise ValueError("sample_id required")
+            sample_id_i = _default_ui_sample_id(sample_id_i, sample_mode)
             _validate_sample_id(sample_id_i)
             source_id_i = (item.get("source_sample_id") or "").strip() or infer_source_sample_id(sample_vcf, sample_mode)
             _validate_sample_id(source_id_i)
@@ -674,6 +688,7 @@ def start_job(
             raise FileNotFoundError(f"VCF not found: {vcf_path}")
         if not sample_id:
             raise ValueError("sample_id required")
+        sample_id = _default_ui_sample_id(sample_id, mode)
         _validate_sample_id(sample_id)
         source_sample_id = source_sample_id or infer_source_sample_id(vcf, mode)
         _validate_sample_id(source_sample_id)
