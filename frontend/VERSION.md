@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v4.9 — 2026-06-10
+
+- SNV/Indel 卡片新增 GIAB stratification 標籤：變異若落在 homopolymer、tandem repeat、segmental duplication、low mappability、GC 極端或其他困難區域，會在標籤列顯示對應的琥珀色 badge，提醒該位點 short-read 判讀較不可靠。
+- 三級分析尾段新增 GIAB stratification 標註步驟（落在哪些困難區寫入 `GIAB_STRATA` 欄），純顯示用途，不影響 tier 排序或診斷報告。
+
 ### v4.8 — 2026-06-10
 
 - In-house 三級分析預設 Sample ID 改為加上 `-nckuh` 後綴，並在 pipeline output 端產生對應的 `-nckuh` 目錄，和 DRAGEN 的 `-dragen` 分流一致。

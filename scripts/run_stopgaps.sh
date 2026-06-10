@@ -79,6 +79,8 @@ SKIP_SPLICEAI=0
 SKIP_EXTRA_VEP=0
 SKIP_CANDIDATE_BED=0
 SKIP_CNV=0
+SKIP_GIAB=0
+GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
 SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
 CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$HOME/NGS_UI/biotools/cds_combined.bed}"
@@ -96,6 +98,8 @@ while [ $# -gt 0 ]; do
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
     --skip-extra-vep)     SKIP_EXTRA_VEP=1; shift;;
     --skip-cnv)           SKIP_CNV=1; shift;;
+    --giab-strat-dir)     GIAB_STRAT_DIR="$2"; shift 2;;
+    --skip-giab)          SKIP_GIAB=1; shift;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -150,6 +154,20 @@ if [ "$SKIP_EXTRA_VEP" -eq 0 ]; then
     fi
   fi
   "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}" "${CANDIDATE_BED_ARGS[@]}"
+  step_done
+fi
+
+# 3b. GIAB stratification labels (difficult-region badges). Runs on the
+#     whole TSV; cheap interval lookup. No-op when the BED dir is absent.
+if [ "$SKIP_GIAB" -eq 0 ]; then
+  echo
+  echo "[stopgaps] annotate_giab_strata.py"
+  step_start "giab-strata"
+  GIAB_ARGS=(--tsv "$TSV")
+  if [ -n "$GIAB_STRAT_DIR" ]; then
+    GIAB_ARGS+=(--strat-dir "$GIAB_STRAT_DIR")
+  fi
+  "$SCRIPT_DIR/annotate_giab_strata.py" "${GIAB_ARGS[@]}"
   step_done
 fi
 

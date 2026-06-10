@@ -98,6 +98,16 @@ BIOTOOLS_DIR = Path(os.environ.get(
     NGS_UI_HOME / "biotools",
 ))
 
+# GIAB / GA4GH genome-stratification BEDs (homopolymers, tandem repeats,
+# segdups, low mappability, GC extremes, other difficult regions). Used by
+# scripts/annotate_giab_strata.py to flag variants in difficult regions and
+# by the variant card to badge them. BEDs are large and not committed; place
+# them (plus strata_manifest.json) under this dir via download_giab_strata.sh.
+GIAB_STRAT_DIR = Path(os.environ.get(
+    "NGS_UI_GIAB_STRAT_DIR",
+    "/home/pipeline/reference/hg38/tertiary/giab_stratification",
+))
+
 # OMIM annotation table (xlsx). Loaded once at first use and lazily
 # reloaded when the file mtime changes. Empty value or missing file
 # disables OMIM annotation; variants render with empty Disease lists.
