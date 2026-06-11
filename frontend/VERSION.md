@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v5.0 — 2026-06-11
+
+- GeneBe ACMG 第二意見改用院內本機 GeneBe 資料庫離線查詢，取代原本的 GeneBe 線上 API：三級分析不再需要 GeneBe 帳號或對外網路，也沒有 API 速率限制。
+- 查不到的變異（資料庫未收錄，如罕見的 novel indel）就不顯示 GeneBe 第二意見，pipeline 自身的 ACMG 分類仍會顯示。
+
 ### v4.9 — 2026-06-10
 
 - SNV/Indel 卡片新增 GIAB stratification 標籤：變異若落在 homopolymer、tandem repeat、segmental duplication、low mappability、GC 極端或其他困難區域，會在標籤列顯示對應的琥珀色 badge，提醒該位點 short-read 判讀較不可靠。

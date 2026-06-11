@@ -108,6 +108,15 @@ GIAB_STRAT_DIR = Path(os.environ.get(
     BIOTOOLS_DIR / "giab_stratification",
 ))
 
+# Local GeneBe ACMG database (bgzip + tabix TSV) used by
+# scripts/annotate_acmg_genebe.py as an OFFLINE replacement for the live
+# GeneBe API — the stop-gap looks up acmg_score / acmg_criteria by tabix
+# instead of calling the API. Large, not committed; placed under biotools.
+GENEBE_DB = Path(os.environ.get(
+    "NGS_UI_GENEBE_DB",
+    BIOTOOLS_DIR / "genebe" / "genebe_hg38.tsv.gz",
+))
+
 # OMIM annotation table (xlsx). Loaded once at first use and lazily
 # reloaded when the file mtime changes. Empty value or missing file
 # disables OMIM annotation; variants render with empty Disease lists.

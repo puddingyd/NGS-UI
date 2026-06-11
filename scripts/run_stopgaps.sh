@@ -7,7 +7,9 @@
 #
 #   1. filter_snv_tsv.py        — filter alt-contig / * only (silent)
 #   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
-#                                  columns (pipeline's ACMG_* untouched)
+#                                  columns via the local GeneBe DB
+#                                  (offline tabix lookup, no API/creds;
+#                                  pipeline's ACMG_* untouched)
 #   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
 #   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
 #                              gCNV + Delly VCFs. Skipped if none supplied.
@@ -30,7 +32,11 @@
 #       [--sample SID]
 #
 # Env / flags:
-#   GENEBE_USER / GENEBE_API_KEY       — required (step 2)
+#   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 2
+#                                         (default $HOME/NGS_UI/biotools/
+#                                         genebe/genebe_hg38.tsv.gz); needs
+#                                         tabix + a fresh .tbi. --skip-genebe
+#                                         to disable.
 #   NGS_UI_CDS_CANDIDATE_BED           — optional, default
 #                                         $HOME/NGS_UI/biotools/cds_combined.bed
 #   --spliceai-snv / --spliceai-indel  — optional, default
@@ -80,6 +86,8 @@ SKIP_EXTRA_VEP=0
 SKIP_CANDIDATE_BED=0
 SKIP_CNV=0
 SKIP_GIAB=0
+SKIP_GENEBE=0
+GENEBE_DB="${NGS_UI_GENEBE_DB:-$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz}"
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
 SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
@@ -98,6 +106,8 @@ while [ $# -gt 0 ]; do
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
     --skip-extra-vep)     SKIP_EXTRA_VEP=1; shift;;
     --skip-cnv)           SKIP_CNV=1; shift;;
+    --genebe-db)          GENEBE_DB="$2"; shift 2;;
+    --skip-genebe)        SKIP_GENEBE=1; shift;;
     --giab-strat-dir)     GIAB_STRAT_DIR="$2"; shift 2;;
     --skip-giab)          SKIP_GIAB=1; shift;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
@@ -126,16 +136,21 @@ fi
 # 1. Filter. Keep the cleanup, but keep it out of the user-facing log.
 run_silent_step "filter-snv" "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
 
-# 2. GeneBe ACMG (writes to GENEBE_* columns; pipeline ACMG_* preserved).
-echo
-echo "[stopgaps] annotate_acmg_genebe.py"
-step_start "genebe"
-if [ -z "${GENEBE_USER:-}" ] || [ -z "${GENEBE_API_KEY:-}" ]; then
-  echo "ERROR: GENEBE_USER + GENEBE_API_KEY must be exported" >&2
-  exit 2
+# 2. GeneBe ACMG second opinion via the local DB (writes GENEBE_* columns;
+#    pipeline ACMG_* preserved). Offline tabix lookup — no API / creds.
+if [ "$SKIP_GENEBE" -eq 0 ]; then
+  echo
+  echo "[stopgaps] annotate_acmg_genebe.py"
+  step_start "genebe"
+  if [ ! -f "$GENEBE_DB" ]; then
+    echo "ERROR: GeneBe DB not found: $GENEBE_DB" >&2
+    echo "       set NGS_UI_GENEBE_DB / --genebe-db, or pass --skip-genebe" >&2
+    exit 2
+  fi
+  "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV" \
+    --genebe-db "$GENEBE_DB" "${CANDIDATE_BED_ARGS[@]}"
+  step_done
 fi
-"$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV" "${CANDIDATE_BED_ARGS[@]}"
-step_done
 
 # 3. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
 if [ "$SKIP_EXTRA_VEP" -eq 0 ]; then

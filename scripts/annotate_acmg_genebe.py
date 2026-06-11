@@ -1,33 +1,48 @@
 #!/usr/bin/env python3
 """GeneBe ACMG annotation — write a second opinion to GENEBE_* columns.
 
-Reads `--tsv snv_indel.annotated.tsv`, builds a sites-only VCF
-(skipping spanning-deletion '*' alleles and high-AF variants per
---max-af), runs pygenebe via apptainer, and writes the GeneBe
-classification into NEW columns named:
+Reads `--tsv snv_indel.annotated.tsv`, selects candidate sites
+(skipping spanning-deletion '*' alleles, high-AF variants per --max-af,
+and anything outside --candidate-bed), looks each up in the **local
+GeneBe database** (`genebe_hg38.tsv.gz`, a bgzip + tabix TSV) and writes
+the GeneBe classification into NEW columns named:
     GENEBE_ACMG_SCORE
     GENEBE_ACMG_CRITERIA
     GENEBE_ACMG_CLASS
 
-The pipeline's own ACMG_SCORE / ACMG_CRITERIA / ACMG_CLASS columns
-are NEVER touched — the UI displays both side by side (pipeline's
-class + score on the main row; GeneBe's class + score in small grey
-text below). This lets reviewers compare the two without either one
-hiding the other.
+This replaces the old live-GeneBe-API call (pygenebe via apptainer):
+lookups are now fully offline, need no credentials/network, and have no
+rate limit. The local DB is a pre-computed cache, so a variant absent
+from it (e.g. a novel coding indel) simply gets no GeneBe second
+opinion — the pipeline's own ACMG_CLASS still shows. There is no API
+fallback by design (DB-only).
+
+The pipeline's own ACMG_SCORE / ACMG_CRITERIA / ACMG_CLASS columns are
+NEVER touched — the UI shows both side by side. Only the GeneBe DB's
+`acmg_score` / `acmg_criteria` are read; the displayed class is derived
+locally from the score via classify() exactly as before, so switching
+from API to DB is a pure data-source swap with no display change for
+variants present in both.
+
+The DB is queried by COLUMN NAME (read from the '#'-prefixed header),
+not by fixed column number, so a slim 7-column DB
+(`#chr pos ref alt acmg_classification acmg_score acmg_criteria`) and a
+full 55-column DB work identically.
 
 By default updates --tsv in place; use --out-tsv to write elsewhere.
 
-Score → class mapping (GeneBe ACMG_score → 5-tier label):
+Score → class mapping (GeneBe acmg_score → 5-tier label):
     >= 10        Pathogenic
     6..9         Likely pathogenic
     0..5         Uncertain significance
     -1..-6       Likely benign
     <= -7        Benign
 
-Credentials (env or flags):
-    GENEBE_USER       --username
-    GENEBE_API_KEY    --api_key
-    GENEBE_SIF        --sif (default $HOME/NGS_UI/biotools/genebe.sif)
+DB path (flag / env):
+    --genebe-db   NGS_UI_GENEBE_DB   (default
+                  $HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz)
+Requires the `tabix` binary on PATH and the DB's `.tbi` index sitting
+next to the `.gz` and newer than it.
 """
 from __future__ import annotations
 
@@ -35,15 +50,15 @@ import argparse
 import bisect
 import csv
 import os
-import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-PAT_SCORE = re.compile(r"(?:^|;)acmg_score=([^;]+)")
-PAT_CRIT  = re.compile(r"(?:^|;)acmg_criteria=([^;]+)")
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
+
+_MISSING = ("", ".", "NA", "N/A")
 
 
 def classify(score: float | None) -> str:
@@ -54,6 +69,16 @@ def classify(score: float | None) -> str:
     if score >=  0:  return "Uncertain significance"
     if score >= -6:  return "Likely benign"
     return "Benign"
+
+
+def _to_float(s: str) -> float | None:
+    s = (s or "").strip()
+    if s in _MISSING:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 
 def _row_max_af(row: dict, cols: list[str]) -> float:
@@ -86,6 +111,21 @@ def _norm_chrom(chrom: str) -> str:
     if s in ("M", "MT", "m", "mt"):
         return "MT"
     return s.upper() if s.upper() in ("X", "Y") else s
+
+
+def _chr_prefixed(chrom: str) -> str:
+    """DB rows are chr-prefixed (chr1…chrX, chrM). Normalise a TSV CHROM
+    to that form for tabix regions + key matching."""
+    s = (chrom or "").strip()
+    if not s:
+        return s
+    if s.lower().startswith("chr"):
+        body = s[3:]
+    else:
+        body = s
+    if body in ("MT", "mt", "M", "m"):
+        body = "M"
+    return "chr" + body
 
 
 def load_bed(path: Path) -> BedIndex:
@@ -130,12 +170,7 @@ def _variant_span_0based(pos: str, ref: str) -> tuple[int, int] | None:
     return start, start + max(1, len(ref or ""))
 
 
-def _overlaps_bed(
-    bed: BedIndex | None,
-    chrom: str,
-    pos: str,
-    ref: str,
-) -> bool:
+def _overlaps_bed(bed: BedIndex | None, chrom: str, pos: str, ref: str) -> bool:
     if bed is None:
         return True
     span = _variant_span_0based(pos, ref)
@@ -153,33 +188,22 @@ def _overlaps_bed(
     return j < len(intervals) and intervals[j][0] < end
 
 
-def tsv_to_sites(
+def collect_candidates(
     tsv_in: Path,
-    vcf_out: Path,
     *,
     max_af: float | None,
     af_cols: list[str],
-    candidate_bed: BedIndex | None = None,
-) -> tuple[int, int, int, int]:
-    """snv_indel.annotated.tsv → minimal sites-only VCF.
+    candidate_bed: BedIndex | None,
+) -> tuple[list[tuple[str, str, str, str]], int, int, int]:
+    """Pick the variants to look up. Same gate as the old VCF builder.
 
-    Returns (n_written, n_dropped_by_af, n_skipped_star, n_dropped_by_bed).
+    Returns (candidates, n_dropped_by_af, n_skipped_star, n_dropped_by_bed)
+    where each candidate is the TSV's own (CHROM, POS, REF, ALT).
     """
     seen: set = set()
-    n_af = 0
-    n_star = 0
-    n_bed = 0
-    with open(tsv_in, "r", encoding="utf-8", newline="") as fi, \
-         open(vcf_out, "w", encoding="utf-8") as fo:
-        fo.write("##fileformat=VCFv4.2\n")
-        # GeneBe's VCF parser warns once per chromosome when a contig
-        # appears in records but is absent from the header.
-        for contig in [
-            *(f"chr{i}" for i in range(1, 23)), "chrX", "chrY", "chrM", "chrMT",
-            *(str(i) for i in range(1, 23)), "X", "Y", "M", "MT",
-        ]:
-            fo.write(f"##contig=<ID={contig}>\n")
-        fo.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+    out: list[tuple[str, str, str, str]] = []
+    n_af = n_star = n_bed = 0
+    with open(tsv_in, "r", encoding="utf-8", newline="") as fi:
         for row in csv.DictReader(fi, delimiter="\t"):
             chrom = (row.get("CHROM") or "").strip()
             pos   = (row.get("POS")   or "").strip()
@@ -200,43 +224,151 @@ def tsv_to_sites(
                 n_bed += 1
                 continue
             seen.add(key)
-            fo.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
-    return len(seen), n_af, n_star, n_bed
+            out.append(key)
+    return out, n_af, n_star, n_bed
 
 
-def parse_annotated_vcf(annot_vcf: Path) -> dict[tuple[str, str, str, str],
-                                                  tuple[str, str, str]]:
-    """{(chr, pos, ref, alt): (score_str, criteria, class_label)}."""
-    out: dict = {}
-    with open(annot_vcf, "r", encoding="utf-8") as fi:
-        for line in fi:
-            if line.startswith("#"):
-                continue
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 8:
-                continue
-            chrom, pos, _, ref, alt, _, _, info = parts[:8]
-            ms = PAT_SCORE.search(info)
-            mc = PAT_CRIT.search(info)
-            score_raw = ms.group(1) if ms else ""
-            try:
-                score_num = float(score_raw) if score_raw else None
-            except ValueError:
-                score_num = None
-            crit = mc.group(1) if mc else ""
-            out[(chrom, pos, ref, alt)] = (score_raw, crit, classify(score_num))
-    return out
+# ---- local GeneBe DB (bgzip + tabix) --------------------------------
+
+class GeneBeDBError(RuntimeError):
+    pass
 
 
-def merge_into_tsv(
-    in_tsv: Path,
-    out_tsv: Path,
-    gb: dict,
-) -> tuple[int, int]:
-    """Write a new TSV with ACMG_* backfilled. Returns (n_filled, n_total).
+def read_db_columns(db: Path) -> dict[str, int]:
+    """Read the '#'-prefixed header via `tabix -H` → {col_name: index}."""
+    try:
+        out = subprocess.run(
+            ["tabix", "-H", str(db)],
+            check=True, text=True, capture_output=True,
+        ).stdout
+    except subprocess.CalledProcessError as e:
+        raise GeneBeDBError(f"tabix -H failed: {e.stderr.strip()}") from e
+    header = ""
+    for line in out.splitlines():
+        if line.startswith("#"):
+            header = line
+            break
+    if not header:
+        raise GeneBeDBError("DB has no '#'-prefixed header line")
+    cols = header.lstrip("#").split("\t")
+    return {name: i for i, name in enumerate(cols)}
 
-    Only blank ACMG cells are populated — any non-empty pipeline value
-    is preserved, so when ACMG_CLASSIFY ships nothing changes.
+
+def parse_db_rows(lines, idx: dict[str, int]) -> dict[tuple[str, str, str, str],
+                                                      tuple[str, str]]:
+    """{(chr,pos,ref,alt): (acmg_score, acmg_criteria)} from tabix output.
+
+    Pure (no subprocess) so it can be unit-tested with synthetic lines.
+    Defensive: skips short rows and rows whose pos isn't an integer (the
+    DB occasionally carries malformed '.' placeholder rows).
+    """
+    ci_chr, ci_pos = idx["chr"], idx["pos"]
+    ci_ref, ci_alt = idx["ref"], idx["alt"]
+    ci_score, ci_crit = idx["acmg_score"], idx["acmg_criteria"]
+    need = max(ci_chr, ci_pos, ci_ref, ci_alt, ci_score, ci_crit)
+    hits: dict[tuple[str, str, str, str], tuple[str, str]] = {}
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        f = line.rstrip("\n").split("\t")
+        if len(f) <= need:
+            continue
+        pos = f[ci_pos]
+        if not pos.isdigit():
+            continue
+        hits[(f[ci_chr], pos, f[ci_ref], f[ci_alt])] = (f[ci_score], f[ci_crit])
+    return hits
+
+
+def query_db(db: Path, regions_bed: Path, idx: dict[str, int]) -> dict:
+    """Run `tabix -R <regions> <db>` and parse the rows."""
+    proc = subprocess.Popen(
+        ["tabix", "-R", str(regions_bed), str(db)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    assert proc.stdout is not None
+    hits = parse_db_rows(proc.stdout, idx)
+    _, err = proc.communicate()
+    # tabix exits non-zero only on real index errors; a region whose
+    # contig is absent from the index is just a stderr warning. We
+    # already probed the DB in preflight, so surface stderr but don't
+    # abort on the benign case (we still got rows).
+    if proc.returncode not in (0, None) and not hits:
+        raise GeneBeDBError(f"tabix -R failed: {(err or '').strip()}")
+    return hits
+
+
+def assemble_gb(
+    candidates: list[tuple[str, str, str, str]],
+    db_hits: dict[tuple[str, str, str, str], tuple[str, str]],
+) -> dict[tuple[str, str, str, str], tuple[str, str, str]]:
+    """Map DB hits back onto the TSV's own keys + derive the class.
+
+    Returns {(tsv_chrom,pos,ref,alt): (score, criteria, class)} for the
+    candidates found in the DB (with a usable score and/or criteria).
+    """
+    gb: dict = {}
+    for (chrom, pos, ref, alt) in candidates:
+        db_key = (_chr_prefixed(chrom), pos, ref, alt)
+        hit = db_hits.get(db_key)
+        if not hit:
+            continue
+        score_raw, crit_raw = hit
+        score_raw = (score_raw or "").strip()
+        crit_raw = (crit_raw or "").strip()
+        score_out = "" if score_raw in _MISSING else score_raw
+        crit_out = "" if crit_raw in _MISSING else crit_raw
+        cls = classify(_to_float(score_raw))
+        if score_out or crit_out or cls:
+            gb[(chrom, pos, ref, alt)] = (score_out, crit_out, cls)
+    return gb
+
+
+def write_regions_bed(candidates: list[tuple[str, str, str, str]], path: Path) -> int:
+    """One sorted, unique 1-bp BED region per candidate POS (covers the
+    DB row whose tabix begin=end=pos)."""
+    seen: set[tuple[str, int]] = set()
+    for chrom, pos, _ref, _alt in candidates:
+        if pos.isdigit():
+            seen.add((_chr_prefixed(chrom), int(pos)))
+    rows = sorted(seen, key=lambda x: (x[0], x[1]))
+    with open(path, "w", encoding="utf-8") as fo:
+        for chrom, pos in rows:
+            fo.write(f"{chrom}\t{pos - 1}\t{pos}\n")
+    return len(rows)
+
+
+def preflight_db(db: Path) -> dict[str, int]:
+    """Validate tabix + DB + index, return the column index map."""
+    if shutil.which("tabix") is None:
+        raise GeneBeDBError("`tabix` not found on PATH (install htslib)")
+    if not db.is_file():
+        raise GeneBeDBError(f"GeneBe DB not found: {db}")
+    tbi = Path(str(db) + ".tbi")
+    csi = Path(str(db) + ".csi")
+    index = tbi if tbi.is_file() else (csi if csi.is_file() else None)
+    if index is None:
+        raise GeneBeDBError(
+            f"missing tabix index for {db.name} — run: "
+            f"tabix -s 1 -b 2 -e 2 -c '#' {db}")
+    if index.stat().st_mtime < db.stat().st_mtime:
+        raise GeneBeDBError(
+            f"index {index.name} is OLDER than the data file — rebuild it: "
+            f"tabix -s 1 -b 2 -e 2 -c '#' {db}")
+    idx = read_db_columns(db)
+    for col in ("chr", "pos", "ref", "alt", "acmg_score", "acmg_criteria"):
+        if col not in idx:
+            raise GeneBeDBError(
+                f"DB header missing required column '{col}'; got {list(idx)}")
+    return idx
+
+
+# ---- merge back into the TSV ----------------------------------------
+
+def merge_into_tsv(in_tsv: Path, out_tsv: Path, gb: dict) -> tuple[int, int]:
+    """Write a new TSV with GENEBE_* backfilled. Returns (n_filled, n_total).
+
+    Only blank GENEBE_* cells are populated; pipeline ACMG_* is untouched.
     """
     in_tsv = Path(in_tsv)
     out_tsv = Path(out_tsv)
@@ -248,12 +380,8 @@ def merge_into_tsv(
     with open(in_tsv, "r", encoding="utf-8", newline="") as fi:
         reader = csv.DictReader(fi, delimiter="\t")
         fieldnames = list(reader.fieldnames or [])
-        # New scheme: write a SECOND opinion to GENEBE_* columns and
-        # NEVER touch the pipeline's ACMG_* columns. The UI shows both
-        # side by side (pipeline ACMG on the main row, GeneBe class +
-        # score in small grey text below).
         for col in ("GENEBE_ACMG_SCORE", "GENEBE_ACMG_CRITERIA",
-                     "GENEBE_ACMG_CLASS"):
+                    "GENEBE_ACMG_CLASS"):
             if col not in fieldnames:
                 fieldnames.append(col)
         with open(target, "w", encoding="utf-8", newline="") as fo:
@@ -282,29 +410,6 @@ def merge_into_tsv(
     return n_filled, n_total
 
 
-def ensure_sif(sif: Path) -> None:
-    if sif.is_file():
-        return
-    sif.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[genebe] pulling docker://genebe/pygenebe:0.0.18 → {sif}", file=sys.stderr)
-    subprocess.run(
-        ["apptainer", "pull", "--force", str(sif),
-         "docker://genebe/pygenebe:0.0.18"],
-        check=True,
-    )
-
-
-def run_genebe(sif: Path, sites: Path, annot: Path, user: str, key: str) -> None:
-    cmd = [
-        "apptainer", "exec", "--bind", str(sites.parent), str(sif),
-        "genebe", "annotate", "--genome", "hg38",
-        "--input", str(sites), "--output", str(annot),
-        "--username", user, "--api_key", key,
-    ]
-    print(f"[genebe] running pygenebe (sites={sites.name})", file=sys.stderr)
-    subprocess.run(cmd, check=True)
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -315,37 +420,41 @@ def main() -> int:
                          "--out-tsv given)")
     ap.add_argument("--out-tsv",
                     help="write merged TSV here instead of overwriting --tsv")
-    ap.add_argument("--workdir",
-                    help="keep intermediate sites.vcf / sites.genebe.vcf here "
-                         "(default: temp dir, removed on success)")
-    ap.add_argument("--username", default=os.environ.get("GENEBE_USER"))
-    ap.add_argument("--api_key",  default=os.environ.get("GENEBE_API_KEY"))
-    ap.add_argument("--sif",
+    ap.add_argument("--genebe-db",
                     default=os.environ.get(
-                        "GENEBE_SIF",
-                        str(Path.home() / "NGS_UI" / "biotools" / "genebe.sif")))
+                        "NGS_UI_GENEBE_DB",
+                        str(Path.home() / "NGS_UI" / "biotools" / "genebe"
+                            / "genebe_hg38.tsv.gz")),
+                    help="local GeneBe DB (bgzip + tabix TSV); "
+                         "env NGS_UI_GENEBE_DB")
+    ap.add_argument("--workdir",
+                    help="keep the candidate regions BED here "
+                         "(default: temp dir, removed on success)")
     ap.add_argument("--max-af", type=float, default=0.01,
                     help="drop sites whose GNOMAD_G_AF > this "
                          "(default 0.01; use -1 to disable)")
     ap.add_argument("--af-cols", default="GNOMAD_G_AF",
                     help="comma-separated AF columns to check "
-                         "(default GNOMAD_G_AF — gnomAD genome 'global' AF, "
-                         "matches filter_snv_tsv.py)")
+                         "(default GNOMAD_G_AF)")
     ap.add_argument("--candidate-bed",
-                    help="BED regions eligible for GeneBe candidate VCF "
+                    help="BED regions eligible for lookup "
                          "(0-based half-open; variants outside are skipped)")
     args = ap.parse_args()
-
-    if not args.username or not args.api_key:
-        print("ERROR: 需要 --username + --api_key（或 env GENEBE_USER/GENEBE_API_KEY）",
-              file=sys.stderr)
-        return 2
 
     in_tsv = Path(args.tsv).resolve()
     if not in_tsv.is_file():
         print(f"ERROR: --tsv 找不到：{in_tsv}", file=sys.stderr)
         return 2
     out_tsv = Path(args.out_tsv).resolve() if args.out_tsv else in_tsv
+
+    db = Path(args.genebe_db).resolve()
+    try:
+        idx = preflight_db(db)
+    except GeneBeDBError as e:
+        print(f"ERROR: GeneBe DB 不可用：{e}", file=sys.stderr)
+        return 2
+    print(f"[genebe] DB: {db}", file=sys.stderr)
+
     candidate_bed = None
     if args.candidate_bed:
         bed_path = Path(args.candidate_bed).resolve()
@@ -357,6 +466,22 @@ def main() -> int:
         print(f"[genebe] candidate BED enabled: {bed_path} "
               f"({n_intervals} merged intervals)", file=sys.stderr)
 
+    max_af = None if args.max_af < 0 else args.max_af
+    af_cols = [c.strip() for c in args.af_cols.split(",") if c.strip()]
+    candidates, n_af, n_star, n_bed = collect_candidates(
+        in_tsv, max_af=max_af, af_cols=af_cols, candidate_bed=candidate_bed,
+    )
+    af_note = (f"dropped {n_af} above AF {max_af}"
+               if max_af is not None else "AF filter off")
+    print(f"[genebe] {len(candidates)} unique candidate sites "
+          f"({af_note}; dropped {n_bed} outside candidate BED; "
+          f"skipped {n_star} with '*')", file=sys.stderr)
+    if not candidates:
+        print("[genebe] 0 candidates — nothing to look up", file=sys.stderr)
+        # Still ensure the GENEBE_* columns exist for a stable schema.
+        merge_into_tsv(in_tsv, out_tsv, {})
+        return 0
+
     if args.workdir:
         wd = Path(args.workdir)
         wd.mkdir(parents=True, exist_ok=True)
@@ -364,38 +489,23 @@ def main() -> int:
     else:
         wd_ctx = tempfile.TemporaryDirectory(prefix="genebe-")
         wd = Path(wd_ctx.name)
-
     try:
-        sites = wd / "sites.vcf"
-        annot = wd / "sites.genebe.vcf"
-
-        max_af = None if args.max_af < 0 else args.max_af
-        af_cols = [c.strip() for c in args.af_cols.split(",") if c.strip()]
-        n_sites, n_af, n_star, n_bed = tsv_to_sites(
-            in_tsv, sites, max_af=max_af, af_cols=af_cols,
-            candidate_bed=candidate_bed,
-        )
-        af_note = (f"dropped {n_af} above AF {max_af}"
-                   if max_af is not None else "AF filter off")
-        print(f"[genebe] {n_sites} unique sites → sites.vcf  "
-              f"({af_note}; dropped {n_bed} outside candidate BED; "
-              f"skipped {n_star} with '*')", file=sys.stderr)
-        if n_sites == 0:
-            print("ERROR: 0 sites — TSV 是否有 CHROM/POS/REF/ALT，或 --max-af 過嚴？",
-                  file=sys.stderr)
-            return 1
-
-        ensure_sif(Path(args.sif))
-        run_genebe(Path(args.sif), sites, annot, args.username, args.api_key)
-        gb = parse_annotated_vcf(annot)
+        regions = wd / "candidates.bed"
+        n_regions = write_regions_bed(candidates, regions)
+        try:
+            db_hits = query_db(db, regions, idx)
+        except GeneBeDBError as e:
+            print(f"ERROR: GeneBe DB 查詢失敗：{e}", file=sys.stderr)
+            return 2
+        gb = assemble_gb(candidates, db_hits)
         n_filled, n_total = merge_into_tsv(in_tsv, out_tsv, gb)
-        print(f"[genebe] backfilled ACMG for {n_filled}/{n_total} TSV rows "
-              f"(GeneBe annotated {len(gb)} sites)", file=sys.stderr)
+        print(f"[genebe] {len(db_hits)} DB rows over {n_regions} positions; "
+              f"backfilled ACMG for {n_filled}/{n_total} TSV rows "
+              f"({len(gb)} candidates matched)", file=sys.stderr)
         print(f"[genebe] done → {out_tsv}", file=sys.stderr)
     finally:
         if wd_ctx is not None:
             wd_ctx.cleanup()
-
     return 0
 
 
