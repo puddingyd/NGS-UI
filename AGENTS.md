@@ -27,7 +27,7 @@
 
 ## 2. 目錄佈局 / env var
 
-`config.py` 裡所有路徑都從 `NGS_UI_HOME` 推導（env `NGS_UI_HOME`，否則 `REPO_ROOT.parent`（若 `../NGS-UI` 存在），再否則 `REPO_ROOT`）。每個都有自己的 env override。在 sandbox 裡 `NGS_UI_HOME` = repo root（沒有 parent NGS-UI），在 dev 機 `NGS_UI_HOME` = `~/NGS_UI`。
+`config.py` 裡所有路徑都從 `NGS_UI_HOME` 推導（env `NGS_UI_HOME` 優先；未設定時，只有典型 production checkout `NGS_UI/NGS-UI` 會用 `REPO_ROOT.parent`，一般 standalone checkout 會用 `REPO_ROOT`）。每個都有自己的 env override。在 sandbox/桌面 checkout 裡 `NGS_UI_HOME` = repo root，在 dev 機 `NGS_UI_HOME` = `~/NGS_UI`。
 
 | 內容 | 預設路徑 | env override |
 |---|---|---|

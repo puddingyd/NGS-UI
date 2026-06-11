@@ -38,7 +38,7 @@ NGS_UI/                    ← NGS_UI_HOME
 └── data/                  ← server runtime state（users.db, jobs/, ...）
 ```
 
-開發 checkout 不需要這整棵樹：`NGS_UI_HOME` 未設且找不到上層 `NGS-UI/` 時，會 fallback 成 repo 自己，所有路徑都落在 repo 內。
+開發 checkout 不需要這整棵樹：`NGS_UI_HOME` 未設時，只有典型正式部署路徑 `NGS_UI/NGS-UI` 會把 parent 當作資料根；一般 standalone checkout（例如桌面上的 `NGS-UI`）會 fallback 成 repo 自己，所有路徑都落在 repo 內。
 
 ---
 

@@ -18,11 +18,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Default: parent of the repo (NGS_UI/NGS-UI/ → NGS_UI/). Falls back to
-# the repo itself when NGS_UI_HOME is unset and no parent layout exists,
-# so dev checkouts keep working with everything inside the repo.
-_default_home = REPO_ROOT.parent if (REPO_ROOT.parent / "NGS-UI").exists() else REPO_ROOT
-NGS_UI_HOME = Path(os.environ.get("NGS_UI_HOME", _default_home))
+# Default: parent of the repo only for the production-style
+# NGS_UI/NGS-UI checkout. A standalone checkout named NGS-UI (for
+# example ~/Desktop/NGS-UI) must fall back to the repo itself; otherwise
+# startup tries to create runtime dirs beside the checkout.
+if "NGS_UI_HOME" in os.environ:
+    NGS_UI_HOME = Path(os.environ["NGS_UI_HOME"])
+elif REPO_ROOT.name == "NGS-UI" and REPO_ROOT.parent.name == "NGS_UI":
+    NGS_UI_HOME = REPO_ROOT.parent
+else:
+    NGS_UI_HOME = REPO_ROOT
 
 TERTIARY_OUTPUT_ROOT = Path(os.environ.get(
     "TERTIARY_OUTPUT_ROOT",
