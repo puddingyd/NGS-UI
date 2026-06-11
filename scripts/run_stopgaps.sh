@@ -147,8 +147,9 @@ if [ "$SKIP_GENEBE" -eq 0 ]; then
     echo "       set NGS_UI_GENEBE_DB / --genebe-db, or pass --skip-genebe" >&2
     exit 2
   fi
-  "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV" \
-    --genebe-db "$GENEBE_DB" "${CANDIDATE_BED_ARGS[@]}"
+  # Whole-TSV lookup (no candidate gate) — the DB read is one streaming
+  # pass regardless of how many variants are queried.
+  "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV" --genebe-db "$GENEBE_DB"
   step_done
 fi
 
