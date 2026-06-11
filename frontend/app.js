@@ -8228,13 +8228,13 @@ function _dragenProgressPercent(state) {
     "nextflow:prepare-vcf-dragen": 4,
     "nextflow:add-callers-tag": 4,
     "nextflow:filter-for-annotation": 6,
-    "nextflow:vep-annotate": 12,
-    "nextflow:pangolin-score": 31,
-    "nextflow:parse-csq": 43,
-    "nextflow:acmg-classify": 45,
-    "nextflow:vep-annotate-done": 75,
-    "copy-pipeline-tsv": 87,
-    "stop-gaps": 87,
+    "nextflow:vep-annotate": 20,
+    "nextflow:pangolin-score": 52,
+    "nextflow:parse-csq": 60,
+    "nextflow:acmg-classify": 76,
+    "nextflow:vep-annotate-done": 52,
+    "copy-pipeline-tsv": 82,
+    "stop-gaps": 82,
     done: 100,
   };
   return byStep[state.step] ?? 0;
@@ -8256,7 +8256,7 @@ function _dragenStopgapProgressPercent(state) {
     "sample-step:gene-index": 0.92,
   };
   const within = sub[state.step] ?? 0;
-  return _clampPct(87 + ((idx + within) / total) * 12);
+  return _clampPct(82 + ((idx + within) / total) * 17);
 }
 
 function _toggleDragenLog() {

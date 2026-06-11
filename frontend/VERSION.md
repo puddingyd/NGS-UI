@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v4.8 — 2026-06-11
+
+- 三級分析進度條改用 Nextflow process 權重，`queued` 事件只記錄 log、不推進百分比；前處理與 prepare 類快速步驟不再讓進度過早衝到 80%。
+- Nextflow 結束點調整為約 82%，保留較多空間給 copy、GeneBe/Extra VEP/AnnotSV、review TSV 與 gene index 預建。
+
 ### v4.7 — 2026-06-10
 
 - SNV/Indel 新增 GIAB stratification 標籤：變異若落在 homopolymer、tandem repeat、segmental duplication、low mappability、GC 極端或其他困難區域，會在標籤列提示，提醒該位點 short-read 判讀較不可靠。

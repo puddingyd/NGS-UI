@@ -680,29 +680,35 @@ def main() -> int:
             # 3. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
             _set_step(job_id, "nextflow")
             nextflow_stages = [
-                ("prepare-vcf-dragen-add-tag", "PREPARE_VCF_DRAGEN:ADD_DRAGEN_TAG"),
-                ("prepare-vcf-dragen", "PREPARE_VCF_DRAGEN"),
-                ("prepare-vcf", "PREPARE_VCF"),
-                ("mito-vep", "MITO_ANNOTATE:MITO_VEP"),
-                ("mito-parse", "MITO_ANNOTATE:MITO_PARSE"),
-                ("str-parse-dragen", "STR_PARSE_DRAGEN"),
-                ("prepare-cnv-dragen", "PREPARE_CNV_DRAGEN"),
-                ("annotsv-cnv-dragen", "ANNOTSV_CNV_DRAGEN"),
-                ("prepare-sv-dragen", "PREPARE_SV_DRAGEN"),
-                ("annotsv-sv-dragen", "ANNOTSV_SV_DRAGEN"),
-                ("vep-annotate", "SNV_ANNOTATE:VEP_ANNOTATE"),
-                ("pangolin-score", "SNV_ANNOTATE:PANGOLIN_SCORE"),
-                ("parse-csq", "PARSE_VEP_CSQ:PARSE_CSQ"),
-                ("acmg-classify", "ACMG_CLASSIFY"),
-                ("pgx-stellarpgx", "PGX_ANNOTATE:PGX_STELLARPGX"),
-                ("pgx-hla-extract", "PGX_ANNOTATE:PGX_HLA_EXTRACT"),
-                ("pgx-optitype", "PGX_ANNOTATE:PGX_OPTITYPE"),
-                ("pgx-pharmcat", "PGX_ANNOTATE:PGX_PHARMCAT"),
-                ("pgx-parse", "PGX_ANNOTATE:PGX_PARSE"),
+                ("prepare-vcf-dragen-add-tag", ("PREPARE_VCF_DRAGEN:ADD_DRAGEN_TAG",), 0.5),
+                ("prepare-vcf-dragen", ("PREPARE_VCF_DRAGEN",), 0.5),
+                ("prepare-vcf", ("PREPARE_VCF",), 1.0),
+                ("mito-vep", ("MITO_ANNOTATE:MITO_VEP",), 1.5),
+                ("mito-parse", ("MITO_ANNOTATE:MITO_PARSE",), 0.8),
+                ("str-parse-dragen", ("STR_PARSE_DRAGEN",), 0.7),
+                ("prepare-cnv-dragen", ("PREPARE_CNV_DRAGEN", "PREPARE_CNV_NCKUH"), 0.7),
+                ("annotsv-cnv-dragen", ("ANNOTSV_CNV_DRAGEN", "ANNOTSV_CNV_NCKUH"), 3.0),
+                ("prepare-sv-dragen", ("PREPARE_SV_DRAGEN", "PREPARE_SV_NCKUH"), 0.7),
+                ("annotsv-sv-dragen", ("ANNOTSV_SV_DRAGEN", "ANNOTSV_SV_NCKUH"), 8.0),
+                ("vep-annotate", ("SNV_ANNOTATE:VEP_ANNOTATE",), 32.0),
+                ("pangolin-score", ("SNV_ANNOTATE:PANGOLIN_SCORE",), 8.0),
+                ("parse-csq", ("PARSE_VEP_CSQ:PARSE_CSQ",), 16.0),
+                ("acmg-classify", ("ACMG_CLASSIFY",), 8.0),
+                ("pgx-stellarpgx", ("PGX_ANNOTATE:PGX_STELLARPGX",), 1.0),
+                ("pgx-hla-extract", ("PGX_ANNOTATE:PGX_HLA_EXTRACT",), 1.0),
+                ("pgx-optitype", ("PGX_ANNOTATE:PGX_OPTITYPE",), 8.0),
+                ("pgx-pharmcat", ("PGX_ANNOTATE:PGX_PHARMCAT",), 4.0),
+                ("pgx-parse", ("PGX_ANNOTATE:PGX_PARSE",), 2.0),
             ]
             if args.without_pgx:
                 nextflow_stages = [row for row in nextflow_stages if not row[0].startswith("pgx-")]
-            nextflow_stage_index = {slug: idx for idx, (slug, _token) in enumerate(nextflow_stages)}
+            nextflow_stage_index = {slug: idx for idx, (slug, _tokens, _weight) in enumerate(nextflow_stages)}
+            nextflow_progress_start = 3.0
+            nextflow_progress_end = 82.0
+            nextflow_total_weight = max(1.0, sum(weight for _slug, _tokens, weight in nextflow_stages))
+            nextflow_stage_fraction: dict[str, float] = {
+                slug: 0.0 for slug, _tokens, _weight in nextflow_stages
+            }
             nextflow_progress_rank = -1
             nextflow_running: dict[str, float] = {}
             nextflow_seen_events: set[tuple[str, str, int, int]] = set()
@@ -715,8 +721,9 @@ def main() -> int:
                 count_match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", norm)
                 done = int(count_match.group(1)) if count_match else 0
                 total = int(count_match.group(2)) if count_match else 0
-                for slug, token in nextflow_stages:
-                    if token not in norm:
+                for slug, tokens, weight in nextflow_stages:
+                    token = next((t for t in tokens if t in norm), "")
+                    if not token:
                         continue
                     if count_match and done >= total:
                         event = "done"
@@ -744,9 +751,22 @@ def main() -> int:
                         done=done or None,
                         total=total or None,
                     )
+                    if event == "queued":
+                        return
                     stage_idx = nextflow_stage_index.get(slug, 0)
                     fraction = (done / total) if total else (1.0 if event == "done" else 0.0)
-                    pct = 3 + ((stage_idx + fraction) / max(1, len(nextflow_stages))) * 84
+                    nextflow_stage_fraction[slug] = max(
+                        nextflow_stage_fraction.get(slug, 0.0),
+                        max(0.0, min(1.0, fraction)),
+                    )
+                    weighted_done = sum(
+                        nextflow_stage_fraction.get(stage_slug, 0.0) * stage_weight
+                        for stage_slug, _stage_tokens, stage_weight in nextflow_stages
+                    )
+                    pct = nextflow_progress_start + (
+                        weighted_done
+                        / nextflow_total_weight
+                    ) * (nextflow_progress_end - nextflow_progress_start)
                     if stage_idx > nextflow_progress_rank or event == "done" or count_match:
                         nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
                         st = dragen_jobs.load_state(job_id) or {}
