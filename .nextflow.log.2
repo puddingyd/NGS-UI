@@ -1,0 +1,494 @@
+Jun-11 23:04:22.739 [main] DEBUG nextflow.cli.Launcher - $> nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config run /home/pipeline/tertiary_code/main_tertiary.nf -profile dgm -work-dir /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da --pipeline_type nckuh --samplesheet /home/n102968/NGS_UI/data/jobs/tertiary/1781219059-8ddf66da/samplesheet.csv --out_dir /home/pipeline/tertiary_output --run_pgx false -resume
+Jun-11 23:04:23.048 [main] DEBUG nextflow.cli.CmdRun - N E X T F L O W  ~  version 25.10.2
+Jun-11 23:04:23.078 [main] DEBUG nextflow.plugin.PluginsFacade - Setting up plugin manager > mode=prod; embedded=false; plugins-dir=/home/pipeline/nextflow_home/plugins; core-plugins: nf-amazon@3.4.2,nf-azure@1.20.2,nf-cloudcache@0.5.0,nf-codecommit@0.5.0,nf-console@1.3.0,nf-google@1.23.3,nf-k8s@1.2.2,nf-tower@1.17.3,nf-wave@1.16.1
+Jun-11 23:04:23.110 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Enabled plugins: []
+Jun-11 23:04:23.111 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Disabled plugins: []
+Jun-11 23:04:23.115 [main] INFO  org.pf4j.DefaultPluginManager - PF4J version 3.12.0 in 'deployment' mode
+Jun-11 23:04:23.133 [main] DEBUG nextflow.util.RetryConfig - Missing nextflow session - using default retry config
+Jun-11 23:04:23.309 [main] INFO  org.pf4j.AbstractPluginManager - No plugins
+Jun-11 23:04:23.354 [main] DEBUG nextflow.config.ConfigBuilder - User config file: /home/pipeline/tertiary_code/nextflow_tertiary.config
+Jun-11 23:04:23.356 [main] DEBUG nextflow.config.ConfigBuilder - Parsing config file: /home/pipeline/tertiary_code/nextflow_tertiary.config
+Jun-11 23:04:23.391 [main] DEBUG nextflow.config.ConfigBuilder - Applying config profile: `dgm`
+Jun-11 23:04:24.184 [main] DEBUG nextflow.config.ConfigBuilder - Available config profiles: [dgm, local]
+Jun-11 23:04:24.224 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins default=[]
+Jun-11 23:04:24.225 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins resolved requirement=[]
+Jun-11 23:04:24.244 [main] DEBUG n.secret.LocalSecretsProvider - Secrets store: /home/pipeline/nextflow_home/secrets/store.json
+Jun-11 23:04:24.248 [main] DEBUG nextflow.secret.SecretsLoader - Discovered secrets providers: [nextflow.secret.LocalSecretsProvider@47e51549] - activable => nextflow.secret.LocalSecretsProvider@47e51549
+Jun-11 23:04:24.271 [main] DEBUG nextflow.cli.CmdRun - Applied DSL=2 from script declaration
+Jun-11 23:04:24.293 [main] DEBUG nextflow.cli.CmdRun - Launching `/home/pipeline/tertiary_code/main_tertiary.nf` [distraught_feynman] DSL2 - revision: f6815e62ca
+Jun-11 23:04:24.353 [main] DEBUG nextflow.Session - Session UUID: 6ea75757-8368-44e7-9789-6da839215b5e
+Jun-11 23:04:24.353 [main] DEBUG nextflow.Session - Run name: distraught_feynman
+Jun-11 23:04:24.354 [main] DEBUG nextflow.Session - Executor pool size: 64
+Jun-11 23:04:24.364 [main] DEBUG nextflow.file.FilePorter - File porter settings maxRetries=3; maxTransfers=50; pollTimeout=null
+Jun-11 23:04:24.371 [main] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'FileTransfer' minSize=10; maxSize=192; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Jun-11 23:04:24.398 [main] DEBUG nextflow.cli.CmdRun - 
+  Version: 25.10.2 build 10555
+  Created: 28-11-2025 19:24 UTC 
+  System: Linux 6.8.0-124-generic
+  Runtime: Groovy 4.0.28 on OpenJDK 64-Bit Server VM 17.0.17-internal+0-adhoc..src
+  Encoding: UTF-8 (UTF-8)
+  Process: 1631529@server [127.0.1.1]
+  CPUs: 64 - Mem: 125.4 GB (17.2 GB) - Swap: 8 GB (3.9 GB)
+Jun-11 23:04:24.456 [main] DEBUG nextflow.Session - Work-dir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da [ext2/ext3]
+Jun-11 23:04:24.456 [main] DEBUG nextflow.Session - Script base path does not exist or is not a directory: /home/pipeline/tertiary_code/bin
+Jun-11 23:04:24.467 [main] DEBUG nextflow.executor.ExecutorFactory - Extension executors providers=[]
+Jun-11 23:04:24.478 [main] DEBUG nextflow.Session - Observer factory (v2): LinObserverFactory
+Jun-11 23:04:24.483 [main] DEBUG nextflow.Session - Observer factory (v2): DefaultObserverFactory
+Jun-11 23:04:24.541 [main] DEBUG nextflow.cache.CacheFactory - Using Nextflow cache factory: nextflow.cache.DefaultCacheFactory
+Jun-11 23:04:24.554 [main] DEBUG nextflow.util.CustomThreadPool - Creating default thread pool > poolSize: 65; maxThreads: 1000
+Jun-11 23:04:24.697 [main] DEBUG nextflow.Session - Session start
+Jun-11 23:04:24.706 [main] DEBUG nextflow.trace.TraceFileObserver - Workflow started -- trace file: /home/pipeline/tertiary_output/pipeline_info/execution_trace.txt
+Jun-11 23:04:25.452 [main] DEBUG nextflow.script.ScriptRunner - > Launching execution
+Jun-11 23:04:27.129 [main] INFO  nextflow.Nextflow - 
+╔══════════════════════════════════════════════════════╗
+║         臨床三級分析 Pipeline  v1.0.0                ║
+╚══════════════════════════════════════════════════════╝
+Pipeline 類型 : NCKUH
+樣本數        : 3
+Sample sheet  : /home/n102968/NGS_UI/data/jobs/tertiary/1781219059-8ddf66da/samplesheet.csv
+輸出目錄      : /home/pipeline/tertiary_output
+容器目錄      : /home/pipeline/nextflow_containers
+VEP cache     : /home/pipeline/reference/hg38/tertiary/vep_cache
+dbNSFP        : /home/pipeline/reference/hg38/tertiary/dbnsfp/dbNSFP4.9c_with_pknn_grch38.gz
+ClinVar       : /home/pipeline/reference/hg38/tertiary/clinvar/clinvar_20260510.vcf.gz
+ClinGen HI    : /home/pipeline/reference/hg38/tertiary/clingen/ClinGen_gene_curation_list_GRCh38.tsv
+Gene MOI      : /home/pipeline/reference/hg38/tertiary/clingen/gene_moi.tsv.gz
+PGx           : 停用（--run_pgx）
+PGx CYP2D6    : StellarPGx BAM-based
+PGx HLA       : OptiType BAM-based
+
+Jun-11 23:04:27.132 [main] INFO  nextflow.Nextflow -   樣本：VAL-30-WGS  seq_type=WGS  input=/home/datalake_Intermediate/pipeline/nextflow_output/260428_WGS_VAL/VAL-30-WGS
+Jun-11 23:04:27.133 [main] INFO  nextflow.Nextflow -   樣本：VAL-31-WGS  seq_type=WGS  input=/home/datalake_Intermediate/pipeline/nextflow_output/260428_WGS_VAL/VAL-31-WGS
+Jun-11 23:04:27.133 [main] INFO  nextflow.Nextflow -   樣本：VAL-32-WGS  seq_type=WGS  input=/home/datalake_Intermediate/pipeline/nextflow_output/260428_WGS_VAL/VAL-32-WGS
+Jun-11 23:04:27.215 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name PREPARE_VCF:ADD_CALLERS_TAG
+Jun-11 23:04:27.227 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.228 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.240 [main] DEBUG nextflow.executor.Executor - [warm up] executor > local
+Jun-11 23:04:27.247 [main] DEBUG n.processor.LocalPollingMonitor - Creating local task monitor for executor 'local' > cpus=64; memory=125.4 GB; capacity=64; pollInterval=100ms; dumpInterval=5m
+Jun-11 23:04:27.250 [main] DEBUG n.processor.TaskPollingMonitor - >>> barrier register (monitor: local)
+Jun-11 23:04:27.277 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'PREPARE_VCF:ADD_CALLERS_TAG': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.318 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name PREPARE_VCF:FILTER_FOR_ANNOTATION
+Jun-11 23:04:27.320 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.320 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.321 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'PREPARE_VCF:FILTER_FOR_ANNOTATION': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.332 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name MITO_ANNOTATE:MITO_VEP
+Jun-11 23:04:27.334 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.334 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.335 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'MITO_ANNOTATE:MITO_VEP': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.339 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name MITO_ANNOTATE:MITO_PARSE
+Jun-11 23:04:27.340 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.340 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.341 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'MITO_ANNOTATE:MITO_PARSE': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.351 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name STR_PREPARE_NCKUH
+Jun-11 23:04:27.352 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.352 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.353 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'STR_PREPARE_NCKUH': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.357 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name STR_PARSE_NCKUH
+Jun-11 23:04:27.358 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.358 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.359 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'STR_PARSE_NCKUH': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.371 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name CNVKIT_TO_BED
+Jun-11 23:04:27.372 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.373 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.374 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'CNVKIT_TO_BED': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.377 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name ANNOTSV_CNV_NCKUH_WGS
+Jun-11 23:04:27.379 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.379 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.380 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'ANNOTSV_CNV_NCKUH_WGS': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.391 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name ANNOTSV_SV_NCKUH
+Jun-11 23:04:27.393 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.393 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.394 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'ANNOTSV_SV_NCKUH': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.404 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_high` matches labels `process_high` for process with name SNV_ANNOTATE:VEP_ANNOTATE
+Jun-11 23:04:27.405 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.405 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.406 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'SNV_ANNOTATE:VEP_ANNOTATE': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.409 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_gpu` matches labels `process_gpu` for process with name SNV_ANNOTATE:PANGOLIN_SCORE
+Jun-11 23:04:27.411 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.411 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.414 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'SNV_ANNOTATE:PANGOLIN_SCORE': maxForks=1; fair=false; array=0
+Jun-11 23:04:27.419 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name PARSE_VEP_CSQ:PARSE_CSQ
+Jun-11 23:04:27.421 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.421 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.422 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'PARSE_VEP_CSQ:PARSE_CSQ': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.429 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name ACMG_CLASSIFY
+Jun-11 23:04:27.430 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-11 23:04:27.431 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-11 23:04:27.433 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'ACMG_CLASSIFY': maxForks=0; fair=false; array=0
+Jun-11 23:04:27.439 [main] DEBUG nextflow.Session - Workflow process names [dsl2]: ADD_DRAGEN_TAG, FILTER_FOR_ANNOTATION, STR_PARSE_NCKUH, SNV_ANNOTATE:PANGOLIN_SCORE, PGX_OPTITYPE, MITO_PARSE, SNV_ANNOTATE:VEP_ANNOTATE, PGX_PARSE, STR_PREPARE_NCKUH, PREPARE_CNV_DRAGEN, ANNOTSV_CNV_DRAGEN, MITO_ANNOTATE:MITO_PARSE, ADD_CALLERS_TAG, PANGOLIN_SCORE, ACMG_CLASSIFY, VEP_ANNOTATE, PARSE_CSQ, PREPARE_VCF:ADD_CALLERS_TAG, PREPARE_SV_DRAGEN, PGX_STELLARPGX, MITO_VEP, CNVKIT_TO_BED, ANNOTSV_CNV_NCKUH_WGS, MITO_ANNOTATE:MITO_VEP, ANNOTSV_SV_NCKUH, ANNOTSV_CNV_NCKUH_WES, PREPARE_VCF:FILTER_FOR_ANNOTATION, PARSE_VEP_CSQ:PARSE_CSQ, PGX_PHARMCAT, ANNOTSV_SV_DRAGEN, PGX_HLA_EXTRACT, STR_PARSE_DRAGEN
+Jun-11 23:04:27.441 [main] DEBUG nextflow.Session - Igniting dataflow network (20)
+Jun-11 23:04:27.444 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > PREPARE_VCF:ADD_CALLERS_TAG
+Jun-11 23:04:27.444 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > PREPARE_VCF:FILTER_FOR_ANNOTATION
+Jun-11 23:04:27.445 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > MITO_ANNOTATE:MITO_VEP
+Jun-11 23:04:27.446 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > MITO_ANNOTATE:MITO_PARSE
+Jun-11 23:04:27.447 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > STR_PREPARE_NCKUH
+Jun-11 23:04:27.447 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > STR_PARSE_NCKUH
+Jun-11 23:04:27.448 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > CNVKIT_TO_BED
+Jun-11 23:04:27.450 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > ANNOTSV_CNV_NCKUH_WGS
+Jun-11 23:04:27.451 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > ANNOTSV_SV_NCKUH
+Jun-11 23:04:27.452 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > SNV_ANNOTATE:VEP_ANNOTATE
+Jun-11 23:04:27.452 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > SNV_ANNOTATE:PANGOLIN_SCORE
+Jun-11 23:04:27.452 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > PARSE_VEP_CSQ:PARSE_CSQ
+Jun-11 23:04:27.453 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > ACMG_CLASSIFY
+Jun-11 23:04:27.454 [main] DEBUG nextflow.script.ScriptRunner - Parsed script files:
+  Script_1eb07fc575b52c80: /home/pipeline/tertiary_code/modules/cnv_sv_annotation.nf
+  Script_ef2395795c81006b: /home/pipeline/tertiary_code/main_tertiary.nf
+  Script_a51f0b3174ff7b6f: /home/pipeline/tertiary_code/modules/snv_annotation.nf
+  Script_0a4cf883ac1443a4: /home/pipeline/tertiary_code/modules/mito_annotation.nf
+  Script_b6642caa232c65b7: /home/pipeline/tertiary_code/modules/str_annotation.nf
+  Script_b0fdf74bb0d86388: /home/pipeline/tertiary_code/modules/acmg_classifier.nf
+  Script_783671216694b461: /home/pipeline/tertiary_code/modules/prepare_vcf.nf
+  Script_e82d94206e19c4dd: /home/pipeline/tertiary_code/modules/pgx_annotation.nf
+  Script_d8744964321ab822: /home/pipeline/tertiary_code/modules/prepare_vcf_dragen.nf
+  Script_670714920b262ba8: /home/pipeline/tertiary_code/modules/parse_csq.nf
+Jun-11 23:04:27.455 [main] DEBUG nextflow.script.ScriptRunner - > Awaiting termination 
+Jun-11 23:04:27.455 [main] DEBUG nextflow.Session - Session await
+Jun-11 23:04:27.698 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:27.701 [Task submitter] INFO  nextflow.Session - [af/506046] Submitted process > MITO_ANNOTATE:MITO_VEP (1)
+Jun-11 23:04:27.717 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:27.718 [Task submitter] INFO  nextflow.Session - [ed/c39e14] Submitted process > STR_PREPARE_NCKUH (2)
+Jun-11 23:04:27.727 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:27.728 [Task submitter] INFO  nextflow.Session - [83/402612] Submitted process > ANNOTSV_SV_NCKUH (3)
+Jun-11 23:04:27.735 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:27.736 [Task submitter] INFO  nextflow.Session - [5c/3a5ea2] Submitted process > MITO_ANNOTATE:MITO_VEP (3)
+Jun-11 23:04:27.743 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:27.744 [Task submitter] INFO  nextflow.Session - [d0/fa6320] Submitted process > STR_PREPARE_NCKUH (1)
+Jun-11 23:04:27.752 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:27.752 [Task submitter] INFO  nextflow.Session - [d8/79f028] Submitted process > CNVKIT_TO_BED (3)
+Jun-11 23:04:28.165 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 12; name: CNVKIT_TO_BED (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/d8/79f0287d55fbce4fe6cef61c43d973]
+Jun-11 23:04:28.167 [Task monitor] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'TaskFinalizer' minSize=10; maxSize=192; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Jun-11 23:04:28.175 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:28.176 [Task submitter] INFO  nextflow.Session - [7f/7b3429] Submitted process > CNVKIT_TO_BED (1)
+Jun-11 23:04:28.617 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 4; name: CNVKIT_TO_BED (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/7b34297cec6afbdcaf4b548a6c3c60]
+Jun-11 23:04:28.627 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:28.628 [Task submitter] INFO  nextflow.Session - [26/e1d69a] Submitted process > PREPARE_VCF:ADD_CALLERS_TAG (3)
+Jun-11 23:04:29.815 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 15; name: MITO_ANNOTATE:MITO_VEP (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5c/3a5ea202a5cf02e51cfbd9543f2bb3]
+Jun-11 23:04:29.824 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:29.824 [Task submitter] INFO  nextflow.Session - [59/808864] Submitted process > ANNOTSV_SV_NCKUH (2)
+Jun-11 23:04:29.830 [TaskFinalizer-3] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'PublishDir' minSize=10; maxSize=192; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Jun-11 23:04:29.851 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 6; name: MITO_ANNOTATE:MITO_VEP (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/af/50604647c78c29f0f4837094272073]
+Jun-11 23:04:29.860 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:29.861 [Task submitter] INFO  nextflow.Session - [a7/5be3f7] Submitted process > CNVKIT_TO_BED (2)
+Jun-11 23:04:29.869 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:29.870 [Task submitter] INFO  nextflow.Session - [bb/1cf807] Submitted process > PREPARE_VCF:ADD_CALLERS_TAG (1)
+Jun-11 23:04:29.876 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:29.877 [Task submitter] INFO  nextflow.Session - [3b/381d8b] Submitted process > STR_PREPARE_NCKUH (3)
+Jun-11 23:04:29.883 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:29.884 [Task submitter] INFO  nextflow.Session - [2b/422ecc] Submitted process > PREPARE_VCF:ADD_CALLERS_TAG (2)
+Jun-11 23:04:30.245 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 10; name: CNVKIT_TO_BED (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/a7/5be3f7573b5a487c76e932525911c2]
+Jun-11 23:04:30.253 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:30.254 [Task submitter] INFO  nextflow.Session - [11/88218d] Submitted process > MITO_ANNOTATE:MITO_PARSE (1)
+Jun-11 23:04:31.287 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 18; name: MITO_ANNOTATE:MITO_PARSE (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/11/88218db1bb1c06724361e5f88c6b1c]
+Jun-11 23:04:31.296 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:31.297 [Task submitter] INFO  nextflow.Session - [93/483b15] Submitted process > MITO_ANNOTATE:MITO_PARSE (2)
+Jun-11 23:04:32.250 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 19; name: MITO_ANNOTATE:MITO_PARSE (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/93/483b15883d6a00ec12c74f6244ae57]
+Jun-11 23:04:41.573 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 7; name: STR_PREPARE_NCKUH (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/d0/fa63209e88d7170e7b6602d9fe023b]
+Jun-11 23:04:41.930 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 11; name: STR_PREPARE_NCKUH (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/ed/c39e14cbecf3088b5311154266adac]
+Jun-11 23:04:41.937 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:41.938 [Task submitter] INFO  nextflow.Session - [ae/563344] Submitted process > STR_PARSE_NCKUH (1)
+Jun-11 23:04:41.943 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:41.943 [Task submitter] INFO  nextflow.Session - [f5/335164] Submitted process > STR_PARSE_NCKUH (2)
+Jun-11 23:04:42.965 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 14; name: STR_PREPARE_NCKUH (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/3b/381d8b95a80e9010ed3bab0f92e03b]
+Jun-11 23:04:43.972 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:43.973 [Task submitter] INFO  nextflow.Session - [c7/216577] Submitted process > STR_PARSE_NCKUH (3)
+Jun-11 23:04:48.542 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 22; name: STR_PARSE_NCKUH (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/f5/335164a495601c3eb54d863524a0db]
+Jun-11 23:04:48.854 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 21; name: STR_PARSE_NCKUH (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/ae/5633449b5b62f1c8d2afdf812d1cfa]
+Jun-11 23:04:50.761 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 23; name: STR_PARSE_NCKUH (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/c7/2165775b7f2fccc4c8d5e8f52d0858]
+Jun-11 23:04:50.767 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:50.768 [Task submitter] INFO  nextflow.Session - [82/d71b45] Submitted process > MITO_ANNOTATE:MITO_VEP (2)
+Jun-11 23:04:52.545 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 8; name: MITO_ANNOTATE:MITO_VEP (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/82/d71b45eee3e881cc840ff5c0772941]
+Jun-11 23:04:52.552 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:04:52.553 [Task submitter] INFO  nextflow.Session - [f6/7b9176] Submitted process > ANNOTSV_SV_NCKUH (1)
+Jun-11 23:05:56.351 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 1; name: PREPARE_VCF:ADD_CALLERS_TAG (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/bb/1cf8070dc4f7e45dab70da19042fb3]
+Jun-11 23:05:56.355 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:05:56.356 [Task submitter] INFO  nextflow.Session - [f1/678847] Submitted process > MITO_ANNOTATE:MITO_PARSE (3)
+Jun-11 23:05:57.257 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 24; name: MITO_ANNOTATE:MITO_PARSE (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/f1/6788470d450cab4d52d08fe533874e]
+Jun-11 23:05:57.262 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:05:57.262 [Task submitter] INFO  nextflow.Session - [22/6297c8] Submitted process > PREPARE_VCF:FILTER_FOR_ANNOTATION (1)
+Jun-11 23:06:06.008 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 2; name: PREPARE_VCF:ADD_CALLERS_TAG (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/422eccf68060753b73b04418fae034]
+Jun-11 23:06:07.023 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:06:07.024 [Task submitter] INFO  nextflow.Session - [39/881979] Submitted process > PREPARE_VCF:FILTER_FOR_ANNOTATION (2)
+Jun-11 23:06:09.029 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 3; name: PREPARE_VCF:ADD_CALLERS_TAG (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/26/e1d69a36c6a78679498c5d0b7741c6]
+Jun-11 23:06:10.035 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:06:10.036 [Task submitter] INFO  nextflow.Session - [21/467029] Submitted process > PREPARE_VCF:FILTER_FOR_ANNOTATION (3)
+Jun-11 23:06:42.165 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 25; name: PREPARE_VCF:FILTER_FOR_ANNOTATION (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/22/6297c89953883ff9fa2beb011035f2]
+Jun-11 23:06:47.186 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 26; name: PREPARE_VCF:FILTER_FOR_ANNOTATION (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/39/881979af3be182e1a9d386249c1016]
+Jun-11 23:06:50.490 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 27; name: PREPARE_VCF:FILTER_FOR_ANNOTATION (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/21/4670290bda2a19d8e7eeaf1c45eb9d]
+Jun-11 23:09:27.379 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 3 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+~> TaskHandler[id: 5; name: ANNOTSV_SV_NCKUH (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/f6/7b917652d762078f75ff35e00571df]
+Jun-11 23:09:28.589 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 6 -- tasks to be submitted are shown below
+~> TaskHandler[id: 16; name: ANNOTSV_CNV_NCKUH_WGS (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/36/4d15f990f8e6640366fc70fc99bc44]
+~> TaskHandler[id: 17; name: ANNOTSV_CNV_NCKUH_WGS (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/49/415e74ced8e98d940e98db9379ccbc]
+~> TaskHandler[id: 20; name: ANNOTSV_CNV_NCKUH_WGS (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/89/76ef8753a15f9915946fac823890c5]
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:14:27.411 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 3 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+~> TaskHandler[id: 5; name: ANNOTSV_SV_NCKUH (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/f6/7b917652d762078f75ff35e00571df]
+Jun-11 23:14:28.754 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 6 -- tasks to be submitted are shown below
+~> TaskHandler[id: 16; name: ANNOTSV_CNV_NCKUH_WGS (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/36/4d15f990f8e6640366fc70fc99bc44]
+~> TaskHandler[id: 17; name: ANNOTSV_CNV_NCKUH_WGS (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/49/415e74ced8e98d940e98db9379ccbc]
+~> TaskHandler[id: 20; name: ANNOTSV_CNV_NCKUH_WGS (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/89/76ef8753a15f9915946fac823890c5]
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:19:27.473 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 3 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+~> TaskHandler[id: 5; name: ANNOTSV_SV_NCKUH (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/f6/7b917652d762078f75ff35e00571df]
+Jun-11 23:19:28.934 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 6 -- tasks to be submitted are shown below
+~> TaskHandler[id: 16; name: ANNOTSV_CNV_NCKUH_WGS (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/36/4d15f990f8e6640366fc70fc99bc44]
+~> TaskHandler[id: 17; name: ANNOTSV_CNV_NCKUH_WGS (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/49/415e74ced8e98d940e98db9379ccbc]
+~> TaskHandler[id: 20; name: ANNOTSV_CNV_NCKUH_WGS (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/89/76ef8753a15f9915946fac823890c5]
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:21:01.590 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 5; name: ANNOTSV_SV_NCKUH (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/f6/7b917652d762078f75ff35e00571df]
+Jun-11 23:21:01.622 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:21:01.624 [Task submitter] INFO  nextflow.Session - [36/4d15f9] Submitted process > ANNOTSV_CNV_NCKUH_WGS (1)
+Jun-11 23:21:16.462 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 16; name: ANNOTSV_CNV_NCKUH_WGS (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/36/4d15f990f8e6640366fc70fc99bc44]
+Jun-11 23:21:16.489 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:21:16.490 [Task submitter] INFO  nextflow.Session - [49/415e74] Submitted process > ANNOTSV_CNV_NCKUH_WGS (2)
+Jun-11 23:21:31.861 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 17; name: ANNOTSV_CNV_NCKUH_WGS (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/49/415e74ced8e98d940e98db9379ccbc]
+Jun-11 23:21:31.880 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:21:31.880 [Task submitter] INFO  nextflow.Session - [89/76ef87] Submitted process > ANNOTSV_CNV_NCKUH_WGS (3)
+Jun-11 23:21:46.215 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 20; name: ANNOTSV_CNV_NCKUH_WGS (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/89/76ef8753a15f9915946fac823890c5]
+Jun-11 23:24:27.501 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+Jun-11 23:24:29.265 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 3 -- tasks to be submitted are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:29:27.531 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+Jun-11 23:29:29.333 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 3 -- tasks to be submitted are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:34:27.571 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+Jun-11 23:34:29.399 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 3 -- tasks to be submitted are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:39:27.626 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+Jun-11 23:39:29.472 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 3 -- tasks to be submitted are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:44:27.637 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+~> TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+Jun-11 23:44:29.554 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 3 -- tasks to be submitted are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:44:29.662 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 13; name: ANNOTSV_SV_NCKUH (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/83/402612027bf4282b8577d7b5c42a9e]
+Jun-11 23:44:29.680 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-11 23:44:29.681 [Task submitter] INFO  nextflow.Session - [2b/ae4f5d] Submitted process > SNV_ANNOTATE:VEP_ANNOTATE (1)
+Jun-11 23:44:42.714 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 9; name: ANNOTSV_SV_NCKUH (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/59/808864961ca533540054ebc7dc993d]
+Jun-11 23:49:27.721 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-11 23:49:29.772 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:54:27.755 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-11 23:54:29.831 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-11 23:59:27.769 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-11 23:59:29.889 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:04:27.799 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:04:29.947 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:09:27.837 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:09:30.006 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:14:27.855 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:14:30.063 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:19:27.890 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:19:30.115 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:24:27.930 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:24:30.165 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:29:27.943 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:29:30.212 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:34:27.992 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:34:30.261 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 2 -- tasks to be submitted are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:35:43.650 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 28; name: SNV_ANNOTATE:VEP_ANNOTATE (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/2b/ae4f5d3d381d99333d804147113e2a]
+Jun-12 00:35:43.662 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 00:35:43.662 [Task submitter] INFO  nextflow.Session - [b2/92e775] Submitted process > SNV_ANNOTATE:VEP_ANNOTATE (2)
+Jun-12 00:35:44.668 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 00:35:44.669 [Task submitter] INFO  nextflow.Session - [35/7cb6e3] Submitted process > SNV_ANNOTATE:PANGOLIN_SCORE (1)
+Jun-12 00:39:28.064 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 00:39:30.725 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:44:28.147 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 00:44:30.805 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:49:28.198 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 00:49:30.891 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:54:28.271 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 00:54:30.971 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 00:59:28.305 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 00:59:31.060 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 01:04:28.385 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 01:04:31.132 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 01:09:28.435 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 01:09:31.207 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 01:14:28.465 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 01:14:31.289 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 01:19:28.538 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 01:19:31.360 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 01:24:28.621 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+~> TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 01:24:31.446 [Task submitter] DEBUG n.processor.TaskPollingMonitor - %% executor local > tasks in the submission queue: 1 -- tasks to be submitted are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: NEW; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 01:24:33.817 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 31; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/35/7cb6e3c949e3c42b797c99d3b1ea5a]
+Jun-12 01:24:34.822 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 01:24:34.823 [Task submitter] INFO  nextflow.Session - [66/43e94d] Submitted process > PARSE_VEP_CSQ:PARSE_CSQ (1)
+Jun-12 01:29:22.507 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 29; name: SNV_ANNOTATE:VEP_ANNOTATE (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/b2/92e7750398826722085936797f1a11]
+Jun-12 01:29:22.542 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 01:29:22.543 [Task submitter] INFO  nextflow.Session - [5f/cdcf52] Submitted process > SNV_ANNOTATE:VEP_ANNOTATE (3)
+Jun-12 01:29:22.549 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 01:29:22.549 [Task submitter] INFO  nextflow.Session - [7f/f8e320] Submitted process > SNV_ANNOTATE:PANGOLIN_SCORE (2)
+Jun-12 01:29:28.711 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 3 -- submitted tasks are shown below
+~> TaskHandler[id: 32; name: PARSE_VEP_CSQ:PARSE_CSQ (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/66/43e94d3d51459f2592eace080dce3b]
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 01:32:23.727 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 32; name: PARSE_VEP_CSQ:PARSE_CSQ (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/66/43e94d3d51459f2592eace080dce3b]
+Jun-12 01:32:23.762 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 01:32:23.763 [Task submitter] INFO  nextflow.Session - [9d/9574d7] Submitted process > ACMG_CLASSIFY (1)
+Jun-12 01:33:08.926 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 34; name: ACMG_CLASSIFY (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/9d/9574d71bb75cf46679f4627f0e4ee3]
+Jun-12 01:34:28.756 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 01:39:28.761 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 01:44:28.794 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 01:49:28.849 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 01:54:28.909 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 01:59:28.962 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 02:04:29.031 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 02:09:29.110 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 02:14:29.206 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 02:16:11.175 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 33; name: SNV_ANNOTATE:PANGOLIN_SCORE (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/7f/f8e320035d81c968349333610137b2]
+Jun-12 02:16:11.197 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 02:16:11.198 [Task submitter] INFO  nextflow.Session - [1b/82c52a] Submitted process > PARSE_VEP_CSQ:PARSE_CSQ (2)
+Jun-12 02:19:29.271 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+~> TaskHandler[id: 35; name: PARSE_VEP_CSQ:PARSE_CSQ (2); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/1b/82c52a5ce81593b4085b04049ab3d5]
+Jun-12 02:23:16.838 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 30; name: SNV_ANNOTATE:VEP_ANNOTATE (3); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/5f/cdcf5235c2e176a523046f82be4f64]
+Jun-12 02:23:16.852 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 02:23:16.853 [Task submitter] INFO  nextflow.Session - [88/6a934a] Submitted process > SNV_ANNOTATE:PANGOLIN_SCORE (3)
+Jun-12 02:23:49.035 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 35; name: PARSE_VEP_CSQ:PARSE_CSQ (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/1b/82c52a5ce81593b4085b04049ab3d5]
+Jun-12 02:23:49.049 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 02:23:49.049 [Task submitter] INFO  nextflow.Session - [68/360403] Submitted process > ACMG_CLASSIFY (2)
+Jun-12 02:24:28.646 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 37; name: ACMG_CLASSIFY (2); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/68/36040330b6df3491dccaafaf3d76c0]
+Jun-12 02:24:29.347 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 36; name: SNV_ANNOTATE:PANGOLIN_SCORE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/88/6a934a171cc25b6f7917ae1717c05d]
+Jun-12 02:29:29.361 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 36; name: SNV_ANNOTATE:PANGOLIN_SCORE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/88/6a934a171cc25b6f7917ae1717c05d]
+Jun-12 02:34:29.453 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 36; name: SNV_ANNOTATE:PANGOLIN_SCORE (3); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781219059-8ddf66da/88/6a934a171cc25b6f7917ae1717c05d]
+Jun-12 02:36:41.809 [SIGTERM handler] DEBUG nextflow.Session - Session aborted -- Cause: SIGTERM
+Jun-12 02:36:41.821 [SIGTERM handler] DEBUG nextflow.Session - The following nodes are still active:
+[process] PARSE_VEP_CSQ:PARSE_CSQ
+  status=ACTIVE
+  port 0: (queue) OPEN  ; channel: -
+  port 1: (queue) OPEN  ; channel: -
+  port 2: (cntrl) -     ; channel: $
+
+[process] ACMG_CLASSIFY
+  status=ACTIVE
+  port 0: (queue) OPEN  ; channel: -
+  port 1: (value) bound ; channel: clingen_hi_tsv
+  port 2: (value) bound ; channel: gene_moi_tsv
+  port 3: (cntrl) -     ; channel: $
+
+Jun-12 02:36:41.827 [SIGTERM handler] WARN  n.processor.TaskPollingMonitor - Killing running tasks (1)
+Jun-12 02:36:41.840 [SIGTERM handler] DEBUG n.trace.WorkflowStatsObserver - Workflow completed > WorkflowStats[succeededCount=36; failedCount=0; ignoredCount=0; cachedCount=0; pendingCount=0; submittedCount=0; runningCount=0; retriesCount=0; abortedCount=1; succeedDuration=4d 5h 44m 7s; failedDuration=0ms; cachedDuration=0ms;loadCpus=0; loadMemory=0; peakRunning=9; peakCpus=41; peakMemory=120 GB; ]
+Jun-12 02:36:41.876 [Task monitor] DEBUG n.processor.TaskPollingMonitor - <<< barrier arrives (monitor: local) - terminating tasks monitor poll loop
+Jun-12 02:36:41.991 [SIGTERM handler] DEBUG nextflow.trace.ReportObserver - Workflow completed -- rendering execution report
+Jun-12 02:36:42.466 [SIGTERM handler] DEBUG nextflow.trace.TimelineObserver - Workflow completed -- rendering execution timeline
+Jun-12 02:36:42.519 [SIGTERM handler] DEBUG nextflow.trace.TraceFileObserver - Workflow completed -- saving trace file
+Jun-12 02:36:42.524 [main] DEBUG nextflow.Session - Session await > all processes finished
+Jun-12 02:36:42.525 [main] DEBUG nextflow.Session - Session await > all barriers passed
+Jun-12 02:36:42.530 [main] DEBUG n.trace.WorkflowStatsObserver - Workflow completed > WorkflowStats[succeededCount=36; failedCount=0; ignoredCount=0; cachedCount=0; pendingCount=0; submittedCount=0; runningCount=0; retriesCount=0; abortedCount=1; succeedDuration=4d 5h 44m 7s; failedDuration=0ms; cachedDuration=0ms;loadCpus=0; loadMemory=0; peakRunning=9; peakCpus=41; peakMemory=120 GB; ]
+Jun-12 02:36:42.530 [main] DEBUG nextflow.trace.ReportObserver - Workflow completed -- rendering execution report
+Jun-12 02:36:42.858 [main] DEBUG nextflow.trace.TimelineObserver - Workflow completed -- rendering execution timeline
+Jun-12 02:36:42.886 [main] DEBUG nextflow.trace.TraceFileObserver - Workflow completed -- saving trace file
+Jun-12 02:36:42.899 [main] DEBUG nextflow.cache.CacheDB - Closing CacheDB done
+Jun-12 02:36:42.957 [main] DEBUG nextflow.script.ScriptRunner - > Execution complete -- Goodbye

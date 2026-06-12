@@ -1,0 +1,196 @@
+Jun-12 02:39:15.010 [main] DEBUG nextflow.cli.Launcher - $> nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config run /home/pipeline/tertiary_code/main_tertiary.nf -profile dgm -work-dir /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e --pipeline_type nckuh --samplesheet /home/n102968/NGS_UI/data/jobs/tertiary/1781231947-bd51458e/samplesheet.csv --out_dir /home/pipeline/tertiary_output --run_pgx false -resume
+Jun-12 02:39:15.223 [main] DEBUG nextflow.cli.CmdRun - N E X T F L O W  ~  version 25.10.2
+Jun-12 02:39:15.244 [main] DEBUG nextflow.plugin.PluginsFacade - Setting up plugin manager > mode=prod; embedded=false; plugins-dir=/home/pipeline/nextflow_home/plugins; core-plugins: nf-amazon@3.4.2,nf-azure@1.20.2,nf-cloudcache@0.5.0,nf-codecommit@0.5.0,nf-console@1.3.0,nf-google@1.23.3,nf-k8s@1.2.2,nf-tower@1.17.3,nf-wave@1.16.1
+Jun-12 02:39:15.267 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Enabled plugins: []
+Jun-12 02:39:15.267 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Disabled plugins: []
+Jun-12 02:39:15.270 [main] INFO  org.pf4j.DefaultPluginManager - PF4J version 3.12.0 in 'deployment' mode
+Jun-12 02:39:15.284 [main] DEBUG nextflow.util.RetryConfig - Missing nextflow session - using default retry config
+Jun-12 02:39:15.410 [main] INFO  org.pf4j.AbstractPluginManager - No plugins
+Jun-12 02:39:15.433 [main] DEBUG nextflow.config.ConfigBuilder - User config file: /home/pipeline/tertiary_code/nextflow_tertiary.config
+Jun-12 02:39:15.434 [main] DEBUG nextflow.config.ConfigBuilder - Parsing config file: /home/pipeline/tertiary_code/nextflow_tertiary.config
+Jun-12 02:39:15.451 [main] DEBUG nextflow.config.ConfigBuilder - Applying config profile: `dgm`
+Jun-12 02:39:15.909 [main] DEBUG nextflow.config.ConfigBuilder - Available config profiles: [dgm, local]
+Jun-12 02:39:15.940 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins default=[]
+Jun-12 02:39:15.940 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins resolved requirement=[]
+Jun-12 02:39:15.958 [main] DEBUG n.secret.LocalSecretsProvider - Secrets store: /home/pipeline/nextflow_home/secrets/store.json
+Jun-12 02:39:15.961 [main] DEBUG nextflow.secret.SecretsLoader - Discovered secrets providers: [nextflow.secret.LocalSecretsProvider@47e51549] - activable => nextflow.secret.LocalSecretsProvider@47e51549
+Jun-12 02:39:15.963 [main] DEBUG nextflow.cli.CmdRun - Applied DSL=2 from script declaration
+Jun-12 02:39:15.978 [main] DEBUG nextflow.cli.CmdRun - Launching `/home/pipeline/tertiary_code/main_tertiary.nf` [ridiculous_tesla] DSL2 - revision: f6815e62ca
+Jun-12 02:39:16.020 [main] DEBUG nextflow.Session - Session UUID: 6ea75757-8368-44e7-9789-6da839215b5e
+Jun-12 02:39:16.020 [main] DEBUG nextflow.Session - Run name: ridiculous_tesla
+Jun-12 02:39:16.020 [main] DEBUG nextflow.Session - Executor pool size: 64
+Jun-12 02:39:16.027 [main] DEBUG nextflow.file.FilePorter - File porter settings maxRetries=3; maxTransfers=50; pollTimeout=null
+Jun-12 02:39:16.032 [main] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'FileTransfer' minSize=10; maxSize=192; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Jun-12 02:39:16.049 [main] DEBUG nextflow.cli.CmdRun - 
+  Version: 25.10.2 build 10555
+  Created: 28-11-2025 19:24 UTC 
+  System: Linux 6.8.0-124-generic
+  Runtime: Groovy 4.0.28 on OpenJDK 64-Bit Server VM 17.0.17-internal+0-adhoc..src
+  Encoding: UTF-8 (UTF-8)
+  Process: 3686669@server [127.0.1.1]
+  CPUs: 64 - Mem: 125.4 GB (22.8 GB) - Swap: 8 GB (3.7 GB)
+Jun-12 02:39:16.120 [main] DEBUG nextflow.Session - Work-dir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e [ext2/ext3]
+Jun-12 02:39:16.120 [main] DEBUG nextflow.Session - Script base path does not exist or is not a directory: /home/pipeline/tertiary_code/bin
+Jun-12 02:39:16.127 [main] DEBUG nextflow.executor.ExecutorFactory - Extension executors providers=[]
+Jun-12 02:39:16.133 [main] DEBUG nextflow.Session - Observer factory (v2): LinObserverFactory
+Jun-12 02:39:16.136 [main] DEBUG nextflow.Session - Observer factory (v2): DefaultObserverFactory
+Jun-12 02:39:16.168 [main] DEBUG nextflow.cache.CacheFactory - Using Nextflow cache factory: nextflow.cache.DefaultCacheFactory
+Jun-12 02:39:16.175 [main] DEBUG nextflow.util.CustomThreadPool - Creating default thread pool > poolSize: 65; maxThreads: 1000
+Jun-12 02:39:16.389 [main] DEBUG nextflow.Session - Session start
+Jun-12 02:39:16.396 [main] DEBUG nextflow.trace.TraceFileObserver - Workflow started -- trace file: /home/pipeline/tertiary_output/pipeline_info/execution_trace.txt
+Jun-12 02:39:16.974 [main] DEBUG nextflow.script.ScriptRunner - > Launching execution
+Jun-12 02:39:18.263 [main] INFO  nextflow.Nextflow - 
+╔══════════════════════════════════════════════════════╗
+║         臨床三級分析 Pipeline  v1.0.0                ║
+╚══════════════════════════════════════════════════════╝
+Pipeline 類型 : NCKUH
+樣本數        : 1
+Sample sheet  : /home/n102968/NGS_UI/data/jobs/tertiary/1781231947-bd51458e/samplesheet.csv
+輸出目錄      : /home/pipeline/tertiary_output
+容器目錄      : /home/pipeline/nextflow_containers
+VEP cache     : /home/pipeline/reference/hg38/tertiary/vep_cache
+dbNSFP        : /home/pipeline/reference/hg38/tertiary/dbnsfp/dbNSFP4.9c_with_pknn_grch38.gz
+ClinVar       : /home/pipeline/reference/hg38/tertiary/clinvar/clinvar_20260510.vcf.gz
+ClinGen HI    : /home/pipeline/reference/hg38/tertiary/clingen/ClinGen_gene_curation_list_GRCh38.tsv
+Gene MOI      : /home/pipeline/reference/hg38/tertiary/clingen/gene_moi.tsv.gz
+PGx           : 停用（--run_pgx）
+PGx CYP2D6    : StellarPGx BAM-based
+PGx HLA       : OptiType BAM-based
+
+Jun-12 02:39:18.265 [main] INFO  nextflow.Nextflow -   樣本：VAL-32-WGS  seq_type=WGS  input=/home/datalake_Intermediate/pipeline/nextflow_output/260428_WGS_VAL/VAL-32-WGS
+Jun-12 02:39:18.320 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name PREPARE_VCF:ADD_CALLERS_TAG
+Jun-12 02:39:18.329 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.329 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.338 [main] DEBUG nextflow.executor.Executor - [warm up] executor > local
+Jun-12 02:39:18.343 [main] DEBUG n.processor.LocalPollingMonitor - Creating local task monitor for executor 'local' > cpus=64; memory=125.4 GB; capacity=64; pollInterval=100ms; dumpInterval=5m
+Jun-12 02:39:18.346 [main] DEBUG n.processor.TaskPollingMonitor - >>> barrier register (monitor: local)
+Jun-12 02:39:18.366 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'PREPARE_VCF:ADD_CALLERS_TAG': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.394 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name PREPARE_VCF:FILTER_FOR_ANNOTATION
+Jun-12 02:39:18.395 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.395 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.396 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'PREPARE_VCF:FILTER_FOR_ANNOTATION': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.404 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name MITO_ANNOTATE:MITO_VEP
+Jun-12 02:39:18.405 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.405 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.406 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'MITO_ANNOTATE:MITO_VEP': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.408 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name MITO_ANNOTATE:MITO_PARSE
+Jun-12 02:39:18.409 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.409 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.410 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'MITO_ANNOTATE:MITO_PARSE': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.416 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name STR_PREPARE_NCKUH
+Jun-12 02:39:18.416 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.417 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.417 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'STR_PREPARE_NCKUH': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.419 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name STR_PARSE_NCKUH
+Jun-12 02:39:18.420 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.421 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.421 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'STR_PARSE_NCKUH': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.428 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_low` matches labels `process_low` for process with name CNVKIT_TO_BED
+Jun-12 02:39:18.429 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.429 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.430 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'CNVKIT_TO_BED': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.432 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name ANNOTSV_CNV_NCKUH_WGS
+Jun-12 02:39:18.433 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.433 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.434 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'ANNOTSV_CNV_NCKUH_WGS': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.440 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name ANNOTSV_SV_NCKUH
+Jun-12 02:39:18.441 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.441 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.442 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'ANNOTSV_SV_NCKUH': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.448 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_high` matches labels `process_high` for process with name SNV_ANNOTATE:VEP_ANNOTATE
+Jun-12 02:39:18.449 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.449 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.450 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'SNV_ANNOTATE:VEP_ANNOTATE': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.452 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_gpu` matches labels `process_gpu` for process with name SNV_ANNOTATE:PANGOLIN_SCORE
+Jun-12 02:39:18.453 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.453 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.455 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'SNV_ANNOTATE:PANGOLIN_SCORE': maxForks=1; fair=false; array=0
+Jun-12 02:39:18.458 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name PARSE_VEP_CSQ:PARSE_CSQ
+Jun-12 02:39:18.459 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.459 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.460 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'PARSE_VEP_CSQ:PARSE_CSQ': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.464 [main] DEBUG n.script.dsl.ProcessConfigBuilder - Config settings `withLabel:process_medium` matches labels `process_medium` for process with name ACMG_CLASSIFY
+Jun-12 02:39:18.466 [main] DEBUG nextflow.executor.ExecutorFactory - << taskConfig executor: null
+Jun-12 02:39:18.466 [main] DEBUG nextflow.executor.ExecutorFactory - >> processorType: 'local'
+Jun-12 02:39:18.466 [main] DEBUG nextflow.processor.TaskProcessor - Creating process 'ACMG_CLASSIFY': maxForks=0; fair=false; array=0
+Jun-12 02:39:18.470 [main] DEBUG nextflow.Session - Workflow process names [dsl2]: ADD_DRAGEN_TAG, STR_PARSE_NCKUH, FILTER_FOR_ANNOTATION, SNV_ANNOTATE:PANGOLIN_SCORE, PGX_OPTITYPE, MITO_PARSE, SNV_ANNOTATE:VEP_ANNOTATE, STR_PREPARE_NCKUH, PGX_PARSE, PREPARE_CNV_DRAGEN, ANNOTSV_CNV_DRAGEN, MITO_ANNOTATE:MITO_PARSE, ADD_CALLERS_TAG, PANGOLIN_SCORE, ACMG_CLASSIFY, VEP_ANNOTATE, PARSE_CSQ, PREPARE_VCF:ADD_CALLERS_TAG, PREPARE_SV_DRAGEN, PGX_STELLARPGX, MITO_VEP, CNVKIT_TO_BED, ANNOTSV_CNV_NCKUH_WGS, MITO_ANNOTATE:MITO_VEP, ANNOTSV_SV_NCKUH, ANNOTSV_CNV_NCKUH_WES, PREPARE_VCF:FILTER_FOR_ANNOTATION, PARSE_VEP_CSQ:PARSE_CSQ, PGX_PHARMCAT, ANNOTSV_SV_DRAGEN, PGX_HLA_EXTRACT, STR_PARSE_DRAGEN
+Jun-12 02:39:18.472 [main] DEBUG nextflow.Session - Igniting dataflow network (20)
+Jun-12 02:39:18.473 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > PREPARE_VCF:ADD_CALLERS_TAG
+Jun-12 02:39:18.473 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > PREPARE_VCF:FILTER_FOR_ANNOTATION
+Jun-12 02:39:18.474 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > MITO_ANNOTATE:MITO_VEP
+Jun-12 02:39:18.474 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > MITO_ANNOTATE:MITO_PARSE
+Jun-12 02:39:18.474 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > STR_PREPARE_NCKUH
+Jun-12 02:39:18.475 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > STR_PARSE_NCKUH
+Jun-12 02:39:18.475 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > CNVKIT_TO_BED
+Jun-12 02:39:18.476 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > ANNOTSV_CNV_NCKUH_WGS
+Jun-12 02:39:18.476 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > ANNOTSV_SV_NCKUH
+Jun-12 02:39:18.478 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > SNV_ANNOTATE:VEP_ANNOTATE
+Jun-12 02:39:18.478 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > SNV_ANNOTATE:PANGOLIN_SCORE
+Jun-12 02:39:18.478 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > PARSE_VEP_CSQ:PARSE_CSQ
+Jun-12 02:39:18.479 [main] DEBUG nextflow.processor.TaskProcessor - Starting process > ACMG_CLASSIFY
+Jun-12 02:39:18.480 [main] DEBUG nextflow.script.ScriptRunner - Parsed script files:
+  Script_ef2395795c81006b: /home/pipeline/tertiary_code/main_tertiary.nf
+  Script_1eb07fc575b52c80: /home/pipeline/tertiary_code/modules/cnv_sv_annotation.nf
+  Script_a51f0b3174ff7b6f: /home/pipeline/tertiary_code/modules/snv_annotation.nf
+  Script_0a4cf883ac1443a4: /home/pipeline/tertiary_code/modules/mito_annotation.nf
+  Script_b6642caa232c65b7: /home/pipeline/tertiary_code/modules/str_annotation.nf
+  Script_b0fdf74bb0d86388: /home/pipeline/tertiary_code/modules/acmg_classifier.nf
+  Script_783671216694b461: /home/pipeline/tertiary_code/modules/prepare_vcf.nf
+  Script_e82d94206e19c4dd: /home/pipeline/tertiary_code/modules/pgx_annotation.nf
+  Script_d8744964321ab822: /home/pipeline/tertiary_code/modules/prepare_vcf_dragen.nf
+  Script_670714920b262ba8: /home/pipeline/tertiary_code/modules/parse_csq.nf
+Jun-12 02:39:18.480 [main] DEBUG nextflow.script.ScriptRunner - > Awaiting termination 
+Jun-12 02:39:18.480 [main] DEBUG nextflow.Session - Session await
+Jun-12 02:39:18.650 [Actor Thread 54] INFO  nextflow.processor.TaskProcessor - [3b/381d8b] Cached process > STR_PREPARE_NCKUH (1)
+Jun-12 02:39:18.650 [Actor Thread 55] INFO  nextflow.processor.TaskProcessor - [83/402612] Cached process > ANNOTSV_SV_NCKUH (1)
+Jun-12 02:39:18.654 [Actor Thread 53] INFO  nextflow.processor.TaskProcessor - [26/e1d69a] Cached process > PREPARE_VCF:ADD_CALLERS_TAG (1)
+Jun-12 02:39:18.664 [Actor Thread 52] INFO  nextflow.processor.TaskProcessor - [5c/3a5ea2] Cached process > MITO_ANNOTATE:MITO_VEP (1)
+Jun-12 02:39:18.671 [Actor Thread 51] INFO  nextflow.processor.TaskProcessor - [d8/79f028] Cached process > CNVKIT_TO_BED (1)
+Jun-12 02:39:18.685 [Actor Thread 52] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'PublishDir' minSize=10; maxSize=192; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Jun-12 02:39:18.687 [Actor Thread 53] INFO  nextflow.processor.TaskProcessor - [36/4d15f9] Cached process > ANNOTSV_CNV_NCKUH_WGS (1)
+Jun-12 02:39:18.691 [Actor Thread 56] INFO  nextflow.processor.TaskProcessor - [c7/216577] Cached process > STR_PARSE_NCKUH (1)
+Jun-12 02:39:18.697 [Actor Thread 54] INFO  nextflow.processor.TaskProcessor - [21/467029] Cached process > PREPARE_VCF:FILTER_FOR_ANNOTATION (1)
+Jun-12 02:39:18.701 [Actor Thread 61] INFO  nextflow.processor.TaskProcessor - [11/88218d] Cached process > MITO_ANNOTATE:MITO_PARSE (1)
+Jun-12 02:39:18.723 [Actor Thread 56] INFO  nextflow.processor.TaskProcessor - [5f/cdcf52] Cached process > SNV_ANNOTATE:VEP_ANNOTATE (1)
+Jun-12 02:39:18.791 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 02:39:18.793 [Task submitter] INFO  nextflow.Session - [b8/901f0d] Submitted process > SNV_ANNOTATE:PANGOLIN_SCORE (1)
+Jun-12 02:44:18.535 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 02:49:18.561 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 02:54:18.626 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 02:59:18.634 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 03:04:18.637 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 03:09:18.657 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 03:14:18.693 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 03:19:18.704 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 03:23:23.620 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 11; name: SNV_ANNOTATE:PANGOLIN_SCORE (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/b8/901f0d7e628338eb31d6066c9f9b88]
+Jun-12 03:23:23.621 [Task monitor] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'TaskFinalizer' minSize=10; maxSize=192; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Jun-12 03:23:23.657 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 03:23:23.658 [Task submitter] INFO  nextflow.Session - [9e/119884] Submitted process > PARSE_VEP_CSQ:PARSE_CSQ (1)
+Jun-12 03:24:18.786 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 12; name: PARSE_VEP_CSQ:PARSE_CSQ (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/9e/119884126a728d0357f1d7df80ff4c]
+Jun-12 03:29:18.800 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 1 -- submitted tasks are shown below
+~> TaskHandler[id: 12; name: PARSE_VEP_CSQ:PARSE_CSQ (1); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/9e/119884126a728d0357f1d7df80ff4c]
+Jun-12 03:30:25.938 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 12; name: PARSE_VEP_CSQ:PARSE_CSQ (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/9e/119884126a728d0357f1d7df80ff4c]
+Jun-12 03:30:25.962 [Task submitter] DEBUG n.executor.local.LocalTaskHandler - Launch cmd line: /bin/bash -ue .command.run
+Jun-12 03:30:25.962 [Task submitter] INFO  nextflow.Session - [8b/bc3517] Submitted process > ACMG_CLASSIFY (1)
+Jun-12 03:31:04.707 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 13; name: ACMG_CLASSIFY (1); status: COMPLETED; exit: 0; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781231947-bd51458e/8b/bc3517e7af3819c3b509ed02c2768b]
+Jun-12 03:31:04.713 [main] DEBUG nextflow.Session - Session await > all processes finished
+Jun-12 03:31:04.807 [Task monitor] DEBUG n.processor.TaskPollingMonitor - <<< barrier arrives (monitor: local) - terminating tasks monitor poll loop
+Jun-12 03:31:04.807 [main] DEBUG nextflow.Session - Session await > all barriers passed
+Jun-12 03:31:04.812 [main] DEBUG nextflow.util.ThreadPoolManager - Thread pool 'TaskFinalizer' shutdown completed (hard=false)
+Jun-12 03:31:05.581 [main] DEBUG nextflow.util.ThreadPoolManager - Thread pool 'PublishDir' shutdown completed (hard=false)
+Jun-12 03:31:05.588 [main] DEBUG n.trace.WorkflowStatsObserver - Workflow completed > WorkflowStats[succeededCount=3; failedCount=0; ignoredCount=0; cachedCount=10; pendingCount=0; submittedCount=0; runningCount=0; retriesCount=0; abortedCount=0; succeedDuration=1h 45m 28s; failedDuration=0ms; cachedDuration=1d 10h 12m 33s;loadCpus=0; loadMemory=0; peakRunning=1; peakCpus=8; peakMemory=32 GB; ]
+Jun-12 03:31:05.614 [main] DEBUG nextflow.trace.ReportObserver - Workflow completed -- rendering execution report
+Jun-12 03:31:06.069 [main] DEBUG nextflow.trace.TimelineObserver - Workflow completed -- rendering execution timeline
+Jun-12 03:31:06.120 [main] DEBUG nextflow.trace.TraceFileObserver - Workflow completed -- saving trace file
+Jun-12 03:31:06.129 [main] DEBUG nextflow.cache.CacheDB - Closing CacheDB done
+Jun-12 03:31:06.146 [main] DEBUG nextflow.util.ThreadPoolManager - Thread pool 'FileTransfer' shutdown completed (hard=false)
+Jun-12 03:31:06.146 [main] DEBUG nextflow.script.ScriptRunner - > Execution complete -- Goodbye
