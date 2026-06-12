@@ -82,6 +82,7 @@ analyses/{ver}/
 未登錄的樣本 = `tertiary_output/{X}/` 有 `snv_indel.annotated.tsv` 但沒有 `sample_metadata.json`；「載入新個案」modal 列這些。
 
 固定 WES-I / WES-II / WGS panel 檔與 custom panels 現在保留在 repo 的 `phenotype_data/gene_panels/`、`phenotype_data/fixed_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git pull 更新。
+HPO reference、fixed/custom panel 與既有 `pheno_score.tsv` 讀入時都會先透過 `panel_deadzone.canonical_gene_symbol()` canonicalize；SNV/CNV/SV/Mito adapter 端也 canonicalize variant gene 後才做 `pheno_score` / `in_panel` join，避免 VEP 舊 symbol 或 panel alias 漏算。
 
 ---
 

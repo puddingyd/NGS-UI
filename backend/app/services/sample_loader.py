@@ -179,9 +179,12 @@ def _read_pheno_scores(path: Path) -> dict[str, float]:
     import csv as _csv
     with path.open("r", encoding="utf-8", newline="") as f:
         for row in _csv.DictReader(f, delimiter="\t"):
-            gene = (row.get("gene_symbol") or "").strip()
+            gene = panel_deadzone.canonical_gene_symbol(row.get("gene_symbol") or "")[0]
+            if not gene:
+                continue
             try:
-                out[gene] = float(row.get("pheno_score") or 0)
+                score = float(row.get("pheno_score") or 0)
+                out[gene] = max(out.get(gene, 0.0), score)
             except ValueError:
                 pass
     return out
@@ -951,9 +954,12 @@ def _read_pheno_by_gene(sidecar_dir) -> dict:
     import csv as _csv
     with p.open("r", encoding="utf-8", newline="") as f:
         for row in _csv.DictReader(f, delimiter="\t"):
-            g = (row.get("gene_symbol") or "").strip()
+            g = panel_deadzone.canonical_gene_symbol(row.get("gene_symbol") or "")[0]
+            if not g:
+                continue
             try:
-                out[g] = float(row.get("pheno_score") or 0)
+                score = float(row.get("pheno_score") or 0)
+                out[g] = max(out.get(g, 0.0), score)
             except ValueError:
                 pass
     return out

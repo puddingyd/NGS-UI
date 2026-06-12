@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Iterable
 
 from ..config import CUSTOM_GENE_PANELS_DIR, GENE_PANELS_DIR, PHENO_DATA_DIR
+from . import panel_deadzone
 
 PHENO_TO_GENES_PATH = PHENO_DATA_DIR / "phenotype_to_genes.txt"
 PANELS_DIR = GENE_PANELS_DIR
@@ -41,6 +42,10 @@ _LOADED = False
 _LOAD_LOCK = threading.Lock()
 
 
+def _canonical_gene(gene: str) -> str:
+    return panel_deadzone.canonical_gene_symbol(gene)[0] or (gene or "").strip()
+
+
 def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[str]]:
     out: dict[str, set[str]] = defaultdict(set)
     if not path.exists():
@@ -49,7 +54,7 @@ def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
             hid = (row.get("hpo_id") or "").strip()
-            gene = (row.get("gene_symbol") or "").strip()
+            gene = _canonical_gene(row.get("gene_symbol") or "")
             if hid and gene and gene != "-":
                 out[hid].add(gene)
     return out
@@ -68,7 +73,7 @@ def _load_panels_from_dir(panel_dir: Path) -> dict[str, set[str]]:
             try:
                 with fp.open("r", encoding=enc) as f:
                     for line in f:
-                        g = line.strip().split("\t")[0].strip()
+                        g = _canonical_gene(line.strip().split("\t")[0])
                         if g and not g.startswith("#"):
                             genes.add(g)
                 break
@@ -153,7 +158,7 @@ def register_custom_panel(name: str, genes: Iterable[str]) -> dict:
     seen: set[str] = set()
     ordered: list[str] = []
     for g in genes or []:
-        g = (g or "").strip()
+        g = _canonical_gene(g or "")
         if g and g not in seen:
             seen.add(g)
             ordered.append(g)

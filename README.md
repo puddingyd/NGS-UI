@@ -184,6 +184,8 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 
 固定 panel 的來源是 `reference/fixed_panel_sources/WES-I.xlsx`、`reference/fixed_panel_sources/WES-II.xlsx` 與 `reference/fixed_panel_sources/other_panel/`。更新 Excel 後執行 `PYTHONPATH=backend python scripts/import_fixed_panels.py`，會同步重建三個入口共用、且會進 git 的 `phenotype_data/fixed_panels/index.json` 與 `phenotype_data/gene_panels/*.txt`。WES Excel 只會匯入 `gene panel list` 標記列起始的基因區塊，避免把疾病名或資料來源列誤算成基因。
 
+HPO reference、固定 panel、custom panel 與既有 `pheno_score.tsv` 讀入時都會先透過 `ngs_panel_deadzone` 的 HGNC alias map 轉成 canonical gene symbol；SNV/CNV/SV/Mito 變異端也用同一套 canonicalization，再做 `pheno_score` / `in_panel` join。
+
 ---
 
 ## 5. 新增一個個案 / mitochondrial annotation

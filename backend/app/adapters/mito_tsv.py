@@ -35,7 +35,7 @@ import re
 from urllib.parse import unquote
 from pathlib import Path
 
-from ..services import clinvar_mito
+from ..services import clinvar_mito, panel_deadzone
 
 MITO_TIERS = ["MITO-1", "MITO-2", "MITO-3"]
 
@@ -231,7 +231,7 @@ def load_mito_tsv(
             # weak/low-base-qual noise, contamination, strand bias, …).
             if filt and filt not in ("PASS", "."):
                 continue
-            gene = _first(row, "GENE", "MITOMAP_LOCUS")
+            gene = panel_deadzone.canonical_gene_symbol(_first(row, "GENE", "MITOMAP_LOCUS"))[0]
             locus_type = _derive_locus_type(row, gene)
             status = _first(row, "MITOMAP_STATUS")
             mitotip = _first(row, "MITOTIP_SCORE", "MITOMAP_MITOTIP")
