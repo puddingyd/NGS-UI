@@ -57,9 +57,10 @@ scripts/inhouse_af/select_cohort.py \
 ### 2. Smoke test on ONE run (~64 samples) before the full cohort
 
 ```bash
-# GLnexus container (one-time):
-#   apptainer pull glnexus.sif docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1
-export GLNEXUS_SIF=$NGS_UI_HOME/biotools/glnexus/glnexus.sif
+# GLnexus — prefer the static binary (single file, zero deps, air-gap friendly):
+#   download glnexus_cli from https://github.com/dnanexus-rnd/GLnexus/releases
+export GLNEXUS_BIN=$NGS_UI_HOME/biotools/glnexus/glnexus_cli   # OR GLNEXUS_SIF=...
+# bcftools: host binary on PATH is fine; or BCFTOOLS_SIF=<bcftools.sif> on DGM.
 
 # restrict to one run by grepping the list, OR use --max-samples for a quick run
 grep 20251118_LH00873_0004 $NGS_UI_HOME/biotools/inhouse_af/cohort_gvcfs.txt \
@@ -70,6 +71,10 @@ scripts/inhouse_af/build_inhouse_af.sh \
   --out  /tmp/inhouse_af.run1.vcf.gz \
   --threads 16 --mem-gbytes 96
 ```
+
+The reference defaults to
+`/home/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta`
+(DGM). Override with `--ref` when it lives elsewhere.
 
 **What to check (this is the Phase 0 validation):**
 
@@ -102,6 +107,37 @@ scripts/inhouse_af/build_inhouse_af.sh \
   --out  $NGS_UI_HOME/biotools/inhouse_af/inhouse_af.hg38.vcf.gz \
   --threads 32 --mem-gbytes 192
 ```
+
+## Running on DGM now, air-gapped DGX later
+
+Both machines can read the reference and the gVCFs; the only difference is
+that **on the DGX the datalake paths drop the leading `/home`** (reference at
+`/datalake_Intermediate/.../hg38/...`, gVCFs at `/datalake_Raw/Novaseq/...`).
+
+Every external tool is pluggable, so the same script runs in both places:
+
+| | DGM (now) | air-gapped DGX (later) |
+|---|---|---|
+| GLnexus | `GLNEXUS_BIN` (static) or `GLNEXUS_SIF` | `GLNEXUS_BIN` static binary (no network) |
+| bcftools | host `bcftools` or `BCFTOOLS_SIF` | host `bcftools` binary |
+| reference | `--ref /home/datalake_Intermediate/.../hg38/Homo_sapiens_assembly38.fasta` | `--ref /datalake_Intermediate/.../hg38/Homo_sapiens_assembly38.fasta` |
+| cohort list | absolute `/home/...` paths | reuse same list + `--strip-path-prefix /home` |
+
+To move to the DGX, stage offline once: the `glnexus_cli` binary, a `bcftools`
+binary, and (already present) the reference + gVCFs. GLnexus is **CPU-only**
+(the DGX GPUs are irrelevant) — it just needs many cores, RAM, and scratch
+disk. Example DGX invocation:
+
+```bash
+GLNEXUS_BIN=/opt/glnexus/glnexus_cli BCFTOOLS_BIN=bcftools \
+scripts/inhouse_af/build_inhouse_af.sh \
+  --list cohort_gvcfs.txt --strip-path-prefix /home \
+  --ref /datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta \
+  --out /path/inhouse_af.hg38.vcf.gz --threads 32 --mem-gbytes 192
+```
+
+When a `*_SIF` is set the script apptainer-execs it (binding `APPTAINER_BIND`,
+default `/home`); otherwise it runs the host binary with no container at all.
 
 ## Incremental update design (each new run)
 
