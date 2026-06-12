@@ -1,0 +1,39 @@
+panel_hgnc_id	panel_hgnc_symbol	vep_symbol	vep_hgnc_id	kind	notes
+HGNC:31102	MAFIP	MIP	HGNC:7103	disagree_other	
+HGNC:1515	CAST	CAST	HGNC:1515	ensembl_id_drift	Same gene by SYMBOL + HGNC_ID, but Ensembl gene_id changed across releases.
+HGNC:4641	GSTT1			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:43984	HELLPAR			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:25323	LRP5L			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:8075	NXF5			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:30080	POM121L9P			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:29867	SLC22A20P			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:21998	SSPOP			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:44115	WTAPP1			no_vep_record	VEP returned no CSQ entry for this panel gene's chosen position; real-sample variants may still annotate but the naming could not be pre-verified.
+HGNC:32925	ATXN8	ATXN8OS	HGNC:10561	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:10628	CCL3L1	CCL3L3	HGNC:30554	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:2889	DISC2	DISC1	HGNC:2888	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:15626	FCGR2C	FCGR3B	HGNC:3620	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:26424	GCOM1	POLR2M	HGNC:14862	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:4251	GGT2P	GNAZ	HGNC:4395	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:4695	GULOP	PTK2B	HGNC:9612	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:25033	LRTOMT	TOMT	HGNC:55527	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:19400	PGBD3	ERCC6	HGNC:3438	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:50397	SNORA93	FBLN2	HGNC:3601	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:12348	TRU-TCA1-1	FOSB	HGNC:3797	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:12575	UOX	SSX2IP	HGNC:16509	vep_missing_gene	VEP doesn't annotate the panel gene at this position; annotates the listed alternate gene instead.
+HGNC:26742	ASPNAT	NAT8L	HGNC:26742	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:14438	CATSPERT	C2CD6	HGNC:14438	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:7687	COXFA4	NDUFA4	HGNC:7687	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:29836	COXFA4L2	NDUFA4L2	HGNC:29836	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:29937	DRC2	CCDC65	HGNC:29937	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:4166	DRC4	GAS8	HGNC:4166	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:25320	FAM194C	C3orf20	HGNC:25320	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:19009	IFT38	CLUAP1	HGNC:19009	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:17861	IFT54	TRAF3IP1	HGNC:17861	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:20887	QTMAN	GTDC1	HGNC:20887	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:24496	RMP64	NEPRO	HGNC:24496	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:32554	SACK1G	FAM83G	HGNC:32554	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:24797	SACK1H	FAM83H	HGNC:24797	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:25984	SLC38A12	TMEM104	HGNC:25984	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:20329	SLC9D1	TMCO3	HGNC:20329	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
+HGNC:25911	TIMCC	FAM136A	HGNC:25911	vep_uses_old_symbol	VEP 115 cache uses older symbol; HGNC_ID matches the panel.
