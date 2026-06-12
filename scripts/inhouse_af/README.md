@@ -32,6 +32,7 @@ MRN/family columns can be bolted on later.
 |---|---|
 | `select_cohort.py` | gVCF path list → deduplicated, filtered cohort (`--out-list`) + audit manifest. Stdlib only. |
 | `build_inhouse_af.sh` | cohort gVCFs → joint genotyping (GLnexus) → `inhouse_af.hg38.vcf.gz` (sites-only, `INHOUSE_{AC,AN,AF,NHOM}`). |
+| `update_inhouse_af.sh` | per-batch SOP: append new samples (dedup), re-genotype the full cohort, atomic-swap the AF DB. Maintains `cohort_manifest.tsv` + `updates.log`. |
 
 The cohort list / manifest / AF DB all contain patient sample ids and
 datalake paths — **keep them out of git** (put them under
@@ -163,6 +164,31 @@ the same `INHOUSE_*` sites-VCF output contract so the UI side doesn't change.
 Either way, maintain `cohort_manifest.tsv` as the audit record of which
 samples (and runs) are in the current DB, and **dedup on append** so a re-run
 batch is never counted twice.
+
+## Phase 1: each new batch (after Phase 0 validates the config)
+
+Once `--config` is confirmed, you never call `build_inhouse_af.sh` by hand
+again — `update_inhouse_af.sh` is the single per-batch entry point:
+
+```bash
+COHORT=$NGS_UI_HOME/biotools/inhouse_af
+
+# new run lands → list its gVCFs (exact bytes, tab-separated)
+find /home/datalake_Raw/Novaseq/<NEW_RUN> -name '*.hard-filtered.gvcf.gz' \
+  -printf '%s\t%p\n' > /tmp/new_batch_sizes.txt
+
+scripts/inhouse_af/update_inhouse_af.sh \
+  --cohort-dir "$COHORT" \
+  --new-sizes  /tmp/new_batch_sizes.txt \
+  --exclude-range 'VAL-:37-54' \
+  --threads 32 --mem-gbytes 192
+# → appends only unseen samples, re-genotypes the whole cohort, atomic-swaps
+#   $COHORT/inhouse_af.hg38.vcf.gz, logs to $COHORT/updates.log
+```
+
+Re-running the same batch is safe (dedup by `sample_id` → "added=0, no
+rebuild"). Use `--manifest-only` to update bookkeeping without rebuilding, and
+`--strip-path-prefix /home` on the DGX.
 
 ## Integrating into NGS-UI (Phase 2, not done yet)
 
