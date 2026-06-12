@@ -17,11 +17,13 @@ a variant absent from it (e.g. a novel coding indel) simply gets no
 GeneBe second opinion; the pipeline's own ACMG_CLASS still shows. There
 is no API fallback by design (DB-only).
 
-Implementation: the DB is read in a single streaming pass (the wanted
-variant keys are held in a set, the DB is decompressed once and matched
-against them). NGS-UI therefore does NOT use the tabix `.tbi` index at
-all, so a stale/missing index can't break this step; malformed DB rows
-(non-integer pos) are skipped defensively.
+Implementation: by default the bgzip TSV is lazily converted into a
+SQLite key-value cache next to the TSV, and lookups use that cache. If a
+newer/different `genebe_hg38.tsv.gz` is uploaded, the next run detects
+the changed size/mtime/ctime and rebuilds the SQLite file under a file lock.
+If SQLite cannot be built/read, the script falls back to the historical
+single streaming pass over the DB; malformed DB rows (non-integer pos)
+are skipped defensively.
 
 The pipeline's own ACMG_SCORE / ACMG_CRITERIA / ACMG_CLASS columns are
 NEVER touched — the UI shows both side by side. Only the DB's
@@ -50,14 +52,22 @@ import csv
 import gzip
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - production is Linux/macOS.
+    fcntl = None
 
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 _MISSING = ("", ".", "NA", "N/A")
+SQLITE_SCHEMA_VERSION = "1"
 
 
 def classify(score: float | None) -> str:
@@ -332,6 +342,175 @@ def preflight_db(db: Path) -> dict[str, int]:
     return idx
 
 
+# ---- SQLite cache ----------------------------------------------------
+
+def default_sqlite_path(db: Path) -> Path:
+    """Path for the derived SQLite cache beside genebe_hg38.tsv.gz."""
+    name = db.name
+    if name.endswith(".tsv.gz"):
+        return db.with_name(name[:-7] + ".sqlite")
+    if name.endswith(".gz"):
+        return db.with_name(name[:-3] + ".sqlite")
+    return db.with_suffix(db.suffix + ".sqlite")
+
+
+def _db_signature(db: Path) -> dict[str, str]:
+    st = db.stat()
+    return {
+        "source_path": str(db),
+        "source_size": str(st.st_size),
+        "source_mtime_ns": str(st.st_mtime_ns),
+        "source_ctime_ns": str(st.st_ctime_ns),
+        "schema_version": SQLITE_SCHEMA_VERSION,
+    }
+
+
+def _read_sqlite_meta(sqlite_path: Path) -> dict[str, str]:
+    try:
+        with sqlite3.connect(sqlite_path) as conn:
+            rows = conn.execute("SELECT key, value FROM meta").fetchall()
+    except sqlite3.Error:
+        return {}
+    return {str(k): str(v) for k, v in rows}
+
+
+def _sqlite_is_current(sqlite_path: Path, db: Path) -> bool:
+    if not sqlite_path.is_file():
+        return False
+    meta = _read_sqlite_meta(sqlite_path)
+    sig = _db_signature(db)
+    return all(meta.get(k) == v for k, v in sig.items())
+
+
+@contextmanager
+def _file_lock(lock_path: Path):
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a", encoding="utf-8") as fh:
+        if fcntl is not None:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def build_sqlite_cache(db: Path, sqlite_path: Path, idx: dict[str, int]) -> int:
+    """Rebuild the derived SQLite cache atomically. Returns row count."""
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = sqlite_path.with_name(f".{sqlite_path.name}.{os.getpid()}.tmp")
+    if tmp.exists():
+        tmp.unlink()
+
+    sig = _db_signature(db)
+    proc, lines = _db_line_stream(db)
+    row_count = 0
+    batch: list[tuple[str, str, str]] = []
+    ci_chr, ci_pos = idx["chr"], idx["pos"]
+    ci_ref, ci_alt = idx["ref"], idx["alt"]
+    ci_score, ci_crit = idx["acmg_score"], idx["acmg_criteria"]
+    need = max(ci_chr, ci_pos, ci_ref, ci_alt, ci_score, ci_crit)
+
+    try:
+        with sqlite3.connect(tmp) as conn:
+            conn.execute("PRAGMA journal_mode=OFF")
+            conn.execute("PRAGMA synchronous=OFF")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            conn.execute(
+                "CREATE TABLE variants ("
+                "vkey TEXT PRIMARY KEY, "
+                "acmg_score TEXT, "
+                "acmg_criteria TEXT)"
+            )
+            conn.executemany(
+                "INSERT INTO meta(key, value) VALUES (?, ?)",
+                list(sig.items()),
+            )
+            for line in lines:
+                if not line or line[0] == "#":
+                    continue
+                f = line.rstrip("\n").split("\t")
+                if len(f) <= need:
+                    continue
+                pos = f[ci_pos]
+                if not pos.isdigit():
+                    continue
+                key = f"{f[ci_chr]}:{pos}:{f[ci_ref]}:{f[ci_alt]}"
+                batch.append((key, f[ci_score], f[ci_crit]))
+                if len(batch) >= 50000:
+                    conn.executemany(
+                        "INSERT OR REPLACE INTO variants VALUES (?, ?, ?)",
+                        batch,
+                    )
+                    row_count += len(batch)
+                    batch.clear()
+            if batch:
+                conn.executemany(
+                    "INSERT OR REPLACE INTO variants VALUES (?, ?, ?)",
+                    batch,
+                )
+                row_count += len(batch)
+            conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", ("row_count", str(row_count)))
+            conn.commit()
+            check = conn.execute("PRAGMA quick_check").fetchone()
+            if not check or check[0] != "ok":
+                raise GeneBeDBError(f"SQLite quick_check failed: {check}")
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    finally:
+        if proc is not None:
+            err = proc.stderr.read() if proc.stderr else ""
+            proc.wait()
+            if proc.returncode not in (0, None):
+                tmp.unlink(missing_ok=True)
+                raise GeneBeDBError(
+                    f"DB decompression failed (rc={proc.returncode}): "
+                    f"{(err or '').strip()}")
+        else:
+            lines.close()
+
+    os.replace(tmp, sqlite_path)
+    return row_count
+
+
+def ensure_sqlite_cache(db: Path, sqlite_path: Path, idx: dict[str, int]) -> tuple[bool, str]:
+    """Ensure the SQLite cache matches the bgzip TSV signature."""
+    if _sqlite_is_current(sqlite_path, db):
+        return False, "current"
+    lock_path = sqlite_path.with_suffix(sqlite_path.suffix + ".lock")
+    with _file_lock(lock_path):
+        if _sqlite_is_current(sqlite_path, db):
+            return False, "current-after-wait"
+        row_count = build_sqlite_cache(db, sqlite_path, idx)
+        return True, f"rebuilt rows={row_count}"
+
+
+def sqlite_lookup(sqlite_path: Path, wanted: set[str]) -> dict[str, tuple[str, str]]:
+    """Lookup wanted variant keys from the derived SQLite cache."""
+    hits: dict[str, tuple[str, str]] = {}
+    if not wanted:
+        return hits
+    with sqlite3.connect(sqlite_path) as conn:
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("CREATE TEMP TABLE wanted (vkey TEXT PRIMARY KEY)")
+        batch: list[tuple[str]] = []
+        for key in wanted:
+            batch.append((key,))
+            if len(batch) >= 50000:
+                conn.executemany("INSERT OR IGNORE INTO wanted(vkey) VALUES (?)", batch)
+                batch.clear()
+        if batch:
+            conn.executemany("INSERT OR IGNORE INTO wanted(vkey) VALUES (?)", batch)
+        for key, score, crit in conn.execute(
+            "SELECT v.vkey, v.acmg_score, v.acmg_criteria "
+            "FROM variants v JOIN wanted w ON w.vkey = v.vkey"
+        ):
+            hits[str(key)] = (score or "", crit or "")
+    return hits
+
+
 # ---- merge back into the TSV ----------------------------------------
 
 def merge_into_tsv(in_tsv: Path, out_tsv: Path, gb: dict) -> tuple[int, int]:
@@ -395,6 +574,15 @@ def main() -> int:
                         str(Path.home() / "NGS_UI" / "biotools" / "genebe"
                             / "genebe_hg38.tsv.gz")),
                     help="local GeneBe DB (bgzip TSV); env NGS_UI_GENEBE_DB")
+    ap.add_argument("--sqlite-db",
+                    help="derived SQLite cache path (default: beside "
+                         "--genebe-db, replacing .tsv.gz with .sqlite)")
+    ap.add_argument("--no-sqlite", action="store_true",
+                    help="disable SQLite cache and use the historical "
+                         "streaming lookup")
+    ap.add_argument("--sqlite-strict", action="store_true",
+                    help="fail instead of falling back to streaming if the "
+                         "SQLite cache cannot be built/read")
     ap.add_argument("--max-af", type=float, default=-1.0,
                     help="optional: drop sites whose AF > this before lookup "
                          "(default -1 = whole TSV, no AF gate)")
@@ -442,13 +630,40 @@ def main() -> int:
         return 0
 
     t0 = time.time()
-    try:
-        db_hits = scan_db(db, idx, wanted)
-    except GeneBeDBError as e:
-        print(f"ERROR: GeneBe DB 掃描失敗：{e}", file=sys.stderr)
-        return 2
+    db_hits: dict[str, tuple[str, str]]
+    if args.no_sqlite:
+        try:
+            db_hits = scan_db(db, idx, wanted)
+        except GeneBeDBError as e:
+            print(f"ERROR: GeneBe DB 掃描失敗：{e}", file=sys.stderr)
+            return 2
+        print(f"[genebe] streamed DB in {time.time() - t0:.0f}s, "
+              f"{len(db_hits)} raw hits", file=sys.stderr)
+    else:
+        sqlite_path = Path(args.sqlite_db).resolve() if args.sqlite_db else default_sqlite_path(db)
+        try:
+            rebuilt, status = ensure_sqlite_cache(db, sqlite_path, idx)
+            action = "rebuilt" if rebuilt else "ready"
+            print(f"[genebe] sqlite {action}: {sqlite_path} ({status})",
+                  file=sys.stderr)
+            db_hits = sqlite_lookup(sqlite_path, wanted)
+            print(f"[genebe] sqlite lookup in {time.time() - t0:.0f}s, "
+                  f"{len(db_hits)} raw hits", file=sys.stderr)
+        except (GeneBeDBError, OSError, sqlite3.Error) as e:
+            if args.sqlite_strict:
+                print(f"ERROR: GeneBe SQLite cache failed: {e}", file=sys.stderr)
+                return 2
+            print(f"[genebe] WARNING: SQLite cache failed ({e}); "
+                  "falling back to streaming DB", file=sys.stderr)
+            try:
+                db_hits = scan_db(db, idx, wanted)
+            except GeneBeDBError as e2:
+                print(f"ERROR: GeneBe DB 掃描失敗：{e2}", file=sys.stderr)
+                return 2
+            print(f"[genebe] streamed DB in {time.time() - t0:.0f}s, "
+                  f"{len(db_hits)} raw hits", file=sys.stderr)
     gb = assemble_gb(db_hits)
-    print(f"[genebe] scanned DB in {time.time() - t0:.0f}s, "
+    print(f"[genebe] resolved DB hits in {time.time() - t0:.0f}s, "
           f"{len(gb)} variants matched", file=sys.stderr)
 
     n_filled, n_total = merge_into_tsv(in_tsv, out_tsv, gb)

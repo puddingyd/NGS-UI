@@ -7855,8 +7855,9 @@ function maybeShowVersionPicker(onPick) {
 
 const _DRAGEN_STATE = {
   // mode is derived from the combobox that has a picked VCF path.
-  // The input itself contains a reviewer-friendly label; selected
-  // keeps the actual path used when starting the worker.
+  // After picking, the input keeps only the source sample ID so reviewers
+  // can edit VAL-36 → VAL-37 without deleting run/size/date metadata.
+  // selected keeps the actual path used when starting the worker.
   mode: "",             // ""    | dragen | inhouse
   index: null,          // {meta, dragen: [...], inhouse: [...]}
   selected: { inhouse: "", dragen: "" },
@@ -8119,8 +8120,14 @@ function _dragenPickVcf(mode, row) {
   _DRAGEN_STATE.mode = mode;
   if (mode === "inhouse") _DRAGEN_STATE.seqType.inhouse = _dragenInferSeqType(row);
   else _DRAGEN_STATE.seqType.inhouse = "";
-  if (input) input.value = _dragenVcfLabel(row);
-  if (other) other.value = "";
+  if (input) {
+    input.value = row.sample_id || "";
+    input.title = _dragenVcfLabel(row);
+  }
+  if (other) {
+    other.value = "";
+    other.title = "";
+  }
   _dragenHideDropdown(mode);
   _dragenHideDropdown(otherMode);
   const sidIn = document.getElementById("dragen-sample-id");
@@ -8385,6 +8392,7 @@ function _dragenWireCombobox(mode) {
   input.addEventListener("input", () => {
     activeIdx = -1;
     _DRAGEN_STATE.selected[mode] = "";
+    input.title = "";
     _DRAGEN_STATE.mode = _dragenActiveMode();
     if (mode === "inhouse") _DRAGEN_STATE.seqType.inhouse = "";
     _dragenRenderSeqType();

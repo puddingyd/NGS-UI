@@ -15,9 +15,10 @@
 #   5. sanity-probe a known region
 #   6. atomically install to the destination (.gz then .tbi)
 #
-# NGS-UI itself streams the .gz (it does NOT use the .tbi), so a bad
-# index can't break the platform — but a clean, indexed DB is still
-# wanted for tabix-based tools and the GENEBE_USAGE.md workflow.
+# NGS-UI itself builds/uses a lazy SQLite cache from the .gz and falls
+# back to streaming the .gz if needed, so a bad tabix index can't break
+# the platform — but a clean, indexed DB is still wanted for tabix-based
+# tools and the GENEBE_USAGE.md workflow.
 #
 # Usage:
 #   scripts/deploy_genebe_db.sh [SRC.tsv.gz] [--dest DEST] [--sort] [--keep-src]

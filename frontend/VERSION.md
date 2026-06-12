@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v4.9 — 2026-06-12
+
+- GeneBe 第二意見改用 lazy SQLite cache：上傳新的 `genebe_hg38.tsv.gz` 後，下一次三級分析會自動偵測來源變更並重建 `genebe_hg38.sqlite`，之後查詢不再每個 sample 重掃整顆 GeneBe TSV。
+- 三級分析 VCF 搜尋選到候選後，輸入框只保留 sample name；run、大小與日期仍在下拉候選與提示中顯示，方便連續修改下一個 sample ID 搜尋。
+
 ### v4.8 — 2026-06-11
 
 - 三級分析進度條改用 Nextflow process 權重，`queued` 事件只記錄 log、不推進百分比；前處理與 prepare 類快速步驟不再讓進度過早衝到 80%。

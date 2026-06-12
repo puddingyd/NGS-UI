@@ -113,10 +113,9 @@ GIAB_STRAT_DIR = Path(os.environ.get(
     BIOTOOLS_DIR / "giab_stratification",
 ))
 
-# Local GeneBe ACMG database (bgzip + tabix TSV) used by
+# Local GeneBe ACMG database (bgzip TSV + lazy SQLite cache) used by
 # scripts/annotate_acmg_genebe.py as an OFFLINE replacement for the live
-# GeneBe API — the stop-gap looks up acmg_score / acmg_criteria by tabix
-# instead of calling the API. Large, not committed; placed under biotools.
+# GeneBe API. Large, not committed; placed under biotools.
 GENEBE_DB = Path(os.environ.get(
     "NGS_UI_GENEBE_DB",
     BIOTOOLS_DIR / "genebe" / "genebe_hg38.tsv.gz",

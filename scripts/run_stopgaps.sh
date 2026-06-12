@@ -8,7 +8,7 @@
 #   1. filter_snv_tsv.py        — filter alt-contig / * only (silent)
 #   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
 #                                  columns via the local GeneBe DB
-#                                  (offline tabix lookup, no API/creds;
+#                                  (offline SQLite lookup, no API/creds;
 #                                  pipeline's ACMG_* untouched)
 #   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
 #   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
@@ -34,9 +34,9 @@
 # Env / flags:
 #   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 2
 #                                         (default $HOME/NGS_UI/biotools/
-#                                         genebe/genebe_hg38.tsv.gz); needs
-#                                         tabix + a fresh .tbi. --skip-genebe
-#                                         to disable.
+#                                         genebe/genebe_hg38.tsv.gz); builds
+#                                         genebe_hg38.sqlite lazily.
+#                                         --skip-genebe to disable.
 #   NGS_UI_CDS_CANDIDATE_BED           — optional, default
 #                                         $HOME/NGS_UI/biotools/cds_combined.bed
 #   --spliceai-snv / --spliceai-indel  — optional, default
@@ -137,7 +137,7 @@ fi
 run_silent_step "filter-snv" "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
 
 # 2. GeneBe ACMG second opinion via the local DB (writes GENEBE_* columns;
-#    pipeline ACMG_* preserved). Offline tabix lookup — no API / creds.
+#    pipeline ACMG_* preserved). Offline SQLite lookup — no API / creds.
 if [ "$SKIP_GENEBE" -eq 0 ]; then
   echo
   echo "[stopgaps] annotate_acmg_genebe.py"
