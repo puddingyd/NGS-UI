@@ -1255,3 +1255,6 @@ Jun-12 12:02:47.532 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! exe
 Jun-12 12:07:47.607 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
 ~> TaskHandler[id: 77; name: SNV_ANNOTATE:VEP_ANNOTATE (8); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781238156-29316524/84/3306d89a10fc98af04bcc396fb4994]
 ~> TaskHandler[id: 98; name: SNV_ANNOTATE:PANGOLIN_SCORE (7); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781238156-29316524/5a/0ae45310f730184f08b6a637654810]
+Jun-12 12:12:47.656 [Task monitor] DEBUG n.processor.TaskPollingMonitor - !! executor local > tasks to be completed: 2 -- submitted tasks are shown below
+~> TaskHandler[id: 77; name: SNV_ANNOTATE:VEP_ANNOTATE (8); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781238156-29316524/84/3306d89a10fc98af04bcc396fb4994]
+~> TaskHandler[id: 98; name: SNV_ANNOTATE:PANGOLIN_SCORE (7); status: RUNNING; exit: -; error: -; workDir: /home/n102968/NGS_UI/nf_work/batch-1781238156-29316524/5a/0ae45310f730184f08b6a637654810]
