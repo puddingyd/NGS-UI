@@ -2130,12 +2130,25 @@ body.sidebar-collapsed .container { margin-left: auto; }
   padding: 1px 0;
   font-size: 12px;
   line-height: 1.35;
+  color: #111827;
 }
 .dead-zone-gene {
   flex: 0 0 auto;
   font-family: ui-monospace, monospace;
   font-weight: 700;
 }
+.dead-zone-exons {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dead-zone-cds {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+.dead-zone-pct-high { color: #7f1d1d; }
+.dead-zone-pct-mid { color: #dc2626; }
+.dead-zone-pct-low { color: #ea580c; }
+.dead-zone-pct-base { color: #111827; }
 .dead-zone-toggle {
   margin-top: 4px;
   padding: 2px 0;

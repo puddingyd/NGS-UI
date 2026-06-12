@@ -10,6 +10,10 @@
 
 - GeneBe 第二意見改用 lazy SQLite cache：上傳新的 `genebe_hg38.tsv.gz` 後，下一次三級分析會自動偵測來源變更並重建 `genebe_hg38.sqlite`，之後查詢不再每個 sample 重掃整顆 GeneBe TSV。
 - 三級分析 VCF 搜尋選到候選後，輸入框只保留 sample name；run、大小與日期仍在下拉候選與提示中顯示，方便連續修改下一個 sample ID 搜尋。
+- Disease-associated / reportable gene list、VEP alias map 與 cohort dead-zone tables 更新至 2026-06-12 版本；固定 WES-I / WES-II / WGS panel 內的舊 gene symbol 與誤植同步修正。
+- 固定 WES-I / WES-II / WGS panel data 改為 repo 內版本化資料，server 更新程式碼時會一併更新 panel；使用者自訂 panel 仍保留在 runtime data。
+- 主畫面 Dead zone 卡片新增臨床門檻下的 CDS dead percentage，並依比例由高到低排序；≥70% 深紅、50-70% 紅、30-50% 橘，其餘黑色。
+- IGV alignment track height 調整為 SNV/Indel 與 Mito 300，CNV/SV 50。
 
 ### v4.8 — 2026-06-11
 

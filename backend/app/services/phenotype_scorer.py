@@ -12,7 +12,8 @@ the same lookup table by treating the panel name as a synthetic
 
 Loaded once at startup:
   - phenotype_data/phenotype_to_genes.txt  (~1M rows, 65 MB)
-  - phenotype_data/gene_panels/*.txt       (69 panels, ~27 k gene rows)
+  - repo phenotype_data/gene_panels/*.txt  (fixed panels, versioned in git)
+  - runtime custom_gene_panels/*.txt       (user-created panels)
 
 A reload happens on demand via reload_db() (no auto-watch).
 """
@@ -25,10 +26,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
-from ..config import GENE_PANELS_DIR, PHENO_DATA_DIR
+from ..config import CUSTOM_GENE_PANELS_DIR, GENE_PANELS_DIR, PHENO_DATA_DIR
 
 PHENO_TO_GENES_PATH = PHENO_DATA_DIR / "phenotype_to_genes.txt"
 PANELS_DIR = GENE_PANELS_DIR
+CUSTOM_PANELS_DIR = CUSTOM_GENE_PANELS_DIR
 
 
 # hpo_id (or panel_name) → set[gene_symbol]
@@ -53,7 +55,7 @@ def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[
     return out
 
 
-def _load_panels(panel_dir: Path = PANELS_DIR) -> dict[str, set[str]]:
+def _load_panels_from_dir(panel_dir: Path) -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
     if not panel_dir.exists():
         return out
@@ -75,6 +77,14 @@ def _load_panels(panel_dir: Path = PANELS_DIR) -> dict[str, set[str]]:
                 continue
         if genes:
             out[name] = genes
+    return out
+
+
+def _load_panels(panel_dirs: Iterable[Path] = (PANELS_DIR, CUSTOM_PANELS_DIR)) -> dict[str, set[str]]:
+    out: dict[str, set[str]] = {}
+    for panel_dir in panel_dirs:
+        for name, genes in _load_panels_from_dir(panel_dir).items():
+            out.setdefault(name, set()).update(genes)
     return out
 
 
@@ -124,8 +134,8 @@ def register_custom_panel(name: str, genes: Iterable[str]) -> dict:
     The name is sanitised (see sanitize_panel_name); collisions with an
     existing panel are refused. Genes are de-duplicated case-sensitively
     in first-seen order (gene symbols like 'C7orf50' carry meaningful
-    case, so we don't upper-case). Writes {name}.txt into the panels
-    directory (one gene per line) and updates the in-memory tables so
+    case, so we don't upper-case). Writes {name}.txt into the runtime
+    custom panels directory and updates the in-memory tables so
     the panel is usable immediately — no reload / restart needed.
 
     Returns {"name": <sanitised>, "n_genes": int}.
@@ -150,11 +160,11 @@ def register_custom_panel(name: str, genes: Iterable[str]) -> dict:
     if not ordered:
         raise ValueError("沒有可用的基因（清空後為空）")
 
-    PANELS_DIR.mkdir(parents=True, exist_ok=True)
-    out = PANELS_DIR / f"{clean}.txt"
+    CUSTOM_PANELS_DIR.mkdir(parents=True, exist_ok=True)
+    out = CUSTOM_PANELS_DIR / f"{clean}.txt"
     # Defence in depth: clean is [A-Za-z0-9_-]{1,64} so this can't
     # escape, but resolve-and-check anyway.
-    if out.resolve().parent != PANELS_DIR.resolve():
+    if out.resolve().parent != CUSTOM_PANELS_DIR.resolve():
         raise ValueError("panel 檔名不合法")
     out.write_text("\n".join(ordered) + "\n", encoding="utf-8")
 

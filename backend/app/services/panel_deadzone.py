@@ -40,12 +40,17 @@ def symbol_to_hgnc_id() -> dict[str, str]:
 
 @lru_cache(maxsize=1)
 def disease_associated_genes() -> frozenset[str]:
-    path = NGS_PANEL_DEADZONE_DIR / "panel" / "panel_loose.hgnc_canonical.txt"
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            return frozenset(line.strip() for line in fh if line.strip())
-    except OSError:
-        return frozenset()
+    paths = [
+        NGS_PANEL_DEADZONE_DIR / "panel" / "panel_loose_plus_clinical.hgnc_canonical.txt",
+        NGS_PANEL_DEADZONE_DIR / "panel" / "panel_loose.hgnc_canonical.txt",
+    ]
+    for path in paths:
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                return frozenset(line.strip() for line in fh if line.strip())
+        except OSError:
+            continue
+    return frozenset()
 
 
 @lru_cache(maxsize=1)
@@ -155,23 +160,41 @@ def _parse_exon_list(raw: str) -> list[int]:
     return sorted(set(out))
 
 
-def _dead_zone_file_for(test_type: str) -> tuple[Path, int, str]:
+def _dead_zone_file_for(test_type: str) -> tuple[Path, int, str, str, str]:
     if (test_type or "").upper() == "WES":
         return (
             NGS_PANEL_DEADZONE_DIR / "dead_zone" / "wes" / "wes_panel_dead_exon_summary.tsv",
             20,
             "dead_20x_exons",
+            "dead_20x_pct",
+            "dead_20x_len",
         )
     return (
         NGS_PANEL_DEADZONE_DIR / "dead_zone" / "dragen_wgs" / "wgs_dragen_panel_dead_exon_summary.tsv",
         15,
         "dead_15x_exons",
+        "dead_15x_pct",
+        "dead_15x_len",
     )
+
+
+def _parse_float(raw: str) -> float:
+    try:
+        return float(str(raw or "").strip())
+    except ValueError:
+        return 0.0
+
+
+def _parse_int(raw: str) -> int:
+    try:
+        return int(float(str(raw or "").strip()))
+    except ValueError:
+        return 0
 
 
 @lru_cache(maxsize=4)
 def _dead_exons_by_gene(test_type_key: str) -> tuple[dict[str, dict], int]:
-    path, threshold, exon_col = _dead_zone_file_for(test_type_key)
+    path, threshold, exon_col, pct_col, len_col = _dead_zone_file_for(test_type_key)
     out: dict[str, dict] = {}
     try:
         for row in _read_tsv(path):
@@ -179,11 +202,25 @@ def _dead_exons_by_gene(test_type_key: str) -> tuple[dict[str, dict], int]:
             exons = _parse_exon_list(row.get(exon_col, ""))
             if not gene or not exons:
                 continue
+            cds_dead_pct = _parse_float(row.get(pct_col, ""))
+            cds_dead_len = _parse_int(row.get(len_col, ""))
+            cds_len = _parse_int(row.get("cds_len", ""))
             entry = out.setdefault(
                 gene,
-                {"gene": gene, "threshold": threshold, "exons": set(), "transcripts": set()},
+                {
+                    "gene": gene,
+                    "threshold": threshold,
+                    "exons": set(),
+                    "transcripts": set(),
+                    "cds_len": 0,
+                    "cds_dead_len": 0,
+                    "cds_dead_pct": 0.0,
+                },
             )
             entry["exons"].update(exons)
+            entry["cds_len"] = max(entry["cds_len"], cds_len)
+            entry["cds_dead_len"] = max(entry["cds_dead_len"], cds_dead_len)
+            entry["cds_dead_pct"] = max(entry["cds_dead_pct"], cds_dead_pct)
             tx = (row.get("transcript") or "").strip()
             if tx:
                 entry["transcripts"].add(tx)
@@ -199,6 +236,9 @@ def _dead_exons_by_gene(test_type_key: str) -> tuple[dict[str, dict], int]:
             "exons": exons,
             "exons_label": _compact_int_runs(exons),
             "transcripts": sorted(entry["transcripts"]),
+            "cds_len": entry["cds_len"],
+            "cds_dead_len": entry["cds_dead_len"],
+            "cds_dead_pct": round(entry["cds_dead_pct"], 1),
         }
     return normalized, threshold
 
@@ -215,7 +255,10 @@ def dead_zone_for_genes(test_type: str, genes: set[str] | list[str] | tuple[str,
         gene, _ = canonical_gene_symbol(str(raw or ""))
         if gene in all_dead:
             out[gene] = all_dead[gene]
-    return dict(sorted(out.items()))
+    return dict(sorted(
+        out.items(),
+        key=lambda item: (-float(item[1].get("cds_dead_pct") or 0), item[0]),
+    ))
 
 
 def dead_zone_suffix(gene: str, test_type: str) -> str:
@@ -223,4 +266,3 @@ def dead_zone_suffix(gene: str, test_type: str) -> str:
     if not hit:
         return ""
     return f"exon {hit['exons_label']} <{hit['threshold']}X"
-

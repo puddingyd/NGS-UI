@@ -7,6 +7,12 @@ This is the companion to `dead_zone.md` (CDS coverage limitations) — both
 are intended for whoever wires VEP CSQ output into the clinical report
 generator.
 
+> **Scope (2026-06-12):** the VEP-alignment probe described below was re-run
+> against the **expanded reportable panel** — `panel_loose_plus_clinical.hgnc_canonical.txt`,
+> **7,363 genes** (curated disease list 6,240 ∪ clinician specialty panels +1,123).
+> All 7,363 genes have been through the synthetic-VCF alignment check; the
+> alias map and dead-zone files are both on the same 7,363 scope.
+
 ---
 
 ## The problem
@@ -17,7 +23,7 @@ outputs older symbols (e.g. `GAS8` for what HGNC now calls **DRC4**), and
 in a few cases doesn't have a transcript for the panel gene at all
 (reports a different overlapping gene instead).
 
-We did a per-gene alignment check (synthetic-VCF probe of all 6,240 panel
+We did a per-gene alignment check (synthetic-VCF probe of all 7,363 panel
 genes against the production VEP cache). The check produced the alias map
 described below — apply it once at the variant-annotation step and the
 report will always use HGNC-current names.
@@ -26,11 +32,12 @@ Per-gene status:
 
 | Outcome | Count | What the backend should do |
 | --- | ---: | --- |
-| `match` | 6,250 | nothing — VEP's SYMBOL already matches HGNC current |
-| `vep_uses_old_symbol` | 15 unique genes | translate VEP SYMBOL → HGNC current (alias map) |
-| `vep_missing_gene` | 4 | translate by HGNC_ID (VEP labels these regions with a *different* gene's HGNC_ID; use cross-reference) |
+| `match` | 7,325 | nothing — VEP's SYMBOL already matches HGNC current |
+| `vep_uses_old_symbol` | 16 | translate VEP SYMBOL → HGNC current (alias map) |
+| `vep_missing_gene` | 12 | translate by HGNC_ID (VEP labels these regions with a *different* gene's HGNC_ID; use cross-reference) |
 | `ensembl_id_drift` | 1 (CAST) | nothing — same SYMBOL + HGNC_ID, Ensembl gene_id drifted |
-| `no_vep_record` | 11 | accept that pre-verification wasn't possible; trust VEP for real-sample variants and use HGNC_ID join (see "Untested edge cases" below) |
+| `disagree_other` | 1 (MAFIP→MIP) | translate by HGNC_ID (MAFIP pseudogene overlaps MIP) |
+| `no_vep_record` | 8 | accept that pre-verification wasn't possible; trust VEP for real-sample variants and use HGNC_ID join (see "Untested edge cases" below) |
 
 ---
 
@@ -38,8 +45,8 @@ Per-gene status:
 
 | File | Purpose | Rows |
 | --- | --- | ---: |
-| `panel/panel_loose.hgnc_canonical.txt` | the panel scope (HGNC-current symbols) | 6,240 |
-| `panel/vep_alias_map.tsv` | every panel gene whose VEP output needs translation; rest of the panel matches VEP exactly | 31 |
+| `panel/panel_loose_plus_clinical.hgnc_canonical.txt` | the panel scope (HGNC-current symbols) | 7,363 |
+| `panel/vep_alias_map.tsv` | every panel gene whose VEP output needs translation; rest of the panel matches VEP exactly | 38 |
 | `panel/hgnc_id_to_symbol.tsv` | HGNC_ID → current symbol lookup (all Approved genes) | 44,989 |
 
 `vep_alias_map.tsv` columns:
@@ -50,7 +57,7 @@ Per-gene status:
 | `panel_hgnc_symbol` | HGNC-current symbol to display in the report |
 | `vep_symbol` | what VEP will put in the CSQ `SYMBOL` field |
 | `vep_hgnc_id` | what VEP will put in the CSQ `HGNC_ID` field |
-| `kind` | one of: `vep_uses_old_symbol`, `vep_missing_gene`, `ensembl_id_drift`, `no_vep_record` |
+| `kind` | one of: `vep_uses_old_symbol`, `vep_missing_gene`, `ensembl_id_drift`, `disagree_other`, `no_vep_record` |
 | `notes` | short human-readable description |
 
 For `no_vep_record` rows the `vep_symbol` / `vep_hgnc_id` columns are
@@ -81,11 +88,12 @@ with open("panel/hgnc_id_to_symbol.tsv", newline="") as fh:
 # Panel scope is a list of HGNC-current SYMBOLS; turn it into HGNC IDs
 # (HGNC_ID is the join key we use against VEP output).
 panel_symbols = set()
-with open("panel/panel_loose.hgnc_canonical.txt") as fh:
+with open("panel/panel_loose_plus_clinical.hgnc_canonical.txt") as fh:
     panel_symbols = {line.strip() for line in fh if line.strip()}
 panel_hgnc_ids = {symbol_to_hgnc[s] for s in panel_symbols if s in symbol_to_hgnc}
 
-# Special-case map for vep_missing_gene (Ensembl-split / read-through cases).
+# Special-case map for vep_missing_gene / disagree_other (Ensembl-split,
+# read-through, or overlapping-pseudogene cases).
 # Key = VEP's HGNC_ID, value = (panel HGNC_ID, panel display symbol).
 # In real-sample VEP output these variants will carry VEP's HGNC_ID (e.g.
 # HGNC:14862 for POLR2M). The reporter may want to ALSO surface the panel
@@ -93,7 +101,7 @@ panel_hgnc_ids = {symbol_to_hgnc[s] for s in panel_symbols if s in symbol_to_hgn
 vep_to_panel_alias = {}       # VEP HGNC_ID -> (panel HGNC_ID, panel symbol)
 with open("panel/vep_alias_map.tsv", newline="") as fh:
     for r in csv.DictReader(fh, delimiter="\t"):
-        if r["kind"] == "vep_missing_gene" and r["vep_hgnc_id"]:
+        if r["kind"] in ("vep_missing_gene", "disagree_other") and r["vep_hgnc_id"]:
             vep_to_panel_alias[r["vep_hgnc_id"]] = (
                 r["panel_hgnc_id"], r["panel_hgnc_symbol"]
             )
@@ -108,7 +116,8 @@ def report_gene_for_csq(csq):
         # 1. Direct: panel gene reachable via VEP HGNC_ID
         if hid in panel_hgnc_ids:
             return hid, hgnc_to_display.get(hid, csq["SYMBOL"])
-        # 2. vep_missing_gene cross-reference (POLR2M -> GCOM1, etc.)
+        # 2. vep_missing_gene / disagree_other cross-reference
+        #    (POLR2M -> GCOM1, MIP -> MAFIP, etc.)
         if hid in vep_to_panel_alias:
             panel_hid, panel_sym = vep_to_panel_alias[hid]
             return panel_hid, panel_sym
@@ -119,30 +128,75 @@ def report_gene_for_csq(csq):
     return None  # not in panel
 ```
 
-The 15 `vep_uses_old_symbol` cases are handled automatically by **step
+The 16 `vep_uses_old_symbol` cases are handled automatically by **step
 1** — VEP's `HGNC_ID` matches the panel's HGNC_ID, and we look up the
 display symbol from the HGNC table (not from VEP). VEP's older SYMBOL is
 ignored.
 
-The 4 `vep_missing_gene` cases are handled by **step 2** — VEP labels
-those regions with a different gene's HGNC_ID; the lookup translates
-back. This expects the report layer to be OK with showing **GCOM1** as
-the panel context for variants VEP labelled as POLR2M, etc.
+The 12 `vep_missing_gene` cases (plus the 1 `disagree_other` MAFIP case)
+are handled by **step 2** — VEP labels those regions with a different
+gene's HGNC_ID; the lookup translates back. This expects the report layer
+to be OK with showing **GCOM1** as the panel context for variants VEP
+labelled as POLR2M, etc.
 
 ---
 
-## How each of the four `vep_missing_gene` cases works in practice
+## How each of the 12 `vep_missing_gene` cases works in practice
 
-| Panel gene (clinical report) | VEP will actually label as | What the backend should do |
-| --- | --- | --- |
-| **GCOM1** (HGNC:26424) | POLR2M (HGNC:14862) and others | When the report needs to discuss GCOM1: also surface any variants VEP annotated as POLR2M / MYZAP / ARMH3 in the chr15:57.7 Mb locus. The GCOM1 designation is a read-through — Ensembl 115 split it. |
-| **LRTOMT** (HGNC:25033) | TOMT (HGNC:55527), LRRC51 | When reporting LRTOMT: surface TOMT + LRRC51 variants in the chr11:72 Mb locus. |
-| **DISC2** (HGNC:2889) | DISC1 (HGNC:2888) | DISC2 is an antisense lncRNA of DISC1; Ensembl 115 doesn't have a separate DISC2 transcript. Variants reported under DISC2 will be labeled as DISC1 by VEP (intronic). Recommend not reporting DISC2 as a primary gene without orthogonal review. |
-| **TRU-TCA1-1** (HGNC:12348) | FOSB (HGNC:3797) (downstream artifact) | TRU-TCA1-1 is a single-exon tRNA; VEP doesn't annotate it as a gene. The "FOSB" label is the nearest downstream gene VEP found at the position we probed. **Do not use this alias** — TRU-TCA1-1 variants will not be discoverable through VEP output. Flag as a known limitation. |
+For each, VEP does not carry the panel gene's own transcript at the probed
+position; it annotates the listed overlapping/adjacent gene instead. The
+HGNC_ID cross-reference (step 2) maps VEP's label back to the panel gene.
+
+| Panel gene (clinical report) | HGNC_ID | VEP will actually label as | VEP's HGNC_ID |
+| --- | --- | --- | --- |
+| **ATXN8**     | HGNC:32925 | ATXN8OS | HGNC:10561 |
+| **CCL3L1**    | HGNC:10628 | CCL3L3  | HGNC:30554 |
+| **DISC2**     | HGNC:2889  | DISC1   | HGNC:2888  |
+| **FCGR2C**    | HGNC:15626 | FCGR3B  | HGNC:3620  |
+| **GCOM1**     | HGNC:26424 | POLR2M  | HGNC:14862 |
+| **GGT2P**     | HGNC:4251  | GNAZ    | HGNC:4395  |
+| **GULOP**     | HGNC:4695  | PTK2B   | HGNC:9612  |
+| **LRTOMT**    | HGNC:25033 | TOMT    | HGNC:55527 |
+| **PGBD3**     | HGNC:19400 | ERCC6   | HGNC:3438  |
+| **SNORA93**   | HGNC:50397 | FBLN2   | HGNC:3601  |
+| **TRU-TCA1-1**| HGNC:12348 | FOSB    | HGNC:3797  |
+| **UOX**       | HGNC:12575 | SSX2IP  | HGNC:16509 |
+
+Notes on the trickier ones:
+
+- **GCOM1** is a read-through that Ensembl 115 split — variants in the
+  chr15:57.7 Mb locus get labelled POLR2M / MYZAP / ARMH3. When the report
+  needs to discuss GCOM1, also surface those.
+- **LRTOMT** — surface TOMT + LRRC51 variants in the chr11:72 Mb locus.
+- **DISC2** is an antisense lncRNA of DISC1; Ensembl 115 has no separate
+  DISC2 transcript. Variants land under DISC1 (intronic). Don't report
+  DISC2 as a primary gene without orthogonal review.
+- **TRU-TCA1-1** is a single-exon tRNA; VEP doesn't annotate it as a gene,
+  so the "FOSB" label is just the nearest downstream gene at the probed
+  position. **Do not use this alias for discovery** — TRU-TCA1-1 variants
+  are not discoverable through VEP output. Flag as a known limitation.
+- **PGBD3 / SNORA93 / ATXN8 / GGT2P / GULOP / UOX** are pseudogenes,
+  snoRNA, or non-coding loci nested inside a host gene (ERCC6, FBLN2,
+  ATXN8OS, GNAZ, PTK2B, SSX2IP); they are rarely clinically reportable on
+  their own. Flag if anything shows up.
 
 ---
 
-## How each of the 15 `vep_uses_old_symbol` cases works
+## The 1 `disagree_other` case (MAFIP → MIP)
+
+| Panel gene | HGNC_ID | VEP labels as | VEP's HGNC_ID |
+| --- | --- | --- | --- |
+| **MAFIP** | HGNC:31102 | MIP | HGNC:7103 |
+
+MAFIP is a pseudogene whose probed position overlaps **MIP**; VEP returns
+MIP's SYMBOL, HGNC_ID and Ensembl gene_id (all three differ from MAFIP).
+Treated like a `vep_missing_gene` cross-reference in the algorithm above
+(step 2 picks it up via VEP's HGNC_ID). MAFIP is not independently
+reportable.
+
+---
+
+## How each of the 16 `vep_uses_old_symbol` cases works
 
 These are the simple cases — same gene, VEP just uses an older name.
 The backend's HGNC_ID lookup handles them automatically. They're listed
@@ -153,6 +207,7 @@ here for the validation report and for human review:
 | ASPNAT | NAT8L | HGNC:26742 |
 | CATSPERT | C2CD6 | HGNC:14438 |
 | COXFA4 | NDUFA4 | HGNC:7687 |
+| COXFA4L2 | NDUFA4L2 | HGNC:29836 |
 | DRC2 | CCDC65 | HGNC:29937 |
 | DRC4 | GAS8 | HGNC:4166 |
 | FAM194C | C3orf20 | HGNC:25320 |
@@ -174,18 +229,27 @@ changes needed.
 
 ## Untested edge cases (`no_vep_record`)
 
-These 11 panel genes failed our pre-validation. The reasons are physical
-limitations, not pipeline bugs:
+These 8 panel genes returned no CSQ entry at the synthetic-probe position,
+so we couldn't pre-verify their naming. The reasons are physical
+limitations (pseudogenes, copy-number-variable loci, non-coding RNAs), not
+pipeline bugs:
 
-| Panel gene | HGNC_ID | Reason | Real-sample handling |
-| --- | --- | --- | --- |
-| FEB1, TCL4 | (none) | OMIM-only locus with no HGNC entry | Real samples will never have VEP output labeled "FEB1" / "TCL4" — these aren't VEP-known genes. If the report needs to discuss them, treat as locus-level (cytoband only). |
-| ABO, ORAI1, CCL3L1, ATXN8, FCGR2C | HGNC:79, HGNC:25896, HGNC:10628, HGNC:32925, HGNC:15626 | alt-locus Ensembl gene IDs; not in MANE Select or VEP primary-assembly cache at the expected positions | Real-sample variants in these may or may not be annotated; cross-check with a UCSC/Ensembl direct lookup before reporting. |
-| CASP12, GULOP, UOX, GGT2P | HGNC:19004, HGNC:4695, HGNC:12575, HGNC:4251 | pseudogenes; VEP cache may or may not have an entry | Pseudogene variants are usually not clinically reportable; flag if anything shows up. |
+| Panel gene | HGNC_ID | Likely reason |
+| --- | --- | --- |
+| GSTT1     | HGNC:4641  | common germline copy-number-deletion locus; often absent from the primary-assembly cache at the probed position |
+| HELLPAR   | HGNC:43984 | long non-coding RNA (macro-lncRNA); no protein transcript to probe |
+| LRP5L     | HGNC:25323 | partial-duplication paralog; alt-locus annotation |
+| NXF5      | HGNC:8075  | X-linked, paralog-rich family; cache coverage gap |
+| POM121L9P | HGNC:30080 | pseudogene |
+| SLC22A20P | HGNC:29867 | pseudogene |
+| SSPOP     | HGNC:21998 | pseudogene of the SSPO locus |
+| WTAPP1    | HGNC:44115 | pseudogene |
 
-For all 11: **trust VEP's HGNC_ID if it appears in real-sample output**.
+For all 8: **trust VEP's HGNC_ID if it appears in real-sample output**.
 The alignment check just couldn't pre-verify the naming because we
-couldn't synthesize a variant at the right position.
+couldn't synthesize a variant that VEP would annotate at the right
+position. Most are pseudogenes / non-coding loci that are rarely
+clinically reportable on their own.
 
 ---
 
@@ -195,7 +259,10 @@ The alias map is regenerated from `gene_alignment_report.tsv` whenever
 the panel alignment is re-run:
 
 ```bash
-python3 scripts/panel_alignment/build_alias_map.py
+python3 scripts/panel_alignment/build_alias_map.py \
+    --report  results/panel_alignment/gene_alignment_report_plus.tsv \
+    --vep-vcf results/panel_alignment/synthetic_plus.vep.vcf.gz \
+    --out     results/panel_alignment/vep_alias_map_plus.tsv
 ```
 
 A complete rebuild of the alignment (after a panel change, HGNC update,
@@ -203,18 +270,22 @@ or VEP cache upgrade) goes:
 
 ```bash
 # on DGM
-bash scripts/panel_alignment/rebuild_alignment.sh
+bash scripts/panel_alignment/rebuild_alignment_expanded.sh
 # back on laptop
 python3 scripts/panel_alignment/parse_vep_alignment.py \
-    --vep-vcf      results/panel_alignment/synthetic.vep.vcf.gz \
-    --panel-hgnc   results/panel_alignment/panel_loose.hgnc.tsv \
-    --out-report   results/panel_alignment/gene_alignment_report.tsv \
-    --out-disagree results/panel_alignment/vep_disagreements.tsv
-python3 scripts/panel_alignment/build_alias_map.py
+    --vep-vcf      results/panel_alignment/synthetic_plus.vep.vcf.gz \
+    --panel-hgnc   results/panel_alignment/panel_loose_plus_clinical.hgnc.tsv \
+    --out-report   results/panel_alignment/gene_alignment_report_plus.tsv \
+    --out-disagree results/panel_alignment/vep_disagreements_plus.tsv
+python3 scripts/panel_alignment/build_alias_map.py \
+    --report  results/panel_alignment/gene_alignment_report_plus.tsv \
+    --vep-vcf results/panel_alignment/synthetic_plus.vep.vcf.gz \
+    --out     results/panel_alignment/vep_alias_map_plus.tsv
 ```
 
 After every rebuild, **re-send `vep_alias_map.tsv` and
-`panel_loose.hgnc_canonical.txt` to the backend** and rerun their ingest.
+`panel_loose_plus_clinical.hgnc_canonical.txt` to the backend** and rerun
+their ingest.
 
 ---
 
@@ -222,8 +293,8 @@ After every rebuild, **re-send `vep_alias_map.tsv` and
 
 | Item | Current value |
 | --- | --- |
-| Panel | `panel_loose.hgnc_canonical.txt`, 6,240 unique HGNC symbols |
-| Panel source databases | OMIM (2026-05-10) + ClinGen (2026-05-10) + GenCC (2026-05-10), HGNC-aligned |
+| Panel | `panel_loose_plus_clinical.hgnc_canonical.txt`, 7,363 unique HGNC symbols |
+| Panel source databases | OMIM (2026-05-10) + ClinGen (2026-05-10) + GenCC (2026-05-10), HGNC-aligned, ∪ clinician specialty panels (2026-06-12) |
 | VEP version | Ensembl VEP 115, `vep_115.sif`, cache at `/home/pipeline/reference/hg38/tertiary/vep_cache/` |
-| Alignment date | as of `gene_alignment_report.tsv` commit (see `git log results/panel_alignment/gene_alignment_report.tsv`) |
-| Alias map rows | 30 (15 `vep_uses_old_symbol` + 4 `vep_missing_gene` + 1 `ensembl_id_drift` + 10 `no_vep_record`) |
+| Alignment date | 2026-06-12 (see `git log results/panel_alignment/gene_alignment_report_plus.tsv`) |
+| Alias map rows | 38 (16 `vep_uses_old_symbol` + 12 `vep_missing_gene` + 1 `ensembl_id_drift` + 1 `disagree_other` + 8 `no_vep_record`) |

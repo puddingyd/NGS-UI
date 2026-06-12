@@ -24,11 +24,11 @@ Per spec: merge SNV/indel + CNV + Mito columns into one deduped gene
 list per panel; drop STR entirely. Each resulting panel becomes a
 plain-text file (one gene per line) and lands under
 
-  {PHENO_DATA_DIR}/fixed_panels/{series}/{category}/{panel_name}.txt
+  {REPO_ROOT}/phenotype_data/fixed_panels/{series}/{category}/{panel_name}.txt
 
 A companion JSON index at
 
-  {PHENO_DATA_DIR}/fixed_panels/index.json
+  {REPO_ROOT}/phenotype_data/fixed_panels/index.json
 
 groups the panels for the UI:
   {
@@ -45,10 +45,11 @@ groups the panels for the UI:
   }
 
 The panel's `key` is what gets passed to `phenotype_scorer` (it
-matches a file written into the gene panel store), so the existing
+matches a file written into the repo gene panel store), so the existing
 phenotype-scoring code consumes them without changes.
 
-Idempotent — wipes the fixed_panels/ output dir each run.
+Idempotent — wipes the fixed_panels/ output dir and fixed series files in
+phenotype_data/gene_panels/ each run.
 
 Usage:
     PYTHONPATH=backend python scripts/import_fixed_panels.py [--src DIR] [--out DIR]
@@ -64,7 +65,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
-from app.config import PHENO_DATA_DIR  # noqa: E402
+from app.config import FIXED_PANELS_DIR  # noqa: E402
 
 
 # ── Sheet → category routing ──────────────────────────────────────
@@ -284,8 +285,8 @@ def _read_wgs_panels(other_dir: Path) -> list[dict]:
 
 def _write_panels(records: list[dict], out_root: Path) -> None:
     """Write one .txt per panel + index.json + 1 gene-per-line files
-    inside the existing GENE_PANELS_DIR so phenotype_scorer can load
-    them without any code change."""
+    inside the repo's GENE_PANELS_DIR so phenotype_scorer can load
+    fixed panels from versioned git data."""
     from app.config import GENE_PANELS_DIR
 
     keys = [rec["key"] for rec in records]
@@ -342,7 +343,7 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--src", default=str(Path(__file__).resolve().parent.parent / "fixed_panel"),
                     help="repo's fixed_panel/ dir (default: ../fixed_panel from this script)")
-    ap.add_argument("--out", default=str(PHENO_DATA_DIR / "fixed_panels"),
+    ap.add_argument("--out", default=str(FIXED_PANELS_DIR),
                     help="output dir for the panel txt + index.json (default: phenotype_data/fixed_panels/)")
     args = ap.parse_args()
 

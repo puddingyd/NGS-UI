@@ -48,13 +48,13 @@ def list_panels_public():
 @router.get("/fixed-panels")
 def list_fixed_panels():
     """Index of the WES-I / WES-II / WGS fixed panels for the new
-    Gene-panels UI tabs. Built once by scripts/import_fixed_panels.py
-    into PHENO_DATA_DIR/fixed_panels/index.json; we just stream it.
+    Gene-panels UI tabs. Built by scripts/import_fixed_panels.py into
+    the repo's phenotype_data/fixed_panels/index.json; we just stream it.
     Returns {"series": []} on a clean dev box (no panels imported).
     """
     import json
-    from ..config import PHENO_DATA_DIR
-    idx = PHENO_DATA_DIR / "fixed_panels" / "index.json"
+    from ..config import FIXED_PANELS_DIR
+    idx = FIXED_PANELS_DIR / "index.json"
     if not idx.is_file():
         return {"series": []}
     try:

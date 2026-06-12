@@ -32,8 +32,9 @@ ngs_panel_deadzone/
 ├── dead_zone.md                 ← per-exon coverage limitation guide
 │
 ├── panel/
-│   ├── panel_loose.hgnc_canonical.txt   panel scope: 6,240 HGNC-current symbols (one/line)
-│   ├── vep_alias_map.tsv                31 panel genes whose VEP output needs translation
+│   ├── panel_loose_plus_clinical.hgnc_canonical.txt  dead-zone panel scope: 7,363 = curated 6,240 ∪ clinical panels +1,123
+│   ├── panel_loose.hgnc_canonical.txt   curated-only disease list: 6,240 HGNC-current symbols (one/line)
+│   ├── vep_alias_map.tsv                38 panel genes whose VEP output needs translation
 │   └── hgnc_id_to_symbol.tsv            HGNC_ID → current symbol, all 44,989 Approved genes
 │
 └── dead_zone/
@@ -69,14 +70,15 @@ per-pipeline comparison are in `dead_zone.md`.
 cd ngs_panel_deadzone
 
 # panel scope size
-wc -l panel/panel_loose.hgnc_canonical.txt          # 6240
+wc -l panel/panel_loose_plus_clinical.hgnc_canonical.txt   # 7363
 
 # alias-map kinds
 cut -f5 panel/vep_alias_map.tsv | tail -n +2 | sort | uniq -c
+#   1 disagree_other
 #   1 ensembl_id_drift
-#  11 no_vep_record
-#   4 vep_missing_gene
-#  15 vep_uses_old_symbol
+#   8 no_vep_record
+#  12 vep_missing_gene
+#  16 vep_uses_old_symbol
 
 # dead-exon rows for the primary pipeline
 wc -l dead_zone/dragen_wgs/wgs_dragen_panel_dead_exons.tsv

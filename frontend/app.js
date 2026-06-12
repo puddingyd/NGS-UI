@@ -756,12 +756,14 @@ async function _initIgvBrowser() {
   const coverageAutoscaleGroup = _igvRoiFor(_igvVariant)
     ? "ngs-ui-cnv-sv-coverage"
     : undefined;
+  const variantSource = String(_igvVariant?.source || "").toLowerCase();
+  const alignmentTrackHeight = variantSource === "cnv" || variantSource === "sv" ? 50 : 300;
   const tracks = _igvBams.map(b => ({
     name: b.label,
     type: "alignment",
     format: "bam",
     displayMode: "SQUISHED",
-    height: String(_igvVariant?.source || "").toLowerCase() === "cnv" ? 50 : undefined,
+    height: alignmentTrackHeight,
     visibilityWindow: IGV_ALIGNMENT_VISIBILITY_WINDOW,
     autoscaleGroup: coverageAutoscaleGroup,
     autoscale: _igvIsSry ? false : undefined,
@@ -1232,7 +1234,11 @@ function renderDeadZoneCard() {
   if (!card || !body) return;
   const dz = state.data?.dead_zone || {};
   const threshold = dz.threshold || "";
-  const entries = Array.isArray(dz.entries) ? dz.entries : [];
+  const entries = (Array.isArray(dz.entries) ? dz.entries : []).slice().sort((a, b) => {
+    const pctA = Number(a?.cds_dead_pct || 0);
+    const pctB = Number(b?.cds_dead_pct || 0);
+    return (pctB - pctA) || String(a?.gene || "").localeCompare(String(b?.gene || ""));
+  });
   if (thrEl) {
     thrEl.textContent = threshold ? `clinical threshold: ${threshold}X` : "";
   }
@@ -1243,7 +1249,7 @@ function renderDeadZoneCard() {
     body.dataset.deadZoneKey = "";
     return;
   }
-  const key = entries.map(e => `${e.gene || ""}:${e.exons_label || ""}`).join("|");
+  const key = entries.map(e => `${e.gene || ""}:${e.exons_label || ""}:${e.cds_dead_pct || ""}`).join("|");
   if (body.dataset.deadZoneKey !== key) {
     body.dataset.deadZoneKey = key;
     body.dataset.expanded = "0";
@@ -1255,8 +1261,15 @@ function renderDeadZoneCard() {
   body.innerHTML = `<ul class="dead-zone-list">${visibleEntries.map(e => {
     const gene = e.gene || "";
     const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
-    return `<li><span class="dead-zone-gene">${escapeHtml(gene)}</span>
-      <span>exon ${escapeHtml(label)}</span></li>`;
+    const pct = Number(e.cds_dead_pct || 0);
+    const pctClass = pct >= 70 ? "dead-zone-pct-high"
+      : pct >= 50 ? "dead-zone-pct-mid"
+      : pct >= 30 ? "dead-zone-pct-low"
+      : "dead-zone-pct-base";
+    const pctLabel = Number.isFinite(pct) ? `${pct.toFixed(1).replace(/\\.0$/, "")}%` : "";
+    return `<li class="${pctClass}"><span class="dead-zone-gene">${escapeHtml(gene)}</span>
+      <span class="dead-zone-exons">exon ${escapeHtml(label)}</span>
+      ${pctLabel ? `<span class="dead-zone-cds">CDS ${escapeHtml(pctLabel)}</span>` : ""}</li>`;
   }).join("")}</ul>${entries.length > limit ? `
     <button id="dead-zone-toggle" class="dead-zone-toggle" type="button" aria-expanded="${expanded ? "true" : "false"}">
       <span class="dead-zone-toggle-arrow">${expanded ? "▾" : "▸"}</span>

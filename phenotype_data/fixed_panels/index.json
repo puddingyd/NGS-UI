@@ -1,0 +1,292 @@
+{
+  "series": [
+    {
+      "key": "WES-I",
+      "label": "WES-I",
+      "groups": [
+        {
+          "category": "兒科",
+          "panels": [
+            {
+              "name": "先天性別發育異常疾病",
+              "key": "WES-I__兒科__先天性別發育異常疾病",
+              "gene_count": 205
+            },
+            {
+              "name": "先天新陳代謝疾病",
+              "key": "WES-I__兒科__先天新陳代謝疾病",
+              "gene_count": 131
+            },
+            {
+              "name": "先天神經肌肉疾病",
+              "key": "WES-I__兒科__先天神經肌肉疾病",
+              "gene_count": 215
+            },
+            {
+              "name": "先天骨骼及結締組織疾病",
+              "key": "WES-I__兒科__先天骨骼及結締組織疾病",
+              "gene_count": 66
+            },
+            {
+              "name": "遺傳性腎臟疾病",
+              "key": "WES-I__兒科__遺傳性腎臟疾病",
+              "gene_count": 353
+            }
+          ]
+        },
+        {
+          "category": "皮膚科",
+          "panels": [
+            {
+              "name": "EB",
+              "key": "WES-I__皮膚科__EB",
+              "gene_count": 66
+            },
+            {
+              "name": "Ichthyosis",
+              "key": "WES-I__皮膚科__Ichthyosis",
+              "gene_count": 62
+            },
+            {
+              "name": "Inflammatory genodermatoses",
+              "key": "WES-I__皮膚科__Inflammatory_genodermatoses",
+              "gene_count": 144
+            },
+            {
+              "name": "Miscellaneous genodermatoses",
+              "key": "WES-I__皮膚科__Miscellaneous_genodermatoses",
+              "gene_count": 233
+            },
+            {
+              "name": "PPK and PC",
+              "key": "WES-I__皮膚科__PPK_and_PC",
+              "gene_count": 29
+            },
+            {
+              "name": "Skin tumoral genodermatoses",
+              "key": "WES-I__皮膚科__Skin_tumoral_genodermatoses",
+              "gene_count": 34
+            }
+          ]
+        },
+        {
+          "category": "眼科",
+          "panels": [
+            {
+              "name": "Lens_disease",
+              "key": "WES-I__眼科__Lens_disease",
+              "gene_count": 381
+            },
+            {
+              "name": "Retina_disease",
+              "key": "WES-I__眼科__Retina_disease",
+              "gene_count": 288
+            }
+          ]
+        },
+        {
+          "category": "神經科",
+          "panels": [
+            {
+              "name": "Young stroke",
+              "key": "WES-I__神經科__Young_stroke",
+              "gene_count": 224
+            }
+          ]
+        },
+        {
+          "category": "耳鼻喉科",
+          "panels": [
+            {
+              "name": "Non-syndromic hearing loss",
+              "key": "WES-I__耳鼻喉科__syndromic_hearing_loss",
+              "gene_count": 119
+            },
+            {
+              "name": "Syndromic hearing loss",
+              "key": "WES-I__耳鼻喉科__Syndromic_hearing_losss",
+              "gene_count": 47
+            }
+          ]
+        },
+        {
+          "category": "腫瘤醫學",
+          "panels": [
+            {
+              "name": "遺傳癌症",
+              "key": "WES-I__腫瘤醫學__遺傳癌症",
+              "gene_count": 209
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "WES-II",
+      "label": "WES-II",
+      "groups": [
+        {
+          "category": "兒科",
+          "panels": [
+            {
+              "name": "Inborn error of metabolism",
+              "key": "WES-II__兒科__Inborn_error_of_metabolism",
+              "gene_count": 1793
+            },
+            {
+              "name": "遺傳性心臟疾病",
+              "key": "WES-II__兒科__遺傳性心臟疾病",
+              "gene_count": 439
+            }
+          ]
+        },
+        {
+          "category": "皮膚科",
+          "panels": [
+            {
+              "name": "ED",
+              "key": "WES-II__皮膚科__ED",
+              "gene_count": 65
+            },
+            {
+              "name": "Epidermal genodermatoses",
+              "key": "WES-II__皮膚科__Epidermal_genodermatoses",
+              "gene_count": 41
+            },
+            {
+              "name": "Pigmentary genodermatoses",
+              "key": "WES-II__皮膚科__Pigmentary_genodermatoses",
+              "gene_count": 52
+            }
+          ]
+        },
+        {
+          "category": "眼科",
+          "panels": [
+            {
+              "name": "Corneal_dystrophy",
+              "key": "WES-II__眼科__Corneal_dystrophy",
+              "gene_count": 34
+            }
+          ]
+        },
+        {
+          "category": "神經科",
+          "panels": [
+            {
+              "name": "ALS, HSP",
+              "key": "WES-II__神經科__ALS_HSP",
+              "gene_count": 195
+            },
+            {
+              "name": "Myopathy, CMS",
+              "key": "WES-II__神經科__Myopathy_CMS",
+              "gene_count": 328
+            },
+            {
+              "name": "PD, dystonia",
+              "key": "WES-II__神經科__PD_dystonia",
+              "gene_count": 506
+            }
+          ]
+        },
+        {
+          "category": "耳鼻喉科",
+          "panels": [
+            {
+              "name": "Otosclerosis",
+              "key": "WES-II__耳鼻喉科__Otosclerosis",
+              "gene_count": 4
+            },
+            {
+              "name": "合併Non-syndromic & syndromic hearing loss",
+              "key": "WES-II__耳鼻喉科__syndromic__syndromic_hearing_loss",
+              "gene_count": 192
+            }
+          ]
+        },
+        {
+          "category": "腫瘤醫學",
+          "panels": [
+            {
+              "name": "心臟毒性",
+              "key": "WES-II__腫瘤醫學__心臟毒性",
+              "gene_count": 219
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "WGS",
+      "label": "WGS",
+      "groups": [
+        {
+          "category": "兒科",
+          "panels": [
+            {
+              "name": "Early onset syndromic epilepsy",
+              "key": "WGS__兒科__Early_onset_syndromic_epilepsy",
+              "gene_count": 1585
+            },
+            {
+              "name": "Growth panel",
+              "key": "WGS__兒科__Growth_panel",
+              "gene_count": 434
+            }
+          ]
+        },
+        {
+          "category": "神經科",
+          "panels": [
+            {
+              "name": "ALS HSP",
+              "key": "WGS__神經科__ALS_HSP",
+              "gene_count": 285
+            },
+            {
+              "name": "Dementia",
+              "key": "WGS__神經科__Dementia",
+              "gene_count": 334
+            },
+            {
+              "name": "Epilepsy",
+              "key": "WGS__神經科__Epilepsy",
+              "gene_count": 2989
+            },
+            {
+              "name": "Leukoencephalopathy",
+              "key": "WGS__神經科__Leukoencephalopathy",
+              "gene_count": 283
+            },
+            {
+              "name": "Neuropathy NMJ Myopathy",
+              "key": "WGS__神經科__Neuropathy_NMJ_Myopathy",
+              "gene_count": 636
+            },
+            {
+              "name": "PD Dystonia Chorea Ataxia Myoclonus",
+              "key": "WGS__神經科__PD_Dystonia_Chorea_Ataxia_Myoclonus",
+              "gene_count": 746
+            },
+            {
+              "name": "Stroke",
+              "key": "WGS__神經科__Stroke",
+              "gene_count": 556
+            }
+          ]
+        },
+        {
+          "category": "耳鼻喉科",
+          "panels": [
+            {
+              "name": "Hearing loss",
+              "key": "WGS__耳鼻喉科__Hearing_loss",
+              "gene_count": 229
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

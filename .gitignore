@@ -10,6 +10,13 @@ node_modules/
 tertiary_output/
 data/
 patient_list/
-phenotype_data/
+phenotype_data/*
+!phenotype_data/
+!phenotype_data/gene_panels/
+!phenotype_data/gene_panels/*.txt
+!phenotype_data/fixed_panels/
+!phenotype_data/fixed_panels/index.json
+!phenotype_data/fixed_panels/**/
+!phenotype_data/fixed_panels/**/*.txt
 _index.json
 secrets.env

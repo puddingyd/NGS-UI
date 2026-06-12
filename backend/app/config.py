@@ -80,15 +80,26 @@ PATIENT_LIST_DIR = Path(os.environ.get(
     NGS_UI_HOME / "patient_list",
 ))
 
-# Reference data for phenotype scoring + HPO search: hp.obo,
-# phenotype_to_genes.txt, gene_panels/*.txt (incl. user-created custom
-# panels). Lives under NGS_UI_HOME so it can be swapped without a
-# redeploy.
+# Reference data for phenotype scoring + HPO search: hp.obo and
+# phenotype_to_genes.txt stay under NGS_UI_HOME because they are large
+# deploy-time data. Fixed WES-I / WES-II / WGS panel files are small,
+# curated repo data so git pull can update them together with code.
 PHENO_DATA_DIR = Path(os.environ.get(
     "NGS_UI_PHENO_DATA_DIR",
     NGS_UI_HOME / "phenotype_data",
 ))
-GENE_PANELS_DIR = Path(os.environ.get("NGS_UI_GENE_PANELS_DIR", PHENO_DATA_DIR / "gene_panels"))
+GENE_PANELS_DIR = Path(os.environ.get(
+    "NGS_UI_GENE_PANELS_DIR",
+    REPO_ROOT / "phenotype_data" / "gene_panels",
+))
+FIXED_PANELS_DIR = Path(os.environ.get(
+    "NGS_UI_FIXED_PANELS_DIR",
+    REPO_ROOT / "phenotype_data" / "fixed_panels",
+))
+CUSTOM_GENE_PANELS_DIR = Path(os.environ.get(
+    "NGS_UI_CUSTOM_GENE_PANELS_DIR",
+    NGS_UI_HOME / "phenotype_data" / "custom_gene_panels",
+))
 
 # Delivered panel/HGNC/dead-zone package. It is intentionally small enough
 # to live in the repo, but can be swapped at deploy time after panel/HGNC
