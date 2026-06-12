@@ -40,7 +40,7 @@
 | HPO reference（`hp.obo`、`phenotype_to_genes.txt` 等大型檔） | `NGS_UI_HOME/phenotype_data/` | `NGS_UI_PHENO_DATA_DIR` |
 | 固定 WES-I / WES-II / WGS gene panels | `REPO_ROOT/phenotype_data/gene_panels/` | `NGS_UI_GENE_PANELS_DIR` |
 | 固定 panel UI index | `REPO_ROOT/phenotype_data/fixed_panels/` | `NGS_UI_FIXED_PANELS_DIR` |
-| 使用者自訂 gene panels | `NGS_UI_HOME/phenotype_data/custom_gene_panels/` | `NGS_UI_CUSTOM_GENE_PANELS_DIR` |
+| custom gene panels | `REPO_ROOT/phenotype_data/custom_panels/` | `NGS_UI_CUSTOM_GENE_PANELS_DIR` |
 | expanded reportable gene list / HGNC alias / dead-zone tables | `REPO_ROOT/ngs_panel_deadzone/` | `NGS_UI_PANEL_DEADZONE_DIR` |
 | OMIM.xlsx | `NGS_UI_HOME/OMIM/OMIM.xlsx` | `NGS_UI_OMIM_XLSX` |
 | GIAB stratification BED + `strata_manifest.json` | `NGS_UI_HOME/biotools/giab_stratification/` | `NGS_UI_GIAB_STRAT_DIR` |
@@ -57,7 +57,7 @@
 | Redis（job queue） | `redis://127.0.0.1:6379/0` | `REDIS_URL` |
 | Java / Exomiser 路徑等 | 見 `config.py` | `EXOMISER_HOME`、`LIRICAL_HOME`、`JAVA_BIN`… |
 
-`.gitignore`：`tertiary_output/`、`data/`、`patient_list/`、`phenotype_data/*`（但例外追蹤 `phenotype_data/gene_panels/*.txt`、`phenotype_data/fixed_panels/**/*.txt` 與 `phenotype_data/fixed_panels/index.json`）、`_index.json`、`__pycache__/`、`*.pyc`、`.venv/`、`node_modules/`。所以固定 panel 檔在 git 裡，HPO 大型 reference、樣本資料、roster、使用者 custom panels 都不在 git 裡，部署時要自己放到 `NGS_UI_HOME/` 底下。`OMIM.xlsx` 原本在 repo 根，已 `git rm` 移出（dev 機放在 `NGS_UI_HOME/OMIM/`）。
+`.gitignore`：`tertiary_output/`、`data/`、`patient_list/`、`phenotype_data/*`（但例外追蹤 `phenotype_data/gene_panels/*.txt`、`phenotype_data/custom_panels/*.txt`、`phenotype_data/fixed_panels/**/*.txt` 與 `phenotype_data/fixed_panels/index.json`）、`_index.json`、`__pycache__/`、`*.pyc`、`.venv/`、`node_modules/`。所以 fixed/custom panel 檔在 git 裡，HPO 大型 reference、樣本資料、roster 都不在 git 裡，部署時要自己放到 `NGS_UI_HOME/` 底下。`OMIM.xlsx` 原本在 repo 根，已 `git rm` 移出（dev 機放在 `NGS_UI_HOME/OMIM/`）。
 
 **每樣本目錄 `tertiary_output/{LIS_ID}/` 內容：**
 ```
@@ -81,7 +81,7 @@ analyses/{ver}/
 ```
 未登錄的樣本 = `tertiary_output/{X}/` 有 `snv_indel.annotated.tsv` 但沒有 `sample_metadata.json`；「載入新個案」modal 列這些。
 
-固定 WES-I / WES-II / WGS panel 檔現在保留在 repo 的 `phenotype_data/gene_panels/` 與 `phenotype_data/fixed_panels/`，會跟著 git pull 更新；`/phenotype/` 使用者建立的 custom panel 仍寫到 `$NGS_UI_HOME/phenotype_data/custom_gene_panels/`，不進 git。
+固定 WES-I / WES-II / WGS panel 檔與 custom panels 現在保留在 repo 的 `phenotype_data/gene_panels/`、`phenotype_data/fixed_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git pull 更新。
 
 ---
 
@@ -187,7 +187,7 @@ UI 流程：
 | `annotate_acmg_genebe.py` | GeneBe ACMG 第二意見：**整張 TSV**（預設不 filter）的變異對本機 `genebe_hg38.tsv.gz` 查 `acmg_score`/`acmg_criteria`（依 `#` header 欄名、非欄號；slim 7 欄與 full 55 欄通用），class 用本地 `classify(score)` 五級門檻，寫回 `GENEBE_ACMG_SCORE/_CRITERIA/_CLASS`（hit 覆寫、**miss 保留該行原值**、不碰 pipeline `ACMG_*`）。**取代舊 GeneBe API（pygenebe via apptainer）**：DB-only、無 API fallback、不需 creds/網路。預設在 `genebe_hg38.tsv.gz` 同目錄 lazy 建立 `genebe_hg38.sqlite` key-value cache；cache 依來源檔 path/size/mtime/ctime/schema 判斷 stale，並用 file lock + tmp + atomic replace 重建，所以上傳新 `.tsv.gz` 後下一次三級分析會自動更新 SQLite。SQLite 失敗才 fallback 舊的單次 streaming 掃整顆 DB（`--no-sqlite` 可強制；`--sqlite-strict` 可禁止 fallback）。可選 `--max-af` / `--candidate-bed` gate（預設關＝whole TSV）。DB 路徑 `--genebe-db` / `NGS_UI_GENEBE_DB`（預設 `$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz`），SQLite 路徑可用 `--sqlite-db` 覆寫。 |
 | `deploy_genebe_db.sh` | 一鍵部署 GeneBe DB：驗 bgzip 完整性 → 濾掉 pos 非整數的壞行（`--sort` 可一併排序）→ bgzip → `tabix -s1 -b2 -e2 -c '#'` 重建索引 → 探測 → **原子換檔**安裝到 `NGS_UI_GENEBE_DB`。給 daily rebuild 後一行部署、避免手動 clean+reindex / stale index。NGS-UI 本身串流讀 `.gz`、不靠 `.tbi`，但索引仍給 tabix 類工具用。用法 `scripts/deploy_genebe_db.sh [SRC.tsv.gz] [--dest DEST] [--sort]`。DB 建置端要求見 `docs/genebe_db_requirements.md`。 |
 | `compare_genebe_spliceai_coverage.py` | 診斷 GeneBe 本機資料庫的 SpliceAI 完整性：從 `genebe_hg38.tsv.gz` 抽樣 variant，使用目前 extra-VEP 的 VEP SpliceAI plugin 路徑重算 `SPLICEAI_MAX`，輸出 coverage summary、mismatch 明細與 run metadata，供評估是否能用本機 GeneBe DB 取代 extra-VEP / GeneBe API；正式估計建議 `--max-sites 100000 --sample-mode chrom-balanced`。 |
-| `import_fixed_panels.py` | `fixed_panel/WES-I.xlsx`、`WES-II.xlsx` 與 `other_panel/` → repo 內 `phenotype_data/fixed_panels/index.json` + `phenotype_data/gene_panels/*.txt`。WES Excel 只讀 `gene panel list` 標記列起始的基因區塊，不可把疾病名或資料來源列當成基因；顯示名稱只移除科別/級別前綴，需保留 `Non-syndromic` 這類 panel 名內的連字號。持久化 key 為相容既有 analysis metadata 仍沿用舊規則，和顯示名稱分開。更新來源 Excel 後要重新執行匯入並提交輸出。 |
+| `import_fixed_panels.py` | `reference/fixed_panel_sources/WES-I.xlsx`、`WES-II.xlsx` 與 `other_panel/` → repo 內 `phenotype_data/fixed_panels/index.json` + `phenotype_data/gene_panels/*.txt`。WES Excel 只讀 `gene panel list` 標記列起始的基因區塊，不可把疾病名或資料來源列當成基因；顯示名稱只移除科別/級別前綴，需保留 `Non-syndromic` 這類 panel 名內的連字號。持久化 key 為相容既有 analysis metadata 仍沿用舊規則，和顯示名稱分開。更新來源 Excel 後要重新執行匯入並提交輸出。 |
 | `annotate_dragen_mito_vcf.sh` | DRAGEN hard-filtered VCF 內含 chrM calls 時的 legacy mito wrapper。直接把 `{sample}.hard-filtered.vcf.gz` 交給 `parse_mito_vcf.py`，只取 `chrM/MT/chrMT` rows，`FORMAT/AF` 當 heteroplasmy、`FORMAT/SQ` 在缺 `INFO/TLOD` 時填入 TLOD 欄，輸出 `<outdir>/mito.annotated.tsv`。用法：`scripts/annotate_dragen_mito_vcf.sh --in /path/{sample}.hard-filtered.vcf.gz --sample {sample} --outdir tertiary_output/{sample}_legacy_mito`。 |
 | `annotate_mito_vcf.sh` + `parse_mito_vcf.py` | Legacy/手動補跑用的 **MITOMAP-only（無 VEP）** mito 轉檔。正式三級分析目前優先使用 pipeline v3.2 `04_mito/{sample}.mito.tsv`，由 worker 複製成 `mito.annotated.tsv`。舊 script 可把 GATK Mutect2-mito VCF → `mito.annotated.tsv`：純 Python 讀 .vcf.gz、Python 端拆 multiallelic、HGVS_M 本地算（SNV `m.{pos}{ref}>{alt}`；indel 簡化 del/ins/dup）、gene/locus 用 rCRS 座標表（`_MT_GENES`/`_gene_at`，D-loop→`MT-CR`/control、OriL gap→`MT-OLR`、其他 gap→intergenic）、consequence + AA change 從 MITOMAP 的 `Amino Acid Change` 欄推、MITOMAP 只做精確 `(pos,ref,alt)` 比對（cc 用 `Nucleotide Change`、rna 用 `<ref><pos><alt>` 的 `Allele`；不做 POS-only fallback）、dedupe by `(pos,ref,alt)` 留 TLOD 最高。`MITOMAP_DIR` env（預設 `${REF_DIR:-/home/pipeline/reference/hg38}/tertiary/mitomap`）要有 `mitomap_mutations_coding_control.tsv`、`mitomap_mutations_rna.tsv`（**Latin-1 編碼**，loader 用 latin-1 讀）。輸出 `mito.annotated.tsv`（不帶 sample 前綴，直接放 `tertiary_output/{LIS}/`）。用法：`scripts/annotate_mito_vcf.sh --in <mito.vcf.gz> --sample {LIS} --outdir tertiary_output/{LIS}`。 |
 | `migrate_to_versioned_layout.py` / `migrate_vcf_path.py` / `rewrite_vcf_paths.py` | 一次性的舊→新佈局遷移 |
@@ -200,13 +200,13 @@ UI 流程：
 `snv_indel.annotated.tsv` 主要來自 v3.1 `03_acmg/{SAMPLE_ID}.snv_indel.acmg.tsv`（65 欄），含 `CHROM POS REF ALT RS_ID GENE TRANSCRIPT TRANSCRIPT_TYPE HGVS_C HGVS_P CONSEQUENCE IMPACT EXON INTRON MANE_ALL CALLERS DP_DV AD_DV VAF_DV DP_HC AD_HC ZYGOSITY GT_DV GT_HC GNOMAD_G_AF GNOMAD_G_EAS_AF GNOMAD_E_AF GNOMAD_E_EAS_AF GNOMAD_E_AF_DBNSFP GNOMAD_E_EAS_AF_DBNSFP TG_EAS_AF CLINVAR_SIG CLINVAR_STARS CLINVAR_DN CLINVAR_SIGCONF CLINVAR_VARIATION_ID OMIM_IDS LOFTEE LOFTEE_FILTER LOFTEE_FLAGS LOFTOOL BAYESDEL_NOAF BAYESDEL_NOAF_PRED ALPHAMISSENSE ALPHAMISSENSE_PRED ESM1B ESM1B_PRED VARITY_R SIFT SIFT_PRED DANN PHACTBOOST PHYLOP100 GERP PKNN_LLR PKNN_EVIDENCE PANGOLIN_SCORE PANGOLIN_DETAIL DOMAINS SWISSPROT HGNC_ID ACMG_CRITERIA ACMG_SCORE ACMG_CLASS ACMG_NOTES`；NGS-UI stop-gaps 可能再補 `GENEBE_*`、`METARNN`、`SPLICEAI_MAX`、`IN_PANEL` 等 UI 欄位。
 CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一列、split=每 gene 一列；adapter `annotsv_tsv.py` 用 index-based 解析只取 ~30 欄、聚合 full+split）。
 
-`tertiary_code/` 裡有次級 pipeline 的 Nextflow（`main_tertiary.nf`、`modules/`、`scripts/parse_vep_csq.py` 等）+ config（`dgm` profile = NCKU 正式環境 `/home/pipeline/reference/hg38`、`/home/pipeline/nextflow_containers`、`--bind /home`；`local` profile = `/scratch/pylin1991/...`、`/data/pylin1991/nf-containers`）—— 純參考用。UI worker 使用正式環境 `/home/pipeline/tertiary_code/{main_tertiary.nf,nextflow_tertiary.config,scripts}`（config 可用 `NGS_UI_TERTIARY_CONFIG` 覆寫）；PGx checkbox 預設勾選，取消時 Nextflow 加 `--run_pgx false`；repo 內的 workflow/scripts 版本可能落後，不可整包覆寫正式 `scripts_dir`。
+三級分析 Nextflow code 不再保留 repo 快照；UI worker 使用正式環境 `/home/pipeline/tertiary_code/{main_tertiary.nf,nextflow_tertiary.config,scripts}`（config 可用 `NGS_UI_TERTIARY_CONFIG` 覆寫）。PGx checkbox 預設勾選，取消時 Nextflow 加 `--run_pgx false`。
 
 ---
 
 ## 8. 輸入臨床表徵工具（`/phenotype/`）
 
-`frontend/phenotype/`（從舊的 GitHub-backed hpo-docs 改寫，砍掉 GitHub OAuth/terminal/run-analysis）。**不需登入**，由 NGS-UI 伺服器靜態服務在 `/phenotype/`（`main.py` 加 `GET /phenotype` → 307 redirect `/phenotype/`，註冊在 StaticFiles mount 之前）。功能：HPO term 搜尋（Fuse.js + 本地 `hpo_data.json` 3.5MB，**在 repo 裡** `frontend/phenotype/`）；Gene Panels 搜尋（打 `GET /api/phenotype-tool/panels`，合併 repo fixed panels + runtime custom panels）；**Custom panel**（名稱 + 基因清單 textarea + weight；按「產生 phenotype.txt」時 POST `/api/phenotype-tool/custom-panel` 建檔到 `NGS_UI_CUSTOM_GENE_PANELS_DIR`、即時更新 `phenotype_scorer` 記憶體、名稱自動清理成 `[A-Za-z0-9_-]{1,64}`、衝突 409、基因**不大寫**（`C7orf50` 保留小寫）、case-sensitive 去重）。「產生 phenotype.txt」一鍵：建 custom panel → 組 TSV → POST `/api/phenotype-tool/save` 寫到 `patient_phenotype/`。MRN 或 LIS_ID 至少填一個；檔名：兩個都填 `{code}_{mrn}_phenotype.txt`、只 LIS_ID `{code}_phenotype.txt`、只 MRN `{mrn}_phenotype.txt`。「載入既有資料」用 `GET /api/phenotype-tool/load?code=&mrn=`。phenotype.txt 格式：`phenotype\thpo_name\tweight` 表頭 + `HP:xxxxxxx\t<name>\t<weight>` / `<panel_name>\t\t<weight>` 列（`phenotype_io.parse` 讀這個）。
+`frontend/phenotype/`（從舊的 GitHub-backed hpo-docs 改寫，砍掉 GitHub OAuth/terminal/run-analysis）。**不需登入**，由 NGS-UI 伺服器靜態服務在 `/phenotype/`（`main.py` 加 `GET /phenotype` → 307 redirect `/phenotype/`，註冊在 StaticFiles mount 之前）。功能：HPO term 搜尋（Fuse.js + 本地 `hpo_data.json` 3.5MB，**在 repo 裡** `frontend/phenotype/`）；Gene Panels 搜尋（打 `GET /api/phenotype-tool/panels`，合併 repo fixed panels + repo custom panels）；**Custom panel**（名稱 + 基因清單 textarea + weight；按「產生 phenotype.txt」時 POST `/api/phenotype-tool/custom-panel` 建檔到 repo 內 `NGS_UI_CUSTOM_GENE_PANELS_DIR`、即時更新 `phenotype_scorer` 記憶體、名稱自動清理成 `[A-Za-z0-9_-]{1,64}`、衝突 409、基因**不大寫**（`C7orf50` 保留小寫）、case-sensitive 去重）。「產生 phenotype.txt」一鍵：建 custom panel → 組 TSV → POST `/api/phenotype-tool/save` 寫到 `patient_phenotype/`。MRN 或 LIS_ID 至少填一個；檔名：兩個都填 `{code}_{mrn}_phenotype.txt`、只 LIS_ID `{code}_phenotype.txt`、只 MRN `{mrn}_phenotype.txt`。「載入既有資料」用 `GET /api/phenotype-tool/load?code=&mrn=`。phenotype.txt 格式：`phenotype\thpo_name\tweight` 表頭 + `HP:xxxxxxx\t<name>\t<weight>` / `<panel_name>\t\t<weight>` 列（`phenotype_io.parse` 讀這個）。
 
 主畫面的 Patient phenotype card 與「載入新個案」modal 都有 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`；固定 panel chip 由 `GET /api/phenotype-tool/fixed-panels` 載入，勾選後以 weight=1 寫入各自的 panels working copy，Other panel typeahead 則排除固定 panel key，避免同一個 panel 出現兩個入口。Patient phenotype、新個案 modal 與 `/phenotype/` 工具的 HPO / panel 下拉都支援鍵盤上下鍵與 Enter 選取；dropdown 開啟時 Enter 只會選項目，不會送出載入個案或開始分析。Patient phenotype 和 Comment 中間的 Dead zone card 依目前 HPO + panel gene set 顯示 cohort dead exons；WES 用 20X，WGS（in-house/DRAGEN 都一樣）用 DRAGEN 15X；主畫面依臨床門檻下的 CDS dead percentage 由高到低排序並顯示比例，字色為 ≥70% 深紅、50-70% 紅、30-50% 橘、其餘黑色，預設只顯示前 10 列，可用小三角形展開全部。平台啟動讀取索引、載入個案核心資料或登錄新個案期間會顯示不可用背景點擊或 ESC 誤關閉的「資料載入中」遮罩；Exomiser/LIRICAL job 完成後的 sample refresh 使用 silent reload，不再用全頁遮罩阻擋判讀。
 
@@ -235,7 +235,7 @@ CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一
 
 ## 11. 已知踩雷 / 慣例
 
-- 大型 HPO reference 仍用 `config.PHENO_DATA_DIR`（= `NGS_UI_HOME/phenotype_data`，**無 fallback** —— dev 機部署時要放 `hp.obo`、`phenotype_to_genes.txt` 等，不然 HPO 搜尋空、pheno_score 全 0）。固定 panel data 改用 repo 內 `GENE_PANELS_DIR` / `FIXED_PANELS_DIR`，custom panel 用 runtime `CUSTOM_GENE_PANELS_DIR`。
+- 大型 HPO reference 仍用 `config.PHENO_DATA_DIR`（= `NGS_UI_HOME/phenotype_data`，**無 fallback** —— dev 機部署時要放 `hp.obo`、`phenotype_to_genes.txt` 等，不然 HPO 搜尋空、pheno_score 全 0）。fixed/custom panel data 改用 repo 內 `GENE_PANELS_DIR` / `FIXED_PANELS_DIR` / `CUSTOM_GENE_PANELS_DIR`。
 - MITOMAP 兩個 TSV 是 **Latin-1**，不是 UTF-8（`0xa0` nbsp），loader 用 `encoding="latin-1"`。
 - `parse_mito_vcf.py` 不做 POS-only MITOMAP fallback（不然 `m.114C>A` 會被配到 `m.114C>T` 的 disease，等等）。
 - `.modal-card input[type=text]` catch-all 已排除 `.variant-card`/`.cnv-sv-card` 裡的 input。

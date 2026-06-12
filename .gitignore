@@ -18,5 +18,7 @@ phenotype_data/*
 !phenotype_data/fixed_panels/index.json
 !phenotype_data/fixed_panels/**/
 !phenotype_data/fixed_panels/**/*.txt
+!phenotype_data/custom_panels/
+!phenotype_data/custom_panels/*.txt
 _index.json
 secrets.env

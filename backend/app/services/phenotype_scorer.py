@@ -13,7 +13,7 @@ the same lookup table by treating the panel name as a synthetic
 Loaded once at startup:
   - phenotype_data/phenotype_to_genes.txt  (~1M rows, 65 MB)
   - repo phenotype_data/gene_panels/*.txt  (fixed panels, versioned in git)
-  - runtime custom_gene_panels/*.txt       (user-created panels)
+  - repo phenotype_data/custom_panels/*.txt  (custom panels, versioned in git)
 
 A reload happens on demand via reload_db() (no auto-watch).
 """

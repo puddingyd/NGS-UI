@@ -32,7 +32,7 @@ NGS_UI/                    ← NGS_UI_HOME
 │                             roh_summary.json, analyses/{ver}/...
 ├── patient_phenotype/     ← {LIS_ID}_{MRN}_phenotype.txt（自動帶入 HPO）
 ├── patient_list/          ← 上傳的「未完成報告清單」xlsx + 衍生 roster.json
-├── phenotype_data/        ← git-tracked fixed panel index + gene_panels/*.txt
+├── phenotype_data/        ← git-tracked fixed/custom panels; large HPO refs live in NGS_UI_HOME
 ├── ngs_panel_deadzone/    ← expanded reportable gene list、HGNC alias map、dead-zone tables
 ├── OMIM/OMIM.xlsx         ← OMIM 疾病註解表（缺檔則 Disease 欄留空）
 └── data/                  ← server runtime state（users.db, jobs/, ...）
@@ -105,7 +105,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_PHENO_DATA_DIR` | `$NGS_UI_HOME/phenotype_data` | hp.obo / phenotype_to_genes 等大型 HPO reference |
 | `NGS_UI_GENE_PANELS_DIR` | `REPO_ROOT/phenotype_data/gene_panels` | git-tracked fixed panel gene lists |
 | `NGS_UI_FIXED_PANELS_DIR` | `REPO_ROOT/phenotype_data/fixed_panels` | git-tracked fixed panel UI index |
-| `NGS_UI_CUSTOM_GENE_PANELS_DIR` | `$NGS_UI_HOME/phenotype_data/custom_gene_panels` | `/phenotype/` 使用者自訂 panel |
+| `NGS_UI_CUSTOM_GENE_PANELS_DIR` | `REPO_ROOT/phenotype_data/custom_panels` | git-tracked custom panel gene lists |
 | `NGS_UI_PANEL_DEADZONE_DIR` | `REPO_ROOT/ngs_panel_deadzone` | expanded reportable gene list、HGNC alias map、WES/WGS dead-zone tables |
 | `NGS_UI_OMIM_XLSX` | `$NGS_UI_HOME/OMIM/OMIM.xlsx` | OMIM 疾病註解（缺檔 = 停用） |
 | `NGS_UI_BIOTOOLS_DIR` | `$NGS_UI_HOME/biotools` | Exomiser / LIRICAL |
@@ -117,7 +117,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | RQ 佇列 |
 | `NGS_UI_EMR_CLIENT_ID` | `""`（空 = 停用所有 EMR 路徑） | NCKU 內網 HIS / APIM |
 
-固定 WES-I / WES-II / WGS panel 檔現在保留在 git 內，server `git pull` 後會直接更新；使用者自訂 panel 仍寫到 `$NGS_UI_HOME/phenotype_data/custom_gene_panels/`，不進 git。
+固定 WES-I / WES-II / WGS panel 與 custom panel 檔現在都保留在 git 內，server `git pull` 後會直接更新。
 
 ---
 
@@ -182,7 +182,7 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 
 主畫面的 Patient phenotype card 也提供 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`；固定 panel 可直接點 chip 選取，其他 panel 仍可用 typeahead 搜尋。
 
-固定 panel 的來源是 `fixed_panel/WES-I.xlsx`、`fixed_panel/WES-II.xlsx` 與 `fixed_panel/other_panel/`。更新 Excel 後執行 `PYTHONPATH=backend python scripts/import_fixed_panels.py`，會同步重建三個入口共用、且會進 git 的 `phenotype_data/fixed_panels/index.json` 與 `phenotype_data/gene_panels/*.txt`。WES Excel 只會匯入 `gene panel list` 標記列起始的基因區塊，避免把疾病名或資料來源列誤算成基因。
+固定 panel 的來源是 `reference/fixed_panel_sources/WES-I.xlsx`、`reference/fixed_panel_sources/WES-II.xlsx` 與 `reference/fixed_panel_sources/other_panel/`。更新 Excel 後執行 `PYTHONPATH=backend python scripts/import_fixed_panels.py`，會同步重建三個入口共用、且會進 git 的 `phenotype_data/fixed_panels/index.json` 與 `phenotype_data/gene_panels/*.txt`。WES Excel 只會匯入 `gene panel list` 標記列起始的基因區塊，避免把疾病名或資料來源列誤算成基因。
 
 ---
 
@@ -238,9 +238,9 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 
 ## 7. 注意事項
 
-- **不要把病人資料 / 大檔 commit 進 git**：`.gitignore` 已排除 `tertiary_output/`、`data/`、`patient_list/`、`phenotype_data/` 內的大型 HPO reference、`_index.json`；但固定 panel 的 `phenotype_data/fixed_panels/` 與 `phenotype_data/gene_panels/` 例外追蹤。
+- **不要把病人資料 / 大檔 commit 進 git**：`.gitignore` 已排除 `tertiary_output/`、`data/`、`patient_list/`、`phenotype_data/` 內的大型 HPO reference、`_index.json`；但固定與自訂 panel 的 `phenotype_data/fixed_panels/`、`phenotype_data/gene_panels/` 與 `phenotype_data/custom_panels/` 例外追蹤。
 - 首頁歡迎文字與版本紀錄放在 `frontend/VERSION.md`，前端啟動時會讀取並顯示在尚未載入個案的首頁。之後若有影響判讀流程、報告輸出、資料載入或主要工具入口的更新，需評估是否同步更新這份版本紀錄。
-- 大型 HPO reference 必須放在 `NGS_UI_PHENO_DATA_DIR`（`hp.obo`、`phenotype_to_genes.txt` 等）；固定 panel data 則在 repo 的 `phenotype_data/fixed_panels/` 與 `phenotype_data/gene_panels/`，會跟著 git 更新。
+- 大型 HPO reference 必須放在 `NGS_UI_PHENO_DATA_DIR`（`hp.obo`、`phenotype_to_genes.txt` 等）；固定與自訂 panel data 則在 repo 的 `phenotype_data/fixed_panels/`、`phenotype_data/gene_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git 更新。
 - EMR 相關功能預設停用，需設 `NGS_UI_EMR_CLIENT_ID` 才會啟用，且只在內網可達。
 - `/api/phenotype-tool/*` 與 `/api/healthz` 是刻意公開無認證；`/api/patient_list` 與其餘 `/api/*` 需登入。
 - 大型 JSON response 會在瀏覽器支援時自動 gzip；SNV parse + phenotype / Exomiser / LIRICAL / OMIM join 使用有上限的 process-local LRU cache，輸入 TSV 或 sidecar 更新後自動失效。

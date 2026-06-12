@@ -98,7 +98,7 @@ FIXED_PANELS_DIR = Path(os.environ.get(
 ))
 CUSTOM_GENE_PANELS_DIR = Path(os.environ.get(
     "NGS_UI_CUSTOM_GENE_PANELS_DIR",
-    NGS_UI_HOME / "phenotype_data" / "custom_gene_panels",
+    REPO_ROOT / "phenotype_data" / "custom_panels",
 ))
 
 # Delivered panel/HGNC/dead-zone package. It is intentionally small enough

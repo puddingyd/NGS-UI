@@ -3,7 +3,7 @@
 spreadsheets into the gene-panel format the UI already understands,
 plus a JSON index so the new "Fixed panels" UI tabs can list them.
 
-Sources (under repo's fixed_panel/):
+Sources (under repo's reference/fixed_panel_sources/):
   WES-I.xlsx                        — 6 sheets, one per 科別 (skin /
                                       eye / ENT / pediatric / neuro /
                                       oncology). Each column = a panel:
@@ -341,8 +341,8 @@ def _write_panels(records: list[dict], out_root: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--src", default=str(Path(__file__).resolve().parent.parent / "fixed_panel"),
-                    help="repo's fixed_panel/ dir (default: ../fixed_panel from this script)")
+    ap.add_argument("--src", default=str(Path(__file__).resolve().parent.parent / "reference" / "fixed_panel_sources"),
+                    help="repo's reference/fixed_panel_sources/ dir")
     ap.add_argument("--out", default=str(FIXED_PANELS_DIR),
                     help="output dir for the panel txt + index.json (default: phenotype_data/fixed_panels/)")
     args = ap.parse_args()
