@@ -186,7 +186,7 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 
 HPO reference、固定 panel、custom panel 與既有 `pheno_score.tsv` 讀入時都會先透過 `ngs_panel_deadzone` 的 HGNC alias map 轉成 canonical gene symbol；從 `/phenotype/` 建立 custom panel 時，後端也會先套用 `ngs_panel_deadzone/panel/panel_gene_aliases.tsv` 的安全 alias 再寫入 repo 內 panel 檔。`panel_gene_aliases.tsv` 由 HGNC 官方 `reference/hgnc/hgnc_complete_set.txt`（`prev_symbol` / 唯一 `alias_symbol`）與 `reference/hgnc/withdrawn.txt`（唯一 merged/split replacement）加上 `reference/hgnc/manual_panel_aliases.tsv` 產生，重建指令為 `python scripts/build_hgnc_panel_aliases.py`；衝突項輸出到 `docs/ops/hgnc_alias_conflicts.tsv`，既有 custom panel 仍非 current HGNC 的項目列在 `docs/ops/custom_panel_hgnc_review_20260613.tsv`。Custom panel 檔案第一行可用 `#source:` 記錄來源（空白也可），loader 會略過註解行；`/phenotype/` 的 gene-list drawer 會顯示這個 source。SNV/CNV/SV/Mito 變異端也用同一套 canonicalization，再做 `pheno_score` / `in_panel` join。
 
-`/phenotype/` 的 HPO term、fixed panel chip 與 panel 搜尋列都有「查看」按鈕，會呼叫 `GET /api/phenotype-tool/gene-list?kind=hpo|panel&key=...`，在右側 drawer 顯示 canonical gene list、來源、搜尋與複製功能，不把完整基因清單塞進主畫面。
+`/phenotype/` 的 HPO term、fixed panel chip 與 panel 搜尋列都有「查看」按鈕，會呼叫 `GET /api/phenotype-tool/gene-list?kind=hpo|panel&key=...`，在右側 drawer 顯示 canonical gene list、來源、清單內篩選與複製功能，不把完整基因清單塞進主畫面。Topbar 的「搜尋基因」會呼叫 `GET /api/phenotype-tool/gene-memberships?gene=...`，反查某個 canonical gene 出現在哪些 HPO terms / panels。單一 HPO gene-list 查詢在 full phenotype scorer cache 尚未預熱完成時會走 fast path，只掃該 HPO term，避免第一次點「查看」被整份 `phenotype_to_genes.txt` 載入卡住。
 
 ---
 

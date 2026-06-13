@@ -1,41 +1,28 @@
 panel	line	entry	category	reason	candidate	suggested_action
-HIE.txt	3812	12-Sep	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	SEPTIN12	can_auto_fix_with_curated_rule
-HIE.txt	3813	9-Sep	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	SEPTIN9	can_auto_fix_with_curated_rule
-Monosomy_7_syndrome_panel.txt	29	JAGN	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	JAGN1	can_auto_fix_with_curated_rule
 Monosomy_7_syndrome_panel.txt	30	TCRG1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	TCIRG1|TCERG1|TCERG1L|TRGV1|TRGJ1	manual_review_source
-congenital_immunodeficiency_panel.txt	132	TNFS12	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	TNFSF12	can_auto_fix_with_curated_rule
 congenital_immunodeficiency_panel.txt	194	CLBP	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	LBP	manual_review_source
 congenital_immunodeficiency_panel.txt	239	HMOX	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	HMOX1/HMOX2	manual_review_source
 congenital_immunodeficiency_panel.txt	269	PSEN	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	PSEN1/PSEN2	manual_review_source
 congenital_immunodeficiency_panel.txt	299	ALP1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ASLP1|APLP1|ALPK1|RALBP1|PARLP1	manual_review_source
 congenital_immunodeficiency_panel.txt	328	TNFAIP	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	TNFAIP1/2/3/6/8	manual_review_source
-febrile_encephalopathy.txt	6	HNPRU	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	HNRNPU	can_auto_fix_with_curated_rule
-growth_panel.txt	216	KMT2D/MLL2	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	KMT2D	can_auto_fix_with_curated_rule
-hearing_loss.txt	76	KNCQ1	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	KCNQ1	can_auto_fix_with_curated_rule
 heart_disease.txt	76	AH1	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	AHI1?	manual_review_source
 heart_disease.txt	111	PDE60	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	PDE6B/C/D/G/H?	manual_review_source
 heart_disease.txt	112	POC18	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	POC1A/POC1B?	manual_review_source
-heart_disease.txt	237	LBD3	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	LDB3	can_auto_fix_with_curated_rule
-heart_disease.txt	323	CDKNIC	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	CDKN1C	can_auto_fix_with_curated_rule
 heart_disease.txt	329	ESC02	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ESCO2	manual_review_source
 heart_disease.txt	330	RDR2	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
 heart_disease.txt	427	AH1	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	AHI1?	manual_review_source
 heart_disease.txt	462	PDE60	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	PDE6B/C/D/G/H?	manual_review_source
 heart_disease.txt	463	POC18	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	POC1A/POC1B?	manual_review_source
-hereditary_cancer.txt	104	TNFRSF6 (FAS)	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	FAS	can_auto_fix_with_curated_rule
 inborn_error.txt	82	ALDH3A2M	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ALDH3A2|ALDH3B2|ALDH3A1|ALDH1A2	manual_review_source
 inborn_error.txt	199	B3GNT1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	B3GNT2P1|B3GALNT1|B3GNT9|B3GNT8|B3GNT7	manual_review_source
 inborn_error.txt	523	DY	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	DYM	manual_review_source
-inborn_error.txt	662	GBE=GBE1	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	GBE1	can_auto_fix_with_curated_rule
 inborn_error.txt	695	GM1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	TGM1|PGM1|GRM1|GFM1|GCM1	manual_review_source
 inborn_error.txt	822	IFT64	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	IFT74|IFT56|IFT54|IFT46|IFT43	manual_review_source
 inborn_error_panel.txt	130	ALDH3A2M	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ALDH3A2|ALDH3B2|ALDH3A1|ALDH1A2	manual_review_source
 inborn_error_panel.txt	284	B3GNT1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	B3GNT2P1|B3GALNT1|B3GNT9|B3GNT8|B3GNT7	manual_review_source
 inborn_error_panel.txt	706	DY	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	DYM	manual_review_source
-inborn_error_panel.txt	889	GBE=GBE1	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	GBE1	can_auto_fix_with_curated_rule
 inborn_error_panel.txt	941	GM1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	TGM1|PGM1|GRM1|GFM1|GCM1	manual_review_source
 inborn_error_panel.txt	1127	IFT64	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	IFT74|IFT56|IFT54|IFT46|IFT43	manual_review_source
-neutropenia_panel.txt	168	CSFR2B	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	CSF2RB	can_auto_fix_with_curated_rule
 proactive.txt	403	Mitochondrial genes	non_gene_group_label	Panel entry is a group label, not a gene symbol.		remove_or_expand_to_actual_genes
 renal_disease_panel.txt	245	GNASGAS1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	GNAS-AS1	manual_review_source
 retina_disease.txt	8	ABRI	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
@@ -265,22 +252,15 @@ retina_disease.txt	966	VMD3	retina_non_hgnc_code	Retina panel contains many dise
 retina_disease.txt	967	VRD1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
 retina_disease.txt	976	WGN1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
 retina_disease.txt	979	Xp21-q21	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
-skeletal_dysplasia_ajhg2023.txt	56	CCD134	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	CCDC134	can_auto_fix_with_curated_rule
 skeletal_dysplasia_ajhg2023.txt	70	CGAF	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	CGA	manual_review_source
 skeletal_dysplasia_ajhg2023.txt	113	DHPAT	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
 skeletal_dysplasia_ajhg2023.txt	178	FUCA	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	FUCA2|FUCA1	manual_review_source
-skeletal_dysplasia_ajhg2023.txt	205	GREM1, FMN1	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	GREM1|FMN1	split_into_multiple_lines
-skeletal_dysplasia_ajhg2023.txt	223	HSGNAT	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	HGSNAT	can_auto_fix_with_curated_rule
-skeletal_dysplasia_ajhg2023.txt	238	IFT40	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	IFT140|IFT80|IFT74|IFT54|IFT46	manual_review_source
-skeletal_dysplasia_ajhg2023.txt	279	MAENLI	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	MAEL	manual_review_source
-skeletal_dysplasia_ajhg2023.txt	324	NKX3¡V2	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
-skeletal_dysplasia_ajhg2023.txt	465	SULF1, SLCO5A1	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	SULF1|SLCO5A1	split_into_multiple_lines
-skeletal_dysplasia_ajhg2023.txt	473	TBX3, TBX5	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	TBX3|TBX5	split_into_multiple_lines
-skeletal_dysplasia_ajhg2023.txt	511	TRPS1, EXT1	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	TRPS1|EXT1	split_into_multiple_lines
+skeletal_dysplasia_ajhg2023.txt	239	IFT40	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	IFT140|IFT80|IFT74|IFT54|IFT46	manual_review_source
+skeletal_dysplasia_ajhg2023.txt	280	MAENLI	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	MAEL	manual_review_source
+skeletal_dysplasia_ajhg2023.txt	325	NKX3¡V2	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
 val55.txt	6	OARS1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	OAS1|YARS1|WARS1|VARS1|TARS1	manual_review_source
 young_stroke.txt	5	ABCG6	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ABCG8|ABCG5|ABCG4|ABCG2|ABCG1	manual_review_source
 young_stroke.txt	6	ABCG7	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ABCG8|ABCG5|ABCG4|ABCG2|ABCG1	manual_review_source
-young_stroke.txt	19	ADPRA2A	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	ADRA2A	can_auto_fix_with_curated_rule
 young_stroke.txt	22	AK097927	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
 young_stroke.txt	45	B2GP1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
 young_stroke.txt	62	COX1	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	MT-CO1?	manual_review_source
@@ -291,4 +271,3 @@ young_stroke.txt	223	REG2	symbol_like_unresolved	Not present as HGNC-current, un
 young_stroke.txt	224	REST-NOA1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
 young_stroke.txt	251	SMCR3	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	SMC3|SMR3B|SMR3A|SMCR8|SMCR5	manual_review_source
 young_stroke.txt	295	VAMP6	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	VAMP8|VAMP7|VAMP5|VAMP4|VAMP3	manual_review_source
-young_stroke.txt	308	ZFP783	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	ZNF783	can_auto_fix_with_curated_rule

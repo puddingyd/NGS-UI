@@ -14,7 +14,7 @@
 - 固定 WES-I / WES-II / WGS panel data 與 custom panel data 改為 repo 內版本化資料，server 更新程式碼時會一併更新 panel。
 - HPO/panel gene set、既有 `pheno_score.tsv` 與 SNV/CNV/SV/Mito 變異 gene 統一以 HGNC canonical symbol 做 `pheno_score` / `in_panel` 比對，降低 VEP 舊名或 panel alias 漏算。
 - Custom panel 匯入與儲存時會先套用安全的 HGNC-current alias 轉換；alias 來源改用 HGNC 官方 complete set、withdrawn table 與人工確認表合併產生，無法唯一確認的項目會保留原字串供人工確認。
-- 輸入臨床表徵工具新增 HPO / panel gene-list drawer，可查看、搜尋與複製各 HPO term 或 panel 的 canonical gene list；custom panel 檔案新增 `#source:` 來源欄位。
+- 輸入臨床表徵工具新增 HPO / panel gene-list drawer，可查看、篩選與複製各 HPO term 或 panel 的 canonical gene list；另新增 gene lookup，可反查某 gene 出現在哪些 HPO terms / panels，單一 HPO 查看也加速避免等待整份 phenotype cache 預熱。
 - 主畫面 Dead zone 卡片新增臨床門檻下的 CDS dead percentage，並依比例由高到低排序；≥70% 深紅、50-70% 紅、30-50% 橘，其餘黑色。
 - IGV alignment track height 調整為 SNV/Indel 與 Mito 300，CNV/SV 50。
 - 三級分析 log 將尾段統一顯示為 post-processing；Nextflow process 完成時間改附在原 stdout 行尾並以分鐘顯示，進度百分比保持單調遞增。

@@ -1,41 +1,28 @@
 panel	line	entry	canonical_attempt	note
-HIE.txt	3812	12-Sep	12-Sep	not_current_hgnc_after_official_aliases
-HIE.txt	3813	9-Sep	9-Sep	not_current_hgnc_after_official_aliases
-Monosomy_7_syndrome_panel.txt	29	JAGN	JAGN	not_current_hgnc_after_official_aliases
 Monosomy_7_syndrome_panel.txt	30	TCRG1	TCRG1	not_current_hgnc_after_official_aliases
-congenital_immunodeficiency_panel.txt	132	TNFS12	TNFS12	not_current_hgnc_after_official_aliases
 congenital_immunodeficiency_panel.txt	194	CLBP	CLBP	not_current_hgnc_after_official_aliases
 congenital_immunodeficiency_panel.txt	239	HMOX	HMOX	not_current_hgnc_after_official_aliases
 congenital_immunodeficiency_panel.txt	269	PSEN	PSEN	not_current_hgnc_after_official_aliases
 congenital_immunodeficiency_panel.txt	299	ALP1	ALP1	not_current_hgnc_after_official_aliases
 congenital_immunodeficiency_panel.txt	328	TNFAIP	TNFAIP	not_current_hgnc_after_official_aliases
-febrile_encephalopathy.txt	6	HNPRU	HNPRU	not_current_hgnc_after_official_aliases
-growth_panel.txt	216	KMT2D/MLL2	KMT2D/MLL2	not_current_hgnc_after_official_aliases
-hearing_loss.txt	76	KNCQ1	KNCQ1	not_current_hgnc_after_official_aliases
 heart_disease.txt	76	AH1	AH1	not_current_hgnc_after_official_aliases
 heart_disease.txt	111	PDE60	PDE60	not_current_hgnc_after_official_aliases
 heart_disease.txt	112	POC18	POC18	not_current_hgnc_after_official_aliases
-heart_disease.txt	237	LBD3	LBD3	not_current_hgnc_after_official_aliases
-heart_disease.txt	323	CDKNIC	CDKNIC	not_current_hgnc_after_official_aliases
 heart_disease.txt	329	ESC02	ESC02	not_current_hgnc_after_official_aliases
 heart_disease.txt	330	RDR2	RDR2	not_current_hgnc_after_official_aliases
 heart_disease.txt	427	AH1	AH1	not_current_hgnc_after_official_aliases
 heart_disease.txt	462	PDE60	PDE60	not_current_hgnc_after_official_aliases
 heart_disease.txt	463	POC18	POC18	not_current_hgnc_after_official_aliases
-hereditary_cancer.txt	104	TNFRSF6 (FAS)	TNFRSF6 (FAS)	not_current_hgnc_after_official_aliases
 inborn_error.txt	82	ALDH3A2M	ALDH3A2M	not_current_hgnc_after_official_aliases
 inborn_error.txt	199	B3GNT1	B3GNT1	not_current_hgnc_after_official_aliases
 inborn_error.txt	523	DY	DY	not_current_hgnc_after_official_aliases
-inborn_error.txt	662	GBE=GBE1	GBE=GBE1	not_current_hgnc_after_official_aliases
 inborn_error.txt	695	GM1	GM1	not_current_hgnc_after_official_aliases
 inborn_error.txt	822	IFT64	IFT64	not_current_hgnc_after_official_aliases
 inborn_error_panel.txt	130	ALDH3A2M	ALDH3A2M	not_current_hgnc_after_official_aliases
 inborn_error_panel.txt	284	B3GNT1	B3GNT1	not_current_hgnc_after_official_aliases
 inborn_error_panel.txt	706	DY	DY	not_current_hgnc_after_official_aliases
-inborn_error_panel.txt	889	GBE=GBE1	GBE=GBE1	not_current_hgnc_after_official_aliases
 inborn_error_panel.txt	941	GM1	GM1	not_current_hgnc_after_official_aliases
 inborn_error_panel.txt	1127	IFT64	IFT64	not_current_hgnc_after_official_aliases
-neutropenia_panel.txt	168	CSFR2B	CSFR2B	not_current_hgnc_after_official_aliases
 proactive.txt	403	Mitochondrial genes	Mitochondrial genes	not_current_hgnc_after_official_aliases
 renal_disease_panel.txt	245	GNASGAS1	GNASGAS1	not_current_hgnc_after_official_aliases
 retina_disease.txt	8	ABRI	ABRI	not_current_hgnc_after_official_aliases
@@ -265,22 +252,15 @@ retina_disease.txt	966	VMD3	VMD3	not_current_hgnc_after_official_aliases
 retina_disease.txt	967	VRD1	VRD1	not_current_hgnc_after_official_aliases
 retina_disease.txt	976	WGN1	WGN1	not_current_hgnc_after_official_aliases
 retina_disease.txt	979	Xp21-q21	Xp21-q21	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	56	CCD134	CCD134	not_current_hgnc_after_official_aliases
 skeletal_dysplasia_ajhg2023.txt	70	CGAF	CGAF	not_current_hgnc_after_official_aliases
 skeletal_dysplasia_ajhg2023.txt	113	DHPAT	DHPAT	not_current_hgnc_after_official_aliases
 skeletal_dysplasia_ajhg2023.txt	178	FUCA	FUCA	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	205	"GREM1, FMN1"	"GREM1, FMN1"	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	223	HSGNAT	HSGNAT	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	238	IFT40	IFT40	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	279	MAENLI	MAENLI	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	324	NKX3¡V2	NKX3¡V2	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	465	"SULF1, SLCO5A1"	"SULF1, SLCO5A1"	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	473	"TBX3, TBX5"	"TBX3, TBX5"	not_current_hgnc_after_official_aliases
-skeletal_dysplasia_ajhg2023.txt	511	"TRPS1, EXT1"	"TRPS1, EXT1"	not_current_hgnc_after_official_aliases
+skeletal_dysplasia_ajhg2023.txt	239	IFT40	IFT40	not_current_hgnc_after_official_aliases
+skeletal_dysplasia_ajhg2023.txt	280	MAENLI	MAENLI	not_current_hgnc_after_official_aliases
+skeletal_dysplasia_ajhg2023.txt	325	NKX3¡V2	NKX3¡V2	not_current_hgnc_after_official_aliases
 val55.txt	6	OARS1	OARS1	not_current_hgnc_after_official_aliases
 young_stroke.txt	5	ABCG6	ABCG6	not_current_hgnc_after_official_aliases
 young_stroke.txt	6	ABCG7	ABCG7	not_current_hgnc_after_official_aliases
-young_stroke.txt	19	ADPRA2A	ADPRA2A	not_current_hgnc_after_official_aliases
 young_stroke.txt	22	AK097927	AK097927	not_current_hgnc_after_official_aliases
 young_stroke.txt	45	B2GP1	B2GP1	not_current_hgnc_after_official_aliases
 young_stroke.txt	62	COX1	COX1	not_current_hgnc_after_official_aliases
@@ -291,4 +271,3 @@ young_stroke.txt	223	REG2	REG2	not_current_hgnc_after_official_aliases
 young_stroke.txt	224	REST-NOA1	REST-NOA1	not_current_hgnc_after_official_aliases
 young_stroke.txt	251	SMCR3	SMCR3	not_current_hgnc_after_official_aliases
 young_stroke.txt	295	VAMP6	VAMP6	not_current_hgnc_after_official_aliases
-young_stroke.txt	308	ZFP783	ZFP783	not_current_hgnc_after_official_aliases

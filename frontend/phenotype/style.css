@@ -34,6 +34,11 @@ body {
   color: #fff;
 }
 .topbar h1 { font-size: 16px; margin: 0; font-weight: 600; }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 #app {
   max-width: 960px;
@@ -351,6 +356,10 @@ button:hover, .btn:hover { background: #eaeef2; }
   z-index: 180;
   background: rgba(15, 23, 42, 0.18);
 }
+.drawer-backdrop[hidden],
+.gene-list-drawer[hidden] {
+  display: none !important;
+}
 .gene-list-drawer {
   position: fixed;
   top: 0;
@@ -405,6 +414,9 @@ button:hover, .btn:hover { background: #eaeef2; }
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
+.drawer-gene-search {
+  background: #f8fafc;
+}
 .drawer-tools input {
   flex: 1;
   min-width: 0;
@@ -437,5 +449,48 @@ button:hover, .btn:hover { background: #eaeef2; }
   border-radius: 999px;
   background: #f8fafc;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.membership-results {
+  flex: 1;
+  width: 100%;
+  overflow: auto;
+}
+.membership-section {
+  margin-bottom: 16px;
+}
+.membership-section h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.membership-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.membership-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.membership-item-main {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.membership-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #1d4ed8;
+  font-size: 12px;
+}
+.membership-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.membership-meta {
+  margin-top: 4px;
+  color: var(--muted);
   font-size: 12px;
 }

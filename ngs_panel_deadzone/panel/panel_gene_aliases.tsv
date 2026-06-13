@@ -12,6 +12,7 @@ alias	hgnc_symbol	source
 10C	ARHGAP9	hgnc_alias_symbol
 11B6	MAGED2	hgnc_alias_symbol
 12-HETER	GPR31	hgnc_alias_symbol
+12-Sep	SEPTIN12	custom_panel_review_curated
 123F2	RASSF1	hgnc_alias_symbol
 12CC4	FOXP1	hgnc_alias_symbol
 12R-LOX	ALOX12B	hgnc_alias_symbol
@@ -271,6 +272,7 @@ alias	hgnc_symbol	source
 8D6A	CD320	hgnc_alias_symbol
 8HS20	VPREB3	hgnc_alias_symbol
 9-27	IFITM1	hgnc_alias_symbol
+9-Sep	SEPTIN9	custom_panel_review_curated
 90K	LGALS3BP	hgnc_alias_symbol
 9630046K23Rik	POGLUT1	hgnc_alias_symbol
 9F	FAM50A	hgnc_alias_symbol
@@ -1027,6 +1029,7 @@ ADP	WDTC1	hgnc_alias_symbol
 ADP-GK	ADPGK	hgnc_alias_symbol
 AdPLA	PLAAT3	hgnc_alias_symbol
 ADPN	PNPLA3	hgnc_prev_symbol
+ADPRA2A	ADRA2A	custom_panel_review_curated
 ADPRHL2	ADPRS	summary_D
 ADPRT	PARP1	hgnc_prev_symbol
 ADPRT3	PARP3	hgnc_alias_symbol
@@ -7283,6 +7286,7 @@ CCCAP	SDCCAG8	hgnc_alias_symbol
 CCCP-1	CCDC186	hgnc_alias_symbol
 CCD	RUNX2	hgnc_prev_symbol
 CCD1	RUNX2	hgnc_prev_symbol
+CCD134	CCDC134	custom_panel_review_curated
 CCD41	PROCR	hgnc_alias_symbol
 CCDC10	FSD1L	hgnc_prev_symbol
 CCDC100	CEP120	hgnc_prev_symbol
@@ -8044,6 +8048,7 @@ CDKN2AIPNLP3	XTBD1P3	hgnc_prev_symbol
 CDKN2B-AS	CDKN2B-AS1	hgnc_alias_symbol
 CDKN2BAS	CDKN2B-AS1	hgnc_prev_symbol
 CDKN7	CDK7	hgnc_alias_symbol
+CDKNIC	CDKN1C	custom_panel_review_curated
 CDLIV	FTSJ1	hgnc_alias_symbol
 CDMP1	GDF5	hgnc_alias_symbol
 cdN	NT5C	hgnc_alias_symbol
@@ -9877,6 +9882,7 @@ CSEN	KCNIP3	hgnc_prev_symbol
 CSF2R	CSF2RA	hgnc_prev_symbol
 CSF2RB2	CSF2RBP1	hgnc_prev_symbol
 CSFR	CSF1R	hgnc_alias_symbol
+CSFR2B	CSF2RB	custom_panel_review_curated
 CSGalNAcT-1	CSGALNACT1	hgnc_alias_symbol
 CSGlcA-T	CHPF2	hgnc_alias_symbol
 cSHMT	SHMT1	hgnc_alias_symbol
@@ -20456,6 +20462,7 @@ GBAT2	RFX5-AS1	hgnc_alias_symbol
 GBD1	ABCB4	hgnc_alias_symbol
 GBD4	ABCG8	hgnc_alias_symbol
 GBDR1	UBAC1	hgnc_alias_symbol
+GBE=GBE1	GBE1	custom_panel_review_curated
 GbetaL	MLST8	hgnc_alias_symbol
 GBF	KLF6	hgnc_alias_symbol
 GBIF	ANKRD49	hgnc_alias_symbol
@@ -23589,6 +23596,7 @@ HNPCC1	MSH2	hgnc_alias_symbol
 HNPCC2	MLH1	hgnc_alias_symbol
 HNPCC4	PMS2	hgnc_alias_symbol
 HNPP	PMP22	hgnc_alias_symbol
+HNPRU	HNRNPU	custom_panel_review_curated
 HNRBP2	RBFOX2	hgnc_alias_symbol
 hNRD1	NRDC	hgnc_alias_symbol
 hNRD2	NRDC	hgnc_alias_symbol
@@ -26147,6 +26155,7 @@ HSFYL1	HSFY1P1	hgnc_alias_symbol
 HSFYP1	HSFY1P1	hgnc_alias_symbol
 HSFYP2	HSFY3P	hgnc_prev_symbol
 HSGA	AHSG	hgnc_alias_symbol
+HSGNAT	HGSNAT	custom_panel_review_curated
 HSGP25L2G	TMED9	hgnc_alias_symbol
 hSGT	SGTA	hgnc_alias_symbol
 hSGT1	ECD	hgnc_alias_symbol
@@ -28189,6 +28198,7 @@ JADE-1	JADE1	hgnc_alias_symbol
 JADE-2	JADE2	hgnc_alias_symbol
 JADE-3	JADE3	hgnc_alias_symbol
 JAGL1	JAG1	hgnc_prev_symbol
+JAGN	JAGN1	custom_panel_review_curated
 JAK-3	JAK3	hgnc_alias_symbol
 JAK1A	JAK1	hgnc_alias_symbol
 JAK1B	JAK1	hgnc_prev_symbol
@@ -30633,6 +30643,7 @@ KMT1C	EHMT2	hgnc_alias_symbol
 KMT1D	EHMT1	hgnc_alias_symbol
 KMT1E	SETDB1	hgnc_alias_symbol
 KMT1F	SETDB2	hgnc_alias_symbol
+KMT2D/MLL2	KMT2D	custom_panel_review_curated
 KMT2F	SETD1A	hgnc_alias_symbol
 KMT2G	SETD1B	hgnc_alias_symbol
 KMT2H	ASH1L	hgnc_alias_symbol
@@ -30660,6 +30671,7 @@ KMU15	LINC02883	hgnc_alias_symbol
 KN	CR1	hgnc_alias_symbol
 KNBC	SLC4A4	hgnc_alias_symbol
 kNBC1	SLC4A4	hgnc_alias_symbol
+KNCQ1	KCNQ1	custom_panel_review_curated
 KNG	KNG1	hgnc_prev_symbol
 KNL2	MIS18BP1	hgnc_alias_symbol
 KNL3	DSN1	hgnc_alias_symbol
@@ -31202,6 +31214,7 @@ LBA1	TRANK1	hgnc_alias_symbol
 LBC	AKAP13	hgnc_prev_symbol
 LBCL2	ARHGEF1	hgnc_alias_symbol
 LBCS	LNC-LBCS	hgnc_alias_symbol
+LBD3	LDB3	custom_panel_review_curated
 LBM180	ABCA3	hgnc_alias_symbol
 LBN	EVC2	hgnc_alias_symbol
 LBP-1a	UBP1	hgnc_alias_symbol
@@ -51804,7 +51817,9 @@ TNFRSF27	EDA2R	hgnc_alias_symbol
 TNFRSF3	LTBR	hgnc_alias_symbol
 TNFRSF5	CD40	hgnc_prev_symbol
 TNFRSF6	FAS	hgnc_prev_symbol
+TNFRSF6 (FAS)	FAS	custom_panel_review_curated
 TNFRSF7	CD27	hgnc_prev_symbol
+TNFS12	TNFSF12	custom_panel_review_curated
 TNFSF1	LTA	hgnc_alias_symbol
 TNFSF2	TNF	hgnc_alias_symbol
 TNFSF20	TNFSF13B	hgnc_prev_symbol
@@ -56273,6 +56288,7 @@ Zfp74	ZNF569	hgnc_alias_symbol
 Zfp740	ZNF740	hgnc_alias_symbol
 Zfp750	ZNF750	hgnc_alias_symbol
 Zfp78	ZNF471	hgnc_alias_symbol
+ZFP783	ZNF783	custom_panel_review_curated
 Zfp9	ZNF25	hgnc_alias_symbol
 ZFP93	ZNF235	hgnc_prev_symbol
 ZFP95	ZKSCAN5	hgnc_prev_symbol

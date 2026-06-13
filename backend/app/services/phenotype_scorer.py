@@ -22,6 +22,7 @@ from __future__ import annotations
 import csv
 import re
 import threading
+from functools import lru_cache
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
@@ -40,10 +41,13 @@ _HPO_TO_GENES: dict[str, set[str]] = defaultdict(set)
 _PANEL_TO_GENES: dict[str, set[str]] = {}
 # panel_name → small metadata parsed from comment headers in *.txt panel files
 _PANEL_META: dict[str, dict[str, str]] = {}
+# canonical_gene → {"hpo": set[hpo_id], "panel": set[panel_name]}
+_GENE_TO_KEYS: dict[str, dict[str, set[str]]] = {}
 _LOADED = False
 _LOAD_LOCK = threading.Lock()
 
 
+@lru_cache(maxsize=200_000)
 def _canonical_gene(gene: str) -> str:
     return panel_deadzone.canonical_panel_gene_symbol(gene) or (gene or "").strip()
 
@@ -60,6 +64,30 @@ def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[
             if hid and gene and gene != "-":
                 out[hid].add(gene)
     return out
+
+
+@lru_cache(maxsize=4096)
+def _load_hpo_genes_for_key(hpo_id: str, path_str: str = str(PHENO_TO_GENES_PATH)) -> tuple[str, ...]:
+    """Fast path for the phenotype tool's one-HPO gene-list drawer.
+
+    During startup the full phenotype score cache may still be warming.
+    A single HPO drawer lookup should not wait for the whole 1M-row map,
+    so scan only the requested HPO term and cache that small result.
+    """
+    key = (hpo_id or "").strip()
+    path = Path(path_str)
+    if not key or not path.exists():
+        return ()
+    genes: set[str] = set()
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            if (row.get("hpo_id") or "").strip() != key:
+                continue
+            gene = _canonical_gene(row.get("gene_symbol") or "")
+            if gene and gene != "-":
+                genes.add(gene)
+    return tuple(sorted(genes))
 
 
 def _load_panels_from_dir(panel_dir: Path) -> tuple[dict[str, set[str]], dict[str, dict[str, str]]]:
@@ -129,6 +157,13 @@ def load() -> tuple[int, int]:
         _HPO_TO_GENES.update(hpo_map)
         _PANEL_TO_GENES.clear()
         _PANEL_TO_GENES.update(panels)
+        gene_to_keys: dict[str, dict[str, set[str]]] = defaultdict(lambda: {"hpo": set(), "panel": set()})
+        for key, genes in hpo_map.items():
+            bucket = "panel" if key in panels else "hpo"
+            for gene in genes:
+                gene_to_keys[gene][bucket].add(key)
+        _GENE_TO_KEYS.clear()
+        _GENE_TO_KEYS.update(gene_to_keys)
         _LOADED = True
         return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
 
@@ -136,6 +171,8 @@ def load() -> tuple[int, int]:
 def reload_db() -> tuple[int, int]:
     global _LOADED
     _LOADED = False
+    _canonical_gene.cache_clear()
+    _load_hpo_genes_for_key.cache_clear()
     return load()
 
 
@@ -215,14 +252,14 @@ def list_panels() -> list[dict]:
 
 def genes_for_key(key: str, kind: str = "") -> dict:
     """Return canonical gene symbols for an HPO term or panel key."""
-    if not _LOADED:
-        load()
     clean_key = (key or "").strip()
     clean_kind = (kind or "").strip().lower()
     if not clean_key:
         return {"kind": clean_kind, "key": "", "gene_count": 0, "genes": []}
 
     if clean_kind == "panel" or (not clean_kind and clean_key in _PANEL_TO_GENES):
+        if not _LOADED:
+            load()
         genes = sorted(_PANEL_TO_GENES.get(clean_key, ()))
         meta = _PANEL_META.get(clean_key) or {}
         return {
@@ -233,13 +270,43 @@ def genes_for_key(key: str, kind: str = "") -> dict:
             "source": meta.get("source", ""),
         }
 
-    genes = sorted(_HPO_TO_GENES.get(clean_key, ()))
+    if _LOADED:
+        genes = sorted(_HPO_TO_GENES.get(clean_key, ()))
+    else:
+        genes = list(_load_hpo_genes_for_key(clean_key))
     return {
         "kind": "hpo",
         "key": clean_key,
         "gene_count": len(genes),
         "genes": genes,
         "source": "phenotype_to_genes.txt",
+    }
+
+
+def memberships_for_gene(gene: str, *, limit_hpo: int = 200, limit_panels: int = 200) -> dict:
+    """Return HPO terms and panels whose canonical gene set contains gene."""
+    if not _LOADED:
+        load()
+    query = _canonical_gene(gene or "")
+    if not query:
+        return {"query": gene or "", "canonical_gene": "", "hpo": [], "panels": []}
+    hits = _GENE_TO_KEYS.get(query) or {"hpo": set(), "panel": set()}
+    hpo_ids = sorted(hits.get("hpo", ()))
+    panel_names = sorted(hits.get("panel", ()))
+    return {
+        "query": gene,
+        "canonical_gene": query,
+        "hpo": [{"id": hid} for hid in hpo_ids[:limit_hpo]],
+        "hpo_total": len(hpo_ids),
+        "panels": [
+            {
+                "name": name,
+                "gene_count": len(_PANEL_TO_GENES.get(name, ())),
+                "source": (_PANEL_META.get(name) or {}).get("source", ""),
+            }
+            for name in panel_names[:limit_panels]
+        ],
+        "panel_total": len(panel_names),
     }
 
 

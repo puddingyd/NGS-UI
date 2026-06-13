@@ -18,6 +18,7 @@ let panelList = [];          // gene panel names
 let panelFuse = null;
 let generatedContent = "";
 let currentGeneList = [];
+let currentGeneMemberships = null;
 
 // Fixed panel index from /api/phenotype-tool/fixed-panels — WES-I /
 // WES-II / WGS tabs are driven entirely by this. Keys look like
@@ -338,8 +339,10 @@ async function openGeneListDrawer(kind, key, label) {
   const summaryEl = document.getElementById("gene-list-summary");
   const contentEl = document.getElementById("gene-list-content");
   const filterEl = document.getElementById("gene-list-filter");
+  const geneQueryEl = document.getElementById("gene-membership-query");
   if (!drawer || !backdrop) return;
   currentGeneList = [];
+  currentGeneMemberships = null;
   drawer.hidden = false;
   backdrop.hidden = false;
   title.textContent = label || key;
@@ -348,6 +351,7 @@ async function openGeneListDrawer(kind, key, label) {
   summaryEl.textContent = "載入中…";
   contentEl.innerHTML = "";
   if (filterEl) filterEl.value = "";
+  if (geneQueryEl) geneQueryEl.value = "";
   try {
     const params = new URLSearchParams({ kind, key });
     const resp = await fetch(`/api/phenotype-tool/gene-list?${params}`);
@@ -363,12 +367,62 @@ async function openGeneListDrawer(kind, key, label) {
   }
 }
 
+function openGeneMembershipSearch() {
+  const drawer = document.getElementById("gene-list-drawer");
+  const backdrop = document.getElementById("gene-list-backdrop");
+  const title = document.getElementById("gene-list-title");
+  const typeEl = document.getElementById("gene-list-type");
+  const sourceEl = document.getElementById("gene-list-source");
+  const summaryEl = document.getElementById("gene-list-summary");
+  const contentEl = document.getElementById("gene-list-content");
+  const filterEl = document.getElementById("gene-list-filter");
+  const geneQueryEl = document.getElementById("gene-membership-query");
+  if (!drawer || !backdrop) return;
+  currentGeneList = [];
+  currentGeneMemberships = null;
+  drawer.hidden = false;
+  backdrop.hidden = false;
+  if (title) title.textContent = "搜尋基因";
+  if (typeEl) typeEl.textContent = "Gene lookup";
+  if (sourceEl) sourceEl.textContent = "";
+  if (summaryEl) summaryEl.textContent = "輸入 gene symbol 後搜尋有哪些 HPO term / panel 包含它。";
+  if (contentEl) contentEl.innerHTML = "";
+  if (filterEl) filterEl.value = "";
+  setTimeout(() => geneQueryEl?.focus(), 0);
+}
+
+async function searchGeneMemberships() {
+  const geneQueryEl = document.getElementById("gene-membership-query");
+  const summaryEl = document.getElementById("gene-list-summary");
+  const contentEl = document.getElementById("gene-list-content");
+  const q = (geneQueryEl?.value || "").trim();
+  if (!q) {
+    if (summaryEl) summaryEl.textContent = "請輸入 gene symbol。";
+    return;
+  }
+  currentGeneList = [];
+  currentGeneMemberships = null;
+  if (summaryEl) summaryEl.textContent = "搜尋中…";
+  if (contentEl) contentEl.innerHTML = "";
+  try {
+    const params = new URLSearchParams({ gene: q });
+    const resp = await fetch(`/api/phenotype-tool/gene-memberships?${params}`);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || "gene 搜尋失敗");
+    currentGeneMemberships = data;
+    renderGeneMemberships(data);
+  } catch (e) {
+    if (summaryEl) summaryEl.textContent = e.message || String(e);
+  }
+}
+
 function closeGeneListDrawer() {
   const drawer = document.getElementById("gene-list-drawer");
   const backdrop = document.getElementById("gene-list-backdrop");
   if (drawer) drawer.hidden = true;
   if (backdrop) backdrop.hidden = true;
   currentGeneList = [];
+  currentGeneMemberships = null;
 }
 
 function renderGeneList(genes) {
@@ -381,7 +435,58 @@ function renderGeneList(genes) {
   contentEl.innerHTML = genes.map((g) => `<span class="gene-pill">${escapeText(g)}</span>`).join("");
 }
 
+function renderGeneMemberships(data) {
+  const contentEl = document.getElementById("gene-list-content");
+  const summaryEl = document.getElementById("gene-list-summary");
+  if (!contentEl) return;
+  const hpo = Array.isArray(data.hpo) ? data.hpo : [];
+  const panels = Array.isArray(data.panels) ? data.panels : [];
+  const hpoTotal = Number(data.hpo_total) || hpo.length;
+  const panelTotal = Number(data.panel_total) || panels.length;
+  if (summaryEl) {
+    summaryEl.textContent = `${data.query || ""} → ${data.canonical_gene || ""}: ${hpoTotal} HPO terms, ${panelTotal} panels`;
+  }
+  if (!hpo.length && !panels.length) {
+    contentEl.innerHTML = '<div class="muted">找不到包含這個 gene 的 HPO term 或 panel。</div>';
+    return;
+  }
+  const hpoHtml = hpo.map((item) => `
+    <div class="membership-item">
+      <div class="membership-item-main">
+        <span class="membership-id">${escapeText(item.id)}</span>
+        <span class="membership-name">${escapeText(item.name || "")}</span>
+      </div>
+    </div>
+  `).join("");
+  const panelHtml = panels.map((item) => `
+    <div class="membership-item">
+      <div class="membership-item-main">
+        <span class="membership-name">${escapeText(item.name)}</span>
+        <span class="membership-meta">${Number(item.gene_count) || 0} genes</span>
+      </div>
+      ${item.source ? `<div class="membership-meta">source: ${escapeText(item.source)}</div>` : ""}
+    </div>
+  `).join("");
+  contentEl.innerHTML = `
+    <div class="membership-results">
+      <section class="membership-section">
+        <h3>HPO terms${hpoTotal > hpo.length ? `（顯示前 ${hpo.length} / ${hpoTotal}）` : ""}</h3>
+        <div class="membership-list">${hpoHtml || '<div class="muted">沒有 HPO term</div>'}</div>
+      </section>
+      <section class="membership-section">
+        <h3>Panels${panelTotal > panels.length ? `（顯示前 ${panels.length} / ${panelTotal}）` : ""}</h3>
+        <div class="membership-list">${panelHtml || '<div class="muted">沒有 panel</div>'}</div>
+      </section>
+    </div>
+  `;
+}
+
 function filterGeneList() {
+  if (!currentGeneList.length && currentGeneMemberships) {
+    const summaryEl = document.getElementById("gene-list-summary");
+    if (summaryEl) summaryEl.textContent = "這個欄位只篩選目前 HPO / panel 的 gene list；gene lookup 結果請用上方搜尋基因。";
+    return;
+  }
   const q = (document.getElementById("gene-list-filter")?.value || "").trim().toUpperCase();
   const filtered = q ? currentGeneList.filter((g) => String(g).toUpperCase().includes(q)) : currentGeneList;
   const summaryEl = document.getElementById("gene-list-summary");
@@ -392,17 +497,53 @@ function filterGeneList() {
 }
 
 async function copyGeneList() {
-  const text = currentGeneList.join("\n");
+  let text = currentGeneList.join("\n");
+  if (!text && currentGeneMemberships) {
+    const hpo = (currentGeneMemberships.hpo || []).map((item) =>
+      `${item.id}\t${item.name || ""}`.trim());
+    const panels = (currentGeneMemberships.panels || []).map((item) => item.name);
+    text = [
+      `gene\t${currentGeneMemberships.canonical_gene || currentGeneMemberships.query || ""}`,
+      "",
+      "HPO terms",
+      ...hpo,
+      "",
+      "Panels",
+      ...panels,
+    ].join("\n");
+  }
   if (!text) return;
   try {
-    await navigator.clipboard.writeText(text);
-    showStatus("已複製 gene list。", "success");
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      throw new Error("Clipboard API unavailable");
+    }
+    showStatus("已複製目前清單。", "success");
   } catch {
-    showStatus("瀏覽器不允許直接複製，請在 gene list 中手動選取。", "error");
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand("copy");
+    textarea.remove();
+    showStatus(ok ? "已複製目前清單。" : "瀏覽器不允許直接複製，請在 gene list 中手動選取。", ok ? "success" : "error");
   }
 }
 
 document.getElementById("gene-list-backdrop")?.addEventListener("click", closeGeneListDrawer);
+document.getElementById("gene-list-close")?.addEventListener("click", closeGeneListDrawer);
+document.getElementById("btn-open-gene-search")?.addEventListener("click", openGeneMembershipSearch);
+document.getElementById("gene-membership-search-btn")?.addEventListener("click", searchGeneMemberships);
+document.getElementById("gene-membership-query")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    searchGeneMemberships();
+  }
+});
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !document.getElementById("gene-list-drawer")?.hidden) {
     closeGeneListDrawer();

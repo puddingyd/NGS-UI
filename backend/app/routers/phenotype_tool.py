@@ -20,7 +20,7 @@ import re
 from fastapi import APIRouter, HTTPException, Query
 
 from ..config import PHENOTYPE_DIR
-from ..services import phenotype_scorer
+from ..services import hpo_ontology, phenotype_scorer
 
 router = APIRouter(prefix="/api/phenotype-tool", tags=["phenotype-tool"])
 
@@ -69,6 +69,19 @@ def gene_list(kind: str = Query("", pattern="^(|hpo|panel)$"), key: str = Query(
     data = phenotype_scorer.genes_for_key(key, kind)
     if not data.get("gene_count"):
         raise HTTPException(404, "找不到這個 HPO term / panel 的 gene list")
+    return data
+
+
+@router.get("/gene-memberships")
+def gene_memberships(gene: str = Query(..., min_length=1, max_length=64)):
+    """Find HPO terms and panels that contain one canonical gene symbol."""
+    data = phenotype_scorer.memberships_for_gene(gene)
+    for item in data.get("hpo", []):
+        term = hpo_ontology.get(item.get("id", ""))
+        if term:
+            item["name"] = term.name
+        else:
+            item["name"] = ""
     return data
 
 

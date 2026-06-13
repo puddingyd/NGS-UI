@@ -9,7 +9,10 @@
 <body>
   <header class="topbar">
     <h1>輸入臨床表徵 (HPO / Panel)</h1>
-    <a href="/" class="btn btn-secondary">← 回分析系統</a>
+    <div class="topbar-actions">
+      <button type="button" class="btn btn-secondary" id="btn-open-gene-search">搜尋基因</button>
+      <a href="/" class="btn btn-secondary">← 回分析系統</a>
+    </div>
   </header>
 
   <main id="app">
@@ -99,11 +102,15 @@
         <h2 id="gene-list-title"></h2>
         <div id="gene-list-source" class="drawer-source"></div>
       </div>
-      <button type="button" class="drawer-close" onclick="closeGeneListDrawer()" title="關閉">&times;</button>
+      <button type="button" class="drawer-close" id="gene-list-close" title="關閉">&times;</button>
+    </div>
+    <div class="drawer-tools drawer-gene-search">
+      <input type="text" id="gene-membership-query" placeholder="輸入 gene，找有哪些 HPO / panel 包含它">
+      <button type="button" class="btn btn-secondary" id="gene-membership-search-btn">搜尋</button>
     </div>
     <div class="drawer-tools">
-      <input type="text" id="gene-list-filter" placeholder="搜尋 gene" oninput="filterGeneList()">
-      <button type="button" class="btn btn-secondary" onclick="copyGeneList()">複製</button>
+      <input type="text" id="gene-list-filter" placeholder="在目前 gene list 內篩選" oninput="filterGeneList()">
+      <button type="button" class="btn btn-secondary" onclick="copyGeneList()">複製清單</button>
     </div>
     <div id="gene-list-summary" class="drawer-summary"></div>
     <div id="gene-list-content" class="gene-list-content"></div>
