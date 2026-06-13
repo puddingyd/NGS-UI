@@ -38,12 +38,14 @@ CUSTOM_PANELS_DIR = CUSTOM_GENE_PANELS_DIR
 _HPO_TO_GENES: dict[str, set[str]] = defaultdict(set)
 # panel_name → set[gene_symbol]
 _PANEL_TO_GENES: dict[str, set[str]] = {}
+# panel_name → small metadata parsed from comment headers in *.txt panel files
+_PANEL_META: dict[str, dict[str, str]] = {}
 _LOADED = False
 _LOAD_LOCK = threading.Lock()
 
 
 def _canonical_gene(gene: str) -> str:
-    return panel_deadzone.canonical_gene_symbol(gene)[0] or (gene or "").strip()
+    return panel_deadzone.canonical_panel_gene_symbol(gene) or (gene or "").strip()
 
 
 def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[str]]:
@@ -60,36 +62,52 @@ def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[
     return out
 
 
-def _load_panels_from_dir(panel_dir: Path) -> dict[str, set[str]]:
+def _load_panels_from_dir(panel_dir: Path) -> tuple[dict[str, set[str]], dict[str, dict[str, str]]]:
     out: dict[str, set[str]] = {}
+    meta: dict[str, dict[str, str]] = {}
     if not panel_dir.exists():
-        return out
+        return out, meta
     for fp in sorted(panel_dir.glob("*.txt")):
         name = fp.stem
         genes: set[str] = set()
+        panel_meta: dict[str, str] = {}
         # A few legacy panel files were saved as Latin-1 (Windows export);
         # fall back so a single bad byte doesn't kill the whole loader.
         for enc in ("utf-8", "latin-1"):
             try:
                 with fp.open("r", encoding=enc) as f:
                     for line in f:
-                        g = _canonical_gene(line.strip().split("\t")[0])
+                        raw = line.strip()
+                        if raw.startswith("#"):
+                            key, sep, value = raw[1:].partition(":")
+                            if sep:
+                                panel_meta[key.strip().lower()] = value.strip()
+                            continue
+                        g = _canonical_gene(raw.split("\t")[0])
                         if g and not g.startswith("#"):
                             genes.add(g)
                 break
             except UnicodeDecodeError:
                 genes.clear()
+                panel_meta.clear()
                 continue
         if genes:
             out[name] = genes
-    return out
+            if panel_meta:
+                meta[name] = panel_meta
+    return out, meta
 
 
 def _load_panels(panel_dirs: Iterable[Path] = (PANELS_DIR, CUSTOM_PANELS_DIR)) -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
+    meta: dict[str, dict[str, str]] = {}
     for panel_dir in panel_dirs:
-        for name, genes in _load_panels_from_dir(panel_dir).items():
+        panels, panel_meta = _load_panels_from_dir(panel_dir)
+        for name, genes in panels.items():
             out.setdefault(name, set()).update(genes)
+        meta.update(panel_meta)
+    _PANEL_META.clear()
+    _PANEL_META.update(meta)
     return out
 
 
@@ -133,15 +151,15 @@ def sanitize_panel_name(name: str) -> str:
     return cleaned[:64]
 
 
-def register_custom_panel(name: str, genes: Iterable[str]) -> dict:
+def register_custom_panel(name: str, genes: Iterable[str], source: str = "") -> dict:
     """Create a reusable gene panel from a user-supplied gene list.
 
     The name is sanitised (see sanitize_panel_name); collisions with an
-    existing panel are refused. Genes are de-duplicated case-sensitively
-    in first-seen order (gene symbols like 'C7orf50' carry meaningful
-    case, so we don't upper-case). Writes {name}.txt into the runtime
-    custom panels directory and updates the in-memory tables so
-    the panel is usable immediately — no reload / restart needed.
+    existing panel are refused. Genes are canonicalised to HGNC-current
+    symbols where a safe panel alias exists, then de-duplicated in
+    first-seen order. Writes {name}.txt into the runtime custom panels
+    directory with a `#source:` header and updates the in-memory tables
+    so the panel is usable immediately — no reload / restart needed.
 
     Returns {"name": <sanitised>, "n_genes": int}.
     Raises ValueError on an empty/invalid name, empty gene list, or a
@@ -171,21 +189,58 @@ def register_custom_panel(name: str, genes: Iterable[str]) -> dict:
     # escape, but resolve-and-check anyway.
     if out.resolve().parent != CUSTOM_PANELS_DIR.resolve():
         raise ValueError("panel 檔名不合法")
-    out.write_text("\n".join(ordered) + "\n", encoding="utf-8")
+    safe_source = " ".join(str(source or "").strip().split())
+    header = f"#source: {safe_source}\n" if safe_source else "#source:\n"
+    out.write_text(header + "\n".join(ordered) + "\n", encoding="utf-8")
 
     gene_set = set(ordered)
     _PANEL_TO_GENES[clean] = gene_set
     _HPO_TO_GENES[clean] |= gene_set
-    return {"name": clean, "n_genes": len(gene_set)}
+    _PANEL_META[clean] = {"source": safe_source} if safe_source else {"source": ""}
+    return {"name": clean, "n_genes": len(gene_set), "source": safe_source}
 
 
 def list_panels() -> list[dict]:
     if not _LOADED:
         load()
     return [
-        {"name": name, "gene_count": len(genes)}
+        {
+            "name": name,
+            "gene_count": len(genes),
+            "source": (_PANEL_META.get(name) or {}).get("source", ""),
+        }
         for name, genes in sorted(_PANEL_TO_GENES.items())
     ]
+
+
+def genes_for_key(key: str, kind: str = "") -> dict:
+    """Return canonical gene symbols for an HPO term or panel key."""
+    if not _LOADED:
+        load()
+    clean_key = (key or "").strip()
+    clean_kind = (kind or "").strip().lower()
+    if not clean_key:
+        return {"kind": clean_kind, "key": "", "gene_count": 0, "genes": []}
+
+    if clean_kind == "panel" or (not clean_kind and clean_key in _PANEL_TO_GENES):
+        genes = sorted(_PANEL_TO_GENES.get(clean_key, ()))
+        meta = _PANEL_META.get(clean_key) or {}
+        return {
+            "kind": "panel",
+            "key": clean_key,
+            "gene_count": len(genes),
+            "genes": genes,
+            "source": meta.get("source", ""),
+        }
+
+    genes = sorted(_HPO_TO_GENES.get(clean_key, ()))
+    return {
+        "kind": "hpo",
+        "key": clean_key,
+        "gene_count": len(genes),
+        "genes": genes,
+        "source": "phenotype_to_genes.txt",
+    }
 
 
 def gene_count(hpo_id: str) -> int:

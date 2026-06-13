@@ -6,7 +6,7 @@ contexts where short-read calling is unreliable: homopolymers, tandem
 repeats, segmental duplications, low-mappability regions, GC extremes,
 and other difficult regions (MHC/KIR/VDJ, false duplications, ...).
 
-This stop-gap intersects every variant in the TSV against a configured
+This post-processing intersects every variant in the TSV against a configured
 set of stratification BEDs and writes the matching short labels into a
 single ``GIAB_STRATA`` column (comma-separated, e.g. ``homopolymer,segdup``).
 The SNV adapter splits that column into a list and the variant card shows
@@ -14,7 +14,7 @@ one badge per label so reviewers can see at a glance when a call sits in a
 difficult region.
 
 It is fill-or-augment and idempotent: re-running overwrites the column.
-Unlike the GeneBe / Extra-VEP stop-gaps it runs on the *whole* TSV (not
+Unlike the GeneBe / Extra-VEP post-processings it runs on the *whole* TSV (not
 just the AF/CDS candidate set) because the labels are display-only QC
 hints and interval lookup is cheap.
 

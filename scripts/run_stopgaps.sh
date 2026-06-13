@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =========================================================
-# run_stopgaps.sh — one-shot stop-gap annotation chain
+# run_stopgaps.sh — one-shot post-processing annotation chain
 # =========================================================
-# Runs every stop-gap on a single snv_indel.annotated.tsv in the
+# Runs every post-processing step on a single snv_indel.annotated.tsv in the
 # order they make sense:
 #
 #   1. filter_snv_tsv.py        — filter alt-contig / * only (silent)
@@ -16,7 +16,7 @@
 #   5. build_snv_review_tsv.py  — pre-build the compact main-screen TSV
 #   6. build_snv_gene_index.py  — pre-build complete-TSV gene search index
 #
-# (ClinVar annotation was a stop-gap before the new pipeline shipped
+# (ClinVar annotation was a compatibility step before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
 #  pipeline now owns it; the legacy annotate_clinvar.py is left on
 #  disk for emergencies.)
@@ -54,7 +54,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 timestamp() { TZ=Asia/Taipei date +"%Y-%m-%dT%H:%M:%S+08:00"; }
 step_start() {
   STOPGAP_STEP="$1"
-  STOPGAP_MARKER="${2:-stopgaps-step}"
+  STOPGAP_MARKER="${2:-post-processing-step}"
   STOPGAP_STEP_STARTED="$(date +%s)"
   echo "[$(timestamp)] [$STOPGAP_MARKER] $STOPGAP_STEP start"
 }
@@ -120,7 +120,7 @@ done
 if [ -z "$SID" ]; then SID="$(basename "$(dirname "$TSV")")"; fi
 
 echo "================================================================"
-echo "  run_stopgaps : $TSV"
+echo "  post-processing : $TSV"
 echo "================================================================"
 
 CANDIDATE_BED_ARGS=()
@@ -140,7 +140,7 @@ run_silent_step "filter-snv" "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
 #    pipeline ACMG_* preserved). Offline SQLite lookup — no API / creds.
 if [ "$SKIP_GENEBE" -eq 0 ]; then
   echo
-  echo "[stopgaps] annotate_acmg_genebe.py"
+  echo "[post-processing] annotate_acmg_genebe.py"
   step_start "genebe"
   if [ ! -f "$GENEBE_DB" ]; then
     echo "ERROR: GeneBe DB not found: $GENEBE_DB" >&2
@@ -156,7 +156,7 @@ fi
 # 3. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
 if [ "$SKIP_EXTRA_VEP" -eq 0 ]; then
   echo
-  echo "[stopgaps] annotate_extra_vep.py"
+  echo "[post-processing] annotate_extra_vep.py"
   step_start "extra-vep"
   EXTRA_VEP_ARGS=(--tsv "$TSV")
   if [ "$SKIP_SPLICEAI" -eq 0 ] && [ -f "$SPLICEAI_SNV" ] && [ -f "$SPLICEAI_INDEL" ]; then
@@ -177,7 +177,7 @@ fi
 #     whole TSV; cheap interval lookup. No-op when the BED dir is absent.
 if [ "$SKIP_GIAB" -eq 0 ]; then
   echo
-  echo "[stopgaps] annotate_giab_strata.py"
+  echo "[post-processing] annotate_giab_strata.py"
   step_start "giab-strata"
   GIAB_ARGS=(--tsv "$TSV")
   if [ -n "$GIAB_STRAT_DIR" ]; then
@@ -191,7 +191,7 @@ fi
 SAMPLE_DIR="$(dirname "$TSV")"
 if [ "$SKIP_CNV" -eq 0 ] && { [ -n "$DRAGEN_VCF" ] || [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; }; then
   echo
-  echo "[stopgaps] run_annotsv_cnv_sv.sh"
+  echo "[post-processing] run_annotsv_cnv_sv.sh"
   step_start "annotsv"
   ANNOTSV_ARGS=(--sample "$SID" --out-dir "$SAMPLE_DIR")
   if [ -n "$DRAGEN_VCF" ]; then
@@ -211,7 +211,7 @@ fi
 GUI_TSV="$SAMPLE_DIR/snv_indel.annotated.tsv"
 if [ "$TSV" != "$GUI_TSV" ]; then
   echo
-  echo "[stopgaps] copy → $GUI_TSV  (GUI-expected path)"
+  echo "[post-processing] copy → $GUI_TSV  (GUI-expected path)"
   cp -v "$TSV" "$GUI_TSV"
 fi
 

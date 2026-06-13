@@ -535,7 +535,7 @@ def _row_to_variant(row: dict) -> dict:
         "VARITY_R":            _max_multi(row.get("VARITY_R")),
         "BayesDel":            _max_multi(row.get("BAYESDEL_NOAF")),
         "BayesDel_pred":       _first_str(row.get("BAYESDEL_NOAF_PRED")),
-        # SpliceAI + MetaRNN come from annotate_extra_vep stop-gap (new
+        # SpliceAI + MetaRNN come from annotate_extra_vep post-processing (new
         # pipeline doesn't ship them).
         "SpliceAI_score":      _max_multi(row.get("SPLICEAI_MAX")),
         "MetaRNN_score":       _max_multi(row.get("METARNN")),

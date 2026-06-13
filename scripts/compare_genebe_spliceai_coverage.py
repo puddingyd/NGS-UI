@@ -2,7 +2,7 @@
 """Compare GeneBe DB SpliceAI coverage against the current extra-VEP path.
 
 This is a read-only diagnostic for deciding whether the local
-genebe_hg38.tsv.gz can replace the stop-gap extra-VEP SpliceAI step.
+genebe_hg38.tsv.gz can replace the post-processing extra-VEP SpliceAI step.
 It samples variants from the GeneBe bgzip TSV, runs VEP with the same
 SpliceAI plugin/data files used by annotate_extra_vep.py, and reports
 where GeneBe has/misses a SpliceAI max score compared with VEP.

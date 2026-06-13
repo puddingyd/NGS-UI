@@ -91,6 +91,24 @@
     </section>
   </main>
 
+  <div id="gene-list-backdrop" class="drawer-backdrop" hidden></div>
+  <aside id="gene-list-drawer" class="gene-list-drawer" hidden aria-label="Gene list">
+    <div class="drawer-head">
+      <div>
+        <div id="gene-list-type" class="drawer-type"></div>
+        <h2 id="gene-list-title"></h2>
+        <div id="gene-list-source" class="drawer-source"></div>
+      </div>
+      <button type="button" class="drawer-close" onclick="closeGeneListDrawer()" title="關閉">&times;</button>
+    </div>
+    <div class="drawer-tools">
+      <input type="text" id="gene-list-filter" placeholder="搜尋 gene" oninput="filterGeneList()">
+      <button type="button" class="btn btn-secondary" onclick="copyGeneList()">複製</button>
+    </div>
+    <div id="gene-list-summary" class="drawer-summary"></div>
+    <div id="gene-list-content" class="gene-list-content"></div>
+  </aside>
+
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
   <script src="app.js"></script>
 </body>

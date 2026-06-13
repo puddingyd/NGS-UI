@@ -5,7 +5,7 @@
 # convention) so it joins cleanly against our mito.annotated.tsv.
 # =========================================================
 # Why a separate small VCF: annotate_clinvar.py (the existing SNV
-# stop-gap) reads its whole input VCF into memory keyed by
+# post-processing) reads its whole input VCF into memory keyed by
 # (CHROM, POS, REF, ALT). The full ClinVar GRCh38 file is ~1 GB and
 # loading it just to annotate the ~200 chrM rows is wasteful — extract
 # the mtDNA subset once, hand the small file to the mito annotation

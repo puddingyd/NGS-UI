@@ -10,7 +10,7 @@ The source has one row per (variant × transcript) so we dedupe by
 Columns the spec expects but the source doesn't carry (TWB_AF,
 PKNN_LLR, ESM2/Evo2, LOFTEE_*, PHASE_*, IN_ROH/IN_PANEL/IN_BLACKLIST,
 …) are emitted blank or with a sensible placeholder so the adapter
-keeps loading. This script is a stop-gap until the real Phase 4
+keeps loading. This script is a post-processing until the real Phase 4
 tertiary pipeline lands; for now it lets reviewers eyeball the UI on
 real-shape data.
 

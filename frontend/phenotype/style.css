@@ -141,6 +141,7 @@ button:hover, .btn:hover { background: #eaeef2; }
   background: var(--ok-bg);
 }
 .phenotype-row .selected-term {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-size: 11px; color: var(--ok);
   margin-top: 3px; min-height: 16px;
 }
@@ -263,6 +264,17 @@ button:hover, .btn:hover { background: #eaeef2; }
 .fp-chip-label { font-weight: 500; }
 .fp-chip-count { color: var(--muted); font-size: 11px; }
 .fp-chip.is-selected .fp-chip-count { color: var(--ok); opacity: 0.85; }
+.gene-list-btn {
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.gene-list-btn:hover { background: #dbeafe; }
+.fp-gene-list-btn { margin-left: 2px; }
 
 /* Custom-panel rows: name input + gene-list textarea + weight + remove. */
 .custom-panel-row {
@@ -279,6 +291,13 @@ button:hover, .btn:hover { background: #eaeef2; }
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 14px;
+  font-family: inherit;
+}
+.custom-panel-row .cp-source {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
   font-family: inherit;
 }
 .custom-panel-row .cp-genes {
@@ -324,3 +343,99 @@ button:hover, .btn:hover { background: #eaeef2; }
 #status-bar:empty { display: none; }
 #status-bar.status-success { background: var(--ok-bg);  color: var(--ok);  }
 #status-bar.status-error   { background: var(--err-bg); color: var(--err); }
+
+/* Gene-list drawer */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  background: rgba(15, 23, 42, 0.18);
+}
+.gene-list-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 181;
+  width: min(420px, 100vw);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 28px rgba(15, 23, 42, 0.16);
+}
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-type {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.drawer-head h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.drawer-source {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  word-break: break-word;
+}
+.drawer-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+.drawer-close:hover { background: #f3f4f6; color: var(--fg); }
+.drawer-tools {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-tools input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.drawer-summary {
+  padding: 8px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.gene-list-content {
+  flex: 1;
+  overflow: auto;
+  padding: 0 16px 16px;
+  display: flex;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gene-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #f8fafc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}

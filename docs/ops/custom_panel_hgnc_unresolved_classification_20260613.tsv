@@ -1,0 +1,294 @@
+panel	line	entry	category	reason	candidate	suggested_action
+HIE.txt	3812	12-Sep	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	SEPTIN12	can_auto_fix_with_curated_rule
+HIE.txt	3813	9-Sep	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	SEPTIN9	can_auto_fix_with_curated_rule
+Monosomy_7_syndrome_panel.txt	29	JAGN	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	JAGN1	can_auto_fix_with_curated_rule
+Monosomy_7_syndrome_panel.txt	30	TCRG1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	TCIRG1|TCERG1|TCERG1L|TRGV1|TRGJ1	manual_review_source
+congenital_immunodeficiency_panel.txt	132	TNFS12	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	TNFSF12	can_auto_fix_with_curated_rule
+congenital_immunodeficiency_panel.txt	194	CLBP	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	LBP	manual_review_source
+congenital_immunodeficiency_panel.txt	239	HMOX	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	HMOX1/HMOX2	manual_review_source
+congenital_immunodeficiency_panel.txt	269	PSEN	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	PSEN1/PSEN2	manual_review_source
+congenital_immunodeficiency_panel.txt	299	ALP1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ASLP1|APLP1|ALPK1|RALBP1|PARLP1	manual_review_source
+congenital_immunodeficiency_panel.txt	328	TNFAIP	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	TNFAIP1/2/3/6/8	manual_review_source
+febrile_encephalopathy.txt	6	HNPRU	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	HNRNPU	can_auto_fix_with_curated_rule
+growth_panel.txt	216	KMT2D/MLL2	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	KMT2D	can_auto_fix_with_curated_rule
+hearing_loss.txt	76	KNCQ1	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	KCNQ1	can_auto_fix_with_curated_rule
+heart_disease.txt	76	AH1	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	AHI1?	manual_review_source
+heart_disease.txt	111	PDE60	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	PDE6B/C/D/G/H?	manual_review_source
+heart_disease.txt	112	POC18	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	POC1A/POC1B?	manual_review_source
+heart_disease.txt	237	LBD3	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	LDB3	can_auto_fix_with_curated_rule
+heart_disease.txt	323	CDKNIC	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	CDKN1C	can_auto_fix_with_curated_rule
+heart_disease.txt	329	ESC02	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ESCO2	manual_review_source
+heart_disease.txt	330	RDR2	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
+heart_disease.txt	427	AH1	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	AHI1?	manual_review_source
+heart_disease.txt	462	PDE60	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	PDE6B/C/D/G/H?	manual_review_source
+heart_disease.txt	463	POC18	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	POC1A/POC1B?	manual_review_source
+hereditary_cancer.txt	104	TNFRSF6 (FAS)	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	FAS	can_auto_fix_with_curated_rule
+inborn_error.txt	82	ALDH3A2M	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ALDH3A2|ALDH3B2|ALDH3A1|ALDH1A2	manual_review_source
+inborn_error.txt	199	B3GNT1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	B3GNT2P1|B3GALNT1|B3GNT9|B3GNT8|B3GNT7	manual_review_source
+inborn_error.txt	523	DY	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	DYM	manual_review_source
+inborn_error.txt	662	GBE=GBE1	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	GBE1	can_auto_fix_with_curated_rule
+inborn_error.txt	695	GM1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	TGM1|PGM1|GRM1|GFM1|GCM1	manual_review_source
+inborn_error.txt	822	IFT64	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	IFT74|IFT56|IFT54|IFT46|IFT43	manual_review_source
+inborn_error_panel.txt	130	ALDH3A2M	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ALDH3A2|ALDH3B2|ALDH3A1|ALDH1A2	manual_review_source
+inborn_error_panel.txt	284	B3GNT1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	B3GNT2P1|B3GALNT1|B3GNT9|B3GNT8|B3GNT7	manual_review_source
+inborn_error_panel.txt	706	DY	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	DYM	manual_review_source
+inborn_error_panel.txt	889	GBE=GBE1	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	GBE1	can_auto_fix_with_curated_rule
+inborn_error_panel.txt	941	GM1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	TGM1|PGM1|GRM1|GFM1|GCM1	manual_review_source
+inborn_error_panel.txt	1127	IFT64	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	IFT74|IFT56|IFT54|IFT46|IFT43	manual_review_source
+neutropenia_panel.txt	168	CSFR2B	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	CSF2RB	can_auto_fix_with_curated_rule
+proactive.txt	403	Mitochondrial genes	non_gene_group_label	Panel entry is a group label, not a gene symbol.		remove_or_expand_to_actual_genes
+renal_disease_panel.txt	245	GNASGAS1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	GNAS-AS1	manual_review_source
+retina_disease.txt	8	ABRI	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	16	ACHM6	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	17	ACHM7	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	22	ADCA2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	36	AICAR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	42	ALSS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	70	ASP	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	72	ATD5	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	80	BART	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	97	BBS22	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	106	BCAMD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	107	BCD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	113	BNHS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	116	BUG22	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	137	CACD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	142	CAR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	143	CBBM	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	151	CCMD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	158	CDMP2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	160	CED3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	174	CHBL	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	178	CLC2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	191	CMT6	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	192	CMT6B	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	204	COACH1	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	209	COD5	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	210	CODA1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	214	COQ10D1	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	215	COQ10D2	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	216	COQ10D7	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	217	COQ10D9	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	222	CORD1	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	230	CORD17	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	231	CORD18	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	232	CORD19	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	234	CORD20	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	235	CORD22	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	240	CORD8	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	243	CORDX2	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	248	CPHD6	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	252	CRDHL	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	253	CRSDS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	254	CRV	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	262	CSNB1H	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	278	CYMD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	280	DCB	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	296	DIAR12	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	297	DLP1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	299	DMDF	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	301	DND	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	307	EAR3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	313	EMPF	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	316	ERVR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	317	ESCS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	321	EVR3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	323	EVR5	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	324	EVR6	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	325	EVR7	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	334	FEVR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	336	FHASD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	344	FVH2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	357	GOP	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	367	HARP	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	370	HECIC2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	374	HK5P	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	377	HMSN6B	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	380	HRG4	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	386	HYC2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	387	ICRD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	388	IDDRP	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	400	ILFS2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	410	IRD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	411	ISQMR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	419	JBTS30	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	434	KIAA1454	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	439	KIP2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	442	KNO2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	444	KSS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	448	LAMPB	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	450	LCA10	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	457	LCA17	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	458	LCA18	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	459	LCA19	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	468	LCAEOD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	470	LHONAR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	471	LHONAR1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	473	LOC619531	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	486	MC1DN16	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	487	MC1DN38	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	488	MCCRP1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	489	MCCRP2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	490	MCCRP3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	491	MCDR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	492	MCDR1	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	494	MCDR3	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	495	MCDR4	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	496	MCDR5	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	497	MCLMR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	499	MCOP2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	500	MCOPS5	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	502	MDCD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	503	MDDC	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	504	MDDGA3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	505	MDDGB3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	506	MDDGC3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	507	MDPT1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	508	MDPT2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	526	MOSPGF	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	528	MPS3C	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	529	MRMV4	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	530	MRP6	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	531	MRST	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	532	MSA1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	545	MVID2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	548	MZSDS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	550	NARP	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	553	NCMD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	554	NCRNA	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	579	NPHS9	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	589	OMCS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	590	ONCR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	592	OPA10	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	593	OPA2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	595	OPA4	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	596	OPA5	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	597	OPA6	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	599	OPA8	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	600	OPA9	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	607	OPSIN-LCR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	609	ORP1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	611	P53BP3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	616	PAP1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	620	PBCRA1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	639	PGN	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	641	PHARC	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	642	PHPVAR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	651	PNR	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	660	PRD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	677	PTBHS	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	685	QRX	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	695	RCD3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	696	RCD3A	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	697	RCD3B	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	698	RCD4	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	699	RCDP1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	706	RDMVID	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	707	RDPA	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	710	REP1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	712	RETGC1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	725	RMCH1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	726	RMCH2	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	727	RNANC	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	728	ROA1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	731	ROP	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	745	RP21	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	746	RP22	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	748	RP24	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	753	RP29	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	757	RP32	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	759	RP34	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	760	RP35	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	768	RP42	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	784	RP58	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	786	RP6	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	790	RP63	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	795	RP68	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	796	RP69	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	798	RP70	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	799	RP71	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	800	RP72	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	801	RP73	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	802	RP74	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	803	RP75	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	804	RP76	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	805	RP77	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	806	RP78	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	807	RP79	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	808	RP8	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	809	RP80	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	810	RP81	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	811	RP82	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	812	RP83	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	813	RP84	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	814	RP85	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	815	RP86	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	816	RP87	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	817	RP88	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	818	RP89	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	820	RP90	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	821	RP91	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	822	RP92	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	823	RP93	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	824	RP94	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	825	RP95	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	826	RP96	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	827	RP97	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	832	RPSKA	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	836	RVCL	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	849	SIFD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	864	SLSN8	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	867	SOPH	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	870	SPARCAN	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	872	SPAX10	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	881	SRTD10	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	882	SRTD11	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	883	SRTD18	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	884	SRTD3	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	885	SRTD5	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	886	SRTD9	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	896	STX3B	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	898	SVD	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	903	TEF1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	904	TEM5L	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	905	THPH5	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	918	TN	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	934	TU15B	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	943	USH1A	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	947	USH1E	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	950	USH1H	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	952	USH1K	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	954	USH2B	disease_locus_or_phenotype_code	Looks like a disease/locus code rather than an HGNC gene symbol.		remove_or_map_using_disease_source
+retina_disease.txt	962	VDM4	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	964	VMD1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	966	VMD3	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	967	VRD1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	976	WGN1	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+retina_disease.txt	979	Xp21-q21	retina_non_hgnc_code	Retina panel contains many disease/locus aliases that are not HGNC gene symbols.		manual_review_source
+skeletal_dysplasia_ajhg2023.txt	56	CCD134	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	CCDC134	can_auto_fix_with_curated_rule
+skeletal_dysplasia_ajhg2023.txt	70	CGAF	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	CGA	manual_review_source
+skeletal_dysplasia_ajhg2023.txt	113	DHPAT	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
+skeletal_dysplasia_ajhg2023.txt	178	FUCA	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	FUCA2|FUCA1	manual_review_source
+skeletal_dysplasia_ajhg2023.txt	205	GREM1, FMN1	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	GREM1|FMN1	split_into_multiple_lines
+skeletal_dysplasia_ajhg2023.txt	223	HSGNAT	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	HGSNAT	can_auto_fix_with_curated_rule
+skeletal_dysplasia_ajhg2023.txt	238	IFT40	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	IFT140|IFT80|IFT74|IFT54|IFT46	manual_review_source
+skeletal_dysplasia_ajhg2023.txt	279	MAENLI	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	MAEL	manual_review_source
+skeletal_dysplasia_ajhg2023.txt	324	NKX3¡V2	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
+skeletal_dysplasia_ajhg2023.txt	465	SULF1, SLCO5A1	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	SULF1|SLCO5A1	split_into_multiple_lines
+skeletal_dysplasia_ajhg2023.txt	473	TBX3, TBX5	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	TBX3|TBX5	split_into_multiple_lines
+skeletal_dysplasia_ajhg2023.txt	511	TRPS1, EXT1	multiple_genes_one_line	Two genes are stored in one line; panel loader treats each line as one gene.	TRPS1|EXT1	split_into_multiple_lines
+val55.txt	6	OARS1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	OAS1|YARS1|WARS1|VARS1|TARS1	manual_review_source
+young_stroke.txt	5	ABCG6	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ABCG8|ABCG5|ABCG4|ABCG2|ABCG1	manual_review_source
+young_stroke.txt	6	ABCG7	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	ABCG8|ABCG5|ABCG4|ABCG2|ABCG1	manual_review_source
+young_stroke.txt	19	ADPRA2A	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	ADRA2A	can_auto_fix_with_curated_rule
+young_stroke.txt	22	AK097927	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
+young_stroke.txt	45	B2GP1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
+young_stroke.txt	62	COX1	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	MT-CO1?	manual_review_source
+young_stroke.txt	63	COX2	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	MT-CO2?	manual_review_source
+young_stroke.txt	86	FACTOR V	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
+young_stroke.txt	164	MT1	ambiguous_truncated_symbol	Looks like a truncated gene-family prefix; multiple HGNC-current genes are plausible.	MT gene family?	manual_review_source
+young_stroke.txt	223	REG2	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	CREG2	manual_review_source
+young_stroke.txt	224	REST-NOA1	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.		manual_review_source
+young_stroke.txt	251	SMCR3	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	SMC3|SMR3B|SMR3A|SMCR8|SMCR5	manual_review_source
+young_stroke.txt	295	VAMP6	symbol_like_unresolved	Not present as HGNC-current, unique previous symbol, unique alias, or withdrawn replacement.	VAMP8|VAMP7|VAMP5|VAMP4|VAMP3	manual_review_source
+young_stroke.txt	308	ZFP783	fixable_typo_or_compound	Pattern is not a single HGNC symbol, but has a clear current HGNC candidate.	ZNF783	can_auto_fix_with_curated_rule

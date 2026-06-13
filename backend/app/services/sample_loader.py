@@ -179,7 +179,7 @@ def _read_pheno_scores(path: Path) -> dict[str, float]:
     import csv as _csv
     with path.open("r", encoding="utf-8", newline="") as f:
         for row in _csv.DictReader(f, delimiter="\t"):
-            gene = panel_deadzone.canonical_gene_symbol(row.get("gene_symbol") or "")[0]
+            gene = panel_deadzone.canonical_panel_gene_symbol(row.get("gene_symbol") or "")
             if not gene:
                 continue
             try:
@@ -954,7 +954,7 @@ def _read_pheno_by_gene(sidecar_dir) -> dict:
     import csv as _csv
     with p.open("r", encoding="utf-8", newline="") as f:
         for row in _csv.DictReader(f, delimiter="\t"):
-            g = panel_deadzone.canonical_gene_symbol(row.get("gene_symbol") or "")[0]
+            g = panel_deadzone.canonical_panel_gene_symbol(row.get("gene_symbol") or "")
             if not g:
                 continue
             try:

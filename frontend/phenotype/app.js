@@ -17,6 +17,7 @@ let fuseInstance = null;
 let panelList = [];          // gene panel names
 let panelFuse = null;
 let generatedContent = "";
+let currentGeneList = [];
 
 // Fixed panel index from /api/phenotype-tool/fixed-panels — WES-I /
 // WES-II / WGS tabs are driven entirely by this. Keys look like
@@ -211,7 +212,10 @@ function selectTerm(rowNum, hpId, hpName, genes) {
   row.dataset.hpName = hpName;
   input.value = `${hpId} ${hpName}`;
   input.classList.add("selected");
-  document.getElementById(`selected-${rowNum}`).textContent = `${hpId} ${hpName} (${genes} genes)`;
+  document.getElementById(`selected-${rowNum}`).innerHTML = `
+    <span>${escapeText(hpId)} ${escapeText(hpName)} (${Number(genes) || 0} genes)</span>
+    <button type="button" class="gene-list-btn" onclick="openGeneListDrawer('hpo', '${escapeJs(hpId)}', '${escapeJs(`${hpId} ${hpName}`)}')">查看</button>
+  `;
   document.getElementById(`dropdown-${rowNum}`).classList.remove("visible");
 }
 
@@ -314,9 +318,96 @@ function selectPanel(rowNum, name) {
   row.dataset.panelName = name;
   input.value = name;
   input.classList.add("selected");
-  document.getElementById(`panel-selected-${rowNum}`).textContent = name;
+  document.getElementById(`panel-selected-${rowNum}`).innerHTML = `
+    <span>${escapeText(name)}</span>
+    <button type="button" class="gene-list-btn" onclick="openGeneListDrawer('panel', '${escapeJs(name)}', '${escapeJs(name)}')">查看</button>
+  `;
   document.getElementById(`panel-dropdown-${rowNum}`).classList.remove("visible");
 }
+
+// ============================================================
+// Gene-list drawer
+// ============================================================
+
+async function openGeneListDrawer(kind, key, label) {
+  const drawer = document.getElementById("gene-list-drawer");
+  const backdrop = document.getElementById("gene-list-backdrop");
+  const title = document.getElementById("gene-list-title");
+  const typeEl = document.getElementById("gene-list-type");
+  const sourceEl = document.getElementById("gene-list-source");
+  const summaryEl = document.getElementById("gene-list-summary");
+  const contentEl = document.getElementById("gene-list-content");
+  const filterEl = document.getElementById("gene-list-filter");
+  if (!drawer || !backdrop) return;
+  currentGeneList = [];
+  drawer.hidden = false;
+  backdrop.hidden = false;
+  title.textContent = label || key;
+  typeEl.textContent = kind === "hpo" ? "HPO term" : "Panel";
+  sourceEl.textContent = "";
+  summaryEl.textContent = "載入中…";
+  contentEl.innerHTML = "";
+  if (filterEl) filterEl.value = "";
+  try {
+    const params = new URLSearchParams({ kind, key });
+    const resp = await fetch(`/api/phenotype-tool/gene-list?${params}`);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || "gene list 載入失敗");
+    currentGeneList = Array.isArray(data.genes) ? data.genes : [];
+    sourceEl.textContent = data.source ? `source: ${data.source}` : "";
+    summaryEl.textContent = `${currentGeneList.length} genes`;
+    renderGeneList(currentGeneList);
+  } catch (e) {
+    summaryEl.textContent = e.message || String(e);
+    contentEl.innerHTML = "";
+  }
+}
+
+function closeGeneListDrawer() {
+  const drawer = document.getElementById("gene-list-drawer");
+  const backdrop = document.getElementById("gene-list-backdrop");
+  if (drawer) drawer.hidden = true;
+  if (backdrop) backdrop.hidden = true;
+  currentGeneList = [];
+}
+
+function renderGeneList(genes) {
+  const contentEl = document.getElementById("gene-list-content");
+  if (!contentEl) return;
+  if (!genes.length) {
+    contentEl.innerHTML = '<div class="muted">沒有符合的 gene</div>';
+    return;
+  }
+  contentEl.innerHTML = genes.map((g) => `<span class="gene-pill">${escapeText(g)}</span>`).join("");
+}
+
+function filterGeneList() {
+  const q = (document.getElementById("gene-list-filter")?.value || "").trim().toUpperCase();
+  const filtered = q ? currentGeneList.filter((g) => String(g).toUpperCase().includes(q)) : currentGeneList;
+  const summaryEl = document.getElementById("gene-list-summary");
+  if (summaryEl) summaryEl.textContent = q
+    ? `${filtered.length} / ${currentGeneList.length} genes`
+    : `${currentGeneList.length} genes`;
+  renderGeneList(filtered);
+}
+
+async function copyGeneList() {
+  const text = currentGeneList.join("\n");
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    showStatus("已複製 gene list。", "success");
+  } catch {
+    showStatus("瀏覽器不允許直接複製，請在 gene list 中手動選取。", "error");
+  }
+}
+
+document.getElementById("gene-list-backdrop")?.addEventListener("click", closeGeneListDrawer);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !document.getElementById("gene-list-drawer")?.hidden) {
+    closeGeneListDrawer();
+  }
+});
 
 // ============================================================
 // Fixed panels (WES-I / WES-II / WGS tabs)
@@ -370,6 +461,8 @@ function renderFixedPanelHosts() {
               <input type="checkbox" class="fp-chip-cb" value="${escapeAttr(p.key)}">
               <span class="fp-chip-label">${escapeText(p.name)}</span>
               <span class="fp-chip-count">(${p.gene_count || 0})</span>
+              <button type="button" class="gene-list-btn fp-gene-list-btn"
+                onclick="event.preventDefault(); event.stopPropagation(); openGeneListDrawer('panel', '${escapeJs(p.key)}', '${escapeJs(`${s.key} · ${g.category} · ${p.name}`)}')">查看</button>
             </label>
           `).join("")}
         </div>
@@ -405,6 +498,16 @@ function escapeText(s) {
 }
 function escapeAttr(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+function escapeJs(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "");
 }
 
 // ============================================================
@@ -485,6 +588,7 @@ function createCustomPanelRow() {
   row.innerHTML = `
     <div class="cp-fields">
       <input type="text" class="cp-name" placeholder="自訂 panel 名稱（例：MyPanel）">
+      <input type="text" class="cp-source" placeholder="來源（例：PanelApp / PMID / Lab curated）">
       <textarea class="cp-genes" rows="3" placeholder="基因清單（逗號或換行分隔，例：BRCA1, TP53, C7orf50）"></textarea>
     </div>
     <input type="number" class="weight-input" value="1" min="0" step="1" placeholder="W" title="weight">
@@ -502,10 +606,11 @@ function _collectCustomPanels() {
   const out = [];
   document.querySelectorAll(".custom-panel-row").forEach((row) => {
     const name = (row.querySelector(".cp-name")?.value || "").trim();
+    const source = (row.querySelector(".cp-source")?.value || "").trim();
     const genesRaw = (row.querySelector(".cp-genes")?.value || "").trim();
     const weight = row.querySelector(".weight-input")?.value || "1";
-    if (name && genesRaw) out.push({ rowEl: row, name, genes: genesRaw, weight });
-    else if (name || genesRaw) out.push({ rowEl: row, name, genes: genesRaw, weight, incomplete: true });
+    if (name && genesRaw) out.push({ rowEl: row, name, source, genes: genesRaw, weight });
+    else if (name || source || genesRaw) out.push({ rowEl: row, name, source, genes: genesRaw, weight, incomplete: true });
   });
   return out;
 }
@@ -595,7 +700,7 @@ async function generateFile() {
       const resp = await fetch("/api/phenotype-tool/custom-panel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: cp.name, genes: cp.genes }),
+        body: JSON.stringify({ name: cp.name, source: cp.source, genes: cp.genes }),
       });
       const body = await resp.json().catch(() => ({}));
       if (!resp.ok) {

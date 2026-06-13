@@ -8,7 +8,7 @@ DANN, PHACTboost, phyloP100way, GERP++_RS, gnomAD_exomes). This
 script re-runs VEP on the small filtered set with MetaRNN (and
 optionally SpliceAI when a scores VCF is available) added to the
 dbNSFP/Plugin extract list, then joins those extra columns back
-into the TSV. Like the GeneBe stop-gap, it keeps missing AF values
+into the TSV. Like the GeneBe post-processing, it keeps missing AF values
 eligible and skips sites whose GNOMAD_G_AF exceeds 0.01 by default.
 
 Workflow:

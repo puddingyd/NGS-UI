@@ -16,7 +16,7 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
                                           snv_indel.annotated.tsv
                                           mito.annotated.tsv
                                           + pipeline_source.json (audit)
-    5. run_stopgaps.sh                → filter / GeneBe / extra-VEP / CNV-AnnotSV
+    5. post-processing                → filter / GeneBe / extra-VEP / CNV-AnnotSV
                                           + pre-build snv_indel.review.tsv
                                           (ClinVar removed — pipeline already
                                            does it; GeneBe writes a SECOND
@@ -467,6 +467,11 @@ def _load_secrets() -> None:
 
 def _update(job_id: str, **kw) -> None:
     st = dragen_jobs.load_state(job_id) or {}
+    if "nextflow_progress_pct" in kw:
+        kw["nextflow_progress_pct"] = max(
+            float(st.get("nextflow_progress_pct") or 0),
+            float(kw.get("nextflow_progress_pct") or 0),
+        )
     st.update(kw)
     dragen_jobs.save_state(job_id, st)
 
@@ -481,6 +486,11 @@ def _set_step(job_id: str, step: str, **kw) -> None:
     """Persist and log step transitions for post-run timing analysis."""
     now = _now()
     st = dragen_jobs.load_state(job_id) or {}
+    if "nextflow_progress_pct" in kw:
+        kw["nextflow_progress_pct"] = max(
+            float(st.get("nextflow_progress_pct") or 0),
+            float(kw.get("nextflow_progress_pct") or 0),
+        )
     history = list(st.get("step_history") or [])
     history.append({"step": step, "started_at": now})
     st.update(kw)
@@ -517,14 +527,15 @@ def _record_nextflow_step(
     history.append(item)
     st["nextflow_step_history"] = history
     dragen_jobs.save_state(job_id, st)
-    progress = f" done={done}/{total}" if done is not None and total is not None else ""
+
+
+def _elapsed_minutes_label(elapsed: float | None) -> str:
     if elapsed is None:
-        _log(f"[nextflow-step] {slug} {event} process={process}{progress}")
-    else:
-        _log(f"[nextflow-step] {slug} {event} process={process}{progress} elapsed={elapsed:.1f}s")
+        return ""
+    return f"elapsed={elapsed / 60:.1f}m"
 
 
-def _run(cmd: list[str], *, label: str, on_line=None) -> None:
+def _run(cmd: list[str], *, label: str, on_line=None, display_cmd: list[str] | None = None) -> None:
     """Stream a subprocess's stdout/stderr into this worker's stdout
     (which is already redirected to log.txt by dragen_jobs.start_job).
     Raises on non-zero exit so the outer try/except records failure.
@@ -532,7 +543,7 @@ def _run(cmd: list[str], *, label: str, on_line=None) -> None:
     started = time.monotonic()
     _log()
     _log(f"========================= [{label}] =========================")
-    _log("$ " + " ".join(cmd))
+    _log("$ " + " ".join(display_cmd or cmd))
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -543,9 +554,13 @@ def _run(cmd: list[str], *, label: str, on_line=None) -> None:
     )
     assert proc.stdout is not None
     for line in proc.stdout:
-        print(line, end="", flush=True)
+        suffix = ""
         if on_line is not None:
-            on_line(line)
+            suffix = on_line(line) or ""
+        if suffix:
+            print(line.rstrip("\n") + suffix, flush=True)
+        else:
+            print(line, end="", flush=True)
     proc.wait()
     elapsed = time.monotonic() - started
     _log(f"[command] {label} finished exit={proc.returncode} elapsed={elapsed:.1f}s")
@@ -751,6 +766,10 @@ def main() -> int:
                         done=done or None,
                         total=total or None,
                     )
+                    suffix = ""
+                    elapsed_label = _elapsed_minutes_label(elapsed)
+                    if elapsed_label:
+                        suffix = f"  {elapsed_label} [{_now()}]"
                     if event == "queued":
                         return
                     stage_idx = nextflow_stage_index.get(slug, 0)
@@ -769,12 +788,8 @@ def main() -> int:
                     ) * (nextflow_progress_end - nextflow_progress_start)
                     if stage_idx > nextflow_progress_rank or event == "done" or count_match:
                         nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
-                        st = dragen_jobs.load_state(job_id) or {}
-                        previous_pct = float(st.get("nextflow_progress_pct") or 0)
-                        pct = max(previous_pct, pct)
-                        _set_step(
+                        _update(
                             job_id,
-                            f"nextflow:{slug}",
                             nextflow_progress_pct=round(pct, 1),
                             nextflow_current={
                                 "step": slug,
@@ -784,7 +799,7 @@ def main() -> int:
                                 "total": total,
                             },
                         )
-                    return
+                    return suffix
 
             if legacy_staging:
                 sample = pending_samples[0]
@@ -910,21 +925,25 @@ def main() -> int:
                 pipeline_annotsv_copied.setdefault(sid, set()).add(kind)
                 _log(f"[copy] {sid}: {annotsv_src} → {annotsv_dst}")
 
-        # 5. Stop-gap chain (no ClinVar; pipeline already populates it).
-        _set_step(job_id, "stop-gaps")
-        def track_stopgaps(line: str) -> None:
-            match = re.search(r"\[(stopgaps-step|sample-step)]\s+([a-z0-9-]+)\s+start", line)
+        # 5. Post-processing chain (no ClinVar; pipeline already populates it).
+        _set_step(job_id, "post-processing")
+        def track_post_processing(line: str) -> None:
+            match = re.search(r"\[(post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+start", line)
             if match:
-                group = "stop-gaps" if match.group(1) == "stopgaps-step" else "sample-step"
+                group = "post-processing" if match.group(1) == "post-processing-step" else "sample-step"
                 _set_step(job_id, f"{group}:{match.group(2)}")
 
-        stopgap_count = len(samples)
-        for stopgap_index, sample in enumerate(samples):
+        post_processing_count = len(samples)
+        for post_processing_index, sample in enumerate(samples):
             sid = sample["sample_id"]
             _update(
                 job_id,
-                stopgap_sample_index=stopgap_index,
-                stopgap_sample_count=stopgap_count,
+                post_processing_sample_index=post_processing_index,
+                post_processing_sample_count=post_processing_count,
+                post_processing_sample_id=sid,
+                # Backward-compatible keys for older frontends/state readers.
+                stopgap_sample_index=post_processing_index,
+                stopgap_sample_count=post_processing_count,
                 stopgap_sample_id=sid,
             )
             gui_tsv = TERTIARY_OUTPUT_ROOT / sid / "snv_indel.annotated.tsv"
@@ -933,7 +952,7 @@ def main() -> int:
                          "--sample", sid]
             if pipeline_annotsv_copied.get(sid) == {"cnv", "sv"}:
                 stop_args += ["--skip-cnv"]
-                _log(f"[stop-gaps] {sid}: skip AnnotSV fallback; pipeline CNV/SV already copied")
+                _log(f"[post-processing] {sid}: skip AnnotSV fallback; pipeline CNV/SV already copied")
             elif mode == "dragen":
                 stop_args += ["--dragen-cnv-source", sample["vcf_path"]]
             elif mode == "inhouse":
@@ -943,7 +962,17 @@ def main() -> int:
                     stop_args += ["--inhouse-sv-vcf",  sample["sv_vcf"]]
             if not args.with_extra_vep:
                 stop_args.append("--skip-extra-vep")
-            _run(stop_args, label=f"stop-gaps {sid}", on_line=track_stopgaps)
+            display_stop_args = ["post-processing", "--tsv", str(gui_tsv), "--sample", sid]
+            if "--skip-cnv" in stop_args:
+                display_stop_args.append("--skip-cnv")
+            if "--skip-extra-vep" in stop_args:
+                display_stop_args.append("--skip-extra-vep")
+            _run(
+                stop_args,
+                label=f"post-processing {sid}",
+                on_line=track_post_processing,
+                display_cmd=display_stop_args,
+            )
 
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)

@@ -331,7 +331,7 @@ const TOOL_CUTOFFS = {
 // ▾ More. Ordering matches the new pipeline's authoritative cascade
 // (P-KNN > AlphaMissense > Pangolin); ESM1b / VARITY_R / BayesDel sit
 // just below them (still high-confidence predictors); SpliceAI /
-// MetaRNN come from the extra-VEP stop-gap; the conservation /
+// MetaRNN come from the extra-VEP post-processing step; the conservation /
 // gene-level / older tools sit further down.
 const IN_SILICO_TOOLS = [
   { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR",            extraField: "PKNN_evidence", cutoffs: "pknn" },
@@ -2976,7 +2976,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     urls.omim ? `<a href="${urls.omim}"     target="_blank" rel="noopener">OMIM</a>` : "",
   ].join("");
 
-  // ACMG priority: reviewer override > GeneBe (second-opinion stop-gap)
+  // ACMG priority: reviewer override > GeneBe (second-opinion post-processing)
   // > pipeline. GeneBe ACMG_CLASS / SCORE / CRITERIA tend to be tighter
   // calibrated than the pipeline's per-rule classifier, so use them
   // when present and fall back to pipeline otherwise.
@@ -3818,7 +3818,7 @@ function _cnvSvIdsForTier(tier) {
 // SV callers (Manta / DELLY / GRIDSS / cnvkit) routinely report the
 // same biological event as several nearly-identical SVs whose
 // breakpoints differ by a few hundred bp. This is a pure-visual
-// stop-gap collapse: pick a representative per cluster (the first
+// display collapse: pick a representative per cluster (the first
 // id, which carries the highest ranking_score because tiers are
 // pre-sorted) and tuck the others inside an expandable "顯示同位點
 // N 個近似 SV" detail block on the rep card. No edits / no data are
@@ -7860,7 +7860,7 @@ function maybeShowVersionPicker(onPick) {
 // Button on the topbar opens a modal listing every hard-filtered
 // VCF found under the server's DRAGEN_VCF_ROOTS, reviewer picks
 // one and clicks 開始分析. Backend spawns a worker process
-// (samplesheet → nextflow → copy outputs → run_stopgaps). We poll
+// (samplesheet → nextflow → copy outputs → post-processing). We poll
 // /api/dragen/jobs/{job_id} every 5 s and reflect the current
 // step in (a) the modal log pane and (b) a small grey status
 // label next to the "成大醫院基因醫學部 NGS 分析平台" title.
@@ -7877,6 +7877,7 @@ const _DRAGEN_STATE = {
   seqType: { inhouse: "" },
   batch: [],            // [{mode, vcf_path, sample_id, source_sample_id, ...}]
   job: null,            // current job state, polled
+  lastProgressPct: 0,   // keep progress visually monotonic across polling races
   pollTimer: null,
   recoverTimer: null,
 };
@@ -8176,7 +8177,12 @@ async function loadDragenVcfList({ force = false } = {}) {
 function _dragenSetJob(state) {
   const isNewJob = state?.job_id && state.job_id !== _DRAGEN_STATE.job?.job_id;
   _DRAGEN_STATE.job = state;
-  const pct = _dragenProgressPercent(state);
+  if (!state || isNewJob) _DRAGEN_STATE.lastProgressPct = 0;
+  const rawPct = _dragenProgressPercent(state);
+  const pct = state?.state === "done"
+    ? 100
+    : Math.max(rawPct, _DRAGEN_STATE.lastProgressPct || 0);
+  _DRAGEN_STATE.lastProgressPct = pct;
   // Topbar status
   const top = document.getElementById("topbar-job-status");
   if (top) {
@@ -8232,10 +8238,10 @@ function _dragenProgressPercent(state) {
   if (state.state === "cancelled") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
   if (state.state === "failed") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
   const step = String(state.step || "");
-  if (step.startsWith("stop-gaps") || step.startsWith("sample-step")) {
+  if (step.startsWith("post-processing") || step.startsWith("sample-step")) {
     return _dragenStopgapProgressPercent(state);
   }
-  if (step.startsWith("nextflow:") && Number.isFinite(Number(state.nextflow_progress_pct))) {
+  if ((step === "nextflow" || step.startsWith("nextflow:")) && Number.isFinite(Number(state.nextflow_progress_pct))) {
     return _clampPct(state.nextflow_progress_pct);
   }
   const byStep = {
@@ -8254,7 +8260,7 @@ function _dragenProgressPercent(state) {
     "nextflow:acmg-classify": 76,
     "nextflow:vep-annotate-done": 52,
     "copy-pipeline-tsv": 82,
-    "stop-gaps": 82,
+    "post-processing": 82,
     done: 100,
   };
   return byStep[state.step] ?? 0;
@@ -8265,13 +8271,14 @@ function _clampPct(value) {
 }
 
 function _dragenStopgapProgressPercent(state) {
-  const total = Math.max(1, Number(state.stopgap_sample_count || state.sample_count || 1));
-  const idx = Math.max(0, Math.min(total - 1, Number(state.stopgap_sample_index || 0)));
+  const total = Math.max(1, Number(state.post_processing_sample_count || state.stopgap_sample_count || state.sample_count || 1));
+  const idx = Math.max(0, Math.min(total - 1, Number(state.post_processing_sample_index ?? state.stopgap_sample_index ?? 0)));
   const sub = {
-    "stop-gaps": 0,
-    "stop-gaps:genebe": 0.20,
-    "stop-gaps:extra-vep": 0.52,
-    "stop-gaps:annotsv": 0.78,
+    "post-processing": 0,
+    "post-processing:genebe": 0.20,
+    "post-processing:extra-vep": 0.52,
+    "post-processing:giab-strata": 0.66,
+    "post-processing:annotsv": 0.78,
     "sample-step:review-tsv": 0.84,
     "sample-step:gene-index": 0.92,
   };
@@ -8332,7 +8339,7 @@ function _dragenStartRecoveryPolling() {
 async function _dragenCancelCurrentJob() {
   const jobId = _DRAGEN_STATE.job?.job_id;
   if (!jobId) return;
-  if (!confirm("確定要終止這次三級分析？正在執行的 Nextflow / stop-gaps 會收到終止訊號。")) return;
+  if (!confirm("確定要終止這次三級分析？正在執行的 Nextflow / post-processing 會收到終止訊號。")) return;
   const btn = document.getElementById("dragen-job-cancel-btn");
   if (btn) { btn.disabled = true; btn.textContent = "終止中…"; }
   try {

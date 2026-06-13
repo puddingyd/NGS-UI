@@ -231,7 +231,7 @@ def load_mito_tsv(
             # weak/low-base-qual noise, contamination, strand bias, …).
             if filt and filt not in ("PASS", "."):
                 continue
-            gene = panel_deadzone.canonical_gene_symbol(_first(row, "GENE", "MITOMAP_LOCUS"))[0]
+            gene = panel_deadzone.canonical_panel_gene_symbol(_first(row, "GENE", "MITOMAP_LOCUS"))
             locus_type = _derive_locus_type(row, gene)
             status = _first(row, "MITOMAP_STATUS")
             mitotip = _first(row, "MITOTIP_SCORE", "MITOMAP_MITOTIP")

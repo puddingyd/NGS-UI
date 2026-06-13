@@ -63,6 +63,15 @@ def list_fixed_panels():
         return {"series": []}
 
 
+@router.get("/gene-list")
+def gene_list(kind: str = Query("", pattern="^(|hpo|panel)$"), key: str = Query(..., min_length=1)):
+    """Return canonical gene symbols for one HPO term or panel key."""
+    data = phenotype_scorer.genes_for_key(key, kind)
+    if not data.get("gene_count"):
+        raise HTTPException(404, "找不到這個 HPO term / panel 的 gene list")
+    return data
+
+
 _GENE_SPLIT_RE = re.compile(r"[,\s]+")
 _MAX_PANEL_GENES = 5000
 
@@ -90,7 +99,11 @@ def create_custom_panel(payload: dict):
     if len(genes) > _MAX_PANEL_GENES:
         raise HTTPException(400, f"基因數過多（上限 {_MAX_PANEL_GENES}）")
     try:
-        return phenotype_scorer.register_custom_panel((payload or {}).get("name", ""), genes)
+        return phenotype_scorer.register_custom_panel(
+            (payload or {}).get("name", ""),
+            genes,
+            source=(payload or {}).get("source", ""),
+        )
     except ValueError as e:
         msg = str(e)
         # "已存在" → 409 Conflict; everything else is a bad request.

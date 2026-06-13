@@ -39,6 +39,11 @@ def symbol_to_hgnc_id() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
+def _current_symbol_by_upper() -> dict[str, str]:
+    return {sym.upper(): sym for sym in hgnc_id_to_symbol().values()}
+
+
+@lru_cache(maxsize=1)
 def disease_associated_genes() -> frozenset[str]:
     paths = [
         NGS_PANEL_DEADZONE_DIR / "panel" / "panel_loose_plus_clinical.hgnc_canonical.txt",
@@ -98,6 +103,28 @@ def _legacy_symbol_alias() -> dict[str, str]:
     return out
 
 
+@lru_cache(maxsize=1)
+def _panel_gene_alias() -> dict[str, str]:
+    """Panel/custom-panel input alias → HGNC-current symbol.
+
+    This intentionally lives beside, but separate from, the VEP alias map:
+    VEP-specific `vep_missing_gene` rows can describe positional annotation
+    drift and must not be applied blindly to user-supplied panel gene lists.
+    """
+    path = NGS_PANEL_DEADZONE_DIR / "panel" / "panel_gene_aliases.tsv"
+    out: dict[str, str] = {}
+    try:
+        for row in _read_tsv(path):
+            alias = (row.get("alias") or "").strip()
+            symbol = (row.get("hgnc_symbol") or "").strip()
+            if alias and symbol:
+                out[alias] = symbol
+                out.setdefault(alias.upper(), symbol)
+    except OSError:
+        return {}
+    return out
+
+
 def canonical_gene_symbol(symbol: str, hgnc_id: str = "") -> tuple[str, str]:
     """Return (HGNC-current symbol, HGNC_ID) for a VEP/AnnotSV gene.
 
@@ -120,6 +147,29 @@ def canonical_gene_symbol(symbol: str, hgnc_id: str = "") -> tuple[str, str]:
     if mapped:
         return mapped, symbol_to_hgnc_id().get(mapped, hid)
     return sym, hid
+
+
+def canonical_panel_gene_symbol(symbol: str) -> str:
+    """Return HGNC-current symbol for HPO/panel/custom-panel input.
+
+    Unlike `canonical_gene_symbol()`, this avoids VEP positional alias rows
+    that are only safe when a variant's HGNC_ID or transcript context is
+    available. It is therefore the right helper for pheno_score gene sets.
+    """
+    sym = (symbol or "").strip()
+    if not sym:
+        return ""
+    by_upper = _current_symbol_by_upper()
+    current = hgnc_id_to_symbol()
+    if sym in current.values():
+        return sym
+    cased = by_upper.get(sym.upper())
+    if cased:
+        return cased
+    mapped = _panel_gene_alias().get(sym) or _panel_gene_alias().get(sym.upper())
+    if mapped:
+        return by_upper.get(mapped.upper(), mapped)
+    return sym
 
 
 def is_disease_associated_gene(symbol: str, hgnc_id: str = "") -> bool:
