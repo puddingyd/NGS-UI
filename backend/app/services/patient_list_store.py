@@ -33,6 +33,7 @@ _ROSTER_NAME = "roster.json"
 _UPLOADS_NAME = "uploads.json"
 _SPECIMEN_PREFIX = "8BB1"
 _HEADER_KEY = "檢體編號"     # the cell that marks the header row in col 0
+_UI_ALIAS_SUFFIXES = ("-dragen", "-nckuh", "-inhouse")
 
 
 def _roster_path() -> Path:
@@ -80,6 +81,35 @@ def _now_iso() -> str:
 
 def _strip(v: Any) -> str:
     return str(v).strip() if v is not None else ""
+
+
+def strip_ui_alias_suffix(sample_id: str) -> str:
+    """Return the LIS_ID candidate behind a caller-disambiguated UI ID.
+
+    Tertiary jobs append -dragen / -nckuh / -inhouse to avoid output
+    collisions. The clinic roster is keyed by the original LIS_ID, so
+    roster lookups may need this caller suffix removed. Exact roster
+    matches still win before this fallback is used.
+    """
+    sid = _strip(sample_id)
+    sid_l = sid.lower()
+    for suffix in _UI_ALIAS_SUFFIXES:
+        if sid_l.endswith(suffix):
+            return sid[: -len(suffix)]
+    return sid
+
+
+def lookup_candidates(sample_id: str, *aliases: str) -> list[str]:
+    """Ordered roster keys to try for a UI sample ID and source aliases."""
+    out: list[str] = []
+    for raw in (sample_id, *aliases):
+        sid = _strip(raw)
+        if not sid:
+            continue
+        for candidate in (sid, strip_ui_alias_suffix(sid)):
+            if candidate and candidate not in out:
+                out.append(candidate)
+    return out
 
 
 def _lis_id_from_specimen(specimen: str) -> str:
@@ -200,7 +230,26 @@ def load_roster() -> dict[str, dict]:
 
 def lookup(lis_id: str) -> dict | None:
     """Roster entry for one LIS_ID, or None."""
-    return load_roster().get(lis_id)
+    roster = load_roster()
+    for key in lookup_candidates(lis_id):
+        hit = roster.get(key)
+        if hit:
+            return hit
+    return None
+
+
+def lookup_with_key(lis_id: str, *aliases: str, roster: dict[str, dict] | None = None) -> tuple[dict | None, str]:
+    """Return the first roster entry and key matching a sample ID.
+
+    `aliases` is intended for original source sample IDs from
+    pipeline_source.json. Returns ({...}, key) or (None, "").
+    """
+    roster = roster if roster is not None else load_roster()
+    for key in lookup_candidates(lis_id, *aliases):
+        hit = roster.get(key)
+        if hit:
+            return hit, key
+    return None, ""
 
 
 def ingest_xlsx(content: bytes, original_filename: str) -> dict:

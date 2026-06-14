@@ -132,7 +132,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 - 個案摘要會寫入每個 sample 目錄的 `case_summary.json`，依 metadata、TSV/index 與 OMIM 簽章自動失效；已標記 SNV 優先用 `snv_gene_index.sqlite` 依 variant id 查找，CNV/SV 只讀目標 id，避免大型 DRAGEN TSV 每次重掃。
 2. **載入新個案** — 點「載入新個案」：
    - LIS_ID 下拉會列出 pipeline 已丟進 `tertiary_output/` 但尚未登錄的目錄；
-   - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；
+   - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；三級分析輸出若使用 `{LIS_ID}-dragen` / `{LIS_ID}-nckuh` / `{LIS_ID}-inhouse` 這類 UI 後綴，會先保留後綴作為 sample ID，再回查未加後綴的 roster LIS_ID；
    - 若來源為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，Test type 會預設為 `WGS`；送出前仍可手動改回 `WES`；
    - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
    - 登錄新個案不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；若 VCF 尚不存在，Exomiser/LIRICAL 背景 job 開始前會自動建立或刷新。

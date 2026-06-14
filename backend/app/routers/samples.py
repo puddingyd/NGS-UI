@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from ..auth import current_user
-from ..config import PHENOTYPE_DIR
+from ..config import PHENOTYPE_DIR, TERTIARY_OUTPUT_ROOT
 from ..services import (
     docx_export,
     patient_list_store,
@@ -188,19 +188,36 @@ def register_sample(
         except _json.JSONDecodeError:
             hpo_payload = panels_payload = None
 
+    source_sample_id = ""
+    pipeline_source = TERTIARY_OUTPUT_ROOT / lis_id / "pipeline_source.json"
+    if pipeline_source.is_file():
+        try:
+            source_info = _json.loads(pipeline_source.read_text(encoding="utf-8")) or {}
+            source_sample_id = str(source_info.get("source_sample_id") or "")
+        except (OSError, _json.JSONDecodeError):
+            source_sample_id = ""
+
+    roster_entry, roster_lis_id = patient_list_store.lookup_with_key(
+        lis_id,
+        source_sample_id,
+    )
     pheno_path = PHENOTYPE_DIR / f"{lis_id}_{mrn}_phenotype.txt"
     phenotype_text = ""
     phenotype_loaded = False
-    if pheno_path.is_file():
-        phenotype_text = pheno_path.read_text(encoding="utf-8")
-        phenotype_loaded = True
+    for pheno_lis_id in patient_list_store.lookup_candidates(lis_id, roster_lis_id, source_sample_id):
+        candidate = PHENOTYPE_DIR / f"{pheno_lis_id}_{mrn}_phenotype.txt"
+        if candidate.is_file():
+            pheno_path = candidate
+            phenotype_text = candidate.read_text(encoding="utf-8")
+            phenotype_loaded = True
+            break
 
     # Fall back to the latest roster entry for fields the reviewer
     # didn't explicitly provide. Lets the load-new-case modal stay
     # minimal — only LIS_ID + name + mrn are mandatory; 科別 /
     # 開單醫師 / 簽收時間 ride along from the xlsx upload.
     if not (department and physician and sign_received_at):
-        roster_entry = patient_list_store.lookup(lis_id) or {}
+        roster_entry = roster_entry or {}
         department       = department or roster_entry.get("department", "")
         physician        = physician  or roster_entry.get("physician", "")
         sign_received_at = sign_received_at or roster_entry.get("sign_received_at", "")

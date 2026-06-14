@@ -14,6 +14,7 @@
 - Secondary findings 的分析區與報告區預設展開；分析區保留全部候選點位，報告區只顯示 ✓ 點位，兩邊的 ACMG 與 comment 編輯會同步。
 - 載入個案時先顯示主要 SNV/Indel，ACMG SF / Proactive / Carrier secondary findings 會在背景補載，避免 carrier panel 查詢拖慢核心畫面。
 - Secondary findings 背景補載會優先用新版 `snv_gene_index.sqlite` 的 P/LP flag 在 SQL 層縮小 rows；舊 index 也會先在 raw TSV 欄位層過濾 ClinVar/GeneBe/ACMG P/LP，再做完整卡片 enrichment，減少 carrier panel 大量非 P/LP rows 的處理時間。
+- 載入新個案時，若三級分析 sample ID 帶有 `-dragen`、`-nckuh` 或 `-inhouse` 後綴，會自動回查未加後綴的個案清單 LIS_ID，避免 MRN / 姓名 / 簽收資料漏帶。
 
 ### v4.9 — 2026-06-12
 
