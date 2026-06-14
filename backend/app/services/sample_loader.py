@@ -580,19 +580,38 @@ def _is_clinvar_plp(variant: dict) -> bool:
     }
 
 
-def _is_acmg_plp(variant: dict) -> bool:
-    cls = (
-        variant.get("genebe_acmg_class")
-        or variant.get("ACMG_classification")
-        or ""
-    )
-    key = str(cls).strip().lower().replace("_", " ")
+def _is_plp_text(raw: str) -> bool:
+    key = str(raw or "").strip().lower().replace("_", " ")
     return key in {
         "pathogenic",
         "likely pathogenic",
         "pathogenic/likely pathogenic",
         "likely pathogenic/pathogenic",
     }
+
+
+def _row_is_secondary_candidate(row: dict[str, str]) -> bool:
+    """Cheap pre-shaping filter for secondary finding candidates.
+
+    Carrier/proactive panels can cover many genes. Avoid converting and
+    enriching thousands of raw rows when the only rows that can surface in
+    the UI are ClinVar P/LP or final ACMG P/LP, matching the card's
+    GeneBe-first ACMG display priority.
+    """
+    return (
+        _is_plp_text(row.get("CLINVAR_SIG") or "")
+        or _is_plp_text(row.get("GENEBE_ACMG_CLASS") or "")
+        or _is_plp_text(row.get("ACMG_CLASS") or "")
+    )
+
+
+def _is_acmg_plp(variant: dict) -> bool:
+    cls = (
+        variant.get("genebe_acmg_class")
+        or variant.get("ACMG_classification")
+        or ""
+    )
+    return _is_plp_text(cls)
 
 
 def _secondary_panel_genes() -> dict[str, set[str]]:
@@ -619,10 +638,12 @@ def _build_secondary_snv_categories(
     panel_genes = _secondary_panel_genes()
     wanted_genes = sorted({g for genes in panel_genes.values() for g in genes})
     if wanted_genes and raw_tsv.is_file():
-        rows = snv_gene_index.query_rows(raw_tsv, wanted_genes)
+        rows = snv_gene_index.query_rows(raw_tsv, wanted_genes, secondary_only=True)
         if rows is not None:
+            rows = [row for row in rows if _row_is_secondary_candidate(row)]
             extra = _variants_from_rows(rows, test_type=test_type)
-            _enrich_snv_variants(extra, sidecar_dir)
+            if extra:
+                _enrich_snv_variants(extra, sidecar_dir)
             for vid, variant in extra.items():
                 if _is_clinvar_plp(variant) or _is_acmg_plp(variant):
                     variants[vid] = variant
