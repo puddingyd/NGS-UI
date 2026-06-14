@@ -168,7 +168,8 @@ async function _loadSample(LIS_ID) {
   toggledBlocks.clear();
 
   // Staged loading: the core payload above carries empty CNV/SV + Mito
-  // side-channels (aux_pending). Pull them in the background so the
+  // side-channels (aux_pending) and secondary SNV panel categories
+  // (secondary_pending). Pull them in the background so the
   // SNV/Indel view + report sections appear immediately; each card
   // re-renders itself when its data lands. A monotonic token drops a
   // stale response that arrives after the user switched samples.
@@ -177,6 +178,25 @@ async function _loadSample(LIS_ID) {
     state.cnvPending = true;
     state.svPending = true;
     state.mitoPending  = true;
+    state.secondaryPending = true;
+    apiFetch(`/samples/${encodeURIComponent(sid)}/secondary-snv`)
+      .then(aux => {
+        if (token !== state._auxLoadToken || !state.data) return;
+        if (aux) {
+          state.data.variants = { ...(state.data.variants || {}), ...(aux.variants || {}) };
+          state.data.categories = { ...(state.data.categories || {}), ...(aux.categories || {}) };
+          state.data.secondary_pending = false;
+        }
+        state.secondaryPending = false;
+        try { renderReportSections(); } catch (_e) {}
+        try { renderCandidateSections(); } catch (_e) {}
+      })
+      .catch(() => {
+        if (token !== state._auxLoadToken) return;
+        state.secondaryPending = false;
+        if (state.data) state.data.secondary_pending = false;
+        try { renderCandidateSections(); } catch (_e) {}
+      });
     apiFetch(`/samples/${encodeURIComponent(sid)}/cnv`)
       .then(aux => {
         if (token !== state._auxLoadToken || !state.data) return;
@@ -3006,6 +3026,20 @@ function setEdit(id, field, val) {
   state.dirty = true;
 }
 
+function _syncEditControls(id, field, val, source = null) {
+  const selectorByField = {
+    comment: ".variant-comment",
+    ACMG_score: ".acmg-score",
+    ACMG_criteria: ".acmg-crit",
+  };
+  const selector = selectorByField[field];
+  if (!selector) return;
+  document.querySelectorAll(`${selector}[data-id="${CSS.escape(id)}"]`).forEach(el => {
+    if (el === source) return;
+    el.value = val ?? "";
+  });
+}
+
 function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const isPanel    = dropdownKind === "panel";
   const panelKey   = isPanel ? (opts.category || "") : "";
@@ -3422,9 +3456,9 @@ const REPORT_SECTION_DEFS = [
   // ACMG SF / Proactive / Carrier / PharmCat all live inside the
   // Secondary findings collapsible group in the HTML; they render
   // the same way as before, just nested in a different container.
-  { el: "sec-acmg-sf",   title: "ACMG SF",            category: "acmg_sf",   dropdown: "panel", diseaseCheckbox: true },
-  { el: "sec-proactive", title: "Proactive",          category: "proactive", dropdown: "panel", diseaseCheckbox: true },
-  { el: "sec-carrier",   title: "Carrier screening",  category: "carrier",   dropdown: "panel", diseaseCheckbox: true },
+  { el: "sec-acmg-sf",   title: "ACMG SF",            category: "acmg_sf",   dropdown: "panel", defaultOpen: true, diseaseCheckbox: true },
+  { el: "sec-proactive", title: "Proactive",          category: "proactive", dropdown: "panel", defaultOpen: true, diseaseCheckbox: true },
+  { el: "sec-carrier",   title: "Carrier screening",  category: "carrier",   dropdown: "panel", defaultOpen: true, diseaseCheckbox: true },
 ];
 
 // Tier sections per 三級輸出計畫.md §2.3. Backend categorises each variant
@@ -3435,9 +3469,9 @@ const CANDIDATE_SECTION_DEFS = [
   { el: "cat-tier-1c", title: "1C — ACMG points ≥ 4",          category: "1C", dropdown: "candidate", tier: "1C", defaultOpen: true },
   { el: "cat-tier-2",  title: "2 — ClinVar P/LP 0★ or Conflicting (含 P)", category: "2", dropdown: "candidate", tier: "2" },
   { el: "cat-tier-3",  title: "3 - Other",                     category: "3",  dropdown: "candidate", tier: "3"  },
-  { el: "cat-acmg-sf-c",   title: "ACMG SF",          category: "acmg_sf",   dropdown: "panel" },
-  { el: "cat-proactive-c", title: "Proactive",        category: "proactive", dropdown: "panel" },
-  { el: "cat-carrier-c",   title: "Carrier screening", category: "carrier",  dropdown: "panel" },
+  { el: "cat-acmg-sf-c",   title: "ACMG SF",          category: "acmg_sf",   dropdown: "panel", defaultOpen: true },
+  { el: "cat-proactive-c", title: "Proactive",        category: "proactive", dropdown: "panel", defaultOpen: true },
+  { el: "cat-carrier-c",   title: "Carrier screening", category: "carrier",  dropdown: "panel", defaultOpen: true },
 ];
 
 // Look up a variant id across all four maps (SNV / Mito / CNV / SV)
@@ -3516,9 +3550,7 @@ function idsForReportSection(def) {
 function idsForCandidateSection(def, { ignoreInPanelOnly = false } = {}) {
   const ids = state.data.categories?.[def.category] || [];
   if (def.dropdown === "panel" && def.category) {
-    return ids.filter(id =>
-      _isSecondaryEligible(id) && !isSecondarySelected(id, def.category)
-    );
+    return ids.filter(id => _isSecondaryEligible(id));
   }
   return ids.filter(id => _passesMainSnvDisplayFilters(
     state.data.variants?.[id],
@@ -3528,6 +3560,9 @@ function idsForCandidateSection(def, { ignoreInPanelOnly = false } = {}) {
 
 function candidateIdsForSection(def) {
   const countIds = idsForCandidateSection(def, { ignoreInPanelOnly: true });
+  if (def.dropdown === "panel" && def.category) {
+    return { displayIds: countIds, countIds };
+  }
   const displayIds = countIds.filter(id =>
     _passesMainSnvDisplayFilters(state.data.variants?.[id])
   );
@@ -3590,7 +3625,9 @@ function renderBlock(def, ids, openKey, countIds = ids) {
   const manuals = def.manualStatus
     ? (state.reports.manual_variants || []).filter(m => m.status === def.manualStatus)
     : [];
-  if (!visibleIds.length && !manuals.length && !def.manualStatus) {
+  if (isPanel && state.data?.secondary_pending) {
+    body.innerHTML = `<div class="muted">載入中…</div>`;
+  } else if (!visibleIds.length && !manuals.length && !def.manualStatus) {
     body.innerHTML = `<div class="muted">（無符合點位）</div>`;
   } else {
     visibleIds.forEach((id, i) => {
@@ -5491,9 +5528,8 @@ function toggleVariantExtras(btn) {
   btn.textContent = willHide ? "▾ More" : "▴ Less";
 }
 
-// Panel-status radio inputs cannot normally be unchecked. Remember
-// whether the pressed chip was already active so a second click clears
-// it. Main 1/2/C/0 chips are checkboxes with custom exclusivity below.
+// Legacy panel-status radio inputs cannot normally be unchecked. Modern
+// secondary ✓ chips are checkboxes; this remains only for old stragglers.
 document.addEventListener("pointerdown", ev => {
   const chip = ev.target.closest?.(".status-radio-chip");
   const input = chip?.querySelector('input[type="radio"]');
@@ -5515,7 +5551,7 @@ document.addEventListener("click", ev => {
 document.addEventListener("change", ev => {
   const t = ev.target;
   // Status chips replace the old <select.status-select>. Main chips
-  // use checkboxes (C + 0 may coexist); panel chips remain radio inputs.
+  // use checkboxes (C + 0 may coexist); secondary ✓ chips are checkboxes too.
   if (t.matches('.status-radio input[type="radio"], .status-radio input[type="checkbox"]')) {
     const wrap = t.closest(".status-radio");
     if (!wrap) return;
@@ -5591,6 +5627,18 @@ document.addEventListener("input", ev => {
   } else if (t.matches("#comment-text")) {
     state.reports.comment = t.value;
     state.dirty = true;
+    updateSaveHint();
+  } else if (t.matches(".variant-comment")) {
+    setEdit(t.dataset.id, "comment", t.value);
+    _syncEditControls(t.dataset.id, "comment", t.value, t);
+    updateSaveHint();
+  } else if (t.matches(".acmg-score")) {
+    setEdit(t.dataset.id, "ACMG_score", t.value);
+    _syncEditControls(t.dataset.id, "ACMG_score", t.value, t);
+    updateSaveHint();
+  } else if (t.matches(".acmg-crit")) {
+    setEdit(t.dataset.id, "ACMG_criteria", t.value);
+    _syncEditControls(t.dataset.id, "ACMG_criteria", t.value, t);
     updateSaveHint();
   } else if (t.matches(".manual-position")) {
     updateManualVariant(t.dataset.mid, "position", t.value);

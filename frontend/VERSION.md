@@ -11,6 +11,8 @@
 - ACMG SF、Proactive 與 Carrier screening 改為 secondary finding 勾選流程：三區只列 custom panel 內的 SNV/Indel ClinVar P/LP 或卡片最終 ACMG P/LP 變異。
 - ClinVar P/LP 會預設勾選 ✓ 並進入 Secondary findings 報告區；ACMG P/LP 但非 ClinVar P/LP 會先留在分析區供 reviewer 手動勾選。
 - 手動取消 ✓ 會被記錄，不會在下次載入時又被 ClinVar 預設規則自動勾回。
+- Secondary findings 的分析區與報告區預設展開；分析區保留全部候選點位，報告區只顯示 ✓ 點位，兩邊的 ACMG 與 comment 編輯會同步。
+- 載入個案時先顯示主要 SNV/Indel，ACMG SF / Proactive / Carrier secondary findings 會在背景補載，避免 carrier panel 查詢拖慢核心畫面。
 
 ### v4.9 — 2026-06-12
 

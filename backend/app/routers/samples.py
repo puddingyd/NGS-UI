@@ -309,6 +309,15 @@ def get_sample_mito(sample_id: str, version: str | None = None):
     return payload
 
 
+@router.get("/samples/{sample_id}/secondary-snv")
+def get_sample_secondary_snv(sample_id: str, version: str | None = None):
+    """ACMG SF / Proactive / Carrier SNV side-channel for staged loading."""
+    payload = sample_loader.load_sample_secondary_snv(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
 @router.get("/samples/{sample_id}/snv-search")
 def search_sample_snv(sample_id: str, genes: str, version: str | None = None):
     """Search the complete source TSV, not the compact main-screen TSV."""

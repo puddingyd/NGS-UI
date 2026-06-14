@@ -626,6 +626,15 @@ def _build_secondary_snv_categories(
             for vid, variant in extra.items():
                 if _is_clinvar_plp(variant) or _is_acmg_plp(variant):
                     variants[vid] = variant
+        elif not variants:
+            all_variants, _categories, _pheno, _old_format_error = _load_enriched_snv_cached(
+                raw_tsv,
+                sidecar_dir=sidecar_dir,
+                test_type=test_type,
+            )
+            for vid, variant in all_variants.items():
+                if _is_clinvar_plp(variant) or _is_acmg_plp(variant):
+                    variants[vid] = variant
 
     categories: dict[str, list[str]] = {}
     for category, genes in panel_genes.items():
@@ -1184,6 +1193,55 @@ def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
     return {"mito_variants": mv, "mito_categories": mc}
 
 
+def _sample_snv_sidecar_context(sample_id: str, version: str | None = None):
+    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    if not sub.is_dir():
+        return None
+    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    chosen_version = _resolve_version(
+        sample_id,
+        requested=version,
+        meta_active=meta.get("active_analysis"),
+    )
+    sidecar_dir = (
+        analyses_store.version_dir(sample_id, chosen_version)
+        if chosen_version is not None else sub
+    )
+    return sub, meta, sidecar_dir, (meta.get("test_type") or "WES").upper()
+
+
+def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader: ACMG SF / Proactive / Carrier SNV side-channel."""
+    started = time.perf_counter()
+    ctx = _sample_snv_sidecar_context(sample_id, version)
+    if ctx is None:
+        return None
+    sub, _meta, sidecar_dir, test_type = ctx
+    raw_snv_tsv = sub / "snv_indel.annotated.tsv"
+    variants: dict[str, dict] = {}
+    categories = _build_secondary_snv_categories(
+        variants,
+        raw_snv_tsv,
+        sidecar_dir=sidecar_dir,
+        test_type=test_type,
+    )
+    _log_perf(
+        "sample.secondary_snv",
+        started,
+        sample=sample_id,
+        raw_size=_fmt_size(raw_snv_tsv),
+        variants=len(variants),
+        acmg_sf=len(categories.get("acmg_sf") or []),
+        proactive=len(categories.get("proactive") or []),
+        carrier=len(categories.get("carrier") or []),
+    )
+    return {
+        "variants": variants,
+        "categories": categories,
+        "secondary_pending": False,
+    }
+
+
 def load_sample(sample_id: str, version: str | None = None,
                 include_aux: bool = True) -> dict | None:
     """Build the per-sample webdata payload the frontend renders.
@@ -1358,11 +1416,14 @@ def load_sample(sample_id: str, version: str | None = None,
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
-    secondary_categories = _build_secondary_snv_categories(
-        variants,
-        raw_snv_tsv,
-        sidecar_dir=sidecar_dir,
-        test_type=_test_type,
+    secondary_categories = (
+        _build_secondary_snv_categories(
+            variants,
+            raw_snv_tsv,
+            sidecar_dir=sidecar_dir,
+            test_type=_test_type,
+        )
+        if include_aux else {category: [] for category in SECONDARY_SNV_PANELS}
     )
     for category, ids in secondary_categories.items():
         categories[category] = ids
@@ -1415,6 +1476,7 @@ def load_sample(sample_id: str, version: str | None = None,
         # placeholders; the frontend fetches them from the dedicated
         # /samples/{id}/cnv, /samples/{id}/sv, and /samples/{id}/mito endpoints.
         "aux_pending":       not include_aux,
+        "secondary_pending": not include_aux,
         # Whether the sample has phenotype configured at all — the
         # frontend uses this to show a "Clinical 區塊空白是因為沒有
         # phenotype" hint instead of leaving the panel silently empty.
