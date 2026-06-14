@@ -1263,7 +1263,11 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
     raw_snv_tsv = sub / "snv_indel.annotated.tsv"
     review_tsv = raw_snv_tsv.with_name(snv_review.REVIEW_TSV_NAME)
     try:
-        snv_tsv = snv_review.ensure_review_tsv(raw_snv_tsv, keep_ids=set())
+        snv_tsv = snv_review.ensure_review_tsv(
+            raw_snv_tsv,
+            keep_ids=set(),
+            test_type=test_type,
+        )
     except OSError:
         if not review_tsv.is_file():
             categories = {category: [] for category in SECONDARY_SNV_PANELS}
@@ -1339,7 +1343,9 @@ def load_sample(sample_id: str, version: str | None = None,
         try:
             review_started = time.perf_counter()
             snv_tsv = snv_review.ensure_review_tsv(
-                raw_snv_tsv, keep_ids=reported_ids,
+                raw_snv_tsv,
+                keep_ids=reported_ids,
+                test_type=(_meta_early.get("test_type") or "WES").upper(),
             )
             _log_perf(
                 "sample.review_tsv",

@@ -16,6 +16,7 @@ from pathlib import Path
 
 REVIEW_TSV_NAME = "snv_indel.review.tsv"
 MAX_GNOMAD_G_AF = 0.01
+WES_DP_HARD_FLOOR = 10
 DEFAULT_CANDIDATE_BED = Path.home() / "NGS_UI" / "biotools" / "cds_combined.bed"
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
@@ -48,6 +49,46 @@ def _to_float(raw: str) -> float | None:
         return float(value)
     except ValueError:
         return None
+
+
+def _to_int(raw: str) -> int:
+    value = (raw or "").strip()
+    if not value or value in {".", "NA", "N/A"}:
+        return 0
+    try:
+        return int(float(value))
+    except ValueError:
+        return 0
+
+
+def _depth_from_ad(ad: str) -> int:
+    total = 0
+    for part in str(ad or "").split(","):
+        value = part.strip()
+        if not value or value == "." or value.upper() in {"NA", "N/A"}:
+            continue
+        try:
+            total += int(float(value))
+        except ValueError:
+            continue
+    return total
+
+
+def _coalesce(*vals: str) -> str:
+    for value in vals:
+        text = (value or "").strip()
+        if text and text not in {".", "NA", "N/A"}:
+            return text
+    return ""
+
+
+def _row_depth(row: dict[str, str]) -> int:
+    return (
+        _to_int(row.get("DP") or "")
+        or _to_int(row.get("DP_DV") or "")
+        or _to_int(row.get("DP_HC") or "")
+        or _depth_from_ad(_coalesce(row.get("AD"), row.get("AD_DV"), row.get("AD_HC")))
+    )
 
 
 def _candidate_bed_path() -> Path:
@@ -139,8 +180,10 @@ def _overlaps_bed(row: dict[str, str], bed: BedIndex | None) -> bool:
     return j < len(intervals) and intervals[j][0] < end
 
 
-def _keep_row(row: dict[str, str], bed: BedIndex | None) -> bool:
+def _keep_row(row: dict[str, str], bed: BedIndex | None, *, is_wes: bool) -> bool:
     """Keep ClinVar P/LP rescue rows, then rare/unknown-AF BED rows."""
+    if is_wes and _row_depth(row) < WES_DP_HARD_FLOOR:
+        return False
     sig = (row.get("CLINVAR_SIG") or "").strip()
     if _PATHOGENIC_RE.search(sig):
         return True
@@ -148,10 +191,17 @@ def _keep_row(row: dict[str, str], bed: BedIndex | None) -> bool:
     return (af is None or af < MAX_GNOMAD_G_AF) and _overlaps_bed(row, bed)
 
 
-def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Path:
+def ensure_review_tsv(
+    raw_tsv: Path,
+    *,
+    keep_ids: set[str] | None = None,
+    test_type: str = "WES",
+) -> Path:
     """Return an up-to-date compact review TSV derived from *raw_tsv*."""
     started = time.perf_counter()
     keep_ids = keep_ids or set()
+    test_type_key = (test_type or "WES").upper()
+    is_wes = test_type_key == "WES"
     review_tsv = raw_tsv.with_name(REVIEW_TSV_NAME)
     manifest = review_tsv.with_suffix(review_tsv.suffix + ".source.json")
     candidate_bed_path = _candidate_bed_path()
@@ -160,6 +210,8 @@ def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Pat
         "raw_mtime_ns": raw_tsv.stat().st_mtime_ns,
         "raw_size": raw_tsv.stat().st_size,
         "max_gnomad_g_af": MAX_GNOMAD_G_AF,
+        "test_type": test_type_key,
+        "wes_dp_hard_floor": WES_DP_HARD_FLOOR if is_wes else None,
         "candidate_bed": _bed_signature(candidate_bed_path),
     }
     if review_tsv.is_file() and manifest.is_file():
@@ -193,7 +245,7 @@ def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Pat
             writer.writeheader()
             for row in reader:
                 scanned += 1
-                if _keep_row(row, candidate_bed):
+                if _keep_row(row, candidate_bed, is_wes=is_wes):
                     writer.writerow(row)
                     kept += 1
     os.replace(tmp, review_tsv)
@@ -212,5 +264,6 @@ def ensure_review_tsv(raw_tsv: Path, *, keep_ids: set[str] | None = None) -> Pat
         kept=kept,
         keep_ids=len(keep_ids),
         bed_exists=bool(candidate_bed),
+        test_type=test_type_key,
     )
     return review_tsv

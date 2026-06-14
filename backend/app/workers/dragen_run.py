@@ -949,7 +949,8 @@ def main() -> int:
             gui_tsv = TERTIARY_OUTPUT_ROOT / sid / "snv_indel.annotated.tsv"
             stop_args = [str(scripts / "run_stopgaps.sh"),
                          "--tsv",    str(gui_tsv),
-                         "--sample", sid]
+                         "--sample", sid,
+                         "--seq-type", sample["seq_type"]]
             if pipeline_annotsv_copied.get(sid) == {"cnv", "sv"}:
                 stop_args += ["--skip-cnv"]
                 _log(f"[post-processing] {sid}: skip AnnotSV fallback; pipeline CNV/SV already copied")
@@ -962,7 +963,12 @@ def main() -> int:
                     stop_args += ["--inhouse-sv-vcf",  sample["sv_vcf"]]
             if not args.with_extra_vep:
                 stop_args.append("--skip-extra-vep")
-            display_stop_args = ["post-processing", "--tsv", str(gui_tsv), "--sample", sid]
+            display_stop_args = [
+                "post-processing",
+                "--tsv", str(gui_tsv),
+                "--sample", sid,
+                "--seq-type", sample["seq_type"],
+            ]
             if "--skip-cnv" in stop_args:
                 display_stop_args.append("--skip-cnv")
             if "--skip-extra-vep" in stop_args:

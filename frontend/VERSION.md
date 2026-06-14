@@ -14,6 +14,7 @@
 - Secondary findings 的分析區與報告區預設展開；分析區保留全部候選點位，報告區只顯示 ✓ 點位，兩邊的 ACMG 與 comment 編輯會同步。
 - 載入個案時先顯示主要 SNV/Indel，ACMG SF / Proactive / Carrier secondary findings 會在背景補載，避免 carrier panel 查詢拖慢核心畫面。
 - Secondary findings 背景補載改用 compact review TSV，不再掃完整 raw TSV 或依 carrier panel gene index 補點，避免 BED 外、低 VAF 或 zygosity=ref 的位點進入 secondary 區。
+- WES SNV/Indel 現在會在 review TSV 產生與後端載入階段直接濾掉 read depth < 10 的位點；WGS 不套用這個 hard floor。
 - 載入新個案時，若三級分析 sample ID 帶有 `-dragen`、`-nckuh` 或 `-inhouse` 後綴，會自動回查未加後綴的個案清單 LIS_ID，避免 MRN / 姓名 / 簽收資料漏帶。
 
 ### v4.9 — 2026-06-12

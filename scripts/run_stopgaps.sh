@@ -29,7 +29,7 @@
 #   scripts/run_stopgaps.sh \\
 #       --tsv tertiary_output/<SID>/<SID>.snv_indel.annotated.tsv \\
 #       [--dragen-cnv-source /path/to/<sample>.hard-filtered.vcf.gz] \\
-#       [--sample SID]
+#       [--sample SID] [--seq-type WES|WGS]
 #
 # Env / flags:
 #   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 2
@@ -87,6 +87,7 @@ SKIP_CANDIDATE_BED=0
 SKIP_CNV=0
 SKIP_GIAB=0
 SKIP_GENEBE=0
+SEQ_TYPE="${SEQ_TYPE:-WES}"
 GENEBE_DB="${NGS_UI_GENEBE_DB:-$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz}"
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
@@ -96,6 +97,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --tsv)                TSV="$2"; shift 2;;
     --sample)             SID="$2"; shift 2;;
+    --seq-type)           SEQ_TYPE="$2"; shift 2;;
     --dragen-cnv-source)  DRAGEN_VCF="$2"; shift 2;;
     --inhouse-cnv-vcf)    INHOUSE_CNV_VCF="$2"; shift 2;;
     --inhouse-sv-vcf)     INHOUSE_SV_VCF="$2"; shift 2;;
@@ -116,6 +118,11 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TSV" ] || { echo "ERROR: --tsv required" >&2; exit 2; }
 [ -f "$TSV" ] || { echo "ERROR: --tsv not found: $TSV" >&2; exit 2; }
+SEQ_TYPE="$(printf '%s' "$SEQ_TYPE" | tr '[:lower:]' '[:upper:]')"
+case "$SEQ_TYPE" in
+  WES|WGS) ;;
+  *) echo "ERROR: --seq-type must be WES or WGS (got: $SEQ_TYPE)" >&2; exit 2;;
+esac
 # Derive sample id from path if not supplied: tertiary_output/<SID>/...
 if [ -z "$SID" ]; then SID="$(basename "$(dirname "$TSV")")"; fi
 
@@ -218,7 +225,7 @@ fi
 echo
 echo "[sample] review TSV  build_snv_review_tsv.py"
 step_start "review-tsv" "sample-step"
-run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV"
+run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV" --test-type "$SEQ_TYPE"
 step_done
 
 echo
