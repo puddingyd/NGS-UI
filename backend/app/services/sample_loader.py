@@ -42,6 +42,12 @@ from ..config import TERTIARY_OUTPUT_ROOT
 from . import analyses_store, omim_store, panel_deadzone, snv_gene_index, snv_review
 
 
+SECONDARY_SNV_PANELS = {
+    "acmg_sf": "ACMG_SF_v3.3",
+    "proactive": "proactive",
+    "carrier": "carrier_mackenzie_1300+",
+}
+
 _SNV_CACHE_MAX = 8
 _snv_cache: OrderedDict[tuple, tuple[dict, dict, dict, str]] = OrderedDict()
 _snv_cache_lock = threading.Lock()
@@ -562,6 +568,81 @@ def _load_enriched_snv_cached(
 def _variant_total_score(variants: dict, vid: str) -> float:
     ts = variants.get(vid, {}).get("total_score")
     return float(ts) if isinstance(ts, (int, float)) else float("-inf")
+
+
+def _is_clinvar_plp(variant: dict) -> bool:
+    sig = (variant.get("CLNSIG") or "").strip().lower().replace("_", " ")
+    return sig in {
+        "pathogenic",
+        "likely pathogenic",
+        "pathogenic/likely pathogenic",
+        "likely pathogenic/pathogenic",
+    }
+
+
+def _is_acmg_plp(variant: dict) -> bool:
+    cls = (
+        variant.get("genebe_acmg_class")
+        or variant.get("ACMG_classification")
+        or ""
+    )
+    key = str(cls).strip().lower().replace("_", " ")
+    return key in {
+        "pathogenic",
+        "likely pathogenic",
+        "pathogenic/likely pathogenic",
+        "likely pathogenic/pathogenic",
+    }
+
+
+def _secondary_panel_genes() -> dict[str, set[str]]:
+    from . import phenotype_scorer
+    out: dict[str, set[str]] = {}
+    for category, panel_name in SECONDARY_SNV_PANELS.items():
+        payload = phenotype_scorer.genes_for_key(panel_name, kind="panel")
+        out[category] = {
+            panel_deadzone.canonical_panel_gene_symbol(g)
+            for g in payload.get("genes", [])
+            if g
+        }
+        out[category].discard("")
+    return out
+
+
+def _build_secondary_snv_categories(
+    variants: dict[str, dict],
+    raw_tsv: Path,
+    *,
+    sidecar_dir: Path,
+    test_type: str,
+) -> dict[str, list[str]]:
+    panel_genes = _secondary_panel_genes()
+    wanted_genes = sorted({g for genes in panel_genes.values() for g in genes})
+    if wanted_genes and raw_tsv.is_file():
+        rows = snv_gene_index.query_rows(raw_tsv, wanted_genes)
+        if rows is not None:
+            extra = _variants_from_rows(rows, test_type=test_type)
+            _enrich_snv_variants(extra, sidecar_dir)
+            for vid, variant in extra.items():
+                if _is_clinvar_plp(variant) or _is_acmg_plp(variant):
+                    variants[vid] = variant
+
+    categories: dict[str, list[str]] = {}
+    for category, genes in panel_genes.items():
+        ids = [
+            vid for vid, variant in variants.items()
+            if (variant.get("gene_symbol") or "") in genes
+            and (_is_clinvar_plp(variant) or _is_acmg_plp(variant))
+        ]
+        categories[category] = sorted(
+            set(ids),
+            key=lambda vid: (
+                0 if _is_clinvar_plp(variants.get(vid, {})) else 1,
+                -_variant_total_score(variants, vid),
+                vid,
+            ),
+        )
+    return categories
 
 
 def _enrich_snv_variants(variants: dict[str, dict], sidecar_dir: Path) -> dict[str, float]:
@@ -1277,6 +1358,14 @@ def load_sample(sample_id: str, version: str | None = None,
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
+    secondary_categories = _build_secondary_snv_categories(
+        variants,
+        raw_snv_tsv,
+        sidecar_dir=sidecar_dir,
+        test_type=_test_type,
+    )
+    for category, ids in secondary_categories.items():
+        categories[category] = ids
 
     payload = {
         "meta": {

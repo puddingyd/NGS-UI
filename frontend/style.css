@@ -850,7 +850,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .status-radio-chip.status-radio-2:has(input:checked) { background: #ffe0b2; border-color: #ef6c00; color: #5c2a00; }
 .status-radio-chip.status-radio-c:has(input:checked) { background: #fff4a3; border-color: #c0a800; color: #5a4400; }
 .status-radio-chip.status-radio-0:has(input:checked) { background: #e0e0e0; border-color: #757575; color: #2b2b2b; }
-.status-radio-chip.status-radio-v:has(input:checked) { background: #c5e1a5; border-color: #558b2f; color: #1b3d04; }
+.status-radio-chip.status-radio-v:has(input:checked),
+.status-radio-chip.status-radio-check:has(input:checked) { background: #c5e1a5; border-color: #558b2f; color: #1b3d04; }
 
 /* Consequence cell — first SO term + tiny ▾ to expand the rest.
    .consequence-rest is .hidden by default; click ▾ removes the

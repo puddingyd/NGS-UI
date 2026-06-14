@@ -147,6 +147,9 @@ async function _loadSample(LIS_ID) {
     genetic_counseling: "", comment: "",
     category: null, sry_confirmed: false, yield: 0, updated_at: null,
   };
+  if (!reports.secondary_findings || typeof reports.secondary_findings !== "object") {
+    reports.secondary_findings = {};
+  }
   if (reports.clinical_description == null) reports.clinical_description = "";
   if (reports.genetic_counseling   == null) reports.genetic_counseling   = data.genetic_counseling || "";
   if (reports.comment == null)               reports.comment = "";
@@ -281,7 +284,8 @@ function classifySignificance(text) {
   const t = String(text).trim().toLowerCase().replace(/_/g, " ");
   switch (t) {
     case "pathogenic":                        case "p":     return "sig-p";
-    case "pathogenic/likely pathogenic":      case "p/lp":  return "sig-p";
+    case "pathogenic/likely pathogenic":
+    case "likely pathogenic/pathogenic":      case "p/lp":  return "sig-p";
     case "likely pathogenic":                 case "lp":    return "sig-lp";
     case "uncertain significance":            case "vus":   return "sig-vus";
     case "likely benign":                     case "lb":    return "sig-lb";
@@ -2830,9 +2834,9 @@ function _startJobPolling(sid, jobId) {
 function statusOptions(kind) {
   // kind: "candidate" → 1 / 2 / C / 0
   //                     1 = Causative · 2 = Other · C = Candidate · 0 = reviewed
-  //       "panel"     → ACMG SF / Proactive / Carrier → V / 0
+  //       "panel"     → ACMG SF / Proactive / Carrier → selected ✓ only
   // X was dropped — reviewers asked to mark-only, not hide.
-  if (kind === "panel") return ["V", "0"];
+  if (kind === "panel") return ["✓"];
   return ["1", "2", "C", "0"];
 }
 
@@ -2845,14 +2849,15 @@ let _statusRadioSeq = 0;
 function _renderStatusRadio(id, curStatus, opts, panelAttr = "") {
   // A variant can be rendered in both the analysis area and report
   // sections. Candidate widgets use checkboxes because C and 0 may
-  // coexist; panel widgets remain radio groups. Duplicate widgets are
-  // synchronized explicitly when the reviewer changes one.
+  // coexist; secondary-finding widgets are also checkboxes because
+  // reviewers must be able to unselect a default ClinVar P/LP pick.
   const groupName = `status-${id}-${++_statusRadioSeq}${panelAttr ? "-" + panelAttr.replace(/[^A-Za-z0-9]/g, "") : ""}`;
-  const inputType = panelAttr ? "radio" : "checkbox";
+  const inputType = "checkbox";
   return `<span class="status-radio" data-id="${escapeAttr(id)}" ${panelAttr}>` +
     opts.map(o => {
       const checked = _statusHas(curStatus, o) ? " checked" : "";
-      const cls = `status-radio-chip status-radio-${o.toLowerCase()}`;
+      const clsKey = o === "✓" ? "check" : o.toLowerCase();
+      const cls = `status-radio-chip status-radio-${clsKey}`;
       return `<label class="${cls}"><input type="${inputType}" name="${escapeAttr(groupName)}" value="${escapeAttr(o)}"${checked} /><span>${escapeHtml(o)}</span></label>`;
     }).join("") +
   `</span>`;
@@ -2910,23 +2915,83 @@ function toggleStatus(id, option, checked) {
   setStatus(id, next);
 }
 
-// Panel-specific status (per panel category, so V in proactive doesn't surface in carrier)
-function getPanelStatus(id, panel) {
+function _finalSnvAcmgClass(id, v = null) {
+  const variant = v || state.data?.variants?.[id] || {};
+  return getEdit(id, "ACMG_classification")
+      || variant.genebe_acmg_class
+      || variant.ACMG_classification
+      || "";
+}
+
+function _isPlpClass(text) {
+  return ["sig-p", "sig-lp"].includes(classifySignificance(text));
+}
+
+function _isClinvarPlp(v) {
+  return _isPlpClass(v?.CLNSIG || "");
+}
+
+function _isSecondaryEligible(id) {
+  const v = state.data?.variants?.[id];
+  return _isClinvarPlp(v) || _isPlpClass(_finalSnvAcmgClass(id, v));
+}
+
+function _secondarySection(panel) {
+  state.reports.secondary_findings = state.reports.secondary_findings || {};
+  const section = state.reports.secondary_findings[panel] || {};
+  const selected = Array.isArray(section.selected) ? section.selected.map(String) : [];
+  const dismissed = Array.isArray(section.dismissed) ? section.dismissed.map(String) : [];
+  return { selected, dismissed };
+}
+
+function _legacyPanelSelected(id, panel) {
   const m = state.reports.panels && state.reports.panels[id];
-  return (m && m[panel]) || "";
+  return (m && m[panel]) === "V";
+}
+
+function _legacyPanelDismissed(id, panel) {
+  const m = state.reports.panels && state.reports.panels[id];
+  return (m && m[panel]) === "0";
+}
+
+function isSecondarySelected(id, panel) {
+  const section = _secondarySection(panel);
+  if (section.selected.includes(id)) return true;
+  if (section.dismissed.includes(id)) return false;
+  if (_legacyPanelSelected(id, panel)) return true;
+  if (_legacyPanelDismissed(id, panel)) return false;
+  const v = state.data?.variants?.[id];
+  return _isClinvarPlp(v);
+}
+
+// Panel-specific status (per secondary category, so ✓ in proactive
+// doesn't surface in carrier). New state lives in
+// reports.secondary_findings; reports.panels is read only for legacy V.
+function getPanelStatus(id, panel) {
+  return isSecondarySelected(id, panel) ? "✓" : "";
 }
 
 function setPanelStatus(id, panel, val) {
-  state.reports.panels = state.reports.panels || {};
-  state.reports.panels[id] = state.reports.panels[id] || {};
-  if (val) state.reports.panels[id][panel] = val;
-  else     delete state.reports.panels[id][panel];
-  if (Object.keys(state.reports.panels[id]).length === 0) {
-    delete state.reports.panels[id];
+  state.reports.secondary_findings = state.reports.secondary_findings || {};
+  const current = _secondarySection(panel);
+  const selected = new Set(current.selected);
+  const dismissed = new Set(current.dismissed);
+  if (val) {
+    selected.add(id);
+    dismissed.delete(id);
+  } else {
+    selected.delete(id);
+    dismissed.add(id);
   }
+  state.reports.secondary_findings[panel] = {
+    selected: Array.from(selected).sort(),
+    dismissed: Array.from(dismissed).sort(),
+  };
   state.dirty = true;
-  renderAll();
-  _syncStatusRadios(id, panel, val);
+  renderReportSections();
+  renderCandidateSections();
+  _syncStatusRadios(id, panel, val ? "✓" : "");
+  updateSaveHint();
 }
 
 function getEdit(id, field) {
@@ -3413,7 +3478,12 @@ function idsForReportSection(def) {
   ];
   const reported      = Object.keys(state.reports.status || {});
   const panelReported = Object.keys(state.reports.panels || {});
-  const all = Array.from(new Set([...known, ...reported, ...panelReported]));
+  const secondaryReported = Object.values(state.reports.secondary_findings || {})
+    .flatMap(section => [
+      ...(Array.isArray(section?.selected) ? section.selected : []),
+      ...(Array.isArray(section?.dismissed) ? section.dismissed : []),
+    ]);
+  const all = Array.from(new Set([...known, ...reported, ...panelReported, ...secondaryReported]));
 
   if (def.match) {
     // Causative / Other / Candidate report sections: SNV keeps
@@ -3436,13 +3506,20 @@ function idsForReportSection(def) {
   }
   if (def.category) {
     const inCat = new Set(state.data.categories?.[def.category] || []);
-    return all.filter(id => inCat.has(id) && getPanelStatus(id, def.category) === "V");
+    return all.filter(id =>
+      inCat.has(id) && _isSecondaryEligible(id) && isSecondarySelected(id, def.category)
+    );
   }
   return [];
 }
 
 function idsForCandidateSection(def, { ignoreInPanelOnly = false } = {}) {
   const ids = state.data.categories?.[def.category] || [];
+  if (def.dropdown === "panel" && def.category) {
+    return ids.filter(id =>
+      _isSecondaryEligible(id) && !isSecondarySelected(id, def.category)
+    );
+  }
   return ids.filter(id => _passesMainSnvDisplayFilters(
     state.data.variants?.[id],
     { ignoreInPanelOnly },
@@ -3500,7 +3577,9 @@ function renderBlock(def, ids, openKey, countIds = ids) {
   const inPanelCount = countVisibleIds.filter(
     id => state.data.variants?.[id]?.in_panel
   ).length;
-  const countLabel = `In panel ${inPanelCount} / Total ${countVisibleIds.length}`;
+  const countLabel = isPanel
+    ? `Total ${countVisibleIds.length}`
+    : `In panel ${inPanelCount} / Total ${countVisibleIds.length}`;
   header.innerHTML = `
     <span><span class="arrow"></span><span class="title">${escapeHtml(def.title)}</span></span>
     <span class="count">${escapeHtml(countLabel)}</span>`;
@@ -5441,7 +5520,7 @@ document.addEventListener("change", ev => {
     const wrap = t.closest(".status-radio");
     if (!wrap) return;
     const panel = wrap.dataset.panel;
-    if (panel) setPanelStatus(wrap.dataset.id, panel, t.value);
+    if (panel) setPanelStatus(wrap.dataset.id, panel, t.checked ? t.value : "");
     else       toggleStatus(wrap.dataset.id, t.value, t.checked);
   } else if (t.matches(".status-select")) {
     // Legacy fallback for any straggling <select> instance.
@@ -5463,6 +5542,8 @@ document.addEventListener("change", ev => {
     t.classList.remove(...SIG_CLASSES);
     const cls = classifySignificance(t.value);
     if (cls) t.classList.add(cls);
+    renderReportSections();
+    renderCandidateSections();
   } else if (t.matches(".acmg-score")) {
     setEdit(t.dataset.id, "ACMG_score", t.value);
     updateSaveHint();
@@ -6630,7 +6711,7 @@ function pdfWriteVariant(w, vid, v, kind) {
 function pdfWriteSection(w, title, ids, dataVariants, panelKey) {
   w.heading(title, 2);
   const filtered = (ids || []).filter(id =>
-    dataVariants?.[id] && getPanelStatus(id, panelKey) === "V"
+    dataVariants?.[id] && _isSecondaryEligible(id) && isSecondarySelected(id, panelKey)
   );
   if (!filtered.length) {
     w.para("（未偵測到致病性之變異位點）", { indent: 4, weight: "regular" });

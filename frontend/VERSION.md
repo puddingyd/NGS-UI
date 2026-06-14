@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v4.10 — 2026-06-14
+
+- ACMG SF、Proactive 與 Carrier screening 改為 secondary finding 勾選流程：三區只列 custom panel 內的 SNV/Indel ClinVar P/LP 或卡片最終 ACMG P/LP 變異。
+- ClinVar P/LP 會預設勾選 ✓ 並進入 Secondary findings 報告區；ACMG P/LP 但非 ClinVar P/LP 會先留在分析區供 reviewer 手動勾選。
+- 手動取消 ✓ 會被記錄，不會在下次載入時又被 ClinVar 預設規則自動勾回。
+
 ### v4.9 — 2026-06-12
 
 - GeneBe 第二意見改用 lazy SQLite cache：上傳新的 `genebe_hg38.tsv.gz` 後，下一次三級分析會自動偵測來源變更並重建 `genebe_hg38.sqlite`，之後查詢不再每個 sample 重掃整顆 GeneBe TSV。

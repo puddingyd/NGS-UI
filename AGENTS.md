@@ -105,7 +105,7 @@ UI 流程：
   選樣本 (combobox) → GET /api/samples/{id}  (核心 payload，aux_pending=true)
                     → 背景分別 GET /api/samples/{id}/cnv、/sv 和 /mito（CNV 可先顯示）
                     → GET /api/samples/{id}/report  (reviewer 編輯狀態)
-  reviewer 在卡片標 1/2/C/0/X、寫 comment、勾 disease/gene checkbox、改 ACMG
+  reviewer 在卡片標 1/2/C/0、secondary findings 勾 ✓、寫 comment、勾 disease/gene checkbox、改 ACMG
   自動儲存 (1.5s debounce) → PUT /api/samples/{id}/report
   ▶ 開始分析 → POST /api/samples/{id}/phenotype (存 HPO/panels + 算 pheno_score)
             → POST /api/samples/{id}/jobs/exomiser_lirical (enqueue rerun worker)
@@ -128,8 +128,9 @@ UI 流程：
 
 **報告區**（`REPORT_SECTION_DEFS`，全在 `frontend/index.html` 的 `#report-sections` + Secondary-findings 折疊群組）：
 - Causative（status `1`）、Other（`2`）、**Candidate（`C`）** —— 三段 default open，有 disease checkbox、可「＋ 新增 variant」。三段先按 `total_score` desc 排，再把**同基因的 cluster 在一起**（最高分基因的整組排最前；手動新增的無 gene_symbol 留原位）。
-- ACMG SF / Proactive / Carrier / PharmCat —— 收在「Secondary findings」折疊群組（純文字標題 + 三角形鈕，無卡片框）。
+- ACMG SF / Proactive / Carrier / PharmCat —— 收在「Secondary findings」折疊群組（純文字標題 + 三角形鈕，無卡片框）。ACMG SF / Proactive / Carrier 只收 SNV/Indel，分別用 custom panel `ACMG_SF_v3.3`、`proactive`、`carrier_mackenzie_1300+`；後端用 `snv_gene_index.sqlite` 依 panel genes 補齊 raw TSV 中符合 ClinVar P/LP 或卡片最終 ACMG P/LP（GeneBe 優先、再 fallback pipeline ACMG）的點，不把整個 panel 的所有 variants 帶進 payload。ClinVar P/LP 預設 ✓，非 ClinVar 但 ACMG P/LP 預設不 ✓；使用者手動勾選寫入 `reports.secondary_findings.{acmg_sf|proactive|carrier}.selected`，手動取消寫入 `.dismissed`，所以之後不會再被 ClinVar 預設規則勾回。舊 `reports.panels[id][section] == "V"` / `"0"` 只作讀取相容。
 - status 圓形按鈕：**`1/2/C/0`**（C → Candidate 區）。`C` 與 `0` 可並存（metadata 存成 `C,0`），`1` 或 `2` 會反選其他狀態；再次點擊已選項目可清空；同一 variant 在分析區、報告區與搜尋 modal 的按鈕會同步上色。
+- Secondary findings 的 ACMG SF / Proactive / Carrier 卡片只顯示一顆同樣圓形樣式的 **`✓`**；有 ✓ 進 Secondary findings 報告區，取消或未勾者留在分析區。這個 ✓ 與 `1/2/C/0` 完全獨立，同一 variant 即使已在 causative / other / candidate 仍可列入 secondary report 區。
 - 「輸出 PDF」在三組匯出按鈕旁，使用瀏覽器列印視窗輸出報告區卡片摘要：標題 `{LIS_ID} Report`，右上固定 `{LIS_ID}_report_{YYYY/M/D HH:mm}`、右下頁碼；含 causative/other/candidate，不含 comment、More 展開內容、Secondary findings、操作按鈕與 CNV/SV 已知致病/良性區域重疊。OMIM disease summary 只留到遺傳模式括號。causative/other 空區仍保留，candidate 空區省略。
 - DOCX 診斷報告依序輸出第一類、第二類、固定家族檢測建議，再集中輸出各 variant 的「參考資料」。CNV/SV 的 Disease override 在多基因或無 OMIM gene 片段中會直接併入第 1 點位置描述（`...，與 {Disease} 相關。`），不另列一點，因此後續編號前移；單一 gene 仍使用含疾病與遺傳模式的詳細句型。SNV/Indel 表格會帶 TSV `RS_ID`，RS ID 欄預留尾端空格避免黏到結構欄；SNV/Indel 與 Mito 的核苷酸欄內容每行最多 13 字元，蛋白質 `(p....)` 固定另起一行。遺傳模式 `XL / XLD / XLR` 分別顯示為「性聯遺傳 / 性染色體顯性遺傳 / 性染色體隱性遺傳」，`Likely pathogenic` 中文為「疑似致病性」。§五.4 grouped gene list 不縮排、HPO 標題不再重複顯示 `(HP:...)`，且各 HPO/panel 區塊之間留空行；§五.4 只列 `ngs_panel_deadzone/panel/panel_loose_plus_clinical.hgnc_canonical.txt`（缺檔時 fallback `panel_loose.hgnc_canonical.txt`）內的 expanded reportable disease-associated genes。WGS 報告會把 dead-zone genes 以 `GENE（exon 2, 4-6 <15X）` 短括號標註，基因清單後空一行並以無縮排註解「註：括號中標示之 exon 為 cohort dead-zone，代表該 exon coverage 低於本檢測判讀門檻（<15X）。」說明；WES 報告不輸出 dead-zone 標註，僅在主畫面顯示。
 
