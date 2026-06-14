@@ -195,6 +195,7 @@ async function _loadSample(LIS_ID) {
         if (token !== state._auxLoadToken) return;
         state.secondaryPending = false;
         if (state.data) state.data.secondary_pending = false;
+        try { renderReportSections(); } catch (_e) {}
         try { renderCandidateSections(); } catch (_e) {}
       });
     apiFetch(`/samples/${encodeURIComponent(sid)}/cnv`)
@@ -1255,6 +1256,7 @@ function renderDeadZoneCard() {
   const card = document.getElementById("dead-zone-card");
   const body = document.getElementById("dead-zone-body");
   const thrEl = document.getElementById("dead-zone-threshold");
+  const headerToggle = document.getElementById("dead-zone-header-toggle");
   if (!card || !body) return;
   const dz = state.data?.dead_zone || {};
   const threshold = dz.threshold || "";
@@ -1271,6 +1273,11 @@ function renderDeadZoneCard() {
     body.innerHTML = `<div class="muted">目前 HPO / panel 基因沒有 cohort dead-zone 註記。</div>`;
     body.dataset.expanded = "0";
     body.dataset.deadZoneKey = "";
+    if (headerToggle) {
+      headerToggle.classList.add("hidden");
+      headerToggle.textContent = "";
+      headerToggle.onclick = null;
+    }
     return;
   }
   const key = entries.map(e => `${e.gene || ""}:${e.exons_label || ""}:${e.cds_dead_pct || ""}`).join("|");
@@ -1279,9 +1286,24 @@ function renderDeadZoneCard() {
     body.dataset.expanded = "0";
   }
   const expanded = body.dataset.expanded === "1";
-  const limit = 10;
-  const visibleEntries = expanded ? entries : entries.slice(0, limit);
-  const hiddenCount = Math.max(0, entries.length - visibleEntries.length);
+  const collapsedEntries = entries.filter(e => Number(e?.cds_dead_pct || 0) >= 50);
+  const visibleEntries = expanded ? entries : collapsedEntries;
+  const collapsedHiddenCount = Math.max(0, entries.length - collapsedEntries.length);
+  const hasToggle = collapsedHiddenCount > 0;
+  const toggleLabel = expanded ? "收合" : `展開全部（另 ${collapsedHiddenCount} 列）`;
+  const toggleHtml = hasToggle ? `
+    <button id="dead-zone-toggle" class="dead-zone-toggle" type="button" aria-expanded="${expanded ? "true" : "false"}">
+      <span class="dead-zone-toggle-arrow">${expanded ? "▾" : "▸"}</span>
+      ${toggleLabel}
+    </button>` : "";
+  if (headerToggle) {
+    headerToggle.classList.toggle("hidden", !hasToggle);
+    headerToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    headerToggle.innerHTML = hasToggle
+      ? `<span class="dead-zone-toggle-arrow">${expanded ? "▾" : "▸"}</span>${toggleLabel}`
+      : "";
+    headerToggle.onclick = null;
+  }
   body.innerHTML = `<ul class="dead-zone-list">${visibleEntries.map(e => {
     const gene = e.gene || "";
     const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
@@ -1294,15 +1316,15 @@ function renderDeadZoneCard() {
     return `<li class="${pctClass}"><span class="dead-zone-gene">${escapeHtml(gene)}</span>
       <span class="dead-zone-exons">exon ${escapeHtml(label)}</span>
       ${pctLabel ? `<span class="dead-zone-cds">CDS ${escapeHtml(pctLabel)}</span>` : ""}</li>`;
-  }).join("")}</ul>${entries.length > limit ? `
-    <button id="dead-zone-toggle" class="dead-zone-toggle" type="button" aria-expanded="${expanded ? "true" : "false"}">
-      <span class="dead-zone-toggle-arrow">${expanded ? "▾" : "▸"}</span>
-      ${expanded ? "收合" : `展開全部（另 ${hiddenCount} 列）`}
-    </button>` : ""}`;
-  document.getElementById("dead-zone-toggle")?.addEventListener("click", () => {
+  }).join("")}</ul>${!expanded && !visibleEntries.length && entries.length
+    ? `<div class="muted">沒有 CDS ≥50% 的 dead-zone；可展開全部查看其他 ${entries.length} 列。</div>`
+    : ""}${toggleHtml}`;
+  const toggleExpanded = () => {
     body.dataset.expanded = expanded ? "0" : "1";
     renderDeadZoneCard();
-  });
+  };
+  document.getElementById("dead-zone-toggle")?.addEventListener("click", toggleExpanded);
+  if (headerToggle && hasToggle) headerToggle.onclick = toggleExpanded;
 }
 
 function _reportedOutOfDiseaseAssociatedSnvs() {

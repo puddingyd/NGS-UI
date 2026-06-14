@@ -20,24 +20,6 @@ INDEX_NAME = "snv_gene_index.sqlite"
 SCHEMA_VERSION = "1"
 
 
-def _is_plp_text(raw: str) -> bool:
-    key = str(raw or "").strip().lower().replace("_", " ")
-    return key in {
-        "pathogenic",
-        "likely pathogenic",
-        "pathogenic/likely pathogenic",
-        "likely pathogenic/pathogenic",
-    }
-
-
-def _is_secondary_candidate_row(row: dict[str, str]) -> bool:
-    return (
-        _is_plp_text(row.get("CLINVAR_SIG") or "")
-        or _is_plp_text(row.get("GENEBE_ACMG_CLASS") or "")
-        or _is_plp_text(row.get("ACMG_CLASS") or "")
-    )
-
-
 def index_path_for(raw_tsv: Path) -> Path:
     return raw_tsv.with_name(INDEX_NAME)
 
@@ -64,14 +46,6 @@ def _read_meta(conn: sqlite3.Connection) -> dict[str, str]:
     except sqlite3.Error:
         return {}
     return {str(k): str(v) for k, v in rows}
-
-
-def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    try:
-        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    except sqlite3.Error:
-        return False
-    return any(str(row[1]) == column for row in rows)
 
 
 def is_current(raw_tsv: Path, index_path: Path | None = None) -> bool:
@@ -112,11 +86,10 @@ def build_index(raw_tsv: Path, index_path: Path | None = None) -> Path:
             "gene TEXT NOT NULL, "
             "variant_id TEXT NOT NULL, "
             "offset INTEGER NOT NULL, "
-            "length INTEGER NOT NULL, "
-            "secondary_candidate INTEGER NOT NULL DEFAULT 0)"
+            "length INTEGER NOT NULL)"
         )
         source_meta = _source_meta(raw_tsv)
-        batch: list[tuple[str, str, int, int, int]] = []
+        batch: list[tuple[str, str, int, int]] = []
         with raw_tsv.open("rb") as fh:
             header_line = fh.readline()
             header = header_line.decode("utf-8").rstrip("\n\r").split("\t")
@@ -154,25 +127,23 @@ def build_index(raw_tsv: Path, index_path: Path | None = None) -> Path:
                     variant_id,
                     offset,
                     length,
-                    1 if _is_secondary_candidate_row(row) else 0,
                 ))
                 indexed += 1
                 if len(batch) >= 10000:
                     conn.executemany(
-                        "INSERT INTO variants(gene, variant_id, offset, length, secondary_candidate) "
-                        "VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO variants(gene, variant_id, offset, length) "
+                        "VALUES (?, ?, ?, ?)",
                         batch,
                     )
                     batch.clear()
         if batch:
             conn.executemany(
-                "INSERT INTO variants(gene, variant_id, offset, length, secondary_candidate) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO variants(gene, variant_id, offset, length) "
+                "VALUES (?, ?, ?, ?)",
                 batch,
             )
         conn.execute("CREATE INDEX idx_variants_gene ON variants(gene)")
         conn.execute("CREATE INDEX idx_variants_id ON variants(variant_id)")
-        conn.execute("CREATE INDEX idx_variants_gene_secondary ON variants(gene, secondary_candidate)")
         conn.commit()
     os.replace(tmp, index_path)
     _log_perf(
@@ -186,7 +157,7 @@ def build_index(raw_tsv: Path, index_path: Path | None = None) -> Path:
     return index_path
 
 
-def query_rows(raw_tsv: Path, genes: list[str], *, secondary_only: bool = False) -> list[dict[str, str]] | None:
+def query_rows(raw_tsv: Path, genes: list[str]) -> list[dict[str, str]] | None:
     """Return raw TSV rows for genes, or None when the index is unavailable."""
     started = time.perf_counter()
     raw_tsv = Path(raw_tsv)
@@ -213,18 +184,10 @@ def query_rows(raw_tsv: Path, genes: list[str], *, secondary_only: bool = False)
     with sqlite3.connect(index_path) as conn:
         meta = _read_meta(conn)
         header = json.loads(meta.get("header_json") or "[]")
-        has_secondary_column = _has_column(conn, "variants", "secondary_candidate")
-        if secondary_only and has_secondary_column:
-            rows = conn.execute(
-                f"SELECT offset, length FROM variants "
-                f"WHERE gene IN ({placeholders}) AND secondary_candidate = 1",
-                sorted(canonical),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                f"SELECT offset, length FROM variants WHERE gene IN ({placeholders})",
-                sorted(canonical),
-            ).fetchall()
+        rows = conn.execute(
+            f"SELECT offset, length FROM variants WHERE gene IN ({placeholders})",
+            sorted(canonical),
+        ).fetchall()
     out = []
     with raw_tsv.open("rb") as fh:
         for offset, length in rows:
@@ -237,7 +200,6 @@ def query_rows(raw_tsv: Path, genes: list[str], *, secondary_only: bool = False)
         status="hit",
         index=index_path.name,
         genes=len(canonical),
-        secondary_only=int(bool(secondary_only)),
         rows=len(out),
     )
     return out

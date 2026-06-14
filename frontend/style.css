@@ -2114,6 +2114,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
   margin-bottom: 6px;
 }
 .dead-zone-header h2 { margin: 0; font-size: 14px; }
+.dead-zone-header-toggle {
+  margin-left: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
 .dead-zone-list {
   list-style: none;
   padding: 0;
@@ -2146,10 +2151,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
   flex: 0 0 auto;
   font-weight: 700;
 }
-.dead-zone-pct-high { color: #7f1d1d; }
-.dead-zone-pct-mid { color: #dc2626; }
-.dead-zone-pct-low { color: #ea580c; }
-.dead-zone-pct-base { color: #111827; }
+.dead-zone-list li.dead-zone-pct-high { color: #7f1d1d; }
+.dead-zone-list li.dead-zone-pct-mid { color: #dc2626; }
+.dead-zone-list li.dead-zone-pct-low { color: #ea580c; }
+.dead-zone-list li.dead-zone-pct-base { color: #111827; }
 .dead-zone-toggle {
   margin-top: 4px;
   padding: 2px 0;

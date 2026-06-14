@@ -590,21 +590,6 @@ def _is_plp_text(raw: str) -> bool:
     }
 
 
-def _row_is_secondary_candidate(row: dict[str, str]) -> bool:
-    """Cheap pre-shaping filter for secondary finding candidates.
-
-    Carrier/proactive panels can cover many genes. Avoid converting and
-    enriching thousands of raw rows when the only rows that can surface in
-    the UI are ClinVar P/LP or final ACMG P/LP, matching the card's
-    GeneBe-first ACMG display priority.
-    """
-    return (
-        _is_plp_text(row.get("CLINVAR_SIG") or "")
-        or _is_plp_text(row.get("GENEBE_ACMG_CLASS") or "")
-        or _is_plp_text(row.get("ACMG_CLASS") or "")
-    )
-
-
 def _is_acmg_plp(variant: dict) -> bool:
     cls = (
         variant.get("genebe_acmg_class")
@@ -628,41 +613,53 @@ def _secondary_panel_genes() -> dict[str, set[str]]:
     return out
 
 
-def _build_secondary_snv_categories(
-    variants: dict[str, dict],
-    raw_tsv: Path,
-    *,
-    sidecar_dir: Path,
-    test_type: str,
-) -> dict[str, list[str]]:
-    panel_genes = _secondary_panel_genes()
-    wanted_genes = sorted({g for genes in panel_genes.values() for g in genes})
-    if wanted_genes and raw_tsv.is_file():
-        rows = snv_gene_index.query_rows(raw_tsv, wanted_genes, secondary_only=True)
-        if rows is not None:
-            rows = [row for row in rows if _row_is_secondary_candidate(row)]
-            extra = _variants_from_rows(rows, test_type=test_type)
-            if extra:
-                _enrich_snv_variants(extra, sidecar_dir)
-            for vid, variant in extra.items():
-                if _is_clinvar_plp(variant) or _is_acmg_plp(variant):
-                    variants[vid] = variant
-        elif not variants:
-            all_variants, _categories, _pheno, _old_format_error = _load_enriched_snv_cached(
-                raw_tsv,
-                sidecar_dir=sidecar_dir,
-                test_type=test_type,
-            )
-            for vid, variant in all_variants.items():
-                if _is_clinvar_plp(variant) or _is_acmg_plp(variant):
-                    variants[vid] = variant
+def _secondary_variant_gene(variant: dict) -> str:
+    gene, _hgnc_id = panel_deadzone.canonical_gene_symbol(
+        variant.get("gene_symbol") or variant.get("GENE") or "",
+        variant.get("HGNC_ID") or "",
+    )
+    return gene
 
+
+def _secondary_vaf_pass(variant: dict) -> bool:
+    vaf = _to_num(variant.get("alt_af"))
+    return isinstance(vaf, (int, float)) and vaf >= 0.2
+
+
+def _secondary_zygosity_pass(variant: dict) -> bool:
+    zygosity = str(
+        variant.get("zygosity")
+        or variant.get("ZYGOSITY")
+        or ""
+    ).strip().lower().replace("_", " ").replace("-", " ")
+    if not zygosity:
+        return True
+    return zygosity not in {
+        "ref",
+        "reference",
+        "hom ref",
+        "homozygous reference",
+        "0/0",
+        "0|0",
+    }
+
+
+def _is_secondary_snv_candidate(variant: dict) -> bool:
+    return (
+        (_is_clinvar_plp(variant) or _is_acmg_plp(variant))
+        and _secondary_vaf_pass(variant)
+        and _secondary_zygosity_pass(variant)
+    )
+
+
+def _build_secondary_snv_categories(variants: dict[str, dict]) -> dict[str, list[str]]:
+    panel_genes = _secondary_panel_genes()
     categories: dict[str, list[str]] = {}
     for category, genes in panel_genes.items():
         ids = [
             vid for vid, variant in variants.items()
-            if (variant.get("gene_symbol") or "") in genes
-            and (_is_clinvar_plp(variant) or _is_acmg_plp(variant))
+            if _secondary_variant_gene(variant) in genes
+            and _is_secondary_snv_candidate(variant)
         ]
         categories[category] = sorted(
             set(ids),
@@ -1264,18 +1261,46 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
         return None
     sub, _meta, sidecar_dir, test_type = ctx
     raw_snv_tsv = sub / "snv_indel.annotated.tsv"
-    variants: dict[str, dict] = {}
-    categories = _build_secondary_snv_categories(
-        variants,
-        raw_snv_tsv,
+    review_tsv = raw_snv_tsv.with_name(snv_review.REVIEW_TSV_NAME)
+    try:
+        snv_tsv = snv_review.ensure_review_tsv(raw_snv_tsv, keep_ids=set())
+    except OSError:
+        if not review_tsv.is_file():
+            categories = {category: [] for category in SECONDARY_SNV_PANELS}
+            _log_perf(
+                "sample.secondary_snv",
+                started,
+                sample=sample_id,
+                selected="missing_review",
+                raw_size=_fmt_size(raw_snv_tsv),
+                review_size="missing",
+                variants=0,
+                acmg_sf=0,
+                proactive=0,
+                carrier=0,
+            )
+            return {
+                "variants": {},
+                "categories": categories,
+                "pheno_scores": {},
+                "secondary_pending": False,
+            }
+        snv_tsv = review_tsv
+    all_variants, _tiers, _pheno, _old_format_error = _load_enriched_snv_cached(
+        snv_tsv,
         sidecar_dir=sidecar_dir,
         test_type=test_type,
     )
+    categories = _build_secondary_snv_categories(all_variants)
+    wanted_ids = {vid for ids in categories.values() for vid in ids}
+    variants = {vid: all_variants[vid] for vid in wanted_ids if vid in all_variants}
     _log_perf(
         "sample.secondary_snv",
         started,
         sample=sample_id,
+        selected=snv_tsv.name,
         raw_size=_fmt_size(raw_snv_tsv),
+        review_size=_fmt_size(snv_tsv),
         variants=len(variants),
         acmg_sf=len(categories.get("acmg_sf") or []),
         proactive=len(categories.get("proactive") or []),
@@ -1396,6 +1421,7 @@ def load_sample(sample_id: str, version: str | None = None,
             snv_tsv, sidecar_dir=sidecar_dir, test_type=_test_type,
         )
     )
+    review_variants_for_secondary = variants
     # The cache stores shared read-only maps. Per-load supplements
     # depend on reviewer status, so copy before adding marked variants.
     variants = dict(variants)
@@ -1463,12 +1489,7 @@ def load_sample(sample_id: str, version: str | None = None,
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
     secondary_categories = (
-        _build_secondary_snv_categories(
-            variants,
-            raw_snv_tsv,
-            sidecar_dir=sidecar_dir,
-            test_type=_test_type,
-        )
+        _build_secondary_snv_categories(review_variants_for_secondary)
         if include_aux else {category: [] for category in SECONDARY_SNV_PANELS}
     )
     for category, ids in secondary_categories.items():

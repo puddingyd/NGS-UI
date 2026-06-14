@@ -8,12 +8,12 @@
 
 ### v4.10 — 2026-06-14
 
-- ACMG SF、Proactive 與 Carrier screening 改為 secondary finding 勾選流程：三區只列 custom panel 內的 SNV/Indel ClinVar P/LP 或卡片最終 ACMG P/LP 變異。
+- ACMG SF、Proactive 與 Carrier screening 改為 secondary finding 勾選流程：三區從 `snv_indel.review.tsv` 產生，只列 custom panel 內且符合 ClinVar P/LP 或卡片最終 ACMG P/LP、VAF ≥ 0.2、zygosity 非 ref 的 SNV/Indel 變異。
 - ClinVar P/LP 會預設勾選 ✓ 並進入 Secondary findings 報告區；ACMG P/LP 但非 ClinVar P/LP 會先留在分析區供 reviewer 手動勾選。
 - 手動取消 ✓ 會被記錄，不會在下次載入時又被 ClinVar 預設規則自動勾回。
 - Secondary findings 的分析區與報告區預設展開；分析區保留全部候選點位，報告區只顯示 ✓ 點位，兩邊的 ACMG 與 comment 編輯會同步。
 - 載入個案時先顯示主要 SNV/Indel，ACMG SF / Proactive / Carrier secondary findings 會在背景補載，避免 carrier panel 查詢拖慢核心畫面。
-- Secondary findings 背景補載會優先用新版 `snv_gene_index.sqlite` 的 P/LP flag 在 SQL 層縮小 rows；舊 index 也會先在 raw TSV 欄位層過濾 ClinVar/GeneBe/ACMG P/LP，再做完整卡片 enrichment，減少 carrier panel 大量非 P/LP rows 的處理時間。
+- Secondary findings 背景補載改用 compact review TSV，不再掃完整 raw TSV 或依 carrier panel gene index 補點，避免 BED 外、低 VAF 或 zygosity=ref 的位點進入 secondary 區。
 - 載入新個案時，若三級分析 sample ID 帶有 `-dragen`、`-nckuh` 或 `-inhouse` 後綴，會自動回查未加後綴的個案清單 LIS_ID，避免 MRN / 姓名 / 簽收資料漏帶。
 
 ### v4.9 — 2026-06-12
@@ -25,7 +25,7 @@
 - HPO/panel gene set、既有 `pheno_score.tsv` 與 SNV/CNV/SV/Mito 變異 gene 統一以 HGNC canonical symbol 做 `pheno_score` / `in_panel` 比對，降低 VEP 舊名或 panel alias 漏算。
 - Custom panel 匯入與儲存時會先套用安全的 HGNC-current alias 轉換；alias 來源改用 HGNC 官方 complete set、withdrawn table 與人工確認表合併產生，無法唯一確認的項目會保留原字串供人工確認。
 - 輸入臨床表徵工具新增 HPO / panel gene-list drawer，可查看、篩選與複製各 HPO term 或 panel 的 canonical gene list；另新增 gene lookup，可反查某 gene 出現在哪些 HPO terms / panels，單一 HPO 查看也加速避免等待整份 phenotype cache 預熱。
-- 主畫面 Dead zone 卡片新增臨床門檻下的 CDS dead percentage，並依比例由高到低排序；≥70% 深紅、50-70% 紅、30-50% 橘，其餘黑色。
+- 主畫面 Dead zone 卡片新增臨床門檻下的 CDS dead percentage，並依比例由高到低排序；≥70% 深紅、50-70% 紅、30-50% 橘，其餘黑色，預設只顯示 CDS ≥50% 的列並可從標題列展開/收合。
 - IGV alignment track height 調整為 SNV/Indel 與 Mito 300，CNV/SV 50。
 - 三級分析 log 將尾段統一顯示為 post-processing；Nextflow process 完成時間改附在原 stdout 行尾並以分鐘顯示，進度百分比保持單調遞增。
 
