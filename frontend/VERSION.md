@@ -9,7 +9,7 @@
 ### v5.2 — 2026-06-15
 
 - 右上角新增「二級分析」工具，可搜尋 WES/WGS FASTQ、建立 samplesheet，並產生可貼到 DGX2 執行的 tmux 指令。
-- 二級分析支援批次加入與「加入同批全部樣本」；WGS 一律使用 lane FASTQ 並輸出 lane 欄，reanalysis FASTQ 可改 Sample ID。
+- 二級分析支援批次加入與「加入同批全部樣本」；WGS 一律使用 lane FASTQ 並輸出 lane 欄；reanalysis 可改 samplesheet 的 Sample ID，但 FASTQ 直接指向原始檔。
 
 ### v5.1 — 2026-06-15
 

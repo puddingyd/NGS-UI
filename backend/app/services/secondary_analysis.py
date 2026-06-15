@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import csv
 import json
-import os
 import re
 import subprocess
 import time
@@ -314,24 +313,6 @@ def _normalize_sample(payload: dict, seq_type: str) -> dict:
     }
 
 
-def _prepare_reanalysis_fastqs(sample: dict, output_dir: Path, warnings: list[str]) -> None:
-    if not sample.get("reanalysis"):
-        return
-    target_dir = output_dir / "reanalysis_fastq"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    for read, key in (("R1", "fastq_1"), ("R2", "fastq_2")):
-        src = Path(sample[key])
-        dst = target_dir / f"{sample['sample_id']}_{read}.fastq.gz"
-        if dst.exists():
-            if dst.is_symlink() and os.readlink(dst) == str(src):
-                pass
-            else:
-                warnings.append(f"{dst} already exists; using the existing renamed FASTQ path")
-        else:
-            os.symlink(src, dst)
-        sample[key] = str(dst)
-
-
 def _launch_command(batch_name: str, seq_type: str, has_one_sample: bool) -> str:
     session = f"ngs2_{batch_name}"
     profile = "dgx_single" if has_one_sample else "dgx"
@@ -373,9 +354,6 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
 
     output_dir = SECONDARY_OUTPUT_ROOT / batch
     output_dir.mkdir(parents=True, exist_ok=True)
-    warnings: list[str] = []
-    for sample in normalized:
-        _prepare_reanalysis_fastqs(sample, output_dir, warnings)
 
     has_lane = any(s.get("lane") for s in normalized)
     fields = ["sample", "fastq_1", "fastq_2", "sex"] + (["lane"] if has_lane else [])
@@ -404,5 +382,5 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
         "dgx_output_dir": dgx_output_dir,
         "tmux_session": f"ngs2_{batch}",
         "command": _launch_command(batch, seq, len(normalized) == 1),
-        "warnings": warnings,
+        "warnings": [],
     }
