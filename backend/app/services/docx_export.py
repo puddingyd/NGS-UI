@@ -1157,9 +1157,11 @@ def _section_methods(doc, test_type: str) -> None:
                         "無法檢測出轉位 (translocation)、倒轉 (inversion) 或其他複雜性結構變異 "
                         "(complex structural variant)、組織特異性的鑲嵌 (tissue-specific mosaicism) "
                         "以及未包含在本次定序範圍之區域。")
-    _add_paragraph(doc, "  5. 本實驗方法以次世代方法定序粒線體DNA基因序列，"
-                        "變異點位判讀之cut-off值定為5%異質性（heteroplasmy）。")
-    _add_paragraph(doc, "  6. 本檢測報告僅供醫療專業人員參考，需配合其他相關臨床資料與家族成員之相關檢驗。"
+    final_note_number = 6 if is_wgs else 5
+    if is_wgs:
+        _add_paragraph(doc, "  5. 本實驗方法以次世代方法定序粒線體DNA基因序列，"
+                            "變異點位判讀之cut-off值定為5%異質性（heteroplasmy）。")
+    _add_paragraph(doc, f"  {final_note_number}. 本檢測報告僅供醫療專業人員參考，需配合其他相關臨床資料與家族成員之相關檢驗。"
                         "依衛福部規定，目前次世代定序分子遺傳診斷皆屬研究性質。")
     _blank(doc)
 

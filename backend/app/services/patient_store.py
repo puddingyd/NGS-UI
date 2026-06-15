@@ -107,6 +107,7 @@ def register(
     physician: str = "",
     sign_received_at: str = "",
     phenotype_text: str = "",
+    clinical_description: str = "",
     hpo: list | None = None,
     panels: list | None = None,
 ) -> dict:
@@ -221,7 +222,7 @@ def register(
         "vcf_path":             vcf_path,
         "run_date":             now,
         "active_analysis":      "default",
-        "clinical_description": "",
+        "clinical_description": clinical_description or "",
         "genetic_counseling":   genetic_counseling,
         "emr_synced_at":        now if (consult.get("found") or emr_payload.get("phenotype", {}).get("found")) else "",
         "comment":              "",

@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import TERTIARY_OUTPUT_ROOT
+from . import clinical_presentation_store
 
 
 _REVIEWER_FIELDS = {
@@ -83,7 +84,19 @@ def _project_reviewer(meta: dict) -> dict:
 
 
 def load(sample_id: str) -> dict:
-    return _project_reviewer(_read_json(_meta_path(sample_id)))
+    meta = _read_json(_meta_path(sample_id))
+    out = _project_reviewer(meta)
+    if not str(out.get("clinical_description") or "").strip():
+        try:
+            sidecar = clinical_presentation_store.load(
+                code=meta.get("lis_id") or meta.get("sample_id") or sample_id,
+                mrn=meta.get("mrn") or "",
+            )
+        except ValueError:
+            sidecar = {}
+        if sidecar:
+            out["clinical_description"] = (sidecar.get("content") or "").strip()
+    return out
 
 
 def save(sample_id: str, payload: dict) -> dict:
@@ -94,6 +107,18 @@ def save(sample_id: str, payload: dict) -> dict:
     for k in _REVIEWER_FIELDS:
         if k in payload:
             meta[k] = payload[k]
+    if "clinical_description" in payload:
+        code = meta.get("lis_id") or meta.get("sample_id") or sample_id
+        mrn = meta.get("mrn") or ""
+        if code or mrn:
+            try:
+                clinical_presentation_store.save(
+                    code=code,
+                    mrn=mrn,
+                    content=str(payload.get("clinical_description") or ""),
+                )
+            except ValueError:
+                pass
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta["updated_at"] = now
     meta.setdefault("created_at", now)

@@ -6,6 +6,7 @@
 //   • panel list  ← GET  /api/phenotype-tool/panels   (public)
 //   • save txt    → POST /api/phenotype-tool/save      (public)
 //   • load txt    ← GET  /api/phenotype-tool/load?...  (public)
+//   • clinical presentation sidecar uses /clinical-presentation/{save,load}
 // No login required — the tool runs on the hospital intranet; only
 // the analysis app gates behind auth. Output txt lands in
 // NGS_UI/patient_phenotype/ so 載入新個案 picks it up automatically.
@@ -21,6 +22,7 @@ let currentGeneList = [];
 let currentGeneMemberships = null;
 let currentGeneListContext = null;
 let currentGeneListView = "genes";
+let loadedClinicalPresentationSidecar = false;
 const deadZoneCache = new Map();
 
 // Fixed panel index from /api/phenotype-tool/fixed-panels — WES-I /
@@ -806,54 +808,82 @@ async function loadPatient() {
   const mrn  = document.getElementById("patient-mrn").value.trim();
   if (!code && !mrn) { showStatus("請先填 LIS_ID 或 MRN。", "error"); return; }
   showStatus("查詢中…", "");
+  let loadedClinical = false;
+  let loadedPhenotype = false;
+  let statusParts = [];
   try {
     const params = new URLSearchParams();
     if (code) params.set("code", code);
     if (mrn)  params.set("mrn", mrn);
-    const resp = await fetch(`/api/phenotype-tool/load?${params}`);
-    if (resp.status === 404) { showStatus("找不到既有檔案，可以直接開始輸入。", ""); return; }
-    if (!resp.ok) { showStatus("讀取失敗。", "error"); return; }
-    const body = await resp.json();
-    const content = body.content || "";
-    const lines = content.trim().split("\n");
-    clearAllRows();
-    clearAllPanelRows();
-    clearSelectedFixedPanels();
-    let termCount = 0, panelCount = 0, fixedCount = 0;
-    for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split("\t");
-      if (parts.length < 1 || !parts[0]) continue;
-      const col1 = parts[0].trim();
-      const col2 = (parts[1] || "").trim();
-      const weight = (parts[2] || "1").trim();
-      if (col1.startsWith("HP:")) {
-        const row = createRow();
-        const num = parseInt(row.id.replace("row-", ""), 10);
-        const known = hpoById[col1];
-        const label = col2 || (known ? known.name : col1);
-        const genes = known ? (known.g || 0) : 0;
-        selectTerm(num, col1, label, genes);
-        row.querySelector(".weight-input").value = weight;
-        termCount++;
-      } else if (fixedPanelKeys.has(col1)) {
-        // Pre-imported WES-I / WES-II / WGS panel → toggle the chip on.
-        const w = parseFloat(weight); selectedFixedPanels.set(col1, Number.isFinite(w) ? w : 1);
-        fixedCount++;
-      } else {
-        const row = createPanelRow();
-        const num = parseInt(row.id.replace("panel-row-", ""), 10);
-        selectPanel(num, col1);
-        row.querySelector(".weight-input").value = weight;
-        panelCount++;
-      }
+    loadedClinicalPresentationSidecar = false;
+    document.getElementById("clinical-presentation-text").value = "";
+    const clinicalResp = await fetch(`/api/phenotype-tool/clinical-presentation/load?${params}`);
+    if (clinicalResp.ok) {
+      const clinicalBody = await clinicalResp.json();
+      document.getElementById("clinical-presentation-text").value = clinicalBody.content || "";
+      loadedClinical = true;
+      loadedClinicalPresentationSidecar = true;
+      statusParts.push(`Clinical presentation（${clinicalBody.filename}）`);
+      if (clinicalBody.code && !code) document.getElementById("patient-code").value = clinicalBody.code;
+      if (clinicalBody.mrn  && !mrn)  document.getElementById("patient-mrn").value  = clinicalBody.mrn;
+    } else if (clinicalResp.status !== 404) {
+      showStatus("Clinical presentation 讀取失敗。", "error");
+      return;
     }
-    syncFixedPanelUiFromState();
-    // Pad back to the default empty-row count for convenience.
-    while (document.querySelectorAll(".phenotype-row:not(.panel-row)").length < 5) createRow();
-    while (document.querySelectorAll(".panel-row").length < 1) createPanelRow();
-    if (body.code && !code) document.getElementById("patient-code").value = body.code;
-    if (body.mrn  && !mrn)  document.getElementById("patient-mrn").value  = body.mrn;
-    showStatus(`已載入：${termCount} 個 HPO term、${fixedCount} 個 fixed panel、${panelCount} 個自由 panel（${body.filename}）`, "success");
+
+    const resp = await fetch(`/api/phenotype-tool/load?${params}`);
+    if (resp.ok) {
+      const body = await resp.json();
+      const content = body.content || "";
+      const lines = content.trim().split("\n");
+      clearAllRows();
+      clearAllPanelRows();
+      clearSelectedFixedPanels();
+      let termCount = 0, panelCount = 0, fixedCount = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split("\t");
+        if (parts.length < 1 || !parts[0]) continue;
+        const col1 = parts[0].trim();
+        const col2 = (parts[1] || "").trim();
+        const weight = (parts[2] || "1").trim();
+        if (col1.startsWith("HP:")) {
+          const row = createRow();
+          const num = parseInt(row.id.replace("row-", ""), 10);
+          const known = hpoById[col1];
+          const label = col2 || (known ? known.name : col1);
+          const genes = known ? (known.g || 0) : 0;
+          selectTerm(num, col1, label, genes);
+          row.querySelector(".weight-input").value = weight;
+          termCount++;
+        } else if (fixedPanelKeys.has(col1)) {
+          // Pre-imported WES-I / WES-II / WGS panel → toggle the chip on.
+          const w = parseFloat(weight); selectedFixedPanels.set(col1, Number.isFinite(w) ? w : 1);
+          fixedCount++;
+        } else {
+          const row = createPanelRow();
+          const num = parseInt(row.id.replace("panel-row-", ""), 10);
+          selectPanel(num, col1);
+          row.querySelector(".weight-input").value = weight;
+          panelCount++;
+        }
+      }
+      syncFixedPanelUiFromState();
+      // Pad back to the default empty-row count for convenience.
+      while (document.querySelectorAll(".phenotype-row:not(.panel-row)").length < 5) createRow();
+      while (document.querySelectorAll(".panel-row").length < 1) createPanelRow();
+      if (body.code && !code) document.getElementById("patient-code").value = body.code;
+      if (body.mrn  && !mrn)  document.getElementById("patient-mrn").value  = body.mrn;
+      loadedPhenotype = true;
+      statusParts.push(`${termCount} 個 HPO term、${fixedCount} 個 fixed panel、${panelCount} 個自由 panel（${body.filename}）`);
+    } else if (resp.status !== 404) {
+      showStatus("phenotype.txt 讀取失敗。", "error");
+      return;
+    }
+    if (!loadedClinical && !loadedPhenotype) {
+      showStatus("找不到既有檔案，可以直接開始輸入。", "");
+    } else {
+      showStatus(`已載入：${statusParts.join("；")}`, "success");
+    }
   } catch (e) {
     showStatus("讀取失敗：" + (e.message || e), "error");
   }
@@ -965,14 +995,15 @@ async function generateFile() {
   const mrn  = document.getElementById("patient-mrn").value.trim();
   const code = document.getElementById("patient-code").value.trim();
   if (!mrn && !code) { showStatus("請至少填 病歷號 或 檢體編號 其中一個。", "error"); return; }
+  const clinicalPresentation = document.getElementById("clinical-presentation-text")?.value || "";
 
   const customPanels = _collectCustomPanels();
   const incomplete = customPanels.find(c => c.incomplete);
   if (incomplete) { showStatus("有自訂 panel 列只填了名稱或基因其中一項，請補齊或移除該列。", "error"); return; }
 
   const baseLines = _collectHpoAndPanelLines();
-  if (baseLines.length === 0 && customPanels.length === 0 && selectedFixedPanels.size === 0) {
-    showStatus("尚未選擇任何 HPO term、panel 或自訂 panel。", "error"); return;
+  if (baseLines.length === 0 && customPanels.length === 0 && selectedFixedPanels.size === 0 && !clinicalPresentation.trim() && !loadedClinicalPresentationSidecar) {
+    showStatus("尚未選擇任何 HPO term、panel、自訂 panel，或輸入 Clinical presentation。", "error"); return;
   }
 
   btn.disabled = true;
@@ -1002,16 +1033,35 @@ async function generateFile() {
       customPanelNames.push(body.name);
     }
 
-    // 2) Build the phenotype.txt body and save it.
-    const all = ["phenotype\thpo_name\tweight", ...baseLines, ...customLines];
-    generatedContent = all.join("\n") + "\n";
-    const resp = await fetch("/api/phenotype-tool/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mrn: mrn || "", code: code || "", content: generatedContent }),
-    });
-    const body = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+    // 2) Save Clinical presentation sidecar first; the main reviewer UI
+    //    also writes back to the same file when it is edited there.
+    let clinicalBody = {};
+    if (clinicalPresentation.trim() || loadedClinicalPresentationSidecar) {
+      const clinicalResp = await fetch("/api/phenotype-tool/clinical-presentation/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mrn: mrn || "", code: code || "", content: clinicalPresentation }),
+      });
+      clinicalBody = await clinicalResp.json().catch(() => ({}));
+      if (!clinicalResp.ok) throw new Error(clinicalBody.detail || `${clinicalResp.status} ${clinicalResp.statusText}`);
+      loadedClinicalPresentationSidecar = true;
+    }
+
+    // 3) Build the phenotype.txt body and save it when phenotype content exists.
+    let body = {};
+    if (baseLines.length || customLines.length) {
+      const all = ["phenotype\thpo_name\tweight", ...baseLines, ...customLines];
+      generatedContent = all.join("\n") + "\n";
+      const resp = await fetch("/api/phenotype-tool/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mrn: mrn || "", code: code || "", content: generatedContent }),
+      });
+      body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+    } else {
+      generatedContent = "";
+    }
 
     document.getElementById("output-preview").style.display = "block";
     // The file on disk keeps the full tab-separated format with
@@ -1023,7 +1073,10 @@ async function generateFile() {
     // Refresh the panel autocomplete so the new custom panels show up.
     if (customPanels.length) loadPanelList();
     const cpNote = customPanels.length ? `（含 ${customPanels.length} 個自訂 panel）` : "";
-    showStatus(`已存到伺服器：${body.path}${cpNote}`, "success");
+    const savedTargets = [];
+    if (body.path) savedTargets.push(body.path);
+    if (clinicalBody.path) savedTargets.push(clinicalBody.path);
+    showStatus(`已存到伺服器：${savedTargets.join("；")}${cpNote}`, "success");
   } catch (e) {
     showStatus(e.message || String(e), "error");
   } finally {

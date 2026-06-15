@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from ..auth import current_user
 from ..config import PHENOTYPE_DIR, TERTIARY_OUTPUT_ROOT
 from ..services import (
+    clinical_presentation_store,
     docx_export,
     patient_list_store,
     patient_store,
@@ -204,6 +205,7 @@ def register_sample(
     pheno_path = PHENOTYPE_DIR / f"{lis_id}_{mrn}_phenotype.txt"
     phenotype_text = ""
     phenotype_loaded = False
+    pheno_lis_candidates = patient_list_store.lookup_candidates(lis_id, roster_lis_id, source_sample_id)
     for pheno_lis_id in patient_list_store.lookup_candidates(lis_id, roster_lis_id, source_sample_id):
         candidate = PHENOTYPE_DIR / f"{pheno_lis_id}_{mrn}_phenotype.txt"
         if candidate.is_file():
@@ -211,6 +213,16 @@ def register_sample(
             phenotype_text = candidate.read_text(encoding="utf-8")
             phenotype_loaded = True
             break
+    clinical_description = ""
+    try:
+        clinical_data = clinical_presentation_store.load(
+            code=lis_id,
+            mrn=mrn,
+            code_candidates=pheno_lis_candidates,
+        )
+        clinical_description = (clinical_data.get("content") or "").strip()
+    except ValueError:
+        clinical_description = ""
 
     # Fall back to the latest roster entry for fields the reviewer
     # didn't explicitly provide. Lets the load-new-case modal stay
@@ -232,6 +244,7 @@ def register_sample(
             physician=physician,
             sign_received_at=sign_received_at,
             phenotype_text=phenotype_text,
+            clinical_description=clinical_description,
             hpo=hpo_payload, panels=panels_payload,
         )
         _log_perf("router.samples.post.register", register_started, sample=lis_id)

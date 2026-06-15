@@ -20,7 +20,7 @@ import re
 from fastapi import APIRouter, HTTPException, Query
 
 from ..config import PHENOTYPE_DIR
-from ..services import hpo_ontology, panel_deadzone, phenotype_scorer
+from ..services import clinical_presentation_store, hpo_ontology, panel_deadzone, phenotype_scorer
 
 router = APIRouter(prefix="/api/phenotype-tool", tags=["phenotype-tool"])
 
@@ -206,6 +206,34 @@ def save_phenotype_file(payload: dict):
         raise HTTPException(400, "檔名不合法")
     out.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
     return {"path": str(out), "filename": fname, "mrn": mrn, "code": code}
+
+
+@router.post("/clinical-presentation/save")
+def save_clinical_presentation(payload: dict):
+    """Write MRN/LIS_ID keyed Clinical presentation free text."""
+    try:
+        return clinical_presentation_store.save(
+            mrn=(payload or {}).get("mrn", ""),
+            code=(payload or {}).get("code", ""),
+            content=(payload or {}).get("content", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/clinical-presentation/load")
+def load_clinical_presentation(
+    mrn:  str | None = Query(None),
+    code: str | None = Query(None),
+):
+    """Return existing Clinical presentation sidecar text for editing."""
+    try:
+        data = clinical_presentation_store.load(code=code or "", mrn=mrn or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not data:
+        raise HTTPException(404, "找不到對應的 Clinical presentation 檔")
+    return data
 
 
 @router.get("/load")

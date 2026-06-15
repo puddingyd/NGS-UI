@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v5.1 — 2026-06-15
+
+- 輸入臨床表徵工具新增 Clinical presentation 欄位，可依檢體編號 / 病歷號儲存並帶入主畫面；主畫面修改後也會同步寫回供後續載入。
+- WES 診斷報告「四、檢測方法說明」移除粒線體 DNA heteroplasmy cut-off 說明，並調整後續編號。
+
 ### v5.0 — 2026-06-14
 
 - 新增 Secondary findings 顯示：ACMG SF、Proactive 與 Carrier screening 區塊，篩選各 panel 內符合 ClinVar P/LP 或 ACMG P/LP 之位點，Clinvar P/LP 之位點自動帶入報告，其他 ACMG P/LP 之位點需手動確認。
