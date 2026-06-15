@@ -236,9 +236,9 @@ PIPELINE_VCF_INDEX_TTL_HOURS = 24
 
 # Secondary-analysis FASTQ discovery and DGX-2 samplesheet creation.
 # The UI server scans the server-mounted raw datalake paths and writes
-# samplesheets into the Nextflow output tree. The generated launch command
-# is meant to be pasted on DGX-2, where the same trees are mounted without
-# the leading /home prefix.
+# samplesheets into a DGX-readable staging tree. The generated launch
+# command creates the final output dir as the DGX runner and copies the
+# samplesheet there, avoiding owner/permission conflicts.
 SECONDARY_WES_FASTQ_ROOTS = [
     Path(p) for p in os.environ.get(
         "NGS_UI_SECONDARY_WES_FASTQ_ROOTS",
@@ -255,9 +255,17 @@ SECONDARY_OUTPUT_ROOT = Path(os.environ.get(
     "NGS_UI_SECONDARY_OUTPUT_ROOT",
     "/home/datalake_Intermediate/pipeline/nextflow_output",
 ))
+SECONDARY_SAMPLESHEET_STAGING_ROOT = Path(os.environ.get(
+    "NGS_UI_SECONDARY_SAMPLESHEET_STAGING_ROOT",
+    "/home/datalake_Intermediate/pipeline/nextflow_samplesheet_staging",
+))
 SECONDARY_DGX_OUTPUT_ROOT = Path(os.environ.get(
     "NGS_UI_SECONDARY_DGX_OUTPUT_ROOT",
     "/datalake_Intermediate/pipeline/nextflow_output",
+))
+SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT = Path(os.environ.get(
+    "NGS_UI_SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT",
+    "/datalake_Intermediate/pipeline/nextflow_samplesheet_staging",
 ))
 SECONDARY_DGX_LAUNCH_ROOT = Path(os.environ.get(
     "NGS_UI_SECONDARY_DGX_LAUNCH_ROOT",

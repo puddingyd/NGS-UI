@@ -13,10 +13,12 @@ from ..config import (
     SECONDARY_DGX_ENV_SCRIPT,
     SECONDARY_DGX_LAUNCH_ROOT,
     SECONDARY_DGX_OUTPUT_ROOT,
+    SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT,
     SECONDARY_DGX_WORK_ROOT,
     SECONDARY_FASTQ_INDEX_PATH,
     SECONDARY_FASTQ_INDEX_TTL_HOURS,
     SECONDARY_OUTPUT_ROOT,
+    SECONDARY_SAMPLESHEET_STAGING_ROOT,
     SECONDARY_WES_FASTQ_ROOTS,
     SECONDARY_WGS_FASTQ_ROOTS,
 )
@@ -260,6 +262,7 @@ def _server_path_to_dgx(path: str) -> str:
     if raw == "/home" or raw.startswith("/home/"):
         raw = raw[5:] or "/"
     replacements = [
+        (str(SECONDARY_SAMPLESHEET_STAGING_ROOT), str(SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT)),
         (str(SECONDARY_OUTPUT_ROOT), str(SECONDARY_DGX_OUTPUT_ROOT)),
         ("/home/datalake_Raw", "/datalake_Raw"),
         ("/home/datalake_Intermediate", "/datalake_Intermediate"),
@@ -273,7 +276,10 @@ def _server_path_to_dgx(path: str) -> str:
 def _unique_batch_name(base: str) -> str:
     name = base
     i = 2
-    while (SECONDARY_OUTPUT_ROOT / name).exists():
+    while (
+        (SECONDARY_OUTPUT_ROOT / name).exists()
+        or (SECONDARY_SAMPLESHEET_STAGING_ROOT / name).exists()
+    ):
         name = f"{base}_{i}"
         i += 1
     return name
@@ -318,15 +324,18 @@ def _launch_command(batch_name: str, seq_type: str, has_one_sample: bool) -> str
     profile = "dgx_single" if has_one_sample else "dgx"
     run_gcnv = " \\\n    --run_gcnv true" if seq_type == "WES" else ""
     script_path = f"/tmp/{session}.sh"
+    staged_sheet = SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch_name / "samplesheet.csv"
     return f"""cat > "{script_path}" <<'NGS2_EOF'
 set -euo pipefail
 BATCH_NAME="{batch_name}"
 OUT_DIR="{SECONDARY_DGX_OUTPUT_ROOT}/${{BATCH_NAME}}"
 LAUNCH_DIR="{SECONDARY_DGX_LAUNCH_ROOT}/${{BATCH_NAME}}"
 WORK_DIR="{SECONDARY_DGX_WORK_ROOT}/${{BATCH_NAME}}"
+STAGED_SAMPLESHEET="{staged_sheet}"
 
 source "{SECONDARY_DGX_ENV_SCRIPT}"
-mkdir -p "${{LAUNCH_DIR}}" "${{WORK_DIR}}"
+mkdir -p "${{OUT_DIR}}" "${{LAUNCH_DIR}}" "${{WORK_DIR}}"
+cp "${{STAGED_SAMPLESHEET}}" "${{OUT_DIR}}/samplesheet.csv"
 cd "${{LAUNCH_DIR}}"
 
 nextflow -c "${{PIPELINE_CONFIG}}" run "${{PIPELINE_CODE}}/main.nf" \\
@@ -353,11 +362,16 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
     _validate_sample_id(batch)
 
     output_dir = SECONDARY_OUTPUT_ROOT / batch
-    output_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = SECONDARY_SAMPLESHEET_STAGING_ROOT / batch
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        staging_dir.chmod(0o755)
+    except OSError:
+        pass
 
     has_lane = any(s.get("lane") for s in normalized)
     fields = ["sample", "fastq_1", "fastq_2", "sex"] + (["lane"] if has_lane else [])
-    sheet = output_dir / "samplesheet.csv"
+    sheet = staging_dir / "samplesheet.csv"
     with sheet.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -371,6 +385,10 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
             if has_lane:
                 row["lane"] = sample.get("lane", "")
             writer.writerow(row)
+    try:
+        sheet.chmod(0o644)
+    except OSError:
+        pass
 
     dgx_output_dir = str(SECONDARY_DGX_OUTPUT_ROOT / batch)
     return {
@@ -378,8 +396,10 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
         "seq_type": seq,
         "sample_count": len(normalized),
         "samplesheet_path": str(sheet),
+        "staged_samplesheet_path": str(sheet),
         "output_dir": str(output_dir),
         "dgx_output_dir": dgx_output_dir,
+        "dgx_staged_samplesheet_path": str(SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch / "samplesheet.csv"),
         "tmux_session": f"ngs2_{batch}",
         "command": _launch_command(batch, seq, len(normalized) == 1),
         "warnings": [],
