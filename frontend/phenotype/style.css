@@ -450,11 +450,19 @@ button:hover, .btn:hover { background: #eaeef2; }
   font-size: 11px;
   line-height: 1.2;
   white-space: nowrap;
+  color: #334155;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.drawer-chip-btn:hover {
+  color: #1e3a8a;
+  background: #e0e7ff;
+  border-color: #a5b4fc;
 }
 .drawer-chip-btn.is-active {
-  color: #be123c;
-  background: #ffe4e6;
-  border-color: #fb7185;
+  color: #3730a3;
+  background: #e0e7ff;
+  border-color: #818cf8;
 }
 .gene-list-content {
   flex: 1;
