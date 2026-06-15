@@ -1,45 +1,22 @@
 # 歡迎使用 NGS 分析平台
 
-成大醫院基因醫學部 NGS 分析平台是院內 NGS 變異判讀工具，用來整合二級 pipeline 產出的 SNV/Indel、CNV/SV 與 Mitochondria 變異資料，進行三級分析 pipeline，並協助醫師及生物資訊工程師載入個案、檢視變異卡片、標記變異、撰寫判讀意見，並輸出診斷報告。
+成大醫院基因醫學部 NGS 分析平台是院內 NGS 變異判讀工具，用來整合二級 pipeline 產出的 SNV/Indel、CNV/SV 與 Mitochondria 變異資料，進行三級分析 pipeline，並協助醫師及生物資訊工程師載入個案、檢視變異、標記變異、撰寫判讀意見，並輸出診斷報告。
 
 請先在上方搜尋既有個案，或使用「載入新個案」登錄 pipeline 已輸出的樣本，或使用右上方「三級分析」開始新的樣本分析。
 
 ## 版本紀錄
 
-### v4.11 — 2026-06-15
+### v5.0 — 2026-06-14
 
-- 輸入臨床表徵工具的 HPO / panel gene-list drawer 新增 `WES dead zone` 與 `WGS dead zone` 按鈕，按下後才查目前 gene list 的 cohort dead-zone 並以單欄列表顯示。
-- 主畫面 Dead zone 排序改為先依 CDS dead percentage 分區（70-100%、50-70%、30-50%、<30%），同一區間內再依 pheno score 由高到低排序。
-- Dead zone 顯示改用淡背景警示色，提升高比例 dead-zone 的可讀性：≥70% rose、50-70% orange、30-50% amber、<30% yellow。
-
-### v4.10 — 2026-06-14
-
-- ACMG SF、Proactive 與 Carrier screening 改為 secondary finding 勾選流程：三區從 `snv_indel.review.tsv` 產生，只列 custom panel 內且符合 ClinVar P/LP 或卡片最終 ACMG P/LP、VAF ≥ 0.2、zygosity 非 ref 的 SNV/Indel 變異。
-- ClinVar P/LP 會預設勾選 ✓ 並進入 Secondary findings 報告區；ACMG P/LP 但非 ClinVar P/LP 會先留在分析區供 reviewer 手動勾選。
-- 手動取消 ✓ 會被記錄，不會在下次載入時又被 ClinVar 預設規則自動勾回。
-- Secondary findings 的分析區與報告區預設展開；分析區保留全部候選點位，報告區只顯示 ✓ 點位，兩邊的 ACMG 與 comment 編輯會同步。
-- 載入個案時先顯示主要 SNV/Indel，ACMG SF / Proactive / Carrier secondary findings 會在背景補載，避免 carrier panel 查詢拖慢核心畫面。
-- Secondary findings 背景補載改用 compact review TSV，不再掃完整 raw TSV 或依 carrier panel gene index 補點，避免 BED 外、低 VAF 或 zygosity=ref 的位點進入 secondary 區。
-- WES SNV/Indel 現在會在 review TSV 產生與後端載入階段直接濾掉 read depth < 10 的位點；WGS 不套用這個 hard floor。
-- 載入新個案時，若三級分析 sample ID 帶有 `-dragen`、`-nckuh` 或 `-inhouse` 後綴，會自動回查未加後綴的個案清單 LIS_ID，避免 MRN / 姓名 / 簽收資料漏帶。
+- 新增 Secondary findings 顯示：ACMG SF、Proactive 與 Carrier screening 區塊，篩選各 panel 內符合 ClinVar P/LP 或 ACMG P/LP 之位點，Clinvar P/LP 之位點自動帶入報告，其他 ACMG P/LP 之位點需手動確認。
+- 輸入臨床表徵工具，新增 `WES dead zone` 與 `WGS dead zone` 按鈕，可查詢 HPO / panel 之 Dead zone 及 CDS dead percentage。
+- 修改主畫面 Dead zone 排序規則為先依 CDS dead percentage 分區（70-100%、50-70%、30-50%、<30%），同一區間內再依 pheno score 由高到低排序。
 
 ### v4.9 — 2026-06-12
 
-- GeneBe 第二意見改用 lazy SQLite cache：上傳新的 `genebe_hg38.tsv.gz` 後，下一次三級分析會自動偵測來源變更並重建 `genebe_hg38.sqlite`，之後查詢不再每個 sample 重掃整顆 GeneBe TSV。
-- 三級分析 VCF 搜尋選到候選後，輸入框只保留 sample name；run、大小與日期仍在下拉候選與提示中顯示，方便連續修改下一個 sample ID 搜尋。
-- Disease-associated / reportable gene list、VEP alias map 與 cohort dead-zone tables 更新至 2026-06-12 版本；固定 WES-I / WES-II / WGS panel 內的舊 gene symbol 與誤植同步修正。
-- 固定 WES-I / WES-II / WGS panel data 與 custom panel data 改為 repo 內版本化資料，server 更新程式碼時會一併更新 panel。
-- HPO/panel gene set、既有 `pheno_score.tsv` 與 SNV/CNV/SV/Mito 變異 gene 統一以 HGNC canonical symbol 做 `pheno_score` / `in_panel` 比對，降低 VEP 舊名或 panel alias 漏算。
-- Custom panel 匯入與儲存時會先套用安全的 HGNC-current alias 轉換；alias 來源改用 HGNC 官方 complete set、withdrawn table 與人工確認表合併產生，無法唯一確認的項目會保留原字串供人工確認。
-- 輸入臨床表徵工具新增 HPO / panel gene-list drawer，可查看、篩選與複製各 HPO term 或 panel 的 canonical gene list；另新增 gene lookup，可反查某 gene 出現在哪些 HPO terms / panels，單一 HPO 查看也加速避免等待整份 phenotype cache 預熱。
-- 主畫面 Dead zone 卡片新增臨床門檻下的 CDS dead percentage，並依比例由高到低排序；≥70% 深紅、50-70% 紅、30-50% 橘，其餘黑色，預設只顯示 CDS ≥50% 的列並可從標題列展開/收合。
-- IGV alignment track height 調整為 SNV/Indel 與 Mito 300，CNV/SV 50。
-- 三級分析 log 將尾段統一顯示為 post-processing；Nextflow process 完成時間改附在原 stdout 行尾並以分鐘顯示，進度百分比保持單調遞增。
-
-### v4.8 — 2026-06-11
-
-- 三級分析進度條改用 Nextflow process 權重，`queued` 事件只記錄 log、不推進百分比；前處理與 prepare 類快速步驟不再讓進度過早衝到 80%。
-- Nextflow 結束點調整為約 82%，保留較多空間給 copy、GeneBe/Extra VEP/AnnotSV、review TSV 與 gene index 預建。
+- 基因套組的基因名稱套用 HGNC current name。
+- 輸入臨床表徵工具新增 HPO / panel 之基因清單分頁，可查看、篩選各 HPO term 或 panel 的基因清單；另可查特定基因出現在哪些 HPO terms / panels。
+- 主畫面 Dead zone 卡片新增臨床門檻下的 CDS dead percentage，並依比例由高到低排序。
 
 ### v4.7 — 2026-06-10
 
