@@ -991,7 +991,7 @@ function _collectPreviewLines(customPanelNames) {
 }
 
 async function generateFile() {
-  const btn = document.getElementById("btn-generate");
+  const saveBtns = document.querySelectorAll(".js-btn-save-phenotype");
   const mrn  = document.getElementById("patient-mrn").value.trim();
   const code = document.getElementById("patient-code").value.trim();
   if (!mrn && !code) { showStatus("請至少填 病歷號 或 檢體編號 其中一個。", "error"); return; }
@@ -1006,7 +1006,7 @@ async function generateFile() {
     showStatus("尚未選擇任何 HPO term、panel、自訂 panel，或輸入 Clinical presentation。", "error"); return;
   }
 
-  btn.disabled = true;
+  saveBtns.forEach(btn => { btn.disabled = true; });
   showStatus("處理中…", "");
   try {
     // 1) Create each custom panel on the server; remember the
@@ -1076,11 +1076,12 @@ async function generateFile() {
     const savedTargets = [];
     if (body.path) savedTargets.push(body.path);
     if (clinicalBody.path) savedTargets.push(clinicalBody.path);
-    showStatus(`已存到伺服器：${savedTargets.join("；")}${cpNote}`, "success");
+    const savedMessage = ["已存到伺服器：", ...savedTargets].join("\n") + cpNote;
+    showStatus(savedMessage, "success");
   } catch (e) {
     showStatus(e.message || String(e), "error");
   } finally {
-    btn.disabled = false;
+    saveBtns.forEach(btn => { btn.disabled = false; });
   }
 }
 
