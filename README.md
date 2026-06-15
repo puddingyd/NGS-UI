@@ -113,7 +113,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_INHOUSE_BAM_ROOT` | `/home/datalake_Intermediate/pipeline/nextflow_output` | IGV 搜尋 in-house / Nextflow BAM 的根目錄；可用 `:` 分隔多個 root；舊 `NGS_UI_BAM_ROOT` 仍作為 fallback |
 | `NGS_UI_DRAGEN_BAM_ROOT` | `/home/datalake_Raw/Novaseq` | IGV 搜尋 DRAGEN raw BAM 的根目錄；尋找 `<run>/bam/{sample}.bam`，排除 `{sample}.repeats.bam` |
 | `NGS_UI_IGV_REF_DIR` | `/home/pipeline/reference/hg38` | IGV 本機 hg38 FASTA + `.fai` |
-| `NGS_UI_SECONDARY_WES_FASTQ_ROOTS` | `/home/datalake_Raw/NextSeq2000:/datalake_Raw/Other/Reanalysis` | 二級分析 FASTQ 搜尋 WES roots；可用 `:` 分隔 |
+| `NGS_UI_SECONDARY_WES_FASTQ_ROOTS` | `/home/datalake_Raw/NextSeq2000:/home/datalake_Raw/Other/Reanalysis:/datalake_Raw/Other/Reanalysis` | 二級分析 FASTQ 搜尋 WES roots；可用 `:` 分隔 |
 | `NGS_UI_SECONDARY_WGS_FASTQ_ROOTS` | `/home/datalake_Raw/Novaseq` | 二級分析 FASTQ 搜尋 WGS roots；WGS 一律使用 lane FASTQ，不使用 merged FASTQ |
 | `NGS_UI_SECONDARY_OUTPUT_ROOT` | `/home/datalake_Intermediate/pipeline/nextflow_output` | 二級分析 samplesheet 寫入位置 |
 | `NGS_UI_SECONDARY_DGX_OUTPUT_ROOT` | `/datalake_Intermediate/pipeline/nextflow_output` | 產生 DGX2 指令時使用的 output root |

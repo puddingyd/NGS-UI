@@ -8310,14 +8310,32 @@ function _secondaryRenderResult(result) {
 async function _secondaryCopyCommand() {
   const text = document.getElementById("secondary-command")?.textContent || "";
   if (!text) return;
+  const btn = document.getElementById("secondary-copy-command");
+  const markCopied = () => {
+    if (!btn) return;
+    const old = btn.textContent;
+    btn.textContent = "已複製";
+    setTimeout(() => { btn.textContent = old; }, 1200);
+  };
   try {
-    await navigator.clipboard.writeText(text);
-    const btn = document.getElementById("secondary-copy-command");
-    if (btn) {
-      const old = btn.textContent;
-      btn.textContent = "已複製";
-      setTimeout(() => { btn.textContent = old; }, 1200);
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      markCopied();
+      return;
     }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (!ok) throw new Error("execCommand copy returned false");
+    markCopied();
   } catch (_e) {
     alert("無法使用瀏覽器剪貼簿，請手動選取指令複製。");
   }
@@ -8363,7 +8381,19 @@ function _secondaryWireCombobox(mode) {
 }
 
 function setupSecondaryButton() {
-  const btn = document.getElementById("btn-secondary-launch");
+  let btn = document.getElementById("btn-secondary-launch");
+  if (!btn) {
+    const dragenBtn = document.getElementById("btn-dragen-launch");
+    if (!dragenBtn?.parentElement) return;
+    btn = document.createElement("button");
+    btn.id = "btn-secondary-launch";
+    btn.className = "btn btn-ghost";
+    btn.type = "button";
+    btn.hidden = dragenBtn.hidden;
+    btn.title = "搜尋 FASTQ、建立二級分析 samplesheet，並產生 DGX2 tmux 執行指令";
+    btn.textContent = "二級分析";
+    dragenBtn.parentElement.insertBefore(btn, dragenBtn);
+  }
   if (!btn) return;
   btn.addEventListener("click", async () => {
     showModal("secondary-modal");

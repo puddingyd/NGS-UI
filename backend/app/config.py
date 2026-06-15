@@ -242,7 +242,7 @@ PIPELINE_VCF_INDEX_TTL_HOURS = 24
 SECONDARY_WES_FASTQ_ROOTS = [
     Path(p) for p in os.environ.get(
         "NGS_UI_SECONDARY_WES_FASTQ_ROOTS",
-        "/home/datalake_Raw/NextSeq2000:/datalake_Raw/Other/Reanalysis",
+        "/home/datalake_Raw/NextSeq2000:/home/datalake_Raw/Other/Reanalysis:/datalake_Raw/Other/Reanalysis",
     ).split(":") if p
 ]
 SECONDARY_WGS_FASTQ_ROOTS = [

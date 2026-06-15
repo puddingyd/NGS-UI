@@ -50,7 +50,7 @@
 | IGV in-house BAM 搜尋根目錄 | `/home/datalake_Intermediate/pipeline/nextflow_output` | `NGS_UI_INHOUSE_BAM_ROOT`（可用 `:` 分隔多個 root；舊 `NGS_UI_BAM_ROOT` 仍作 fallback） |
 | IGV DRAGEN BAM 搜尋根目錄 | `/home/datalake_Raw/Novaseq` | `NGS_UI_DRAGEN_BAM_ROOT`（可用 `:` 分隔多個 root；尋找 `<run>/bam/{sample}.bam`，排除 `{sample}.repeats.bam`） |
 | IGV hg38 reference（FASTA + `.fai`） | `/home/pipeline/reference/hg38` | `NGS_UI_IGV_REF_DIR` |
-| 二級分析 WES FASTQ 搜尋 roots | `/home/datalake_Raw/NextSeq2000:/datalake_Raw/Other/Reanalysis` | `NGS_UI_SECONDARY_WES_FASTQ_ROOTS` |
+| 二級分析 WES FASTQ 搜尋 roots | `/home/datalake_Raw/NextSeq2000:/home/datalake_Raw/Other/Reanalysis:/datalake_Raw/Other/Reanalysis` | `NGS_UI_SECONDARY_WES_FASTQ_ROOTS` |
 | 二級分析 WGS FASTQ 搜尋 roots | `/home/datalake_Raw/Novaseq`（WGS 一律使用 lane FASTQ，不用 merged） | `NGS_UI_SECONDARY_WGS_FASTQ_ROOTS` |
 | 二級分析 samplesheet server output | `/home/datalake_Intermediate/pipeline/nextflow_output` | `NGS_UI_SECONDARY_OUTPUT_ROOT` |
 | 二級分析 DGX2 output / launch / work roots | `/datalake_Intermediate/pipeline/nextflow_output`、`/datalake_Intermediate/pipeline/nextflow_launch`、`/raid/DGM/work` | `NGS_UI_SECONDARY_DGX_OUTPUT_ROOT`、`NGS_UI_SECONDARY_DGX_LAUNCH_ROOT`、`NGS_UI_SECONDARY_DGX_WORK_ROOT` |

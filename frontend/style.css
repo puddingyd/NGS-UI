@@ -2447,8 +2447,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .secondary-card { max-width: 920px !important; }
 .secondary-form { gap: 12px; }
 .secondary-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 .secondary-sample-row input {
@@ -2654,9 +2654,6 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .dragen-siblings .sib-miss { color: #cf222e; }
 
 @media (max-width: 760px) {
-  .secondary-grid {
-    grid-template-columns: 1fr;
-  }
   .secondary-sample-row {
     flex-wrap: wrap;
   }
