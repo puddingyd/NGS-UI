@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v5.2 — 2026-06-15
+
+- 右上角新增「二級分析」工具，可搜尋 WES/WGS FASTQ、建立 samplesheet，並產生可貼到 DGX2 執行的 tmux 指令。
+- 二級分析支援批次加入與「加入同批全部樣本」；WGS 一律使用 lane FASTQ 並輸出 lane 欄，reanalysis FASTQ 可改 Sample ID。
+
 ### v5.1 — 2026-06-15
 
 - 輸入臨床表徵工具新增 Clinical presentation 欄位，可依檢體編號 / 病歷號儲存並帶入主畫面；主畫面修改後也會同步寫回供後續載入。

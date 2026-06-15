@@ -18,6 +18,7 @@
       <span id="topbar-user" class="muted" hidden></span>
       <button id="btn-logout" class="btn btn-ghost" hidden>登出</button>
       <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
+      <button id="btn-secondary-launch" class="btn btn-ghost" type="button" hidden title="搜尋 FASTQ、建立二級分析 samplesheet，並產生 DGX2 tmux 執行指令">二級分析</button>
       <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 或 in-house ensemble Nextflow 輸出啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
       <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" hidden />
@@ -634,6 +635,70 @@
         </label>
       </div>
       <div id="gene-search-results"></div>
+    </div>
+  </div>
+
+  <!-- 二級分析 — FASTQ picker → samplesheet.csv + DGX-2 tmux launch block. -->
+  <div id="secondary-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide secondary-card">
+      <h2>二級分析</h2>
+      <div class="dragen-form secondary-form">
+        <div class="dragen-form-row dragen-vcf-row">
+          <span id="secondary-index-meta" class="muted dragen-index-meta"></span>
+          <button id="secondary-refresh-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="重新掃描 FASTQ root 目錄">↻ 更新索引</button>
+        </div>
+
+        <div class="secondary-grid">
+          <div class="dragen-caller-block">
+            <label class="dragen-form-label">WES FASTQ</label>
+            <div class="dragen-vcf-picker">
+              <label class="combobox-wrap dragen-vcf-combobox">
+                <input id="secondary-fastq-wes" class="dragen-vcf-input" type="text"
+                       placeholder="輸入 sample / run / path 搜尋" autocomplete="off" />
+                <ul id="secondary-fastq-wes-dropdown" class="combobox-dropdown dragen-vcf-dropdown hidden"></ul>
+              </label>
+            </div>
+          </div>
+          <div class="dragen-caller-block">
+            <label class="dragen-form-label">WGS FASTQ</label>
+            <div class="dragen-vcf-picker">
+              <label class="combobox-wrap dragen-vcf-combobox">
+                <input id="secondary-fastq-wgs" class="dragen-vcf-input" type="text"
+                       placeholder="輸入 sample / run / path 搜尋" autocomplete="off" />
+                <ul id="secondary-fastq-wgs-dropdown" class="combobox-dropdown dragen-vcf-dropdown hidden"></ul>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="dragen-sample-row secondary-sample-row">
+          <label for="secondary-sample-id" class="dragen-form-label-sub">Sample ID</label>
+          <input id="secondary-sample-id" type="text" placeholder="選取 FASTQ 後自動帶入；reanalysis 可在這裡改名" />
+          <button id="secondary-add-batch-btn" class="btn btn-ghost" type="button">加入批次</button>
+          <button id="secondary-add-folder-btn" class="btn btn-ghost" type="button">加入同批全部樣本</button>
+        </div>
+        <div class="dragen-sample-row secondary-sample-row">
+          <label for="secondary-batch-name" class="dragen-form-label-sub">Batch name</label>
+          <input id="secondary-batch-name" type="text" placeholder="留空自動產生，例如 260610_WES" />
+        </div>
+        <div id="secondary-batch-list" class="dragen-batch-list secondary-batch-list" hidden></div>
+        <div class="dragen-actions">
+          <button id="secondary-create-btn" class="btn btn-primary" type="button">建立 sample sheet</button>
+          <button type="button" class="btn btn-ghost" data-close="secondary-modal">關閉</button>
+        </div>
+      </div>
+
+      <div id="secondary-result-panel" class="secondary-result-panel" hidden>
+        <div class="secondary-result-head">
+          <strong>DGX2 執行指令</strong>
+          <span id="secondary-result-meta" class="muted"></span>
+          <button id="secondary-copy-command" class="btn btn-ghost dragen-toolbar-btn" type="button">複製</button>
+        </div>
+        <pre id="secondary-command" class="dragen-job-log secondary-command"></pre>
+        <div class="secondary-tmux-help muted">
+          進入進度畫面：<code id="secondary-help-attach"></code>；離開但不中斷：先按 <code>Ctrl-b</code> 再按 <code>d</code>；查看所有 session：<code>tmux ls</code>。
+        </div>
+      </div>
     </div>
   </div>
 

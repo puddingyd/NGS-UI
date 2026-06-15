@@ -2540,6 +2540,8 @@ function setLoggedInUser(username) {
   if (up) up.hidden = !username;
   const cases = document.getElementById("btn-case-list");
   if (cases) cases.hidden = !username;
+  const secondary = document.getElementById("btn-secondary-launch");
+  if (secondary) secondary.hidden = !username;
   const dr = document.getElementById("btn-dragen-launch");
   if (dr) dr.hidden = !username;
   const pipelineList = document.getElementById("btn-pipeline-list");
@@ -8033,6 +8035,354 @@ function maybeShowVersionPicker(onPick) {
 })();
 
 // ─────────────────────────────────────────────────────────────────
+// 二級分析 — FASTQ samplesheet helper (UI for /api/secondary/*)
+// ─────────────────────────────────────────────────────────────────
+
+const _SECONDARY_STATE = {
+  index: null,                // {meta, wes: [...], wgs: [...]}
+  selected: { wes: "", wgs: "" },
+  mode: "",                  // "" | wes | wgs
+  batch: [],                 // FASTQ rows to write into samplesheet.csv
+};
+
+function _secondaryCurrentList(mode = _SECONDARY_STATE.mode) {
+  const idx = _SECONDARY_STATE.index;
+  if (!idx) return [];
+  return (mode === "wgs" ? idx.wgs : idx.wes) || [];
+}
+
+function _secondaryActiveMode() {
+  if (_SECONDARY_STATE.selected.wes) return "wes";
+  if (_SECONDARY_STATE.selected.wgs) return "wgs";
+  return "";
+}
+
+function _secondaryRenderMeta() {
+  const el = document.getElementById("secondary-index-meta");
+  if (!el) return;
+  const m = _SECONDARY_STATE.index?.meta;
+  if (!m || !m.updated_at) { el.textContent = ""; return; }
+  const when = new Date(m.updated_at).toLocaleString();
+  const stale = m.stale ? "（已過期，自動背景刷新中）" : "";
+  el.textContent = `上次更新 ${when} · WES ${m.wes_count} · WGS ${m.wgs_count} ${stale}`;
+}
+
+function _secondaryFastqLabel(row) {
+  const lane = row.lane ? ` · ${row.lane}` : "";
+  const re = row.reanalysis ? " · reanalysis" : "";
+  return `${row.sample_id || ""}${lane}${re} · ${row.run || ""} · ${_dragenFmtSize(row.size)} · ${_dragenFmtMtime(row.mtime)}`;
+}
+
+function _secondaryMatchFastqs(mode, query, { showAll = false } = {}) {
+  const q = showAll ? "" : (query || "").trim().toLowerCase();
+  if (!q && !showAll) return [];
+  return _secondaryCurrentList(mode).filter(row => {
+    if (!q) return true;
+    return [row.sample_id, row.source_sample_id, row.run, row.input_dir, row.fastq_1, row.fastq_2, row.lane]
+      .some(value => String(value || "").toLowerCase().includes(q));
+  });
+}
+
+function _secondaryRenderDropdown(mode, { showAll = false } = {}) {
+  const input = document.getElementById(`secondary-fastq-${mode}`);
+  const list = document.getElementById(`secondary-fastq-${mode}-dropdown`);
+  if (!input || !list) return;
+  const rows = _secondaryMatchFastqs(mode, input.value, { showAll });
+  list.innerHTML = "";
+  if (!rows.length) {
+    if (input.value.trim() || showAll) {
+      list.innerHTML = `<li class="combobox-option dragen-vcf-option muted">（沒有符合條件的 FASTQ）</li>`;
+      list.classList.remove("hidden");
+    } else {
+      list.classList.add("hidden");
+    }
+    return;
+  }
+  rows.forEach(row => {
+    const li = document.createElement("li");
+    li.className = "combobox-option dragen-vcf-option";
+    li.dataset.path = row.fastq_1 || "";
+    li.innerHTML = `<span>${escapeHtml(row.sample_id || "")}</span>` +
+      `<span class="opt-vcf-meta">${escapeHtml(_secondaryFastqLabel(row))}</span>`;
+    li.title = `${row.fastq_1 || ""}\n${row.fastq_2 || ""}`;
+    li.addEventListener("mousedown", ev => {
+      ev.preventDefault();
+      _secondaryPickFastq(mode, row);
+    });
+    list.appendChild(li);
+  });
+  list.classList.remove("hidden");
+}
+
+function _secondaryHideDropdown(mode) {
+  document.getElementById(`secondary-fastq-${mode}-dropdown`)?.classList.add("hidden");
+}
+
+function _secondaryBatchSeqType() {
+  return _SECONDARY_STATE.batch[0]?.seq_type || "";
+}
+
+function _secondaryCurrentRowFromForm() {
+  const mode = _secondaryActiveMode();
+  if (!mode) return null;
+  const path = _SECONDARY_STATE.selected[mode] || "";
+  const row = _secondaryCurrentList(mode).find(v => v.fastq_1 === path);
+  if (!row) return null;
+  const sid = (document.getElementById("secondary-sample-id")?.value || row.sample_id || "").trim();
+  if (!sid) return null;
+  return { ...row, sample_id: sid, seq_type: mode.toUpperCase() };
+}
+
+function _secondaryRenderBatch() {
+  const box = document.getElementById("secondary-batch-list");
+  if (!box) return;
+  const rows = _SECONDARY_STATE.batch;
+  if (!rows.length) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  const uniqueSamples = new Set(rows.map(r => r.sample_id)).size;
+  const body = rows.map((row, idx) => {
+    const path = row.lane ? `${row.fastq_1 || ""} (${row.lane})` : (row.fastq_1 || "");
+    return `
+      <div class="dragen-batch-row">
+        <code>${escapeHtml(row.sample_id || "")}</code>
+        <code>${escapeHtml(row.seq_type || "")}</code>
+        <code>${escapeHtml(row.run || "")}</code>
+        <span class="dragen-batch-path" title="${escapeAttr(path)}">${escapeHtml(path)}</span>
+        <button type="button" class="dragen-batch-remove" data-idx="${idx}" title="移除">×</button>
+      </div>
+    `;
+  }).join("");
+  box.innerHTML = `
+    <div class="dragen-batch-head">
+      <span>批次清單：${rows.length} 列 / ${uniqueSamples} 個 sample / ${escapeHtml(rows[0].seq_type || "")}</span>
+      <button type="button" class="btn btn-ghost btn-link" id="secondary-batch-clear">清空</button>
+    </div>
+    ${body}
+  `;
+  box.hidden = false;
+  box.querySelector("#secondary-batch-clear")?.addEventListener("click", () => {
+    _SECONDARY_STATE.batch = [];
+    _secondaryRenderBatch();
+  });
+  box.querySelectorAll(".dragen-batch-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.idx);
+      if (Number.isInteger(idx)) {
+        _SECONDARY_STATE.batch.splice(idx, 1);
+        _secondaryRenderBatch();
+      }
+    });
+  });
+}
+
+function _secondaryAddRow(row) {
+  const seqType = row.seq_type || "";
+  const batchSeq = _secondaryBatchSeqType();
+  if (batchSeq && batchSeq !== seqType) {
+    alert("同一批 samplesheet 只能包含 WES 或 WGS 其中一種。");
+    return false;
+  }
+  const dup = _SECONDARY_STATE.batch.find(x => x.fastq_1 === row.fastq_1);
+  if (dup) return false;
+  _SECONDARY_STATE.batch.push(row);
+  return true;
+}
+
+function _secondaryAddCurrentToBatch() {
+  const row = _secondaryCurrentRowFromForm();
+  if (!row) { alert("請先選一個 FASTQ 並確認 Sample ID"); return; }
+  if (!_secondaryAddRow(row)) {
+    alert("這列 FASTQ 已在批次清單中，或批次類型不一致。");
+  }
+  _secondaryRenderBatch();
+}
+
+function _secondaryAddFolderToBatch() {
+  const current = _secondaryCurrentRowFromForm();
+  if (!current) { alert("請先選一個 FASTQ"); return; }
+  const mode = current.seq_type.toLowerCase();
+  const rows = _secondaryCurrentList(mode).filter(row => row.input_dir === current.input_dir);
+  let added = 0;
+  rows.forEach(row => {
+    if (_secondaryAddRow({ ...row, seq_type: current.seq_type })) added += 1;
+  });
+  if (!added) alert("同資料夾沒有可新增的其他 FASTQ。");
+  _secondaryRenderBatch();
+}
+
+function _secondaryPickFastq(mode, row) {
+  const batchSeq = _secondaryBatchSeqType();
+  const seqType = mode.toUpperCase();
+  if (batchSeq && batchSeq !== seqType) {
+    alert("目前批次已選擇另一種 seq type；請先清空批次再切換。");
+    return;
+  }
+  const otherMode = mode === "wes" ? "wgs" : "wes";
+  const input = document.getElementById(`secondary-fastq-${mode}`);
+  const other = document.getElementById(`secondary-fastq-${otherMode}`);
+  _SECONDARY_STATE.selected[mode] = row.fastq_1 || "";
+  _SECONDARY_STATE.selected[otherMode] = "";
+  _SECONDARY_STATE.mode = mode;
+  if (input) {
+    input.value = row.sample_id || "";
+    input.title = _secondaryFastqLabel(row);
+  }
+  if (other) {
+    other.value = "";
+    other.title = "";
+  }
+  const sid = document.getElementById("secondary-sample-id");
+  if (sid) sid.value = row.sample_id || "";
+  _secondaryHideDropdown(mode);
+  _secondaryHideDropdown(otherMode);
+}
+
+async function loadSecondaryFastqList({ force = false } = {}) {
+  const wes = document.getElementById("secondary-fastq-wes");
+  const wgs = document.getElementById("secondary-fastq-wgs");
+  if (!wes || !wgs) return;
+  if (!force && _SECONDARY_STATE.index) {
+    _secondaryRenderMeta();
+    return;
+  }
+  wes.placeholder = "FASTQ 清單載入中…";
+  wgs.placeholder = "FASTQ 清單載入中…";
+  try {
+    const idx = await apiFetch(force ? "/secondary/index/refresh" : "/secondary/fastqs", {
+      method: force ? "POST" : "GET",
+    });
+    _SECONDARY_STATE.index = idx;
+    _secondaryRenderMeta();
+  } catch (e) {
+    wes.placeholder = `載入失敗：${String(e)}`;
+    wgs.placeholder = `載入失敗：${String(e)}`;
+    return;
+  }
+  wes.placeholder = "輸入 sample / run / path 搜尋";
+  wgs.placeholder = "輸入 sample / run / path 搜尋";
+}
+
+async function _secondaryCreateSamplesheet() {
+  let samples = _SECONDARY_STATE.batch.slice();
+  if (!samples.length) {
+    const row = _secondaryCurrentRowFromForm();
+    if (!row) { alert("請先挑選 FASTQ，或先加入批次"); return; }
+    samples = [row];
+  }
+  const seqType = samples[0]?.seq_type || "";
+  const batchName = (document.getElementById("secondary-batch-name")?.value || "").trim();
+  const btn = document.getElementById("secondary-create-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "建立中…"; }
+  try {
+    const result = await apiFetch("/secondary/samplesheet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seq_type: seqType, batch_name: batchName, samples }),
+    });
+    _SECONDARY_STATE.batch = samples.slice();
+    _secondaryRenderBatch();
+    _secondaryRenderResult(result);
+  } catch (e) {
+    alert("建立 samplesheet 失敗：" + (e?.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "建立 sample sheet"; }
+  }
+}
+
+function _secondaryRenderResult(result) {
+  const panel = document.getElementById("secondary-result-panel");
+  const meta = document.getElementById("secondary-result-meta");
+  const command = document.getElementById("secondary-command");
+  const attach = document.getElementById("secondary-help-attach");
+  if (!panel || !result) return;
+  panel.hidden = false;
+  if (meta) {
+    const warn = (result.warnings || []).length ? `；${result.warnings.join("；")}` : "";
+    meta.textContent = `${result.samplesheet_path || ""} → ${result.dgx_output_dir || ""}${warn}`;
+  }
+  if (command) command.textContent = result.command || "";
+  if (attach) attach.textContent = `tmux attach -t ${result.tmux_session || ""}`;
+}
+
+async function _secondaryCopyCommand() {
+  const text = document.getElementById("secondary-command")?.textContent || "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = document.getElementById("secondary-copy-command");
+    if (btn) {
+      const old = btn.textContent;
+      btn.textContent = "已複製";
+      setTimeout(() => { btn.textContent = old; }, 1200);
+    }
+  } catch (_e) {
+    alert("無法使用瀏覽器剪貼簿，請手動選取指令複製。");
+  }
+}
+
+function _secondaryWireCombobox(mode) {
+  const input = document.getElementById(`secondary-fastq-${mode}`);
+  const list = document.getElementById(`secondary-fastq-${mode}-dropdown`);
+  if (!input || !list) return;
+  let activeIdx = -1;
+  input.addEventListener("focus", () => {
+    activeIdx = -1;
+    _secondaryRenderDropdown(mode, { showAll: true });
+  });
+  input.addEventListener("input", () => {
+    activeIdx = -1;
+    _SECONDARY_STATE.selected[mode] = "";
+    input.title = "";
+    _SECONDARY_STATE.mode = _secondaryActiveMode();
+    _secondaryRenderDropdown(mode);
+  });
+  input.addEventListener("blur", () => {
+    setTimeout(() => _secondaryHideDropdown(mode), 120);
+  });
+  input.addEventListener("keydown", ev => {
+    const opts = Array.from(list.querySelectorAll(".dragen-vcf-option[data-path]"));
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      activeIdx = Math.min(opts.length - 1, activeIdx + 1);
+      opts.forEach((el, i) => el.classList.toggle("active", i === activeIdx));
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      activeIdx = Math.max(0, activeIdx - 1);
+      opts.forEach((el, i) => el.classList.toggle("active", i === activeIdx));
+    } else if (ev.key === "Enter" && activeIdx >= 0 && opts[activeIdx]) {
+      ev.preventDefault();
+      const row = _secondaryCurrentList(mode).find(v => v.fastq_1 === opts[activeIdx].dataset.path);
+      if (row) _secondaryPickFastq(mode, row);
+    } else if (ev.key === "Escape") {
+      _secondaryHideDropdown(mode);
+    }
+  });
+}
+
+function setupSecondaryButton() {
+  const btn = document.getElementById("btn-secondary-launch");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    showModal("secondary-modal");
+    await loadSecondaryFastqList();
+  });
+  _secondaryWireCombobox("wes");
+  _secondaryWireCombobox("wgs");
+  document.getElementById("secondary-refresh-btn")?.addEventListener("click", async ev => {
+    const b = ev.currentTarget;
+    if (b) { b.disabled = true; b.textContent = "↻ 更新中…"; }
+    try { await loadSecondaryFastqList({ force: true }); }
+    finally { if (b) { b.disabled = false; b.textContent = "↻ 更新索引"; } }
+  });
+  document.getElementById("secondary-add-batch-btn")?.addEventListener("click", _secondaryAddCurrentToBatch);
+  document.getElementById("secondary-add-folder-btn")?.addEventListener("click", _secondaryAddFolderToBatch);
+  document.getElementById("secondary-create-btn")?.addEventListener("click", _secondaryCreateSamplesheet);
+  document.getElementById("secondary-copy-command")?.addEventListener("click", _secondaryCopyCommand);
+}
+
 // 三級分析 — DRAGEN VCF kicker (UI for /api/dragen/*)
 //
 // Button on the topbar opens a modal listing every hard-filtered
@@ -8755,6 +9105,7 @@ function setupPipelineList() {
 
 // Wire it up at boot — sits alongside setupCombobox / setupGeneSearch.
 document.addEventListener("DOMContentLoaded", () => {
+  try { setupSecondaryButton(); } catch (_e) {}
   try { setupDragenButton(); } catch (_e) {}
   try { setupPipelineList(); } catch (_e) {}
 });

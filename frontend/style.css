@@ -2444,6 +2444,50 @@ body.sidebar-collapsed .container { margin-left: auto; }
   color: #8c959f;
   cursor: not-allowed;
 }
+.secondary-card { max-width: 920px !important; }
+.secondary-form { gap: 12px; }
+.secondary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.secondary-sample-row input {
+  min-width: 0;
+}
+.secondary-batch-list .dragen-batch-row {
+  grid-template-columns: minmax(100px, 0.7fr) 52px minmax(120px, 0.8fr) minmax(0, 1.8fr) auto;
+}
+.secondary-result-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 8px;
+}
+.secondary-result-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.secondary-result-head .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.secondary-command {
+  max-height: 360px;
+  white-space: pre-wrap;
+}
+.secondary-tmux-help {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.secondary-tmux-help code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--fg);
+}
 .dragen-actions {
   display: flex;
   gap: 8px;
@@ -2608,6 +2652,18 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .dragen-siblings .sib-ok   { color: #1a7f37; }
 .dragen-siblings .sib-miss { color: #cf222e; }
+
+@media (max-width: 760px) {
+  .secondary-grid {
+    grid-template-columns: 1fr;
+  }
+  .secondary-sample-row {
+    flex-wrap: wrap;
+  }
+  .secondary-sample-row input {
+    flex-basis: 100%;
+  }
+}
 
 /* ─── 三級分析清單 modal ───────────────────────────────────── */
 #pipeline-list-modal .modal-card-wide { max-width: 900px; }
