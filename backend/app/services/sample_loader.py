@@ -1494,6 +1494,11 @@ def load_sample(sample_id: str, version: str | None = None,
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
+    dead_zone_entries = []
+    for gene, hit in dead_zone_hits.items():
+        entry = dict(hit)
+        entry["pheno_score"] = round(float(pheno_by_gene.get(gene) or 0), 2)
+        dead_zone_entries.append(entry)
     secondary_categories = (
         _build_secondary_snv_categories(review_variants_for_secondary)
         if include_aux else {category: [] for category in SECONDARY_SNV_PANELS}
@@ -1526,7 +1531,7 @@ def load_sample(sample_id: str, version: str | None = None,
         "roh_summary":       roh,
         "dead_zone": {
             "threshold": panel_deadzone.dead_zone_threshold(_test_type),
-            "entries": list(dead_zone_hits.values()),
+            "entries": dead_zone_entries,
         },
         "variants":          variants,
         # When non-empty, the SNV/Indel TSV is in the pre-2026-05

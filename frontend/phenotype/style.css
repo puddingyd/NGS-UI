@@ -426,10 +426,35 @@ button:hover, .btn:hover { background: #eaeef2; }
   font-family: inherit;
   font-size: 13px;
 }
-.drawer-summary {
+.drawer-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 16px;
+}
+.drawer-summary {
+  flex: 1;
+  min-width: 0;
   color: var(--muted);
   font-size: 12px;
+}
+.drawer-dead-zone-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.drawer-dead-zone-actions[hidden] { display: none !important; }
+.drawer-chip-btn {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.drawer-chip-btn.is-active {
+  color: #be123c;
+  background: #ffe4e6;
+  border-color: #fb7185;
 }
 .gene-list-content {
   flex: 1;
@@ -439,6 +464,9 @@ button:hover, .btn:hover { background: #eaeef2; }
   align-content: flex-start;
   flex-wrap: wrap;
   gap: 6px;
+}
+.gene-list-content.dead-zone-mode {
+  display: block;
 }
 .gene-pill {
   display: inline-flex;
@@ -450,6 +478,57 @@ button:hover, .btn:hover { background: #eaeef2; }
   background: #f8fafc;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+}
+.drawer-dead-zone-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.drawer-dead-zone-list li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.dead-zone-gene {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+}
+.dead-zone-exons {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dead-zone-cds {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+.drawer-dead-zone-list li.dead-zone-pct-high {
+  color: #be123c;
+  background: #ffe4e6;
+  border-left: 3px solid #be123c;
+}
+.drawer-dead-zone-list li.dead-zone-pct-mid {
+  color: #c2410c;
+  background: #ffedd5;
+  border-left: 3px solid #f97316;
+}
+.drawer-dead-zone-list li.dead-zone-pct-low {
+  color: #92400e;
+  background: #fef3c7;
+  border-left: 3px solid #f59e0b;
+}
+.drawer-dead-zone-list li.dead-zone-pct-base {
+  color: #3f3f46;
+  background: #fefce8;
+  border-left: 3px solid #eab308;
 }
 .membership-results {
   flex: 1;

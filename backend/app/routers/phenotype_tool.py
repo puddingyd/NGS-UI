@@ -20,7 +20,7 @@ import re
 from fastapi import APIRouter, HTTPException, Query
 
 from ..config import PHENOTYPE_DIR
-from ..services import hpo_ontology, phenotype_scorer
+from ..services import hpo_ontology, panel_deadzone, phenotype_scorer
 
 router = APIRouter(prefix="/api/phenotype-tool", tags=["phenotype-tool"])
 
@@ -87,6 +87,57 @@ def gene_memberships(gene: str = Query(..., min_length=1, max_length=64)):
 
 _GENE_SPLIT_RE = re.compile(r"[,\s]+")
 _MAX_PANEL_GENES = 5000
+_MAX_DEAD_ZONE_GENES = 10000
+
+
+def _sort_dead_zone_entries(entries: list[dict]) -> list[dict]:
+    def bucket(pct: float) -> int:
+        if pct >= 70:
+            return 0
+        if pct >= 50:
+            return 1
+        if pct >= 30:
+            return 2
+        return 3
+
+    return sorted(
+        entries,
+        key=lambda e: (
+            bucket(float(e.get("cds_dead_pct") or 0)),
+            -float(e.get("cds_dead_pct") or 0),
+            str(e.get("gene") or ""),
+        ),
+    )
+
+
+@router.post("/dead-zone")
+def dead_zone_for_gene_list(payload: dict):
+    """Return WES/WGS cohort dead-zone rows for a supplied gene list.
+
+    The phenotype drawer already has the canonical gene list, so this endpoint
+    only runs when the reviewer explicitly asks for dead-zone rows. The large
+    WES/WGS tables stay behind panel_deadzone's process LRU cache.
+    """
+    test_type = str((payload or {}).get("test_type") or "").upper()
+    if test_type not in {"WES", "WGS"}:
+        raise HTTPException(400, "test_type 必須是 WES 或 WGS")
+    raw_genes = (payload or {}).get("genes") or []
+    if isinstance(raw_genes, str):
+        genes = [g for g in _GENE_SPLIT_RE.split(raw_genes) if g]
+    elif isinstance(raw_genes, (list, tuple)):
+        genes = [str(g or "").strip() for g in raw_genes if str(g or "").strip()]
+    else:
+        genes = []
+    if len(genes) > _MAX_DEAD_ZONE_GENES:
+        raise HTTPException(400, f"基因數過多（上限 {_MAX_DEAD_ZONE_GENES}）")
+    hits = panel_deadzone.dead_zone_for_genes(test_type, genes)
+    entries = _sort_dead_zone_entries([dict(v) for v in hits.values()])
+    return {
+        "test_type": test_type,
+        "threshold": panel_deadzone.dead_zone_threshold(test_type),
+        "gene_count": len(set(genes)),
+        "entries": entries,
+    }
 
 
 @router.post("/custom-panel")

@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v4.11 — 2026-06-15
+
+- 輸入臨床表徵工具的 HPO / panel gene-list drawer 新增 `WES dead zone` 與 `WGS dead zone` 按鈕，按下後才查目前 gene list 的 cohort dead-zone 並以單欄列表顯示。
+- 主畫面 Dead zone 排序改為先依 CDS dead percentage 分區（70-100%、50-70%、30-50%、<30%），同一區間內再依 pheno score 由高到低排序。
+- Dead zone 顯示改用淡背景警示色，提升高比例 dead-zone 的可讀性：≥70% rose、50-70% orange、30-50% amber、<30% yellow。
+
 ### v4.10 — 2026-06-14
 
 - ACMG SF、Proactive 與 Carrier screening 改為 secondary finding 勾選流程：三區從 `snv_indel.review.tsv` 產生，只列 custom panel 內且符合 ClinVar P/LP 或卡片最終 ACMG P/LP、VAF ≥ 0.2、zygosity 非 ref 的 SNV/Indel 變異。

@@ -112,7 +112,13 @@
       <input type="text" id="gene-list-filter" placeholder="在目前 gene list 內篩選" oninput="filterGeneList()">
       <button type="button" class="btn btn-secondary" onclick="copyGeneList()">複製清單</button>
     </div>
-    <div id="gene-list-summary" class="drawer-summary"></div>
+    <div class="drawer-summary-row">
+      <div id="gene-list-summary" class="drawer-summary"></div>
+      <div id="gene-list-dead-zone-actions" class="drawer-dead-zone-actions" hidden>
+        <button type="button" class="drawer-chip-btn" data-dead-zone-mode="WES" title="再次點擊可回到 gene list">WES dead zone</button>
+        <button type="button" class="drawer-chip-btn" data-dead-zone-mode="WGS" title="再次點擊可回到 gene list">WGS dead zone</button>
+      </div>
+    </div>
     <div id="gene-list-content" class="gene-list-content"></div>
   </aside>
 

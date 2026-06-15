@@ -19,6 +19,9 @@ let panelFuse = null;
 let generatedContent = "";
 let currentGeneList = [];
 let currentGeneMemberships = null;
+let currentGeneListContext = null;
+let currentGeneListView = "genes";
+const deadZoneCache = new Map();
 
 // Fixed panel index from /api/phenotype-tool/fixed-panels — WES-I /
 // WES-II / WGS tabs are driven entirely by this. Keys look like
@@ -343,6 +346,9 @@ async function openGeneListDrawer(kind, key, label) {
   if (!drawer || !backdrop) return;
   currentGeneList = [];
   currentGeneMemberships = null;
+  currentGeneListContext = { kind, key, label: label || key };
+  currentGeneListView = "genes";
+  updateDeadZoneButtons();
   drawer.hidden = false;
   backdrop.hidden = false;
   title.textContent = label || key;
@@ -360,10 +366,12 @@ async function openGeneListDrawer(kind, key, label) {
     currentGeneList = Array.isArray(data.genes) ? data.genes : [];
     sourceEl.textContent = data.source ? `source: ${data.source}` : "";
     summaryEl.textContent = `${currentGeneList.length} genes`;
-    renderGeneList(currentGeneList);
+    renderCurrentGeneListView();
   } catch (e) {
     summaryEl.textContent = e.message || String(e);
     contentEl.innerHTML = "";
+    currentGeneListContext = null;
+    updateDeadZoneButtons();
   }
 }
 
@@ -380,6 +388,9 @@ function openGeneMembershipSearch() {
   if (!drawer || !backdrop) return;
   currentGeneList = [];
   currentGeneMemberships = null;
+  currentGeneListContext = null;
+  currentGeneListView = "genes";
+  updateDeadZoneButtons();
   drawer.hidden = false;
   backdrop.hidden = false;
   if (title) title.textContent = "搜尋基因";
@@ -402,6 +413,9 @@ async function searchGeneMemberships() {
   }
   currentGeneList = [];
   currentGeneMemberships = null;
+  currentGeneListContext = null;
+  currentGeneListView = "genes";
+  updateDeadZoneButtons();
   if (summaryEl) summaryEl.textContent = "搜尋中…";
   if (contentEl) contentEl.innerHTML = "";
   try {
@@ -423,11 +437,15 @@ function closeGeneListDrawer() {
   if (backdrop) backdrop.hidden = true;
   currentGeneList = [];
   currentGeneMemberships = null;
+  currentGeneListContext = null;
+  currentGeneListView = "genes";
+  updateDeadZoneButtons();
 }
 
 function renderGeneList(genes) {
   const contentEl = document.getElementById("gene-list-content");
   if (!contentEl) return;
+  contentEl.classList.remove("dead-zone-mode");
   if (!genes.length) {
     contentEl.innerHTML = '<div class="muted">沒有符合的 gene</div>';
     return;
@@ -435,10 +453,134 @@ function renderGeneList(genes) {
   contentEl.innerHTML = genes.map((g) => `<span class="gene-pill">${escapeText(g)}</span>`).join("");
 }
 
+function deadZoneBucket(pct) {
+  const n = Number(pct || 0);
+  if (n >= 70) return 0;
+  if (n >= 50) return 1;
+  if (n >= 30) return 2;
+  return 3;
+}
+
+function deadZonePctClass(pct) {
+  const n = Number(pct || 0);
+  if (n >= 70) return "dead-zone-pct-high";
+  if (n >= 50) return "dead-zone-pct-mid";
+  if (n >= 30) return "dead-zone-pct-low";
+  return "dead-zone-pct-base";
+}
+
+function sortDeadZoneEntries(entries) {
+  return (entries || []).slice().sort((a, b) => {
+    const pctA = Number(a?.cds_dead_pct || 0);
+    const pctB = Number(b?.cds_dead_pct || 0);
+    return (deadZoneBucket(pctA) - deadZoneBucket(pctB))
+      || (pctB - pctA)
+      || String(a?.gene || "").localeCompare(String(b?.gene || ""));
+  });
+}
+
+function geneListFilterQuery() {
+  return (document.getElementById("gene-list-filter")?.value || "").trim().toUpperCase();
+}
+
+function filteredCurrentGenes() {
+  const q = geneListFilterQuery();
+  return q ? currentGeneList.filter((g) => String(g).toUpperCase().includes(q)) : currentGeneList;
+}
+
+function currentDeadZoneCacheKey(testType) {
+  const ctx = currentGeneListContext;
+  if (!ctx || !currentGeneList.length) return "";
+  return `${testType}:${ctx.kind}:${ctx.key}:${currentGeneList.join(",")}`;
+}
+
+function updateDeadZoneButtons() {
+  const actions = document.getElementById("gene-list-dead-zone-actions");
+  if (!actions) return;
+  const show = Boolean(currentGeneListContext && currentGeneList.length);
+  actions.hidden = !show;
+  actions.querySelectorAll("[data-dead-zone-mode]").forEach((btn) => {
+    btn.classList.toggle("is-active", currentGeneListView === btn.dataset.deadZoneMode);
+  });
+}
+
+function renderCurrentGeneListView() {
+  updateDeadZoneButtons();
+  if (currentGeneListView === "WES" || currentGeneListView === "WGS") {
+    renderDeadZoneList(currentGeneListView);
+    return;
+  }
+  const filtered = filteredCurrentGenes();
+  const summaryEl = document.getElementById("gene-list-summary");
+  if (summaryEl) {
+    const q = geneListFilterQuery();
+    summaryEl.textContent = q
+      ? `${filtered.length} / ${currentGeneList.length} genes`
+      : `${currentGeneList.length} genes`;
+  }
+  renderGeneList(filtered);
+}
+
+async function loadDeadZoneEntries(testType) {
+  const cacheKey = currentDeadZoneCacheKey(testType);
+  if (!cacheKey) return null;
+  if (deadZoneCache.has(cacheKey)) return deadZoneCache.get(cacheKey);
+  const resp = await fetch("/api/phenotype-tool/dead-zone", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ test_type: testType, genes: currentGeneList }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.detail || "Dead zone 載入失敗");
+  deadZoneCache.set(cacheKey, data);
+  return data;
+}
+
+async function renderDeadZoneList(testType) {
+  const contentEl = document.getElementById("gene-list-content");
+  const summaryEl = document.getElementById("gene-list-summary");
+  if (!contentEl) return;
+  const requestKey = currentDeadZoneCacheKey(testType);
+  contentEl.classList.add("dead-zone-mode");
+  if (summaryEl) summaryEl.textContent = `${testType} dead zone 載入中…`;
+  contentEl.innerHTML = "";
+  try {
+    const data = await loadDeadZoneEntries(testType);
+    if (currentGeneListView !== testType || currentDeadZoneCacheKey(testType) !== requestKey) return;
+    const threshold = data?.threshold || "";
+    let entries = sortDeadZoneEntries(Array.isArray(data?.entries) ? data.entries : []);
+    const q = geneListFilterQuery();
+    if (q) entries = entries.filter((e) => String(e.gene || "").toUpperCase().includes(q));
+    if (summaryEl) {
+      summaryEl.textContent = q
+        ? `${testType} dead zone: ${entries.length} / ${(data.entries || []).length} genes，threshold ${threshold}X`
+        : `${testType} dead zone: ${entries.length} genes，threshold ${threshold}X`;
+    }
+    if (!entries.length) {
+      contentEl.innerHTML = '<div class="muted">目前這組 gene list 沒有 cohort dead-zone 註記。</div>';
+      return;
+    }
+    contentEl.innerHTML = `<ul class="drawer-dead-zone-list">${entries.map((e) => {
+      const pct = Number(e.cds_dead_pct || 0);
+      const pctLabel = Number.isFinite(pct) ? `${pct.toFixed(1).replace(/\\.0$/, "")}%` : "";
+      const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
+      return `<li class="${deadZonePctClass(pct)}">
+        <span class="dead-zone-gene">${escapeText(e.gene || "")}</span>
+        <span class="dead-zone-exons">exon ${escapeText(label)}</span>
+        ${pctLabel ? `<span class="dead-zone-cds">CDS ${escapeText(pctLabel)}</span>` : ""}
+      </li>`;
+    }).join("")}</ul>`;
+  } catch (e) {
+    if (summaryEl) summaryEl.textContent = e.message || String(e);
+    contentEl.innerHTML = "";
+  }
+}
+
 function renderGeneMemberships(data) {
   const contentEl = document.getElementById("gene-list-content");
   const summaryEl = document.getElementById("gene-list-summary");
   if (!contentEl) return;
+  contentEl.classList.remove("dead-zone-mode");
   const hpo = Array.isArray(data.hpo) ? data.hpo : [];
   const panels = Array.isArray(data.panels) ? data.panels : [];
   const hpoTotal = Number(data.hpo_total) || hpo.length;
@@ -446,6 +588,7 @@ function renderGeneMemberships(data) {
   if (summaryEl) {
     summaryEl.textContent = `${data.query || ""} → ${data.canonical_gene || ""}: ${hpoTotal} HPO terms, ${panelTotal} panels`;
   }
+  updateDeadZoneButtons();
   if (!hpo.length && !panels.length) {
     contentEl.innerHTML = '<div class="muted">找不到包含這個 gene 的 HPO term 或 panel。</div>';
     return;
@@ -487,13 +630,7 @@ function filterGeneList() {
     if (summaryEl) summaryEl.textContent = "這個欄位只篩選目前 HPO / panel 的 gene list；gene lookup 結果請用上方搜尋基因。";
     return;
   }
-  const q = (document.getElementById("gene-list-filter")?.value || "").trim().toUpperCase();
-  const filtered = q ? currentGeneList.filter((g) => String(g).toUpperCase().includes(q)) : currentGeneList;
-  const summaryEl = document.getElementById("gene-list-summary");
-  if (summaryEl) summaryEl.textContent = q
-    ? `${filtered.length} / ${currentGeneList.length} genes`
-    : `${currentGeneList.length} genes`;
-  renderGeneList(filtered);
+  renderCurrentGeneListView();
 }
 
 async function copyGeneList() {
@@ -538,6 +675,15 @@ document.getElementById("gene-list-backdrop")?.addEventListener("click", closeGe
 document.getElementById("gene-list-close")?.addEventListener("click", closeGeneListDrawer);
 document.getElementById("btn-open-gene-search")?.addEventListener("click", openGeneMembershipSearch);
 document.getElementById("gene-membership-search-btn")?.addEventListener("click", searchGeneMemberships);
+document.querySelectorAll("[data-dead-zone-mode]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const mode = btn.dataset.deadZoneMode;
+    currentGeneListView = currentGeneListView === mode ? "genes" : mode;
+    const contentEl = document.getElementById("gene-list-content");
+    contentEl?.classList.toggle("dead-zone-mode", currentGeneListView !== "genes");
+    renderCurrentGeneListView();
+  });
+});
 document.getElementById("gene-membership-query")?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();

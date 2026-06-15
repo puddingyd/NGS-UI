@@ -1260,11 +1260,7 @@ function renderDeadZoneCard() {
   if (!card || !body) return;
   const dz = state.data?.dead_zone || {};
   const threshold = dz.threshold || "";
-  const entries = (Array.isArray(dz.entries) ? dz.entries : []).slice().sort((a, b) => {
-    const pctA = Number(a?.cds_dead_pct || 0);
-    const pctB = Number(b?.cds_dead_pct || 0);
-    return (pctB - pctA) || String(a?.gene || "").localeCompare(String(b?.gene || ""));
-  });
+  const entries = sortDeadZoneEntries(Array.isArray(dz.entries) ? dz.entries : []);
   if (thrEl) {
     thrEl.textContent = threshold ? `clinical threshold: ${threshold}X` : "";
   }
@@ -1308,14 +1304,16 @@ function renderDeadZoneCard() {
     const gene = e.gene || "";
     const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
     const pct = Number(e.cds_dead_pct || 0);
-    const pctClass = pct >= 70 ? "dead-zone-pct-high"
-      : pct >= 50 ? "dead-zone-pct-mid"
-      : pct >= 30 ? "dead-zone-pct-low"
-      : "dead-zone-pct-base";
+    const pctClass = deadZonePctClass(pct);
     const pctLabel = Number.isFinite(pct) ? `${pct.toFixed(1).replace(/\\.0$/, "")}%` : "";
+    const pheno = Number(e.pheno_score || 0);
+    const phenoLabel = Number.isFinite(pheno) && pheno > 0
+      ? `<span class="dead-zone-pheno">Pheno ${pheno.toFixed(1).replace(/\\.0$/, "")}</span>`
+      : "";
     return `<li class="${pctClass}"><span class="dead-zone-gene">${escapeHtml(gene)}</span>
       <span class="dead-zone-exons">exon ${escapeHtml(label)}</span>
-      ${pctLabel ? `<span class="dead-zone-cds">CDS ${escapeHtml(pctLabel)}</span>` : ""}</li>`;
+      ${pctLabel ? `<span class="dead-zone-cds">CDS ${escapeHtml(pctLabel)}</span>` : ""}
+      ${phenoLabel}</li>`;
   }).join("")}</ul>${!expanded && !visibleEntries.length && entries.length
     ? `<div class="muted">沒有 CDS ≥50% 的 dead-zone；可展開全部查看其他 ${entries.length} 列。</div>`
     : ""}${toggleHtml}`;
@@ -1325,6 +1323,35 @@ function renderDeadZoneCard() {
   };
   document.getElementById("dead-zone-toggle")?.addEventListener("click", toggleExpanded);
   if (headerToggle && hasToggle) headerToggle.onclick = toggleExpanded;
+}
+
+function deadZoneBucket(pct) {
+  const n = Number(pct || 0);
+  if (n >= 70) return 0;
+  if (n >= 50) return 1;
+  if (n >= 30) return 2;
+  return 3;
+}
+
+function deadZonePctClass(pct) {
+  const n = Number(pct || 0);
+  if (n >= 70) return "dead-zone-pct-high";
+  if (n >= 50) return "dead-zone-pct-mid";
+  if (n >= 30) return "dead-zone-pct-low";
+  return "dead-zone-pct-base";
+}
+
+function sortDeadZoneEntries(entries) {
+  return (entries || []).slice().sort((a, b) => {
+    const pctA = Number(a?.cds_dead_pct || 0);
+    const pctB = Number(b?.cds_dead_pct || 0);
+    const phenoA = Number(a?.pheno_score || 0);
+    const phenoB = Number(b?.pheno_score || 0);
+    return (deadZoneBucket(pctA) - deadZoneBucket(pctB))
+      || (phenoB - phenoA)
+      || (pctB - pctA)
+      || String(a?.gene || "").localeCompare(String(b?.gene || ""));
+  });
 }
 
 function _reportedOutOfDiseaseAssociatedSnvs() {

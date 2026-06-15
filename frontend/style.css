@@ -2133,7 +2133,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
   gap: 6px;
   align-items: baseline;
   min-width: 0;
-  padding: 1px 0;
+  padding: 2px 6px;
+  border-radius: 4px;
   font-size: 12px;
   line-height: 1.35;
   color: #111827;
@@ -2151,10 +2152,31 @@ body.sidebar-collapsed .container { margin-left: auto; }
   flex: 0 0 auto;
   font-weight: 700;
 }
-.dead-zone-list li.dead-zone-pct-high { color: #7f1d1d; }
-.dead-zone-list li.dead-zone-pct-mid { color: #dc2626; }
-.dead-zone-list li.dead-zone-pct-low { color: #ea580c; }
-.dead-zone-list li.dead-zone-pct-base { color: #111827; }
+.dead-zone-pheno {
+  flex: 0 0 auto;
+  color: #475569;
+  font-size: 11px;
+}
+.dead-zone-list li.dead-zone-pct-high {
+  color: #be123c;
+  background: #ffe4e6;
+  border-left: 3px solid #be123c;
+}
+.dead-zone-list li.dead-zone-pct-mid {
+  color: #c2410c;
+  background: #ffedd5;
+  border-left: 3px solid #f97316;
+}
+.dead-zone-list li.dead-zone-pct-low {
+  color: #92400e;
+  background: #fef3c7;
+  border-left: 3px solid #f59e0b;
+}
+.dead-zone-list li.dead-zone-pct-base {
+  color: #3f3f46;
+  background: #fefce8;
+  border-left: 3px solid #eab308;
+}
 .dead-zone-toggle {
   margin-top: 4px;
   padding: 2px 0;
