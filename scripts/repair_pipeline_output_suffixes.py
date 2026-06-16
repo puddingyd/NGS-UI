@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Mirror legacy source-ID tertiary outputs into suffixed UI output dirs.
+"""Move legacy source-ID tertiary outputs into suffixed UI output dirs.
 
 Older NGS-UI jobs ran Nextflow with the sequencing source sample ID, so
 DRAGEN and in-house output could collide under /home/pipeline/tertiary_output.
-This script repairs completed cases by copying either:
+This script repairs completed cases by renaming either:
 
     PIPELINE_OUT_ROOT/{source_sample_id}/ -> PIPELINE_OUT_ROOT/{ui_sample_id}/
 
@@ -21,7 +21,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -115,11 +114,11 @@ def main() -> int:
         "--legacy-dragen-pattern",
         default=DEFAULT_LEGACY_DRAGEN_PATTERN,
         help=(
-            "Regex for old unsuffixed DRAGEN pipeline directories to mirror "
+            "Regex for old unsuffixed DRAGEN pipeline directories to move "
             "to '<sample>-dragen'. Use '' to disable. Default: ^VAL-\\d+$"
         ),
     )
-    ap.add_argument("--apply", action="store_true", help="perform copies; default is dry-run")
+    ap.add_argument("--apply", action="store_true", help="perform renames; default is dry-run")
     args = ap.parse_args()
 
     repairs = list(iter_repairs(args.tertiary_root, args.pipeline_root, args.legacy_dragen_pattern))
@@ -127,16 +126,16 @@ def main() -> int:
         print("No legacy pipeline output directories need repair.")
         return 0
     for item in repairs:
-        action = "COPY" if args.apply else "DRY-RUN"
+        action = "MOVE" if args.apply else "DRY-RUN"
         print(
             f"{action}\t{item['pipeline_type']}\t"
             f"{item['source_sid']} -> {item['ui_sid']}\t"
             f"{item['src']} -> {item['dst']}\t{item['reason']}"
         )
         if args.apply:
-            shutil.copytree(item["src"], item["dst"], symlinks=True)
+            item["src"].rename(item["dst"])
     if not args.apply:
-        print("\nRe-run with --apply to create the suffixed pipeline output directories.")
+        print("\nRe-run with --apply to rename the legacy directories.")
     return 0
 
 

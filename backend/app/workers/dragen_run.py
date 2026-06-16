@@ -10,7 +10,7 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
     2. write a v3.x samplesheet       → data/jobs/tertiary/<job>/samplesheet.csv
        (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
     3. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<source SID>/
-       then mirror legacy source-ID-only output to <SID> when the UI ID
+       then rename legacy source-ID-only output to <SID> when the UI ID
        carries -dragen / -nckuh / -inhouse
     4. copy pipeline outputs          → NGS_UI/tertiary_output/<SID>/
                                           snv_indel.annotated.tsv
@@ -30,10 +30,10 @@ Mode differences:
             output folder as input_dir; CNV/SV AnnotSV runs separately on
             gcnv + delly VCFs.
 
-Existing-output detection (step 2): prefers the UI sample ID, so DRAGEN
-and in-house output can coexist as <SID>-dragen / <SID>-nckuh. Older
-source-ID-only directories are treated as a legacy fallback and are
-mirrored into the suffixed directory before copying into NGS-UI.
+Existing-output detection (step 2): reuses only exact UI sample ID
+directories, so DRAGEN and in-house output can coexist as <SID>-dragen /
+<SID>-nckuh. After a real Nextflow run, source-ID-only output is renamed
+into the suffixed directory before copying into NGS-UI.
 
 Started by `python3 -m app.workers.dragen_run --job-id … --vcf …`.
 """
@@ -85,15 +85,24 @@ def _default_ui_sample_id(sample_id: str, mode: str) -> str:
     return sid
 
 
-def _pipeline_candidate_ids(sample_id: str, source_sample_id: str = "") -> list[str]:
+def _pipeline_candidate_ids(
+    sample_id: str,
+    source_sample_id: str = "",
+    *,
+    include_legacy_aliases: bool = True,
+) -> list[str]:
     candidates: list[str] = []
-    for sid in (sample_id, source_sample_id):
+    search_ids = [sample_id]
+    if include_legacy_aliases:
+        search_ids.append(source_sample_id)
+    for sid in search_ids:
         sid = (sid or "").strip()
         if sid and sid not in candidates:
             candidates.append(sid)
-    stripped = _strip_sid_suffix(sample_id or "")
-    if stripped and stripped not in candidates:
-        candidates.append(stripped)
+    if include_legacy_aliases:
+        stripped = _strip_sid_suffix(sample_id or "")
+        if stripped and stripped not in candidates:
+            candidates.append(stripped)
     return candidates
 
 
@@ -207,10 +216,16 @@ def _pipeline_outputs_for(
     source_sample_id: str,
     *,
     require_pgx: bool,
+    include_legacy_aliases: bool = True,
 ) -> tuple[dict[str, Path], list[str], str]:
     outputs: dict[str, Path] = {}
     found_under = ""
-    for sid in _pipeline_candidate_ids(sample_id, source_sample_id):
+    candidate_ids = _pipeline_candidate_ids(
+        sample_id,
+        source_sample_id,
+        include_legacy_aliases=include_legacy_aliases,
+    )
+    for sid in candidate_ids:
         checks: list[tuple[str, Path | None]] = [
             ("snv_indel.acmg.tsv", _find_pipeline_acmg_tsv(sid)),
             ("mito.tsv", _find_pipeline_mito_tsv(sid)),
@@ -231,15 +246,15 @@ def _pipeline_outputs_for(
     missing = []
     for name in all_names:
         if name == "snv_indel.acmg.tsv":
-            path = _find_pipeline_acmg_tsv(*_pipeline_candidate_ids(sample_id, source_sample_id))
+            path = _find_pipeline_acmg_tsv(*candidate_ids)
         elif name == "mito.tsv":
-            path = _find_pipeline_mito_tsv(*_pipeline_candidate_ids(sample_id, source_sample_id))
+            path = _find_pipeline_mito_tsv(*candidate_ids)
         elif name == "cnv.annotated.tsv":
-            path = _find_pipeline_annotsv_tsv("cnv", *_pipeline_candidate_ids(sample_id, source_sample_id))
+            path = _find_pipeline_annotsv_tsv("cnv", *candidate_ids)
         elif name == "sv.annotated.tsv":
-            path = _find_pipeline_annotsv_tsv("sv", *_pipeline_candidate_ids(sample_id, source_sample_id))
+            path = _find_pipeline_annotsv_tsv("sv", *candidate_ids)
         else:
-            path = _find_pipeline_pgx_output(*_pipeline_candidate_ids(sample_id, source_sample_id))
+            path = _find_pipeline_pgx_output(*candidate_ids)
         if path is None:
             missing.append(name)
         else:
@@ -247,10 +262,11 @@ def _pipeline_outputs_for(
     return outputs, missing, found_under
 
 
-def _mirror_legacy_pipeline_output(sample_id: str, source_sample_id: str, legacy_sid: str) -> None:
-    """Copy old source-ID-only output into the UI-suffixed directory.
+def _rename_legacy_pipeline_output(sample_id: str, source_sample_id: str, legacy_sid: str) -> None:
+    """Move source-ID-only output into the UI-suffixed directory.
 
-    This repairs already-finished cases without deleting the legacy output.
+    This prevents future DRAGEN / in-house runs from re-detecting the
+    source-ID-only directory as an unrelated pipeline result.
     """
     if not sample_id or sample_id == legacy_sid:
         return
@@ -258,8 +274,8 @@ def _mirror_legacy_pipeline_output(sample_id: str, source_sample_id: str, legacy
     dst = PIPELINE_OUT_ROOT / sample_id
     if not src.is_dir() or dst.exists():
         return
-    shutil.copytree(src, dst, symlinks=True)
-    _log(f"[repair] mirrored legacy pipeline output {src} -> {dst}")
+    src.rename(dst)
+    _log(f"[repair] renamed legacy pipeline output {src} -> {dst}")
 
 
 def _pipeline_input_dir(vcf: Path, mode: str) -> Path:
@@ -614,10 +630,11 @@ def main() -> int:
                 sid,
                 source_sid,
                 require_pgx=not args.without_pgx,
+                include_legacy_aliases=False,
             )
             if not missing:
                 if found_under and found_under != sid:
-                    _mirror_legacy_pipeline_output(sid, source_sid, found_under)
+                    _rename_legacy_pipeline_output(sid, source_sid, found_under)
                     outputs, missing, found_under = _pipeline_outputs_for(
                         sid,
                         source_sid,
@@ -637,6 +654,17 @@ def main() -> int:
                 )
 
         if pending_samples:
+            for sample in pending_samples:
+                sid = sample["sample_id"]
+                source_sid = sample["source_sample_id"]
+                source_dir = PIPELINE_OUT_ROOT / source_sid
+                target_dir = PIPELINE_OUT_ROOT / sid
+                if source_sid != sid and source_dir.is_dir() and not target_dir.exists():
+                    raise RuntimeError(
+                        "legacy source-ID pipeline output exists before a new suffixed run: "
+                        f"{source_dir}. Rename it to the correct suffixed directory or run "
+                        "scripts/repair_pipeline_output_suffixes.py --apply before retrying."
+                    )
             _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
 
             # 2. v3.x pipeline input. The official pipeline now owns
@@ -860,7 +888,7 @@ def main() -> int:
                     require_pgx=not args.without_pgx,
                 )
                 if not missing and found_under and found_under != sid:
-                    _mirror_legacy_pipeline_output(sid, source_sid, found_under)
+                    _rename_legacy_pipeline_output(sid, source_sid, found_under)
                     outputs, missing, found_under = _pipeline_outputs_for(
                         sid,
                         source_sid,

@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v5.3 — 2026-06-16
+
+- 三級分析開跑前只重用 exact UI sample ID 的 pipeline output 目錄，避免 DRAGEN / in-house 同名樣本誤抓無後綴舊結果。
+- 若開跑前仍有無後綴舊 pipeline output，系統會先停止並要求搬移，避免新分析結果與舊資料混在同一個資料夾。
+- Nextflow 完成後若 pipeline 仍輸出到無後綴 source sample ID 目錄，會搬移成 `-dragen` / `-nckuh` suffixed 目錄，不再保留重複 legacy 目錄。
+
 ### v5.2 — 2026-06-15
 
 - 右上角新增「二級分析」工具，可搜尋 WES/WGS FASTQ、建立 samplesheet，並產生可貼到 DGX2 執行的 tmux 指令。
