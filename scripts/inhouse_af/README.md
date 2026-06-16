@@ -79,10 +79,13 @@ The reference defaults to
 
 **What to check (this is the Phase 0 validation):**
 
-1. **GLnexus accepts DRAGEN gVCFs with `--config gatk`** — no crash, plausible
-   site count. If `gatk` over/under-filters DRAGEN calls, try `gatk_unfiltered`
-   (then we rely on our own `view -f PASS` / thresholds). This config choice is
-   the main open question Phase 0 resolves.
+1. **Config: use `glnexus_config_dragen.yml` (the default).** The built-in
+   `gatk` preset sets `revise_genotypes: true` and aborts on DRAGEN gVCFs with
+   *"couldn't find genotype likelihoods (NotFound)"* — DRAGEN records don't
+   always carry PL. Our config keeps the `gatk` unifier/quality thresholds but
+   sets `revise_genotypes: false`, so GLnexus trusts DRAGEN's GT calls. (This is
+   what Phase 0 resolved; `gatk` fails at the genotyping step even though
+   discovery succeeds.)
 2. **AN denominator is right** — the verify block prints the AN distribution;
    at common sites it should peak near `2 × N_samples` (≈128 for one run).
    If AN is way below that, the gVCF reference blocks aren't being read

@@ -45,7 +45,7 @@
 #     [--ref     /home/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta] \
 #     [--bed     primary_contigs.bed]   # restrict to chr1-22,X,Y,M — skip the
 #                                       # ~3340 decoy/alt/HLA contigs (much faster)
-#     [--config  gatk] [--threads 16] [--mem-gbytes 96] \
+#     [--config  glnexus_config_dragen.yml] [--threads 16] [--mem-gbytes 96] \
 #     [--scratch <dir>] [--max-samples N] [--keep-cohort] \
 #     [--strip-path-prefix /home]    # DGX: cohort list paths drop /home
 #
@@ -64,7 +64,11 @@ GLNEXUS_BIN="${GLNEXUS_BIN:-glnexus_cli}"
 BCFTOOLS_SIF="${BCFTOOLS_SIF:-}"
 BCFTOOLS_BIN="${BCFTOOLS_BIN:-bcftools}"
 APPTAINER_BIND="${APPTAINER_BIND:-/home}"
-CONFIG="gatk"
+# DRAGEN gVCFs need revise_genotypes:false (the built-in `gatk` preset aborts
+# with "couldn't find genotype likelihoods"). Default to our DRAGEN config file;
+# pass --config <preset|file> to override.
+DEFAULT_CONFIG="$SCRIPT_DIR/glnexus_config_dragen.yml"
+CONFIG="$DEFAULT_CONFIG"
 THREADS=16
 MEM_GB=96
 LIST=""
@@ -99,6 +103,12 @@ done
 [ -f "$REF" ]  || { echo "ERROR: --ref not found: $REF" >&2; exit 2; }
 [ -f "${REF}.fai" ] || { echo "ERROR: ${REF}.fai not found (samtools faidx)" >&2; exit 2; }
 [ -z "$BED" ] || [ -f "$BED" ] || { echo "ERROR: --bed not found: $BED" >&2; exit 2; }
+# CONFIG may be a built-in preset name (e.g. gatk_unfiltered) or a YAML file.
+# If it looks like a path (has a / or .yml) it must exist.
+case "$CONFIG" in
+  */*|*.yml|*.yaml)
+    [ -f "$CONFIG" ] || { echo "ERROR: --config file not found: $CONFIG" >&2; exit 2; } ;;
+esac
 
 # ---- resolve engines: container image preferred, else host binary --------
 if [ -n "$GLNEXUS_SIF" ]; then
