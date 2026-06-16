@@ -1,8 +1,10 @@
-"""MRN/LIS_ID keyed Clinical presentation sidecar files.
+"""MRN-keyed Clinical presentation sidecar files.
 
 The standalone /phenotype/ tool can be used before a sample is registered,
 so this free text lives next to phenotype.txt and is pulled into
 sample_metadata.json when the case is opened in the main reviewer UI.
+When MRN is available it is the stable key; LIS_ID is only a fallback
+for pre-roster or malformed cases.
 """
 from __future__ import annotations
 
@@ -30,12 +32,10 @@ def check_token(name: str, value: str, *, required: bool) -> str:
 def filename_for(*, code: str = "", mrn: str = "") -> str:
     code = check_token("LIS_ID", code, required=False)
     mrn = check_token("MRN", mrn, required=False)
-    if code and mrn:
-        return f"{code}_{mrn}{_SUFFIX}"
-    if code:
-        return f"{code}{_SUFFIX}"
     if mrn:
         return f"{mrn}{_SUFFIX}"
+    if code:
+        return f"{code}{_SUFFIX}"
     raise ValueError("請至少提供 MRN 或 LIS_ID")
 
 
@@ -53,8 +53,9 @@ def _read(path: Path) -> str:
 def find(*, code: str = "", mrn: str = "", code_candidates: list[str] | tuple[str, ...] | None = None) -> Path | None:
     """Find the best clinical presentation sidecar.
 
-    Precedence mirrors phenotype.txt lookup: exact LIS+MRN, LIS-only, any
-    LIS+MRN for the LIS candidate, then MRN-only / any LIS for MRN.
+    Clinical presentation is patient-level, so MRN-only wins. LIS_ID-based
+    names remain as legacy/fallback lookup for files created before this
+    became MRN-keyed.
     """
     code = check_token("LIS_ID", code, required=False)
     mrn = check_token("MRN", mrn, required=False)
@@ -69,6 +70,11 @@ def find(*, code: str = "", mrn: str = "", code_candidates: list[str] | tuple[st
     if not PHENOTYPE_DIR.is_dir():
         return None
 
+    if mrn:
+        p = PHENOTYPE_DIR / f"{mrn}{_SUFFIX}"
+        if p.is_file():
+            return p
+
     for c in candidates:
         if mrn:
             p = PHENOTYPE_DIR / f"{c}_{mrn}{_SUFFIX}"
@@ -82,9 +88,6 @@ def find(*, code: str = "", mrn: str = "", code_candidates: list[str] | tuple[st
             return matches[0]
 
     if mrn:
-        p = PHENOTYPE_DIR / f"{mrn}{_SUFFIX}"
-        if p.is_file():
-            return p
         matches = sorted(PHENOTYPE_DIR.glob(f"*_{mrn}{_SUFFIX}"))
         if matches:
             return matches[0]

@@ -210,7 +210,11 @@ def save_phenotype_file(payload: dict):
 
 @router.post("/clinical-presentation/save")
 def save_clinical_presentation(payload: dict):
-    """Write MRN/LIS_ID keyed Clinical presentation free text."""
+    """Write patient-level Clinical presentation free text.
+
+    MRN is the stable key. LIS_ID is accepted only as a fallback when no MRN
+    is available.
+    """
     try:
         return clinical_presentation_store.save(
             mrn=(payload or {}).get("mrn", ""),

@@ -31,7 +31,7 @@ NGS_UI/                    ← NGS_UI_HOME
 │                             qc_summary.json,
 │                             roh_summary.json, analyses/{ver}/...
 ├── patient_phenotype/     ← {LIS_ID}_{MRN}_phenotype.txt（自動帶入 HPO）
-│                             + {LIS_ID}_{MRN}_clinical_presentation.txt
+│                             + {MRN}_clinical_presentation.txt
 ├── patient_list/          ← 上傳的「未完成報告清單」xlsx + 衍生 roster.json
 ├── phenotype_data/        ← git-tracked fixed/custom panels; large HPO refs live in NGS_UI_HOME
 ├── ngs_panel_deadzone/    ← expanded reportable gene list、HGNC alias map、dead-zone tables
@@ -101,7 +101,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `TERTIARY_OUTPUT_ROOT` | `$NGS_UI_HOME/tertiary_output` | per-sample TSV |
 | `NGS_UI_DATA_ROOT` | `$NGS_UI_HOME/data` | users.db, jobs/ |
 | `NGS_UI_VCF_DIR` | `$NGS_UI_HOME/vcf` | per-sample VCF |
-| `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt`、`{LIS}_{MRN}_clinical_presentation.txt` |
+| `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt`、`{MRN}_clinical_presentation.txt` |
 | `NGS_UI_PATIENT_LIST_DIR` | `$NGS_UI_HOME/patient_list` | 上傳清單 + roster.json |
 | `NGS_UI_PHENO_DATA_DIR` | `$NGS_UI_HOME/phenotype_data` | hp.obo / phenotype_to_genes 等大型 HPO reference |
 | `NGS_UI_GENE_PANELS_DIR` | `REPO_ROOT/phenotype_data/gene_panels` | git-tracked fixed panel gene lists |
@@ -140,7 +140,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - LIS_ID 下拉會列出 pipeline 已丟進 `tertiary_output/` 但尚未登錄的目錄；
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；三級分析輸出若使用 `{LIS_ID}-dragen` / `{LIS_ID}-nckuh` / `{LIS_ID}-inhouse` 這類 UI 後綴，會先保留後綴作為 sample ID，再回查未加後綴的 roster LIS_ID；
    - 若來源為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，Test type 會預設為 `WGS`；送出前仍可手動改回 `WES`；
-   - Clinical presentation 可在檢體編號 / 病歷號下方輸入，儲存為 `patient_phenotype/{LIS}_{MRN}_clinical_presentation.txt`，載入新個案與主畫面 Clinical presentation 會自動帶入；主畫面 reviewer 修改後也會同步寫回此檔，供 `/phenotype/` 後續載入。
+   - Clinical presentation 可在檢體編號 / 病歷號下方輸入，會依病歷號 debounce 自動儲存為 `patient_phenotype/{MRN}_clinical_presentation.txt`，載入新個案與主畫面 Clinical presentation 會自動帶入；主畫面 reviewer 修改後也會同步寫回此檔，供 `/phenotype/` 後續載入。若沒有 MRN，才 fallback 使用 LIS_ID 暫存。
    - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
    - 登錄新個案不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；若 VCF 尚不存在，Exomiser/LIRICAL 背景 job 開始前會自動建立或刷新。
    - HPO/panel 的 in-panel 狀態來自 `pheno_score.tsv` 動態補值，不再寫回大型 `snv_indel.annotated.tsv` 的 `IN_PANEL` 欄。

@@ -23,6 +23,11 @@ let currentGeneMemberships = null;
 let currentGeneListContext = null;
 let currentGeneListView = "genes";
 let loadedClinicalPresentationSidecar = false;
+let clinicalPresentationLastSaved = "";
+let clinicalPresentationLastSavedPath = "";
+let clinicalAutosaveTimer = null;
+let clinicalAutosaveDirty = false;
+let clinicalAutosaveInflight = false;
 const deadZoneCache = new Map();
 
 // Fixed panel index from /api/phenotype-tool/fixed-panels — WES-I /
@@ -800,6 +805,85 @@ function escapeJs(s) {
 }
 
 // ============================================================
+// Clinical presentation autosave
+// ============================================================
+
+function _clinicalPresentationFields() {
+  return {
+    code: document.getElementById("patient-code").value.trim(),
+    mrn: document.getElementById("patient-mrn").value.trim(),
+    content: document.getElementById("clinical-presentation-text")?.value || "",
+  };
+}
+
+async function saveClinicalPresentationSidecar() {
+  const { code, mrn, content } = _clinicalPresentationFields();
+  if (!code && !mrn) throw new Error("請先填 病歷號 或 檢體編號");
+  if (!content.trim() && !loadedClinicalPresentationSidecar) return {};
+  if (content === clinicalPresentationLastSaved && loadedClinicalPresentationSidecar) {
+    return clinicalPresentationLastSavedPath ? { path: clinicalPresentationLastSavedPath, skipped: true } : {};
+  }
+
+  const clinicalResp = await fetch("/api/phenotype-tool/clinical-presentation/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mrn: mrn || "", code: code || "", content }),
+  });
+  const clinicalBody = await clinicalResp.json().catch(() => ({}));
+  if (!clinicalResp.ok) throw new Error(clinicalBody.detail || `${clinicalResp.status} ${clinicalResp.statusText}`);
+  loadedClinicalPresentationSidecar = true;
+  clinicalPresentationLastSaved = content;
+  clinicalPresentationLastSavedPath = clinicalBody.path || clinicalPresentationLastSavedPath;
+  return clinicalBody;
+}
+
+function scheduleClinicalPresentationAutosave() {
+  clinicalAutosaveDirty = true;
+  clearTimeout(clinicalAutosaveTimer);
+  const { code, mrn } = _clinicalPresentationFields();
+  if (!code && !mrn) {
+    showStatus("Clinical presentation 尚未自動儲存：請先填病歷號；若沒有病歷號，可先填檢體編號暫存。", "");
+    return;
+  }
+  clinicalAutosaveTimer = setTimeout(flushClinicalPresentationAutosave, 1200);
+}
+
+async function flushClinicalPresentationAutosave() {
+  if (clinicalAutosaveInflight || !clinicalAutosaveDirty) return;
+  const { code, mrn } = _clinicalPresentationFields();
+  if (!code && !mrn) return;
+
+  clinicalAutosaveDirty = false;
+  clinicalAutosaveInflight = true;
+  try {
+    const contentBeforeSave = document.getElementById("clinical-presentation-text")?.value || "";
+    const body = await saveClinicalPresentationSidecar();
+    if (body.path && !body.skipped) showStatus(`Clinical presentation 已自動儲存：\n${body.path}`, "success");
+    const contentAfterSave = document.getElementById("clinical-presentation-text")?.value || "";
+    if (contentAfterSave !== contentBeforeSave) scheduleClinicalPresentationAutosave();
+  } catch (e) {
+    clinicalAutosaveDirty = true;
+    showStatus("Clinical presentation 自動儲存失敗：" + (e.message || e), "error");
+  } finally {
+    clinicalAutosaveInflight = false;
+  }
+}
+
+function initClinicalPresentationAutosave() {
+  document.getElementById("clinical-presentation-text")?.addEventListener("input", scheduleClinicalPresentationAutosave);
+  document.getElementById("patient-code")?.addEventListener("input", () => {
+    if (clinicalAutosaveDirty || (document.getElementById("clinical-presentation-text")?.value || "").trim()) {
+      scheduleClinicalPresentationAutosave();
+    }
+  });
+  document.getElementById("patient-mrn")?.addEventListener("input", () => {
+    if (clinicalAutosaveDirty || (document.getElementById("clinical-presentation-text")?.value || "").trim()) {
+      scheduleClinicalPresentationAutosave();
+    }
+  });
+}
+
+// ============================================================
 // Load existing phenotype from the server (by LIS_ID then MRN)
 // ============================================================
 
@@ -816,6 +900,10 @@ async function loadPatient() {
     if (code) params.set("code", code);
     if (mrn)  params.set("mrn", mrn);
     loadedClinicalPresentationSidecar = false;
+    clinicalPresentationLastSaved = "";
+    clinicalPresentationLastSavedPath = "";
+    clinicalAutosaveDirty = false;
+    clearTimeout(clinicalAutosaveTimer);
     document.getElementById("clinical-presentation-text").value = "";
     const clinicalResp = await fetch(`/api/phenotype-tool/clinical-presentation/load?${params}`);
     if (clinicalResp.ok) {
@@ -823,6 +911,8 @@ async function loadPatient() {
       document.getElementById("clinical-presentation-text").value = clinicalBody.content || "";
       loadedClinical = true;
       loadedClinicalPresentationSidecar = true;
+      clinicalPresentationLastSaved = clinicalBody.content || "";
+      clinicalPresentationLastSavedPath = clinicalBody.path || "";
       statusParts.push(`Clinical presentation（${clinicalBody.filename}）`);
       if (clinicalBody.code && !code) document.getElementById("patient-code").value = clinicalBody.code;
       if (clinicalBody.mrn  && !mrn)  document.getElementById("patient-mrn").value  = clinicalBody.mrn;
@@ -1037,14 +1127,9 @@ async function generateFile() {
     //    also writes back to the same file when it is edited there.
     let clinicalBody = {};
     if (clinicalPresentation.trim() || loadedClinicalPresentationSidecar) {
-      const clinicalResp = await fetch("/api/phenotype-tool/clinical-presentation/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mrn: mrn || "", code: code || "", content: clinicalPresentation }),
-      });
-      clinicalBody = await clinicalResp.json().catch(() => ({}));
-      if (!clinicalResp.ok) throw new Error(clinicalBody.detail || `${clinicalResp.status} ${clinicalResp.statusText}`);
-      loadedClinicalPresentationSidecar = true;
+      clinicalBody = await saveClinicalPresentationSidecar();
+      clinicalAutosaveDirty = false;
+      clearTimeout(clinicalAutosaveTimer);
     }
 
     // 3) Build the phenotype.txt body and save it when phenotype content exists.
@@ -1095,4 +1180,5 @@ function showStatus(msg, type) {
 // ============================================================
 // Boot
 // ============================================================
+initClinicalPresentationAutosave();
 loadHPOData();
