@@ -59,6 +59,7 @@ while [ $# -gt 0 ]; do
     --exclude-id-file)   SEL_ARGS+=(--exclude-id-file "$2"); shift 2;;
     --min-size-mb)       SEL_ARGS+=(--min-size-mb "$2"); shift 2;;
     --ref)               BUILD_ARGS+=(--ref "$2"); shift 2;;
+    --bed)               BUILD_ARGS+=(--bed "$2"); shift 2;;
     --config)            BUILD_ARGS+=(--config "$2"); shift 2;;
     -h|--help)           sed -n '2,55p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;

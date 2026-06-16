@@ -43,6 +43,8 @@
 #     --list   cohort_gvcfs.txt \
 #     --out    $NGS_UI_HOME/biotools/inhouse_af/inhouse_af.hg38.vcf.gz \
 #     [--ref     /home/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta] \
+#     [--bed     primary_contigs.bed]   # restrict to chr1-22,X,Y,M — skip the
+#                                       # ~3340 decoy/alt/HLA contigs (much faster)
 #     [--config  gatk] [--threads 16] [--mem-gbytes 96] \
 #     [--scratch <dir>] [--max-samples N] [--keep-cohort] \
 #     [--strip-path-prefix /home]    # DGX: cohort list paths drop /home
@@ -71,12 +73,14 @@ SCRATCH=""
 MAX_SAMPLES=0
 KEEP_COHORT=0
 STRIP_PREFIX=""
+BED=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --list)              LIST="$2"; shift 2;;
     --out)               OUT="$2"; shift 2;;
     --ref)               REF="$2"; shift 2;;
+    --bed)               BED="$2"; shift 2;;
     --config)            CONFIG="$2"; shift 2;;
     --threads)           THREADS="$2"; shift 2;;
     --mem-gbytes)        MEM_GB="$2"; shift 2;;
@@ -94,6 +98,7 @@ done
 [ -f "$LIST" ] || { echo "ERROR: --list not found: $LIST" >&2; exit 2; }
 [ -f "$REF" ]  || { echo "ERROR: --ref not found: $REF" >&2; exit 2; }
 [ -f "${REF}.fai" ] || { echo "ERROR: ${REF}.fai not found (samtools faidx)" >&2; exit 2; }
+[ -z "$BED" ] || [ -f "$BED" ] || { echo "ERROR: --bed not found: $BED" >&2; exit 2; }
 
 # ---- resolve engines: container image preferred, else host binary --------
 if [ -n "$GLNEXUS_SIF" ]; then
@@ -149,6 +154,7 @@ FIRST=$(head -1 "$EFF_LIST")
 echo "[inhouse-af] samples    : $N_SAMPLES"
 echo "[inhouse-af] config     : $CONFIG"
 echo "[inhouse-af] ref        : $REF"
+echo "[inhouse-af] bed        : ${BED:-(none — all contigs)}"
 echo "[inhouse-af] out        : $OUT"
 echo "[inhouse-af] scratch    : $SCRATCH"
 echo "[inhouse-af] glnexus    : $GLNEXUS_MODE ($([ "$GLNEXUS_MODE" = sif ] && echo "$GLNEXUS_SIF" || command -v "$GLNEXUS_BIN"))"
@@ -165,11 +171,11 @@ echo "[inhouse-af] stage 1: GLnexus joint genotyping ($N_SAMPLES gVCFs)…"
 if [ "$GLNEXUS_MODE" = "sif" ]; then
   apptainer exec --bind "$APPTAINER_BIND","$SCRATCH" "$GLNEXUS_SIF" glnexus_cli \
     --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
-    --list "$EFF_LIST" > "$COHORT_BCF"
+    ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
 else
   "$GLNEXUS_BIN" \
     --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
-    --list "$EFF_LIST" > "$COHORT_BCF"
+    ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
 fi
 rm -rf "$GLDB"   # the DB is large; the BCF is the only thing we keep
 echo "[inhouse-af] stage 1 done: $COHORT_BCF ($(du -h "$COHORT_BCF" | cut -f1))"

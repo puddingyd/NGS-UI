@@ -102,12 +102,28 @@ scripts/inhouse_af/build_inhouse_af.sh --list /tmp/run12_gvcfs.txt \
 
 ### 4. Full cohort
 
+**Restrict to primary contigs.** DRAGEN gVCFs carry ~3340 decoy/alt/HLA
+contigs; variants there are useless for annotating `snv_indel.annotated.tsv`
+(primary assembly only) and processing them is slow. Build a one-time BED of
+chr1-22, X, Y, M from the reference `.fai` and pass it with `--bed`:
+
 ```bash
+REF=/home/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta
+awk 'BEGIN{OFS="\t"} $1 ~ /^chr([0-9]+|X|Y|M)$/ {print $1,0,$2}' "$REF.fai" \
+  > $NGS_UI_HOME/biotools/inhouse_af/primary_contigs.bed
+
 scripts/inhouse_af/build_inhouse_af.sh \
   --list $NGS_UI_HOME/biotools/inhouse_af/cohort_gvcfs.txt \
   --out  $NGS_UI_HOME/biotools/inhouse_af/inhouse_af.hg38.vcf.gz \
+  --bed  $NGS_UI_HOME/biotools/inhouse_af/primary_contigs.bed \
   --threads 32 --mem-gbytes 192
 ```
+
+**Timing note.** GLnexus bulk-loads every gVCF into a scratch DB before
+genotyping, and that load is data-volume bound (~2.5 h / 64 WGS observed →
+roughly a day for 600+). `--bed` speeds the discover/genotype tail but not the
+bulk load. If the full-rebuild-per-batch time becomes painful at scale, that is
+the signal to switch to the DRAGEN iterative gVCF Genotyper (see below).
 
 ## Running on DGM now, air-gapped DGX later
 
