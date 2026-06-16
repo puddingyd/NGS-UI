@@ -47,6 +47,9 @@
 #                                       # ~3340 decoy/alt/HLA contigs (much faster)
 #     [--config  glnexus_config_dragen.yml] [--threads 16] [--mem-gbytes 96] \
 #     [--scratch <dir>] [--max-samples N] [--keep-cohort] \
+#     [--cohort-bcf <cohort.raw.bcf>]   # re-derive AF from an existing genotyped
+#                                       # BCF, skipping GLnexus stage 1
+#     [--keep-cohort]                   # keep cohort.raw.bcf for --cohort-bcf reuse
 #     [--strip-path-prefix /home]    # DGX: cohort list paths drop /home
 #
 # Containers / binaries (override via env):
@@ -78,6 +81,7 @@ MAX_SAMPLES=0
 KEEP_COHORT=0
 STRIP_PREFIX=""
 BED=""
+EXT_COHORT_BCF=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -85,6 +89,7 @@ while [ $# -gt 0 ]; do
     --out)               OUT="$2"; shift 2;;
     --ref)               REF="$2"; shift 2;;
     --bed)               BED="$2"; shift 2;;
+    --cohort-bcf)        EXT_COHORT_BCF="$2"; shift 2;;
     --config)            CONFIG="$2"; shift 2;;
     --threads)           THREADS="$2"; shift 2;;
     --mem-gbytes)        MEM_GB="$2"; shift 2;;
@@ -97,9 +102,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$LIST" ] || { echo "ERROR: --list <cohort_gvcfs.txt> required" >&2; exit 2; }
 [ -n "$OUT" ]  || { echo "ERROR: --out <inhouse_af.hg38.vcf.gz> required" >&2; exit 2; }
-[ -f "$LIST" ] || { echo "ERROR: --list not found: $LIST" >&2; exit 2; }
+if [ -n "$EXT_COHORT_BCF" ]; then
+  # Re-derive AF from an existing genotyped cohort BCF (skip GLnexus stage 1).
+  [ -f "$EXT_COHORT_BCF" ] || { echo "ERROR: --cohort-bcf not found: $EXT_COHORT_BCF" >&2; exit 2; }
+else
+  [ -n "$LIST" ] || { echo "ERROR: --list <cohort_gvcfs.txt> required (or --cohort-bcf)" >&2; exit 2; }
+  [ -f "$LIST" ] || { echo "ERROR: --list not found: $LIST" >&2; exit 2; }
+fi
 [ -f "$REF" ]  || { echo "ERROR: --ref not found: $REF" >&2; exit 2; }
 [ -f "${REF}.fai" ] || { echo "ERROR: ${REF}.fai not found (samtools faidx)" >&2; exit 2; }
 [ -z "$BED" ] || [ -f "$BED" ] || { echo "ERROR: --bed not found: $BED" >&2; exit 2; }
@@ -111,16 +121,20 @@ case "$CONFIG" in
 esac
 
 # ---- resolve engines: container image preferred, else host binary --------
-if [ -n "$GLNEXUS_SIF" ]; then
-  [ -f "$GLNEXUS_SIF" ] || { echo "ERROR: GLNEXUS_SIF not found: $GLNEXUS_SIF" >&2; exit 2; }
-  GLNEXUS_MODE="sif"
-elif command -v "$GLNEXUS_BIN" >/dev/null 2>&1; then
-  GLNEXUS_MODE="bin"
-else
-  echo "ERROR: need GLnexus — set GLNEXUS_SIF=<image.sif> or put glnexus_cli on PATH (GLNEXUS_BIN)." >&2
-  echo "       static binary:  https://github.com/dnanexus-rnd/GLnexus/releases (glnexus_cli)" >&2
-  echo "       container:      apptainer pull glnexus.sif docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1" >&2
-  exit 3
+# GLnexus is only needed for stage 1; skip the check when reusing --cohort-bcf.
+GLNEXUS_MODE="skip"
+if [ -z "$EXT_COHORT_BCF" ]; then
+  if [ -n "$GLNEXUS_SIF" ]; then
+    [ -f "$GLNEXUS_SIF" ] || { echo "ERROR: GLNEXUS_SIF not found: $GLNEXUS_SIF" >&2; exit 2; }
+    GLNEXUS_MODE="sif"
+  elif command -v "$GLNEXUS_BIN" >/dev/null 2>&1; then
+    GLNEXUS_MODE="bin"
+  else
+    echo "ERROR: need GLnexus — set GLNEXUS_SIF=<image.sif> or put glnexus_cli on PATH (GLNEXUS_BIN)." >&2
+    echo "       static binary:  https://github.com/dnanexus-rnd/GLnexus/releases (glnexus_cli)" >&2
+    echo "       container:      apptainer pull glnexus.sif docker://ghcr.io/dnanexus-rnd/glnexus:v1.4.1" >&2
+    exit 3
+  fi
 fi
 if [ -n "$BCFTOOLS_SIF" ]; then
   [ -f "$BCFTOOLS_SIF" ] || { echo "ERROR: BCFTOOLS_SIF not found: $BCFTOOLS_SIF" >&2; exit 2; }
@@ -147,19 +161,23 @@ bcf_run() {  # $1 = bash snippet referencing $BCF
 }
 
 # ---- effective gVCF list: drop blanks/comments, optional prefix strip ----
-EFF_LIST="$SCRATCH/cohort_gvcfs.effective.txt"
-grep -vE '^\s*(#|$)' "$LIST" > "$EFF_LIST"
-if [ -n "$STRIP_PREFIX" ]; then
-  sed -i "s#^${STRIP_PREFIX}##" "$EFF_LIST"
+if [ -z "$EXT_COHORT_BCF" ]; then
+  EFF_LIST="$SCRATCH/cohort_gvcfs.effective.txt"
+  grep -vE '^\s*(#|$)' "$LIST" > "$EFF_LIST"
+  if [ -n "$STRIP_PREFIX" ]; then
+    sed -i "s#^${STRIP_PREFIX}##" "$EFF_LIST"
+  fi
+  if [ "$MAX_SAMPLES" -gt 0 ]; then
+    head -n "$MAX_SAMPLES" "$EFF_LIST" > "$EFF_LIST.tmp" && mv "$EFF_LIST.tmp" "$EFF_LIST"
+  fi
+  N_SAMPLES=$(wc -l < "$EFF_LIST")
+  [ "$N_SAMPLES" -gt 0 ] || { echo "ERROR: no gVCFs in list" >&2; exit 2; }
+  # sanity: first gVCF must be readable from here
+  FIRST=$(head -1 "$EFF_LIST")
+  [ -f "$FIRST" ] || { echo "ERROR: first gVCF not readable: $FIRST  (wrong --strip-path-prefix?)" >&2; exit 2; }
+else
+  N_SAMPLES="?"
 fi
-if [ "$MAX_SAMPLES" -gt 0 ]; then
-  head -n "$MAX_SAMPLES" "$EFF_LIST" > "$EFF_LIST.tmp" && mv "$EFF_LIST.tmp" "$EFF_LIST"
-fi
-N_SAMPLES=$(wc -l < "$EFF_LIST")
-[ "$N_SAMPLES" -gt 0 ] || { echo "ERROR: no gVCFs in list" >&2; exit 2; }
-# sanity: first gVCF must be readable from here
-FIRST=$(head -1 "$EFF_LIST")
-[ -f "$FIRST" ] || { echo "ERROR: first gVCF not readable: $FIRST  (wrong --strip-path-prefix?)" >&2; exit 2; }
 
 echo "[inhouse-af] samples    : $N_SAMPLES"
 echo "[inhouse-af] config     : $CONFIG"
@@ -167,28 +185,38 @@ echo "[inhouse-af] ref        : $REF"
 echo "[inhouse-af] bed        : ${BED:-(none — all contigs)}"
 echo "[inhouse-af] out        : $OUT"
 echo "[inhouse-af] scratch    : $SCRATCH"
-echo "[inhouse-af] glnexus    : $GLNEXUS_MODE ($([ "$GLNEXUS_MODE" = sif ] && echo "$GLNEXUS_SIF" || command -v "$GLNEXUS_BIN"))"
+if [ "$GLNEXUS_MODE" = "skip" ]; then
+  echo "[inhouse-af] glnexus    : skip (reuse --cohort-bcf $EXT_COHORT_BCF)"
+else
+  echo "[inhouse-af] glnexus    : $GLNEXUS_MODE ($([ "$GLNEXUS_MODE" = sif ] && echo "$GLNEXUS_SIF" || command -v "$GLNEXUS_BIN"))"
+fi
 echo "[inhouse-af] bcftools   : $BCF_MODE ($([ "$BCF_MODE" = sif ] && echo "$BCFTOOLS_SIF" || command -v "$BCFTOOLS_BIN"))"
 echo "[inhouse-af] threads/mem: $THREADS / ${MEM_GB}G"
 echo
 
 # ---- Stage 1: joint genotyping → raw cohort BCF -------------------------
-# GLnexus needs its scratch DB dir to NOT pre-exist.
-GLDB="$SCRATCH/GLnexus.DB"
-rm -rf "$GLDB"
-COHORT_BCF="$SCRATCH/cohort.raw.bcf"
-echo "[inhouse-af] stage 1: GLnexus joint genotyping ($N_SAMPLES gVCFs)…"
-if [ "$GLNEXUS_MODE" = "sif" ]; then
-  apptainer exec --bind "$APPTAINER_BIND","$SCRATCH" "$GLNEXUS_SIF" glnexus_cli \
-    --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
-    ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
+if [ -n "$EXT_COHORT_BCF" ]; then
+  COHORT_BCF="$EXT_COHORT_BCF"
+  KEEP_COHORT=1          # never delete a user-supplied BCF
+  echo "[inhouse-af] stage 1: skipped — reusing $COHORT_BCF ($(du -h "$COHORT_BCF" | cut -f1))"
 else
-  "$GLNEXUS_BIN" \
-    --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
-    ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
+  # GLnexus needs its scratch DB dir to NOT pre-exist.
+  GLDB="$SCRATCH/GLnexus.DB"
+  rm -rf "$GLDB"
+  COHORT_BCF="$SCRATCH/cohort.raw.bcf"
+  echo "[inhouse-af] stage 1: GLnexus joint genotyping ($N_SAMPLES gVCFs)…"
+  if [ "$GLNEXUS_MODE" = "sif" ]; then
+    apptainer exec --bind "$APPTAINER_BIND","$SCRATCH" "$GLNEXUS_SIF" glnexus_cli \
+      --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
+      ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
+  else
+    "$GLNEXUS_BIN" \
+      --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
+      ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
+  fi
+  rm -rf "$GLDB"   # the DB is large; the BCF is the only thing we keep
+  echo "[inhouse-af] stage 1 done: $COHORT_BCF ($(du -h "$COHORT_BCF" | cut -f1))"
 fi
-rm -rf "$GLDB"   # the DB is large; the BCF is the only thing we keep
-echo "[inhouse-af] stage 1 done: $COHORT_BCF ($(du -h "$COHORT_BCF" | cut -f1))"
 echo
 
 # ---- Stage 2: normalize → PASS → AF tags → strip genotypes → rename -----
@@ -197,7 +225,7 @@ cat > "$RENAME" <<'EOF'
 INFO/AC	INFO/INHOUSE_AC
 INFO/AN	INFO/INHOUSE_AN
 INFO/AF	INFO/INHOUSE_AF
-INFO/nhomalt	INFO/INHOUSE_NHOM
+INFO/AC_Hom	INFO/INHOUSE_AC_HOM
 EOF
 
 echo "[inhouse-af] stage 2: norm + PASS + fill-tags + sites-only → $OUT"
@@ -205,9 +233,9 @@ bcf_run "
   set -euo pipefail
   $BCF norm -m- -f '$REF' '$COHORT_BCF' -Ou \
   | $BCF view -f 'PASS,.' -Ou \
-  | $BCF +fill-tags -Ou -- -t AN,AC,AF,nhomalt \
+  | $BCF +fill-tags -Ou -- -t AN,AC,AF,AC_Hom \
   | $BCF view -G -Ou \
-  | $BCF annotate -x '^INFO/AC,INFO/AN,INFO/AF,INFO/nhomalt' -Ou \
+  | $BCF annotate -x '^INFO/AC,INFO/AN,INFO/AF,INFO/AC_Hom' -Ou \
   | $BCF annotate --rename-annots '$RENAME' -Oz -o '$OUT'
   $BCF index -t -f '$OUT'
 "
@@ -230,4 +258,5 @@ ls -la "$OUT" "${OUT}.tbi"
 echo
 echo "[inhouse-af] DONE. Annotate per-sample TSVs with:"
 echo "  bcftools annotate -a '$OUT' \\"
-echo "    -c INFO/INHOUSE_AC,INFO/INHOUSE_AN,INFO/INHOUSE_AF,INFO/INHOUSE_NHOM <sample.vcf>"
+echo "    -c INFO/INHOUSE_AC,INFO/INHOUSE_AN,INFO/INHOUSE_AF,INFO/INHOUSE_AC_HOM <sample.vcf>"
+echo "  (INHOUSE_AC_HOM = alleles in hom-alt genotypes = 2 x #homozygous individuals)"
