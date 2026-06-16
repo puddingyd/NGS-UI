@@ -205,14 +205,21 @@ else
   rm -rf "$GLDB"
   COHORT_BCF="$SCRATCH/cohort.raw.bcf"
   echo "[inhouse-af] stage 1: GLnexus joint genotyping ($N_SAMPLES gVCFs)…"
+  # Build the GLnexus invocation (container or host binary).
   if [ "$GLNEXUS_MODE" = "sif" ]; then
-    apptainer exec --bind "$APPTAINER_BIND","$SCRATCH" "$GLNEXUS_SIF" glnexus_cli \
-      --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
-      ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
+    GLNEXUS_CMD=(apptainer exec --bind "$APPTAINER_BIND","$SCRATCH" "$GLNEXUS_SIF" glnexus_cli)
   else
-    "$GLNEXUS_BIN" \
-      --config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" \
-      ${BED:+--bed "$BED"} --list "$EFF_LIST" > "$COHORT_BCF"
+    GLNEXUS_CMD=("$GLNEXUS_BIN")
+  fi
+  GLNEXUS_CMD+=(--config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" --list "$EFF_LIST")
+  [ -n "$BED" ] && GLNEXUS_CMD+=(--bed "$BED")
+  # Pipe GLnexus stdout through bcftools so the cohort BCF is a properly
+  # finalized, BGZF-EOF-terminated file — GLnexus's raw stdout can omit the EOF
+  # marker, which later reads report as "EOF marker absent / truncated".
+  if [ "$BCF_MODE" = "sif" ]; then
+    "${GLNEXUS_CMD[@]}" | apptainer exec --bind "$APPTAINER_BIND","$SCRATCH" "$BCFTOOLS_SIF" bcftools view -Ob -o "$COHORT_BCF"
+  else
+    "${GLNEXUS_CMD[@]}" | "$BCF" view -Ob -o "$COHORT_BCF"
   fi
   rm -rf "$GLDB"   # the DB is large; the BCF is the only thing we keep
   echo "[inhouse-af] stage 1 done: $COHORT_BCF ($(du -h "$COHORT_BCF" | cut -f1))"
@@ -229,9 +236,13 @@ INFO/AC_Hom	INFO/INHOUSE_AC_HOM
 EOF
 
 echo "[inhouse-af] stage 2: norm + PASS + fill-tags + sites-only → $OUT"
+# --check-ref x drops the (few) sites whose REF disagrees with the FASTA instead
+# of aborting; those can't be matched against the primary-assembly TSV anyway.
+# norm's stderr (incl. the skipped-sites summary) is captured for reporting.
+NORM_LOG="$SCRATCH/norm.log"
 bcf_run "
   set -euo pipefail
-  $BCF norm -m- -f '$REF' '$COHORT_BCF' -Ou \
+  $BCF norm -m- -f '$REF' --check-ref x '$COHORT_BCF' -Ou 2> '$NORM_LOG' \
   | $BCF view -f 'PASS,.' -Ou \
   | $BCF +fill-tags -Ou -- -t AN,AC,AF,AC_Hom \
   | $BCF view -G -Ou \
@@ -239,6 +250,8 @@ bcf_run "
   | $BCF annotate --rename-annots '$RENAME' -Oz -o '$OUT'
   $BCF index -t -f '$OUT'
 "
+echo "[inhouse-af] norm summary (ref-mismatch sites are skipped, not fatal):"
+grep -iE 'mismatch|skipped|total|lines' "$NORM_LOG" | tail -5 | sed 's/^/    /' || true
 
 [ "$KEEP_COHORT" -eq 1 ] || rm -f "$COHORT_BCF"
 
