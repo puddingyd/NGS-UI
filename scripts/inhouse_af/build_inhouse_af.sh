@@ -245,6 +245,7 @@ bcf_run "
   $BCF norm -m- -f '$REF' --check-ref x '$COHORT_BCF' -Ou 2> '$NORM_LOG' \
   | $BCF view -f 'PASS,.' -Ou \
   | $BCF +fill-tags -Ou -- -t AN,AC,AF,AC_Hom \
+  | $BCF view -e 'INFO/AC=0 || INFO/AN=0' -Ou \
   | $BCF view -G -Ou \
   | $BCF annotate -x '^INFO/AC,INFO/AN,INFO/AF,INFO/AC_Hom' -Ou \
   | $BCF annotate --rename-annots '$RENAME' -Oz -o '$OUT'
