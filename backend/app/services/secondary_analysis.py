@@ -332,6 +332,29 @@ OUT_DIR="{SECONDARY_DGX_OUTPUT_ROOT}/${{BATCH_NAME}}"
 LAUNCH_DIR="{SECONDARY_DGX_LAUNCH_ROOT}/${{BATCH_NAME}}"
 WORK_DIR="{SECONDARY_DGX_WORK_ROOT}/${{BATCH_NAME}}"
 STAGED_SAMPLESHEET="{staged_sheet}"
+NEXTFLOW_LOG="${{OUT_DIR}}/nextflow.log"
+
+finish() {{
+    status=$?
+    set +e
+    trap - EXIT
+    if [ -f "${{LAUNCH_DIR}}/.nextflow.log" ]; then
+        cp -f "${{LAUNCH_DIR}}/.nextflow.log" "${{NEXTFLOW_LOG}}"
+        echo
+        echo "[NGS2] Nextflow log copied to: ${{NEXTFLOW_LOG}}"
+    else
+        echo
+        echo "[NGS2] Nextflow log not found at: ${{LAUNCH_DIR}}/.nextflow.log"
+    fi
+    if [ "${{status}}" -eq 0 ]; then
+        echo "[NGS2] DONE: Nextflow finished successfully."
+    else
+        echo "[NGS2] FAILED: exit status ${{status}}"
+    fi
+    echo "[NGS2] tmux pane kept open. Type 'exit' to close this shell."
+    exec bash -i
+}}
+trap finish EXIT
 
 source "{SECONDARY_DGX_ENV_SCRIPT}"
 mkdir -p "${{OUT_DIR}}" "${{LAUNCH_DIR}}" "${{WORK_DIR}}"
