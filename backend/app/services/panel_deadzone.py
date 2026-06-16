@@ -221,10 +221,10 @@ def _dead_zone_file_for(test_type: str) -> tuple[Path, int, str, str, str]:
         )
     return (
         NGS_PANEL_DEADZONE_DIR / "dead_zone" / "dragen_wgs" / "wgs_dragen_panel_dead_exon_summary.tsv",
-        15,
-        "dead_15x_exons",
-        "dead_15x_pct",
-        "dead_15x_len",
+        10,
+        "dead_10x_exons",
+        "dead_10x_pct",
+        "dead_10x_len",
     )
 
 

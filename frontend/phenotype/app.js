@@ -842,7 +842,8 @@ function scheduleClinicalPresentationAutosave() {
   clearTimeout(clinicalAutosaveTimer);
   const { code, mrn } = _clinicalPresentationFields();
   if (!code && !mrn) {
-    showStatus("Clinical presentation 尚未自動儲存：請先填病歷號；若沒有病歷號，可先填檢體編號暫存。", "");
+    const msg = "Clinical presentation 尚未自動儲存：請先填病歷號；若沒有病歷號，可先填檢體編號暫存。";
+    showStatus(msg, "", { clinical: true });
     return;
   }
   clinicalAutosaveTimer = setTimeout(flushClinicalPresentationAutosave, 1200);
@@ -858,12 +859,12 @@ async function flushClinicalPresentationAutosave() {
   try {
     const contentBeforeSave = document.getElementById("clinical-presentation-text")?.value || "";
     const body = await saveClinicalPresentationSidecar();
-    if (body.path && !body.skipped) showStatus(`Clinical presentation 已自動儲存：\n${body.path}`, "success");
+    if (body.path && !body.skipped) showStatus(`Clinical presentation 已自動儲存：\n${body.path}`, "success", { clinical: true });
     const contentAfterSave = document.getElementById("clinical-presentation-text")?.value || "";
     if (contentAfterSave !== contentBeforeSave) scheduleClinicalPresentationAutosave();
   } catch (e) {
     clinicalAutosaveDirty = true;
-    showStatus("Clinical presentation 自動儲存失敗：" + (e.message || e), "error");
+    showStatus("Clinical presentation 自動儲存失敗：" + (e.message || e), "error", { clinical: true });
   } finally {
     clinicalAutosaveInflight = false;
   }
@@ -914,11 +915,15 @@ async function loadPatient() {
       clinicalPresentationLastSaved = clinicalBody.content || "";
       clinicalPresentationLastSavedPath = clinicalBody.path || "";
       statusParts.push(`Clinical presentation（${clinicalBody.filename}）`);
+      showInlineClinicalStatus(`已載入 Clinical presentation：\n${clinicalBody.path || clinicalBody.filename}`, "success");
       if (clinicalBody.code && !code) document.getElementById("patient-code").value = clinicalBody.code;
       if (clinicalBody.mrn  && !mrn)  document.getElementById("patient-mrn").value  = clinicalBody.mrn;
     } else if (clinicalResp.status !== 404) {
       showStatus("Clinical presentation 讀取失敗。", "error");
+      showInlineClinicalStatus("Clinical presentation 讀取失敗。", "error");
       return;
+    } else {
+      showInlineClinicalStatus("", "");
     }
 
     const resp = await fetch(`/api/phenotype-tool/load?${params}`);
@@ -1084,7 +1089,7 @@ async function generateFile() {
   const saveBtns = document.querySelectorAll(".js-btn-save-phenotype");
   const mrn  = document.getElementById("patient-mrn").value.trim();
   const code = document.getElementById("patient-code").value.trim();
-  if (!mrn && !code) { showStatus("請至少填 病歷號 或 檢體編號 其中一個。", "error"); return; }
+  if (!mrn && !code) { showStatus("請至少填 病歷號 或 檢體編號 其中一個。", "error", { clinical: true }); return; }
   const clinicalPresentation = document.getElementById("clinical-presentation-text")?.value || "";
 
   const customPanels = _collectCustomPanels();
@@ -1097,7 +1102,7 @@ async function generateFile() {
   }
 
   saveBtns.forEach(btn => { btn.disabled = true; });
-  showStatus("處理中…", "");
+  showStatus("處理中…", "", { clinical: true });
   try {
     // 1) Create each custom panel on the server; remember the
     //    server-sanitised name so the phenotype.txt references it
@@ -1162,19 +1167,28 @@ async function generateFile() {
     if (body.path) savedTargets.push(body.path);
     if (clinicalBody.path) savedTargets.push(clinicalBody.path);
     const savedMessage = ["已存到伺服器：", ...savedTargets].join("\n") + cpNote;
-    showStatus(savedMessage, "success");
+    showStatus(savedMessage, "success", { clinical: true });
   } catch (e) {
-    showStatus(e.message || String(e), "error");
+    showStatus(e.message || String(e), "error", { clinical: true });
   } finally {
     saveBtns.forEach(btn => { btn.disabled = false; });
   }
 }
 
-function showStatus(msg, type) {
-  const el = document.getElementById("status-bar");
+function showInlineClinicalStatus(msg, type) {
+  const el = document.getElementById("clinical-status-inline");
   if (!el) return;
-  el.textContent = msg;
-  el.className = type ? `status-${type}` : "";
+  el.textContent = msg || "";
+  el.className = "inline-status" + (type ? ` status-${type}` : "");
+}
+
+function showStatus(msg, type, opts = {}) {
+  const el = document.getElementById("status-bar");
+  if (el) {
+    el.textContent = msg;
+    el.className = type ? `status-${type}` : "";
+  }
+  if (opts.clinical) showInlineClinicalStatus(msg, type);
 }
 
 // ============================================================

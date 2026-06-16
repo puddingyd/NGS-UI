@@ -119,9 +119,24 @@ button:hover, .btn:hover { background: #eaeef2; }
 .hint-line { margin-top: 10px; font-size: 12px; color: var(--muted); }
 .card-actions {
   display: flex;
+  align-items: flex-start;
+  gap: 10px;
   justify-content: flex-end;
   margin-top: 10px;
 }
+.inline-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  padding-top: 6px;
+}
+.inline-status:empty { display: none; }
+.inline-status.status-success { color: var(--ok); }
+.inline-status.status-error { color: var(--err); }
 
 #clinical-presentation-text {
   width: 100%;

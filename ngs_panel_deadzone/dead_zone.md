@@ -42,20 +42,19 @@ profiles, and reference indexing differ:
 
 ## Threshold to use
 
-Anchored to the validated LoD floor in Section 2.3.1 of the WGS validation
-report (`results/wgs/validation/{in_house,dragen}/WGS_validation_report_sections.docx`):
+Use the current reporting threshold selected by the clinical reporting
+platform. DRAGEN WGS ships multiple threshold columns in the same reference
+package, and the platform currently reports DRAGEN WGS dead-zone at 10×.
 
 | Pipeline | Threshold | Rationale |
 | --- | ---: | --- |
-| **WGS DRAGEN** | **15×** | DRAGEN INDEL LoD = 15× (SNV LoD ≥ 5× from data; 15× is the conservative of the two). At 15× SNV sensitivity = 98.6 %, INDEL = 90.2 %. |
+| **WGS DRAGEN** | **10×** | Current NGS-UI reporting threshold; 15×/20×/30× columns remain available for comparison and audit. |
 | WGS in_house | 20× | Both SNV and INDEL LoD = 20×; sensitivity ≥ 96 % at 20-25× bin. |
 | WES in_house | 20× | SNV LoD = 20× (90.5 % sens); INDEL nominally 30× but 20× is the common clinical floor with a documented caveat (84.3 % INDEL sensitivity). |
 
-Numbers below the threshold (e.g. dead at 10×) are **informational only** —
-they overstate the limitation. Numbers above (e.g. dead at 30×) overstate
-the limitation in the other direction (because at WGS ~30× mean coverage,
-~50 % of bp drop below 30× by definition). Stay at the LoD-anchored
-threshold for clinical reporting.
+Numbers above the reporting threshold (e.g. dead at 30×) are informational
+only and overstate the clinical limitation. Stay at the platform-selected
+threshold for clinical reporting unless the reporting policy changes.
 
 ---
 
@@ -100,8 +99,8 @@ CDS overall".  Appended after the original columns — existing parsers unaffect
 import pandas as pd
 dz = pd.read_csv("dead_zone/dragen_wgs/wgs_dragen_panel_dead_exons.tsv",
                  sep="\t")
-# Dead exons at the clinical threshold (DRAGEN 15x):
-dead_15 = dz[dz["is_dead_15x"] == 1]
+# Dead exons at the clinical threshold (DRAGEN 10x):
+dead_10 = dz[dz["is_dead_10x"] == 1]
 # Lookup: is BRCA1 exon 11 dead?
 brca1_11 = dz[(dz.gene == "BRCA1") & (dz.exon == 11)]
 ```
@@ -132,9 +131,9 @@ column positions / parsers are unaffected.
 import pandas as pd
 summary = pd.read_csv("…/wgs_dragen_panel_dead_exon_summary.tsv", sep="\t")
 
-# Get DRC4's clinical dead exons (15x):
+# Get DRC4's clinical dead exons (10x):
 row = summary[summary.gene == "DRC4"].iloc[0]
-dead_exons = [int(x) for x in row["dead_15x_exons"].split(",") if x] if row["dead_15x_exons"] else []
+dead_exons = [int(x) for x in row["dead_10x_exons"].split(",") if x] if row["dead_10x_exons"] else []
 ```
 
 ### JSON Lines — easiest universal ingest
@@ -182,7 +181,7 @@ formal validation docx (Section 2.4). Not for downstream parsing.
 import pandas as pd
 
 DZ_PATH = "dead_zone/dragen_wgs/wgs_dragen_panel_dead_exons.tsv"
-THR_COL = "is_dead_15x"      # DRAGEN clinical threshold
+THR_COL = "is_dead_10x"      # DRAGEN clinical threshold
 
 dz = pd.read_csv(DZ_PATH, sep="\t")
 
@@ -251,7 +250,7 @@ git pull origin ngs-validation
 
 # Reruns mosdepth + aggregator + panel report; one entry point each.
 bash scripts/dead_zone/rerun_with_canonical_panel.sh    # WES + in_house WGS
-bash scripts/dead_zone/dragen_wgs_dead_zone.sh          # DRAGEN WGS (15x added)
+bash scripts/dead_zone/dragen_wgs_dead_zone.sh          # DRAGEN WGS (10x/15x/20x/30x)
 
 git add results/{wes,wgs}/**/dead_zone_cds_canonical
 git commit -m '...'

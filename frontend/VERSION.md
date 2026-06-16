@@ -11,6 +11,7 @@
 - 右上角新增「二級分析」工具，可搜尋 WES/WGS FASTQ、建立 samplesheet，並產生可貼到 DGX2 執行的 tmux 指令。
 - 二級分析支援批次加入與「加入同批全部樣本」；WGS 一律使用 lane FASTQ 並輸出 lane 欄；reanalysis 可改 samplesheet 的 Sample ID，但 FASTQ 直接指向原始檔。
 - 輸入臨床表徵工具新增 Clinical presentation 欄位，依病歷號自動儲存並帶入主畫面；同一病歷號的不同檢體會共用同一份內容，主畫面修改後也會同步寫回供後續載入。
+- WGS Dead zone 改用 DRAGEN 10X 臨床門檻；主畫面、輸入臨床表徵工具與診斷報告的 dead-zone 標註同步顯示 10X。
 
 ### v5.0 — 2026-06-14
 
@@ -48,7 +49,7 @@
 
 - 改用 HGNC gene symbol 顯示，降低 VEP 舊基因名稱造成的判讀落差。
 - 新增 `Disease-associated` 標籤，預設只顯示 disease-associated gene list 內的基因。
-- 新增 Dead zone 提醒，依目前 HPO / panel 基因列出 coverage 低於判讀門檻的 exon；WES 使用 20X，WGS 使用 15X。
+- 新增 Dead zone 提醒，依目前 HPO / panel 基因列出 coverage 低於判讀門檻的 exon；WES 使用 20X，WGS 使用 DRAGEN 10X。
 - 診斷報告之基因清單限制在 disease-associated gene list 中；WGS 報告會在有 dead-zone 的基因後以括號標註，WES 報告僅在主畫面顯示 Dead zone。
 
 ### v4.2 — 2026-05-30

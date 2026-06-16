@@ -44,6 +44,7 @@
       <textarea id="clinical-presentation-text" rows="5" placeholder="輸入病患的 Clinical presentation"></textarea>
       <p class="hint-line">此欄位會依病歷號儲存；同一病歷號的不同檢體會共用同一份 Clinical presentation。</p>
       <div class="card-actions">
+        <div id="clinical-status-inline" class="inline-status" aria-live="polite"></div>
         <button onclick="generateFile()" class="btn btn-primary js-btn-save-phenotype" type="button">儲存</button>
       </div>
     </section>
