@@ -34,6 +34,8 @@ MRN/family columns can be bolted on later.
 | `build_inhouse_af.sh` | cohort gVCFs → joint genotyping (GLnexus) → `inhouse_af.hg38.vcf.gz` (sites-only, `INHOUSE_{AC,AN,AF,NHOM}`). |
 | `update_inhouse_af.sh` | per-batch SOP: append new samples (dedup), re-genotype the full cohort, atomic-swap the AF DB. Maintains `cohort_manifest.tsv` + `updates.log`. |
 | `ingest_sample.py` | **incremental Phase A** — per-sample tool: DRAGEN ploidy → sex, stream gVCF → ploidy-weighted callable BED (DP≥10) + AC/hom/het/hemi + chrM carrier. Writes `per_sample/{id}/`. See `DESIGN_incremental.md`. |
+| `accumulate.py` | **incremental Phase B (1/2)** — fold per-sample output into `counts.sqlite` (UPSERT) + `an_track.bg.gz` (event/delta rebuild). Idempotent dedup via the `samples` table. |
+| `publish_af.py` | **incremental Phase B (2/2)** — merge-join counts × AN track → `inhouse_af.hg38.vcf.gz` (the `INHOUSE_*` sites VCF). |
 | `DESIGN_incremental.md` | full design of the incremental (per-sample) production path + reconciliation. |
 
 The cohort list / manifest / AF DB all contain patient sample ids and
@@ -239,9 +241,37 @@ cat $NGS_UI_HOME/biotools/inhouse_af/per_sample/25G00042/qc.json
 - BED weights: 2 on autosomes/PAR, 1 on male chrX-nonPAR & chrY, 1 on chrM,
   nothing on chrY for XX.
 
-Once these look right we build **Phase B** (AN-track accumulator + `counts.sqlite`
-+ publish to the `INHOUSE_*` sites VCF) and validate the 8-sample incremental AF
-against the GLnexus 8-sample run.
+## Incremental Phase B — accumulate + publish
+
+After ingesting samples (Phase A → `per_sample/{id}/`), fold them in and render
+the sites VCF:
+
+```bash
+DB=$NGS_UI_HOME/biotools/inhouse_af
+
+# accumulate every per_sample/ dir not yet ingested (idempotent; safe to re-run)
+scripts/inhouse_af/accumulate.py --db-dir "$DB"
+#   -> counts.sqlite (UPSERT) + an_track.bg.gz (event/delta rebuild) + samples table
+
+# render the INHOUSE_* sites VCF
+scripts/inhouse_af/publish_af.py --db-dir "$DB" \
+  --ref /home/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta
+#   -> $DB/inhouse_af.hg38.vcf.gz  (bgzip+tabix when available)
+```
+
+- `accumulate.py` is incremental: each call only adds samples not already in the
+  `samples` table, and the AN track is rebuilt from `old track + new BEDs` (no
+  gVCF re-processing). Re-running a batch is a no-op.
+- `publish_af.py` merge-joins in one streaming pass; AN=0 / AC=0 sites are
+  dropped. Output is the same contract as the GLnexus path.
+
+**Validation against GLnexus (ground truth):** ingest + accumulate + publish the
+same 8 samples, then compare `INHOUSE_AF` to the 8-sample GLnexus VCF (scatter /
+correlation). Differences are expected only at borderline calls / complex indels;
+AN should agree closely since both see the same coverage.
+
+The whole Phase A→B chain was end-to-end verified on a synthetic 3-sample cohort
+(hand-checked AC/AN/AF, incremental add, and dedup).
 
 ## Integrating into NGS-UI (Phase 2, not done yet)
 
