@@ -72,35 +72,49 @@ A sites-only VCF, identical in spirit to the gnomAD AF VCF, with INFO:
 
 ---
 
+## 3a. Per-sample data sources (confirmed on real DRAGEN output)
+
+Anchor each sample on its **`other/{sample}/` directory** (richer than the
+`vcf.gz/` delivery copy):
+
+| need | file | notes |
+|---|---|---|
+| sex / karyotype | `{sample}.ploidy_estimation_metrics.csv` | `Ploidy estimation,XX/XY/…` (4.1) |
+| callable / AN (MIN_DP) | `{sample}.hard-filtered.gvcf.gz` (+ `.tbi`) | ref blocks carry `MIN_DP`; **indexed** here (the `vcf.gz/` copy is not) |
+| variant counts (AC) | `{sample}.hard-filtered.vcf.gz` (+ `.tbi`) | clean PASS + `GT:AD:AF:DP` (4.4) |
+| (future) ROH / STR | `{sample}.roh.bed`, `{sample}.repeats.vcf.gz` | unrelated to AF; material for the UI's ROH/STR cards |
+
+`select_cohort.py` should record the `other/{sample}/` dir per sample so ingest
+finds all four. (Datalake files are read-only and the `vcf.gz/` copies are
+un-indexed → ingest must not assume it can write indexes; it streams the gVCF
+and uses the existing `.tbi` in `other/` when present.)
+
 ## 4. Components
 
-### 4.1 Sex inference (from gVCF coverage)
+### 4.1 Sex / karyotype (from DRAGEN, not inferred)
 
-For each sample, compute length-weighted mean depth from the gVCF reference
-blocks (`MIN_DP`) + variant records (`DP`) over three region sets:
+**Primary source: DRAGEN's own ploidy estimation.** Each sample's
+`other/{sample}/{sample}.ploidy_estimation_metrics.csv` ends with:
 
-- `cov_auto` = mean depth over a fixed autosomal sampling set (e.g. all of
-  chr1–22, or a subsample for speed)
-- `cov_Xnonpar` = mean depth over chrX **non-PAR**
-- `cov_Ynonpar` = mean depth over chrY **non-PAR unique** region
+```
+PLOIDY ESTIMATION,,Ploidy estimation,XX
+```
 
-Ratios: `Rx = cov_Xnonpar / cov_auto`, `Ry = cov_Ynonpar / cov_auto`.
+This is DRAGEN's final karyotype call (XX / XY / X0 / XXY / …), computed from
+**median** per-contig coverage — robust, aneuploidy-aware, and free. We parse
+that one field. No need to roll our own inference.
 
-Call:
+> Why not infer it ourselves: median beats mean badly here. On a confirmed XX
+> sample, DRAGEN's `Y median / Autosomal = 0.00` cleanly says female, but a
+> *mean* MIN_DP over non-PAR Y gives ~4× (Ry≈0.14) because of Y/X homology
+> hotspots — right on a naive 0.1 threshold. DRAGEN already solved this.
 
-| Rx | Ry | call |
-|---|---|---|
-| ≈1.0 (> 0.8) | ≈0 (< 0.1) | **XX (female)** |
-| ≈0.5 (0.3–0.7) | ≈0.5 (> 0.1) | **XY (male)** |
-| otherwise | | **ambiguous** (XXY/X0/XYY/mosaic/contamination) |
+**Fallback (older samples missing the CSV):** mean MIN_DP coverage ratios
+(Rx/Ry) from the gVCF, with conservative "ambiguous" handling (4.2). Flag in
+`qc.json` which source was used.
 
-Ambiguous handling (conservative): autosome + chrM contributions counted
-normally; **X and Y contributions excluded** for that sample (both its AN-track
-weight and its X/Y variant AC), and flagged in `qc.json` for manual review.
-Thresholds are configurable; final numbers tuned on the real cohort.
-
-No BAM needed — everything comes from the gVCF, so this works for every sample
-including unregistered ones, and is portable to the DGX.
+Karyotype → ploidy weighting in 4.2 (`XX`→female column, `XY`→male column,
+anything else → ambiguous/excluded for X/Y, flagged for review).
 
 ### 4.2 Callable BED (DP ≥ 10) + ploidy weighting
 
@@ -143,6 +157,12 @@ callable sample — this is the whole reason the design is correct **and**
 incremental.
 
 ### 4.4 Variant counts (the numerator, accumulated)
+
+**Source: the per-sample `{sample}.hard-filtered.vcf.gz`** (the regular VCF,
+not the gVCF). It carries clean `FILTER=PASS` and a consistent
+`GT:AD:AF:DP:…` FORMAT, so we sidestep the gVCF's variable variant-record
+FORMAT (some gVCF variant rows are only `GT:GQ:PS`). The hard-filtered VCF is
+small + indexed.
 
 Per new sample: normalize its PASS variant calls and classify each ALT-bearing
 record by genotype, then UPSERT-add into `counts.sqlite`:
@@ -269,13 +289,18 @@ UI script — that is Phase E, on the appropriate branch, later.
 
 ---
 
-## 10. Open items to confirm before building
+## 10. Open items
 
-1. **gVCF fields** present as assumed (`MIN_DP` in ref blocks, `DP` in variant
-   records) — verify on a real DRAGEN gVCF.
-2. **Sex-call thresholds** — set provisional (Rx/Ry above), tune on the cohort.
-3. **AN-track tooling** — pure-Python sweep-line vs `bedtools` dependency
-   (bedtools is one more binary to stage on the DGX; pure-Python keeps it
-   dependency-free — leaning pure-Python).
-4. **chrM carrier definition** — PASS + DP≥10 + any ALT; confirm DRAGEN's chrM
-   representation in the gVCF (heteroplasmy threshold for a "call").
+1. ~~gVCF fields~~ — **confirmed**: ref blocks carry `MIN_DP`; variant counts
+   come from `hard-filtered.vcf.gz` so the gVCF's variable variant FORMAT is moot.
+2. ~~Sex-call thresholds~~ — **resolved**: use DRAGEN's `Ploidy estimation`
+   field; our coverage inference is fallback only.
+3. **AN-track tooling** — `bedtools v2.31.1` is available on DGM; leaning toward
+   using it (one static binary to stage on the DGX) vs a pure-Python sweep-line.
+   Decide at build time.
+4. **chrM carrier definition** — chrM has PASS variants with `AF` (heteroplasmy)
+   + `DP`. Pending: confirm GT ploidy (`1` vs `0/1`) and whether to set a
+   heteroplasmy threshold (e.g. count any PASS ALT as a carrier vs AF≥x).
+5. **Confirm the `other/{sample}/` layout is uniform** across runs (some newer
+   runs nest under `other/{sample}/germline_seq/`) so `select_cohort.py` can find
+   the ploidy CSV + indexed gVCF + hard-filtered VCF for every sample.
