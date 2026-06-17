@@ -33,6 +33,8 @@ MRN/family columns can be bolted on later.
 | `select_cohort.py` | gVCF path list → deduplicated, filtered cohort (`--out-list`) + audit manifest. Stdlib only. |
 | `build_inhouse_af.sh` | cohort gVCFs → joint genotyping (GLnexus) → `inhouse_af.hg38.vcf.gz` (sites-only, `INHOUSE_{AC,AN,AF,NHOM}`). |
 | `update_inhouse_af.sh` | per-batch SOP: append new samples (dedup), re-genotype the full cohort, atomic-swap the AF DB. Maintains `cohort_manifest.tsv` + `updates.log`. |
+| `ingest_sample.py` | **incremental Phase A** — per-sample tool: DRAGEN ploidy → sex, stream gVCF → ploidy-weighted callable BED (DP≥10) + AC/hom/het/hemi + chrM carrier. Writes `per_sample/{id}/`. See `DESIGN_incremental.md`. |
+| `DESIGN_incremental.md` | full design of the incremental (per-sample) production path + reconciliation. |
 
 The cohort list / manifest / AF DB all contain patient sample ids and
 datalake paths — **keep them out of git** (put them under
@@ -208,6 +210,38 @@ scripts/inhouse_af/update_inhouse_af.sh \
 Re-running the same batch is safe (dedup by `sample_id` → "added=0, no
 rebuild"). Use `--manifest-only` to update bookkeeping without rebuilding, and
 `--strip-path-prefix /home` on the DGX.
+
+## Incremental Phase A — per-sample ingest (validate before wiring up Phase B)
+
+`ingest_sample.py` turns one DRAGEN sample into its per-sample contributions
+(`callable.weighted.bed.gz` + `counts.tsv` + `qc.json`). Validate it on a few
+samples before building the accumulator/publish (Phase B).
+
+```bash
+# pure-logic unit checks (no I/O / no bcftools)
+scripts/inhouse_af/ingest_sample.py --selftest
+
+# one sample (point at its DRAGEN other/{id}/ dir; auto-finds gVCF + ploidy CSV)
+scripts/inhouse_af/ingest_sample.py \
+  --sample-dir /home/datalake_Raw/Novaseq/<run>/other/25G00042 \
+  --ref /home/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta \
+  --out-dir $NGS_UI_HOME/biotools/inhouse_af/per_sample
+# bcftools: host binary, or export BCFTOOLS_SIF=...
+
+cat $NGS_UI_HOME/biotools/inhouse_af/per_sample/25G00042/qc.json
+```
+
+**What to sanity-check on a handful of samples (mix of XX / XY):**
+- `qc.json` `sex_class` matches the DRAGEN karyotype; `callable_bp` for chrX is
+  ~2× higher in XX than XY, chrY ~0 in XX; chrM small.
+- `counts.tsv`: XY samples produce `hemi` rows on chrX-nonPAR/chrY; XX produce
+  none; chrM rows are `mt_hom`/`mt_het` with an `af`.
+- BED weights: 2 on autosomes/PAR, 1 on male chrX-nonPAR & chrY, 1 on chrM,
+  nothing on chrY for XX.
+
+Once these look right we build **Phase B** (AN-track accumulator + `counts.sqlite`
++ publish to the `INHOUSE_*` sites VCF) and validate the 8-sample incremental AF
+against the GLnexus 8-sample run.
 
 ## Integrating into NGS-UI (Phase 2, not done yet)
 
