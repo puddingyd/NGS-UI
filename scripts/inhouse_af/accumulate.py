@@ -100,8 +100,11 @@ def find_bed(sample_dir: str):
     return None
 
 
-def rebuild_an_track(old_track, new_beds, out_path, bgzip_bin):
-    """events(old + new) | sort | prefix-sum | bgzip -> out_path (atomic)."""
+def rebuild_an_track(old_track, new_beds, out_path, bgzip_bin, sort_tmp):
+    """events(old + new) | sort | prefix-sum | bgzip -> out_path (atomic).
+
+    sort spills to sort_tmp (a big disk, NOT /tmp) and compresses temp runs —
+    the event stream for a whole cohort is tens of GB."""
     parts = []
     if old_track and os.path.exists(old_track):
         rdr = "zcat" if old_track.endswith(".gz") else "cat"
@@ -111,9 +114,14 @@ def rebuild_an_track(old_track, new_beds, out_path, bgzip_bin):
         parts.append(f"{rdr} {shlex.quote(b)} | {DECODE_AWK}")
     if not parts:
         return
+    os.makedirs(sort_tmp, exist_ok=True)
     tmp = out_path + ".tmp"
+    comp = ""
+    if shutil.which("gzip"):
+        comp = "--compress-program=gzip"
+    sort_cmd = f"LC_ALL=C sort -T {shlex.quote(sort_tmp)} -S 50% {comp} -k1,1 -k2,2n"
     pipeline = (
-        "( " + " ; ".join(parts) + " ) | LC_ALL=C sort -k1,1 -k2,2n | "
+        "( " + " ; ".join(parts) + " ) | " + sort_cmd + " | "
         + PREFIXSUM_AWK + f" | {bgzip_bin} > {shlex.quote(tmp)}"
     )
     subprocess.run(["bash", "-c", "set -o pipefail; " + pipeline], check=True)
@@ -128,6 +136,7 @@ def main():
     ap.add_argument("--db-dir", required=True)
     ap.add_argument("--per-sample-dir")
     ap.add_argument("--samples", help="comma-separated sample ids (default: all new)")
+    ap.add_argument("--sort-tmp", help="big scratch dir for sort (default <db-dir>/.sorttmp; NOT /tmp)")
     args = ap.parse_args()
 
     db_dir = args.db_dir
@@ -136,6 +145,7 @@ def main():
     db_path = os.path.join(db_dir, "counts.sqlite")
     an_track = os.path.join(db_dir, "an_track.bg.gz")
     bgzip_bin = shutil.which("bgzip") or "gzip"
+    sort_tmp = args.sort_tmp or os.path.join(db_dir, ".sorttmp")
 
     conn = sqlite3.connect(db_path)
     init_db(conn)
@@ -147,34 +157,45 @@ def main():
         want = sorted(os.path.basename(d) for d in glob.glob(os.path.join(per_sample, "*"))
                       if os.path.isdir(d))
     new = [s for s in want if s not in done]
-    if not new:
-        print("[accumulate] nothing new to add.", file=sys.stderr)
-        return 0
 
-    print(f"[accumulate] adding {len(new)} sample(s) (have {len(done)})", file=sys.stderr)
-    new_beds = []
-    now = datetime.now(TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
-    for sid in new:
-        d = os.path.join(per_sample, sid)
-        counts_tsv = os.path.join(d, "counts.tsv")
-        bed = find_bed(d)
-        if not (os.path.exists(counts_tsv) and bed):
-            print(f"[accumulate]   skip {sid}: missing counts.tsv or callable BED", file=sys.stderr)
-            continue
-        conn.execute("BEGIN")
-        n = upsert_counts(conn, counts_tsv)
-        conn.execute("INSERT INTO samples(sample_id,added_at) VALUES(?,?)", (sid, now))
-        conn.commit()
-        new_beds.append(bed)
-        print(f"[accumulate]   + {sid}  ({n} variant rows)", file=sys.stderr)
+    if new:
+        print(f"[accumulate] adding {len(new)} sample(s) (have {len(done)})", file=sys.stderr)
+        now = datetime.now(TAIPEI).strftime("%Y-%m-%d %H:%M:%S")
+        for sid in new:
+            d = os.path.join(per_sample, sid)
+            counts_tsv = os.path.join(d, "counts.tsv")
+            bed = find_bed(d)
+            if not (os.path.exists(counts_tsv) and bed):
+                print(f"[accumulate]   skip {sid}: missing counts.tsv or callable BED", file=sys.stderr)
+                continue
+            conn.execute("BEGIN")
+            n = upsert_counts(conn, counts_tsv)
+            conn.execute("INSERT INTO samples(sample_id,added_at) VALUES(?,?)", (sid, now))
+            conn.commit()
+            print(f"[accumulate]   + {sid}  ({n} variant rows)", file=sys.stderr)
 
+    # Decide what feeds the AN-track rebuild:
+    #  - track present  -> incremental: old track + the BEDs of the new samples
+    #  - track missing  -> (re)build from ALL ingested samples (self-healing after
+    #    a crash, or a fresh DB)
+    ingested = sorted(already_ingested(conn))
     conn.close()
+    have_track = os.path.exists(an_track)
+    if have_track:
+        bed_ids = new
+        old = an_track
+    else:
+        bed_ids = ingested
+        old = None
+    beds = [b for b in (find_bed(os.path.join(per_sample, s)) for s in bed_ids) if b]
 
-    if new_beds:
-        print(f"[accumulate] rebuilding AN track ({'+'.join(['old'] if os.path.exists(an_track) else []) or 'fresh'} + {len(new_beds)} BEDs)…", file=sys.stderr)
-        rebuild_an_track(an_track if os.path.exists(an_track) else None,
-                         new_beds, an_track, bgzip_bin)
+    if beds:
+        kind = "old + %d" % len(beds) if have_track else "fresh, %d BEDs" % len(beds)
+        print(f"[accumulate] rebuilding AN track ({kind}); sort tmp={sort_tmp}…", file=sys.stderr)
+        rebuild_an_track(old, beds, an_track, bgzip_bin, sort_tmp)
         print(f"[accumulate] AN track -> {an_track}", file=sys.stderr)
+    else:
+        print("[accumulate] AN track unchanged.", file=sys.stderr)
 
     # report cohort size
     conn = sqlite3.connect(db_path)
