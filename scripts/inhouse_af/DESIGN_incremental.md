@@ -74,20 +74,21 @@ A sites-only VCF, identical in spirit to the gnomAD AF VCF, with INFO:
 
 ## 3a. Per-sample data sources (confirmed on real DRAGEN output)
 
-Anchor each sample on its **`other/{sample}/` directory** (richer than the
-`vcf.gz/` delivery copy):
+Anchor each sample on its **`other/{sample}/` directory** and drive everything
+from the **indexed gVCF there** — it contains both the reference blocks (for AN)
+and the PASS variant records (for AC), so one file covers both:
 
 | need | file | notes |
 |---|---|---|
 | sex / karyotype | `{sample}.ploidy_estimation_metrics.csv` | `Ploidy estimation,XX/XY/…` (4.1) |
-| callable / AN (MIN_DP) | `{sample}.hard-filtered.gvcf.gz` (+ `.tbi`) | ref blocks carry `MIN_DP`; **indexed** here (the `vcf.gz/` copy is not) |
-| variant counts (AC) | `{sample}.hard-filtered.vcf.gz` (+ `.tbi`) | clean PASS + `GT:AD:AF:DP` (4.4) |
+| **AC + callable/AN** | `{sample}.hard-filtered.gvcf.gz` (+ `.tbi`) | **indexed** here. Ref blocks carry `MIN_DP` (→ callable, 4.2); variant rows carry `FILTER` + `GT` (→ AC, 4.4). chrM variants are present too (4.6). |
 | (future) ROH / STR | `{sample}.roh.bed`, `{sample}.repeats.vcf.gz` | unrelated to AF; material for the UI's ROH/STR cards |
 
-`select_cohort.py` should record the `other/{sample}/` dir per sample so ingest
-finds all four. (Datalake files are read-only and the `vcf.gz/` copies are
-un-indexed → ingest must not assume it can write indexes; it streams the gVCF
-and uses the existing `.tbi` in `other/` when present.)
+The separate `{sample}.hard-filtered.vcf.gz` (variant-only) lives in the
+`vcf.gz/` delivery dir and is **not indexed there**; its PASS calls are the same
+ones already in the gVCF, so we don't need it. Datalake files are read-only →
+ingest never writes indexes; it uses the existing `.tbi` in `other/` and streams
+the gVCF for the genome-wide callable pass.
 
 ## 4. Components
 
@@ -156,13 +157,12 @@ polymorphic in only one batch still gets the full denominator from every other
 callable sample — this is the whole reason the design is correct **and**
 incremental.
 
-### 4.4 Variant counts (the numerator, accumulated)
+### 4.4 Variant counts (the numerator, accumulated) — autosomes + X/Y
 
-**Source: the per-sample `{sample}.hard-filtered.vcf.gz`** (the regular VCF,
-not the gVCF). It carries clean `FILTER=PASS` and a consistent
-`GT:AD:AF:DP:…` FORMAT, so we sidestep the gVCF's variable variant-record
-FORMAT (some gVCF variant rows are only `GT:GQ:PS`). The hard-filtered VCF is
-small + indexed.
+**Source: PASS variant records in the indexed gVCF** (`FILTER=PASS`, real ALT,
+drop the `<NON_REF>` symbolic allele). We only need `FILTER` + `GT`, both always
+present, so the gVCF's variable variant FORMAT (some rows are `GT:GQ:PS`) is a
+non-issue. chrM is handled separately in 4.6.
 
 Per new sample: normalize its PASS variant calls and classify each ALT-bearing
 record by genotype, then UPSERT-add into `counts.sqlite`:
@@ -194,6 +194,34 @@ For each row in `counts.sqlite`:
 
 Emit sites VCF → bgzip + tabix → **atomic swap** into
 `inhouse_af.hg38.vcf.gz`. Same atomic-install discipline as `deploy_genebe_db.sh`.
+
+### 4.6 chrM (mitochondrial) — haploid carrier frequency
+
+chrM needs its own counting rule, confirmed against real DRAGEN output:
+
+- chrM is in the same gVCF, with PASS variant rows and high depth (DP ~1000–3000).
+- **GT is written diploid-style** (`1/1` ≈ homoplasmic, `0/1` ≈ heteroplasmic) —
+  do **not** apply the autosome `2·hom + het` arithmetic.
+- **`FORMAT/AF` is the heteroplasmy fraction** (e.g. `1`, `0.9994`, `0.0541`,
+  `0.1963`).
+
+Counting (one mito genome per sample):
+- `AN_chrM` at a site = number of **callable** samples on chrM (MIN_DP ≥ 10,
+  weight **1**) — chrM is effectively always callable given the coverage.
+- a sample is a **carrier** of a chrM ALT if it has a **PASS** record there with
+  a real ALT in GT; count **1** per carrier (never 2, even for `1/1`).
+- `AF_chrM = carriers / AN_chrM`.
+- store the **heteroplasmy** alongside: e.g. `n_carrier`, plus
+  `n_homoplasmic` (AF ≥ 0.95) vs `n_heteroplasmic` (AF < 0.95), so the UI can
+  later distinguish "homoplasmic in N" from "low-level heteroplasmy in M".
+
+**v1 carrier threshold = PASS only** (DRAGEN's filter already gates quality; we
+keep even low-heteroplasmy PASS calls but record their level). A minimum
+heteroplasmy cutoff can be added later from the stored stats without re-ingest.
+
+Output fields for chrM rows reuse the contract: `INHOUSE_AC` = carriers,
+`INHOUSE_AN` = callable mito genomes, `INHOUSE_AF` = carrier frequency,
+`INHOUSE_NHOM` = `n_homoplasmic`, plus an extra `INHOUSE_HET_MT` = `n_heteroplasmic`.
 
 ---
 
@@ -298,9 +326,12 @@ UI script — that is Phase E, on the appropriate branch, later.
 3. **AN-track tooling** — `bedtools v2.31.1` is available on DGM; leaning toward
    using it (one static binary to stage on the DGX) vs a pure-Python sweep-line.
    Decide at build time.
-4. **chrM carrier definition** — chrM has PASS variants with `AF` (heteroplasmy)
-   + `DP`. Pending: confirm GT ploidy (`1` vs `0/1`) and whether to set a
-   heteroplasmy threshold (e.g. count any PASS ALT as a carrier vs AF≥x).
+4. ~~chrM carrier definition~~ — **resolved (4.6)**: GT is diploid-style, `AF`
+   is heteroplasmy; count haploid carriers (PASS, weight 1), AN = callable mito
+   genomes, store homoplasmic vs heteroplasmic. v1 threshold = PASS only.
+   *To confirm: is "PASS-only" the right carrier threshold, or do you want a
+   minimum heteroplasmy (e.g. AF ≥ 0.10)?*
 5. **Confirm the `other/{sample}/` layout is uniform** across runs (some newer
    runs nest under `other/{sample}/germline_seq/`) so `select_cohort.py` can find
-   the ploidy CSV + indexed gVCF + hard-filtered VCF for every sample.
+   the ploidy CSV + indexed gVCF for every sample. (`ploidy CSV` coverage already
+   confirmed: 0 cohort samples missing.)
