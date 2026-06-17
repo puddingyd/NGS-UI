@@ -248,6 +248,34 @@ new run gVCFs
 
 ---
 
+## 5a. Stratified AF by disease category (cancer / neuro / healthy / …)
+
+Fully supported by this architecture — it is exactly the gnomAD "AF per
+population" model, and a **late-binding** one: the per-sample artifacts
+(`per_sample/{id}/` callable BED + counts) are **category-agnostic**, so disease
+labels can be added/changed **without re-processing any gVCF**. Stratification
+lives entirely in the accumulate/publish layer.
+
+To add it:
+1. A `sample_category(sample_id, category)` table (or TSV) — many-to-one (a
+   sample can also belong to several groups, e.g. "cancer" + "all").
+2. **Counts per category:** add `category` to the variant_counts key
+   (`PRIMARY KEY(chrom,pos,ref,alt,category)`), accumulating each sample into its
+   category bucket (plus an `ALL` bucket).
+3. **One AN track per category:** the AN track is just "sum of weights of the
+   callable samples in that group", so build `an_track.<category>.bg.gz` from
+   only that category's BEDs — same event/delta machinery, partitioned by label.
+4. **Publish:** emit overall `INHOUSE_AF` plus per-category
+   `INHOUSE_AF_cancer`, `INHOUSE_AN_cancer`, … (gnomAD-style suffixes).
+
+Because labels bind at accumulate time, you can (re)derive a fully stratified DB
+from the existing `per_sample/` cache by re-running accumulate with the
+`sample_category` map — no gVCF re-processing, no re-ingest. Caveats: small
+strata → noisy AF (show AC/AN); a "healthy" stratum is the most useful control
+but hardest to define in a referral cohort. Recommend keeping `ALL` as the
+default and adding strata once labels exist. (Not built yet — flagged as the
+next extension after Phase C validates the un-stratified path.)
+
 ## 6. Reconciliation with full GLnexus (quarterly)
 
 1. Full `build_inhouse_af.sh` over the whole cohort → a GLnexus snapshot.
