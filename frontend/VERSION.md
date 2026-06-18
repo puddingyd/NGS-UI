@@ -9,6 +9,7 @@
 ### v5.2 — 2026-06-18
 
 - SNV/Indel variant card 支援同一 genomic variant 的多 transcript annotation；預設顯示 consequence 較嚴重者，同嚴重度時優先 MANE，reviewer 可在卡片上切換 transcript，DOCX 報告會使用所選 transcript。
+- 三級分析 worker 相容 pipeline v3.5 的 64 欄 SNV/Indel TSV（移除 `MANE_ALL`），不再用舊 v3.1 的 65 欄檢查誤擋完成的分析。
 - WGS 診斷報告的基因清單不再輸出 dead-zone exon 標註；dead-zone 僅保留於主畫面與 phenotype 工具查詢。
 - 「輸出 PDF」下方新增本次檢測基因清單，並可和 DOCX 一樣選擇按 HPO/panel 分組或全部合併去重。
 - 輸入臨床表徵工具載入下一位病人既有資料時，會先清空上一位病人的 HPO terms 與 panel 選擇。

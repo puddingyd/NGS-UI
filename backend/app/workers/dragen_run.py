@@ -321,18 +321,29 @@ def _validate_acmg_tsv(path: Path, *, strict_v31: bool) -> None:
         header = path.open(encoding="utf-8").readline().rstrip("\n").split("\t")
     except OSError as e:
         raise RuntimeError(f"cannot read pipeline TSV: {path}") from e
-    required = {"HGNC_ID", "ACMG_CRITERIA", "ACMG_SCORE", "ACMG_CLASS", "ACMG_NOTES"}
+    required = {
+        "CHROM", "POS", "REF", "ALT",
+        "GENE", "TRANSCRIPT", "TRANSCRIPT_TYPE", "HGVS_C", "HGVS_P",
+        "CONSEQUENCE", "IMPACT",
+        "HGNC_ID", "ACMG_CRITERIA", "ACMG_SCORE", "ACMG_CLASS", "ACMG_NOTES",
+    }
     missing = sorted(required - set(header))
     if missing:
         raise RuntimeError(
-            f"pipeline TSV missing v3.1 required columns: {', '.join(missing)}"
+            f"pipeline TSV missing required columns: {', '.join(missing)}"
         )
-    if strict_v31 and len(header) < 65:
+    is_v35_transcript_schema = "MANE_ALL" not in header
+    expected_cols = 64 if is_v35_transcript_schema else 65
+    schema_label = "v3.5 transcript schema" if is_v35_transcript_schema else "v3.1-v3.4 schema"
+    if strict_v31 and len(header) < expected_cols:
         raise RuntimeError(
-            f"pipeline TSV has {len(header)} columns; v3.1 guide expects at least 65"
+            f"pipeline TSV has {len(header)} columns; {schema_label} expects at least {expected_cols}"
         )
-    if len(header) != 65:
-        _log(f"[validate] warning: pipeline TSV has {len(header)} columns (v3.1 guide: 65)")
+    if len(header) != expected_cols:
+        _log(
+            f"[validate] warning: pipeline TSV has {len(header)} columns "
+            f"({schema_label}: {expected_cols})"
+        )
 
 
 def _sample_from_args(args: argparse.Namespace) -> dict:
