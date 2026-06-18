@@ -54,6 +54,47 @@ EXCLUDED_GENES = {
 # "Likely_benign(2)|Uncertain_significance(1)" alone is noise.
 _CONFLICTING_PATHO_RE = re.compile(r"\b(?:Likely_)?[Pp]athogenic\b")
 
+_CONSEQUENCE_RANK = {
+    "transcript_ablation": 1,
+    "splice_acceptor_variant": 2,
+    "splice_donor_variant": 3,
+    "stop_gained": 4,
+    "frameshift_variant": 5,
+    "stop_lost": 6,
+    "start_lost": 7,
+    "transcript_amplification": 8,
+    "inframe_insertion": 9,
+    "inframe_deletion": 10,
+    "missense_variant": 11,
+    "protein_altering_variant": 12,
+    "splice_region_variant": 13,
+    "splice_donor_5th_base_variant": 14,
+    "splice_donor_region_variant": 15,
+    "splice_polypyrimidine_tract_variant": 16,
+    "incomplete_terminal_codon_variant": 17,
+    "stop_retained_variant": 18,
+    "synonymous_variant": 19,
+    "coding_sequence_variant": 20,
+    "mature_miRNA_variant": 21,
+    "5_prime_UTR_variant": 22,
+    "3_prime_UTR_variant": 23,
+    "non_coding_transcript_exon_variant": 24,
+    "intron_variant": 25,
+    "NMD_transcript_variant": 26,
+    "non_coding_transcript_variant": 27,
+    "upstream_gene_variant": 28,
+    "downstream_gene_variant": 29,
+    "intergenic_variant": 38,
+}
+
+_TRANSCRIPT_TYPE_RANK = {
+    "MANE_SELECT": 0,
+    "MANE_PLUS_CLINICAL": 1,
+    "CANONICAL": 2,
+    "APPRIS_P1": 3,
+    "BEST_CONSEQUENCE": 4,
+}
+
 
 def _to_num(v: str):
     if v is None or v == "":
@@ -76,6 +117,15 @@ def _to_int(v: str, default: int = 0) -> int:
 
 def _to_bool(v: str) -> bool:
     return str(v).strip().lower() in ("true", "1", "yes", "y", "t")
+
+
+def _worst_consequence_rank(consequence: str) -> int:
+    ranks = [
+        _CONSEQUENCE_RANK.get(part.strip(), 99)
+        for part in str(consequence or "").split("&")
+        if part.strip()
+    ]
+    return min(ranks) if ranks else 99
 
 
 def _parse_mane_all(raw: str) -> list[dict[str, Any]]:
@@ -600,6 +650,90 @@ def _row_to_variant(row: dict) -> dict:
     }
 
 
+def _transcript_option_from_variant(v: dict) -> dict:
+    key_parts = [
+        v.get("gene_symbol") or "",
+        v.get("transcript") or "",
+        v.get("transcript_type") or "",
+        v.get("HGVS_C") or "",
+        v.get("HGVS_P") or "",
+        v.get("Consequence") or "",
+    ]
+    key = "|".join(str(part) for part in key_parts)
+    return {
+        "key": key,
+        "gene_symbol": v.get("gene_symbol") or "",
+        "transcript": v.get("transcript") or "",
+        "transcript_type": v.get("transcript_type") or "",
+        "HGVS_C": v.get("HGVS_C") or "",
+        "HGVS_P": v.get("HGVS_P") or "",
+        "HGVS": v.get("HGVS") or "",
+        "Consequence": v.get("Consequence") or "",
+        "impact": v.get("impact") or "",
+        "exon": v.get("exon") or "",
+        "intron": v.get("intron") or "",
+        "hgnc_id": v.get("hgnc_id") or "",
+    }
+
+
+def _transcript_option_sort_key(opt: dict) -> tuple[int, int, str]:
+    return (
+        _worst_consequence_rank(opt.get("Consequence") or ""),
+        _TRANSCRIPT_TYPE_RANK.get(str(opt.get("transcript_type") or "").upper(), 9),
+        str(opt.get("key") or ""),
+    )
+
+
+def _apply_transcript_option(v: dict, opt: dict) -> None:
+    for src_key, dst_key in (
+        ("gene_symbol", "gene_symbol"),
+        ("transcript", "transcript"),
+        ("transcript_type", "transcript_type"),
+        ("HGVS_C", "HGVS_C"),
+        ("HGVS_P", "HGVS_P"),
+        ("HGVS", "HGVS"),
+        ("Consequence", "Consequence"),
+        ("impact", "impact"),
+        ("exon", "exon"),
+        ("intron", "intron"),
+        ("hgnc_id", "hgnc_id"),
+    ):
+        v[dst_key] = opt.get(src_key) or ""
+    v["selected_transcript_key"] = opt.get("key") or ""
+    v["default_transcript_key"] = opt.get("key") or ""
+
+
+def merge_snv_variant_row(variants: dict[str, dict], v: dict) -> dict:
+    """Merge one transcript row into the one-card-per-variant payload."""
+    option = _transcript_option_from_variant(v)
+    v["transcript_options"] = [option]
+    v["selected_transcript_key"] = option["key"]
+    v["default_transcript_key"] = option["key"]
+
+    existing = variants.get(v["id"])
+    if existing is None:
+        variants[v["id"]] = v
+        return v
+
+    options = list(existing.get("transcript_options") or [])
+    seen = {opt.get("key") for opt in options}
+    if option["key"] not in seen:
+        options.append(option)
+    options.sort(key=_transcript_option_sort_key)
+    existing["transcript_options"] = options
+    best = options[0]
+    if _transcript_option_sort_key(option) < _transcript_option_sort_key({
+        "key": existing.get("default_transcript_key") or "",
+        "transcript_type": existing.get("transcript_type") or "",
+        "Consequence": existing.get("Consequence") or "",
+    }):
+        for key, value in v.items():
+            if key not in {"transcript_options", "selected_transcript_key", "default_transcript_key"}:
+                existing[key] = value
+    _apply_transcript_option(existing, best)
+    return existing
+
+
 # Depth thresholds applied at the adapter level.
 #   WES → hard floor at DP=10 (drop noise outside the capture targets)
 #         + red flag at DP<20.
@@ -626,7 +760,6 @@ def load_snv_tsv(tsv_path: Path,
       WGS  → no hard floor; low_depth set when DP < 10.
     """
     variants: dict[str, dict] = {}
-    by_tier: dict[str, list[tuple[float, str]]] = {t: [] for t in TIERS}
     is_wes    = (test_type or "").upper() == "WES"
     low_flag  = _DP_LOW_FLAG_WES if is_wes else _DP_LOW_FLAG_WGS
 
@@ -653,11 +786,13 @@ def load_snv_tsv(tsv_path: Path,
             if is_wes and dp < _DP_HARD_FLOOR_WES:
                 continue
             v["low_depth"] = bool(dp and dp < low_flag)
-            variants[v["id"]] = v
-            pts = v.get("ACMG_score")
-            sort_key = float(pts) if isinstance(pts, (int, float)) else -999.0
-            by_tier[v["tier"]].append((sort_key, v["id"]))
+            merge_snv_variant_row(variants, v)
 
+    by_tier: dict[str, list[tuple[float, str]]] = {t: [] for t in TIERS}
+    for vid, v in variants.items():
+        pts = v.get("ACMG_score")
+        sort_key = float(pts) if isinstance(pts, (int, float)) else -999.0
+        by_tier.setdefault(v.get("tier"), []).append((sort_key, vid))
     categories: dict[str, list[str]] = {}
     for t in TIERS:
         by_tier[t].sort(key=lambda kv: (-kv[0], kv[1]))

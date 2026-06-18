@@ -791,14 +791,46 @@ def _mito_disease_text(v: dict, edits: dict) -> str:
     return ""
 
 
+def _selected_snv_transcript(v: dict, edits: dict) -> dict:
+    options = v.get("transcript_options") or []
+    selected = str(edits.get("selected_transcript_key") or "").strip()
+    if selected:
+        for opt in options:
+            if str(opt.get("key") or "") == selected:
+                return opt
+    default_key = str(v.get("default_transcript_key") or "").strip()
+    if default_key:
+        for opt in options:
+            if str(opt.get("key") or "") == default_key:
+                return opt
+    return {}
+
+
+def _snv_tx_field(v: dict, edits: dict, field: str, *fallbacks: str) -> str:
+    selected = _selected_snv_transcript(v, edits)
+    value = selected.get(field)
+    if value not in (None, ""):
+        return str(value)
+    for key in fallbacks:
+        value = v.get(key)
+        if value not in (None, ""):
+            return str(value)
+    value = v.get(field)
+    return "" if value in (None, "") else str(value)
+
+
 def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
-    gene = v.get("gene_symbol") or "?"
-    tx   = v.get("transcript")  or v.get("MANE_SELECT") or ""
+    gene = _snv_tx_field(v, edits, "gene_symbol") or "?"
+    tx   = _snv_tx_field(v, edits, "transcript", "MANE_SELECT")
     _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
     rs    = v.get("rs_id") or v.get("RS_ID") or ""
-    struc = _structure_label(v)
-    hgvs_c = _strip_tx_prefix(v.get("hgvs_c") or v.get("HGVS_C") or "")
-    hgvs_p = _strip_tx_prefix(v.get("hgvs_p") or v.get("HGVS_P") or "")
+    struc = _structure_label({
+        **v,
+        "exon": _snv_tx_field(v, edits, "exon"),
+        "intron": _snv_tx_field(v, edits, "intron"),
+    })
+    hgvs_c = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
+    hgvs_p = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
     nuc    = hgvs_c + (f"({hgvs_p})" if hgvs_p else "")
     # 基因型 column stays in English per spec (Heterozygous / Homozygous)
     zyg    = _zygosity_long(v.get("zygosity", ""))
@@ -820,14 +852,14 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
 
 def _snv_reference_text(v: dict, edits: dict) -> str:
-    gene = v.get("gene_symbol") or "?"
+    gene = _snv_tx_field(v, edits, "gene_symbol") or "?"
     # Drop the "NM_xxx:" transcript prefix from HGVS values here too —
     # the transcript already appears beside the gene name on the block
     # header, no need to repeat it in the ref text.
-    hgvs_c = _strip_tx_prefix(v.get("hgvs_c") or v.get("HGVS_C") or "")
-    hgvs_p = _strip_tx_prefix(v.get("hgvs_p") or v.get("HGVS_P") or "")
+    hgvs_c = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
+    hgvs_p = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
     nuc    = hgvs_c + (f" ({hgvs_p})" if hgvs_p else "")
-    cq_zh  = _consequence_zh(v.get("Consequence", ""))
+    cq_zh  = _consequence_zh(_snv_tx_field(v, edits, "Consequence"))
     af     = _afs_str(v)
     clinvar = _clinvar_label(v)
     acmg    = _acmg_label(v, edits)
@@ -1198,10 +1230,7 @@ def _genes_for_term_or_panel(key: str) -> list[str]:
 
 
 def _gene_list_label(gene: str, test_type: str) -> str:
-    if (test_type or "").upper() != "WGS":
-        return gene
-    suffix = panel_deadzone.dead_zone_suffix(gene, test_type)
-    return f"{gene}（{suffix}）" if suffix else gene
+    return gene
 
 
 def _add_dead_zone_gene_list_note(doc, threshold: int) -> None:
@@ -1218,8 +1247,7 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
     # phenotype_io.parse) — pull the name field.
     panel_entries: list = sample.get("selected_panels") or []
     test_type = ((sample.get("meta") or {}).get("Test") or "WES").upper()
-    threshold = panel_deadzone.dead_zone_threshold(test_type)
-    include_docx_dead_zone = test_type == "WGS"
+    include_docx_dead_zone = False
 
     # Build [(display_name, [genes...])] preserving order.
     sections: list[tuple[str, list[str]]] = []

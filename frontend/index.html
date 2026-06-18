@@ -789,7 +789,10 @@
   <div id="pipeline-list-modal" class="modal hidden">
     <div class="modal-card modal-card-wide">
       <h2>三級分析清單</h2>
-      <p class="muted">刪除會一併移除 pipeline output、NGS-UI 個案資料與 job log。</p>
+      <div class="pipeline-list-toolbar">
+        <p class="muted">刪除會一併移除 pipeline output、NGS-UI 個案資料與 job log。</p>
+        <input id="pipeline-list-search" type="search" placeholder="搜尋 sample ID" autocomplete="off" />
+      </div>
       <div id="pipeline-list-status" class="muted"></div>
       <div id="pipeline-list-table" class="pipeline-list-table"></div>
       <div id="pipeline-list-log-panel" class="pipeline-list-log-panel" hidden>

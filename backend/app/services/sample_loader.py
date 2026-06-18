@@ -37,9 +37,10 @@ from ..adapters.snv_tsv import (
     _DP_LOW_FLAG_WGS,
     _row_to_variant,
     load_snv_tsv,
+    merge_snv_variant_row,
 )
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store, omim_store, panel_deadzone, snv_gene_index, snv_review
+from . import analyses_store, omim_store, panel_deadzone, phenotype_scorer, snv_gene_index, snv_review
 
 
 SECONDARY_SNV_PANELS = {
@@ -227,7 +228,53 @@ def _case_variant_label(variant: dict, edits: dict) -> str:
         zyg = "hemi"
     else:
         zyg = raw_zyg
-    return ", ".join(x for x in (variant.get("HGVS", ""), acmg_short, zyg) if x)
+    hgvs = _selected_snv_hgvs(variant, edits)
+    return ", ".join(x for x in (hgvs, acmg_short, zyg) if x)
+
+
+def _selected_snv_hgvs(variant: dict, edits: dict) -> str:
+    options = variant.get("transcript_options") or []
+    selected = str(edits.get("selected_transcript_key") or "").strip()
+    if selected:
+        for opt in options:
+            if str(opt.get("key") or "") == selected:
+                return str(opt.get("HGVS") or "")
+    default_key = str(variant.get("default_transcript_key") or "").strip()
+    if default_key:
+        for opt in options:
+            if str(opt.get("key") or "") == default_key:
+                return str(opt.get("HGVS") or "")
+    return str(variant.get("HGVS") or "")
+
+
+def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
+    phenotype_scorer.load()
+    sections: list[dict] = []
+
+    def genes_for(key: str) -> list[str]:
+        genes: list[str] = []
+        for raw in phenotype_scorer._HPO_TO_GENES.get(key, set()):
+            gene, hgnc_id = panel_deadzone.canonical_gene_symbol(raw)
+            if panel_deadzone.is_disease_associated_gene(gene, hgnc_id):
+                genes.append(gene)
+        return sorted(set(genes))
+
+    for row in hpo_rows or []:
+        hid = row.get("phenotype") or row.get("hpo_id") or ""
+        if not hid:
+            continue
+        label = row.get("label") or hid
+        sections.append({"name": label, "genes": genes_for(hid)})
+    for entry in panel_entries or []:
+        name = entry.get("name") if isinstance(entry, dict) else str(entry)
+        if not name:
+            continue
+        sections.append({"name": name, "genes": genes_for(name)})
+
+    merged: set[str] = set()
+    for section in sections:
+        merged.update(section.get("genes") or [])
+    return {"grouped": sections, "merged": sorted(merged)}
 
 
 def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
@@ -740,7 +787,7 @@ def _variants_from_rows(rows: list[dict[str, str]], *, test_type: str) -> dict[s
         if is_wes and dp < _DP_HARD_FLOOR_WES:
             continue
         v["low_depth"] = bool(dp and dp < low_flag)
-        out[v["id"]] = v
+        merge_snv_variant_row(out, v)
     return out
 
 
@@ -1526,6 +1573,7 @@ def load_sample(sample_id: str, version: str | None = None,
         "generated_at":      meta.get("run_date") or datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "patient_phenotype": _normalize_phenotype(hpo_list),
         "selected_panels":   panels_list,
+        "report_gene_list":  _report_gene_list(_normalize_phenotype(hpo_list), panels_list),
         "vcf_path":          meta.get("vcf_path", ""),
         "qc_summary":        qc,
         "roh_summary":       roh,

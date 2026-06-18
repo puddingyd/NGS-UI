@@ -658,6 +658,19 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .variant-head .variant-tag { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
 .variant-head .clinvar-upgrade-arrow { color: #c0392b; font-weight: 700; margin-right: 2px; cursor: help; }
 .clinvar-old { color: var(--muted); font-size: 11px; margin-left: 4px; cursor: help; }
+.variant-head .transcript-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 180px;
+  max-width: min(360px, 38vw);
+  color: var(--muted);
+  font-size: 12px;
+}
+.variant-head .transcript-picker select {
+  min-width: 0;
+  width: 100%;
+}
 .variant-head select { padding: 4px 6px; border-radius: 4px; border: 1px solid var(--border); font-size: 12px; }
 .variant-head .ext-links { display: flex; gap: 4px; }
 .variant-head .ext-links a {
@@ -2664,6 +2677,25 @@ body.sidebar-collapsed .container { margin-left: auto; }
 
 /* ─── 三級分析清單 modal ───────────────────────────────────── */
 #pipeline-list-modal .modal-card-wide { max-width: 900px; }
+.pipeline-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pipeline-list-toolbar p {
+  margin: 0;
+}
+.pipeline-list-toolbar input {
+  min-width: 220px;
+  max-width: 320px;
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
 .pipeline-list-table {
   max-height: 440px;
   overflow: auto;

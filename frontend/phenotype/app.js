@@ -787,6 +787,14 @@ function clearSelectedFixedPanels() {
   syncFixedPanelUiFromState();
 }
 
+function resetPhenotypeSelections() {
+  clearAllRows();
+  clearAllPanelRows();
+  clearSelectedFixedPanels();
+  while (document.querySelectorAll(".phenotype-row:not(.panel-row)").length < 5) createRow();
+  while (document.querySelectorAll(".panel-row").length < 1) createPanelRow();
+}
+
 function escapeText(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -906,6 +914,7 @@ async function loadPatient() {
     clinicalAutosaveDirty = false;
     clearTimeout(clinicalAutosaveTimer);
     document.getElementById("clinical-presentation-text").value = "";
+    resetPhenotypeSelections();
     const clinicalResp = await fetch(`/api/phenotype-tool/clinical-presentation/load?${params}`);
     if (clinicalResp.ok) {
       const clinicalBody = await clinicalResp.json();

@@ -685,6 +685,68 @@ function _maneDisplayHgvs(row, key) {
   return value;
 }
 
+function _selectedTranscriptOption(v, id) {
+  const options = Array.isArray(v?.transcript_options) ? v.transcript_options : [];
+  if (!options.length) return null;
+  const selected = String(getEdit(id, "selected_transcript_key") || "").trim();
+  if (selected) {
+    const hit = options.find(opt => String(opt?.key || "") === selected);
+    if (hit) return hit;
+  }
+  const def = String(v?.default_transcript_key || v?.selected_transcript_key || "").trim();
+  if (def) {
+    const hit = options.find(opt => String(opt?.key || "") === def);
+    if (hit) return hit;
+  }
+  return options[0] || null;
+}
+
+function _variantWithSelectedTranscript(v, id) {
+  const opt = _selectedTranscriptOption(v, id);
+  if (!opt) return v;
+  return {
+    ...v,
+    gene_symbol: opt.gene_symbol || v.gene_symbol,
+    transcript: opt.transcript || v.transcript,
+    transcript_type: opt.transcript_type || v.transcript_type,
+    HGVS_C: opt.HGVS_C || v.HGVS_C,
+    HGVS_P: opt.HGVS_P || v.HGVS_P,
+    HGVS: opt.HGVS || v.HGVS,
+    Consequence: opt.Consequence || v.Consequence,
+    impact: opt.impact || v.impact,
+    exon: opt.exon || v.exon,
+    intron: opt.intron || v.intron,
+    hgnc_id: opt.hgnc_id || v.hgnc_id,
+    selected_transcript_key: opt.key || v.selected_transcript_key,
+  };
+}
+
+function _transcriptOptionLabel(opt) {
+  const bits = [
+    opt?.transcript_type || "",
+    opt?.gene_symbol || "",
+    opt?.transcript || "",
+    _maneDisplayHgvs(opt || {}, "HGVS_C") || opt?.HGVS_C || "",
+    _maneDisplayHgvs(opt || {}, "HGVS_P") || opt?.HGVS_P || "",
+    opt?.Consequence || "",
+  ].filter(Boolean);
+  return bits.join(" · ");
+}
+
+function renderTranscriptPicker(v, id) {
+  const options = Array.isArray(v?.transcript_options) ? v.transcript_options : [];
+  if (options.length <= 1) return "";
+  const selected = _selectedTranscriptOption(v, id)?.key || "";
+  const rows = options.map(opt => `
+    <option value="${escapeAttr(opt.key || "")}" ${String(opt.key || "") === selected ? "selected" : ""}>
+      ${escapeHtml(_transcriptOptionLabel(opt))}
+    </option>`).join("");
+  return `<label class="transcript-picker" title="選擇這張卡片與 DOCX 報告使用的 transcript">
+    <span>Transcript</span>
+    <select class="transcript-select" data-id="${escapeAttr(id)}">${rows}</select>
+  </label>`;
+}
+
 function _sryIgvRegion() {
   // SRY gene coordinates from the reference assemblies used by the UI.
   // Keep this as a lightweight pseudo-variant so it follows the same
@@ -2612,7 +2674,7 @@ function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
   // drill-down content before serialising the print window.
   clone.querySelectorAll([
     ".status-radio", ".ext-links", ".btn-copy", ".btn-more",
-    ".more-extras", ".comment-row", ".cnv-sv-comment",
+    ".more-extras", ".comment-row", ".cnv-sv-comment", ".transcript-picker",
     ".btn-add-manual", ".btn-remove-manual", ".same-gene-btn",
     ".disease-detail", ".disease-collapse",
     ".cnv-sv-reasoning", ".cnv-sv-gene-overflow",
@@ -2661,8 +2723,28 @@ function _printReportTimestamp(now = new Date()) {
   return `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
-function printReportCards() {
+function _reportGeneListPrintBlock(mode) {
+  const data = state.data?.report_gene_list || {};
+  const sections = Array.isArray(data.grouped) ? data.grouped : [];
+  const merged = Array.isArray(data.merged) ? data.merged : [];
+  if (!sections.length && !merged.length) {
+    return `<section class="print-gene-list"><h2>本次檢測基因包括</h2><p>（未設定 HPO / panel — 無檢測基因清單）</p></section>`;
+  }
+  if (mode === "merged") {
+    return `<section class="print-gene-list"><h2>本次檢測基因包括</h2><p>${escapeHtml(merged.join(", "))}</p></section>`;
+  }
+  const html = sections.map(section => `
+    <div class="print-gene-section">
+      <h3>${escapeHtml(section.name || "")}</h3>
+      <p>${escapeHtml((section.genes || []).length ? section.genes.join(", ") : "（無對應基因）")}</p>
+    </div>`).join("");
+  return `<section class="print-gene-list"><h2>本次檢測基因包括</h2>${html}</section>`;
+}
+
+async function printReportCards() {
   if (!state.currentLIS || !state.data) return;
+  const mode = await _pickGeneListMode({ title: "輸出 PDF", okLabel: "輸出 PDF" });
+  if (!mode) return;
   const popup = window.open("", "_blank");
   if (!popup) {
     alert("無法開啟列印視窗，請允許本站開啟彈出式視窗後再試一次。");
@@ -2682,6 +2764,7 @@ function printReportCards() {
     _reportPrintBlock("sec-other"),
     _reportPrintBlock("sec-candidate", { omitWhenEmpty: true }),
   ].join("");
+  const geneList = _reportGeneListPrintBlock(mode);
 
   popup.document.open();
   popup.document.write(`<!doctype html>
@@ -2700,6 +2783,11 @@ function printReportCards() {
     .block-header { pointer-events: none; }
     .block-header .arrow { display: none; }
     .variant-card { break-inside: avoid; page-break-inside: avoid; }
+    .print-gene-list { break-inside: avoid; page-break-inside: avoid; margin-top: 18px; }
+    .print-gene-list h2 { font-size: 16px; margin: 0 0 8px; }
+    .print-gene-section { margin: 0 0 10px; }
+    .print-gene-section h3 { font-size: 13px; margin: 0 0 3px; }
+    .print-gene-list p { margin: 0; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
     .print-field { display: inline-block; white-space: pre-wrap; overflow-wrap: anywhere; }
     .disease-row summary { line-height: 1.15; padding-top: 1px; padding-bottom: 1px; }
     details > summary { list-style: none; }
@@ -2722,6 +2810,7 @@ function printReportCards() {
     <div class="print-toolbar"><button type="button" onclick="window.print()">列印 / 儲存 PDF</button></div>
     <h1 class="print-title">${escapeHtml(sid)} Report</h1>
     ${sections}
+    ${geneList}
   </main>
   <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
 </body>
@@ -2731,14 +2820,14 @@ function printReportCards() {
 
 // Small inline modal asking how the 檢測基因清單 should appear in §五.4.
 // Returns "grouped" | "merged" | null (cancelled).
-function _pickGeneListMode() {
+function _pickGeneListMode(opts = {}) {
   return new Promise((resolve) => {
     // One-shot modal — built on the fly, removed after pick.
     const wrap = document.createElement("div");
     wrap.className = "modal";
     wrap.innerHTML = `
       <div class="modal-card" style="max-width:520px">
-        <h2>匯出診斷報告</h2>
+        <h2>${escapeHtml(opts.title || "匯出診斷報告")}</h2>
         <p style="margin:8px 0 12px;font-size:13px;color:#555">
           「本次檢測基因包括」要怎麼呈現？
         </p>
@@ -2754,7 +2843,7 @@ function _pickGeneListMode() {
         </label>
         <div class="dragen-actions" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
           <button type="button" class="btn btn-ghost" data-act="cancel">取消</button>
-          <button type="button" class="btn btn-primary" data-act="ok">匯出</button>
+          <button type="button" class="btn btn-primary" data-act="ok">${escapeHtml(opts.okLabel || "匯出")}</button>
         </div>
       </div>`;
     document.body.appendChild(wrap);
@@ -3117,6 +3206,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const card = document.createElement("div");
   card.className = "variant-card";
   card.dataset.inPanel = v.in_panel ? "true" : "false";
+  v = _variantWithSelectedTranscript(v, id);
 
   const links = [
     `<a href="#" class="btn-igv" data-id="${escapeAttr(id)}" title="在 IGV 內檢視">IGV</a>`,
@@ -3200,6 +3290,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
       ${_renderStatusRadio(id, curStatus, options, panelAttr)}
       <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button> <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
+      ${renderTranscriptPicker(v, id)}
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v)}
@@ -3389,24 +3480,24 @@ function fmtPhase(v) {
   return `${result} <span class="muted">(PG=${escapeHtml(group)})</span>`;
 }
 
-// Inline <details> block listing every MANE transcript carried by
-// MANE_ALL. The pipeline emits this as an array of
-// {transcript, transcript_type, hgvs_c, hgvs_p, consequence}; older
-// rows leave the list empty and we hide the block in that case.
+// Inline <details> block listing transcript annotations carried by the
+// grouped TSV rows (new pipeline) or legacy MANE_ALL payload.
 function renderManeAll(v) {
-  const rows = Array.isArray(v.MANE_ALL) ? v.MANE_ALL : [];
+  const rows = Array.isArray(v.transcript_options) && v.transcript_options.length
+    ? v.transcript_options
+    : (Array.isArray(v.MANE_ALL) ? v.MANE_ALL : []);
   if (!rows.length) return "";
   const cells = rows.map(r => `
     <tr>
       <td><span class="badge badge-${(r.transcript_type || "").toLowerCase().replace(/_/g, "-")}">${escapeHtml(r.transcript_type || "")}</span></td>
       <td class="mane-tx">${escapeHtml(_maneDisplayTranscript(r))}</td>
-      <td>${escapeHtml(_maneDisplayHgvs(r, "hgvs_c"))}</td>
-      <td>${escapeHtml(_maneDisplayHgvs(r, "hgvs_p"))}</td>
-      <td>${escapeHtml(r.consequence || "")}</td>
+      <td>${escapeHtml(_maneDisplayHgvs(r, "HGVS_C") || _maneDisplayHgvs(r, "hgvs_c"))}</td>
+      <td>${escapeHtml(_maneDisplayHgvs(r, "HGVS_P") || _maneDisplayHgvs(r, "hgvs_p"))}</td>
+      <td>${escapeHtml(r.Consequence || r.consequence || "")}</td>
     </tr>`).join("");
   return `
     <details class="mane-all">
-      <summary>MANE transcripts (${rows.length})</summary>
+      <summary>Transcripts (${rows.length})</summary>
       <table class="mane-table">
         <thead><tr><th>Type</th><th>Transcript</th><th>HGVS.c</th><th>HGVS.p</th><th>Consequence</th></tr></thead>
         <tbody>${cells}</tbody>
@@ -5639,6 +5730,10 @@ document.addEventListener("change", ev => {
     updateSaveHint();
   } else if (t.matches(".variant-comment")) {
     setEdit(t.dataset.id, "comment", t.value);
+    updateSaveHint();
+  } else if (t.matches(".transcript-select")) {
+    setEdit(t.dataset.id, "selected_transcript_key", t.value);
+    renderAll();
     updateSaveHint();
   } else if (t.matches(".disease-pick")) {
     const picked = { ...(getEdit(t.dataset.id, "report_diseases") || {}) };
@@ -9033,45 +9128,66 @@ function setupDragenButton() {
   _dragenStartRecoveryPolling();
 }
 
-async function _renderPipelineList() {
+let _pipelineListRows = [];
+
+function _drawPipelineListRows() {
   const host = document.getElementById("pipeline-list-table");
   const status = document.getElementById("pipeline-list-status");
   if (!host) return;
+  const query = String(document.getElementById("pipeline-list-search")?.value || "").trim().toLowerCase();
+  const rows = query
+    ? _pipelineListRows.filter(row => [
+        row.sample_id,
+        row.source_sample_id,
+        row.pipeline_sample_id,
+      ].some(v => String(v || "").toLowerCase().includes(query)))
+    : _pipelineListRows;
+  if (!_pipelineListRows.length) {
+    host.innerHTML = `<div class="muted" style="padding:10px">（尚無三級分析資料夾）</div>`;
+    return;
+  }
+  if (!rows.length) {
+    host.innerHTML = `<div class="muted" style="padding:10px">（沒有符合搜尋的 sample）</div>`;
+    if (status) status.textContent = "";
+    return;
+  }
+  const head = `
+    <tr>
+      <th>Sample</th>
+      <th>狀態</th>
+      <th>最近更新</th>
+      <th>Log</th>
+      <th></th>
+    </tr>`;
+  const body = rows.map(row => {
+    const ready = row.has_acmg ? "完成" : (row.has_output ? "未完成" : "無輸出");
+    const state = row.job_state ? ` · ${row.job_state}` : "";
+    const source = row.source_sample_id && row.source_sample_id !== row.sample_id
+      ? `<div class="muted">source: ${escapeHtml(row.source_sample_id)}</div>`
+      : "";
+    return `
+      <tr>
+        <td>${escapeHtml(row.sample_id || "")}${source}</td>
+        <td>${escapeHtml(ready + state)}</td>
+        <td>${escapeHtml(_dragenFmtMtime(row.mtime) || "—")}</td>
+        <td><button type="button" class="btn btn-ghost pipeline-log-view"
+          data-sample-id="${escapeAttr(row.sample_id || "")}">查看 Log</button></td>
+        <td><button type="button" class="btn btn-danger pipeline-output-delete"
+          data-sample-id="${escapeAttr(row.sample_id || "")}"
+          data-pipeline-sample-id="${escapeAttr(row.pipeline_sample_id || row.source_sample_id || row.sample_id || "")}">刪除</button></td>
+      </tr>`;
+  }).join("");
+  host.innerHTML = `<table>${head}${body}</table>`;
+  if (status) status.textContent = query ? `符合 ${rows.length} / ${_pipelineListRows.length} 筆` : "";
+}
+
+async function _renderPipelineList() {
+  const host = document.getElementById("pipeline-list-table");
+  if (!host) return;
   host.innerHTML = `<div class="muted" style="padding:10px">載入中…</div>`;
   try {
-    const rows = await apiFetch("/dragen/outputs") || [];
-    if (!rows.length) {
-      host.innerHTML = `<div class="muted" style="padding:10px">（尚無三級分析資料夾）</div>`;
-      return;
-    }
-    const head = `
-      <tr>
-        <th>Sample</th>
-        <th>狀態</th>
-        <th>最近更新</th>
-        <th>Log</th>
-        <th></th>
-      </tr>`;
-    const body = rows.map(row => {
-      const ready = row.has_acmg ? "完成" : (row.has_output ? "未完成" : "無輸出");
-      const state = row.job_state ? ` · ${row.job_state}` : "";
-      const source = row.source_sample_id && row.source_sample_id !== row.sample_id
-        ? `<div class="muted">source: ${escapeHtml(row.source_sample_id)}</div>`
-        : "";
-      return `
-        <tr>
-          <td>${escapeHtml(row.sample_id || "")}${source}</td>
-          <td>${escapeHtml(ready + state)}</td>
-          <td>${escapeHtml(_dragenFmtMtime(row.mtime) || "—")}</td>
-          <td><button type="button" class="btn btn-ghost pipeline-log-view"
-            data-sample-id="${escapeAttr(row.sample_id || "")}">查看 Log</button></td>
-          <td><button type="button" class="btn btn-danger pipeline-output-delete"
-            data-sample-id="${escapeAttr(row.sample_id || "")}"
-            data-pipeline-sample-id="${escapeAttr(row.pipeline_sample_id || row.source_sample_id || row.sample_id || "")}">刪除</button></td>
-        </tr>`;
-    }).join("");
-    host.innerHTML = `<table>${head}${body}</table>`;
-    if (status) status.textContent = "";
+    _pipelineListRows = await apiFetch("/dragen/outputs") || [];
+    _drawPipelineListRows();
   } catch (e) {
     host.innerHTML = `<div class="muted" style="padding:10px">載入失敗：${escapeHtml(String(e))}</div>`;
   }
@@ -9087,8 +9203,11 @@ function setupPipelineList() {
     showModal("pipeline-list-modal");
     if (status) status.textContent = "";
     if (logPanel) logPanel.hidden = true;
+    const search = document.getElementById("pipeline-list-search");
+    if (search) search.value = "";
     await _renderPipelineList();
   });
+  document.getElementById("pipeline-list-search")?.addEventListener("input", _drawPipelineListRows);
   host.addEventListener("click", async ev => {
     const logBtn = ev.target.closest?.(".pipeline-log-view");
     const delBtn = ev.target.closest?.(".pipeline-output-delete");
