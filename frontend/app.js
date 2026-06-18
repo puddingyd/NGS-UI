@@ -677,8 +677,8 @@ function _maneDisplayTranscript(row) {
 
 function _maneDisplayHgvs(row, key) {
   const value = String(row?.[key] || "").trim();
-  const nm = String(row?.transcript || "").trim();
-  const enst = String(row?.enst || "").trim();
+  const nm = String(row?.refseq_transcript || row?.transcript || "").trim();
+  const enst = String(row?.ensembl_transcript || row?.enst || "").trim();
   if (/^NM_/i.test(nm) && enst && value.startsWith(`${enst}:`)) {
     return `${nm}:${value.split(":", 2)[1] || ""}`;
   }
@@ -708,6 +708,10 @@ function _variantWithSelectedTranscript(v, id) {
     ...v,
     gene_symbol: opt.gene_symbol || v.gene_symbol,
     transcript: opt.transcript || v.transcript,
+    ensembl_transcript: opt.ensembl_transcript || v.ensembl_transcript,
+    refseq_transcript: opt.refseq_transcript || v.refseq_transcript,
+    refseq_protein: opt.refseq_protein || v.refseq_protein,
+    mane_status: opt.mane_status || v.mane_status,
     transcript_type: opt.transcript_type || v.transcript_type,
     HGVS_C: opt.HGVS_C || v.HGVS_C,
     HGVS_P: opt.HGVS_P || v.HGVS_P,
@@ -722,10 +726,13 @@ function _variantWithSelectedTranscript(v, id) {
 }
 
 function _transcriptOptionLabel(opt) {
+  const refseq = String(opt?.refseq_transcript || "").trim();
+  const enst = String(opt?.ensembl_transcript || opt?.transcript || "").trim();
+  const tx = refseq && enst && refseq !== enst ? `${refseq} / ${enst}` : (refseq || enst);
   const bits = [
     opt?.transcript_type || "",
     opt?.gene_symbol || "",
-    opt?.transcript || "",
+    tx,
     _maneDisplayHgvs(opt || {}, "HGVS_C") || opt?.HGVS_C || "",
     _maneDisplayHgvs(opt || {}, "HGVS_P") || opt?.HGVS_P || "",
     opt?.Consequence || "",
@@ -741,10 +748,10 @@ function renderTranscriptPicker(v, id) {
     <option value="${escapeAttr(opt.key || "")}" ${String(opt.key || "") === selected ? "selected" : ""}>
       ${escapeHtml(_transcriptOptionLabel(opt))}
     </option>`).join("");
-  return `<label class="transcript-picker" title="選擇這張卡片與 DOCX 報告使用的 transcript">
-    <span>Transcript</span>
+  return `<details class="transcript-picker" title="選擇這張卡片與 DOCX 報告使用的 transcript">
+    <summary aria-label="選擇 transcript">▾</summary>
     <select class="transcript-select" data-id="${escapeAttr(id)}">${rows}</select>
-  </label>`;
+  </details>`;
 }
 
 function _sryIgvRegion() {
@@ -2723,8 +2730,7 @@ function _printReportTimestamp(now = new Date()) {
   return `${now.getFullYear()}/${now.getMonth() + 1}/${now.getDate()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
-function _reportGeneListPrintBlock(mode) {
-  const data = state.data?.report_gene_list || {};
+function _reportGeneListPrintBlock(mode, data = {}) {
   const sections = Array.isArray(data.grouped) ? data.grouped : [];
   const merged = Array.isArray(data.merged) ? data.merged : [];
   if (!sections.length && !merged.length) {
@@ -2745,6 +2751,15 @@ async function printReportCards() {
   if (!state.currentLIS || !state.data) return;
   const mode = await _pickGeneListMode({ title: "輸出 PDF", okLabel: "輸出 PDF" });
   if (!mode) return;
+  const sampleRow = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sampleId = sampleRow?.sample_id || state.currentLIS;
+  let reportGeneList = {};
+  try {
+    reportGeneList = await apiFetch(`/samples/${encodeURIComponent(sampleId)}/report-gene-list`) || {};
+  } catch (e) {
+    alert("讀取基因清單失敗：" + e.message);
+    return;
+  }
   const popup = window.open("", "_blank");
   if (!popup) {
     alert("無法開啟列印視窗，請允許本站開啟彈出式視窗後再試一次。");
@@ -2764,7 +2779,7 @@ async function printReportCards() {
     _reportPrintBlock("sec-other"),
     _reportPrintBlock("sec-candidate", { omitWhenEmpty: true }),
   ].join("");
-  const geneList = _reportGeneListPrintBlock(mode);
+  const geneList = _reportGeneListPrintBlock(mode, reportGeneList);
 
   popup.document.open();
   popup.document.write(`<!doctype html>
@@ -3289,8 +3304,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     <div class="variant-head">
       ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
       ${_renderStatusRadio(id, curStatus, options, panelAttr)}
-      <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button> <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
-      ${renderTranscriptPicker(v, id)}
+      <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v)}
@@ -5733,6 +5747,7 @@ document.addEventListener("change", ev => {
     updateSaveHint();
   } else if (t.matches(".transcript-select")) {
     setEdit(t.dataset.id, "selected_transcript_key", t.value);
+    t.closest(".transcript-picker")?.removeAttribute("open");
     renderAll();
     updateSaveHint();
   } else if (t.matches(".disease-pick")) {
@@ -8931,6 +8946,7 @@ function _dragenStopgapProgressPercent(state) {
     "post-processing:genebe": 0.20,
     "post-processing:extra-vep": 0.52,
     "post-processing:giab-strata": 0.66,
+    "post-processing:mane-refseq": 0.72,
     "post-processing:annotsv": 0.78,
     "sample-step:review-tsv": 0.84,
     "sample-step:gene-index": 0.92,

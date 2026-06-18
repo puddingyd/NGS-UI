@@ -277,6 +277,17 @@ def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
     return {"grouped": sections, "merged": sorted(merged)}
 
 
+def load_report_gene_list(sample_id: str, version: str | None = None) -> dict | None:
+    meta = _read_metadata(sample_id)
+    if meta is None:
+        return None
+    ctx = _analysis_context(sample_id, meta, version)
+    if ctx is None:
+        return None
+    _sub, _sidecar_dir, hpo_list, panels_list, _pheno_by_gene = ctx
+    return _report_gene_list(_normalize_phenotype(hpo_list), panels_list)
+
+
 def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
     """Return only OMIM diseases explicitly selected by the reviewer."""
     picked = edits.get("report_diseases") or {}
@@ -1573,7 +1584,6 @@ def load_sample(sample_id: str, version: str | None = None,
         "generated_at":      meta.get("run_date") or datetime.utcnow().isoformat(timespec="seconds") + "Z",
         "patient_phenotype": _normalize_phenotype(hpo_list),
         "selected_panels":   panels_list,
-        "report_gene_list":  _report_gene_list(_normalize_phenotype(hpo_list), panels_list),
         "vcf_path":          meta.get("vcf_path", ""),
         "qc_summary":        qc,
         "roh_summary":       roh,

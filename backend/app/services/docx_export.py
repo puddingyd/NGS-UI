@@ -819,9 +819,17 @@ def _snv_tx_field(v: dict, edits: dict, field: str, *fallbacks: str) -> str:
     return "" if value in (None, "") else str(value)
 
 
+def _snv_transcript_label(v: dict, edits: dict) -> str:
+    enst = _snv_tx_field(v, edits, "ensembl_transcript")
+    refseq = _snv_tx_field(v, edits, "refseq_transcript")
+    if enst and refseq and enst != refseq:
+        return f"{enst}; {refseq}"
+    return refseq or enst or _snv_tx_field(v, edits, "transcript", "MANE_SELECT")
+
+
 def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     gene = _snv_tx_field(v, edits, "gene_symbol") or "?"
-    tx   = _snv_tx_field(v, edits, "transcript", "MANE_SELECT")
+    tx   = _snv_transcript_label(v, edits)
     _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
     rs    = v.get("rs_id") or v.get("RS_ID") or ""
     struc = _structure_label({

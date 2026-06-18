@@ -447,6 +447,10 @@ def _row_to_variant(row: dict) -> dict:
     hgnc_id = (row.get("HGNC_ID") or "").strip()
     gene, hgnc_id = panel_deadzone.canonical_gene_symbol(row.get("GENE", ""), hgnc_id)
     transcript = row.get("TRANSCRIPT", "")
+    ensembl_transcript = transcript
+    refseq_transcript = (row.get("REFSEQ_NUC") or "").strip()
+    refseq_protein = (row.get("REFSEQ_PROT") or "").strip()
+    mane_status = (row.get("MANE_STATUS") or "").strip()
     # New pipeline ships HGVS_P with URL-encoded characters (e.g.
     # `p.Gly282%3D` for synonymous changes). Decode so the UI renders
     # `p.Gly282=` instead of the percent escape.
@@ -487,6 +491,8 @@ def _row_to_variant(row: dict) -> dict:
     display_mane = _pick_display_mane(mane_all, enst_base)
     if display_mane:
         refseq_nm = display_mane["transcript"]
+        refseq_transcript = refseq_transcript or refseq_nm
+        ensembl_transcript = display_mane.get("enst") or ensembl_transcript
         transcript = refseq_nm
         mane_hgvs_c = display_mane.get("hgvs_c") or ""
         mane_hgvs_p = display_mane.get("hgvs_p") or ""
@@ -511,8 +517,12 @@ def _row_to_variant(row: dict) -> dict:
         if not t or t == "." or t.upper() in ("NA", "N/A"):
             return ""
         return t.split(":", 1)[1] if ":" in t else t
-    hgvs_full = ":".join(p for p in (gene, transcript,
-                                      _strip_tx(hgvs_c),
+    display_transcript = refseq_transcript or transcript
+    display_hgvs_c = hgvs_c
+    if refseq_transcript and display_hgvs_c and ":" in display_hgvs_c:
+        display_hgvs_c = f"{refseq_transcript}:{display_hgvs_c.split(':', 1)[1]}"
+    hgvs_full = ":".join(p for p in (gene, display_transcript,
+                                      _strip_tx(display_hgvs_c),
                                       _strip_tx(hgvs_p)) if p)
 
     return {
@@ -523,6 +533,10 @@ def _row_to_variant(row: dict) -> dict:
         "ALT": alt,
         "gene_symbol": gene,
         "transcript": transcript,
+        "ensembl_transcript": ensembl_transcript,
+        "refseq_transcript": refseq_transcript,
+        "refseq_protein": refseq_protein,
+        "mane_status": mane_status,
         "transcript_type": row.get("TRANSCRIPT_TYPE", ""),
         "HGVS_C": hgvs_c,
         "HGVS_P": hgvs_p,
@@ -654,6 +668,8 @@ def _transcript_option_from_variant(v: dict) -> dict:
     key_parts = [
         v.get("gene_symbol") or "",
         v.get("transcript") or "",
+        v.get("refseq_transcript") or "",
+        v.get("ensembl_transcript") or "",
         v.get("transcript_type") or "",
         v.get("HGVS_C") or "",
         v.get("HGVS_P") or "",
@@ -664,6 +680,10 @@ def _transcript_option_from_variant(v: dict) -> dict:
         "key": key,
         "gene_symbol": v.get("gene_symbol") or "",
         "transcript": v.get("transcript") or "",
+        "ensembl_transcript": v.get("ensembl_transcript") or "",
+        "refseq_transcript": v.get("refseq_transcript") or "",
+        "refseq_protein": v.get("refseq_protein") or "",
+        "mane_status": v.get("mane_status") or "",
         "transcript_type": v.get("transcript_type") or "",
         "HGVS_C": v.get("HGVS_C") or "",
         "HGVS_P": v.get("HGVS_P") or "",
@@ -688,6 +708,10 @@ def _apply_transcript_option(v: dict, opt: dict) -> None:
     for src_key, dst_key in (
         ("gene_symbol", "gene_symbol"),
         ("transcript", "transcript"),
+        ("ensembl_transcript", "ensembl_transcript"),
+        ("refseq_transcript", "refseq_transcript"),
+        ("refseq_protein", "refseq_protein"),
+        ("mane_status", "mane_status"),
         ("transcript_type", "transcript_type"),
         ("HGVS_C", "HGVS_C"),
         ("HGVS_P", "HGVS_P"),

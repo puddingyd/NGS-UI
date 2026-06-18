@@ -11,10 +11,11 @@
 #                                  (offline SQLite lookup, no API/creds;
 #                                  pipeline's ACMG_* untouched)
 #   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
-#   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
+#   4. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
+#   5. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
 #                              gCNV + Delly VCFs. Skipped if none supplied.
-#   5. build_snv_review_tsv.py  — pre-build the compact main-screen TSV
-#   6. build_snv_gene_index.py  — pre-build complete-TSV gene search index
+#   6. build_snv_review_tsv.py  — pre-build the compact main-screen TSV
+#   7. build_snv_gene_index.py  — pre-build complete-TSV gene search index
 #
 # (ClinVar annotation was a compatibility step before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
@@ -44,6 +45,9 @@
 #   --candidate-bed / --skip-candidate-bed
 #                                      — restrict GeneBe/Extra VEP candidates
 #   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 3
+#   NGS_UI_MANE_SUMMARY / --mane-summary
+#                                      — MANE summary for RefSeq mapping
+#   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
 #   --skip-cnv                         — disable AnnotSV step 4 even
 #                                         when --dragen-cnv-source is set
 # =========================================================
@@ -87,8 +91,11 @@ SKIP_CANDIDATE_BED=0
 SKIP_CNV=0
 SKIP_GIAB=0
 SKIP_GENEBE=0
+SKIP_MANE_REFSEQ=0
 SEQ_TYPE="${SEQ_TYPE:-WES}"
+NGS_HOME_DEFAULT="${NGS_UI_HOME:-$HOME/NGS_UI}"
 GENEBE_DB="${NGS_UI_GENEBE_DB:-$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz}"
+MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5.summary.txt.gz}"
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
 SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
@@ -110,6 +117,8 @@ while [ $# -gt 0 ]; do
     --skip-cnv)           SKIP_CNV=1; shift;;
     --genebe-db)          GENEBE_DB="$2"; shift 2;;
     --skip-genebe)        SKIP_GENEBE=1; shift;;
+    --mane-summary)       MANE_SUMMARY="$2"; shift 2;;
+    --skip-mane-refseq)   SKIP_MANE_REFSEQ=1; shift;;
     --giab-strat-dir)     GIAB_STRAT_DIR="$2"; shift 2;;
     --skip-giab)          SKIP_GIAB=1; shift;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
@@ -191,6 +200,16 @@ if [ "$SKIP_GIAB" -eq 0 ]; then
     GIAB_ARGS+=(--strat-dir "$GIAB_STRAT_DIR")
   fi
   "$SCRIPT_DIR/annotate_giab_strata.py" "${GIAB_ARGS[@]}"
+  step_done
+fi
+
+# 3c. MANE RefSeq mapping. Runs before review TSV / gene index so every
+#     derived artifact carries the display transcript IDs.
+if [ "$SKIP_MANE_REFSEQ" -eq 0 ]; then
+  echo
+  echo "[post-processing] annotate_mane_refseq.py"
+  step_start "mane-refseq"
+  "$SCRIPT_DIR/annotate_mane_refseq.py" --tsv "$TSV" --mane-summary "$MANE_SUMMARY"
   step_done
 fi
 
