@@ -819,6 +819,17 @@ def _snv_tx_field(v: dict, edits: dict, field: str, *fallbacks: str) -> str:
     return "" if value in (None, "") else str(value)
 
 
+def _strip_hgvs_prefix(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    for marker in ("c.", "n.", "m.", "g.", "p."):
+        idx = text.find(marker)
+        if idx >= 0:
+            return text[idx:]
+    return text.split(":", 1)[1] if ":" in text else text
+
+
 def _snv_transcript_label(v: dict, edits: dict) -> str:
     enst = _snv_tx_field(v, edits, "ensembl_transcript")
     refseq = _snv_tx_field(v, edits, "refseq_transcript")
@@ -837,8 +848,8 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
         "exon": _snv_tx_field(v, edits, "exon"),
         "intron": _snv_tx_field(v, edits, "intron"),
     })
-    hgvs_c = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
-    hgvs_p = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
+    hgvs_c = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
+    hgvs_p = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
     nuc    = hgvs_c + (f"({hgvs_p})" if hgvs_p else "")
     # 基因型 column stays in English per spec (Heterozygous / Homozygous)
     zyg    = _zygosity_long(v.get("zygosity", ""))
@@ -864,8 +875,8 @@ def _snv_reference_text(v: dict, edits: dict) -> str:
     # Drop the "NM_xxx:" transcript prefix from HGVS values here too —
     # the transcript already appears beside the gene name on the block
     # header, no need to repeat it in the ref text.
-    hgvs_c = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
-    hgvs_p = _strip_tx_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
+    hgvs_c = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
+    hgvs_p = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
     nuc    = hgvs_c + (f" ({hgvs_p})" if hgvs_p else "")
     cq_zh  = _consequence_zh(_snv_tx_field(v, edits, "Consequence"))
     af     = _afs_str(v)

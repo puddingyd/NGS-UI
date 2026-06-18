@@ -278,7 +278,10 @@ def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
 
 
 def load_report_gene_list(sample_id: str, version: str | None = None) -> dict | None:
-    meta = _read_metadata(sample_id)
+    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    if not sub.is_dir():
+        return None
+    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
     if meta is None:
         return None
     ctx = _analysis_context(sample_id, meta, version)

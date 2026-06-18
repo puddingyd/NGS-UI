@@ -748,10 +748,10 @@ function renderTranscriptPicker(v, id) {
     <option value="${escapeAttr(opt.key || "")}" ${String(opt.key || "") === selected ? "selected" : ""}>
       ${escapeHtml(_transcriptOptionLabel(opt))}
     </option>`).join("");
-  return `<details class="transcript-picker" title="選擇這張卡片與 DOCX 報告使用的 transcript">
-    <summary aria-label="選擇 transcript">▾</summary>
+  return `<span class="transcript-picker" title="選擇這張卡片與 DOCX 報告使用的 transcript">
+    <span class="transcript-arrow" aria-hidden="true">▾</span>
     <select class="transcript-select" data-id="${escapeAttr(id)}">${rows}</select>
-  </details>`;
+  </span>`;
 }
 
 function _sryIgvRegion() {
@@ -5747,7 +5747,6 @@ document.addEventListener("change", ev => {
     updateSaveHint();
   } else if (t.matches(".transcript-select")) {
     setEdit(t.dataset.id, "selected_transcript_key", t.value);
-    t.closest(".transcript-picker")?.removeAttribute("open");
     renderAll();
     updateSaveHint();
   } else if (t.matches(".disease-pick")) {
