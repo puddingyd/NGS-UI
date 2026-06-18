@@ -34,6 +34,19 @@ def _rq_status(job_id: str) -> dict:
         return {}
 
 
+def _with_live_status(job: dict) -> dict:
+    out = dict(job)
+    live = _rq_status(out["job_id"])
+    out.update(live)
+    if (
+        out.get("status") in {"queued", "running"}
+        and out.get("rq_status") in {"failed", "stopped", "canceled", "cancelled"}
+    ):
+        out["status"] = "failed"
+        out.setdefault("step", out.get("step") or out.get("rq_status"))
+    return out
+
+
 def _enqueue(
     sample_id: str,
     kind: str = "exomiser_lirical",
@@ -96,9 +109,7 @@ def post_exomiser_lirical(sample_id: str, payload: dict | None = None):
 @router.get("/samples/{sample_id}/jobs")
 def list_sample_jobs(sample_id: str):
     jobs = job_store.list_for_sample(sample_id, limit=20)
-    for j in jobs:
-        j.update(_rq_status(j["job_id"]))
-    return jobs
+    return [_with_live_status(j) for j in jobs]
 
 
 @router.get("/jobs/{job_id}")
@@ -106,5 +117,4 @@ def get_job(job_id: str):
     j = job_store.read(job_id)
     if not j:
         raise HTTPException(404, "unknown job")
-    j.update(_rq_status(job_id))
-    return j
+    return _with_live_status(j)

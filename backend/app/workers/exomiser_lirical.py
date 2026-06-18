@@ -131,15 +131,24 @@ def _run(cmd: list[str], log_path: Path, cwd: Path | None = None,
     with log_path.open("a", encoding="utf-8") as logf:
         logf.write(f"\n# {_now()} $ {' '.join(shlex.quote(c) for c in cmd)}\n")
         logf.flush()
-        proc = subprocess.run(
-            cmd,
-            cwd=str(cwd) if cwd else None,
-            stdout=logf,
-            stderr=subprocess.STDOUT,
-            timeout=timeout,
-            check=False,
-        )
-    return proc.returncode
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(cwd) if cwd else None,
+                stdout=logf,
+                stderr=subprocess.STDOUT,
+                timeout=timeout,
+                check=False,
+            )
+            return proc.returncode
+        except subprocess.TimeoutExpired as e:
+            logf.write(f"\n# {_now()} TIMEOUT after {timeout}s\n")
+            if e.stdout:
+                logf.write(str(e.stdout)[-4000:])
+            if e.stderr:
+                logf.write(str(e.stderr)[-4000:])
+            logf.flush()
+            return 124
 
 
 def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from ..config import TERTIARY_OUTPUT_ROOT
 
 
 VCF_FILENAME = "vcf_from_tsv.vcf.gz"
+VCF_META_FILENAME = "vcf_from_tsv.vcf.gz.source.json"
+WRITER_VERSION = 2
 
 # UCSC-style names; both hg19 and hg38 TSVs in this codebase use them.
 CONTIGS = [f"chr{n}" for n in range(1, 23)] + ["chrX", "chrY", "chrM"]
@@ -30,6 +33,19 @@ CONTIGS = [f"chr{n}" for n in range(1, 23)] + ["chrX", "chrY", "chrM"]
 
 def vcf_path_for(lis_id: str) -> Path:
     return TERTIARY_OUTPUT_ROOT / lis_id / VCF_FILENAME
+
+
+def _meta_path_for(lis_id: str) -> Path:
+    return TERTIARY_OUTPUT_ROOT / lis_id / VCF_META_FILENAME
+
+
+def _tsv_signature(path: Path) -> dict:
+    st = path.stat()
+    return {
+        "path": str(path),
+        "mtime_ns": st.st_mtime_ns,
+        "size": st.st_size,
+    }
 
 
 def needs_rebuild(lis_id: str) -> bool:
@@ -45,7 +61,16 @@ def needs_rebuild(lis_id: str) -> bool:
     tsv = TERTIARY_OUTPUT_ROOT / lis_id / "snv_indel.annotated.tsv"
     if not tsv.exists():
         return False
-    return out.stat().st_mtime < tsv.stat().st_mtime
+    meta_path = _meta_path_for(lis_id)
+    if not meta_path.exists():
+        return True
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8")) or {}
+    except (OSError, json.JSONDecodeError):
+        return True
+    if meta.get("writer_version") != WRITER_VERSION:
+        return True
+    return meta.get("tsv") != _tsv_signature(tsv)
 
 
 def _pick_gt(row: dict) -> str:
@@ -84,10 +109,12 @@ def from_tsv(lis_id: str) -> Path:
     out = vcf_path_for(lis_id)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    rows: list[tuple[str, int, str, str, str]] = []
+    rows_by_key: dict[tuple[str, int, str, str], str] = {}
+    source_rows = 0
     with tsv.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for r in reader:
+            source_rows += 1
             chrom = (r.get("CHROM") or "").strip()
             pos_s = (r.get("POS")   or "").strip()
             ref   = (r.get("REF")   or "").strip()
@@ -101,9 +128,9 @@ def from_tsv(lis_id: str) -> Path:
             gt = _pick_gt(r)
             if not gt:
                 continue
-            rows.append((chrom, pos, ref, alt, gt))
+            rows_by_key.setdefault((chrom, pos, ref, alt), gt)
 
-    rows.sort(key=lambda x: (_chrom_sort(x[0]), x[1]))
+    rows = sorted(rows_by_key.items(), key=lambda x: (_chrom_sort(x[0][0]), x[0][1], x[0][2], x[0][3]))
 
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     with gzip.open(out, "wt", encoding="utf-8", newline="\n") as f:
@@ -115,7 +142,22 @@ def from_tsv(lis_id: str) -> Path:
         f.write('##FILTER=<ID=PASS,Description="All filters passed">\n')
         f.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n')
         f.write(f"#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{lis_id}\n")
-        for chrom, pos, ref, alt, gt in rows:
+        for (chrom, pos, ref, alt), gt in rows:
             f.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\tPASS\t.\tGT\t{gt}\n")
+
+    _meta_path_for(lis_id).write_text(
+        json.dumps(
+            {
+                "writer_version": WRITER_VERSION,
+                "tsv": _tsv_signature(tsv),
+                "records": len(rows),
+                "source_rows": source_rows,
+                "written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     return out

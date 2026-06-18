@@ -17,6 +17,7 @@
 - 輸入臨床表徵工具載入下一位病人既有資料時，會先清空上一位病人的 HPO terms 與 panel 選擇。
 - 三級分析清單新增 sample ID 搜尋框，可即時篩選 sample/source ID。
 - SNV/Indel 卡片的外部連結固定靠右；多 transcript 選擇改為 HGVS 旁的小三角展開選單。
+- Exomiser/LIRICAL 的 TSV-to-VCF 會依 genomic variant 去重，避免 v3.5 多 transcript rows 產生重複 VCF records；RQ 已失敗但 sidecar 停在 running 的 job 也會正確顯示 failed。
 
 ### v5.1 — 2026-06-15
 
