@@ -1304,6 +1304,23 @@ body.sidebar-collapsed .container { margin-left: auto; }
 
 /* New 2-section pharmacogenomics layout: Clinically actionable on top,
    Routine condensed below. */
+.pgx-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.pgx-summary > div {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f9fafb;
+  padding: 6px 8px;
+}
+.pgx-summary strong {
+  display: block;
+  font-size: 15px;
+  margin-top: 2px;
+}
 .pgx-section { margin-top: 8px; }
 .pgx-heading {
   margin: 12px 0 6px;
@@ -1325,11 +1342,37 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-weight: 600;
   font-size: 13px;
   margin-bottom: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+.pgx-evidence {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pgx-evidence-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #fee2e2;
+  color: #7f1d1d;
+  border-radius: 999px;
+  padding: 1px 6px;
 }
 .pgx-recs { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 6px; }
 .pgx-rec  { font-size: 12px; padding: 2px 0; }
 .pgx-drug { font-weight: 600; font-family: ui-monospace, monospace; }
-.pgx-rec-item { padding-left: 10px; }
+.pgx-rec-item { padding-left: 10px; margin-top: 3px; }
+.pgx-rec-meta {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.pgx-implication {
+  color: var(--muted);
+  margin-top: 2px;
+}
 .pgx-rec-item ul,
 .pgx-rec-item ol { margin: 2px 0 2px 18px; padding: 0; }
 .pgx-rec-item li { margin: 1px 0; }
@@ -1341,8 +1384,51 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 12px;
   font-family: inherit;
 }
+.pgx-routine-chip {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #f3f4f6;
+}
+.pgx-additional {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.pgx-additional > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.pgx-additional > summary .count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: var(--muted);
+  font-size: 11px;
+}
+.pgx-additional-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.pgx-additional-gene {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafbfc;
+  padding: 6px 8px;
+}
 
 @media (max-width: 720px) {
+  .pgx-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pgx-additional-body { grid-template-columns: 1fr; }
+  .str-repeat-grid,
+  .str-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pharmcat-table th,
   .pharmcat-table td { padding: 4px 5px; font-size: 12px; }
   .pharmcat-variants { font-size: 10px; }
@@ -1478,6 +1564,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .tier-tab.tier-cnv { background: #bfdbfe; }
 .tier-tab.tier-sv  { background: #ddd6fe; }
 .tier-tab.tier-mito { background: #99f6e4; }
+.tier-tab.tier-str { background: #fde68a; }
 /* Count chip: a touch lighter than the tab's own band so it reads as
    a pill but stays within the same colour family. */
 .tier-tab.tier-1a .tier-tab-count { background: #fecaca; }
@@ -1488,6 +1575,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .tier-tab.tier-cnv .tier-tab-count { background: #dbeafe; }
 .tier-tab.tier-sv  .tier-tab-count { background: #ede9fe; }
 .tier-tab.tier-mito .tier-tab-count { background: #ccfbf1; }
+.tier-tab.tier-str .tier-tab-count { background: #fef3c7; }
 
 .tier-tab-panels { padding: 0; }
 /* Only the active tier panel renders; the inner block-header (title +
@@ -1506,6 +1594,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .tier-panel.tier-cnv { background: #bfdbfe; }
 .tier-panel.tier-sv  { background: #ddd6fe; }
 .tier-panel.tier-mito { background: #99f6e4; }
+.tier-panel.tier-str { background: #fde68a; }
 .cat-block[class*="tier-"] > .block-header .title { font-weight: 600; }
 
 /* ---- CNV / SV variant cards ------------------------------------
@@ -1529,6 +1618,79 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .sv-type-pill.sv-type-INV { background: #ea580c; }
 .sv-type-pill.sv-type-INS { background: #7c3aed; }
 .sv-type-pill.sv-type-TRA { background: #6b7280; }
+
+/* STR card */
+.str-card {
+  border-left: 4px solid #d97706;
+}
+.str-card.str-class-pathogenic { border-left-color: #dc2626; }
+.str-card.str-class-intermediate { border-left-color: #f59e0b; }
+.str-card.str-class-no-threshold { border-left-color: #6b7280; }
+.str-card.str-class-normal { border-left-color: #16a34a; }
+.str-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.str-class-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+}
+.str-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.str-repeat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.str-repeat-grid > div {
+  background: #f9fafb;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.str-repeat-grid strong {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  margin-top: 2px;
+}
+.str-threshold {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 12px;
+}
+.str-detail {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.str-detail summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.str-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.str-detail-grid > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
 /* Mitochondria card: locus-type pill + heteroplasmy badge. */
 .mito-locus-pill {

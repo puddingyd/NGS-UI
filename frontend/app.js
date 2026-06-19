@@ -167,7 +167,7 @@ async function _loadSample(LIS_ID) {
   // Reset manual-toggle tracking between samples so defaultOpen applies fresh.
   toggledBlocks.clear();
 
-  // Staged loading: the core payload above carries empty CNV/SV + Mito
+  // Staged loading: the core payload above carries empty CNV/SV + Mito + STR + PGx
   // side-channels (aux_pending) and secondary SNV panel categories
   // (secondary_pending). Pull them in the background so the
   // SNV/Indel view + report sections appear immediately; each card
@@ -178,6 +178,8 @@ async function _loadSample(LIS_ID) {
     state.cnvPending = true;
     state.svPending = true;
     state.mitoPending  = true;
+    state.strPending = true;
+    state.pgxPending = true;
     state.secondaryPending = true;
     apiFetch(`/samples/${encodeURIComponent(sid)}/secondary-snv`)
       .then(aux => {
@@ -242,10 +244,38 @@ async function _loadSample(LIS_ID) {
         state.mitoPending = false;
         try { renderMitoTabBar(); } catch (_e) {}
       });
+    apiFetch(`/samples/${encodeURIComponent(sid)}/str`)
+      .then(aux => {
+        if (token !== state._auxLoadToken || !state.data) return;
+        if (aux) Object.assign(state.data, aux);
+        state.strPending = false;
+        try { renderStrTabBar(); } catch (_e) {}
+      })
+      .catch(() => {
+        if (token !== state._auxLoadToken) return;
+        state.strPending = false;
+        try { renderStrTabBar(); } catch (_e) {}
+      });
+    apiFetch(`/samples/${encodeURIComponent(sid)}/pgx`)
+      .then(aux => {
+        if (token !== state._auxLoadToken || !state.data) return;
+        if (aux) Object.assign(state.data, aux);
+        state.pgxPending = false;
+        try { renderPharmcatBlock("sec-pharmcat"); } catch (_e) {}
+        try { renderPharmcatBlock("cat-pharmcat-c"); } catch (_e) {}
+      })
+      .catch(() => {
+        if (token !== state._auxLoadToken) return;
+        state.pgxPending = false;
+        try { renderPharmcatBlock("sec-pharmcat"); } catch (_e) {}
+        try { renderPharmcatBlock("cat-pharmcat-c"); } catch (_e) {}
+      });
   } else {
     state.cnvPending = false;
     state.svPending = false;
     state.mitoPending  = false;
+    state.strPending = false;
+    state.pgxPending = false;
   }
 }
 
@@ -3867,6 +3897,7 @@ function renderCandidateSections() {
   updateInPanelCount();
   renderCnvSvTabBar();
   renderMitoTabBar();
+  renderStrTabBar();
 }
 
 function renderActiveSnvTier() {
@@ -4374,7 +4405,134 @@ function applyMitoTabActive() {
   });
 }
 
-// Click dispatch for all three tier-tab groups (SNV, CNV/SV, Mito).
+// ---------- STR tier tabs -----------------------------------------
+const STR_TIER_ORDER = ["STR-P", "STR-I", "STR-N"];
+const STR_TITLES = {
+  "STR-P": "Pathogenic",
+  "STR-I": "Intermediate / Borderline",
+  "STR-N": "Normal / No threshold",
+};
+let activeStrTab = null;
+
+function _strIdsForTier(tier) {
+  return (state.data?.str_categories && state.data.str_categories[tier]) || [];
+}
+
+function renderStrTabBar() {
+  const bar = document.getElementById("str-tab-bar");
+  if (!bar) return;
+  if (!STR_TIER_ORDER.includes(activeStrTab)) activeStrTab = null;
+  if (!activeStrTab) activeStrTab = "STR-P";
+  const loading = !!state.strPending;
+  bar.innerHTML = STR_TIER_ORDER.map(t => {
+    const active = t === activeStrTab ? " active" : "";
+    const ids = _strIdsForTier(t);
+    return `<button type="button" class="tier-tab tier-str${active}" data-tier="${t}">
+              <span class="tier-tab-title">${escapeHtml(STR_TITLES[t])}</span>
+              <span class="tier-tab-count">${loading ? "…" : "Total " + ids.length}</span>
+            </button>`;
+  }).join("");
+
+  STR_TIER_ORDER.forEach(tier => {
+    const panel = document.querySelector(`#str-tab-panels .tier-panel[data-tier="${tier}"]`);
+    if (!panel) return;
+    panel.innerHTML = "";
+    if (loading) {
+      const wrap = document.createElement("div");
+      wrap.className = "block-body";
+      wrap.innerHTML = `<div class="analysis-card-empty">載入中…</div>`;
+      panel.appendChild(wrap);
+      return;
+    }
+    const ids = _strIdsForTier(tier);
+    if (!ids.length) {
+      const empty = document.createElement("div");
+      empty.className = "block-body";
+      empty.innerHTML = `<div class="analysis-card-empty">${
+        tier === "STR-P" ? "（無 pathogenic STR）"
+        : tier === "STR-I" ? "（無 intermediate / borderline STR）"
+        : "（無 normal / no-threshold STR 資料）"
+      }</div>`;
+      panel.appendChild(empty);
+      return;
+    }
+    const body = document.createElement("div");
+    body.className = "block-body open";
+    ids.forEach((id, i) => {
+      const v = state.data?.str_variants?.[id];
+      if (!v) return;
+      body.appendChild(renderStrCard(v, id, { index: i + 1 }));
+    });
+    panel.appendChild(body);
+  });
+  applyStrTabActive();
+}
+
+function applyStrTabActive() {
+  const panels = document.getElementById("str-tab-panels");
+  if (!panels) return;
+  panels.querySelectorAll(".tier-panel").forEach(p => {
+    p.classList.toggle("active", p.dataset.tier === activeStrTab);
+  });
+}
+
+function _strClassificationClass(v) {
+  const c = String(v?.CLASSIFICATION || "").toLowerCase();
+  if (c === "pathogenic") return "str-class-pathogenic";
+  if (c === "intermediate" || c === "borderline") return "str-class-intermediate";
+  if (c === "no_threshold") return "str-class-no-threshold";
+  return "str-class-normal";
+}
+
+function _strThresholdParts(v) {
+  const parts = [];
+  if (v.BENIGN_MIN || v.BENIGN_MAX) {
+    parts.push(`Benign ${escapeHtml(v.BENIGN_MIN || "—")}–${escapeHtml(v.BENIGN_MAX || "—")}`);
+  }
+  if (v.INTERMEDIATE_MIN || v.INTERMEDIATE_MAX) {
+    parts.push(`Intermediate ${escapeHtml(v.INTERMEDIATE_MIN || "—")}–${escapeHtml(v.INTERMEDIATE_MAX || "—")}`);
+  }
+  if (v.PATHOGENIC_MIN || v.PATHOGENIC_MAX) {
+    parts.push(`Pathogenic ${escapeHtml(v.PATHOGENIC_MIN || "—")}–${escapeHtml(v.PATHOGENIC_MAX || "—")}`);
+  }
+  return parts.join(" · ");
+}
+
+function renderStrCard(v, id, opts = {}) {
+  const card = document.createElement("div");
+  card.className = `variant-card str-card ${_strClassificationClass(v)}`;
+  card.dataset.variantId = id;
+  const coord = [v.CHROM, v.POS && `${v.POS}-${v.END || v.POS}`].filter(Boolean).join(":");
+  const threshold = _strThresholdParts(v) || "Threshold not available";
+  card.innerHTML = `
+    <div class="variant-card-header str-card-header">
+      <div class="variant-title">
+        ${opts.index ? `<span class="rank-badge">${opts.index}</span>` : ""}
+        <span class="gene">${escapeHtml(v.GENE || "STR")}</span>
+        <span class="muted">${escapeHtml(v.STR_ID || "")}</span>
+      </div>
+      <span class="str-class-badge">${escapeHtml(v.CLASSIFICATION || "normal")}</span>
+    </div>
+    <div class="str-subtitle">${escapeHtml(v.DISEASE || "—")} · ${escapeHtml(v.INHERITANCE || "—")} · ${escapeHtml(v.TYPE || "—")} · ${escapeHtml(v.MOTIF || "—")}</div>
+    <div class="str-repeat-grid">
+      <div><span class="label">Allele 1</span><strong>${escapeHtml(v.REPCN_A1 || "—")}</strong></div>
+      <div><span class="label">Allele 2</span><strong>${escapeHtml(v.REPCN_A2 || "—")}</strong></div>
+      <div><span class="label">CI</span><strong>${escapeHtml(v.REPCI || "—")}</strong></div>
+      <div><span class="label">DP</span><strong>${escapeHtml(v.DP || "—")}</strong></div>
+    </div>
+    <div class="str-threshold">${threshold}</div>
+    <details class="str-detail">
+      <summary>詳細</summary>
+      <div class="str-detail-grid">
+        <div><span class="label">Locus structure</span><span>${escapeHtml(v.LOCUS_STRUCTURE || "—")}</span></div>
+        <div><span class="label">Coordinate</span><span>${escapeHtml(coord || "—")}</span></div>
+        <div><span class="label">Pipeline</span><span>${escapeHtml(v.PIPELINE || "—")}</span></div>
+      </div>
+    </details>`;
+  return card;
+}
+
+// Click dispatch for all tier-tab groups (SNV, CNV/SV, Mito, STR).
 // The tab's data-tier tells us which group, so the active-class toggle
 // stays scoped to that group's bar.
 document.addEventListener("click", ev => {
@@ -4389,6 +4547,9 @@ document.addEventListener("click", ev => {
   } else if (MITO_TIER_ORDER.includes(tier)) {
     barId = "mito-tab-bar"; current = activeMitoTab;
     setActive = t => { activeMitoTab = t; }; applyActive = applyMitoTabActive;
+  } else if (STR_TIER_ORDER.includes(tier)) {
+    barId = "str-tab-bar"; current = activeStrTab;
+    setActive = t => { activeStrTab = t; }; applyActive = applyStrTabActive;
   } else {
     barId = "tier-tab-bar"; current = activeTierTab;
     setActive = t => { activeTierTab = t; };
@@ -5170,9 +5331,12 @@ function renderPharmcatBlock(hostId) {
   host.innerHTML = "";
   host.style.display = "";
 
-  const pc = state.data?.pharmcat;
-  const genes = pc?.genes ? Object.values(pc.genes) : [];
-  genes.sort((a, b) => String(a.gene || "").localeCompare(String(b.gene || "")));
+  const pc = state.data?.pgx || state.data?.pharmcat || {};
+  const geneOrder = Array.isArray(pc.gene_order)
+    ? pc.gene_order
+    : (pc.genes ? Object.keys(pc.genes).sort() : []);
+  const genes = geneOrder.map(g => pc.genes?.[g]).filter(Boolean);
+  const loading = !!state.pgxPending;
 
   // Mark the block as data-bearing so the CSS only paints the gray header
   // background when PharmCAT actually returned something.
@@ -5186,16 +5350,18 @@ function renderPharmcatBlock(hostId) {
   const header = document.createElement("div");
   header.className = "block-header" + (wasOpen ? " open" : "");
   header.innerHTML = `
-    <span><span class="arrow"></span><span class="title">Pharmacogenomics</span></span>
-    <span class="count">${genes.length}</span>`;
+    <span><span class="arrow"></span><span class="title">PGx / PharmCAT</span></span>
+    <span class="count">${loading ? "…" : genes.length}</span>`;
   host.appendChild(header);
 
   const body = document.createElement("div");
   body.className = "block-body" + (wasOpen ? " open" : "");
-  if (!genes.length) {
-    body.innerHTML = `<div class="muted">尚無 PharmCAT 結果。</div>`;
+  if (loading) {
+    body.innerHTML = `<div class="muted">PGx 載入中…</div>`;
+  } else if (!genes.length) {
+    body.innerHTML = `<div class="muted">尚無 PGx / PharmCAT 結果。</div>`;
   } else {
-    body.innerHTML = renderPharmcatBody(pc, genes);
+    body.innerHTML = renderPharmcatBody(pc);
   }
   host.appendChild(body);
 
@@ -5207,222 +5373,146 @@ function renderPharmcatBlock(hostId) {
   });
 }
 
-// PharmCAT genes are split into "Clinically actionable" (the call carries a
-// drug-relevant signal) and "Routine" (the call is benign / reference / a
-// negative HLA screen / Uncertain Susceptibility / etc.).
-//
-// Phenotype-based vetoes run BEFORE the drug-rec presence check so that
-// e.g. RYR1 (Uncertain Susceptibility) and HLA-B (only *15:02/*57:01/*58:01
-// negative) stay in Routine even though PharmCAT lists them as implicated
-// for desflurane / allopurinol / etc.
-function isPharmcatActionable(gene, recsByGene) {
-  const phenotype = String(gene.phenotype || "").trim().toLowerCase();
-  const a1 = String(gene.allele1_function || "").trim().toLowerCase();
-  const a2 = String(gene.allele2_function || "").trim().toLowerCase();
-  const sym = String(gene.gene || "");
-
-  // Vetoes — never actionable regardless of drug rec presence.
-  if (phenotype.includes("uncertain susceptibility")) return false;
-  if (sym.startsWith("HLA") && !/\bpositive\b/.test(phenotype)) return false;
-  if (phenotype.includes("metabolizer") &&
-      (phenotype.includes("normal metabolizer") ||
-       phenotype.includes("indeterminate") ||
-       phenotype.includes("unknown"))) return false;
-  // G6PD writes the phenotype as bare "Normal" rather than "Normal Metabolizer";
-  // every CPIC drug rec for G6PD Normal is "No reason to avoid based on G6PD
-  // status" so it stays in Routine alongside the other Normal Metabolizers.
-  if (phenotype === "normal") return false;
-  if (phenotype.includes("function") && phenotype.includes("normal function")) return false;
-  if (sym === "CFTR" && /non-respons/.test(phenotype)) return false;
-  if (sym === "MT-RNR1" && !/increased risk/.test(phenotype)) return false;
-
-  // Positive signals.
-  if ((recsByGene[gene.gene] || []).length > 0) return true;
-  if (phenotype.includes("metabolizer")) return true;        // already filtered Normal/Indet/Unk above
-  if (phenotype.includes("function"))    return true;        // already filtered Normal function
-  if (sym.startsWith("HLA"))             return true;        // contains "positive"
-  if (sym === "MT-RNR1")                 return true;        // contains "increased risk"
-  if (sym === "CFTR")                    return /respons/.test(phenotype);
-  if (sym === "VKORC1") {
-    return /\baa\b/.test(phenotype)
-        || /coumarin sensitivity/.test(a1)
-        || /coumarin sensitivity/.test(a2);
-  }
-  if (phenotype.includes("susceptibility")) return true;     // already filtered Uncertain
-  return false;
-}
-
-function renderPharmcatBody(pc, genes) {
-  const recs = Array.isArray(pc.recommendations) ? pc.recommendations : [];
-  const recsByGene = {};
-  for (const r of recs) {
-    // Older webdata writes implicated as a bare string when there's exactly
-    // one gene (jsonlite auto_unbox); normalise so for…of doesn't iterate
-    // characters of "CYP3A5".
-    const imp = Array.isArray(r.implicated)
-      ? r.implicated
-      : (r.implicated ? [r.implicated] : []);
-    for (const g of imp) {
-      if (!recsByGene[g]) recsByGene[g] = [];
-      recsByGene[g].push(r);
-    }
-  }
-
-  const actionable = [];
-  const routine = [];
-  for (const g of genes) {
-    if (isPharmcatActionable(g, recsByGene)) actionable.push(g);
-    else routine.push(g);
-  }
-
-  const ts = pc.timestamp
-    ? `<div class="muted pharmcat-ts">Generated ${escapeHtml(pc.timestamp)}</div>`
-    : "";
-
+function renderPharmcatBody(pc) {
+  const summary = pc.summary || {};
+  const meta = [
+    pc.timestamp ? `Generated ${escapeHtml(pc.timestamp)}` : "",
+    pc.pharmcat_version ? `PharmCAT ${escapeHtml(pc.pharmcat_version)}` : "",
+    pc.data_version ? `Data ${escapeHtml(pc.data_version)}` : "",
+  ].filter(Boolean).join(" · ");
+  const summaryHtml = `<div class="pgx-summary">
+    <div><span class="label">Called genes</span><strong>${escapeHtml(String(summary.called_genes ?? 0))}</strong></div>
+    <div><span class="label">Actionable</span><strong>${escapeHtml(String(summary.actionable_genes ?? 0))}</strong></div>
+    <div><span class="label">Recommendations</span><strong>${escapeHtml(String(summary.recommendations ?? 0))}</strong></div>
+    <div><span class="label">Strong</span><strong>${escapeHtml(String(summary.strong_recommendations ?? 0))}</strong></div>
+  </div>`;
+  const actionable = (pc.actionable || []).map(gene => pc.genes?.[gene]).filter(Boolean);
+  const routine = (pc.routine || []).map(gene => pc.genes?.[gene]).filter(Boolean);
+  const additional = (pc.additional_genes || []).map(gene => pc.genes?.[gene]).filter(Boolean);
   const actionableHtml = actionable.length
     ? `<div class="pgx-section">
          <h4 class="pgx-heading">Clinically actionable</h4>
-         ${actionable.map(g => renderPharmcatActionableGene(g, recsByGene[g.gene] || [])).join("")}
+         ${actionable.map(g => renderPharmcatGene(g, { compact: false })).join("")}
        </div>`
     : "";
-
   const routineHtml = routine.length
     ? `<div class="pgx-section pgx-routine">
-         <h4 class="pgx-heading">Routine (no special action)</h4>
+         <h4 class="pgx-heading">Routine / negative screens</h4>
          ${renderPharmcatRoutine(routine)}
        </div>`
     : "";
-
-  const empty = !actionable.length && !routine.length
-    ? `<div class="muted">尚無 PharmCAT 結果。</div>`
+  const additionalHtml = additional.length
+    ? `<details class="pgx-additional">
+         <summary>Additional PharmCAT genes <span class="count">${additional.length}</span></summary>
+         <div class="pgx-additional-body">
+           ${additional.map(g => renderPharmcatAdditionalGene(g)).join("")}
+         </div>
+       </details>`
     : "";
-
-  return `${ts}${actionableHtml}${routineHtml}${empty}`;
+  const ts = meta ? `<div class="muted pharmcat-ts">${meta}</div>` : "";
+  return `${summaryHtml}${ts}${actionableHtml}${routineHtml}${additionalHtml}`;
 }
 
-function renderPharmcatActionableGene(g, recs) {
-  const heading = `${escapeHtml(g.gene || "")} — `
-    + `${escapeHtml(displayPhenotype(g))}`
-    + (g.label && g.label !== g.phenotype
-        ? ` <span class="muted">(${escapeHtml(g.label)})</span>`
-        : "");
-  // PharmCAT's drugRecommendation text is already valid HTML (with <ul>,
-  // <li>, <a>, &quot;, &gt;, …); pass it straight to innerHTML. Source label
-  // and drug name are plain strings so they still get escapeHtml.
-  const recItems = recs.map(r => {
-    const items = (r.items || []).map(it => {
-      const src = it.source ? ` <span class="muted">(${escapeHtml(it.source)})</span>` : "";
-      return `<div class="pgx-rec-item">${it.text || ""}${src}</div>`;
+function _pgxGeneSubtitle(g) {
+  const parts = [g.diplotype, g.phenotype].filter(Boolean);
+  if (g.activity_score) parts.push(`AS ${g.activity_score}`);
+  if (g.outside_caller) parts.push(g.outside_caller);
+  if (g.mtrn1_risk) parts.push(`MT-RNR1 ${g.mtrn1_risk}`);
+  return parts.join(" · ") || "—";
+}
+
+function _pgxEvidenceBadges(g) {
+  const counts = g.evidence_counts || {};
+  return Object.keys(counts).sort().map(k =>
+    `<span class="pgx-evidence-badge">${escapeHtml(k)} ${escapeHtml(String(counts[k]))}</span>`
+  ).join("");
+}
+
+function renderPharmcatGene(g) {
+  const drugHtml = (g.drugs || []).map(drug => {
+    const recs = (drug.recommendations || []).map(rec => {
+      const levels = [rec.source, rec.evidence, rec.cpic_level && rec.cpic_level !== "." ? `CPIC ${rec.cpic_level}` : "", rec.dpwg_level && rec.dpwg_level !== "." ? `DPWG ${rec.dpwg_level}` : ""].filter(Boolean).join(" · ");
+      const implication = rec.implication ? `<div class="pgx-implication">${escapeHtml(rec.implication)}</div>` : "";
+      return `<div class="pgx-rec-item">
+        <div class="pgx-rec-meta">${escapeHtml(levels || "Recommendation")}</div>
+        <div>${escapeHtml(rec.recommendation || "—")}</div>
+        ${implication}
+      </div>`;
     }).join("");
     return `<div class="pgx-rec">
-              <div class="pgx-drug">${escapeHtml(r.drug)}</div>
-              ${items}
-            </div>`;
+      <div class="pgx-drug">${escapeHtml(drug.drug || "general")}</div>
+      ${recs}
+    </div>`;
   }).join("");
-  const recsBlock = recs.length
-    ? `<div class="pgx-recs">${recItems}</div>`
-    : `<div class="muted">No drug-level recommendation in PharmCAT report.</div>`;
   return `<div class="pgx-gene">
-            <div class="pgx-gene-head">${heading}</div>
-            ${recsBlock}
-            ${renderPharmcatGeneDetails(g)}
-          </div>`;
+    <div class="pgx-gene-head">
+      <span>${escapeHtml(g.gene || "")}</span>
+      <span class="muted">${escapeHtml(_pgxGeneSubtitle(g))}</span>
+      <span class="pgx-evidence">${_pgxEvidenceBadges(g)}</span>
+    </div>
+    <div class="pgx-recs">${drugHtml || `<div class="muted">No drug-level recommendation.</div>`}</div>
+    ${renderPharmcatGeneDetails(g)}
+  </div>`;
 }
 
-// "n/a" / empty phenotype gets replaced with the allele's clinical-function
-// label (so IFNL3 reads "Favorable response allele" instead of "n/a"); G6PD's
-// "Normal" is rewritten to "Normal Metabolizer" so it merges into the same
-// routine bucket as the CYPs.
-function displayPhenotype(g) {
-  const raw = String(g.phenotype || "").trim();
-  const lower = raw.toLowerCase();
-  if (!raw || lower === "n/a" || lower === "—") {
-    const fn = (g.allele1_function || g.allele2_function || "").trim();
-    if (fn) return fn;
-    if (g.label) return g.label;  // CYP4F2 etc.: show diplotype if nothing else
-  }
-  if (lower === "normal") return "Normal Metabolizer";
-  return raw || "—";
-}
-
-// HLA rows always get their own line because the diplotype label differs per
-// gene; everything else is grouped by displayPhenotype, so e.g. RYR1 and
-// CACNA1S (both Uncertain Susceptibility) collapse into a single row.
 function renderPharmcatRoutine(genes) {
-  const groups   = new Map();   // key (lowercased label) → { label, items }
-  const hlaRows  = [];
-
+  const groups = new Map();
   for (const g of genes) {
-    const sym = String(g.gene || "");
-    const label = displayPhenotype(g);
-    if (sym.startsWith("HLA")) {
-      hlaRows.push({ gene: sym, dip: g.label || "—", phenotype: g.phenotype || "" });
-      continue;
-    }
+    const label = g.phenotype || "Other";
     const key = label.toLowerCase();
     if (!groups.has(key)) groups.set(key, { label, items: [] });
-    groups.get(key).items.push({ gene: sym, dip: g.label || "" });
+    groups.get(key).items.push(g);
   }
-
-  const order = key => {
-    if (key.includes("normal metabolizer")) return 0;
-    if (key.includes("uncertain"))          return 1;
-    return 2;
-  };
-  const sortedKeys = [...groups.keys()].sort((a, b) => {
-    const oa = order(a), ob = order(b);
-    return oa !== ob ? oa - ob : a.localeCompare(b);
-  });
-
-  const groupRows = sortedKeys.map(key => {
-    const { label, items } = groups.get(key);
-    const list = items.map(it => {
-      const dip = it.dip
-        ? ` <span class="muted">(${escapeHtml(it.dip)})</span>`
-        : "";
-      return `${escapeHtml(it.gene)}${dip}`;
-    }).join(", ");
-    return `<div class="pgx-routine-row"><strong>${escapeHtml(label)}:</strong> ${list}</div>`;
+  return [...groups.values()].map(group => {
+    const list = group.items.map(g => {
+      const subtitle = _pgxGeneSubtitle(g);
+      return `<span class="pgx-routine-chip"><strong>${escapeHtml(g.gene || "")}</strong>${subtitle ? ` <span class="muted">${escapeHtml(subtitle)}</span>` : ""}</span>`;
+    }).join("");
+    return `<div class="pgx-routine-row"><strong>${escapeHtml(group.label)}:</strong> ${list}</div>`;
   }).join("");
+}
 
-  const hlaHtml = hlaRows.map(h => {
-    const ph = h.phenotype
-      ? ` <span class="muted">(${escapeHtml(h.phenotype)})</span>`
-      : "";
-    return `<div class="pgx-routine-row"><strong>${escapeHtml(h.gene)}</strong> — ${escapeHtml(h.dip)}${ph}</div>`;
-  }).join("");
-
-  return `${groupRows}${hlaHtml}`;
+function renderPharmcatAdditionalGene(g) {
+  return `<div class="pgx-additional-gene">
+    <div class="pgx-gene-head">
+      <span>${escapeHtml(g.gene || "")}</span>
+      <span class="muted">${escapeHtml(_pgxGeneSubtitle(g))}</span>
+    </div>
+    ${renderPharmcatGeneDetails(g)}
+  </div>`;
 }
 
 function renderPharmcatGeneDetails(g) {
-  // Re-uses the per-gene allele / variant detail block from the prior
-  // implementation, now nested inside <details> for actionable genes.
   const fnLine = (name, fn) => {
     if (!name && !fn) return "";
     const left  = name ? escapeHtml(name) : "—";
     const right = fn   ? ` <span class="muted">(${escapeHtml(fn)})</span>` : "";
     return `<div>${left}${right}</div>`;
   };
-  const vrows = (g.variants || []).map(v => `
+  const details = g.details || {};
+  const vrows = (details.variants || []).map(v => `
     <tr>
       <td>${escapeHtml(v.rsid || "—")}</td>
       <td>${escapeHtml(v.chr || "")}:${escapeHtml(String(v.pos ?? ""))}</td>
       <td>${escapeHtml(v.call || "")}</td>
       <td>${escapeHtml(v.alleles || "")}</td>
     </tr>`).join("");
-  const uncalled = (g.uncalled && g.uncalled.length)
-    ? `<div class="muted">Uncalled: ${g.uncalled.map(escapeHtml).join(", ")}</div>`
+  const uncalled = (details.uncalled && details.uncalled.length)
+    ? `<div class="muted">Uncalled: ${details.uncalled.map(escapeHtml).join(", ")}</div>`
+    : "";
+  const messages = (details.messages && details.messages.length)
+    ? `<div class="muted">Messages: ${details.messages.map(m => escapeHtml(String(m))).join(", ")}</div>`
     : "";
   const variants = vrows
     ? `<table class="pharmcat-variants"><thead><tr><th>rsID</th><th>Position</th><th>Call</th><th>Alleles</th></tr></thead><tbody>${vrows}</tbody></table>`
     : "";
   return `<details class="pgx-detail"><summary>詳細</summary>
             <div class="pharmcat-alleles">
-              ${fnLine(g.allele1_name, g.allele1_function)}
-              ${fnLine(g.allele2_name, g.allele2_function)}
+              ${fnLine(details.allele1_name, details.allele1_function)}
+              ${fnLine(details.allele2_name, details.allele2_function)}
             </div>
             ${uncalled}
+            ${messages}
             ${variants}
           </details>`;
 }
@@ -6935,30 +7025,13 @@ function pdfWriteSection(w, title, ids, dataVariants, panelKey) {
 // no per-gene details (mirrors the toggle the user keeps closed in the UI).
 function pdfWritePharmacogenomics(w, pc) {
   w.heading("藥物基因體學", 2);
-  if (!pc || !pc.genes) {
+  if (!pc || !pc.genes || !Object.keys(pc.genes).length) {
     w.para("（無 PharmCAT 結果）", { indent: 4 });
     w.gap(4);
     return;
   }
-  // Build the same actionable/routine split the web UI uses.
-  const recs = Array.isArray(pc.recommendations) ? pc.recommendations : [];
-  const recsByGene = {};
-  for (const r of recs) {
-    const imp = Array.isArray(r.implicated)
-      ? r.implicated
-      : (r.implicated ? [r.implicated] : []);
-    for (const g of imp) {
-      if (!recsByGene[g]) recsByGene[g] = [];
-      recsByGene[g].push(r);
-    }
-  }
-  const allGenes = Object.values(pc.genes);
-  allGenes.sort((a, b) => String(a.gene || "").localeCompare(String(b.gene || "")));
-  const actionable = [], routine = [];
-  for (const g of allGenes) {
-    if (isPharmcatActionable(g, recsByGene)) actionable.push(g);
-    else routine.push(g);
-  }
+  const actionable = (pc.actionable || []).map(gene => pc.genes?.[gene]).filter(Boolean);
+  const routine = (pc.routine || []).map(gene => pc.genes?.[gene]).filter(Boolean);
 
   // Actionable
   w.doc.setFont(PDF_FONT_NAME, "bold");
@@ -6970,30 +7043,25 @@ function pdfWritePharmacogenomics(w, pc) {
   w.doc.setTextColor(20, 20, 20);
 
   for (const g of actionable) {
-    const dispPheno = displayPhenotype(g);
-    const labelSuffix = (g.label && g.label !== g.phenotype) ? `  (${g.label})` : "";
-    w.para(`${g.gene} — ${dispPheno}${labelSuffix}`, { size: 10 });
-    const recsList = recsByGene[g.gene] || [];
-    if (!recsList.length) {
+    w.para(`${g.gene} — ${_pgxGeneSubtitle(g)}`, { size: 10 });
+    const drugs = g.drugs || [];
+    if (!drugs.length) {
       w.para("（PharmCAT 報告中尚無藥物層級建議）", { size: 9, indent: 6 });
     } else {
-      for (const r of recsList) {
+      for (const drug of drugs) {
         w.doc.setFont(PDF_FONT_NAME, "normal");
         w.doc.setFontSize(10);
         const dh = 10 * 0.55 + 2;
         if (w.y + dh > w.pageH - w.margin) { w.doc.addPage(); w.y = w.margin; }
         w.doc.setTextColor(70, 70, 70);
-        w.doc.text("• " + r.drug, w.margin + 6, w.y + dh * 0.7);
+        w.doc.text("• " + (drug.drug || "general"), w.margin + 6, w.y + dh * 0.7);
         w.doc.setTextColor(20, 20, 20);
         w.y += dh;
-        for (const it of (r.items || [])) {
-          // Strip HTML tags from the rec text for the PDF (jsPDF can't render them).
-          const txt = String(it.text || "")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<")
-            .replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+        for (const rec of (drug.recommendations || [])) {
+          const txt = String(rec.recommendation || "").replace(/\s+/g, " ").trim();
           if (!txt) continue;
-          w.para(`(${it.source || ""}) ${txt}`, { size: 9, indent: 14 });
+          const label = [rec.source, rec.evidence].filter(Boolean).join(" / ");
+          w.para(`(${label || "PGx"}) ${txt}`, { size: 9, indent: 14 });
         }
       }
     }
@@ -7002,7 +7070,7 @@ function pdfWritePharmacogenomics(w, pc) {
   if (!actionable.length) w.para("（無）", { size: 9, indent: 6 });
   w.gap(4);
 
-  // Routine — collapse same-phenotype groups, HLA per-row, just like the UI.
+  // Routine.
   w.doc.setFont(PDF_FONT_NAME, "bold");
   w.doc.setFontSize(12);
   w.doc.setTextColor(60, 90, 60);
@@ -7012,33 +7080,20 @@ function pdfWritePharmacogenomics(w, pc) {
   w.doc.setTextColor(20, 20, 20);
 
   const groups = new Map();
-  const hlaRows = [];
   for (const g of routine) {
     const sym = String(g.gene || "");
-    const label = displayPhenotype(g);
-    if (sym.startsWith("HLA")) {
-      hlaRows.push({ gene: sym, dip: g.label || "—", phenotype: g.phenotype || "" });
-      continue;
-    }
+    const label = g.phenotype || "Other";
     const key = label.toLowerCase();
     if (!groups.has(key)) groups.set(key, { label, items: [] });
-    groups.get(key).items.push({ gene: sym, dip: g.label || "" });
+    groups.get(key).items.push({ gene: sym, subtitle: _pgxGeneSubtitle(g) });
   }
-  const order = key => key.includes("normal metabolizer") ? 0 : key.includes("uncertain") ? 1 : 2;
-  const sortedKeys = [...groups.keys()].sort((a, b) => {
-    const oa = order(a), ob = order(b);
-    return oa !== ob ? oa - ob : a.localeCompare(b);
-  });
+  const sortedKeys = [...groups.keys()].sort();
   for (const key of sortedKeys) {
     const { label, items } = groups.get(key);
-    const list = items.map(it => it.dip ? `${it.gene} (${it.dip})` : it.gene).join(", ");
+    const list = items.map(it => it.subtitle ? `${it.gene} (${it.subtitle})` : it.gene).join(", ");
     w.para(`${label}: ${list}`, { size: 10, indent: 4 });
   }
-  for (const h of hlaRows) {
-    const ph = h.phenotype ? `  (${h.phenotype})` : "";
-    w.para(`${h.gene} — ${h.dip}${ph}`, { size: 10, indent: 4 });
-  }
-  if (!groups.size && !hlaRows.length) w.para("（無）", { size: 9, indent: 6 });
+  if (!groups.size) w.para("（無）", { size: 9, indent: 6 });
   w.gap(4);
 }
 
@@ -7074,7 +7129,7 @@ async function buildScreeningPDF() {
   pdfWriteSection(w, "重大疾病風險篩檢（美國遺傳醫學會 ACMG 次要發現基因）", cats.acmg_sf,   data.variants, "acmg_sf");
   pdfWriteSection(w, "主動性篩檢",                                          cats.proactive, data.variants, "proactive");
   pdfWriteSection(w, "帶因者篩檢",                                          cats.carrier,   data.variants, "carrier");
-  pdfWritePharmacogenomics(w, data.pharmcat);
+  pdfWritePharmacogenomics(w, data.pgx || data.pharmcat);
 
   // 檢測方法說明 — fixed wording for the screening report (assumes WGS,
   // since that's what's used for screening). Numbered list rendered with

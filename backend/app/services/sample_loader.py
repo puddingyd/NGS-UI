@@ -1297,6 +1297,65 @@ def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
     return {"mito_variants": mv, "mito_categories": mc}
 
 
+def load_sample_str(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader: STR side-channel for a sample."""
+    started = time.perf_counter()
+    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    if not sub.is_dir():
+        return None
+    from ..adapters.str_tsv import STR_TIERS, load_str_tsv
+    str_path = sub / "str.tsv"
+    if not str_path.exists():
+        str_path = sub / "str.annotated.tsv"
+    variants, categories = (
+        load_str_tsv(str_path)
+        if str_path.exists() else ({}, {t: [] for t in STR_TIERS})
+    )
+    _log_perf(
+        "sample.str",
+        started,
+        sample=sample_id,
+        size=_fmt_size(str_path),
+        variants=len(variants),
+    )
+    return {
+        "str_variants": variants,
+        "str_categories": categories,
+        "str_pending": False,
+    }
+
+
+def load_sample_pgx(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader: PGx / PharmCAT side-channel for a sample."""
+    started = time.perf_counter()
+    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    if not sub.is_dir():
+        return None
+    from ..adapters.pgx_tsv import load_pgx
+    pgx_path = sub / "pgx.tsv"
+    if not pgx_path.exists():
+        hits = sorted(sub.glob("*.pgx.tsv"))
+        pgx_path = hits[0] if hits else pgx_path
+    pharmcat_path = sub / "pharmcat.report.json"
+    if not pharmcat_path.exists():
+        hits = sorted(sub.glob("*pharmcat*.json"))
+        pharmcat_path = hits[0] if hits else pharmcat_path
+    pgx = load_pgx(pgx_path, pharmcat_path if pharmcat_path.exists() else None)
+    _log_perf(
+        "sample.pgx",
+        started,
+        sample=sample_id,
+        pgx_size=_fmt_size(pgx_path),
+        pharmcat_size=_fmt_size(pharmcat_path),
+        genes=len(pgx.get("gene_order") or []),
+    )
+    return {
+        "pgx": pgx,
+        "pharmcat": pgx,
+        "pgx_pending": False,
+    }
+
+
 def _sample_snv_sidecar_context(sample_id: str, version: str | None = None):
     sub = TERTIARY_OUTPUT_ROOT / sample_id
     if not sub.is_dir():
@@ -1611,6 +1670,9 @@ def load_sample(sample_id: str, version: str | None = None,
         "sv_categories":     sv_categories,
         "mito_variants":     mito_variants,
         "mito_categories":   mito_categories,
+        "str_variants":      {},
+        "str_categories":    {},
+        "pgx":               {},
         # When True the CNV/SV + Mito side-channels above are empty
         # placeholders; the frontend fetches them from the dedicated
         # /samples/{id}/cnv, /samples/{id}/sv, and /samples/{id}/mito endpoints.

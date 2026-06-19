@@ -153,6 +153,26 @@ def _find_pipeline_mito_tsv(*sample_ids: str) -> Path | None:
     return None
 
 
+def _find_pipeline_str_tsv(*sample_ids: str) -> Path | None:
+    """Look for v3.x 05_str/<SID>.str.tsv output."""
+    candidates: list[str] = []
+    for sid in sample_ids:
+        if not sid:
+            continue
+        if sid not in candidates:
+            candidates.append(sid)
+    for s in candidates:
+        p = PIPELINE_OUT_ROOT / s / "05_str" / f"{s}.str.tsv"
+        if p.is_file():
+            return p
+        d = PIPELINE_OUT_ROOT / s / "05_str"
+        if d.is_dir():
+            hit = next(d.glob("*.str.tsv"), None)
+            if hit is not None and hit.is_file():
+                return hit
+    return None
+
+
 def _find_pipeline_annotsv_tsv(kind: str, *sample_ids: str) -> Path | None:
     """Look for v3.2 06_cnv_sv/<SID>.<kind>.annotated.tsv output."""
     candidates: list[str] = []
@@ -209,6 +229,35 @@ def _find_pipeline_pgx_output(*sample_ids: str) -> Path | None:
                 if hit is not None:
                     return hit
     return None
+
+
+def _find_pipeline_pgx_files(*sample_ids: str) -> dict[str, Path]:
+    """Return known 07_pgx files keyed by their UI-side destination name."""
+    wanted = {
+        "pgx.tsv": "*.pgx.tsv",
+        "pharmcat.report.json": "*.pharmcat.report.json",
+        "outside_calls.tsv": "*.outside_calls.tsv",
+        "stellarpgx.tsv": "*.stellarpgx.tsv",
+        "optitype.tsv": "*.optitype.tsv",
+    }
+    found: dict[str, Path] = {}
+    for sid in sample_ids:
+        if not sid:
+            continue
+        d = PIPELINE_OUT_ROOT / sid / "07_pgx"
+        if not d.is_dir():
+            continue
+        for dst_name, pattern in wanted.items():
+            if dst_name in found:
+                continue
+            exact = d / f"{sid}.{dst_name}"
+            if exact.is_file():
+                found[dst_name] = exact
+                continue
+            hit = next(d.glob(pattern), None)
+            if hit is not None and hit.is_file():
+                found[dst_name] = hit
+    return found
 
 
 def _pipeline_outputs_for(
@@ -950,6 +999,26 @@ def main() -> int:
                 except Exception:
                     pass
                 _log(f"[copy] {sid}: {mito_src} → {mito_dst}")
+            str_src = _find_pipeline_str_tsv(sid, source_sid)
+            if str_src is None:
+                _log(
+                    f"[copy] {sid}: STR output not found under "
+                    f"{PIPELINE_OUT_ROOT}/{source_sid}/05_str/"
+                )
+            else:
+                str_dst = sample_dir / "str.tsv"
+                shutil.copyfile(str_src, str_dst)
+                _log(f"[copy] {sid}: {str_src} → {str_dst}")
+            pgx_files = _find_pipeline_pgx_files(sid, source_sid)
+            if not pgx_files and not args.without_pgx:
+                _log(
+                    f"[copy] {sid}: PGx outputs not found under "
+                    f"{PIPELINE_OUT_ROOT}/{source_sid}/07_pgx/"
+                )
+            for dst_name, pgx_src in sorted(pgx_files.items()):
+                pgx_dst = sample_dir / dst_name
+                shutil.copyfile(pgx_src, pgx_dst)
+                _log(f"[copy] {sid}: {pgx_src} → {pgx_dst}")
             for kind in ("cnv", "sv"):
                 key = f"{kind}.annotated.tsv"
                 annotsv_src = outputs.get(key) or _find_pipeline_annotsv_tsv(kind, sid, source_sid)

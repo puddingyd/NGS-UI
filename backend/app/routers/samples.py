@@ -339,6 +339,24 @@ def get_sample_mito(sample_id: str, version: str | None = None):
     return payload
 
 
+@router.get("/samples/{sample_id}/str")
+def get_sample_str(sample_id: str, version: str | None = None):
+    """STR side-channel for the staged loader."""
+    payload = sample_loader.load_sample_str(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
+@router.get("/samples/{sample_id}/pgx")
+def get_sample_pgx(sample_id: str, version: str | None = None):
+    """PGx / PharmCAT side-channel for the staged loader."""
+    payload = sample_loader.load_sample_pgx(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
 @router.get("/samples/{sample_id}/secondary-snv")
 def get_sample_secondary_snv(sample_id: str, version: str | None = None):
     """ACMG SF / Proactive / Carrier SNV side-channel for staged loading."""

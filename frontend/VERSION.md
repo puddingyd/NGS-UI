@@ -1,30 +1,22 @@
 # 歡迎使用 NGS 分析平台
 
-成大醫院基因醫學部 NGS 分析平台是院內 NGS 變異判讀工具，用來整合二級 pipeline 產出的 SNV/Indel、CNV/SV 與 Mitochondria 變異資料，進行三級分析 pipeline，並協助醫師及生物資訊工程師載入個案、檢視變異、標記變異、撰寫判讀意見，並輸出診斷報告。
+成大醫院基因醫學部 NGS 分析平台是院內 NGS 變異判讀工具，用來整合二級 pipeline 產出的 SNV/Indel、CNV/SV、Mitochondria、STR 與 PGx 變異資料，進行三級分析 pipeline，並協助醫師及生物資訊工程師載入個案、檢視變異、標記變異、撰寫判讀意見，並輸出診斷報告。
 
 請先在上方搜尋既有個案，或使用「載入新個案」登錄 pipeline 已輸出的樣本，或使用右上方「三級分析」開始新的樣本分析。
 
 ## 版本紀錄
 
-### v5.2 — 2026-06-18
+### v6.0 — 2026-06-19
 
-- SNV/Indel variant card 支援同一 genomic variant 的多 transcript annotation；預設顯示 consequence 較嚴重者，同嚴重度時優先 MANE，reviewer 可在卡片上切換 transcript，DOCX 報告會使用所選 transcript。
-- 三級分析 worker 相容 pipeline v3.5 的 64 欄 SNV/Indel TSV（移除 `MANE_ALL`），不再用舊 v3.1 的 65 欄檢查誤擋完成的分析。
-- 三級分析 post-processing 會用 MANE summary 將 Ensembl transcript 對應到 RefSeq；卡片 HGVS 優先顯示 RefSeq，DOCX transcript 欄同時列出 Ensembl 與 RefSeq。
-- PDF 基因清單改為按下輸出 PDF 時才讀取，避免首次載入個案時預先載入 phenotype gene map。
-- WGS 診斷報告的基因清單不再輸出 dead-zone exon 標註；dead-zone 僅保留於主畫面與 phenotype 工具查詢。
-- 「輸出 PDF」下方新增本次檢測基因清單，並可和 DOCX 一樣選擇按 HPO/panel 分組或全部合併去重。
-- 輸入臨床表徵工具載入下一位病人既有資料時，會先清空上一位病人的 HPO terms 與 panel 選擇。
-- 三級分析清單新增 sample ID 搜尋框，可即時篩選 sample/source ID。
-- SNV/Indel 卡片的外部連結固定靠右；多 transcript 選擇改為 HGVS 旁的小三角展開選單。
-- Exomiser/LIRICAL 的 TSV-to-VCF 會依 genomic variant 去重，避免 v3.5 多 transcript rows 產生重複 VCF records；RQ 已失敗但 sidecar 停在 running 的 job 也會正確顯示 failed。
+- 新增 STR 分析區，依 Pathogenic、Intermediate / Borderline、Normal / No threshold 分頁顯示。
+- 新增 Pharmacogenomics 區塊，分成 Clinically actionable、Routine / negative screens 與 Additional PharmCAT genes。
+- SNV/Indel variant card 支援同一 genomic variant 的多 transcript annotation；使用者可在卡片上切換 transcript。
 
 ### v5.1 — 2026-06-15
 
-- 右上角新增「二級分析」工具，可搜尋 WES/WGS FASTQ、建立 samplesheet，並產生可貼到 DGX2 執行的 tmux 指令。
+- 新增「二級分析」工具，可搜尋 WES/WGS FASTQ、建立 samplesheet，並產生可貼到 DGX2 執行的 tmux 指令。
 - 二級分析支援批次加入與「加入同批全部樣本」；WGS 一律使用 lane FASTQ 並輸出 lane 欄；reanalysis 可改 samplesheet 的 Sample ID，但 FASTQ 直接指向原始檔。
-- 輸入臨床表徵工具新增 Clinical presentation 欄位，依病歷號自動儲存並帶入主畫面；同一病歷號的不同檢體會共用同一份內容，主畫面修改後也會同步寫回供後續載入。
-- WGS Dead zone 改用 DRAGEN 10X 臨床門檻；主畫面、輸入臨床表徵工具與診斷報告的 dead-zone 標註同步顯示 10X。
+- 輸入臨床表徵工具新增 Clinical presentation 欄位，依病歷號自動儲存並帶入主畫面。
 
 ### v5.0 — 2026-06-14
 
