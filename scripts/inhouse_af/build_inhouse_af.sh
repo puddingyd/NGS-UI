@@ -213,14 +213,16 @@ else
   fi
   GLNEXUS_CMD+=(--config "$CONFIG" --dir "$GLDB" --threads "$THREADS" --mem-gbytes "$MEM_GB" --list "$EFF_LIST")
   [ -n "$BED" ] && GLNEXUS_CMD+=(--bed "$BED")
-  # Pipe GLnexus stdout through bcftools so the cohort BCF is a properly
-  # finalized, BGZF-EOF-terminated file — GLnexus's raw stdout can omit the EOF
-  # marker, which later reads report as "EOF marker absent / truncated".
-  if [ "$BCF_MODE" = "sif" ]; then
-    "${GLNEXUS_CMD[@]}" | apptainer exec --bind "$APPTAINER_BIND","$SCRATCH" "$BCFTOOLS_SIF" bcftools view -Ob -o "$COHORT_BCF"
-  else
-    "${GLNEXUS_CMD[@]}" | "$BCF" view -Ob -o "$COHORT_BCF"
-  fi
+  # Write GLnexus output straight to a file (NOT a live pipe into bcftools):
+  # GLnexus emits nothing on stdout during the multi-hour bulk load, so piping
+  # into `bcftools view` makes bcftools fail format-detection immediately
+  # ("Failed to read from standard input: unknown file type"). Then re-block the
+  # finished file with bcftools so the cohort BCF gets a proper BGZF EOF marker.
+  RAW_BCF="$SCRATCH/cohort.glnexus.bcf"
+  "${GLNEXUS_CMD[@]}" > "$RAW_BCF"
+  echo "[inhouse-af] stage 1: re-blocking GLnexus output → $COHORT_BCF"
+  bcf_run "set -euo pipefail; $BCF view -Ob '$RAW_BCF' -o '$COHORT_BCF'"
+  rm -f "$RAW_BCF"
   rm -rf "$GLDB"   # the DB is large; the BCF is the only thing we keep
   echo "[inhouse-af] stage 1 done: $COHORT_BCF ($(du -h "$COHORT_BCF" | cut -f1))"
 fi
