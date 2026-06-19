@@ -3666,11 +3666,14 @@ const CANDIDATE_SECTION_DEFS = [
 // {v, kind} or {v: null, kind: null}.
 function lookupAnyVariant(id) {
   const d = state.data || {};
-  let v = (d.variants || {})[id];
+  // Mito variants can share the same chrM-pos-ref-alt id with raw SNV
+  // rows. Report sections must keep the mito-specific card and m.HGVS
+  // display instead of accidentally resolving to the SNV transcript row.
+  let v = (d.mito_variants || {})[id];
+  if (v) return { v, kind: "mito" };
+  v = (d.variants || {})[id];
   if (!v) v = (state.snvSearchVariants || {})[id];
   if (v) return { v, kind: "snv" };
-  v = (d.mito_variants || {})[id];
-  if (v) return { v, kind: "mito" };
   v = _cnvSvVariantById(id);
   if (v) return { v, kind: v.source === "sv" ? "sv" : "cnv" };
   return { v: null, kind: null };
