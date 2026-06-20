@@ -1,0 +1,6 @@
+sampleId: sample
+hpoIds: []
+negatedHpoIds: []
+sex: UNKNOWN
+age: P5Y
+vcf: analysis_files/input.vcf.gz

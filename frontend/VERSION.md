@@ -11,6 +11,7 @@
 - 新增 STR 分析區，依 Pathogenic、Intermediate / Borderline、Normal / No threshold 分頁顯示。
 - 新增 Pharmacogenomics 區塊，分成 Clinically actionable、Routine / negative screens 與 Additional PharmCAT genes。
 - SNV/Indel variant card 支援同一 genomic variant 的多 transcript annotation；使用者可在卡片上切換 transcript。
+- 補回 Exomiser/LIRICAL rerun 所需的 `phenotype_reference` YAML templates，並在 render 失敗時把 traceback 寫入 `analysis_files/rerun.log`。
 
 ### v5.1 — 2026-06-15
 

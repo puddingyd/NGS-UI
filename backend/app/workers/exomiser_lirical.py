@@ -22,6 +22,7 @@ import json
 import shlex
 import subprocess
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -83,6 +84,12 @@ def _read_yaml(path: Path) -> dict:
 
 def _write_yaml(path: Path, doc: dict) -> None:
     path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+
+def _append_log(log_path: Path, message: str) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as logf:
+        logf.write(f"\n# {_now()} {message}\n")
 
 
 def _hpo_ids(hpo_list: list) -> list[str]:
@@ -216,9 +223,20 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
         "step": "exomiser:render",
         "started_at": _now(),
     })
-    exo_yml = _render_exomiser_yml(
-        EXOMISER_TEMPLATE, work_dir, vcf, hpo_ids, assembly,
-    )
+    try:
+        exo_yml = _render_exomiser_yml(
+            EXOMISER_TEMPLATE, work_dir, vcf, hpo_ids, assembly,
+        )
+    except Exception as e:
+        _append_log(log_path, "ERROR during exomiser:render")
+        _append_log(log_path, traceback.format_exc())
+        job_store.update(job_id, {
+            "status": "failed",
+            "step": "exomiser:render",
+            "error": str(e),
+            "finished_at": _now(),
+        })
+        raise
     job_store.update(job_id, {"step": "exomiser:run"})
     exo_cmd = [
         JAVA_BIN, *shlex.split(JAVA_OPTS),
@@ -233,7 +251,18 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
 
     # ---- LIRICAL ----
     job_store.update(job_id, {"step": "lirical:render"})
-    lir_yaml = _render_lirical_yaml(LIRICAL_TEMPLATE, work_dir, sample_id, vcf, hpo_ids)
+    try:
+        lir_yaml = _render_lirical_yaml(LIRICAL_TEMPLATE, work_dir, sample_id, vcf, hpo_ids)
+    except Exception as e:
+        _append_log(log_path, "ERROR during lirical:render")
+        _append_log(log_path, traceback.format_exc())
+        job_store.update(job_id, {
+            "status": "failed",
+            "step": "lirical:render",
+            "error": str(e),
+            "finished_at": _now(),
+        })
+        raise
 
     job_store.update(job_id, {"step": "lirical:run"})
     ed_dir = EXOMISER_DATA_HG38 if assembly == "hg38" else EXOMISER_DATA_HG19
