@@ -35,6 +35,7 @@ from ..adapters.snv_tsv import (
     _DP_HARD_FLOOR_WES,
     _DP_LOW_FLAG_WES,
     _DP_LOW_FLAG_WGS,
+    _is_mito_chrom,
     _row_to_variant,
     load_snv_tsv,
     merge_snv_variant_row,
@@ -790,6 +791,8 @@ def _variants_from_rows(rows: list[dict[str, str]], *, test_type: str) -> dict[s
     is_wes = (test_type or "").upper() == "WES"
     low_flag = _DP_LOW_FLAG_WES if is_wes else _DP_LOW_FLAG_WGS
     for row in rows:
+        if _is_mito_chrom(row.get("CHROM") or ""):
+            continue
         canonical_gene, _ = panel_deadzone.canonical_gene_symbol(
             row.get("GENE", ""),
             row.get("HGNC_ID", ""),
@@ -802,6 +805,38 @@ def _variants_from_rows(rows: list[dict[str, str]], *, test_type: str) -> dict[s
             continue
         v["low_depth"] = bool(dp and dp < low_flag)
         merge_snv_variant_row(out, v)
+    return out
+
+
+def _variant_id_from_row(row: dict[str, str]) -> str:
+    chrom = (row.get("CHROM") or "").strip()
+    pos = (row.get("POS") or "").strip()
+    ref = (row.get("REF") or "").strip()
+    alt = (row.get("ALT") or "").strip()
+    if not (chrom and pos and ref and alt):
+        return ""
+    return "-".join((chrom, pos, ref, alt))
+
+
+def _scan_raw_snv_rows_by_ids(raw_tsv: Path, wanted_ids: set[str]) -> list[dict[str, str]]:
+    """Fallback exact-id lookup for reviewer-marked rows when the index is absent.
+
+    Gene search can still find a variant through the raw TSV fallback, so the
+    report view must be able to rehydrate the same reviewer-marked variant even
+    on old samples that predate snv_gene_index.sqlite. The wanted set is tiny
+    (status=1/2/C ids), and we keep scanning after the first hit so multi-
+    transcript rows for the same genomic variant merge into one complete card.
+    """
+    import csv as _csv
+
+    wanted = {str(vid).strip() for vid in wanted_ids if str(vid).strip()}
+    if not wanted or not raw_tsv.is_file():
+        return []
+    out: list[dict[str, str]] = []
+    with raw_tsv.open("r", encoding="utf-8", newline="") as f:
+        for row in _csv.DictReader(f, delimiter="\t"):
+            if _variant_id_from_row(row) in wanted:
+                out.append(row)
     return out
 
 
@@ -826,13 +861,16 @@ def _supplement_marked_snv_variants(
     started = time.perf_counter()
     rows = snv_gene_index.query_rows_by_ids(raw_tsv, missing)
     if rows is None:
+        rows = _scan_raw_snv_rows_by_ids(raw_tsv, missing)
         _log_perf(
             "sample.marked_snv_supplement",
             started,
-            status="skipped_no_index",
+            status="raw_scan_fallback",
             missing=len(missing),
+            rows=len(rows),
         )
-        return
+        if not rows:
+            return
     extra = _variants_from_rows(rows, test_type=test_type)
     _enrich_snv_variants(extra, sidecar_dir)
     for vid, variant in extra.items():

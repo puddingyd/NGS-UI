@@ -16,7 +16,7 @@ from pathlib import Path
 
 REVIEW_TSV_NAME = "snv_indel.review.tsv"
 MAX_GNOMAD_G_AF = 0.01
-WES_DP_HARD_FLOOR = 10
+WES_DP_HARD_FLOOR = 20
 DEFAULT_CANDIDATE_BED = Path.home() / "NGS_UI" / "biotools" / "cds_combined.bed"
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
@@ -104,6 +104,10 @@ def _norm_chrom(chrom: str) -> str:
     return s.upper() if s.upper() in {"X", "Y"} else s
 
 
+def _is_mito_chrom(chrom: str) -> bool:
+    return _norm_chrom(chrom or "") == "MT"
+
+
 def _load_bed(path: Path) -> BedIndex | None:
     if not path.is_file():
         return None
@@ -182,6 +186,8 @@ def _overlaps_bed(row: dict[str, str], bed: BedIndex | None) -> bool:
 
 def _keep_row(row: dict[str, str], bed: BedIndex | None, *, is_wes: bool) -> bool:
     """Keep ClinVar P/LP rescue rows, then rare/unknown-AF BED rows."""
+    if _is_mito_chrom(row.get("CHROM") or ""):
+        return False
     if is_wes and _row_depth(row) < WES_DP_HARD_FLOOR:
         return False
     sig = (row.get("CLINVAR_SIG") or "").strip()

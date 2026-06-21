@@ -557,7 +557,7 @@ def _row_to_variant(row: dict) -> dict:
         "AD":     _coalesce(row.get("AD"),  row.get("AD_DV"),  row.get("AD_HC")),
         # Total read depth at the position — DV column preferred (more
         # accurate for short reads), HC fallback. Used by the UI for
-        # depth-based filtering (drop < 10 on WES) and the low-depth
+        # depth-based filtering (drop < 20 on WES) and the low-depth
         # red flag (< 20). Falls back to sum(AD) when neither DP column
         # is set.
         "depth": (
@@ -759,14 +759,20 @@ def merge_snv_variant_row(variants: dict[str, dict], v: dict) -> dict:
 
 
 # Depth thresholds applied at the adapter level.
-#   WES → hard floor at DP=10 (drop noise outside the capture targets)
-#         + red flag at DP<20.
+#   WES → hard floor at DP=20 (drop low-confidence WES calls).
 #   WGS → no hard floor (uniform coverage); red flag at DP<10 only.
 # Both flags land on the variant as `low_depth: bool`; the UI paints
 # the Read-depth cell red when true.
-_DP_HARD_FLOOR_WES = 10
+_DP_HARD_FLOOR_WES = 20
 _DP_LOW_FLAG_WES   = 20
 _DP_LOW_FLAG_WGS   = 10
+
+
+def _is_mito_chrom(chrom: str) -> bool:
+    value = (chrom or "").strip()
+    if value.lower().startswith("chr"):
+        value = value[3:]
+    return value.upper() in {"M", "MT"}
 
 
 def load_snv_tsv(tsv_path: Path,
@@ -779,8 +785,7 @@ def load_snv_tsv(tsv_path: Path,
     (within tier 4: ACMG_POINTS desc; within tier 5: ACMG_POINTS desc).
 
     `test_type` controls the depth gate:
-      WES  → variants with DP < 10 dropped entirely (off-target noise);
-             low_depth set on the remainder when DP < 20.
+      WES  → variants with DP < 20 dropped entirely.
       WGS  → no hard floor; low_depth set when DP < 10.
     """
     variants: dict[str, dict] = {}
@@ -799,6 +804,8 @@ def load_snv_tsv(tsv_path: Path,
                 "為舊格式，請以新版 pipeline 重跑此樣本。"
             )
         for row in reader:
+            if _is_mito_chrom(row.get("CHROM") or ""):
+                continue
             canonical_gene, _ = panel_deadzone.canonical_gene_symbol(
                 row.get("GENE", ""),
                 row.get("HGNC_ID", ""),

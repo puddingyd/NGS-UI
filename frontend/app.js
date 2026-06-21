@@ -321,6 +321,15 @@ function formatClinvar(sig, conf, stars) {
     });
     return out.join("|") + starTxt;
   }
+  if (/[&|]/.test(sigStr)) {
+    const out = sigStr.split(/[&|]/).map(p => {
+      const part = p.trim().replace(/^_/, "");
+      const m = part.match(/^(.+?)\((\d+)\)$/);
+      if (!m) return CLINVAR_ABBREV[part] || part;
+      return (CLINVAR_ABBREV[m[1]] || m[1]) + "(" + m[2] + ")";
+    }).filter(Boolean);
+    if (out.length) return out.join("|") + starTxt;
+  }
   return (CLINVAR_ABBREV[sigStr] || sigStr) + starTxt;
 }
 
