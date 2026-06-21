@@ -181,7 +181,11 @@ def stream_gvcf(gvcf, sex, min_dp, bed_fh, variants_vcf_fh):
                 is_callable = (depth is not None and depth >= min_dp) or (is_var and depth is None)
                 if is_callable:
                     if is_var:
-                        start, end = pos - 1, pos - 1 + len(ref)
+                        # single anchor base only. A multi-base REF span (e.g. a
+                        # deletion TG>T) would overlap the adjacent ref blocks of
+                        # the SAME sample and double-count AN at those bases; we
+                        # only ever look up AN at the variant's POS anyway.
+                        start, end = pos - 1, pos
                     else:
                         end_s = ""
                         if "END=" in info:

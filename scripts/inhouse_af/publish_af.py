@@ -99,12 +99,14 @@ def main():
         o.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
 
         for chrom, pos, ref, alt, n_hom, n_het, n_hemi, n_mt_hom, n_mt_het in cur:
-            # advance AN track to the interval covering (chrom,pos)
+            # AN track is a 0-based bedGraph; the variant POS is 1-based, so the
+            # base to look up is pos-1.
+            p0 = pos - 1
             while cur_iv and (cur_iv[0] < chrom or
-                              (cur_iv[0] == chrom and cur_iv[2] <= pos)):
+                              (cur_iv[0] == chrom and cur_iv[2] <= p0)):
                 cur_iv = next(an, None)
             an_val = (cur_iv[3] if (cur_iv and cur_iv[0] == chrom
-                                    and cur_iv[1] <= pos < cur_iv[2]) else 0)
+                                    and cur_iv[1] <= p0 < cur_iv[2]) else 0)
             if chrom == "chrM":
                 ac = n_mt_hom + n_mt_het
                 nhom, hemi, het_mt = n_mt_hom, 0, n_mt_het
