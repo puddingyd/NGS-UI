@@ -304,6 +304,22 @@ const CLINVAR_ABBREV = {
   "Conflicting_classifications_of_pathogenicity": "Conflict",
 };
 
+function _formatClinvarPart(part) {
+  const text = String(part || "").trim().replace(/^_/, "");
+  if (!text) return "";
+  const m = text.match(/^(.+?)\((\d+)\)$/);
+  if (!m) return CLINVAR_ABBREV[text] || text;
+  return (CLINVAR_ABBREV[m[1]] || m[1]) + "(" + m[2] + ")";
+}
+
+function _formatClinvarParts(text) {
+  return String(text || "")
+    .split(/[,&|]/)
+    .map(_formatClinvarPart)
+    .filter(Boolean)
+    .join("|");
+}
+
 function formatClinvar(sig, conf, stars) {
   // Treat pipeline placeholders ('.', 'NA', '') as "no ClinVar data"
   // — otherwise the cell renders as `.(0★)` instead of `—`.
@@ -313,22 +329,11 @@ function formatClinvar(sig, conf, stars) {
   }
   const starTxt = (stars != null && stars !== "") ? `(${stars}★)` : "";
   if (sigStr.startsWith("Conflicting") && conf) {
-    const parts = String(conf).split(/[,|]/).map(p => p.trim().replace(/^_/, ""));
-    const out = parts.map(p => {
-      const m = p.match(/^(.+?)\((\d+)\)$/);
-      if (!m) return p;
-      return (CLINVAR_ABBREV[m[1]] || m[1]) + "(" + m[2] + ")";
-    });
-    return out.join("|") + starTxt;
+    return (_formatClinvarParts(conf) || (CLINVAR_ABBREV[sigStr] || sigStr)) + starTxt;
   }
-  if (/[&|]/.test(sigStr)) {
-    const out = sigStr.split(/[&|]/).map(p => {
-      const part = p.trim().replace(/^_/, "");
-      const m = part.match(/^(.+?)\((\d+)\)$/);
-      if (!m) return CLINVAR_ABBREV[part] || part;
-      return (CLINVAR_ABBREV[m[1]] || m[1]) + "(" + m[2] + ")";
-    }).filter(Boolean);
-    if (out.length) return out.join("|") + starTxt;
+  if (/[,&|]/.test(sigStr)) {
+    const out = _formatClinvarParts(sigStr);
+    if (out) return out + starTxt;
   }
   return (CLINVAR_ABBREV[sigStr] || sigStr) + starTxt;
 }
