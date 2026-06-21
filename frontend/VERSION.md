@@ -12,6 +12,7 @@
 - 新增 Pharmacogenomics 區塊，分成 Clinically actionable、Routine / negative screens 與 Additional PharmCAT genes。
 - SNV/Indel variant card 支援同一 genomic variant 的多 transcript annotation；使用者可在卡片上切換 transcript。
 - WES 的 SNV/Indel 會直接排除 read depth < 20 的位點；chrM/MT 位點只顯示在 Mitochondria 區，並將 ClinVar 多分類摘要顯示為 `VUS(1)|B(7)|LB(1)` 這類縮寫。
+- 三級分析清單新增「清理 Nextflow 暫存」按鈕，可清空 Nextflow work 目錄；有三級分析執行中時會拒絕清理。
 - 補回 Exomiser/LIRICAL rerun 所需的 `phenotype_reference` YAML templates，並在 render 失敗時把 traceback 寫入 `analysis_files/rerun.log`。
 - 修正從 SNV gene search 標記進報告的 WES variant：即使舊樣本缺少 `snv_gene_index.sqlite`，報告區也會從完整 TSV 補回已標記點位。
 

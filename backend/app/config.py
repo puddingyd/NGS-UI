@@ -34,6 +34,11 @@ TERTIARY_OUTPUT_ROOT = Path(os.environ.get(
     NGS_UI_HOME / "tertiary_output",
 ))
 
+TERTIARY_NF_WORK_ROOT = Path(os.environ.get(
+    "NGS_UI_TERTIARY_NF_WORK_ROOT",
+    NGS_UI_HOME / "nf_work",
+))
+
 # Generated docx reports — every export saves a copy here so reviewers
 # can re-download or audit past versions without re-running the report.
 REPORT_OUTPUT_DIR = Path(os.environ.get(

@@ -6,6 +6,7 @@
   GET  /api/dragen/jobs            list known jobs (for topbar status)
   GET  /api/dragen/jobs/{jid}      state + log tail for one job
   POST /api/dragen/jobs/{jid}/cancel
+  POST /api/dragen/nf-work/cleanup
   GET  /api/dragen/outputs         list pipeline output sample directories
   GET  /api/dragen/outputs/{sid}/log
   DELETE /api/dragen/outputs/{sid}
@@ -167,6 +168,18 @@ def cancel_dragen_job(job_id: str):
     state["running"] = dragen_jobs.is_running(job_id)
     state["log_tail"] = dragen_jobs.tail_log(job_id, n=80)
     return state
+
+
+@router.post("/nf-work/cleanup")
+async def cleanup_nf_work():
+    try:
+        return await asyncio.to_thread(dragen_jobs.cleanup_nf_work)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"清理失敗：{e}")
 
 
 @router.get("/outputs")

@@ -54,7 +54,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
-                       TERTIARY_JOBS_DIR, TERTIARY_OUTPUT_ROOT)
+                       TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT,
+                       TERTIARY_OUTPUT_ROOT)
 from ..services import dragen_jobs, mitomap_mito
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
@@ -669,7 +670,7 @@ def main() -> int:
 
     scripts = REPO_ROOT / "scripts"
     batch_slug = sample_ids[0] if len(sample_ids) == 1 else f"batch-{job_id}"
-    nf_work  = NGS_UI_HOME / "nf_work" / batch_slug
+    nf_work  = TERTIARY_NF_WORK_ROOT / batch_slug
     pipeline_type = "dragen" if mode == "dragen" else "nckuh"
     legacy_staging = os.environ.get("NGS_UI_TERTIARY_LEGACY_STAGING", "").strip().lower() in {
         "1", "true", "yes", "y", "on"

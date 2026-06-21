@@ -2883,10 +2883,17 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .pipeline-list-toolbar p {
   margin: 0;
 }
-.pipeline-list-toolbar input {
+.pipeline-list-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   min-width: 220px;
   max-width: 320px;
   flex: 1;
+}
+.pipeline-list-toolbar input {
+  width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--border);
   border-radius: 6px;

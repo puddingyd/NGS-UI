@@ -9280,6 +9280,38 @@ async function _renderPipelineList() {
   }
 }
 
+function _fmtBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let idx = 0;
+  while (v >= 1024 && idx < units.length - 1) {
+    v /= 1024;
+    idx += 1;
+  }
+  return `${v.toFixed(v >= 10 ? 1 : 2)} ${units[idx]}`;
+}
+
+async function _cleanupNextflowWork() {
+  const btn = document.getElementById("pipeline-clean-nf-work");
+  const status = document.getElementById("pipeline-list-status");
+  if (!confirm("確定清理 Nextflow 暫存？\n\n將刪除 /home/n102968/NGS_UI/nf_work 底下的所有內容。\n正在執行三級分析時後端會拒絕清理。")) return;
+  if (btn) { btn.disabled = true; btn.textContent = "清理中…"; }
+  if (status) status.textContent = "清理 Nextflow 暫存中…";
+  try {
+    const result = await apiFetch("/dragen/nf-work/cleanup", { method: "POST" });
+    const count = Number(result?.deleted_count || 0);
+    const size = _fmtBytes(result?.freed_bytes || 0);
+    const path = result?.path || "/home/n102968/NGS_UI/nf_work";
+    if (status) status.textContent = `已清理 ${count} 個項目，約釋放 ${size}：${path}`;
+  } catch (e) {
+    if (status) status.textContent = `清理失敗：${e.message || e}`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "清理 Nextflow 暫存"; }
+  }
+}
+
 function setupPipelineList() {
   const btn = document.getElementById("btn-pipeline-list");
   const host = document.getElementById("pipeline-list-table");
@@ -9295,6 +9327,7 @@ function setupPipelineList() {
     await _renderPipelineList();
   });
   document.getElementById("pipeline-list-search")?.addEventListener("input", _drawPipelineListRows);
+  document.getElementById("pipeline-clean-nf-work")?.addEventListener("click", _cleanupNextflowWork);
   host.addEventListener("click", async ev => {
     const logBtn = ev.target.closest?.(".pipeline-log-view");
     const delBtn = ev.target.closest?.(".pipeline-output-delete");

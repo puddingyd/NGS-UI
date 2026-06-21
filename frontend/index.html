@@ -796,7 +796,10 @@
       <h2>三級分析清單</h2>
       <div class="pipeline-list-toolbar">
         <p class="muted">刪除會一併移除 pipeline output、NGS-UI 個案資料與 job log。</p>
-        <input id="pipeline-list-search" type="search" placeholder="搜尋 sample ID" autocomplete="off" />
+        <div class="pipeline-list-controls">
+          <button id="pipeline-clean-nf-work" class="btn btn-danger" type="button">清理 Nextflow 暫存</button>
+          <input id="pipeline-list-search" type="search" placeholder="搜尋 sample ID" autocomplete="off" />
+        </div>
       </div>
       <div id="pipeline-list-status" class="muted"></div>
       <div id="pipeline-list-table" class="pipeline-list-table"></div>

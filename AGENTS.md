@@ -55,6 +55,7 @@
 | 二級分析 samplesheet server output | `/home/datalake_Intermediate/pipeline/nextflow_output` | `NGS_UI_SECONDARY_OUTPUT_ROOT` |
 | 二級分析 samplesheet staging | `/home/datalake_Intermediate/pipeline/nextflow_samplesheet_staging` | `NGS_UI_SECONDARY_SAMPLESHEET_STAGING_ROOT`（DGX2 對應 `NGS_UI_SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT`） |
 | 二級分析 DGX2 output / launch / work roots | `/datalake_Intermediate/pipeline/nextflow_output`、`/datalake_Intermediate/pipeline/nextflow_launch`、`/raid/DGM/work` | `NGS_UI_SECONDARY_DGX_OUTPUT_ROOT`、`NGS_UI_SECONDARY_DGX_LAUNCH_ROOT`、`NGS_UI_SECONDARY_DGX_WORK_ROOT` |
+| 三級分析 Nextflow work 暫存 | `NGS_UI_HOME/nf_work/` | `NGS_UI_TERTIARY_NF_WORK_ROOT` |
 | Exomiser/LIRICAL 輸入模板 | `REPO_ROOT/phenotype_reference/`（**在 repo 裡，不在 NGS_UI_HOME**） | — |
 | 前端靜態檔 | `REPO_ROOT/frontend/` | `FRONTEND_DIR` |
 | 首頁歡迎文字與版本紀錄 | `REPO_ROOT/frontend/VERSION.md`（前端啟動時讀取並顯示在未載入個案的首頁） | — |

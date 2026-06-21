@@ -27,7 +27,8 @@ from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
                        LEGACY_DRAGEN_JOBS_DIR, TERTIARY_JOBS_DIR,
                        PIPELINE_VCF_INDEX_PATH,
                        PIPELINE_VCF_INDEX_TTL_HOURS, PIPELINE_OUT_ROOT,
-                       REPO_ROOT, TERTIARY_OUTPUT_ROOT)
+                       REPO_ROOT, TERTIARY_NF_WORK_ROOT,
+                       TERTIARY_OUTPUT_ROOT)
 
 # Final pipeline steps, in order — the worker writes the current one
 # into state.json so the UI can show progress.
@@ -428,6 +429,70 @@ def _job_samples(job: dict) -> list[dict]:
         "sample_id": sample_id,
         "source_sample_id": job.get("source_sample_id", sample_id) or sample_id,
     }]
+
+
+def _active_tertiary_jobs() -> list[dict]:
+    active: list[dict] = []
+    for job in list_jobs(limit=1000):
+        job_id = job.get("job_id", "")
+        if job.get("state") in ("done", "failed", "cancelled"):
+            continue
+        if not (job.get("running") or job.get("state") in ("queued", "running")):
+            continue
+        if job_id and not is_running(job_id) and job.get("state") != "queued":
+            continue
+        active.append(job)
+    return active
+
+
+def _path_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_symlink() or path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for child in path.rglob("*"):
+        if child.is_symlink() or child.is_file():
+            try:
+                total += child.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def cleanup_nf_work() -> dict:
+    """Remove all direct children under the tertiary Nextflow work root."""
+    active = _active_tertiary_jobs()
+    if active:
+        samples: list[str] = []
+        for job in active:
+            samples.extend(str(sample.get("sample_id") or "") for sample in _job_samples(job))
+        names = ", ".join(s for s in samples if s) or ", ".join(
+            str(job.get("job_id") or "") for job in active
+        )
+        raise RuntimeError(f"仍有三級分析執行中，請先終止或等完成：{names}")
+
+    root = TERTIARY_NF_WORK_ROOT.resolve()
+    if str(root) in {"", "/"} or root == root.parent:
+        raise ValueError(f"不安全的 Nextflow work root：{root}")
+    if not root.exists():
+        return {"path": str(root), "deleted_count": 0, "freed_bytes": 0, "existed": False}
+    if not root.is_dir():
+        raise ValueError(f"Nextflow work root 不是資料夾：{root}")
+
+    deleted = 0
+    freed = 0
+    for child in root.iterdir():
+        freed += _path_size(child)
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+        deleted += 1
+    return {"path": str(root), "deleted_count": deleted, "freed_bytes": freed, "existed": True}
 
 
 def _latest_job_for_sample(sample_id: str) -> dict | None:

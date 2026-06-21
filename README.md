@@ -101,6 +101,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_HOME` | repo 的上層（找不到則 repo 自己） | 整棵資料樹的根 |
 | `TERTIARY_OUTPUT_ROOT` | `$NGS_UI_HOME/tertiary_output` | per-sample TSV |
 | `NGS_UI_DATA_ROOT` | `$NGS_UI_HOME/data` | users.db, jobs/ |
+| `NGS_UI_TERTIARY_NF_WORK_ROOT` | `$NGS_UI_HOME/nf_work` | 三級分析 Nextflow work 暫存 |
 | `NGS_UI_VCF_DIR` | `$NGS_UI_HOME/vcf` | per-sample VCF |
 | `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt`、`{MRN}_clinical_presentation.txt` |
 | `NGS_UI_PATIENT_LIST_DIR` | `$NGS_UI_HOME/patient_list` | 上傳清單 + roster.json |
@@ -180,7 +181,7 @@ SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越�
 
 三級分析重用既有 `/home/pipeline/tertiary_output/{sample}/` output 時，優先使用 UI sample ID（例如 `VAL-57-dragen` / `VAL-57-nckuh`）作為 pipeline output 目錄，且後端 job API / worker 會為新 job 強制補上來源 suffix，避免 DRAGEN 與 in-house 同名 sample 互相覆蓋；開跑前 reuse 只信任 exact UI sample ID 目錄，不再用無後綴 source-ID-only output 當 shortcut。reuse 也不再只看 `03_acmg/*.snv_indel.acmg.tsv`，而是檢查 SNV、Mito、CNV、SV；PGx checkbox 有勾時也會要求 PGx/PharmCAT 輸出存在，缺任一項就讓 Nextflow 用 `-resume` 補齊。若開跑前發現無後綴 source-ID-only 目錄存在、但目標 suffixed 目錄不存在，worker 會停止並要求先修復，避免 Nextflow 混入舊 pipeline output。Nextflow 完成後若 pipeline 仍輸出到 source-ID-only 目錄，worker 會把它 rename 成 suffixed 目錄；已跑完但 pipeline output 還沒有 suffix 的 case，可先 dry-run `python scripts/repair_pipeline_output_suffixes.py`，確認後加 `--apply` 搬移成 suffixed 目錄。工具會依 `pipeline_source.json` 修復，也會預設把 `/home/pipeline/tertiary_output/VAL-數字/` 視為 legacy DRAGEN 並搬移成 `VAL-數字-dragen/`（可用 `--legacy-dragen-pattern` 調整或設空字串關閉）。worker-owned log timestamp 會放在行尾 `[YYYY-MM-DD HH:MM:SS]`；Nextflow process 完成時只在原 stdout 行尾追加 elapsed 分鐘與時間戳，batch 進度條會依同一 process 的完成比例推進。
 
-三級分析進度條依實測 DRAGEN / in-house batch log 配重：Nextflow 佔主要時間，但 `queued` 事件只寫 timing log，不推進 UI 百分比；實際 `start/done` 才依 process 權重更新。前處理、mito、STR、prepare CNV/SV 等快速步驟只佔少量進度，`ANNOTSV_SV`、VEP、Pangolin、parse CSQ、ACMG/PGx 等耗時步驟佔主要權重。Nextflow 結束約落在 82%，post-processing 依目前第幾個 sample 與子步驟推進到完成。Nextflow batch 會同時更新多個 process，因此後端寫入 `nextflow_progress_pct` 時會保留目前最大值，避免較早 process 晚更新造成進度條倒退。首頁會定期查詢後端 active job，因此其他瀏覽器或電腦登入後也會看到正在跑的三級分析；進度面板提供「終止」按鈕，會呼叫後端取消該 job 並向 worker process group 送出終止訊號。
+三級分析進度條依實測 DRAGEN / in-house batch log 配重：Nextflow 佔主要時間，但 `queued` 事件只寫 timing log，不推進 UI 百分比；實際 `start/done` 才依 process 權重更新。前處理、mito、STR、prepare CNV/SV 等快速步驟只佔少量進度，`ANNOTSV_SV`、VEP、Pangolin、parse CSQ、ACMG/PGx 等耗時步驟佔主要權重。Nextflow 結束約落在 82%，post-processing 依目前第幾個 sample 與子步驟推進到完成。Nextflow batch 會同時更新多個 process，因此後端寫入 `nextflow_progress_pct` 時會保留目前最大值，避免較早 process 晚更新造成進度條倒退。首頁會定期查詢後端 active job，因此其他瀏覽器或電腦登入後也會看到正在跑的三級分析；進度面板提供「終止」按鈕，會呼叫後端取消該 job 並向 worker process group 送出終止訊號。三級分析清單右上角提供「清理 Nextflow 暫存」，可清空 `NGS_UI_TERTIARY_NF_WORK_ROOT`（預設 `$NGS_UI_HOME/nf_work`，dev 機為 `/home/n102968/NGS_UI/nf_work`）底下內容；若仍有 queued/running job，後端會拒絕清理。
 
 DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比欄寬少一格，避免座標字串貼到後面的欄位。
 
