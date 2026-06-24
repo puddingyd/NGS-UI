@@ -273,6 +273,73 @@ AN should agree closely since both see the same coverage.
 The whole Phase A→B chain was end-to-end verified on a synthetic 3-sample cohort
 (hand-checked AC/AN/AF, incremental add, and dedup).
 
+## Phase C — validation on the DGX (incremental vs GLnexus)
+
+The production target is the **air-gapped DGX** (1.5 TB RAM, no OOM headroom
+worries; no network). Everything — the GLnexus baseline *and* the incremental
+path — runs there. Two deployment details make the same scripts work unchanged:
+
+**1. apptainer wrappers for the htslib tools.** The DGX has no `bcftools` /
+`bgzip` / `tabix` on PATH, but it does have `apptainer` and a samtools/bcftools
+`.sif`. Drop thin wrappers in `~/bin` so every script that calls `bcftools`
+(via `BCFTOOLS_BIN=bcftools`) just works:
+
+```bash
+mkdir -p ~/bin
+cat > ~/bin/bcftools <<'EOF'
+#!/usr/bin/env bash
+exec apptainer exec --bind /datalake_Raw,/datalake_Intermediate,/home,/raid \
+  /path/to/bcftools.sif bcftools "$@"
+EOF
+# identical wrappers for bgzip and tabix (same sif, last arg = tool name)
+chmod +x ~/bin/{bcftools,bgzip,tabix}
+export PATH=$HOME/bin:$PATH
+```
+
+The wrappers must `--bind` every filesystem the tool touches (reference,
+gVCFs, and the scratch/output dir) or you get "No such file" inside the
+container.
+
+**2. Paths drop the leading `/home`, and scratch must be local.**
+
+| | value on the DGX |
+|---|---|
+| reference | `--ref /datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta` |
+| cohort list | regenerate with DGX paths, or reuse the DGM list + `--strip-path-prefix /home` |
+| GLnexus scratch (`--scratch`) | a **fast local** disk, e.g. `/raid/DGM/<user>/glnexus_scratch` — **never** NFS (`/datalake*`). GLnexus's RocksDB bulk-load thrashes random I/O and NFS makes it pathologically slow. |
+| accumulate sort tmp (`--sort-tmp`) | likewise a big local disk, not `/tmp` (the event stream is tens of GB). |
+
+A 64-sample run reproduced **bit-for-bit identical** output on the DGX vs DGM
+(same 19,009,919 GLnexus variant records), confirming the port is clean.
+
+### Validation result (64-sample run)
+
+Pearson correlation of `INHOUSE_AF` between the **incremental** path and the
+**GLnexus** ground truth, at shared normalized sites:
+
+| stratum | sites | Pearson r |
+|---|---|---|
+| SNP, AN ≥ 120 | — | **0.9998** |
+| indel, AN ≥ 120 | — | **0.9962** |
+| all shared sites | 13.1 M | ~0.5 |
+
+The headline ~0.5 over *all* sites is **not a bug** — it is entirely the
+low-AN tail (~1.87 M sites, ~14%) where GLnexus emits a no-call for samples it
+is unsure about, so its AN/AF there is based on fewer samples than ours. Our
+incremental method counts every sample whose coverage is callable (DP≥10), so
+it is *more complete* for in-house AF, not less accurate. On well-called sites
+(AN ≥ 120, i.e. ≥60/64 samples) the two methods agree to **r ≈ 0.9998 (SNP) /
+0.9962 (indel)**. See `DESIGN_incremental.md` §6a.
+
+> **Indel AN double-count — fixed during Phase C.** An early run showed
+> r ≈ 0.5 even at high AN. Cause: a variant's callable interval was the full
+> REF span `[pos-1, pos-1+len(ref))`, which for multi-base REF / deletions
+> overlapped the *same sample's* adjacent reference block and double-counted
+> AN; a compounding off-by-one in the publish AN lookup landed on the
+> double-counted base. Fixed by (a) recording a **single anchor base**
+> `[pos-1, pos)` per variant in `ingest_sample.py`, and (b) looking AN up at
+> `pos-1` in `publish_af.py`. Both fixes are in the committed scripts.
+
 ## Integrating into NGS-UI (Phase 2, not done yet)
 
 Mirror the gnomAD pattern:

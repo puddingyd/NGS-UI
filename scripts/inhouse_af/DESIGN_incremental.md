@@ -287,13 +287,43 @@ next extension after Phase C validates the un-stratified path.)
 
 Production DB = the incremental one. GLnexus = audit/ground-truth. (Optionally,
 adopt the GLnexus snapshot as the canonical DB each quarter and continue
-incrementing from there — decide after we see the first comparison.) The very
-first ground truth is the GLnexus full-633 run currently in progress.
+incrementing from there — decide after we see the first comparison.)
+
+### 6a. Phase C validation result (64-sample run, on the DGX)
+
+The incremental DB and a full GLnexus joint-genotyping of the **same 64 WGS**
+were compared by `INHOUSE_AF` at shared, normalized sites. On sites where both
+methods well-call the locus (`AN ≥ 120` of 128):
+
+| variant class | n | Pearson r |
+|---|---|---|
+| SNP | 9.38 M | **0.9998** |
+| indel | 1.86 M | **0.9962** |
+
+→ the incremental AC/AN/AF machinery is **correct** (near-perfect agreement
+with the joint-genotyping ground truth). The *overall* correlation looks low
+(~0.5) only because ~14% of sites fall in a low-`AN` tail where GLnexus
+**no-calls** low-confidence samples (smaller denominator → higher GLnexus AF),
+while the incremental counts every DP≥10-callable sample. That is a
+**methodological difference, not a bug** — and "count all callable samples" is
+the more complete choice for an in-house AF. Repeat/STR indels additionally
+differ because per-sample DRAGEN calls stutter there (incremental may
+over-count); those are difficult regions flagged elsewhere anyway.
+
+This validation also caught and fixed a real bug: indel callable intervals must
+be a **single anchor base** (§4.2) and the AN-track lookup must use `pos-1`
+(0-based) — otherwise a deletion's multi-base REF span overlaps the same
+sample's adjacent ref block and double-counts AN.
 
 ---
 
 ## 7. Pitfalls / edge cases
 
+- **Indel AN double-count (fixed).** A variant's callable interval is a SINGLE
+  anchor base `[pos-1, pos)`; using the full REF span makes a deletion overlap
+  the same sample's adjacent ref block → AN counted twice. Publish looks up AN
+  at `pos-1` (0-based) to match the bedGraph. Caught in Phase C (indel `incAN`
+  reached 226 for 64 samples, impossible >128).
 - **gVCF depth field.** DRAGEN ref blocks expose `MIN_DP` (we already rely on
   this via GLnexus `ref_dp_format: MIN_DP`); variant records use `DP`. Confirm on
   real data before building.
