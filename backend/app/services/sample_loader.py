@@ -255,11 +255,12 @@ def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
     phenotype_scorer.load()
     sections: list[dict] = []
 
-    def genes_for(key: str) -> list[str]:
+    def genes_for(key: str, kind: str = "") -> list[str]:
         genes: list[str] = []
-        for raw in phenotype_scorer._HPO_TO_GENES.get(key, set()):
-            gene, hgnc_id = panel_deadzone.canonical_gene_symbol(raw)
-            if panel_deadzone.is_disease_associated_gene(gene, hgnc_id):
+        entry = phenotype_scorer.genes_for_key(key, kind=kind)
+        for raw in entry.get("genes") or []:
+            gene = panel_deadzone.canonical_panel_gene_symbol(raw)
+            if panel_deadzone.is_disease_associated_gene(gene):
                 genes.append(gene)
         return sorted(set(genes))
 
@@ -268,12 +269,12 @@ def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
         if not hid:
             continue
         label = row.get("label") or hid
-        sections.append({"name": label, "genes": genes_for(hid)})
+        sections.append({"name": label, "genes": genes_for(hid, kind="hpo")})
     for entry in panel_entries or []:
         name = entry.get("name") if isinstance(entry, dict) else str(entry)
         if not name:
             continue
-        sections.append({"name": name, "genes": genes_for(name)})
+        sections.append({"name": name, "genes": genes_for(name, kind="panel")})
 
     merged: set[str] = set()
     for section in sections:

@@ -206,7 +206,7 @@ EMR_CLIENT_ID = os.environ.get("NGS_UI_EMR_CLIENT_ID", "")
 DRAGEN_VCF_ROOTS = [
     Path(p) for p in os.environ.get(
         "NGS_UI_DRAGEN_VCF_ROOTS",
-        "/home/datalake_Raw/Novaseq",
+        "/home/datalake_Raw/Novaseq:/home/datalake_Intermediate/n102968",
     ).split(":") if p
 ]
 TERTIARY_JOBS_DIR = DATA_ROOT / "jobs" / "tertiary"

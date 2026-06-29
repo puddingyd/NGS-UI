@@ -132,6 +132,9 @@ body.sidebar-collapsed #sidebar {
 .sidebar-link:hover { background: #e5e5e5; }
 .sidebar-link.active { background: #e5e5e5; font-weight: 600; }
 .sidebar-link.sub { padding-left: 32px; font-size: 14px; color: #525252; }
+.sidebar-subgroup { margin-left: 20px; }
+.sidebar-subgroup summary { padding-left: 12px; font-size: 14px; color: #525252; }
+.sidebar-link.secondary-sub { padding-left: 28px; font-size: 13px; }
 .sidebar-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-group summary {
   list-style: none;
