@@ -1309,6 +1309,365 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         _add_dead_zone_gene_list_note(doc, threshold)
 
 
+# ── Health screening DOCX ─────────────────────────────────────────
+
+_NO_HEALTH_VARIANT_TEXT = "於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。"
+
+_HEALTH_SECTION_ORDER = [
+    ("acmg_sf", "第一類：重大可預防疾病風險基因（ACMG SF）"),
+    ("lipid_fh", "第二類：血脂相關基因"),
+    ("hereditary_cancer", "第三類：腫瘤相關基因"),
+    ("stroke", "第四類：中風相關基因"),
+    ("carrier", "第五類：帶因者篩查"),
+    ("proactive", "第六類：主動篩查"),
+    ("pgx", "藥物基因體學"),
+]
+
+_ACMG_SF_GROUPS = [
+    {
+        "key": "lipid",
+        "title": "血脂相關基因",
+        "genes": ["APOB", "LDLR", "PCSK9"],
+    },
+    {
+        "key": "tumor",
+        "title": "腫瘤相關基因",
+        "genes": [
+            "APC", "BMPR1A", "BRCA1", "BRCA2", "MAX", "MEN1", "MLH1",
+            "MSH2", "MSH6", "MUTYH", "NF2", "PALB2", "PMS2", "PTEN",
+            "RB1", "RET", "SDHAF2", "SDHB", "SDHC", "SDHD", "SMAD4",
+            "STK11", "TMEM127", "TP53", "TSC1", "TSC2", "VHL", "WT1",
+        ],
+    },
+    {
+        "key": "cardiovascular",
+        "title": (
+            "心血管疾病相關基因，包含心肌病變相關基因（ACTC1, BAG3, DES, DSC2, "
+            "DSG2, DSP, FLNC, LMNA, MYBPC3, MYH7, MYL2, MYL3, PKP2, PLN, "
+            "PRKAG2, RBM20, TMEM43, TNNC1, TNNI3, TNNT2, TPM1, TTN）、"
+            "心律不整相關基因（CALM1, CALM2, CALM3, CASQ2, KCNH2, KCNQ1, "
+            "RYR2, SCN5A, TRDN）、主動脈及血管疾病相關基因（ACTA2, COL3A1, "
+            "FBN1, MYH11, SMAD3, TGFBR1, TGFBR2, ACVRL1, ENG）"
+        ),
+        "genes": [
+            "ACTC1", "BAG3", "DES", "DSC2", "DSG2", "DSP", "FLNC",
+            "LMNA", "MYBPC3", "MYH7", "MYL2", "MYL3", "PKP2", "PLN",
+            "PRKAG2", "RBM20", "TMEM43", "TNNC1", "TNNI3", "TNNT2",
+            "TPM1", "TTN", "CALM1", "CALM2", "CALM3", "CASQ2", "KCNH2",
+            "KCNQ1", "RYR2", "SCN5A", "TRDN", "ACTA2", "COL3A1",
+            "FBN1", "MYH11", "SMAD3", "TGFBR1", "TGFBR2", "ACVRL1",
+            "ENG",
+        ],
+    },
+    {
+        "key": "metabolic_endocrine",
+        "title": "代謝與內分泌疾病相關基因",
+        "genes": ["ABCD1", "ATP7B", "BTD", "CYP27A1", "GAA", "GLA", "HFE", "HNF1A", "OTC"],
+    },
+    {
+        "key": "anesthesia",
+        "title": "麻醉用藥風險相關基因",
+        "genes": ["CACNA1S", "RYR1"],
+    },
+    {
+        "key": "other",
+        "title": "其它基因",
+        "genes": ["RPE65", "TTR"],
+    },
+]
+
+_ACMG_SF_DISEASES = {
+    "ABCD1": [{"disease": "X-linked adrenoleukodystrophy", "inheritance": "XL"}],
+    "ACTA2": [{"disease": "Familial thoracic aortic aneurysm", "inheritance": "AD"}],
+    "ACTC1": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "ACVRL1": [{"disease": "Hereditary hemorrhagic telangiectasia", "inheritance": "AD"}],
+    "APC": [{"disease": "Familial adenomatous polyposis", "inheritance": "AD"}],
+    "APOB": [{"disease": "Familial hypercholesterolemia", "inheritance": "AD"}],
+    "ATP7B": [{"disease": "Wilson disease", "inheritance": "AR"}],
+    "BAG3": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}, {"disease": "Myofibrillar myopathy", "inheritance": "AD"}],
+    "BMPR1A": [{"disease": "Juvenile polyposis syndrome", "inheritance": "AD"}],
+    "BRCA1": [{"disease": "Hereditary breast and ovarian cancer", "inheritance": "AD"}],
+    "BRCA2": [{"disease": "Hereditary breast and ovarian cancer", "inheritance": "AD"}],
+    "BTD": [{"disease": "Biotinidase deficiency", "inheritance": "AR"}],
+    "CACNA1S": [{"disease": "Malignant hyperthermia", "inheritance": "AD"}],
+    "CALM1": [{"disease": "Long-QT syndrome type 14", "inheritance": "AD"}, {"disease": "Catecholaminergic polymorphic ventricular tachycardia", "inheritance": "AD"}],
+    "CALM2": [{"disease": "Long-QT syndrome type 15", "inheritance": "AD"}, {"disease": "Catecholaminergic polymorphic ventricular tachycardia", "inheritance": "AD"}],
+    "CALM3": [{"disease": "Long-QT syndrome type 16", "inheritance": "AD"}, {"disease": "Catecholaminergic polymorphic ventricular tachycardia", "inheritance": "AD"}],
+    "CASQ2": [{"disease": "Catecholaminergic polymorphic ventricular tachycardia", "inheritance": "AR"}],
+    "COL3A1": [{"disease": "Ehlers-Danlos syndrome, vascular type", "inheritance": "AD"}],
+    "CYP27A1": [{"disease": "Cerebrotendinous xanthomatosis", "inheritance": "AR"}],
+    "DES": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}, {"disease": "Myofibrillar myopathy", "inheritance": "AD"}],
+    "DSC2": [{"disease": "Arrhythmogenic right ventricular cardiomyopathy", "inheritance": "AD"}],
+    "DSG2": [{"disease": "Arrhythmogenic right ventricular cardiomyopathy", "inheritance": "AD"}],
+    "DSP": [{"disease": "Arrhythmogenic right ventricular cardiomyopathy", "inheritance": "AD"}, {"disease": "Dilated cardiomyopathy", "inheritance": "AD"}],
+    "ENG": [{"disease": "Hereditary hemorrhagic telangiectasia", "inheritance": "AD"}],
+    "FBN1": [{"disease": "Marfan syndrome", "inheritance": "AD"}],
+    "FLNC": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}, {"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}, {"disease": "Myofibrillar myopathy", "inheritance": "AD"}],
+    "GAA": [{"disease": "Pompe disease", "inheritance": "AR"}],
+    "GLA": [{"disease": "Fabry disease", "inheritance": "XL"}],
+    "HFE": [{"disease": "Hereditary hemochromatosis (c.845G>A; p.C282Y homozygotes only)", "inheritance": "AR"}],
+    "HNF1A": [{"disease": "Maturity-Onset of Diabetes of the Young", "inheritance": "AD"}],
+    "KCNH2": [{"disease": "Long-QT syndrome type 2", "inheritance": "AD"}],
+    "KCNQ1": [{"disease": "Long-QT syndrome type 1", "inheritance": "AD"}],
+    "LDLR": [{"disease": "Familial hypercholesterolemia", "inheritance": "AD"}],
+    "LMNA": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}],
+    "MAX": [{"disease": "Hereditary paraganglioma-pheochromocytoma syndrome", "inheritance": "AD"}],
+    "MEN1": [{"disease": "Multiple endocrine neoplasia type 1", "inheritance": "AD"}],
+    "MLH1": [{"disease": "Lynch syndrome", "inheritance": "AD"}],
+    "MSH2": [{"disease": "Lynch syndrome", "inheritance": "AD"}],
+    "MSH6": [{"disease": "Lynch syndrome", "inheritance": "AD"}],
+    "MUTYH": [{"disease": "MUTYH-associated polyposis", "inheritance": "AR"}],
+    "MYBPC3": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "MYH11": [{"disease": "Familial thoracic aortic aneurysm", "inheritance": "AD"}],
+    "MYH7": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}, {"disease": "Dilated cardiomyopathy", "inheritance": "AD"}],
+    "MYL2": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "MYL3": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "NF2": [{"disease": "NF2-related schwannomatosis", "inheritance": "AD"}],
+    "OTC": [{"disease": "Ornithine transcarbamylase deficiency", "inheritance": "XL"}],
+    "PALB2": [{"disease": "Hereditary breast cancer", "inheritance": "AD"}],
+    "PCSK9": [{"disease": "Familial hypercholesterolemia", "inheritance": "AD"}],
+    "PKP2": [{"disease": "Arrhythmogenic right ventricular cardiomyopathy", "inheritance": "AD"}],
+    "PLN": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}],
+    "PMS2": [{"disease": "Lynch syndrome", "inheritance": "AD"}],
+    "PRKAG2": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "PTEN": [{"disease": "PTEN hamartoma tumor syndrome", "inheritance": "AD"}],
+    "RB1": [{"disease": "Retinoblastoma", "inheritance": "AD"}],
+    "RBM20": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}],
+    "RET": [{"disease": "Familial medullary thyroid cancer", "inheritance": "AD"}, {"disease": "Multiple endocrine neoplasia type 2A", "inheritance": "AD"}, {"disease": "Multiple endocrine neoplasia type 2B", "inheritance": "AD"}],
+    "RPE65": [{"disease": "RPE65-related retinopathy", "inheritance": "AR"}],
+    "RYR1": [{"disease": "Malignant hyperthermia", "inheritance": "AD"}],
+    "RYR2": [{"disease": "Catecholaminergic polymorphic ventricular tachycardia", "inheritance": "AD"}],
+    "SCN5A": [{"disease": "Long QT syndrome type 3", "inheritance": "AD"}, {"disease": "Brugada syndrome", "inheritance": "AD"}, {"disease": "Dilated cardiomyopathy", "inheritance": "AD"}],
+    "SDHAF2": [{"disease": "Hereditary paraganglioma-pheochromocytoma syndrome", "inheritance": "AD"}],
+    "SDHB": [{"disease": "Hereditary paraganglioma-pheochromocytoma syndrome", "inheritance": "AD"}],
+    "SDHC": [{"disease": "Hereditary paraganglioma-pheochromocytoma syndrome", "inheritance": "AD"}],
+    "SDHD": [{"disease": "Hereditary paraganglioma-pheochromocytoma syndrome", "inheritance": "AD"}],
+    "SMAD3": [{"disease": "Loeys-Dietz syndrome", "inheritance": "AD"}],
+    "SMAD4": [{"disease": "Juvenile polyposis syndrome", "inheritance": "AD"}, {"disease": "Hereditary hemorrhagic telangiectasia", "inheritance": "AD"}],
+    "STK11": [{"disease": "Peutz-Jeghers syndrome", "inheritance": "AD"}],
+    "TGFBR1": [{"disease": "Loeys-Dietz syndrome", "inheritance": "AD"}],
+    "TGFBR2": [{"disease": "Loeys-Dietz syndrome", "inheritance": "AD"}],
+    "TMEM127": [{"disease": "Hereditary paraganglioma-pheochromocytoma syndrome", "inheritance": "AD"}],
+    "TMEM43": [{"disease": "Arrhythmogenic right ventricular cardiomyopathy", "inheritance": "AD"}],
+    "TNNC1": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}],
+    "TNNI3": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "TNNT2": [{"disease": "Dilated cardiomyopathy", "inheritance": "AD"}, {"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "TP53": [{"disease": "Li-Fraumeni syndrome", "inheritance": "AD"}],
+    "TPM1": [{"disease": "Hypertrophic cardiomyopathy", "inheritance": "AD"}],
+    "TRDN": [{"disease": "Catecholaminergic polymorphic ventricular tachycardia", "inheritance": "AR"}, {"disease": "Long QT syndrome", "inheritance": "AR"}],
+    "TSC1": [{"disease": "Tuberous sclerosis complex", "inheritance": "AD"}],
+    "TSC2": [{"disease": "Tuberous sclerosis complex", "inheritance": "AD"}],
+    "TTN": [{"disease": "Dilated cardiomyopathy (truncating variants only)", "inheritance": "AD"}],
+    "TTR": [{"disease": "Hereditary transthyretin-related amyloidosis", "inheritance": "AD"}],
+    "VHL": [{"disease": "Von Hippel-Lindau syndrome", "inheritance": "AD"}],
+    "WT1": [{"disease": "WT1-related Wilms tumor", "inheritance": "AD"}],
+}
+
+
+def _cell_text(cell, text: str, *, bold: bool = False) -> None:
+    cell.text = ""
+    p = cell.paragraphs[0]
+    run = p.add_run(str(text or ""))
+    run.bold = bold
+    run.font.size = BODY_FONT_SIZE
+    _set_run_font(run)
+
+
+def _plain_table(doc, headers: list[str], rows: list[list[str]]) -> None:
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.style = "Table Grid"
+    for cell, header in zip(table.rows[0].cells, headers):
+        _cell_text(cell, header, bold=True)
+    for row in rows:
+        cells = table.add_row().cells
+        for cell, value in zip(cells, row):
+            _cell_text(cell, value)
+
+
+def _health_variant_gene(v: dict, edits: dict) -> str:
+    return _snv_tx_field(v, edits, "gene_symbol") or v.get("gene_symbol") or v.get("GENE") or ""
+
+
+def _health_variant_hgvs(v: dict, edits: dict) -> str:
+    hgvs_c = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
+    hgvs_p = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
+    return hgvs_c + (f" ({hgvs_p})" if hgvs_p else "")
+
+
+def _is_health_clinvar_plp(v: dict) -> bool:
+    return _clinvar_label(v).lower().replace("_", " ") in {
+        "pathogenic",
+        "likely pathogenic",
+        "pathogenic/likely pathogenic",
+        "likely pathogenic/pathogenic",
+    }
+
+
+def _health_selected_ids(report: dict, category: str, candidate_ids: list[str], variants: dict) -> list[str]:
+    section = (report.get("secondary_findings") or {}).get(category) or {}
+    selected = {str(x) for x in section.get("selected") or []}
+    dismissed = {str(x) for x in section.get("dismissed") or []}
+    legacy = report.get("panels") or {}
+    out = []
+    for vid in candidate_ids:
+        if vid in dismissed or (legacy.get(vid, {}) or {}).get(category) == "0":
+            continue
+        if vid in selected or (legacy.get(vid, {}) or {}).get(category) == "V" or _is_health_clinvar_plp(variants.get(vid, {})):
+            out.append(vid)
+    return out
+
+
+def _acmg_disease_text(gene: str) -> str:
+    rows = _ACMG_SF_DISEASES.get(gene) or []
+    parts = []
+    for row in rows:
+        disease = row.get("disease") or ""
+        inh = row.get("inheritance") or ""
+        parts.append(f"{disease}（{inh}）" if inh else disease)
+    return "；".join(parts)
+
+
+def _render_health_variant_table(doc, ids: list[str], variants: dict, report: dict, *, acmg: bool = False) -> None:
+    edits = report.get("edits") or {}
+    rows = []
+    for vid in ids:
+        v = variants.get(vid) or {}
+        e = edits.get(vid) or {}
+        gene = _health_variant_gene(v, e)
+        disease = _acmg_disease_text(gene) if acmg else ""
+        if not disease:
+            disease = _picked_disease_for_snv(v, e)
+        rows.append([
+            gene,
+            _health_variant_hgvs(v, e),
+            _zygosity_long(v.get("zygosity", "")),
+            _clinvar_label(v),
+            _acmg_label(v, e),
+            disease,
+        ])
+    _plain_table(doc, ["基因", "變異", "基因型", "ClinVar", "ACMG/AMP", "相關疾病"], rows)
+
+
+def _render_health_secondary_section(doc, title: str, ids: list[str], variants: dict, report: dict) -> None:
+    _add_paragraph(doc, title, bold=True)
+    if not ids:
+        _add_paragraph(doc, f"  {_NO_HEALTH_VARIANT_TEXT}")
+    else:
+        _render_health_variant_table(doc, ids, variants, report)
+    _blank(doc)
+
+
+def _render_health_acmg_section(doc, title: str, ids: list[str], variants: dict, report: dict) -> None:
+    _add_paragraph(doc, title, bold=True)
+    remaining = set(ids)
+    for idx, group in enumerate(_ACMG_SF_GROUPS, start=1):
+        group_genes = set(group["genes"])
+        group_ids = [
+            vid for vid in ids
+            if _health_variant_gene(variants.get(vid, {}), (report.get("edits") or {}).get(vid) or {}) in group_genes
+        ]
+        remaining -= set(group_ids)
+        genes_label = ", ".join(group["genes"])
+        if group["key"] == "cardiovascular":
+            _add_paragraph(doc, f"  {idx}. {group['title']}")
+        else:
+            _add_paragraph(doc, f"  {idx}. {group['title']}，包含 {genes_label}")
+        if group_ids:
+            _render_health_variant_table(doc, group_ids, variants, report, acmg=True)
+        else:
+            _add_paragraph(doc, f"    {_NO_HEALTH_VARIANT_TEXT}")
+    if remaining:
+        _add_paragraph(doc, "  其它未分類 ACMG SF 基因")
+        _render_health_variant_table(doc, sorted(remaining), variants, report, acmg=True)
+    _blank(doc)
+
+
+def _pgx_actionable_rows(pgx: dict) -> list[list[str]]:
+    rows = []
+    genes = pgx.get("genes") or {}
+    for gene in pgx.get("actionable") or []:
+        g = genes.get(gene) or {}
+        diplotype = g.get("diplotype") or (g.get("details") or {}).get("label") or ""
+        phenotype = g.get("phenotype") or g.get("mtrn1_risk") or ""
+        for drug in g.get("drugs") or []:
+            for rec in drug.get("recommendations") or []:
+                if "CPIC" not in (rec.get("source") or "").upper():
+                    continue
+                level = rec.get("cpic_level") or rec.get("evidence") or ""
+                rows.append([
+                    gene,
+                    diplotype,
+                    phenotype,
+                    drug.get("drug") or "",
+                    level,
+                    rec.get("recommendation") or "",
+                ])
+    return rows
+
+
+def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
+    _add_paragraph(doc, title, bold=True)
+    rows = _pgx_actionable_rows(pgx or {})
+    if not rows:
+        _add_paragraph(doc, "  本次藥物基因體學分析未檢出具 CPIC 用藥建議之 actionable 結果。")
+    else:
+        _plain_table(doc, ["基因", "基因型", "代謝/風險表型", "藥物", "CPIC 等級", "CPIC recommendation"], rows)
+    _blank(doc)
+
+
+def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) -> bytes:
+    sample = sample_loader.load_sample(sample_id, include_aux=False)
+    if sample is None:
+        raise FileNotFoundError(f"sample not found: {sample_id}")
+    secondary = sample_loader.load_sample_secondary_snv(sample_id) or {}
+    pgx_payload = sample_loader.load_sample_pgx(sample_id) or {}
+
+    requested = [str(s).strip() for s in (sections or []) if str(s).strip()]
+    if not requested:
+        requested = ["acmg_sf", "pgx"]
+    requested_set = set(requested)
+    report = report_store.load(sample_id)
+    variants = secondary.get("variants") or {}
+    categories = secondary.get("categories") or {}
+
+    doc = Document()
+    _apply_normal_font(doc)
+    _apply_page_margins(doc)
+
+    meta = sample.get("meta") or {}
+    _add_paragraph(doc, "健檢基因篩檢報告", bold=True, size=TITLE_FONT_SIZE, align="center")
+    _blank(doc)
+    _add_paragraph(doc, f"檢體編號：{meta.get('LIS_ID') or sample_id}")
+    if meta.get("Name"):
+        _add_paragraph(doc, f"姓名：{meta.get('Name')}")
+    if meta.get("MRN"):
+        _add_paragraph(doc, f"病歷號：{meta.get('MRN')}")
+    _blank(doc)
+    _add_paragraph(doc, "檢測結果", bold=True)
+
+    for key, title in _HEALTH_SECTION_ORDER:
+        if key not in requested_set:
+            continue
+        if key == "pgx":
+            _render_health_pgx_section(doc, title, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
+            continue
+        ids = _health_selected_ids(report, key, categories.get(key) or [], variants)
+        if key == "acmg_sf":
+            _render_health_acmg_section(doc, title, ids, variants, report)
+        else:
+            _render_health_secondary_section(doc, title, ids, variants, report)
+
+    _add_paragraph(
+        doc,
+        "註：本報告僅針對本次檢測涵蓋範圍內達報告標準之致病或疑似致病變異進行彙整；"
+        "未檢出不代表可完全排除所有相關疾病風險。",
+    )
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
 # ── Top-level entrypoint ──────────────────────────────────────────
 
 def build_diagnosis_docx(sample_id: str, *, gene_list_mode: str = "grouped") -> bytes:

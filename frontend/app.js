@@ -2713,6 +2713,87 @@ async function exportDiagnosticDocx() {
   }
 }
 
+function _pickHealthReportSections() {
+  const options = [
+    { key: "acmg_sf", title: "重大可預防疾病風險基因（ACMG SF）", checked: true },
+    { key: "lipid_fh", title: "血脂相關基因", checked: false },
+    { key: "hereditary_cancer", title: "腫瘤相關基因", checked: false },
+    { key: "stroke", title: "中風相關基因", checked: false },
+    { key: "carrier", title: "帶因者篩查", checked: false },
+    { key: "proactive", title: "主動篩查", checked: false },
+    { key: "pgx", title: "藥物基因體學", checked: true },
+  ];
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "modal";
+    wrap.innerHTML = `
+      <div class="modal-card health-report-card">
+        <h2>匯出健檢報告</h2>
+        <p class="health-report-hint">選擇這次要放入報告的項目。</p>
+        <div class="health-report-options">
+          ${options.map(opt => `
+            <label class="health-report-option">
+              <input type="checkbox" value="${escapeAttr(opt.key)}"${opt.checked ? " checked" : ""} />
+              <span>${escapeHtml(opt.title)}</span>
+            </label>
+          `).join("")}
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-act="cancel">取消</button>
+          <button type="button" class="btn btn-primary" data-act="ok">匯出</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    const finish = (val) => { document.body.removeChild(wrap); resolve(val); };
+    wrap.addEventListener("click", (ev) => {
+      if (ev.target === wrap) finish(null);
+      const act = ev.target?.dataset?.act;
+      if (act === "cancel") finish(null);
+      if (act === "ok") {
+        const selected = Array.from(wrap.querySelectorAll('input[type="checkbox"]:checked'))
+          .map(input => input.value);
+        if (!selected.length) {
+          alert("請至少選擇一個報告項目。");
+          return;
+        }
+        finish(selected);
+      }
+    });
+  });
+}
+
+async function exportHealthDocx() {
+  if (!state.currentLIS) return;
+  const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+  const sid = row?.sample_id || state.currentLIS;
+  const sections = await _pickHealthReportSections();
+  if (!sections) return;
+
+  const btns = document.querySelectorAll(".btn-export-health");
+  const setBusy = b => btns.forEach(x => { x.disabled = b; });
+  const hint = msg => {
+    document.querySelectorAll(".js-save-hint").forEach(el => { el.textContent = msg; });
+  };
+  setBusy(true);
+  hint("產生健檢報告…");
+  try {
+    if (!await flushPendingSave()) throw new Error(_saveError || "尚未完成儲存");
+    const qs = encodeURIComponent(sections.join(","));
+    const url = `${API_BASE}/samples/${encodeURIComponent(sid)}/health-report.docx?sections=${qs}`;
+    const resp = await fetch(url, { credentials: "same-origin" });
+    if (resp.status === 401) { showLoginModal(); return; }
+    if (!resp.ok) throw new Error(`匯出失敗 (${resp.status})`);
+    const blob = await resp.blob();
+    downloadBlob(blob, `${sid}_health.docx`);
+    hint("健檢報告已下載");
+  } catch (e) {
+    hint("");
+    alert("匯出健檢報告失敗：" + e.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
 function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
   const source = document.getElementById(sectionId);
   if (!source) return "";
@@ -3053,7 +3134,7 @@ function _startJobPolling(sid, jobId) {
 function statusOptions(kind) {
   // kind: "candidate" → 1 / 2 / C / 0
   //                     1 = Causative · 2 = Other · C = Candidate · 0 = reviewed
-  //       "panel"     → ACMG SF / Proactive / Carrier → selected ✓ only
+  //       "panel"     → secondary finding panels → selected ✓ only
   // X was dropped — reviewers asked to mark-only, not hide.
   if (kind === "panel") return ["✓"];
   return ["1", "2", "C", "0"];
@@ -3062,8 +3143,7 @@ function statusOptions(kind) {
 // Render the four status options as radio chips (clickable circles)
 // instead of a dropdown — saves a click per status change and the
 // available choices are visible at a glance. `panelAttr` carries the
-// optional data-panel="..." string for panel-scoped statuses (ACMG
-// SF / Proactive / Carrier).
+// optional data-panel="..." string for panel-scoped statuses.
 let _statusRadioSeq = 0;
 function _renderStatusRadio(id, curStatus, opts, panelAttr = "") {
   // A variant can be rendered in both the analysis area and report
@@ -3183,8 +3263,8 @@ function isSecondarySelected(id, panel) {
   return _isClinvarPlp(v);
 }
 
-// Panel-specific status (per secondary category, so ✓ in proactive
-// doesn't surface in carrier). New state lives in
+// Panel-specific status (per secondary category, so ✓ in one panel
+// doesn't surface in another). New state lives in
 // reports.secondary_findings; reports.panels is read only for legacy V.
 function getPanelStatus(id, panel) {
   return isSecondarySelected(id, panel) ? "✓" : "";
@@ -3649,16 +3729,30 @@ function renderDiseaseList(v, id, withCheckbox) {
 
 // ---------- Render: sections ---------------------------------------
 
+const SECONDARY_PANEL_DEFS = [
+  { key: "acmg_sf",            title: "ACMG SF" },
+  { key: "lipid_fh",           title: "血脂相關基因" },
+  { key: "hereditary_cancer",  title: "腫瘤相關基因" },
+  { key: "stroke",             title: "中風相關基因" },
+  { key: "carrier",            title: "Carrier screening" },
+  { key: "proactive",          title: "Proactive" },
+];
+
 const REPORT_SECTION_DEFS = [
   { el: "sec-causative", title: "Causative variants", match: id => getStatus(id) === "1", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "1" },
   { el: "sec-other",     title: "Other variants",     match: id => getStatus(id) === "2", dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "2" },
   { el: "sec-candidate", title: "Candidate variants", match: id => _statusHas(getStatus(id), "C"), dropdown: "candidate", defaultOpen: true, diseaseCheckbox: true, manualStatus: "C" },
-  // ACMG SF / Proactive / Carrier / PharmCat all live inside the
+  // ACMG SF / health-screening panels / PharmCat all live inside the
   // Secondary findings collapsible group in the HTML; they render
   // the same way as before, just nested in a different container.
-  { el: "sec-acmg-sf",   title: "ACMG SF",            category: "acmg_sf",   dropdown: "panel", defaultOpen: true, diseaseCheckbox: true },
-  { el: "sec-proactive", title: "Proactive",          category: "proactive", dropdown: "panel", defaultOpen: true, diseaseCheckbox: true },
-  { el: "sec-carrier",   title: "Carrier screening",  category: "carrier",   dropdown: "panel", defaultOpen: true, diseaseCheckbox: true },
+  ...SECONDARY_PANEL_DEFS.map(def => ({
+    el: `sec-${def.key.replace(/_/g, "-")}`,
+    title: def.title,
+    category: def.key,
+    dropdown: "panel",
+    defaultOpen: true,
+    diseaseCheckbox: true,
+  })),
 ];
 
 // Tier sections per 三級輸出計畫.md §2.3. Backend categorises each variant
@@ -3669,9 +3763,13 @@ const CANDIDATE_SECTION_DEFS = [
   { el: "cat-tier-1c", title: "1C — ACMG points ≥ 4",          category: "1C", dropdown: "candidate", tier: "1C", defaultOpen: true },
   { el: "cat-tier-2",  title: "2 — ClinVar P/LP 0★ or Conflicting (含 P)", category: "2", dropdown: "candidate", tier: "2" },
   { el: "cat-tier-3",  title: "3 - Other",                     category: "3",  dropdown: "candidate", tier: "3"  },
-  { el: "cat-acmg-sf-c",   title: "ACMG SF",          category: "acmg_sf",   dropdown: "panel", defaultOpen: true },
-  { el: "cat-proactive-c", title: "Proactive",        category: "proactive", dropdown: "panel", defaultOpen: true },
-  { el: "cat-carrier-c",   title: "Carrier screening", category: "carrier",  dropdown: "panel", defaultOpen: true },
+  ...SECONDARY_PANEL_DEFS.map(def => ({
+    el: `cat-${def.key.replace(/_/g, "-")}-c`,
+    title: def.title,
+    category: def.key,
+    dropdown: "panel",
+    defaultOpen: true,
+  })),
 ];
 
 // Look up a variant id across all four maps (SNV / Mito / CNV / SV)
@@ -5691,6 +5789,8 @@ document.addEventListener("click", ev => {
     collapseCandidateSections();
   } else if (t.matches(".btn-export-clinical")) {
     exportDiagnosticDocx();
+  } else if (t.matches(".btn-export-health")) {
+    exportHealthDocx();
   } else if (t.matches(".btn-print-report")) {
     printReportCards();
   } else if (t.matches(".btn-export-html, .btn-export-screening")) {
@@ -7144,8 +7244,11 @@ async function buildScreeningPDF() {
   w.gap(6);
 
   pdfWriteSection(w, "重大疾病風險篩檢（美國遺傳醫學會 ACMG 次要發現基因）", cats.acmg_sf,   data.variants, "acmg_sf");
-  pdfWriteSection(w, "主動性篩檢",                                          cats.proactive, data.variants, "proactive");
+  pdfWriteSection(w, "血脂相關基因",                                        cats.lipid_fh, data.variants, "lipid_fh");
+  pdfWriteSection(w, "腫瘤相關基因",                                        cats.hereditary_cancer, data.variants, "hereditary_cancer");
+  pdfWriteSection(w, "中風相關基因",                                        cats.stroke, data.variants, "stroke");
   pdfWriteSection(w, "帶因者篩檢",                                          cats.carrier,   data.variants, "carrier");
+  pdfWriteSection(w, "主動性篩檢",                                          cats.proactive, data.variants, "proactive");
   pdfWritePharmacogenomics(w, data.pgx || data.pharmcat);
 
   // 檢測方法說明 — fixed wording for the screening report (assumes WGS,

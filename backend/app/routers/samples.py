@@ -67,6 +67,36 @@ def get_report_docx(sample_id: str, gene_list_mode: str = "grouped"):
     )
 
 
+@router.get("/samples/{sample_id}/health-report.docx")
+def get_health_report_docx(sample_id: str, sections: str = "acmg_sf,pgx"):
+    """Render the health-screening DOCX with selected secondary findings
+    sections. `sections` is a comma-separated list of panel keys plus pgx.
+    """
+    selected = [s.strip() for s in (sections or "").split(",") if s.strip()]
+    try:
+        blob = docx_export.build_health_docx(sample_id, sections=selected)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+    from datetime import datetime, timezone
+    from ..config import REPORT_OUTPUT_DIR
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = REPORT_OUTPUT_DIR / f"{sample_id}_health_{ts}.docx"
+    latest  = REPORT_OUTPUT_DIR / f"{sample_id}_health.docx"
+    try:
+        archive.write_bytes(blob)
+        latest.write_bytes(blob)
+    except OSError:
+        pass
+
+    fname = quote(f"{sample_id}_health.docx")
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"},
+    )
+
+
 @router.get("/samples")
 def list_samples():
     return sample_loader.list_index()
@@ -359,7 +389,7 @@ def get_sample_pgx(sample_id: str, version: str | None = None):
 
 @router.get("/samples/{sample_id}/secondary-snv")
 def get_sample_secondary_snv(sample_id: str, version: str | None = None):
-    """ACMG SF / Proactive / Carrier SNV side-channel for staged loading."""
+    """Secondary-finding SNV side-channel for staged loading."""
     payload = sample_loader.load_sample_secondary_snv(sample_id, version=version)
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")

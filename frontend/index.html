@@ -40,8 +40,11 @@
         <button type="button" class="sidebar-link sub" data-target="card-str">STR</button>
         <button type="button" class="sidebar-link sub" data-target="card-roh">ROH</button>
         <button type="button" class="sidebar-link sub" data-target="cat-acmg-sf-c">ACMG SF</button>
-        <button type="button" class="sidebar-link sub" data-target="cat-proactive-c">Proactive</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-lipid-fh-c">血脂相關基因</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-hereditary-cancer-c">腫瘤相關基因</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-stroke-c">中風相關基因</button>
         <button type="button" class="sidebar-link sub" data-target="cat-carrier-c">Carrier</button>
+        <button type="button" class="sidebar-link sub" data-target="cat-proactive-c">Proactive</button>
         <button type="button" class="sidebar-link sub" data-target="cat-pharmcat-c">Pharmacogenomics</button>
       </details>
     </nav>
@@ -295,6 +298,7 @@
     <div id="save-row-mid" class="save-row save-row-mid hidden">
       <button class="btn btn-primary js-btn-save">💾 儲存變更</button>
       <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
+      <button class="btn btn-export-health" title="匯出健檢報告 (DOCX, 細明體)">匯出健檢報告</button>
       <button class="btn btn-print-report" title="列印報告區卡片或另存為 PDF">輸出 PDF</button>
       <span class="muted js-save-hint"></span>
     </div>
@@ -316,14 +320,18 @@
         </button>
         <div class="secondary-findings-body open">
           <div id="sec-acmg-sf"    class="report-block" data-kind="panel"    data-category="acmg_sf"></div>
-          <div id="sec-proactive"  class="report-block" data-kind="panel"    data-category="proactive"></div>
+          <div id="sec-lipid-fh"   class="report-block" data-kind="panel"    data-category="lipid_fh"></div>
+          <div id="sec-hereditary-cancer" class="report-block" data-kind="panel" data-category="hereditary_cancer"></div>
+          <div id="sec-stroke"     class="report-block" data-kind="panel"    data-category="stroke"></div>
           <div id="sec-carrier"    class="report-block" data-kind="panel"    data-category="carrier"></div>
+          <div id="sec-proactive"  class="report-block" data-kind="panel"    data-category="proactive"></div>
           <div id="sec-pharmcat"   class="report-block" data-kind="pharmcat"></div>
         </div>
       </div>
       <div class="save-row">
         <button id="btn-save-top" class="btn btn-primary js-btn-save">💾 儲存變更</button>
         <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
+        <button class="btn btn-export-health" title="匯出健檢報告 (DOCX, 細明體)">匯出健檢報告</button>
         <button class="btn btn-print-report" title="列印報告區卡片或另存為 PDF">輸出 PDF</button>
         <span id="save-hint-top" class="muted js-save-hint"></span>
       </div>
@@ -420,12 +428,16 @@
         <div class="analysis-card-empty">（無資料）</div>
       </div>
       <div id="cat-acmg-sf-c"  class="cat-block" data-category="acmg_sf"></div>
-      <div id="cat-proactive-c" class="cat-block" data-category="proactive"></div>
+      <div id="cat-lipid-fh-c" class="cat-block" data-category="lipid_fh"></div>
+      <div id="cat-hereditary-cancer-c" class="cat-block" data-category="hereditary_cancer"></div>
+      <div id="cat-stroke-c" class="cat-block" data-category="stroke"></div>
       <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
+      <div id="cat-proactive-c" class="cat-block" data-category="proactive"></div>
       <div id="cat-pharmcat-c" class="cat-block" data-category="pharmcat"></div>
       <div class="save-row">
         <button id="btn-save-bottom" class="btn btn-primary js-btn-save">💾 儲存變更</button>
         <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
+        <button class="btn btn-export-health" title="匯出健檢報告 (DOCX, 細明體)">匯出健檢報告</button>
         <button class="btn btn-print-report" title="列印報告區卡片或另存為 PDF">輸出 PDF</button>
         <span id="save-hint-bottom" class="muted js-save-hint"></span>
       </div>

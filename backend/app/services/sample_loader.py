@@ -46,8 +46,11 @@ from . import analyses_store, omim_store, panel_deadzone, phenotype_scorer, snv_
 
 SECONDARY_SNV_PANELS = {
     "acmg_sf": "ACMG_SF_v3.3",
-    "proactive": "proactive",
+    "lipid_fh": "lipid_fh",
+    "hereditary_cancer": "WES-I__腫瘤醫學__遺傳癌症",
+    "stroke": "WGS__神經科__Stroke",
     "carrier": "carrier_mackenzie_1300+",
+    "proactive": "proactive",
 }
 
 _SNV_CACHE_MAX = 8
@@ -1412,7 +1415,7 @@ def _sample_snv_sidecar_context(sample_id: str, version: str | None = None):
 
 
 def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dict | None:
-    """Staged loader: ACMG SF / Proactive / Carrier SNV side-channel."""
+    """Staged loader for secondary-finding SNV panel categories."""
     started = time.perf_counter()
     ctx = _sample_snv_sidecar_context(sample_id, version)
     if ctx is None:
@@ -1437,9 +1440,7 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
                 raw_size=_fmt_size(raw_snv_tsv),
                 review_size="missing",
                 variants=0,
-                acmg_sf=0,
-                proactive=0,
-                carrier=0,
+                **{category: 0 for category in SECONDARY_SNV_PANELS},
             )
             return {
                 "variants": {},
@@ -1464,9 +1465,7 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
         raw_size=_fmt_size(raw_snv_tsv),
         review_size=_fmt_size(snv_tsv),
         variants=len(variants),
-        acmg_sf=len(categories.get("acmg_sf") or []),
-        proactive=len(categories.get("proactive") or []),
-        carrier=len(categories.get("carrier") or []),
+        **{category: len(categories.get(category) or []) for category in SECONDARY_SNV_PANELS},
     )
     return {
         "variants": variants,
