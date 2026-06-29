@@ -11,6 +11,7 @@
 - Secondary findings 新增血脂相關基因、腫瘤相關基因與中風相關基因區塊，並依 ACMG SF、血脂、腫瘤、中風、Carrier screening、Proactive、PGx 的順序顯示。
 - 新增「匯出健檢報告」DOCX：匯出前可選擇報告項目，預設勾選 ACMG SF 與藥物基因體學；版型沿用診斷報告的 `====` 表格、列點、檢測方法、注意事項與基因清單；未檢出區段以「於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。」呈現。
 - 健檢報告中的 ACMG SF 依血脂、腫瘤、心血管、代謝與內分泌、麻醉用藥風險及其它基因分組，疾病名稱使用 ClinGen / ACMG SF v3.3 表格。
+- 診斷與健檢 DOCX 的 SNV/Indel 表格調整 ClinVar / RS ID 欄寬，避免 `conflicting classifications` 與下一欄黏在一起。
 - 三級分析 DRAGEN VCF 清單預設加掃 `/home/datalake_Intermediate/n102968`，方便從該目錄直接選擇 hard-filtered VCF。
 
 ### v6.0 — 2026-06-19

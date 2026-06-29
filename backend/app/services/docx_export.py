@@ -341,6 +341,8 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
                    Tokens longer than `width` fall back to char wrap.
     mode="buffered" → greedy char wrap with one trailing display column
                       reserved as whitespace before the next table cell.
+    mode="token-buffered" → token wrap with one trailing display column
+                            reserved before the next table cell.
     """
     if text is None:
         return [""]
@@ -359,6 +361,9 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
             else:
                 out.extend(_wrap_to_cols(tok, width, mode="char"))
         return out or [""]
+
+    if mode == "token-buffered":
+        return _wrap_to_cols(s, max(1, width - 1), mode="token")
 
     if mode == "hgvs":
         # Keep one blank display column between HGVS content and the next
@@ -859,12 +864,12 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("基因",          9),
-        ("RS ID",         8, "buffered"),
+        ("RS ID",         7, "buffered"),
         ("結構",          9),
         ("核苷酸",       14, "hgvs"),
         ("基因型",       13),
-        ("ClinVar",      13, "token"),
-        ("ACMG&AMP指引", 13, "token"),
+        ("ClinVar",      16, "token-buffered"),
+        ("ACMG&AMP指引", 12, "token"),
     ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
 
     _add_paragraph(doc, f"    1. {_omim_block_for_snv(v, edits)}")
@@ -1528,12 +1533,12 @@ def _health_snv_variant_block(doc, v: dict, *, tier: str, edits: dict,
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("基因",          9),
-        ("RS ID",         8, "buffered"),
+        ("RS ID",         7, "buffered"),
         ("結構",          9),
         ("核苷酸",       14, "hgvs"),
         ("基因型",       13),
-        ("ClinVar",      13, "token"),
-        ("ACMG&AMP指引", 13, "token"),
+        ("ClinVar",      16, "token-buffered"),
+        ("ACMG&AMP指引", 12, "token"),
     ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
 
     if disease_text:
