@@ -13,6 +13,7 @@
 - 健檢報告中的 ACMG SF 依血脂、腫瘤、心血管、代謝與內分泌、麻醉用藥風險及其它基因分組，疾病名稱使用 ClinGen / ACMG SF v3.3 表格。
 - 診斷與健檢 DOCX 的 SNV/Indel 表格調整 ClinVar / RS ID 欄寬，避免 `conflicting classifications` 與下一欄黏在一起。
 - 三級分析 DRAGEN VCF 清單預設加掃 `/home/datalake_Intermediate/n102968`，方便從該目錄直接選擇 hard-filtered VCF。
+- IGV DRAGEN BAM 搜尋預設加掃 `/home/datalake_Intermediate/n102968`，可直接讀取測試用 `<run>/bam/{sample}.bam`。
 
 ### v6.0 — 2026-06-19
 

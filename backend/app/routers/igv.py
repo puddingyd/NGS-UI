@@ -40,7 +40,7 @@ _INHOUSE_BAM_ROOTS = [
 _DRAGEN_BAM_ROOTS = [
     Path(p).resolve() for p in (
         os.environ.get("NGS_UI_DRAGEN_BAM_ROOT")
-        or "/home/datalake_Raw/Novaseq"
+        or "/home/datalake_Raw/Novaseq:/home/datalake_Intermediate/n102968"
     ).split(":") if p
 ]
 _ALL_BAM_ROOTS = tuple(dict.fromkeys([*_INHOUSE_BAM_ROOTS, *_DRAGEN_BAM_ROOTS]))
