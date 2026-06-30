@@ -1328,7 +1328,7 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
 
 # ── Health screening DOCX ─────────────────────────────────────────
 
-_NO_HEALTH_VARIANT_TEXT = "於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。"
+_NO_HEALTH_VARIANT_TEXT = "此類別於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。"
 
 _HEALTH_SECTION_ORDER = [
     ("acmg_sf", "第一類：重大可預防疾病風險基因"),
@@ -1354,8 +1354,20 @@ def _meta_value(meta: dict, key: str) -> str:
     return "" if value in (None, "") else str(value)
 
 
-def _meta_pair(label: str, value: str, width: int = 27) -> str:
-    return _pad_right(f"{label}: {value or '—'}", width)
+def _display_lis_id(value: str) -> str:
+    text = str(value or "").strip()
+    for suffix in ("-dragen", "-nckuh", "-inhouse"):
+        if text.lower().endswith(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
+def _health_meta_row(row: list[tuple[str, str]]) -> str:
+    widths = (32, 25, 25)
+    cells = []
+    for (label, value), width in zip(row, widths):
+        cells.append(_pad_right(f"{label}: {value or '—'}", width))
+    return " ".join(cells).rstrip()
 
 
 def _section_health_patient_header(doc, meta: dict) -> None:
@@ -1365,7 +1377,7 @@ def _section_health_patient_header(doc, meta: dict) -> None:
     _blank(doc)
     rows = [
         (
-            ("檢體編號", _meta_value(meta, "LIS_ID")),
+            ("檢體編號", _display_lis_id(_meta_value(meta, "LIS_ID"))),
             ("病歷號", _meta_value(meta, "MRN")),
             ("簽收日期", _meta_value(meta, "SignReceivedAt")),
         ),
@@ -1377,7 +1389,7 @@ def _section_health_patient_header(doc, meta: dict) -> None:
     ]
     _add_paragraph(doc, "受檢者資料", bold=True)
     for row in rows:
-        _add_paragraph(doc, "".join(_meta_pair(*pair) for pair in row))
+        _add_paragraph(doc, _health_meta_row(list(row)))
     _blank(doc)
 
 _ACMG_SF_GROUPS = [
@@ -1732,7 +1744,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
     _add_paragraph(doc, title, bold=True)
     groups = _pgx_actionable_groups(pgx or {})
     if not groups:
-        _add_paragraph(doc, "  本次藥物基因體學分析未檢出具 CPIC 用藥建議之 actionable 結果。")
+        _add_paragraph(doc, "  未檢出具臨床可應用之用藥建議之結果。")
     else:
         for group in groups:
             _ascii_table(doc, columns=[

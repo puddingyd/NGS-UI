@@ -9,13 +9,14 @@
 ### v6.1 — 2026-06-29
 
 - Secondary findings 新增血脂相關基因、腫瘤相關基因與中風相關基因區塊，並依 ACMG SF、血脂、腫瘤、中風、Carrier screening、Proactive、PGx 的順序顯示。
-- 新增「匯出健檢報告」DOCX：匯出前可選擇報告項目，預設勾選 ACMG SF 與藥物基因體學；版型沿用診斷報告的 `====` 表格、列點、檢測方法、注意事項與基因清單；未檢出區段以「於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。」呈現。
+- 新增「匯出健檢報告」DOCX：匯出前可選擇報告項目，預設勾選 ACMG SF 與藥物基因體學；版型沿用診斷報告的 `====` 表格、列點、檢測方法、注意事項與基因清單；未檢出區段以「此類別於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。」呈現。
 - 健檢報告中的 ACMG SF 依血脂、腫瘤、心血管、代謝與內分泌、麻醉用藥風險及其它基因分組，疾病名稱使用 ClinGen / ACMG SF v3.3 表格。
 - 診斷與健檢 DOCX 的 SNV/Indel 表格調整 ClinVar / RS ID 欄寬，避免 `conflicting classifications` 與下一欄黏在一起。
 - 三級分析 DRAGEN VCF 清單預設加掃 `/home/datalake_Intermediate/n102968`，方便從該目錄直接選擇 hard-filtered VCF。
 - IGV DRAGEN BAM 搜尋預設加掃 `/home/datalake_Intermediate/n102968`，可直接讀取測試用 `<run>/bam/{sample}.bam`。
 - 健檢 DOCX 依 review 註解調整格式：新增受檢者資料區、更新檢驗項目/套組名稱、ACMG SF 參考文字與遺傳模式句型，PGx 僅輸出 Strong/Moderate/Optional CPIC recommendation。
-- 健檢 DOCX 進一步依 review 註解調整：報告抬頭置中、受檢者資料改雙列三欄、SNV 表格移除類別欄、PGx 基因清單改列基因名稱；主畫面 Secondary findings 預設只展開 ACMG，分析區預設展開 ACMG 與 PGx。
+- 健檢 DOCX 進一步依 review 註解調整：報告抬頭置中、受檢者資料改雙列三欄且檢體編號顯示時去除來源後綴、SNV 表格移除類別欄、PGx 基因清單改列基因名稱；主畫面 Secondary findings 預設只展開 ACMG，分析區預設展開 ACMG 與 PGx。
+- 健檢 DOCX 的 PGx 區段若無 actionable 結果，改寫「未檢出具臨床可應用之用藥建議之結果。」。
 - 報告區 Causative / Other / Candidate 點位順序固定為 SNV/Indel、CNV/SV、Mitochondria；DOCX 遺傳模式不再顯示 digenic 或 somatic。
 
 ### v6.0 — 2026-06-19
