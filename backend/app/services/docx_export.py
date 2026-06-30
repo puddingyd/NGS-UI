@@ -467,11 +467,14 @@ def _manual_for(report: dict, status: str) -> list[dict]:
 
 # ── Sections ──────────────────────────────────────────────────────
 
-def _section_test_info(doc, test_type: str) -> None:
+def _section_test_info(doc, test_type: str, *, health: bool = False) -> None:
     """一、檢驗項目"""
     is_wgs = (test_type or "").upper() == "WGS"
-    label = "次世代定序全基因組定序檢測-單基因遺傳疾病" if is_wgs \
-        else "次世代定序全外顯子定序檢測-單基因遺傳疾病"
+    if health:
+        label = "次世代定序全基因體定序檢測" if is_wgs else "次世代定序全外顯子定序檢測"
+    else:
+        label = "次世代定序全基因組定序檢測-單基因遺傳疾病" if is_wgs \
+            else "次世代定序全外顯子定序檢測-單基因遺傳疾病"
     _add_paragraph(doc, f"一、檢驗項目: {label}")
     _blank(doc)
 
@@ -826,7 +829,7 @@ def _snv_tx_field(v: dict, edits: dict, field: str, *fallbacks: str) -> str:
 
 def _strip_hgvs_prefix(value: str) -> str:
     text = str(value or "").strip()
-    if not text:
+    if not text or text in {".", "-", "NA", "N/A"}:
         return ""
     for marker in ("c.", "n.", "m.", "g.", "p."):
         idx = text.find(marker)
@@ -1319,7 +1322,7 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
 _NO_HEALTH_VARIANT_TEXT = "於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。"
 
 _HEALTH_SECTION_ORDER = [
-    ("acmg_sf", "第一類：重大可預防疾病風險基因（ACMG SF）"),
+    ("acmg_sf", "第一類：重大可預防疾病風險基因"),
     ("lipid_fh", "第二類：血脂相關基因"),
     ("hereditary_cancer", "第三類：腫瘤相關基因"),
     ("stroke", "第四類：中風相關基因"),
@@ -1327,6 +1330,35 @@ _HEALTH_SECTION_ORDER = [
     ("proactive", "第六類：主動篩查"),
     ("pgx", "藥物基因體學"),
 ]
+
+_HEALTH_ACMG_GENE_LIST_TITLE = (
+    "第一類：重大可預防疾病風險基因（參考美國遺傳醫學會 "
+    "(American College of Medical Genetics and Genomics) 於 2025 年所公告之"
+    "次發現 (Secondary findings) 基因清單 v3.3 版；PMID: 40568962）"
+)
+
+
+def _meta_value(meta: dict, key: str) -> str:
+    value = meta.get(key)
+    return "" if value in (None, "") else str(value)
+
+
+def _meta_pair(label: str, value: str, width: int = 39) -> str:
+    return _pad_right(f"{label}: {value or '—'}", width)
+
+
+def _section_health_patient_header(doc, meta: dict) -> None:
+    """Basic case metadata above the health-report sections."""
+    rows = [
+        (("檢體編號", _meta_value(meta, "LIS_ID")), ("姓名", _meta_value(meta, "Name"))),
+        (("病歷號", _meta_value(meta, "MRN")), ("性別", _meta_value(meta, "Sex"))),
+        (("出生日期", _meta_value(meta, "DOB")), ("簽收日期", _meta_value(meta, "SignReceivedAt"))),
+        (("科別", _meta_value(meta, "Department")), ("開單醫師", _meta_value(meta, "Physician"))),
+    ]
+    _add_paragraph(doc, "受檢者資料", bold=True)
+    for left, right in rows:
+        _add_paragraph(doc, f"{_meta_pair(*left)}{_meta_pair(*right)}")
+    _blank(doc)
 
 _ACMG_SF_GROUPS = [
     {
@@ -1468,6 +1500,23 @@ _ACMG_SF_DISEASES = {
     "WT1": [{"disease": "WT1-related Wilms tumor", "inheritance": "AD"}],
 }
 
+_PGX_REPORTABLE_STRENGTHS = {"strong", "moderate", "optional"}
+
+_PGX_LEVEL_A_GENE_INFO = {
+    "CYP2D6": ("StellarPGx（WGS）", "抗憂鬱劑、止痛藥、抗精神病藥"),
+    "CYP2C19": ("PharmCAT（VCF）", "clopidogrel、PPI、抗憂鬱劑"),
+    "CYP2C9": ("PharmCAT（VCF）", "warfarin、NSAIDs、phenytoin"),
+    "DPYD": ("PharmCAT（VCF）", "fluoropyrimidine（5-FU）毒性"),
+    "TPMT": ("PharmCAT（VCF）", "thiopurine（azathioprine）毒性"),
+    "NUDT15": ("PharmCAT（VCF）", "thiopurine（azathioprine）毒性（亞洲族群重要）"),
+    "SLCO1B1": ("PharmCAT（VCF）", "simvastatin 肌肉毒性"),
+    "HLA-A": ("OptiType（WGS）", "abacavir 過敏（*31:01 positive）"),
+    "HLA-B": ("OptiType（WGS）", "abacavir（*57:01）、carbamazepine（*15:02）、allopurinol（*58:01）過敏"),
+    "UGT1A1": ("PharmCAT（VCF）", "irinotecan 毒性"),
+    "G6PD": ("PharmCAT（VCF）", "多種藥物溶血風險"),
+    "MT-RNR1": ("mito pipeline + BAM mpileup", "aminoglycoside 致聾風險（CPIC Level A）"),
+}
+
 
 def _health_variant_gene(v: dict, edits: dict) -> str:
     return _snv_tx_field(v, edits, "gene_symbol") or v.get("gene_symbol") or v.get("GENE") or ""
@@ -1504,16 +1553,30 @@ def _health_selected_ids(report: dict, category: str, candidate_ids: list[str], 
 
 def _acmg_disease_text(gene: str) -> str:
     rows = _ACMG_SF_DISEASES.get(gene) or []
-    parts = []
+    parts: list[str] = []
     for row in rows:
         disease = row.get("disease") or ""
-        inh = row.get("inheritance") or ""
-        parts.append(f"{disease}（{inh}）" if inh else disease)
+        if disease:
+            parts.append(disease)
     return "；".join(parts)
 
 
+def _acmg_inheritance_text(gene: str) -> str:
+    rows = _ACMG_SF_DISEASES.get(gene) or []
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in rows:
+        inh = row.get("inheritance") or ""
+        zh = _inheritance_zh(inh)
+        if zh and zh not in seen:
+            seen.add(zh)
+            out.append(zh)
+    return "、".join(out)
+
+
 def _health_snv_variant_block(doc, v: dict, *, tier: str, edits: dict,
-                              disease_text: str = "") -> None:
+                              disease_text: str = "",
+                              inheritance_text: str = "") -> None:
     gene = _health_variant_gene(v, edits) or "?"
     tx = _snv_transcript_label(v, edits)
     _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
@@ -1542,7 +1605,8 @@ def _health_snv_variant_block(doc, v: dict, *, tier: str, edits: dict,
     ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
 
     if disease_text:
-        _add_paragraph(doc, f"    1. {gene} 為 {disease_text} 之相關基因。")
+        inh_clause = f"，其遺傳模式屬於{inheritance_text}" if inheritance_text else ""
+        _add_paragraph(doc, f"    1. {gene} 為 {disease_text} 之相關基因{inh_clause}。")
     else:
         _add_paragraph(doc, f"    1. {_omim_block_for_snv(v, edits)}")
     _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
@@ -1587,6 +1651,7 @@ def _render_health_acmg_section(doc, title: str, ids: list[str], variants: dict,
                     tier=str(vid_idx),
                     edits=edits.get(vid) or {},
                     disease_text=_acmg_disease_text(gene),
+                    inheritance_text=_acmg_inheritance_text(gene),
                 )
                 _blank(doc)
         else:
@@ -1603,6 +1668,7 @@ def _render_health_acmg_section(doc, title: str, ids: list[str], variants: dict,
                 tier=str(vid_idx),
                 edits=edits.get(vid) or {},
                 disease_text=_acmg_disease_text(gene),
+                inheritance_text=_acmg_inheritance_text(gene),
             )
             _blank(doc)
     _blank(doc)
@@ -1621,6 +1687,8 @@ def _pgx_actionable_groups(pgx: dict) -> list[dict]:
                 if "CPIC" not in (rec.get("source") or "").upper():
                     continue
                 level = rec.get("cpic_level") or rec.get("evidence") or ""
+                if level.strip().lower() not in _PGX_REPORTABLE_STRENGTHS:
+                    continue
                 recs.append({
                     "drug": drug.get("drug") or "",
                     "level": level,
@@ -1650,7 +1718,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
             ], rows=[[group["gene"], group["diplotype"], group["phenotype"]]])
             _add_paragraph(doc, "    相關用藥建議：")
             for idx, rec in enumerate(group["recommendations"], start=1):
-                level = f" (CPIC evidence level: {rec['level']})" if rec.get("level") else ""
+                level = f" (CPIC Recommendation strength: {rec['level']})" if rec.get("level") else ""
                 _add_paragraph(doc, f"    {idx}. {rec['drug']}: {rec['recommendation']}{level}")
             _blank(doc)
     _blank(doc)
@@ -1667,6 +1735,7 @@ def _health_panel_gene_sections(requested_set: set[str]) -> list[tuple[str, list
         "proactive": "proactive",
     }
     titles = dict(_HEALTH_SECTION_ORDER)
+    titles["acmg_sf"] = _HEALTH_ACMG_GENE_LIST_TITLE
     for key, panel_name in panel_keys.items():
         if key not in requested_set:
             continue
@@ -1677,12 +1746,22 @@ def _health_panel_gene_sections(requested_set: set[str]) -> list[tuple[str, list
             if g
         })
         out.append((titles.get(key, key), [g for g in genes if g]))
-    if "pgx" in requested_set:
-        out.append(("藥物基因體學", []))
     return out
 
 
-def _section_health_annotations(doc, requested_set: set[str]) -> None:
+def _pgx_level_a_gene_rows(pgx: dict) -> list[list[str]]:
+    genes = pgx.get("genes") or {}
+    tsv_genes = [g for g in (pgx.get("gene_order") or []) if g in genes and not (genes.get(g) or {}).get("additional")]
+    rows: list[list[str]] = []
+    for gene in _PGX_LEVEL_A_GENE_INFO:
+        if gene not in tsv_genes:
+            continue
+        caller, meaning = _PGX_LEVEL_A_GENE_INFO[gene]
+        rows.append([gene, caller, meaning])
+    return rows
+
+
+def _section_health_annotations(doc, requested_set: set[str], pgx: dict | None = None) -> None:
     _add_paragraph(doc, "五、檢測結果注釋")
     _add_paragraph(doc, "  1. 本檢測結果比對參考序列為人類hg38版本。")
     _add_paragraph(doc, f"  2. ClinVar及ACMG&AMP指引：引用ClinVar資料庫截至{CLINVAR_DATE_HUMN}更新的註解，"
@@ -1706,6 +1785,20 @@ def _section_health_annotations(doc, requested_set: set[str]) -> None:
             _add_paragraph(doc, ", ".join(genes))
         else:
             _add_paragraph(doc, "依藥物基因體學分析模組可判讀基因輸出。")
+    if "pgx" in requested_set:
+        if sections:
+            _blank(doc)
+        _add_paragraph(doc, "藥物基因體學:")
+        rows = _pgx_level_a_gene_rows(pgx or {})
+        if rows:
+            _add_paragraph(doc, "CPIC Level A 基因清單")
+            _ascii_table(doc, columns=[
+                ("基因", 10),
+                ("Outside caller", 24, "buffered"),
+                ("主要臨床意義", 46, "buffered"),
+            ], rows=rows)
+        else:
+            _add_paragraph(doc, "本次藥物基因體學分析未輸出 CPIC Level A 基因。")
 
 
 def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) -> bytes:
@@ -1730,8 +1823,9 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     meta = sample.get("meta") or {}
     test_type = meta.get("Test", "") or "WES"
 
-    _section_test_info(doc, test_type)
-    _add_paragraph(doc, "二、檢驗套組: 健檢基因篩檢")
+    _section_health_patient_header(doc, meta)
+    _section_test_info(doc, test_type, health=True)
+    _add_paragraph(doc, "二、檢驗套組: 重大疾病基因篩檢")
     _blank(doc)
 
     _add_paragraph(doc, "三、檢測結果")
@@ -1774,7 +1868,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             _blank(doc)
 
     _section_methods(doc, test_type)
-    _section_health_annotations(doc, requested_set)
+    _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
 
     buf = io.BytesIO()
     doc.save(buf)

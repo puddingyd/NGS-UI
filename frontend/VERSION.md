@@ -14,6 +14,7 @@
 - 診斷與健檢 DOCX 的 SNV/Indel 表格調整 ClinVar / RS ID 欄寬，避免 `conflicting classifications` 與下一欄黏在一起。
 - 三級分析 DRAGEN VCF 清單預設加掃 `/home/datalake_Intermediate/n102968`，方便從該目錄直接選擇 hard-filtered VCF。
 - IGV DRAGEN BAM 搜尋預設加掃 `/home/datalake_Intermediate/n102968`，可直接讀取測試用 `<run>/bam/{sample}.bam`。
+- 健檢 DOCX 依 review 註解調整格式：新增受檢者資料區、更新檢驗項目/套組名稱、ACMG SF 參考文字與遺傳模式句型，PGx 僅輸出 Strong/Moderate/Optional CPIC recommendation。
 
 ### v6.0 — 2026-06-19
 
