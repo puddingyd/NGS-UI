@@ -3750,7 +3750,7 @@ const REPORT_SECTION_DEFS = [
     title: def.title,
     category: def.key,
     dropdown: "panel",
-    defaultOpen: true,
+    defaultOpen: def.key === "acmg_sf",
     diseaseCheckbox: true,
   })),
 ];
@@ -3768,7 +3768,7 @@ const CANDIDATE_SECTION_DEFS = [
     title: def.title,
     category: def.key,
     dropdown: "panel",
-    defaultOpen: true,
+    defaultOpen: def.key === "acmg_sf",
   })),
 ];
 
@@ -3803,6 +3803,14 @@ function _reportVariantSortScore(id) {
   return Number.isFinite(n) ? n : -Infinity;
 }
 
+function _reportVariantKindRank(id) {
+  const kind = lookupAnyVariant(id).kind || "";
+  if (kind === "snv") return 0;
+  if (kind === "cnv" || kind === "sv") return 1;
+  if (kind === "mito") return 2;
+  return 3;
+}
+
 function idsForReportSection(def) {
   const d = state.data || {};
   const known = [
@@ -3821,19 +3829,23 @@ function idsForReportSection(def) {
   const all = Array.from(new Set([...known, ...reported, ...panelReported, ...secondaryReported]));
 
   if (def.match) {
-    // Causative / Other / Candidate report sections: SNV keeps
-    // total_score desc; CNV/SV uses combined phenotype + AnnotSV score. Then
-    // cluster same-gene variants together.
+    // Causative / Other / Candidate report sections: keep the visual order
+    // stable by variant type (SNV/Indel → CNV/SV → Mito), then use each
+    // adapter's score inside that type. Same-gene variants cluster within
+    // their type.
     // The gene with the highest-scored variant leads; its lower-
     // scored siblings get pulled up directly behind it instead of
     // scattering down the list. Manual entries (no gene_symbol)
     // stay put as singleton clusters.
     const sorted = all.filter(def.match).sort((a, b) => {
+      const rankDiff = _reportVariantKindRank(a) - _reportVariantKindRank(b);
+      if (rankDiff) return rankDiff;
       return _reportVariantSortScore(b) - _reportVariantSortScore(a);
     });
     const groups = new Map();
     for (const id of sorted) {
-      const key = lookupAnyVariant(id).v?.gene_symbol || `__${id}`;
+      const { v, kind } = lookupAnyVariant(id);
+      const key = `${kind || "unknown"}:${v?.gene_symbol || `__${id}`}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(id);
     }
@@ -5459,7 +5471,7 @@ function renderPharmcatBlock(hostId) {
 
   const wasOpen = toggledBlocks.has(hostId)
     ? host.dataset.wasOpen === "1"
-    : false;
+    : hostId === "cat-pharmcat-c";
   host.dataset.wasOpen = wasOpen ? "1" : "0";
 
   const header = document.createElement("div");

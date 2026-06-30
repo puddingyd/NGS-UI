@@ -15,6 +15,8 @@
 - 三級分析 DRAGEN VCF 清單預設加掃 `/home/datalake_Intermediate/n102968`，方便從該目錄直接選擇 hard-filtered VCF。
 - IGV DRAGEN BAM 搜尋預設加掃 `/home/datalake_Intermediate/n102968`，可直接讀取測試用 `<run>/bam/{sample}.bam`。
 - 健檢 DOCX 依 review 註解調整格式：新增受檢者資料區、更新檢驗項目/套組名稱、ACMG SF 參考文字與遺傳模式句型，PGx 僅輸出 Strong/Moderate/Optional CPIC recommendation。
+- 健檢 DOCX 進一步依 review 註解調整：報告抬頭置中、受檢者資料改雙列三欄、SNV 表格移除類別欄、PGx 基因清單改列基因名稱；主畫面 Secondary findings 預設只展開 ACMG，分析區預設展開 ACMG 與 PGx。
+- 報告區 Causative / Other / Candidate 點位順序固定為 SNV/Indel、CNV/SV、Mitochondria；DOCX 遺傳模式不再顯示 digenic 或 somatic。
 
 ### v6.0 — 2026-06-19
 
