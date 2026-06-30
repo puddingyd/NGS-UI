@@ -1346,7 +1346,7 @@ _HEALTH_ACMG_GENE_LIST_TITLE = (
     "次發現 (Secondary findings) 基因清單 v3.3 版；PMID: 40568962）"
 )
 
-_HEALTH_PGX_GENE_LIST_TITLE = "藥物基因體學（本段列出本次分析涵蓋之 CPIC Level A 藥物基因）"
+_HEALTH_PGX_GENE_LIST_TITLE = "藥物基因體學（參考 Clinical Pharmacogenetics Implementation Consortium (CPIC) 證據等級 A 級 (臨床可應用) 之藥物基因）"
 
 
 def _meta_value(meta: dict, key: str) -> str:
