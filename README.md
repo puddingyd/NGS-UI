@@ -139,7 +139,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 
 - 首頁登入後的 `/api/samples` 只載入搜尋用的輕量樣本索引，不同步計算個案清單摘要。
 - 「個案清單」開啟時呼叫 `/api/samples/case-summary`，後端直接讀 `tertiary_output/_case_table.json` 總表；若總表缺失或 sample 集合不一致才重建。
-- 個案摘要仍會寫入每個 sample 目錄的 `case_summary.json`，依 metadata、TSV/index 與 OMIM 簽章自動失效；已標記 SNV 優先用 `snv_gene_index.sqlite` 依 variant id 查找，CNV/SV 只讀目標 id。註冊個案、metadata/report/phenotype/analysis 變更與刪除個案時會同步更新 `_case_table.json` 的單一 row，避免開啟個案清單時重掃大型 DRAGEN TSV。
+- 個案摘要仍會寫入每個 sample 目錄的 `case_summary.json`，依 metadata、TSV/index、Mito TSV 與 OMIM 簽章自動失效；已標記 Mito 會先用 `mito.annotated.tsv` adapter 抓 mito 卡片資料，已標記 SNV 再用 `snv_gene_index.sqlite` 依 variant id 查找，CNV/SV 只讀目標 id。註冊個案、metadata/report/phenotype/analysis 變更與刪除個案時會同步更新 `_case_table.json` 的單一 row，避免開啟個案清單時重掃大型 DRAGEN TSV。
 2. **載入新個案** — 點「載入新個案」：
    - LIS_ID 下拉會列出 pipeline 已丟進 `tertiary_output/` 但尚未登錄的目錄；
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；三級分析輸出若使用 `{LIS_ID}-dragen` / `{LIS_ID}-nckuh` / `{LIS_ID}-inhouse` 這類 UI 後綴，會先保留後綴作為 sample ID，再回查未加後綴的 roster LIS_ID；
@@ -149,7 +149,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 登錄新個案不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；若 VCF 尚不存在，Exomiser/LIRICAL 背景 job 開始前會自動建立或刷新。
    - HPO/panel 的 in-panel 狀態來自 `pheno_score.tsv` 動態補值，不再寫回大型 `snv_indel.annotated.tsv` 的 `IN_PANEL` 欄。
    - 勾「登錄後開始分析」會順便把 Exomiser/LIRICAL 排入佇列。
-   - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` 篩選並全文搜尋；表格會摘要目前 active analysis 的 HPO/panel（HPO 顯示如 `Seizure HP:0001250`）、causative / other SNV、CNV、SV，已勾選 OMIM disease、CNV/SV reviewer 輸入的 Disease、主畫面 comment、簽收與載入時間。多個 HPO/panel、variant / disease 會逐行顯示，長 HGVS 可自動折行。也可刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時可選擇同步刪除或保留 `/home/pipeline/tertiary_output/{LIS_ID}/`，按取消則完全不刪除。
+   - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` 篩選並全文搜尋；表格會摘要目前 active analysis 的 HPO/panel（HPO 顯示如 `Seizure HP:0001250`）、causative / other SNV、CNV、SV、Mito，已勾選 OMIM disease、Mito ClinVar disease 與 CNV/SV reviewer 輸入的 Disease、主畫面 comment、簽收與載入時間。多個 HPO/panel、variant / disease 會逐行顯示，長 HGVS 可自動折行。也可刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時可選擇同步刪除或保留 `/home/pipeline/tertiary_output/{LIS_ID}/`，按取消則完全不刪除。
    - 主畫面搜尋框上方有可複選的 `WES` / `WGS` 圓形 filter，取消勾選後對應 test type 不出現在搜尋清單。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV、Mitochondria、STR 與 PGx 在背景載完後補上：
    - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。

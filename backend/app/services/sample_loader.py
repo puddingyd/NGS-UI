@@ -61,7 +61,7 @@ _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
 CASE_SUMMARY_CACHE_NAME = "case_summary.json"
 CASE_TABLE_CACHE_NAME = "_case_table.json"
-CASE_TABLE_VERSION = 1
+CASE_TABLE_VERSION = 2
 _case_table_lock = threading.Lock()
 
 
@@ -153,6 +153,7 @@ def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> 
         list(_file_signature(sample_dir / "snv_indel.annotated.tsv")),
         list(_file_signature(sample_dir / "snv_gene_index.sqlite")),
         list(_file_signature(sample_dir / "snv_indel.review.tsv")),
+        list(_file_signature(sample_dir / "mito.annotated.tsv")),
         list(_file_signature(sample_dir / "cnv.annotated.tsv")),
         list(_file_signature(sample_dir / "sv.annotated.tsv")),
         list(omim_sig if omim_sig is not None else omim_store.cache_signature()),
@@ -473,6 +474,40 @@ def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
     return out
 
 
+def _case_mito_label(variant: dict, edits: dict) -> str:
+    """Compact mitochondrial label for the case-management table."""
+    acmg = (
+        edits.get("ACMG_classification_mito")
+        or variant.get("CLNSIG")
+        or ""
+    ).strip()
+    acmg_short = _ACMG_SHORT.get(acmg.lower().replace("_", " "), acmg)
+    gene = str(variant.get("gene_symbol") or "").strip()
+    hgvs = str(variant.get("HGVS_M") or "").strip()
+    variant_label = " ".join(x for x in (gene, hgvs) if x).strip()
+    het = variant.get("heteroplasmy")
+    het_label = ""
+    if isinstance(het, (int, float)):
+        het_label = f"{het * 100:.1f}% heteroplasmy"
+    return ", ".join(x for x in (variant_label, acmg_short, het_label) if x)
+
+
+def _case_selected_mito_diseases(variant: dict, edits: dict) -> list[str]:
+    """Return ClinVar diseases explicitly selected on the mito card."""
+    picked = edits.get("report_diseases_clinvar") or {}
+    if not isinstance(picked, dict) or not any(bool(v) for v in picked.values()):
+        return []
+    diseases = variant.get("clinvar_diseases") or []
+    out: list[str] = []
+    for idx, disease in enumerate(diseases):
+        key = str(idx)
+        if picked.get(key) or picked.get(idx):
+            label = str(disease or "").strip()
+            if label and label not in out:
+                out.append(label)
+    return out
+
+
 def _case_cnv_sv_label(variant: dict, edits: dict) -> str:
     """Compact CNV/SV label for the case-management table."""
     raw_acmg = edits.get("ACMG_class_sv")
@@ -540,6 +575,22 @@ def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, di
     if variants:
         _enrich_snv_variants(variants, sample_dir)
     return variants
+
+
+def _case_mito_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, dict]:
+    """Read marked mitochondrial variants from the mito adapter, not SNV TSV."""
+    mito_tsv = sample_dir / "mito.annotated.tsv"
+    if not wanted or not mito_tsv.exists():
+        return {}
+    try:
+        from ..adapters.mito_tsv import load_mito_tsv
+        sidecar_dir = analyses_store.active_version_dir(sample_dir.name)
+        pheno_by_gene = _read_pheno_scores(sidecar_dir / "pheno_score.tsv")
+        variants, _categories = load_mito_tsv(mito_tsv, pheno_by_gene=pheno_by_gene)
+    except Exception as e:
+        print(f"[case-summary] mito lookup failed for {sample_dir.name}: {e}", flush=True)
+        return {}
+    return {vid: variant for vid, variant in variants.items() if vid in wanted}
 
 
 def _variant_from_merged_id(variant_id: str) -> dict | None:
@@ -670,7 +721,22 @@ def _case_management_summary(
     other: list[str] = []
     if wanted:
         omim_store.ensure_loaded()
-    snv_variants = _case_snv_variants_by_id(sample_dir, wanted)
+
+    mito_variants = _case_mito_variants_by_id(sample_dir, wanted)
+    for vid, variant in mito_variants.items():
+        edits = edits_by_id.get(vid) or {}
+        label = _case_mito_label(variant, edits)
+        if str(statuses.get(vid, "")).strip() == "1":
+            if label:
+                causative.append(label)
+            for disease in _case_selected_mito_diseases(variant, edits):
+                if disease not in diseases:
+                    diseases.append(disease)
+        elif label:
+            other.append(label)
+
+    snv_wanted = wanted.difference(mito_variants.keys())
+    snv_variants = _case_snv_variants_by_id(sample_dir, snv_wanted)
     for vid, variant in snv_variants.items():
         edits = edits_by_id.get(vid) or {}
         label = _case_variant_label(variant, edits)
@@ -683,7 +749,7 @@ def _case_management_summary(
         elif label:
             other.append(label)
 
-    cnv_sv_wanted = wanted.difference(snv_variants.keys())
+    cnv_sv_wanted = wanted.difference(mito_variants.keys()).difference(snv_variants.keys())
     cnv_sv_variants = _case_cnv_sv_variants_by_id(sample_dir, cnv_sv_wanted)
     for vid, variant in cnv_sv_variants.items():
         edits = edits_by_id.get(vid) or {}

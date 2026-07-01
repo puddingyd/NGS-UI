@@ -10,6 +10,7 @@
 
 - 三級分析重新啟動時，若偵測到無後綴 source-ID output 且目標 `-dragen` / `-nckuh` 目錄尚不存在，會直接清除該 legacy publish 目錄，讓 Nextflow 依自己的 work/cache 用 `-resume` 判斷並重新輸出。
 - 個案清單新增 Phenotype 欄位，顯示 active analysis 的 HPO/panel；HPO 以 `Seizure HP:0001250` 格式呈現。個案清單改讀 `tertiary_output/_case_table.json` 總表，個案資料變更時同步更新單列，減少開啟清單時等待。
+- 個案清單摘要修正 Mitochondria 變異來源；Mito causative / other 會讀取 mito 卡片資料與 ClinVar disease 勾選，不再被同座標 SNV/Indel transcript 誤配。
 
 ### v6.1 — 2026-06-29
 
