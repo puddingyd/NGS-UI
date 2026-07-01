@@ -3038,7 +3038,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .case-list-table table {
   width: 100%;
-  min-width: 1480px;
+  min-width: 1700px;
   border-collapse: collapse;
 }
 .case-list-table th,
@@ -3057,6 +3057,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .case-list-table tr:last-child td { border-bottom: none; }
 .case-list-table td.case-list-id {
+  min-width: 14ch;
   width: 14ch;
   max-width: 14ch;
   white-space: normal;
