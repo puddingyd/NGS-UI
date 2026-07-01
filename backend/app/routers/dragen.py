@@ -143,7 +143,7 @@ def get_dragen_jobs():
 
 @router.get("/jobs/{job_id}")
 def get_dragen_job(job_id: str):
-    state = dragen_jobs.load_state(job_id)
+    state = dragen_jobs.reconcile_job_state(job_id)
     if state is None:
         raise HTTPException(404, f"job not found: {job_id}")
     state = dict(state)

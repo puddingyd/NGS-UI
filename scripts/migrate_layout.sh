@@ -96,6 +96,10 @@ Environment=PYTHONPATH=$NEW_REPO/backend
 Environment=NGS_UI_HOME=$NEW_HOME
 ExecStart=/usr/bin/env python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 Restart=on-failure
+# Tertiary analysis workers are spawned into their own Unix session.
+# Keep them alive across web-service restarts; otherwise systemd's
+# default KillMode=control-group sends SIGTERM to Nextflow jobs too.
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target

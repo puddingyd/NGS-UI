@@ -5,10 +5,11 @@ State lives under TERTIARY_JOBS_DIR/{job_id}/:
     log.txt        combined stdout/stderr from the chain
     pid            spawned worker PID (for `is_running` check)
 
-Jobs are spawned via subprocess.Popen with start_new_session=True so
-they survive a uvicorn reload / restart; we never wait on them
-inside the request handler. The frontend polls /api/dragen/jobs/{id}
-every few seconds.
+Jobs are spawned via subprocess.Popen with start_new_session=True and
+the production systemd unit uses KillMode=process so tertiary workers
+survive a uvicorn reload / restart; we never wait on them inside the
+request handler. The frontend polls /api/dragen/jobs/{id} every few
+seconds.
 """
 from __future__ import annotations
 
@@ -333,6 +334,16 @@ def _pid_alive(pid: int) -> bool:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError, OSError):
         return False
+    # On Linux an exited child can remain as a zombie if the original
+    # uvicorn process never waited for it. kill(pid, 0) still succeeds
+    # for zombies, but the tertiary worker is no longer doing work.
+    stat_path = Path("/proc") / str(pid) / "stat"
+    try:
+        stat = stat_path.read_text(encoding="utf-8", errors="replace")
+        if ") Z" in stat:
+            return False
+    except OSError:
+        pass
     return True
 
 
@@ -348,6 +359,44 @@ def is_running(job_id: str) -> bool:
     except (ValueError, OSError):
         return False
     return _pid_alive(pid)
+
+
+def reconcile_job_state(job_id: str) -> dict | None:
+    """Return current state, marking orphaned active jobs as failed.
+
+    The browser recovers active tertiary jobs from persisted state.json.
+    If the worker process has already exited unexpectedly, leaving
+    state=running/queued behind, the UI would otherwise keep showing the
+    last progress percentage forever.
+    """
+    st = load_state(job_id)
+    if st is None:
+        return None
+    if st.get("state") in ("done", "failed", "cancelled"):
+        return st
+    if st.get("state") not in ("queued", "running"):
+        return st
+    if is_running(job_id):
+        return st
+
+    st = dict(st)
+    message = (
+        "worker process exited unexpectedly before writing final status; "
+        "check the NGS-UI job log and Nextflow work/.nextflow.log for the "
+        "last completed process"
+    )
+    st.update({
+        "state": "failed",
+        "error": st.get("error") or message,
+        "finished_at": st.get("finished_at") or _now(),
+    })
+    save_state(job_id, st)
+    try:
+        with _log_path(job_id).open("a", encoding="utf-8") as fh:
+            fh.write(f"[job-state] FAILED: {message} [{_now()}]\n")
+    except OSError:
+        pass
+    return st
 
 
 def tail_log(job_id: str, n: int = 50) -> str:
@@ -377,7 +426,7 @@ def list_jobs(limit: int = 50) -> list[dict]:
             if not child.is_dir() or child.name in seen:
                 continue
             seen.add(child.name)
-            st = load_state(child.name)
+            st = reconcile_job_state(child.name)
             if st:
                 st = dict(st)
                 st["running"] = is_running(child.name)
