@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import current_user
 from ..config import TERTIARY_OUTPUT_ROOT
-from ..services import analyses_store
+from ..services import analyses_store, sample_loader
 
 router = APIRouter(prefix="/api", tags=["analyses"], dependencies=[Depends(current_user)])
 
@@ -63,6 +63,7 @@ def create_or_update_version(sample_id: str, payload: dict):
             analyses_store.set_active(sample_id, name)
         except ValueError as e:
             raise HTTPException(400, str(e))
+    sample_loader.update_case_table_row(sample_id)
 
     return {
         "name":     name,
@@ -90,7 +91,9 @@ def delete_version(sample_id: str, name: str):
     # exists, else the first remaining version, else None.
     current = analyses_store.active_version(sample_id)
     if current is None:
+        sample_loader.update_case_table_row(sample_id)
         return {"deleted": name, "active": None}
+    sample_loader.update_case_table_row(sample_id)
     return {"deleted": name, "active": current}
 
 
@@ -102,4 +105,5 @@ def set_active_version(sample_id: str, payload: dict):
         analyses_store.set_active(sample_id, name)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    sample_loader.update_case_table_row(sample_id)
     return {"active": name}

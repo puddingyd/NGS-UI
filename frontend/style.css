@@ -3038,7 +3038,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .case-list-table table {
   width: 100%;
-  min-width: 1560px;
+  min-width: 1480px;
   border-collapse: collapse;
 }
 .case-list-table th,
@@ -3056,6 +3056,21 @@ body.sidebar-collapsed .container { margin-left: auto; }
   font-size: 11px;
 }
 .case-list-table tr:last-child td { border-bottom: none; }
+.case-list-table td.case-list-id {
+  width: 8ch;
+  max-width: 8ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+.case-list-table td.case-list-test {
+  width: 6ch;
+  max-width: 6ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
 .case-list-table td.case-list-long {
   min-width: 150px;
   max-width: 320px;
@@ -3067,6 +3082,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .case-list-table td.case-list-variant {
   min-width: 150px;
   max-width: 255px;
+}
+.case-list-table td.case-list-phenotype {
+  min-width: 160px;
+  max-width: 230px;
 }
 .case-list-table td.case-list-date {
   color: var(--muted);

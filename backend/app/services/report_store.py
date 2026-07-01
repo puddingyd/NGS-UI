@@ -123,4 +123,9 @@ def save(sample_id: str, payload: dict) -> dict:
     meta["updated_at"] = now
     meta.setdefault("created_at", now)
     _write_json(p, meta)
+    try:
+        from . import sample_loader
+        sample_loader.update_case_table_row(sample_id)
+    except Exception as e:
+        print(f"[case-table] report save refresh failed for {sample_id}: {e}", flush=True)
     return _project_reviewer(meta)

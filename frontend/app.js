@@ -2520,6 +2520,7 @@ async function _renderCaseList({ refresh = true } = {}) {
         <th>姓名</th>
         <th>病歷號</th>
         <th>Test type</th>
+        <th>Phenotype</th>
         <th>Causative variant</th>
         <th>Disease</th>
         <th>Other variant</th>
@@ -2530,10 +2531,11 @@ async function _renderCaseList({ refresh = true } = {}) {
       </tr>`;
     const body = rows.map(r => `
       <tr>
-        <td>${escapeHtml(r.lis_id || r.sample_id || "")}</td>
-        <td>${escapeHtml(r.name || "—")}</td>
-        <td>${escapeHtml(r.mrn || "—")}</td>
-        <td>${escapeHtml(r.test_type || "—")}</td>
+        <td class="case-list-id">${escapeHtml(r.lis_id || r.sample_id || "")}</td>
+        <td class="case-list-id">${escapeHtml(r.name || "—")}</td>
+        <td class="case-list-id">${escapeHtml(r.mrn || "—")}</td>
+        <td class="case-list-test">${escapeHtml(r.test_type || "—")}</td>
+        <td class="case-list-long case-list-phenotype">${escapeHtml(r.phenotype_summary || "—")}</td>
         <td class="case-list-long case-list-variant">${escapeHtml(r.causative_variants || "—")}</td>
         <td class="case-list-long case-list-disease">${escapeHtml(r.diseases || "—")}</td>
         <td class="case-list-long case-list-variant">${escapeHtml(r.other_variants || "—")}</td>

@@ -85,6 +85,7 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
 
     from . import sample_loader
     sample_loader.invalidate_sample_cache(ui_dir)
+    sample_loader.remove_case_table_row(lis_id)
     return {
         "sample_id": lis_id,
         "deleted": deleted,
@@ -275,4 +276,9 @@ def register(
         )
 
     _log_perf("patient_store.register.total", started, sample=lis_id)
+    try:
+        from . import sample_loader
+        sample_loader.update_case_table_row(lis_id)
+    except Exception as e:
+        print(f"[case-table] register refresh failed for {lis_id}: {e}", flush=True)
     return meta

@@ -328,6 +328,27 @@ def _rename_legacy_pipeline_output(sample_id: str, source_sample_id: str, legacy
     _log(f"[repair] renamed legacy pipeline output {src} -> {dst}")
 
 
+def _remove_legacy_pipeline_output_before_resume(sample_id: str, source_sample_id: str) -> None:
+    """Remove a source-ID publish dir before a suffixed resume.
+
+    Nextflow resume state lives under the work directory, not the publish
+    directory, so clearing the legacy publish dir lets the resumed run decide
+    what is cached and republish into a clean source-ID directory that we can
+    later rename.
+    """
+    if not sample_id or not source_sample_id or sample_id == source_sample_id:
+        return
+    src = PIPELINE_OUT_ROOT / source_sample_id
+    dst = PIPELINE_OUT_ROOT / sample_id
+    if not src.is_dir() or dst.exists():
+        return
+    shutil.rmtree(src)
+    _log(
+        f"[repair] removed legacy source-ID pipeline output {src}; "
+        f"nextflow -resume will republish for {sample_id}"
+    )
+
+
 def _pipeline_input_dir(vcf: Path, mode: str) -> Path:
     """Return the sample-sheet input_dir for the v3.1 pipeline."""
     if mode == "dragen":
@@ -721,247 +742,247 @@ def main() -> int:
                 source_dir = PIPELINE_OUT_ROOT / source_sid
                 target_dir = PIPELINE_OUT_ROOT / sid
                 if source_sid != sid and source_dir.is_dir() and not target_dir.exists():
-                    raise RuntimeError(
-                        "legacy source-ID pipeline output exists before a new suffixed run: "
-                        f"{source_dir}. Rename it to the correct suffixed directory or run "
-                        "scripts/repair_pipeline_output_suffixes.py --apply before retrying."
-                    )
-            _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
+                    _remove_legacy_pipeline_output_before_resume(sid, source_sid)
+            pending_samples = [sample for sample in pending_samples if sample["sample_id"] not in existing_by_sid]
+            if not pending_samples:
+                _set_step(job_id, "detect-pipeline-output", state="done")
+            else:
+                _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
 
-            # 2. v3.x pipeline input. The official pipeline now owns
-            # PREPARE_VCF / PREPARE_VCF_DRAGEN, so the default path is
-            # a one-row sample sheet. Keep the old staging route behind
-            # an env switch for deployments that have not upgraded yet.
-            if legacy_staging:
-                if len(pending_samples) != 1:
-                    raise RuntimeError(
-                        "batch jobs require the v3.x samplesheet pipeline; "
-                        "unset NGS_UI_TERTIARY_LEGACY_STAGING or run one sample at a time"
-                    )
-                sample = pending_samples[0]
-                sid = sample["sample_id"]
-                source_sid = sample["source_sample_id"]
-                vcf = sample["vcf_path"]
-                vcf_path = Path(vcf)
-                nf_stage = NGS_UI_HOME / "nf_stage" / sid
-                _set_step(job_id, "stage")
-                _log("[stage] legacy staging enabled by NGS_UI_TERTIARY_LEGACY_STAGING")
-                if mode == "inhouse":
-                    if source_sid == sid:
-                        _symlink_inhouse_into_nf_stage(vcf_path, sid, nf_stage)
-                        _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
-                             f"{sid}.ensemble.fixed.vcf.gz (no filter)")
+            if pending_samples:
+                # 2. v3.x pipeline input. The official pipeline now owns
+                # PREPARE_VCF / PREPARE_VCF_DRAGEN, so the default path is
+                # a one-row sample sheet. Keep the old staging route behind
+                # an env switch for deployments that have not upgraded yet.
+                if legacy_staging:
+                    if len(pending_samples) != 1:
+                        raise RuntimeError(
+                            "batch jobs require the v3.x samplesheet pipeline; "
+                            "unset NGS_UI_TERTIARY_LEGACY_STAGING or run one sample at a time"
+                        )
+                    sample = pending_samples[0]
+                    sid = sample["sample_id"]
+                    source_sid = sample["source_sample_id"]
+                    vcf = sample["vcf_path"]
+                    vcf_path = Path(vcf)
+                    nf_stage = NGS_UI_HOME / "nf_stage" / sid
+                    _set_step(job_id, "stage")
+                    _log("[stage] legacy staging enabled by NGS_UI_TERTIARY_LEGACY_STAGING")
+                    if mode == "inhouse":
+                        if source_sid == sid:
+                            _symlink_inhouse_into_nf_stage(vcf_path, sid, nf_stage)
+                            _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
+                                 f"{sid}.ensemble.fixed.vcf.gz (no filter)")
+                        else:
+                            _run([str(scripts / "stage_dragen_for_tertiary.sh"),
+                                  "--in",         vcf,
+                                  "--sample",     sid,
+                                  "--skip-norm",
+                                  "--skip-bed",
+                                  "--skip-gnomad",
+                                  "--keep-chrm"],
+                                 label="2a/4 stage in-house alias")
                     else:
                         _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-                              "--in",         vcf,
-                              "--sample",     sid,
-                              "--skip-norm",
-                              "--skip-bed",
-                              "--skip-gnomad",
-                              "--keep-chrm"],
-                             label="2a/4 stage in-house alias")
+                              "--in",     vcf,
+                              "--sample", sid],
+                             label="2a/4 stage")
                 else:
-                    _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-                          "--in",     vcf,
-                          "--sample", sid],
-                         label="2a/4 stage")
-            else:
-                _set_step(job_id, "samplesheet")
-                samplesheet = _write_samplesheet(
-                    job_id,
-                    samples=pending_samples,
-                )
-                _log(f"[samplesheet] {samplesheet}")
-                for sample in pending_samples:
-                    _log(
-                        "[samplesheet] "
-                        f"source_sample_id={sample['source_sample_id']} "
-                        f"ui_sample_id={sample['sample_id']} "
-                        f"pipeline_type={pipeline_type} "
-                        f"input_dir={_pipeline_input_dir(Path(sample['vcf_path']), mode)}"
-                    )
-
-            # 3. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
-            _set_step(job_id, "nextflow")
-            nextflow_stages = [
-                ("prepare-vcf-dragen-add-tag", ("PREPARE_VCF_DRAGEN:ADD_DRAGEN_TAG",), 0.5),
-                ("prepare-vcf-dragen", ("PREPARE_VCF_DRAGEN",), 0.5),
-                ("prepare-vcf", ("PREPARE_VCF",), 1.0),
-                ("mito-vep", ("MITO_ANNOTATE:MITO_VEP",), 1.5),
-                ("mito-parse", ("MITO_ANNOTATE:MITO_PARSE",), 0.8),
-                ("str-parse-dragen", ("STR_PARSE_DRAGEN",), 0.7),
-                ("prepare-cnv-dragen", ("PREPARE_CNV_DRAGEN", "PREPARE_CNV_NCKUH"), 0.7),
-                ("annotsv-cnv-dragen", ("ANNOTSV_CNV_DRAGEN", "ANNOTSV_CNV_NCKUH"), 3.0),
-                ("prepare-sv-dragen", ("PREPARE_SV_DRAGEN", "PREPARE_SV_NCKUH"), 0.7),
-                ("annotsv-sv-dragen", ("ANNOTSV_SV_DRAGEN", "ANNOTSV_SV_NCKUH"), 8.0),
-                ("vep-annotate", ("SNV_ANNOTATE:VEP_ANNOTATE",), 32.0),
-                ("pangolin-score", ("SNV_ANNOTATE:PANGOLIN_SCORE",), 8.0),
-                ("parse-csq", ("PARSE_VEP_CSQ:PARSE_CSQ",), 16.0),
-                ("acmg-classify", ("ACMG_CLASSIFY",), 8.0),
-                ("pgx-stellarpgx", ("PGX_ANNOTATE:PGX_STELLARPGX",), 1.0),
-                ("pgx-hla-extract", ("PGX_ANNOTATE:PGX_HLA_EXTRACT",), 1.0),
-                ("pgx-optitype", ("PGX_ANNOTATE:PGX_OPTITYPE",), 8.0),
-                ("pgx-pharmcat", ("PGX_ANNOTATE:PGX_PHARMCAT",), 4.0),
-                ("pgx-parse", ("PGX_ANNOTATE:PGX_PARSE",), 2.0),
-            ]
-            if args.without_pgx:
-                nextflow_stages = [row for row in nextflow_stages if not row[0].startswith("pgx-")]
-            nextflow_stage_index = {slug: idx for idx, (slug, _tokens, _weight) in enumerate(nextflow_stages)}
-            nextflow_progress_start = 3.0
-            nextflow_progress_end = 82.0
-            nextflow_total_weight = max(1.0, sum(weight for _slug, _tokens, weight in nextflow_stages))
-            nextflow_stage_fraction: dict[str, float] = {
-                slug: 0.0 for slug, _tokens, _weight in nextflow_stages
-            }
-            nextflow_progress_rank = -1
-            nextflow_running: dict[str, float] = {}
-            nextflow_seen_events: set[tuple[str, str, int, int]] = set()
-
-            def track_nextflow(line: str) -> None:
-                nonlocal nextflow_progress_rank
-                if "[" not in line or "]" not in line:
-                    return
-                norm = " ".join(line.strip().split())
-                count_match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", norm)
-                done = int(count_match.group(1)) if count_match else 0
-                total = int(count_match.group(2)) if count_match else 0
-                for slug, tokens, weight in nextflow_stages:
-                    token = next((t for t in tokens if t in norm), "")
-                    if not token:
-                        continue
-                    if count_match and done >= total:
-                        event = "done"
-                    elif "[-" in norm:
-                        event = "queued"
-                    else:
-                        event = "start"
-                    key = (slug, event, done, total)
-                    if key in nextflow_seen_events:
-                        return
-                    nextflow_seen_events.add(key)
-                    process = token
-                    if event == "start":
-                        nextflow_running.setdefault(slug, time.monotonic())
-                    elapsed = None
-                    if event == "done":
-                        started = nextflow_running.get(slug)
-                        elapsed = (time.monotonic() - started) if started is not None else None
-                    _record_nextflow_step(
+                    _set_step(job_id, "samplesheet")
+                    samplesheet = _write_samplesheet(
                         job_id,
-                        slug,
-                        process,
-                        event,
-                        elapsed=elapsed,
-                        done=done or None,
-                        total=total or None,
+                        samples=pending_samples,
                     )
-                    suffix = ""
-                    elapsed_label = _elapsed_minutes_label(elapsed)
-                    if elapsed_label:
-                        suffix = f"  {elapsed_label} [{_now()}]"
-                    if event == "queued":
-                        return
-                    stage_idx = nextflow_stage_index.get(slug, 0)
-                    fraction = (done / total) if total else (1.0 if event == "done" else 0.0)
-                    nextflow_stage_fraction[slug] = max(
-                        nextflow_stage_fraction.get(slug, 0.0),
-                        max(0.0, min(1.0, fraction)),
-                    )
-                    weighted_done = sum(
-                        nextflow_stage_fraction.get(stage_slug, 0.0) * stage_weight
-                        for stage_slug, _stage_tokens, stage_weight in nextflow_stages
-                    )
-                    pct = nextflow_progress_start + (
-                        weighted_done
-                        / nextflow_total_weight
-                    ) * (nextflow_progress_end - nextflow_progress_start)
-                    if stage_idx > nextflow_progress_rank or event == "done" or count_match:
-                        nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
-                        _update(
-                            job_id,
-                            nextflow_progress_pct=round(pct, 1),
-                            nextflow_current={
-                                "step": slug,
-                                "process": process,
-                                "event": event,
-                                "done": done,
-                                "total": total,
-                            },
+                    _log(f"[samplesheet] {samplesheet}")
+                    for sample in pending_samples:
+                        _log(
+                            "[samplesheet] "
+                            f"source_sample_id={sample['source_sample_id']} "
+                            f"ui_sample_id={sample['sample_id']} "
+                            f"pipeline_type={pipeline_type} "
+                            f"input_dir={_pipeline_input_dir(Path(sample['vcf_path']), mode)}"
                         )
-                    return suffix
 
-            if legacy_staging:
-                sample = pending_samples[0]
-                sid = sample["sample_id"]
-                nextflow_cmd = [
-                    "nextflow",
-                    "-c", str(TERTIARY_NEXTFLOW_CONFIG),
-                    "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
-                    "-profile", "dgm",
-                    "-work-dir", str(nf_work),
-                    "--sample_id", sid,
-                    "--input_dir", str(nf_stage),
-                    "--seq_type",  sample["seq_type"],
-                    "--out_dir",   str(PIPELINE_OUT_ROOT),
+                # 3. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
+                _set_step(job_id, "nextflow")
+                nextflow_stages = [
+                    ("prepare-vcf-dragen-add-tag", ("PREPARE_VCF_DRAGEN:ADD_DRAGEN_TAG",), 0.5),
+                    ("prepare-vcf-dragen", ("PREPARE_VCF_DRAGEN",), 0.5),
+                    ("prepare-vcf", ("PREPARE_VCF",), 1.0),
+                    ("mito-vep", ("MITO_ANNOTATE:MITO_VEP",), 1.5),
+                    ("mito-parse", ("MITO_ANNOTATE:MITO_PARSE",), 0.8),
+                    ("str-parse-dragen", ("STR_PARSE_DRAGEN",), 0.7),
+                    ("prepare-cnv-dragen", ("PREPARE_CNV_DRAGEN", "PREPARE_CNV_NCKUH"), 0.7),
+                    ("annotsv-cnv-dragen", ("ANNOTSV_CNV_DRAGEN", "ANNOTSV_CNV_NCKUH"), 3.0),
+                    ("prepare-sv-dragen", ("PREPARE_SV_DRAGEN", "PREPARE_SV_NCKUH"), 0.7),
+                    ("annotsv-sv-dragen", ("ANNOTSV_SV_DRAGEN", "ANNOTSV_SV_NCKUH"), 8.0),
+                    ("vep-annotate", ("SNV_ANNOTATE:VEP_ANNOTATE",), 32.0),
+                    ("pangolin-score", ("SNV_ANNOTATE:PANGOLIN_SCORE",), 8.0),
+                    ("parse-csq", ("PARSE_VEP_CSQ:PARSE_CSQ",), 16.0),
+                    ("acmg-classify", ("ACMG_CLASSIFY",), 8.0),
+                    ("pgx-stellarpgx", ("PGX_ANNOTATE:PGX_STELLARPGX",), 1.0),
+                    ("pgx-hla-extract", ("PGX_ANNOTATE:PGX_HLA_EXTRACT",), 1.0),
+                    ("pgx-optitype", ("PGX_ANNOTATE:PGX_OPTITYPE",), 8.0),
+                    ("pgx-pharmcat", ("PGX_ANNOTATE:PGX_PHARMCAT",), 4.0),
+                    ("pgx-parse", ("PGX_ANNOTATE:PGX_PARSE",), 2.0),
                 ]
                 if args.without_pgx:
-                    nextflow_cmd += ["--run_pgx", "false"]
-                nextflow_cmd.append("-resume")
-                _run(nextflow_cmd, label="2b/4 nextflow legacy", on_line=track_nextflow)
-            else:
-                samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
-                nextflow_cmd = [
-                    "nextflow",
-                    "-c", str(TERTIARY_NEXTFLOW_CONFIG),
-                    "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
-                    "-profile", "dgm",
-                    "-work-dir", str(nf_work),
-                    "--pipeline_type", pipeline_type,
-                    "--samplesheet", str(samplesheet),
-                    "--out_dir", str(PIPELINE_OUT_ROOT),
-                ]
-                if args.without_pgx:
-                    nextflow_cmd += ["--run_pgx", "false"]
-                nextflow_cmd.append("-resume")
-                inner = " ".join(shlex.quote(part) for part in nextflow_cmd)
-                env_script = os.environ.get(
-                    "NGS_UI_TERTIARY_ENV_SCRIPT",
-                    "/home/pipeline/pipeline_code/NGS2ndAnalysis_env.sh",
-                )
-                shell_cmd = (
-                    f"if [ -f {shlex.quote(env_script)} ]; then "
-                    f"source {shlex.quote(env_script)}; "
-                    "else echo '[nextflow] env script not found; using current environment'; fi; "
-                    f"{inner}"
-                )
-                _run([
-                    "bash",
-                    "-lc",
-                    shell_cmd,
-                ], label="2b/4 nextflow v3.x", on_line=track_nextflow)
+                    nextflow_stages = [row for row in nextflow_stages if not row[0].startswith("pgx-")]
+                nextflow_stage_index = {slug: idx for idx, (slug, _tokens, _weight) in enumerate(nextflow_stages)}
+                nextflow_progress_start = 3.0
+                nextflow_progress_end = 82.0
+                nextflow_total_weight = max(1.0, sum(weight for _slug, _tokens, weight in nextflow_stages))
+                nextflow_stage_fraction: dict[str, float] = {
+                    slug: 0.0 for slug, _tokens, _weight in nextflow_stages
+                }
+                nextflow_progress_rank = -1
+                nextflow_running: dict[str, float] = {}
+                nextflow_seen_events: set[tuple[str, str, int, int]] = set()
 
-            for sample in pending_samples:
-                sid = sample["sample_id"]
-                source_sid = sample["source_sample_id"]
-                outputs, missing, found_under = _pipeline_outputs_for(
-                    sid,
-                    source_sid,
-                    require_pgx=not args.without_pgx,
-                )
-                if not missing and found_under and found_under != sid:
-                    _rename_legacy_pipeline_output(sid, source_sid, found_under)
+                def track_nextflow(line: str) -> None:
+                    nonlocal nextflow_progress_rank
+                    if "[" not in line or "]" not in line:
+                        return
+                    norm = " ".join(line.strip().split())
+                    count_match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", norm)
+                    done = int(count_match.group(1)) if count_match else 0
+                    total = int(count_match.group(2)) if count_match else 0
+                    for slug, tokens, weight in nextflow_stages:
+                        token = next((t for t in tokens if t in norm), "")
+                        if not token:
+                            continue
+                        if count_match and done >= total:
+                            event = "done"
+                        elif "[-" in norm:
+                            event = "queued"
+                        else:
+                            event = "start"
+                        key = (slug, event, done, total)
+                        if key in nextflow_seen_events:
+                            return
+                        nextflow_seen_events.add(key)
+                        process = token
+                        if event == "start":
+                            nextflow_running.setdefault(slug, time.monotonic())
+                        elapsed = None
+                        if event == "done":
+                            started = nextflow_running.get(slug)
+                            elapsed = (time.monotonic() - started) if started is not None else None
+                        _record_nextflow_step(
+                            job_id,
+                            slug,
+                            process,
+                            event,
+                            elapsed=elapsed,
+                            done=done or None,
+                            total=total or None,
+                        )
+                        suffix = ""
+                        elapsed_label = _elapsed_minutes_label(elapsed)
+                        if elapsed_label:
+                            suffix = f"  {elapsed_label} [{_now()}]"
+                        if event == "queued":
+                            return
+                        stage_idx = nextflow_stage_index.get(slug, 0)
+                        fraction = (done / total) if total else (1.0 if event == "done" else 0.0)
+                        nextflow_stage_fraction[slug] = max(
+                            nextflow_stage_fraction.get(slug, 0.0),
+                            max(0.0, min(1.0, fraction)),
+                        )
+                        weighted_done = sum(
+                            nextflow_stage_fraction.get(stage_slug, 0.0) * stage_weight
+                            for stage_slug, _stage_tokens, stage_weight in nextflow_stages
+                        )
+                        pct = nextflow_progress_start + (
+                            weighted_done
+                            / nextflow_total_weight
+                        ) * (nextflow_progress_end - nextflow_progress_start)
+                        if stage_idx > nextflow_progress_rank or event == "done" or count_match:
+                            nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
+                            _update(
+                                job_id,
+                                nextflow_progress_pct=round(pct, 1),
+                                nextflow_current={
+                                    "step": slug,
+                                    "process": process,
+                                    "event": event,
+                                    "done": done,
+                                    "total": total,
+                                },
+                            )
+                        return suffix
+
+                if legacy_staging:
+                    sample = pending_samples[0]
+                    sid = sample["sample_id"]
+                    nextflow_cmd = [
+                        "nextflow",
+                        "-c", str(TERTIARY_NEXTFLOW_CONFIG),
+                        "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
+                        "-profile", "dgm",
+                        "-work-dir", str(nf_work),
+                        "--sample_id", sid,
+                        "--input_dir", str(nf_stage),
+                        "--seq_type",  sample["seq_type"],
+                        "--out_dir",   str(PIPELINE_OUT_ROOT),
+                    ]
+                    if args.without_pgx:
+                        nextflow_cmd += ["--run_pgx", "false"]
+                    nextflow_cmd.append("-resume")
+                    _run(nextflow_cmd, label="2b/4 nextflow legacy", on_line=track_nextflow)
+                else:
+                    samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
+                    nextflow_cmd = [
+                        "nextflow",
+                        "-c", str(TERTIARY_NEXTFLOW_CONFIG),
+                        "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
+                        "-profile", "dgm",
+                        "-work-dir", str(nf_work),
+                        "--pipeline_type", pipeline_type,
+                        "--samplesheet", str(samplesheet),
+                        "--out_dir", str(PIPELINE_OUT_ROOT),
+                    ]
+                    if args.without_pgx:
+                        nextflow_cmd += ["--run_pgx", "false"]
+                    nextflow_cmd.append("-resume")
+                    inner = " ".join(shlex.quote(part) for part in nextflow_cmd)
+                    env_script = os.environ.get(
+                        "NGS_UI_TERTIARY_ENV_SCRIPT",
+                        "/home/pipeline/pipeline_code/NGS2ndAnalysis_env.sh",
+                    )
+                    shell_cmd = (
+                        f"if [ -f {shlex.quote(env_script)} ]; then "
+                        f"source {shlex.quote(env_script)}; "
+                        "else echo '[nextflow] env script not found; using current environment'; fi; "
+                        f"{inner}"
+                    )
+                    _run([
+                        "bash",
+                        "-lc",
+                        shell_cmd,
+                    ], label="2b/4 nextflow v3.x", on_line=track_nextflow)
+
+                for sample in pending_samples:
+                    sid = sample["sample_id"]
+                    source_sid = sample["source_sample_id"]
                     outputs, missing, found_under = _pipeline_outputs_for(
                         sid,
                         source_sid,
                         require_pgx=not args.without_pgx,
                     )
-                if missing:
-                    raise RuntimeError(
-                        "nextflow finished but expected output(s) still missing for "
-                        f"{sid}: {', '.join(missing)}"
-                    )
-                existing_by_sid[sid] = outputs
-
+                    if not missing and found_under and found_under != sid:
+                        _rename_legacy_pipeline_output(sid, source_sid, found_under)
+                        outputs, missing, found_under = _pipeline_outputs_for(
+                            sid,
+                            source_sid,
+                            require_pgx=not args.without_pgx,
+                        )
+                    if missing:
+                        raise RuntimeError(
+                            "nextflow finished but expected output(s) still missing for "
+                            f"{sid}: {', '.join(missing)}"
+                        )
+                    existing_by_sid[sid] = outputs
         # 4. Copy pipeline outputs → NGS-UI side; record source audit.
         _set_step(job_id, "copy-pipeline-tsv")
         pipeline_annotsv_copied: dict[str, set[str]] = {}

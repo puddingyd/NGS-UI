@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import current_user
 from ..config import TERTIARY_OUTPUT_ROOT
-from ..services import hpo_ontology, phenotype_scorer
+from ..services import hpo_ontology, phenotype_scorer, sample_loader
 
 router = APIRouter(prefix="/api", tags=["phenotype"], dependencies=[Depends(current_user)])
 
@@ -100,6 +100,7 @@ def update_phenotype(sample_id: str, payload: dict):
 
     # 5. Stats for UI
     top10 = sorted(scores.items(), key=lambda kv: -kv[1])[:10]
+    sample_loader.update_case_table_row(sample_id)
     return {
         "sample_id":         sample_id,
         "n_hpo":             len(hpo_in),

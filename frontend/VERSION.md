@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v6.2 — 2026-07-01
+
+- 三級分析重新啟動時，若偵測到無後綴 source-ID output 且目標 `-dragen` / `-nckuh` 目錄尚不存在，會直接清除該 legacy publish 目錄，讓 Nextflow 依自己的 work/cache 用 `-resume` 判斷並重新輸出。
+- 個案清單新增 Phenotype 欄位，顯示 active analysis 的 HPO/panel；HPO 以 `Seizure HP:0001250` 格式呈現。個案清單改讀 `tertiary_output/_case_table.json` 總表，個案資料變更時同步更新單列，減少開啟清單時等待。
+
 ### v6.1 — 2026-06-29
 
 - Secondary findings 新增血脂相關基因、腫瘤相關基因與中風相關基因區塊，並依 ACMG SF、血脂、腫瘤、中風、Carrier screening、Proactive、PGx 的順序顯示。

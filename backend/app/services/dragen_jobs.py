@@ -673,6 +673,7 @@ def delete_pipeline_output(sample_id: str) -> dict:
             deleted.append(str(job_dir))
     from . import sample_loader
     sample_loader.invalidate_sample_cache(ui_dir)
+    sample_loader.remove_case_table_row(ui_sample_id)
     return {"sample_id": ui_sample_id, "source_sample_id": pipeline_sample_id, "deleted": deleted}
 
 

@@ -41,7 +41,7 @@ from ..adapters.snv_tsv import (
     merge_snv_variant_row,
 )
 from ..config import TERTIARY_OUTPUT_ROOT
-from . import analyses_store, omim_store, panel_deadzone, phenotype_scorer, snv_gene_index, snv_review
+from . import analyses_store, hpo_ontology, omim_store, panel_deadzone, phenotype_scorer, snv_gene_index, snv_review
 
 
 SECONDARY_SNV_PANELS = {
@@ -60,6 +60,9 @@ _CASE_SUMMARY_CACHE_MAX = 128
 _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
 CASE_SUMMARY_CACHE_NAME = "case_summary.json"
+CASE_TABLE_CACHE_NAME = "_case_table.json"
+CASE_TABLE_VERSION = 1
+_case_table_lock = threading.Lock()
 
 
 def _fmt_size(path: Path) -> str:
@@ -181,6 +184,165 @@ def _write_case_summary_disk(sample_dir: Path, signature: list, summary: dict[st
         )
     except OSError:
         pass
+
+
+def _case_table_path() -> Path:
+    return TERTIARY_OUTPUT_ROOT / CASE_TABLE_CACHE_NAME
+
+
+def _case_table_row_id(row: dict) -> str:
+    return str(row.get("tertiary_dir") or row.get("sample_id") or row.get("lis_id") or "").strip()
+
+
+def _read_case_table_payload() -> dict:
+    payload = _read_json_or(_case_table_path(), {}) or {}
+    if not isinstance(payload, dict) or payload.get("version") != CASE_TABLE_VERSION:
+        return {}
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        return {}
+    return payload
+
+
+def _write_case_table_rows(rows: list[dict]) -> None:
+    payload = {
+        "version": CASE_TABLE_VERSION,
+        "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "rows": rows,
+    }
+    path = _case_table_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def _registered_sample_ids() -> set[str]:
+    if not TERTIARY_OUTPUT_ROOT.exists():
+        return set()
+    out: set[str] = set()
+    for sub in TERTIARY_OUTPUT_ROOT.iterdir():
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        if (sub / "sample_metadata.json").exists():
+            out.add(sub.name)
+    return out
+
+
+def _case_table_is_complete(rows: list[dict]) -> bool:
+    ids = _registered_sample_ids()
+    row_ids = {_case_table_row_id(row) for row in rows}
+    row_ids.discard("")
+    return row_ids == ids
+
+
+def _analysis_phenotype_summary(sample_id: str, meta: dict) -> str:
+    version = meta.get("active_analysis") or analyses_store.active_version(sample_id) or "default"
+    analysis = analyses_store.read_version(sample_id, version) or {}
+    hpo_rows = analysis.get("hpo") or meta.get("hpo") or meta.get("patient_phenotype") or []
+    panel_rows = analysis.get("selected_panels") or meta.get("selected_panels") or []
+    lines: list[str] = []
+    for row in hpo_rows:
+        if isinstance(row, dict):
+            hpo_id = str(row.get("phenotype") or row.get("hpo_id") or "").strip()
+            label = str(row.get("label") or row.get("name") or "").strip()
+        else:
+            hpo_id = str(row or "").strip()
+            label = ""
+        if not hpo_id:
+            continue
+        if not label:
+            term = hpo_ontology.get(hpo_id)
+            label = term.name if term else ""
+        lines.append(f"{label} {hpo_id}".strip())
+    for row in panel_rows:
+        if isinstance(row, dict):
+            name = str(row.get("name") or row.get("panel") or "").strip()
+        else:
+            name = str(row or "").strip()
+        if name:
+            lines.append(name)
+    return "\n".join(dict.fromkeys(lines))
+
+
+def _case_table_row_from_sample_dir(
+    sample_dir: Path,
+    *,
+    omim_sig: tuple | None = None,
+) -> dict | None:
+    meta_path = sample_dir / "sample_metadata.json"
+    if not meta_path.exists():
+        return None
+    meta = _read_json_or(meta_path, {}) or {}
+    sample_id = str(meta.get("sample_id") or sample_dir.name)
+    summary = _case_management_summary(sample_dir, meta, omim_sig=omim_sig)
+    return {
+        "sample_id":     sample_id,
+        "lis_id":        meta.get("lis_id") or sample_dir.name,
+        "name":          meta.get("name", ""),
+        "mrn":           meta.get("mrn", ""),
+        "sex":           meta.get("sex", ""),
+        "test_type":     meta.get("test_type", ""),
+        "category":      meta.get("category", ""),
+        "run_date":      meta.get("run_date", ""),
+        "created_at":    meta.get("created_at", ""),
+        "tags":          meta.get("tags", []),
+        "has_completed": (sample_dir / "snv_indel.annotated.tsv").exists(),
+        "tertiary_dir":  sample_dir.name,
+        "phenotype_summary": _analysis_phenotype_summary(sample_id, meta),
+        **summary,
+    }
+
+
+def rebuild_case_table() -> list[dict]:
+    """Rebuild the denormalized case-list table from all registered samples."""
+    rows: list[dict] = []
+    if TERTIARY_OUTPUT_ROOT.exists():
+        omim_sig = omim_store.cache_signature()
+        for sub in sorted(TERTIARY_OUTPUT_ROOT.iterdir()):
+            if not sub.is_dir() or sub.name.startswith("_"):
+                continue
+            row = _case_table_row_from_sample_dir(sub, omim_sig=omim_sig)
+            if row is not None:
+                rows.append(row)
+    rows.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
+    with _case_table_lock:
+        _write_case_table_rows(rows)
+    return rows
+
+
+def update_case_table_row(sample_id: str) -> None:
+    """Best-effort refresh of one row in the case-list table."""
+    sample_dir = TERTIARY_OUTPUT_ROOT / sample_id
+    try:
+        row = _case_table_row_from_sample_dir(sample_dir)
+        if row is None:
+            remove_case_table_row(sample_id)
+            return
+        with _case_table_lock:
+            payload = _read_case_table_payload()
+            rows = payload.get("rows") if payload else []
+            rows = [r for r in rows if _case_table_row_id(r) != sample_id]
+            rows.append(row)
+            rows.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
+            _write_case_table_rows(rows)
+    except Exception as e:
+        print(f"[case-table] refresh failed for {sample_id}: {e}", flush=True)
+
+
+def remove_case_table_row(sample_id: str) -> None:
+    """Best-effort removal of one row after a sample is deleted."""
+    try:
+        with _case_table_lock:
+            payload = _read_case_table_payload()
+            rows = payload.get("rows") if payload else []
+            rows = [r for r in rows if _case_table_row_id(r) != sample_id]
+            _write_case_table_rows(rows)
+    except Exception as e:
+        print(f"[case-table] remove failed for {sample_id}: {e}", flush=True)
 
 
 def _read_pheno_scores(path: Path) -> dict[str, float]:
@@ -942,36 +1104,19 @@ def list_index() -> list[dict]:
 
 
 def list_case_summaries() -> list[dict]:
-    """Return the case-list table rows, including cached variant summaries."""
-    out: list[dict] = []
-    if not TERTIARY_OUTPUT_ROOT.exists():
-        return out
-    omim_sig = omim_store.cache_signature()
-    for sub in sorted(TERTIARY_OUTPUT_ROOT.iterdir()):
-        if not sub.is_dir() or sub.name.startswith("_"):
-            continue
-        meta_path = sub / "sample_metadata.json"
-        if not meta_path.exists():
-            continue
-        meta = _read_json_or(meta_path, {}) or {}
-        summary = _case_management_summary(sub, meta, omim_sig=omim_sig)
-        out.append({
-            "sample_id":     meta.get("sample_id") or sub.name,
-            "lis_id":        meta.get("lis_id") or sub.name,
-            "name":          meta.get("name", ""),
-            "mrn":           meta.get("mrn", ""),
-            "sex":           meta.get("sex", ""),
-            "test_type":     meta.get("test_type", ""),
-            "category":      meta.get("category", ""),
-            "run_date":      meta.get("run_date", ""),
-            "created_at":    meta.get("created_at", ""),
-            "tags":          meta.get("tags", []),
-            "has_completed": (sub / "snv_indel.annotated.tsv").exists(),
-            "tertiary_dir":  sub.name,
-            **summary,
-        })
-    out.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
-    return out
+    """Return the denormalized case-list table rows.
+
+    The modal should not scan variant TSVs on every open. Normal app writes
+    refresh one row at a time; this path rebuilds only when the table is absent
+    or the registered sample set changed outside the app.
+    """
+    payload = _read_case_table_payload()
+    rows = payload.get("rows") if payload else []
+    if rows and _case_table_is_complete(rows):
+        rows = list(rows)
+        rows.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
+        return rows
+    return rebuild_case_table()
 
 
 def list_unregistered() -> list[dict]:
