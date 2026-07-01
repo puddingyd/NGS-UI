@@ -3057,8 +3057,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .case-list-table tr:last-child td { border-bottom: none; }
 .case-list-table td.case-list-id {
-  width: 8ch;
-  max-width: 8ch;
+  width: 13ch;
+  max-width: 13ch;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -3084,8 +3084,8 @@ body.sidebar-collapsed .container { margin-left: auto; }
   max-width: 255px;
 }
 .case-list-table td.case-list-phenotype {
-  min-width: 160px;
-  max-width: 230px;
+  min-width: 240px;
+  max-width: 345px;
 }
 .case-list-table td.case-list-date {
   color: var(--muted);
