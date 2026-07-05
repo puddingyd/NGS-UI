@@ -331,6 +331,13 @@ it is *more complete* for in-house AF, not less accurate. On well-called sites
 (AN ≥ 120, i.e. ≥60/64 samples) the two methods agree to **r ≈ 0.9998 (SNP) /
 0.9962 (indel)**. See `DESIGN_incremental.md` §6a.
 
+**Re-confirmed at full cohort (677 incremental vs 675 GLnexus):** well-called
+sites (AN ≥ 1300 of 1350) agree to **r = 0.9999 (SNP) / 0.9960 (indel)**, and
+the incremental DB is a **superset** of GLnexus (99.4 % of GLnexus sites present,
+plus ~18 M more rare/low-quality sites). The low overall r (~0.15) is again the
+rare/low-AN tail, magnified at N=677 because singletons dominate the site count.
+See `DESIGN_incremental.md` §6b.
+
 > **Indel AN double-count — fixed during Phase C.** An early run showed
 > r ≈ 0.5 even at high AN. Cause: a variant's callable interval was the full
 > REF span `[pos-1, pos-1+len(ref))`, which for multi-base REF / deletions
