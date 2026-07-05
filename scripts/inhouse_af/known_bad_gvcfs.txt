@@ -1,0 +1,16 @@
+# Known-bad gVCFs for the GLnexus joint-genotyping baseline.
+#
+# GLnexus validates every input during bulk load and ABORTS THE WHOLE RUN if
+# any single gVCF has a malformed record ("gVCF record doesn't have expected #
+# of GT entries"). Losing a multi-hour load to one bad file is expensive, so
+# the GLnexus list-builder (make_glnexus_list.sh) drops the sample ids below.
+#
+# NOTE: this ONLY affects the GLnexus audit baseline. The incremental production
+# path (ingest_sample.py) has a tolerant parser and KEEPS these samples — do not
+# remove them from the incremental cohort.
+#
+# Format: one sample id per line; "# ..." comments allowed. Record the reason.
+#
+# id            # run / locus / reason
+25G00256        # 20251126_LH00873_0006  chr1:25405596  wrong # of GT entries
+25G00347        # 20251204_LH00873_0008  chr1:25405596  wrong # of GT entries

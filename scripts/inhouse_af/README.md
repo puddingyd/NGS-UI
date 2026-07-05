@@ -340,6 +340,60 @@ it is *more complete* for in-house AF, not less accurate. On well-called sites
 > `[pos-1, pos)` per variant in `ingest_sample.py`, and (b) looking AN up at
 > `pos-1` in `publish_af.py`. Both fixes are in the committed scripts.
 
+## Quarterly GLnexus audit (ground-truth baseline) — SOP
+
+The incremental path is production; **GLnexus is only re-run periodically** as an
+independent ground-truth to re-confirm the incremental AF. GLnexus is
+all-or-nothing: **one malformed gVCF aborts the whole multi-hour load.** Two
+guards make that survivable:
+
+1. **`known_bad_gvcfs.txt`** — sample ids GLnexus can't load (with the reason).
+   `make_glnexus_list.sh` drops them from the GLnexus list. These samples stay
+   in the *incremental* cohort (its parser is tolerant) — only the GLnexus
+   baseline excludes them.
+2. **`preflight_glnexus.sh`** — a fast, parallel pre-scan that finds *new*
+   malformed gVCFs **before** the load (not 11 h in), and appends them to
+   `known_bad_gvcfs.txt`.
+
+So you do **not** discover bad samples by losing a full run — you scan first:
+
+```bash
+DB=/raid/DGM/n102968/inhouse_af
+
+# 1. pre-flight the whole cohort in parallel (~1–2 h; NFS-read-bound, not a full load)
+scripts/inhouse_af/preflight_glnexus.sh \
+  --list "$DB/cohort_gvcfs.txt" --out-prefix "$DB/glnexus_preflight" --jobs 32
+#   -> $DB/glnexus_preflight.clean.txt  + appends any new bad ids to known_bad_gvcfs.txt
+
+# 2. build the GLnexus-safe list (drops known-bad ids)
+scripts/inhouse_af/make_glnexus_list.sh \
+  --in "$DB/cohort_gvcfs.txt" --out "$DB/cohort_gvcfs.glnexus.txt"
+
+# 3. joint-genotype (scratch on LOCAL /raid, keep the cohort BCF as insurance)
+scripts/inhouse_af/build_inhouse_af.sh \
+  --list "$DB/cohort_gvcfs.glnexus.txt" \
+  --ref "$REF" --bed "$DB/primary_contigs.bed" \
+  --scratch "$DB/glnexus_scratch" --keep-cohort \
+  --out "$DB/inhouse_af.glnexus.vcf.gz" --threads 32 --mem-gbytes 256
+
+# 4. compare incremental vs GLnexus (Phase C)
+scripts/inhouse_af/compare_inhouse_af.py \
+  --incremental "$DB/inhouse_af.hg38.vcf.gz" \
+  --glnexus     "$DB/inhouse_af.glnexus.vcf.gz"
+```
+
+`preflight_glnexus.sh` is stdlib-only (fast C decompression via `bgzip -dc` piped
+into `validate_gvcf_glnexus.py`, which flags the "wrong # of GT entries" defect
+GLnexus rejects). `compare_inhouse_af.py` merge-joins the two sites VCFs and
+prints Pearson r stratified by SNP/indel and AN floor — the low-AN tail (where
+GLnexus no-calls low-confidence samples) is separated from the well-called sites
+the method is judged on.
+
+**Adding a batch does NOT need any of this.** Routine per-batch updates run the
+incremental path only (`ingest_sample.py` → `accumulate.py` → `publish_af.py`),
+which never re-genotypes the cohort and never trips on a malformed gVCF. The
+GLnexus audit is a periodic cross-check, not part of the update loop.
+
 ## Integrating into NGS-UI (Phase 2, not done yet)
 
 Mirror the gnomAD pattern:
