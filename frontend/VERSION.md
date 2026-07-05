@@ -6,31 +6,18 @@
 
 ## 版本紀錄
 
-### v6.3 — 2026-07-05
+### v6.2 — 2026-07-05
 
-- SNV/Indel 卡片新增「本院 AF（AF_nckuh）」：顯示該變異在院內 WGS cohort 的等位基因頻率，格式為 `AF (AC/AN)`（例：`0.045 (61/1352)`），排在 `AF` / `AF_eas` 下方；`1000G EAS` 移到「More」內。缺值顯示「—」。本院 AF 為疾病轉介族群統計，供辨識院內常見／重現變異，不作為 ACMG 族群頻率證據（BA1/BS1 仍以 gnomAD 為準）。
+- SNV/Indel 新增「本院 AF（AF_nckuh）」：顯示該變異在院內 WGS cohort 的等位基因頻率。
 - 三級分析 stop-gaps 新增 in-house AF 註記步驟（`annotate_inhouse_af.py`），在 review TSV／gene index 之前把 `INHOUSE_AC/AN/AF` 併入 `snv_indel.annotated.tsv`；本院 AF 資料庫未部署時自動略過。舊樣本可用 `scripts/backfill_inhouse_af.sh` 補上。
-
-### v6.2 — 2026-07-01
-
-- 三級分析 job 狀態偵測新增 orphan/zombie worker 收斂：若後端發現 `state=running/queued` 但 worker PID 已不存在或已成 zombie，會自動標記為 failed，避免首頁狀態列永久停在最後進度百分比。
-- systemd unit 範本新增 `KillMode=process`，避免重啟 NGS-UI web service 時把正在執行的三級分析 Nextflow worker 一起 SIGTERM。
-- 三級分析重新啟動時，若偵測到無後綴 source-ID output 且目標 `-dragen` / `-nckuh` 目錄尚不存在，會直接清除該 legacy publish 目錄，讓 Nextflow 依自己的 work/cache 用 `-resume` 判斷並重新輸出。
 - 個案清單新增 Phenotype 欄位，顯示 active analysis 的 HPO/panel；HPO 以 `Seizure HP:0001250` 格式呈現。個案清單改讀 `tertiary_output/_case_table.json` 總表，個案資料變更時同步更新單列，減少開啟清單時等待。
-- 個案清單摘要修正 Mitochondria 變異來源；Mito causative / other 會讀取 mito 卡片資料與 ClinVar disease 勾選，不再被同座標 SNV/Indel transcript 誤配。
 
 ### v6.1 — 2026-06-29
 
-- Secondary findings 新增血脂相關基因、腫瘤相關基因與中風相關基因區塊，並依 ACMG SF、血脂、腫瘤、中風、Carrier screening、Proactive、PGx 的順序顯示。
-- 新增「匯出健檢報告」DOCX：匯出前可選擇報告項目，預設勾選 ACMG SF 與藥物基因體學；版型沿用診斷報告的 `====` 表格、列點、檢測方法、注意事項與基因清單；未檢出區段以「此類別於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。」呈現。
+- Secondary findings 新增血脂相關基因、腫瘤相關基因與中風相關基因區塊。
+- 新增「匯出健檢報告」：匯出前可選擇報告項目，預設勾選 ACMG SF 與藥物基因體學。
 - 健檢報告中的 ACMG SF 依血脂、腫瘤、心血管、代謝與內分泌、麻醉用藥風險及其它基因分組，疾病名稱使用 ClinGen / ACMG SF v3.3 表格。
-- 診斷與健檢 DOCX 的 SNV/Indel 表格調整 ClinVar / RS ID 欄寬，避免 `conflicting classifications` 與下一欄黏在一起。
-- 三級分析 DRAGEN VCF 清單預設加掃 `/home/datalake_Intermediate/n102968`，方便從該目錄直接選擇 hard-filtered VCF。
-- IGV DRAGEN BAM 搜尋預設加掃 `/home/datalake_Intermediate/n102968`，可直接讀取測試用 `<run>/bam/{sample}.bam`。
-- 健檢 DOCX 依 review 註解調整格式：新增受檢者資料區、更新檢驗項目/套組名稱、ACMG SF 參考文字與遺傳模式句型，PGx 僅輸出 Strong/Moderate/Optional CPIC recommendation。
-- 健檢 DOCX 進一步依 review 註解調整：報告抬頭置中、受檢者資料改雙列三欄且檢體編號顯示時去除來源後綴、SNV 表格移除類別欄、PGx 基因清單改列基因名稱；主畫面 Secondary findings 預設只展開 ACMG，分析區預設展開 ACMG 與 PGx。
-- 健檢 DOCX 的 PGx 區段若無 actionable 結果，改寫「未檢出具臨床可應用之用藥建議之結果。」。
-- 報告區 Causative / Other / Candidate 點位順序固定為 SNV/Indel、CNV/SV、Mitochondria；DOCX 遺傳模式不再顯示 digenic 或 somatic。
+
 
 ### v6.0 — 2026-06-19
 
