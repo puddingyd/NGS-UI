@@ -23,16 +23,20 @@ REPO="${REPO:-$HOME/NGS_UI/NGS-UI}"
 BRANCH="${BRANCH:-claude/pensive-johnson-d68tmi}"
 DGX="${DGX:-n102968@dgx2}"
 DEST="${DEST:-~/dgx_stage/inhouse_af}"     # DGX 上的目的資料夾（注意是 flat，不含 scripts/）
+VIA="${VIA:-}"                             # 若設了：走「共享 datalake 中繼」而非 ssh/scp
+DGX_VIEW="${DGX_VIEW:-}"                   # --via 在 DGX 上看到的路徑（預設把開頭 /home 去掉）
 DO_PULL=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --repo)    REPO="$2"; shift 2;;
-    --branch)  BRANCH="$2"; shift 2;;
-    --dgx)     DGX="$2"; shift 2;;
-    --dest)    DEST="$2"; shift 2;;
-    --no-pull) DO_PULL=0; shift;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0;;
+    --repo)     REPO="$2"; shift 2;;
+    --branch)   BRANCH="$2"; shift 2;;
+    --dgx)      DGX="$2"; shift 2;;
+    --dest)     DEST="$2"; shift 2;;
+    --via)      VIA="$2"; shift 2;;
+    --dgx-view) DGX_VIEW="$2"; shift 2;;
+    --no-pull)  DO_PULL=0; shift;;
+    -h|--help)  sed -n '2,28p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
@@ -61,6 +65,22 @@ else
 fi
 echo
 
+# ---- 模式 A：共享 datalake 中繼（--via），不需 ssh/主機名 ---------------
+if [ -n "$VIA" ]; then
+  echo "[2/2] 複製到共享中繼資料夾（DGX 也掛載得到）..."
+  mkdir -p "$VIA"
+  ( cd "$SRC" && cp -f -- *.py *.sh *.yml *.yaml *.md *.txt "$VIA/" 2>/dev/null || true )
+  # DGX 端看到的路徑：預設把開頭的 /home 去掉（DGM /home/datalake_* ↔ DGX /datalake_*）
+  view="$DGX_VIEW"
+  [ -n "$view" ] || view="${VIA#/home}"
+  echo
+  echo "== 已複製到中繼：$VIA =="
+  echo "現在到 DGX 上執行這一行，把檔案放進 staging："
+  echo "  mkdir -p ~/dgx_stage/inhouse_af && cp -f $view/*.py $view/*.sh $view/*.yml $view/*.txt ~/dgx_stage/inhouse_af/"
+  exit 0
+fi
+
+# ---- 模式 B：直接 ssh/scp 到 DGX ---------------------------------------
 # ---- 2. 確保 DGX 目的資料夾存在 ----------------------------------------
 echo "[2/3] 在 DGX 建立目的資料夾（若不存在）..."
 ssh "$DGX" "mkdir -p $DEST"
