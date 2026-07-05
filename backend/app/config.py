@@ -137,6 +137,16 @@ GENEBE_DB = Path(os.environ.get(
     BIOTOOLS_DIR / "genebe" / "genebe_hg38.tsv.gz",
 ))
 
+# In-house allele frequency sites VCF (built from our own WGS cohort by
+# scripts/inhouse_af/publish_af.py). scripts/annotate_inhouse_af.py joins its
+# INHOUSE_AC/AN/AF into snv_indel.annotated.tsv and the SNV card shows an
+# AF_nckuh row. Large + patient-derived, not committed; deploy under biotools
+# via scripts/inhouse_af/deploy_inhouse_af_db.sh. Missing file = silently off.
+INHOUSE_AF_DB = Path(os.environ.get(
+    "NGS_UI_INHOUSE_AF_DB",
+    BIOTOOLS_DIR / "inhouse_af" / "inhouse_af.hg38.vcf.gz",
+))
+
 # OMIM annotation table (xlsx). Loaded once at first use and lazily
 # reloaded when the file mtime changes. Empty value or missing file
 # disables OMIM annotation; variants render with empty Disease lists.

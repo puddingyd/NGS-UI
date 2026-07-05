@@ -401,28 +401,37 @@ incremental path only (`ingest_sample.py` → `accumulate.py` → `publish_af.py
 which never re-genotypes the cohort and never trips on a malformed gVCF. The
 GLnexus audit is a periodic cross-check, not part of the update loop.
 
-## Integrating into NGS-UI (Phase 2, not done yet)
+## Integrating into NGS-UI (Phase 2 — DONE)
 
-Mirror the gnomAD pattern:
+Implemented on the main line (mirrors the GeneBe/GIAB annotate pattern — the
+sites VCF is joined into the TSV as columns, NOT `bcftools annotate`, because
+`snv_indel.annotated.tsv` is a TSV):
 
-1. `config.py`: add `NGS_UI_INHOUSE_AF_DB` (default
-   `$NGS_UI_HOME/biotools/inhouse_af/inhouse_af.hg38.vcf.gz`).
-2. `run_stopgaps.sh`: after the gnomAD annotate step, add
-   `bcftools annotate -a $INHOUSE_AF_DB -c INFO/INHOUSE_AC,INFO/INHOUSE_AN,INFO/INHOUSE_AF,INFO/INHOUSE_NHOM`
-   onto `snv_indel.annotated.tsv`. Re-annotating rewrites the whole TSV, so
-   rebuild `snv_gene_index.sqlite` too (same gotcha as `backfill_giab_strata.sh`).
-3. `adapters/snv_tsv.py`: surface `inhouse_af` / `inhouse_ac` / `inhouse_an`
-   next to the gnomAD fields.
-4. Front-end: an in-house badge on the SNV card showing **AC/AN** (not just %,
-   so N=613 sample-size is visible) and an "In-house AF < x" display filter
-   next to the existing `gnomAD_G_AF < 0.01` toggle.
-5. A `backfill_inhouse_af.sh` (cf. `backfill_giab_strata.sh`) for existing
-   samples.
+1. **`config.py`** — `INHOUSE_AF_DB` (env `NGS_UI_INHOUSE_AF_DB`, default
+   `$NGS_UI_HOME/biotools/inhouse_af/inhouse_af.hg38.vcf.gz`; missing = off).
+2. **`scripts/annotate_inhouse_af.py`** — single streaming pass over the sorted
+   sites VCF (not per-variant tabix seeks), fills `INHOUSE_AC/AN/AF` on matching
+   `(chrom,pos,ref,alt)`, atomic replace, no-op when the DB is absent.
+3. **`run_stopgaps.sh`** — runs `annotate_inhouse_af.py` after `giab-strata` and
+   before `review-tsv`/`gene-index` (so the columns reach the UI and the gene
+   index is rebuilt after the whole-TSV rewrite). `--skip-inhouse-af` /
+   `--inhouse-af-db` flags.
+4. **`adapters/snv_tsv.py`** — surfaces `inhouse_af` / `inhouse_ac` / `inhouse_an`.
+5. **Front-end** — SNV card shows an **`AF_nckuh`** row `AF (AC/AN)` (e.g.
+   `0.045 (61/1352)`) under `AF`/`AF_eas`; `1000G EAS` moved into *More*. No
+   display filter (deliberately). "—" when the variant isn't in the DB.
+6. **`scripts/backfill_inhouse_af.sh`** — for existing samples / after a batch
+   refresh: annotate → rebuild review TSV → **rebuild gene index** (offsets shift).
+7. **`scripts/inhouse_af/deploy_inhouse_af_db.sh`** — atomic-install the sites VCF
+   onto the NGS-UI host under `biotools/inhouse_af/`.
+
+Case list / DOCX intentionally NOT wired (main-screen display only). See
+`PHASE2_PLAN.md` for the decisions.
 
 ## Caveats to keep in mind
 
 - **Disease-referral cohort, not population controls.** Use in-house AF to
   flag recurrent artifacts / locally common variants; do **not** use it as
   ACMG BA1/BS1 population-frequency evidence (that stays gnomAD).
-- **N=613** → minimum resolvable allele frequency ≈ 1/1226 ≈ 0.08%; show AC/AN.
+- **N=677** → minimum resolvable allele frequency ≈ 1/1354 ≈ 0.07%; show AC/AN.
 - **No relatedness/MRN dedup yet** (see Cohort note).

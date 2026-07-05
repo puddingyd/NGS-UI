@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v6.3 — 2026-07-05
+
+- SNV/Indel 卡片新增「本院 AF（AF_nckuh）」：顯示該變異在院內 WGS cohort 的等位基因頻率，格式為 `AF (AC/AN)`（例：`0.045 (61/1352)`），排在 `AF` / `AF_eas` 下方；`1000G EAS` 移到「More」內。缺值顯示「—」。本院 AF 為疾病轉介族群統計，供辨識院內常見／重現變異，不作為 ACMG 族群頻率證據（BA1/BS1 仍以 gnomAD 為準）。
+- 三級分析 stop-gaps 新增 in-house AF 註記步驟（`annotate_inhouse_af.py`），在 review TSV／gene index 之前把 `INHOUSE_AC/AN/AF` 併入 `snv_indel.annotated.tsv`；本院 AF 資料庫未部署時自動略過。舊樣本可用 `scripts/backfill_inhouse_af.sh` 補上。
+
 ### v6.2 — 2026-07-01
 
 - 三級分析 job 狀態偵測新增 orphan/zombie worker 收斂：若後端發現 `state=running/queued` 但 worker PID 已不存在或已成 zombie，會自動標記為 failed，避免首頁狀態列永久停在最後進度百分比。

@@ -92,11 +92,13 @@ SKIP_CNV=0
 SKIP_GIAB=0
 SKIP_GENEBE=0
 SKIP_MANE_REFSEQ=0
+SKIP_INHOUSE_AF=0
 SEQ_TYPE="${SEQ_TYPE:-WES}"
 NGS_HOME_DEFAULT="${NGS_UI_HOME:-$HOME/NGS_UI}"
 GENEBE_DB="${NGS_UI_GENEBE_DB:-$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz}"
 MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5.summary.txt.gz}"
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
+INHOUSE_AF_DB="${NGS_UI_INHOUSE_AF_DB:-$NGS_HOME_DEFAULT/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
 SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
 SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
 CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$HOME/NGS_UI/biotools/cds_combined.bed}"
@@ -121,6 +123,8 @@ while [ $# -gt 0 ]; do
     --skip-mane-refseq)   SKIP_MANE_REFSEQ=1; shift;;
     --giab-strat-dir)     GIAB_STRAT_DIR="$2"; shift 2;;
     --skip-giab)          SKIP_GIAB=1; shift;;
+    --inhouse-af-db)      INHOUSE_AF_DB="$2"; shift 2;;
+    --skip-inhouse-af)    SKIP_INHOUSE_AF=1; shift;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -201,6 +205,21 @@ if [ "$SKIP_GIAB" -eq 0 ]; then
   fi
   "$SCRIPT_DIR/annotate_giab_strata.py" "${GIAB_ARGS[@]}"
   step_done
+fi
+
+# 3b2. In-house allele frequency. Joins INHOUSE_AC/AN/AF from the local cohort
+#      sites VCF (single streaming pass). Runs on the whole TSV, before review
+#      TSV / gene index so the columns reach the UI. No-op when the DB is absent.
+if [ "$SKIP_INHOUSE_AF" -eq 0 ]; then
+  if [ -f "$INHOUSE_AF_DB" ]; then
+    echo
+    echo "[post-processing] annotate_inhouse_af.py"
+    step_start "inhouse-af"
+    "$SCRIPT_DIR/annotate_inhouse_af.py" --tsv "$TSV" --db "$INHOUSE_AF_DB"
+    step_done
+  else
+    echo "  - in-house AF skipped (DB not found: $INHOUSE_AF_DB)"
+  fi
 fi
 
 # 3c. MANE RefSeq mapping. Runs before review TSV / gene index so every

@@ -579,6 +579,12 @@ def _row_to_variant(row: dict) -> dict:
         "AF_eas": _to_num(row.get("GNOMAD_G_EAS_AF")),
         "AF_exome": _to_num(row.get("GNOMAD_E_AF")),
         "AF_exome_eas": _to_num(row.get("GNOMAD_E_EAS_AF")),
+        # In-house AF from our own WGS cohort (scripts/annotate_inhouse_af.py
+        # writes INHOUSE_AC/AN/AF). The card shows an AF_nckuh row "<AF> (AC/AN)".
+        # All None when the variant isn't in the DB (or the DB isn't deployed).
+        "inhouse_af":          _to_num(row.get("INHOUSE_AF")),
+        "inhouse_ac":          _to_int(row.get("INHOUSE_AC")),
+        "inhouse_an":          _to_int(row.get("INHOUSE_AN")),
         # New pipeline drops Taiwan Biobank; gnomAD EAS covers the same
         # population well enough.
         "TG_eas_af":           _to_num(row.get("TG_EAS_AF")),
