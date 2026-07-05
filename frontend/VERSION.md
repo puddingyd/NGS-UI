@@ -9,8 +9,7 @@
 ### v6.2 — 2026-07-05
 
 - SNV/Indel 新增「本院 AF（AF_nckuh）」：顯示該變異在院內 WGS cohort 的等位基因頻率。
-- 三級分析 stop-gaps 新增 in-house AF 註記步驟（`annotate_inhouse_af.py`），在 review TSV／gene index 之前把 `INHOUSE_AC/AN/AF` 併入 `snv_indel.annotated.tsv`；本院 AF 資料庫未部署時自動略過。舊樣本可用 `scripts/backfill_inhouse_af.sh` 補上。
-- 個案清單新增 Phenotype 欄位，顯示 active analysis 的 HPO/panel；HPO 以 `Seizure HP:0001250` 格式呈現。個案清單改讀 `tertiary_output/_case_table.json` 總表，個案資料變更時同步更新單列，減少開啟清單時等待。
+- 個案清單新增 Phenotype 欄位，顯示該個案用於分析之 HPO/panel。
 
 ### v6.1 — 2026-06-29
 
