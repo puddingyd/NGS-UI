@@ -211,7 +211,6 @@ def ensure_review_tsv(
     review_tsv = raw_tsv.with_name(REVIEW_TSV_NAME)
     manifest = review_tsv.with_suffix(review_tsv.suffix + ".source.json")
     candidate_bed_path = _candidate_bed_path()
-    candidate_bed = _load_bed(candidate_bed_path)
     source = {
         "raw_mtime_ns": raw_tsv.stat().st_mtime_ns,
         "raw_size": raw_tsv.stat().st_size,
@@ -236,6 +235,7 @@ def ensure_review_tsv(
         except (OSError, json.JSONDecodeError):
             pass
 
+    candidate_bed = _load_bed(candidate_bed_path)
     tmp = review_tsv.with_suffix(review_tsv.suffix + ".tmp")
     manifest_tmp = manifest.with_suffix(manifest.suffix + ".tmp")
     kept = 0
