@@ -2318,6 +2318,8 @@ function openGeneSearchModal(kind, gene) {
   const inp = document.getElementById("gene-search-modal-input");
   document.getElementById("gene-search-filter-row")
     ?.classList.toggle("hidden", kind === "cnv-sv");
+  document.getElementById("gene-search-filter-gnomad-label")
+    ?.classList.remove("hidden");
   if (inp) {
     inp.style.display = "";
     inp.value = gene || "";
@@ -2335,7 +2337,8 @@ function openToolRankModal(tool) {
   const titleEl = document.getElementById("gene-search-title");
   const host    = document.getElementById("gene-search-results");
   const inp      = document.getElementById("gene-search-modal-input");
-  document.getElementById("gene-search-filter-row")?.classList.add("hidden");
+  document.getElementById("gene-search-filter-row")?.classList.remove("hidden");
+  document.getElementById("gene-search-filter-gnomad-label")?.classList.add("hidden");
   if (inp) inp.style.display = "none";   // re-search input is meaningless in rank mode
   const rankKey  = tool === "lirical" ? "rank_lirical_variant" : "rank_exomiser_variant";
   const toolName = tool === "lirical" ? "LIRICAL" : "Exomiser";
@@ -7602,11 +7605,15 @@ function setupSnvDisplayFilters() {
 // every SNV variant card via a class on #category-sections.
 function setupOmimFilter() {
   const cb = document.getElementById("filter-omim");
-  if (!cb) return;
-  const apply = () => document.getElementById("category-sections")
-    ?.classList.toggle("hide-omim", !cb.checked);
-  apply();
-  cb.addEventListener("change", apply);
+  const modalCb = document.getElementById("gene-search-filter-omim");
+  const applyMain = () => document.getElementById("category-sections")
+    ?.classList.toggle("hide-omim", !cb?.checked);
+  const applyModal = () => document.getElementById("gene-search-modal")
+    ?.classList.toggle("hide-omim", !modalCb?.checked);
+  applyMain();
+  applyModal();
+  cb?.addEventListener("change", applyMain);
+  modalCb?.addEventListener("change", applyModal);
 }
 
 // ---------- tiny utils ---------------------------------------------
@@ -9242,7 +9249,16 @@ async function _dragenStart() {
     if (!r.ok) throw new Error(await r.text());
     const { job_id } = await r.json();
     _DRAGEN_STATE.batch = samples.slice();
-    _DRAGEN_STATE.job = { job_id, state: "queued", running: true };
+    _dragenSetJob({
+      job_id,
+      state: "queued",
+      step: "queued",
+      running: true,
+      mode,
+      sample_id: samples[0]?.sample_id || samples[0]?.source_sample_id || "",
+      sample_count: samples.length,
+      log_tail: "",
+    });
     _dragenRenderBatch();
     _dragenStartPolling(job_id);
   } catch (e) {

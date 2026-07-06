@@ -649,9 +649,13 @@
         <button type="button" class="btn btn-ghost" data-close="gene-search-modal">關閉</button>
       </div>
       <div id="gene-search-filter-row" class="gene-search-filter-row">
-        <label class="filter-toggle">
+        <label id="gene-search-filter-gnomad-label" class="filter-toggle">
           <input id="gene-search-filter-gnomad-af" type="checkbox" checked />
           <span>gnomAD_G_AF &lt; 0.01</span>
+        </label>
+        <label id="gene-search-filter-omim-label" class="filter-toggle filter-omim-toggle" title="顯示變異卡片下方的 OMIM 疾病資訊">
+          <input id="gene-search-filter-omim" type="checkbox" checked />
+          <span>OMIM</span>
         </label>
       </div>
       <div id="gene-search-results"></div>

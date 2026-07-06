@@ -1539,6 +1539,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 .gene-search-filter-row {
   display: flex;
+  gap: 12px;
   justify-content: flex-end;
   margin-bottom: 12px;
 }
@@ -2034,6 +2035,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 
 #category-sections.hide-omim .disease-list { display: none; }
+#gene-search-modal.hide-omim .disease-list { display: none; }
 
 /* ---- Phase A/B: phenotype + panel editor ----------------------- */
 
