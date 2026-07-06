@@ -115,6 +115,20 @@ def _to_int(v: str, default: int = 0) -> int:
         return default
 
 
+def _first_num(v: str):
+    """First value of a possibly per-ALT (comma-separated) numeric field, or
+    None. Used for the in-house AF columns (Number=A, e.g. '0.44,0.42'); the
+    card shows the first ALT, consistent with the first-ALT VAF/AD behaviour.
+    Returns None for missing / '.' so absent variants render a clean '—'
+    (NOT 0 — that would make the card show '(0/0)')."""
+    if v is None or v == "":
+        return None
+    tok = str(v).split(",", 1)[0].strip()
+    if tok in ("", "."):
+        return None
+    return _to_num(tok)
+
+
 def _to_bool(v: str) -> bool:
     return str(v).strip().lower() in ("true", "1", "yes", "y", "t")
 
@@ -582,9 +596,9 @@ def _row_to_variant(row: dict) -> dict:
         # In-house AF from our own WGS cohort (scripts/annotate_inhouse_af.py
         # writes INHOUSE_AC/AN/AF). The card shows an AF_nckuh row "<AF> (AC/AN)".
         # All None when the variant isn't in the DB (or the DB isn't deployed).
-        "inhouse_af":          _to_num(row.get("INHOUSE_AF")),
-        "inhouse_ac":          _to_int(row.get("INHOUSE_AC")),
-        "inhouse_an":          _to_int(row.get("INHOUSE_AN")),
+        "inhouse_af":          _first_num(row.get("INHOUSE_AF")),
+        "inhouse_ac":          _first_num(row.get("INHOUSE_AC")),
+        "inhouse_an":          _first_num(row.get("INHOUSE_AN")),
         # New pipeline drops Taiwan Biobank; gnomAD EAS covers the same
         # population well enough.
         "TG_eas_af":           _to_num(row.get("TG_EAS_AF")),

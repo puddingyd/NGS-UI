@@ -3492,7 +3492,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="k">AF</span><span class="v">${fmtNum(v.AF, 5)}</span>
         <span class="k">AF_eas</span><span class="v">${fmtNum(v.AF_eas, 5)}</span>
         <span class="k">AF_nckuh</span><span class="v">${fmtNum(v.inhouse_af, 5)}${
-          (v.inhouse_ac != null && v.inhouse_an != null)
+          (v.inhouse_af != null && v.inhouse_ac != null && v.inhouse_an != null)
             ? ` (${v.inhouse_ac}/${v.inhouse_an})` : ""}</span>
       </div>
     </div>
