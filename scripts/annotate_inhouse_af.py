@@ -13,14 +13,17 @@ multiallelic (`ALT="C,CA"`) or whose indel is represented differently won't
 exact-match. To match the DB representation we normalize the TSV variants the
 SAME way before joining:
 
-  * PRIMARY (`bcftools`): write the TSV variants to a mini VCF (ID=row_allele),
-    `bcftools norm -m- -f ref` (split multiallelics + left-align), sort, then
-    `bcftools annotate -a <DB>` — a fast sorted merge-join. Values map back
-    per (row, allele). One-shot per sample; C-speed.
-  * FALLBACK (pure Python, no bcftools/ref): split ALT on comma + trim to
+  * DEFAULT (pure Python, ref-independent): split ALT on comma + trim to
     minimal representation, then a single streaming pass over the DB. Handles
     multiallelics and simple indels; misses only indels the DB left-shifted
-    into a repeat (rare).
+    into a repeat (rare). Ref-independent, so it works even when the deploy
+    machine's hg38 differs from the DB's build reference.
+  * OPT-IN (`--use-bcftools`): mini VCF (ID=row_allele) → `bcftools norm -m-
+    -f ref` (split + left-align) → index → `annotate -a <DB>`. Also recovers
+    left-shifted indels — BUT `norm --check-ref x` DROPS variants whose REF
+    disagrees with the local FASTA, so if that FASTA isn't the DB's build
+    reference it matches FEWER (observed ~16% fewer, no speed win). Use only
+    when the local ref is known to match the DB build ref.
 
 Per-allele values are comma-joined in ALT order (`.` for a non-matching
 allele). The SNV adapter shows the first ALT's value on the card (consistent
@@ -267,7 +270,7 @@ def assemble(rows, hits) -> int:
     return n_hit
 
 
-def annotate(tsv: Path, db: str, ref_arg: str | None) -> int:
+def annotate(tsv: Path, db: str, ref_arg: str | None, use_bcftools: bool = False) -> int:
     if not os.path.exists(db):
         print(f"[inhouse-af] DB not found: {db} — skipping (no-op)", file=sys.stderr)
         return 0
@@ -283,18 +286,27 @@ def annotate(tsv: Path, db: str, ref_arg: str | None) -> int:
         if col not in fieldnames:
             fieldnames.append(col)
 
-    bcftools = resolve_bcftools()
-    ref = resolve_ref(ref_arg)
-    used = "python"
+    # Default = ref-independent Python join. `bcftools norm --check-ref x` drops
+    # variants whose REF doesn't match the *local* reference FASTA, which loses
+    # matches whenever the deploy machine's hg38 differs from the one the DB was
+    # built on (observed: ~16% fewer matches, no speed win). Opt in with
+    # --use-bcftools only when the local ref matches the DB's build reference.
+    used, ref_used = "python", None
     hits = None
-    if bcftools and ref:
-        try:
-            hits = join_bcftools(rows, db, ref, bcftools)
-            used = "bcftools"
-        except Exception as e:  # noqa: BLE001 — degrade, never block stop-gaps
-            print(f"[inhouse-af] bcftools path failed ({e}); falling back to python",
+    if use_bcftools:
+        bcftools = resolve_bcftools()
+        ref = resolve_ref(ref_arg)
+        if bcftools and ref:
+            try:
+                hits = join_bcftools(rows, db, ref, bcftools)
+                used, ref_used = "bcftools", ref
+            except Exception as e:  # noqa: BLE001 — degrade, never block stop-gaps
+                print(f"[inhouse-af] bcftools path failed ({e}); falling back to python",
+                      file=sys.stderr)
+                hits = None
+        else:
+            print("[inhouse-af] --use-bcftools set but bcftools/ref not found; using python",
                   file=sys.stderr)
-            hits = None
     if hits is None:
         hits = join_python(rows, db)
 
@@ -316,7 +328,7 @@ def annotate(tsv: Path, db: str, ref_arg: str | None) -> int:
         raise
 
     print(f"[inhouse-af] {len(rows)} variants, {n_hit} matched in-house AF DB "
-          f"(join={used}{', ref='+os.path.basename(ref) if used=='bcftools' else ''})")
+          f"(join={used}{', ref='+os.path.basename(ref_used) if ref_used else ''})")
     return 0
 
 
@@ -365,6 +377,10 @@ def main() -> int:
     ap.add_argument("--db", default=DEFAULT_DB, help=f"in-house AF sites VCF (default {DEFAULT_DB})")
     ap.add_argument("--ref", default=None, help="hg38 FASTA (+.fai) for bcftools normalize; "
                     "auto-detected from NGS_UI_INHOUSE_AF_REF / common paths if omitted")
+    ap.add_argument("--use-bcftools", action="store_true",
+                    help="use bcftools norm+annotate instead of the default ref-independent "
+                         "python join (only when the local ref matches the DB's build ref; "
+                         "otherwise --check-ref drops matches)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     if args.selftest:
@@ -373,7 +389,7 @@ def main() -> int:
         ap.error("--tsv required (or --selftest)")
     if not args.tsv.is_file():
         raise SystemExit(f"--tsv not found: {args.tsv}")
-    return annotate(args.tsv, args.db, args.ref)
+    return annotate(args.tsv, args.db, args.ref, use_bcftools=args.use_bcftools)
 
 
 if __name__ == "__main__":
