@@ -88,16 +88,26 @@ def _vep_missing_alias_by_hgnc_id() -> dict[str, tuple[str, str]]:
 
 
 @lru_cache(maxsize=1)
-def _legacy_symbol_alias() -> dict[str, str]:
-    """VEP emitted symbol → HGNC-current symbol, fallback when HGNC_ID is absent."""
+def _vep_same_gene_alias() -> dict[str, str]:
+    """VEP old symbol → HGNC-current symbol when both share the same HGNC_ID.
+
+    Unlike `vep_missing_gene`, these rows are true same-gene renames from
+    an older VEP cache and are safe fallback aliases when a TSV lacks HGNC_ID.
+    """
     path = NGS_PANEL_DEADZONE_DIR / "panel" / "vep_alias_map.tsv"
     out: dict[str, str] = {}
+    safe_kinds = {"vep_uses_old_symbol", "ensembl_id_drift"}
     try:
         for row in _read_tsv(path):
+            if (row.get("kind") or "").strip() not in safe_kinds:
+                continue
+            panel_hid = (row.get("panel_hgnc_id") or "").strip()
+            vep_hid = (row.get("vep_hgnc_id") or "").strip()
             vep_sym = (row.get("vep_symbol") or "").strip()
             panel_sym = (row.get("panel_hgnc_symbol") or "").strip()
-            if vep_sym and panel_sym:
+            if panel_hid and panel_hid == vep_hid and vep_sym and panel_sym:
                 out[vep_sym] = panel_sym
+                out.setdefault(vep_sym.upper(), panel_sym)
     except OSError:
         return {}
     return out
@@ -129,23 +139,32 @@ def canonical_gene_symbol(symbol: str, hgnc_id: str = "") -> tuple[str, str]:
     """Return (HGNC-current symbol, HGNC_ID) for a VEP/AnnotSV gene.
 
     HGNC_ID is preferred because VEP may emit old symbols while keeping the
-    stable HGNC ID. For known VEP-missing split genes, use the package's
-    cross-reference back to the panel gene.
+    stable HGNC ID. When HGNC_ID is absent, fall back to HGNC current symbols,
+    HGNC alias/previous-symbol mappings, and same-HGNC-ID VEP old-symbol rows.
+    Do not apply positional `vep_missing_gene` rows here: those describe
+    panel/dead-zone annotation drift and must not rewrite a real variant row's
+    gene identity.
     """
     sym = (symbol or "").strip()
     hid = (hgnc_id or "").strip()
 
     if hid:
-        alias = _vep_missing_alias_by_hgnc_id().get(hid)
-        if alias:
-            return alias[1], alias[0]
         mapped = hgnc_id_to_symbol().get(hid)
         if mapped:
             return mapped, hid
 
-    mapped = _legacy_symbol_alias().get(sym)
+    by_upper = _current_symbol_by_upper()
+    cased = by_upper.get(sym.upper())
+    if cased:
+        return cased, symbol_to_hgnc_id().get(cased, hid)
+
+    mapped = _panel_gene_alias().get(sym) or _panel_gene_alias().get(sym.upper())
     if mapped:
-        return mapped, symbol_to_hgnc_id().get(mapped, hid)
+        return by_upper.get(mapped.upper(), mapped), symbol_to_hgnc_id().get(mapped, hid)
+
+    mapped = _vep_same_gene_alias().get(sym) or _vep_same_gene_alias().get(sym.upper())
+    if mapped:
+        return by_upper.get(mapped.upper(), mapped), symbol_to_hgnc_id().get(mapped, hid)
     return sym, hid
 
 

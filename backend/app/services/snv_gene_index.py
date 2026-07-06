@@ -17,7 +17,7 @@ from . import panel_deadzone
 
 
 INDEX_NAME = "snv_gene_index.sqlite"
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 def index_path_for(raw_tsv: Path) -> Path:
