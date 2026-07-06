@@ -318,7 +318,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 
 /* Combobox */
-.combobox-wrap { position: relative; display: block; width: 100%; }
+.combobox-wrap { position: relative; }
+#new-case-form .combobox-wrap {
+  display: block;
+  width: 100%;
+}
 .combobox-dropdown {
   list-style: none;
   margin: 0;
@@ -349,6 +353,13 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .combobox-option .opt-lis { font-family: ui-monospace, monospace; font-weight: 600; }
 .combobox-option .opt-name { color: var(--fg); }
 .combobox-option .opt-mrn { color: var(--muted); font-family: ui-monospace, monospace; }
+#new-case-lis-id-dropdown .combobox-option {
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 0.8fr) minmax(260px, 2.4fr);
+}
+#new-case-lis-id-dropdown .opt-mrn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* Sample meta — single horizontal row, wraps if narrow */
 /* Two-row patient meta strip. The outer .sample-meta is a single

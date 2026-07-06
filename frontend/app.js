@@ -7809,16 +7809,19 @@ function _renderNewCaseLisDropdown(query = "", { showAll = false } = {}) {
   }
   drop.innerHTML = rows.map(r => {
     const roster = r.roster || {};
-    const meta = [
+    const runMeta = [
       r.mtime ? new Date(r.mtime * 1000).toLocaleString() : "",
       r.tsv_size ? `${(r.tsv_size / 1024).toFixed(0)} KB` : "",
+    ].filter(Boolean).join(" · ");
+    const detail = [
       roster.name || "",
       roster.mrn || "",
+      roster.department || "",
     ].filter(Boolean).join(" · ");
     return `<li class="combobox-option" data-new-case-lis-id="${escapeAttr(r.lis_id)}">`
-      + `<span class="opt-lis">${escapeHtml(r.lis_id || "")}</span>`
-      + `<span class="opt-name">${escapeHtml(r.source_sample_id || "")}</span>`
-      + `<span class="opt-mrn">${escapeHtml(meta)}</span>`
+      + `<span class="opt-lis">${escapeHtml(r.source_sample_id || r.lis_id || "")}</span>`
+      + `<span class="opt-name">${escapeHtml(runMeta)}</span>`
+      + `<span class="opt-mrn">${escapeHtml(detail)}</span>`
       + `</li>`;
   }).join("");
   _comboClearActive(drop);
