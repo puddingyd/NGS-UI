@@ -7819,7 +7819,7 @@ function _renderNewCaseLisDropdown(query = "", { showAll = false } = {}) {
       roster.department || "",
     ].filter(Boolean).join(" · ");
     return `<li class="combobox-option" data-new-case-lis-id="${escapeAttr(r.lis_id)}">`
-      + `<span class="opt-lis">${escapeHtml(r.source_sample_id || r.lis_id || "")}</span>`
+      + `<span class="opt-lis">${escapeHtml(r.lis_id || r.source_sample_id || "")}</span>`
       + `<span class="opt-name">${escapeHtml(runMeta)}</span>`
       + `<span class="opt-mrn">${escapeHtml(detail)}</span>`
       + `</li>`;

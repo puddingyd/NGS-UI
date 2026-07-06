@@ -354,7 +354,10 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .combobox-option .opt-name { color: var(--fg); }
 .combobox-option .opt-mrn { color: var(--muted); font-family: ui-monospace, monospace; }
 #new-case-lis-id-dropdown .combobox-option {
-  grid-template-columns: minmax(120px, 1fr) minmax(120px, 0.8fr) minmax(260px, 2.4fr);
+  grid-template-columns: minmax(140px, 0.95fr) minmax(230px, 1.35fr) minmax(240px, 1.7fr);
+}
+#new-case-lis-id-dropdown .opt-name {
+  white-space: nowrap;
 }
 #new-case-lis-id-dropdown .opt-mrn {
   white-space: normal;
