@@ -155,20 +155,21 @@ def join_bcftools(rows, db, ref, bcftools):
                     o.write(f"{chrom}\t{pos}\t{i}_{j}\t{ref_a}\t{a.upper()}\t.\t.\t.\n")
 
         norm_gz = os.path.join(tmpd, "norm.vcf.gz")
+        sort_gz = os.path.join(tmpd, "sorted.vcf.gz")
         subprocess.run(bcftools + ["norm", "-m-", "-f", ref, "--check-ref", "x",
                                    mini, "-Oz", "-o", norm_gz],
                        check=True, stderr=subprocess.DEVNULL)
-        # Stream sort -> annotate. Passing the sorted file as an argument makes
-        # `bcftools annotate` demand a .tbi for the MAIN input ("could not load
-        # index"); reading it from a pipe is sequential and needs no index.
-        # Only the -a DB needs its (already-present) index.
-        p_sort = subprocess.Popen(bcftools + ["sort", "-T", tmpd, norm_gz, "-Ou"],
-                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        subprocess.run(bcftools + ["sort", "-T", tmpd, norm_gz, "-Oz", "-o", sort_gz],
+                       check=True, stderr=subprocess.DEVNULL)
+        # `bcftools annotate -a` uses the synced reader, which requires the MAIN
+        # input to be an indexed file (even a stdin stream fails with "could not
+        # load index"). Index the sorted file before annotating.
+        subprocess.run(bcftools + ["index", "-t", sort_gz],
+                       check=True, stderr=subprocess.DEVNULL)
         p = subprocess.Popen(
             bcftools + ["annotate", "-a", db,
-                        "-c", "INFO/INHOUSE_AC,INFO/INHOUSE_AN,INFO/INHOUSE_AF"],
-            stdin=p_sort.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        p_sort.stdout.close()
+                        "-c", "INFO/INHOUSE_AC,INFO/INHOUSE_AN,INFO/INHOUSE_AF", sort_gz],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         hits = {}
         for line in p.stdout:
             if not line or line[0] == "#":
@@ -191,7 +192,6 @@ def join_bcftools(rows, db, ref, bcftools):
             hits[key] = (ac or ".", an or ".", af or ".")
         err = p.stderr.read()
         rc = p.wait()
-        p_sort.wait()
         if rc != 0:
             raise RuntimeError(f"bcftools annotate rc={rc}: {err.strip()[:300]}")
         return hits
