@@ -1929,6 +1929,7 @@ function _comboPickActive(dropdown, fallbackFirst = true) {
   if (!opt) return false;
   if (dropdown.id === "hpo-search-dropdown") return _pickHpoOption(opt);
   if (dropdown.id === "panel-search-dropdown") return _pickPanelOption(opt);
+  if (dropdown.id === "new-case-lis-id-dropdown") return _pickNewCaseLisOption(opt);
   if (dropdown.id === "new-case-hpo-search-dropdown") return _pickNewCaseHpoOption(opt);
   if (dropdown.id === "new-case-panel-search-dropdown") return _pickNewCasePanelOption(opt);
   return false;
@@ -2066,6 +2067,8 @@ document.addEventListener("keydown", ev => {
     _handleComboKeydown(ev, document.getElementById("hpo-search-dropdown"));
   } else if (ev.target.id === "panel-search") {
     _handleComboKeydown(ev, document.getElementById("panel-search-dropdown"));
+  } else if (ev.target.id === "new-case-lis-id-search") {
+    _handleComboKeydown(ev, document.getElementById("new-case-lis-id-dropdown"));
   } else if (ev.target.id === "new-case-hpo-search") {
     _handleComboKeydown(ev, document.getElementById("new-case-hpo-search-dropdown"));
   } else if (ev.target.id === "new-case-panel-search") {
@@ -2177,6 +2180,12 @@ function _numericValue(raw) {
 function _passesGnomadAfFilter(v) {
   const af = _numericValue(v?.AF);
   return af == null || af < 0.01;
+}
+
+function _isReferenceZygosity(v) {
+  return ["ref", "hom_ref", "hom-ref", "0/0", "0|0"].includes(
+    String(v?.zygosity || "").trim().toLowerCase()
+  );
 }
 
 async function _geneSearchSnv(genesUpper, { filterGnomad = true } = {}) {
@@ -3898,9 +3907,9 @@ function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false, ignoreDise
       && document.getElementById("filter-in-panel-only")?.checked
       && !v.in_panel) return false;
   if (document.getElementById("filter-gnomad-af")?.checked && !_passesGnomadAfFilter(v)) return false;
-  if (document.getElementById("filter-vaf")?.checked) {
+  if (!document.getElementById("filter-vaf")?.checked) {
     const vaf = _numericValue(v.alt_af);
-    if (vaf == null || vaf < 0.2) return false;
+    if ((vaf != null && vaf < 0.2) || _isReferenceZygosity(v)) return false;
   }
   if (!document.getElementById("filter-impact-modifier")?.checked
       && String(v.impact || "").toUpperCase() === "MODIFIER") return false;
@@ -7733,6 +7742,7 @@ document.addEventListener("click", ev => {
 // the dropdown change handler so we don't have to re-fetch the
 // preview each time the reviewer scrubs the list.
 let _unregisteredById = {};
+let _unregisteredList = [];
 
 // Editable HPO/panel state for the load-new-case modal. Mirrors
 // phenoEdit on the analysis page but kept separate so the analysis
@@ -7757,6 +7767,96 @@ function inferNewCaseTestType(entry) {
   const sourceSize = Number(entry.source_vcf_size || 0);
   if (sourceSize > NEW_CASE_WGS_VCF_SIZE_BYTES) return "WGS";
   return "";
+}
+
+function _formatNewCasePendingLabel(entry) {
+  if (!entry) return "";
+  const ts = entry.mtime ? new Date(entry.mtime * 1000).toLocaleString() : "";
+  const size = entry.tsv_size ? `${(entry.tsv_size / 1024).toFixed(0)} KB` : "";
+  return [entry.lis_id, ts, size].filter(Boolean).join("  ·  ");
+}
+
+function _newCasePendingSearchText(entry) {
+  const roster = entry?.roster || {};
+  return [
+    entry?.lis_id,
+    entry?.source_sample_id,
+    entry?.source_vcf_path,
+    roster.name,
+    roster.mrn,
+    roster.department,
+    roster.test_type,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function _renderNewCaseLisDropdown(query = "", { showAll = false } = {}) {
+  const drop = document.getElementById("new-case-lis-id-dropdown");
+  if (!drop) return;
+  const q = String(query || "").trim().toLowerCase();
+  let rows = _unregisteredList || [];
+  if (q) rows = rows.filter(r => _newCasePendingSearchText(r).includes(q));
+  if (!showAll && !q) {
+    drop.classList.add("hidden");
+    drop.innerHTML = "";
+    return;
+  }
+  rows = rows.slice(0, 80);
+  if (!rows.length) {
+    drop.innerHTML = `<li class="combobox-option combobox-empty"><span class="opt-name">（沒有符合的未登錄個案）</span></li>`;
+    _comboClearActive(drop);
+    drop.classList.remove("hidden");
+    return;
+  }
+  drop.innerHTML = rows.map(r => {
+    const roster = r.roster || {};
+    const meta = [
+      r.mtime ? new Date(r.mtime * 1000).toLocaleString() : "",
+      r.tsv_size ? `${(r.tsv_size / 1024).toFixed(0)} KB` : "",
+      roster.name || "",
+      roster.mrn || "",
+    ].filter(Boolean).join(" · ");
+    return `<li class="combobox-option" data-new-case-lis-id="${escapeAttr(r.lis_id)}">`
+      + `<span class="opt-lis">${escapeHtml(r.lis_id || "")}</span>`
+      + `<span class="opt-name">${escapeHtml(r.source_sample_id || "")}</span>`
+      + `<span class="opt-mrn">${escapeHtml(meta)}</span>`
+      + `</li>`;
+  }).join("");
+  _comboClearActive(drop);
+  drop.classList.remove("hidden");
+}
+
+function _clearNewCaseLisSelection() {
+  const hidden = document.getElementById("new-case-lis-id");
+  if (hidden) hidden.value = "";
+  newCaseEdit.hpo = [];
+  newCaseEdit.panels = [];
+  newCaseEdit.source = "";
+  renderNewCasePhenoEditor();
+}
+
+function _selectNewCaseLisId(lis_id) {
+  const entry = _unregisteredById[lis_id];
+  const input = document.getElementById("new-case-lis-id-search");
+  const hidden = document.getElementById("new-case-lis-id");
+  const drop = document.getElementById("new-case-lis-id-dropdown");
+  if (!entry || !input || !hidden) return false;
+  input.value = _formatNewCasePendingLabel(entry);
+  input.title = [
+    entry.lis_id,
+    entry.source_sample_id,
+    entry.source_vcf_path,
+  ].filter(Boolean).join("\n");
+  hidden.value = entry.lis_id || "";
+  drop?.classList.add("hidden");
+  if (drop) _comboClearActive(drop);
+  _applyNewCaseLisSelection(entry.lis_id);
+  return true;
+}
+
+function _pickNewCaseLisOption(opt) {
+  const lis_id = opt?.dataset?.newCaseLisId || "";
+  if (!lis_id) return false;
+  return _selectNewCaseLisId(lis_id);
 }
 
 document.getElementById("btn-new-case")?.addEventListener("click", async () => {
@@ -7785,46 +7885,43 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
       opts.map(o => `<option value="${escapeAttr(o)}">${escapeHtml(o)}</option>`).join("");
   }
 
-  // Populate the LIS_ID dropdown from /api/samples/unregistered. Newest
+  // Populate the LIS_ID typeahead from /api/samples/unregistered. Newest
   // first so the just-finished pipeline output sits at the top.
-  const select = document.getElementById("new-case-lis-id");
-  select.innerHTML = `<option value="">— 載入中… —</option>`;
+  const lisInput = document.getElementById("new-case-lis-id-search");
+  const lisHidden = document.getElementById("new-case-lis-id");
+  if (lisInput) {
+    lisInput.value = "";
+    lisInput.title = "";
+    lisInput.placeholder = "未登錄個案清單載入中…";
+  }
+  if (lisHidden) lisHidden.value = "";
+  _unregisteredList = [];
+  _unregisteredById = {};
   _initNewCasePanelTabs();
   _resetNewCasePanelTabs();
   renderNewCaseFixedPanelHosts();
   showModal("new-case-modal");
   try {
     const list = await apiFetch("/samples/unregistered") || [];
+    _unregisteredList = list;
     _unregisteredById = {};
     list.forEach(r => { _unregisteredById[r.lis_id] = r; });
     if (!list.length) {
-      select.innerHTML = `<option value="">（沒有未登錄的個案）</option>`;
+      if (lisInput) lisInput.placeholder = "（沒有未登錄的個案）";
       return;
     }
-    const fmt = ts => ts ? new Date(ts * 1000).toLocaleString() : "";
-    const fmtKB = b => `${(b / 1024).toFixed(0)} KB`;
-    select.innerHTML = `<option value="">— 選擇 —</option>` +
-      list.map(r =>
-        `<option value="${escapeAttr(r.lis_id)}">`
-        + `${escapeHtml(r.lis_id)}  ·  ${fmt(r.mtime)}`
-        + (r.tsv_size ? `  ·  ${fmtKB(r.tsv_size)}` : "")
-        + `</option>`
-      ).join("");
+    if (lisInput) lisInput.placeholder = "輸入 LIS ID / sample / 姓名 / MRN 搜尋";
   } catch (e) {
-    select.innerHTML = `<option value="">（讀取失敗：${escapeHtml(e.message)}）</option>`;
+    if (lisInput) lisInput.placeholder = `讀取失敗：${String(e.message || e)}`;
   }
 });
 
 // Picking a sample preloads phenotype from the reviewer txt + auto-
 // fills the MRN that was embedded in the phenotype filename.
-document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
-  const lis_id = ev.target.value;
+function _applyNewCaseLisSelection(lis_id) {
   const entry = _unregisteredById[lis_id];
   if (!entry) {
-    newCaseEdit.hpo = [];
-    newCaseEdit.panels = [];
-    newCaseEdit.source = "";
-    renderNewCasePhenoEditor();
+    _clearNewCaseLisSelection();
     return;
   }
   // Auto-fill MRN / 姓名 / Test type from the uploaded clinic-list
@@ -7858,7 +7955,7 @@ document.getElementById("new-case-lis-id")?.addEventListener("change", (ev) => {
     newCaseEdit.source = "未找到 Web phenotype input tool 紀錄";
   }
   renderNewCasePhenoEditor();
-});
+}
 
 // EMR sync button on the modal: pull name / sex / dob / phenotype
 // from the EMR APIs and merge into the form. Sex overwrites whatever
@@ -8013,6 +8110,10 @@ document.addEventListener("input", ev => {
   } else if (ev.target.id === "new-case-panel-search") {
     clearTimeout(_ncPanelSearchTimer);
     _ncPanelSearchTimer = setTimeout(() => _ncRunPanelSearch(ev.target.value), 200);
+  } else if (ev.target.id === "new-case-lis-id-search") {
+    const hidden = document.getElementById("new-case-lis-id");
+    if (hidden) hidden.value = "";
+    _renderNewCaseLisDropdown(ev.target.value, { showAll: false });
   }
 });
 async function _ncRunHpoSearch(q) {
@@ -8062,17 +8163,27 @@ async function _ncRunPanelSearch(q) {
   drop.classList.remove("hidden");
 }
 document.addEventListener("mousedown", ev => {
-  const opt = ev.target.closest("[data-nc-hpo-pick], [data-nc-panel-pick]");
+  const opt = ev.target.closest("[data-new-case-lis-id], [data-nc-hpo-pick], [data-nc-panel-pick]");
   if (!opt) return;
   ev.preventDefault();
-  if (opt.dataset.ncHpoPick) {
+  if (opt.dataset.newCaseLisId) {
+    _pickNewCaseLisOption(opt);
+  } else if (opt.dataset.ncHpoPick) {
     _pickNewCaseHpoOption(opt);
   } else if (opt.dataset.ncPanelPick) {
     _pickNewCasePanelOption(opt);
   }
 });
+document.addEventListener("focusin", ev => {
+  if (ev.target.id === "new-case-lis-id-search") {
+    _renderNewCaseLisDropdown(ev.target.value, { showAll: true });
+  }
+});
 document.addEventListener("focusout", ev => {
   // Slight delay so click on a dropdown row lands first.
+  if (ev.target.id === "new-case-lis-id-search") {
+    setTimeout(() => document.getElementById("new-case-lis-id-dropdown")?.classList.add("hidden"), 150);
+  }
   if (ev.target.id === "new-case-hpo-search") {
     setTimeout(() => document.getElementById("new-case-hpo-search-dropdown")?.classList.add("hidden"), 150);
   }
@@ -8087,6 +8198,19 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
   const errEl = document.getElementById("new-case-error");
   errEl.classList.add("hidden");
   errEl.textContent = "";
+  const lisHidden = document.getElementById("new-case-lis-id");
+  if (!lisHidden?.value) {
+    const typed = (document.getElementById("new-case-lis-id-search")?.value || "").trim().toLowerCase();
+    const exact = (_unregisteredList || []).find(r => String(r.lis_id || "").toLowerCase() === typed);
+    if (exact) _selectNewCaseLisId(exact.lis_id);
+  }
+  if (!lisHidden?.value) {
+    errEl.textContent = "請先從未登錄個案清單選擇一個 LIS ID";
+    errEl.classList.remove("hidden");
+    document.getElementById("new-case-lis-id-search")?.focus();
+    _renderNewCaseLisDropdown(document.getElementById("new-case-lis-id-search")?.value || "", { showAll: true });
+    return;
+  }
   const fd = new FormData(form);
   // Always send the modal-edited chips; backend uses them as the
   // authoritative phenotype (overrides reviewer txt + EMR fallback).

@@ -91,7 +91,7 @@ analyses/{ver}/
   → (個案清單: 上傳 xlsx → patient_list/roster.json)
 
 UI 流程：
-  載入新個案 (modal) → POST /api/samples → 寫 sample_metadata.json + analyses/default/analysis.json
+  載入新個案 (modal；未登錄個案欄位支援 LIS ID/source sample/姓名/MRN typeahead 搜尋) → POST /api/samples → 寫 sample_metadata.json + analyses/default/analysis.json
                                           + (write_version side-effect 寫 pheno_score.tsv；SNV in_panel 動態由 pheno_score.tsv 補值)
                                           + 記錄既有 vcf_from_tsv.vcf.gz；缺 VCF 時交給 Exomiser/LIRICAL worker 背景建立
   個案清單 (modal) → DELETE /api/samples/{id}?delete_pipeline_output={bool}
@@ -139,7 +139,7 @@ UI 流程：
 - **登入 modal**：「申請帳號：PYTHONPATH=backend python -m app create-user」那段提示字用 `.login-hint`/`.login-hint-code`（白底白字，反白才看得到）。
 - **三個分析卡片**（`#card-snv`、`#card-cnv-sv`、`#card-mito`）各有 tier-tab bar + tier panels。`renderTierTabBar`/`renderCnvSvTabBar`/`renderMitoTabBar`；tab-click dispatch 統一處理三組（用 `data-tier` 判斷）。tier-panel 顏色：SNV 紅/黃系、CNV 藍 `#bfdbfe`、SV 紫 `#ddd6fe`、Mito teal `#99f6e4`。卡片要包在 `.block-body` 裡才有 inset 效果（`.tier-panel > .block-body { padding-top: 8px }`）。Mito/STR/ROH 卡片：STR 跟 ROH 還是「（無資料）」placeholder。
 - **Staged loading**：`GET /samples/{id}` 只回核心（meta + reports + review TSV 的 SNV + analyses + has_phenotype，`aux_pending: true`，CNV/SV/Mito 是空 dict）。前端 `loadSample` render 完後背景分別打 `GET /samples/{id}/cnv`、`/sv` 和 `/mito`，CNV 載完會先顯示，SV 可繼續在背景載入；回來後 merge 進 `state.data` + re-render 那張卡。`state._auxLoadToken` 防 race（切樣本後晚到的回應丟掉）。等待時對應 CNV/SV、Mito panel 顯示「載入中…」、tab count「…」。SNV tier 只 render active tab，切 tab 時才建立該 tier 卡片 DOM。
-- **SNV 顯示 filter**：分析區標題列依序是 `Disease-associated`（預設勾；限 `panel_loose`，只影響 SNV 主畫面，不限制 CNV/SV 或 gene search modal）、`In panel only`（預設勾）、`gnomAD_G_AF < 0.01`（預設勾；缺值保留）、`VAF ≥ 0.2`（預設勾；缺值隱藏）、`impact=MODIFIER`（預設不勾；勾後才顯示 MODIFIER）、OMIM 顯示 toggle。這些都是 UI-only，不刪原始 TSV；主畫面 review TSV 預載層只保留 `NGS_UI_CDS_CANDIDATE_BED` 內且 AF<0.01/AF缺值的點，ClinVar P/LP 與 reviewer 已標記點不受 BED/AF 限制，其他超過者仍可用 gene search 查回。`IMPACT=LOW` 一律保留。tier tab count 跟著 filter 重算。若 reviewer 標記不在 `panel_loose` 的 SNV，分析區會提示 DOCX §五.4 不會列該 gene，但不阻擋標記。
+- **SNV 顯示 filter**：分析區標題列依序是 `Disease-associated`（預設勾；限 `panel_loose`，只影響 SNV 主畫面，不限制 CNV/SV 或 gene search modal）、`In panel only`（預設勾）、`gnomAD_G_AF < 0.01`（預設勾；缺值保留）、`VAF < 0.2 / zygosity=ref`（預設不勾；主畫面預設隱藏低 VAF 或 ref genotype 點位，勾後才顯示）、`impact=MODIFIER`（預設不勾；勾後才顯示 MODIFIER）、OMIM 顯示 toggle。這些都是 UI-only，不刪原始 TSV；主畫面 review TSV 預載層只保留 `NGS_UI_CDS_CANDIDATE_BED` 內且 AF<0.01/AF缺值的點，ClinVar P/LP 與 reviewer 已標記點不受 BED/AF 限制，其他超過者仍可用 gene search 查回。`IMPACT=LOW` 一律保留。tier tab count 跟著 filter 重算。若 reviewer 標記不在 `panel_loose` 的 SNV，分析區會提示 DOCX §五.4 不會列該 gene，但不阻擋標記。
 - **ESM1b 配色**：依 Bergquist et al. 2025 ClinGen SVI 校準區間壓成五色；ESM1b 與一般 predictor 方向相反，分數越低越偏致病（`≤-24` P、`≤-10.7` LP、`≤-6.2` VUS、`≤8.7` LB、其餘 B）。多 transcript TSV 用最低分作 worst case。
 - **GIAB stratification badge**：SNV/Indel 卡片那排 `MANE_SELECT / DRAGEN / In panel / LOFTEE HC` 標籤後面，會依變異落在哪些 GIAB 困難區（homopolymer / tandem_repeat / segdup / low_mappability / gc_extreme / other_difficult）多畫琥珀色 `.badge-giab`。資料來自 TSV `GIAB_STRATA` 欄（逗號分隔 label）→ adapter `giab_strata: [...]` → 前端 `GIAB_STRATA_DISPLAY` map（不認得的 label 直接顯示原字串，加 strata 不用改前端）。純 UI QC 提示，不影響 tier 排序、不進 DOCX。`GIAB_STRATA` 由 `scripts/annotate_giab_strata.py` 在三級分析尾段寫入（見 §7），review TSV 與 gene search 都會帶這欄。BED 不在 git，部署時用 `scripts/download_giab_strata.sh` 放到 `NGS_UI_GIAB_STRAT_DIR`。
 - **個案搜尋 filter**：主畫面搜尋框上方是可複選、可取消的 `WES` / `WGS` 圓形 chips；`matchSamples()` 與 Enter 精準查找都只在勾選的 test type 內搜尋。提示文字放在 input placeholder。

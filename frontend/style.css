@@ -318,7 +318,7 @@ body.sidebar-collapsed .container { margin-left: auto; }
 }
 
 /* Combobox */
-.combobox-wrap { position: relative; }
+.combobox-wrap { position: relative; display: block; width: 100%; }
 .combobox-dropdown {
   list-style: none;
   margin: 0;
