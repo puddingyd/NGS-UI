@@ -1089,6 +1089,30 @@ def _scan_raw_snv_rows_by_ids(raw_tsv: Path, wanted_ids: set[str]) -> list[dict[
     return out
 
 
+def _scan_raw_snv_rows_by_genes(raw_tsv: Path, genes: set[str]) -> list[dict[str, str]]:
+    """Streaming fallback for gene search when snv_gene_index.sqlite is absent.
+
+    This is slower than the SQLite index, but it keeps memory bounded by the
+    number of matching rows instead of materializing a multi-GB WGS TSV.
+    """
+    import csv as _csv
+
+    wanted = {str(g).strip().upper() for g in genes if str(g).strip()}
+    if not wanted or not raw_tsv.is_file():
+        return []
+    out: list[dict[str, str]] = []
+    with raw_tsv.open("r", encoding="utf-8", newline="") as f:
+        reader = _csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            gene, _hgnc_id = panel_deadzone.canonical_gene_symbol(
+                row.get("GENE") or "",
+                row.get("HGNC_ID") or "",
+            )
+            if gene.upper() in wanted:
+                out.append(row)
+    return out
+
+
 def _supplement_marked_snv_variants(
     variants: dict[str, dict],
     categories: dict[str, list[str]],
@@ -2001,17 +2025,12 @@ def search_snv_by_genes(
         search_source = "gene_index"
         raw_variant_count = "indexed"
     else:
-        variants, _categories, _pheno, old_format_error = _load_enriched_snv_cached(
-            raw_tsv,
-            sidecar_dir=sidecar_dir,
-            test_type=test_type,
-        )
-        matches = {
-            vid: v for vid, v in variants.items()
-            if (v.get("gene_symbol") or "").upper() in wanted
-        }
-        search_source = "raw_tsv_fallback"
-        raw_variant_count = len(variants)
+        indexed_rows = _scan_raw_snv_rows_by_genes(raw_tsv, wanted)
+        variants = _variants_from_rows(indexed_rows, test_type=test_type)
+        _enrich_snv_variants(variants, sidecar_dir)
+        matches = variants
+        search_source = "raw_stream_fallback"
+        raw_variant_count = "streamed"
     _log_perf(
         "sample.snv_search",
         started,

@@ -36,7 +36,7 @@
 | 樣本清單快取（每次 list 都被重寫） | `NGS_UI_HOME/tertiary_output/_index.json` | `NGS_UI_INDEX_PATH` |
 | 伺服器執行狀態（`users.db`、`jobs/`） | `NGS_UI_HOME/data/` | `NGS_UI_DATA_ROOT` |
 | SNV review payload in-memory LRU 筆數 | `2` | `NGS_UI_SNV_CACHE_MAX`（`0`=關閉） |
-| 完整 SNV annotation fallback 可進 cache 的大小上限 | `100 MB` | `NGS_UI_SNV_CACHE_MAX_RAW_MB`（大型 WGS raw TSV 預設不 cache） |
+| 完整 SNV annotation fallback 可進 cache 的大小上限 | `100 MB` | `NGS_UI_SNV_CACHE_MAX_RAW_MB`（大型 WGS raw TSV 預設不 cache；gene search 缺 index 時串流掃描） |
 | 病患 phenotype.txt + Clinical presentation sidecar | `NGS_UI_HOME/patient_phenotype/` | `NGS_UI_PHENOTYPE_DIR` |
 | 上傳的個案清單 xlsx + `roster.json` | `NGS_UI_HOME/patient_list/` | `NGS_UI_PATIENT_LIST_DIR` |
 | HPO reference（`hp.obo`、`phenotype_to_genes.txt` 等大型檔） | `NGS_UI_HOME/phenotype_data/` | `NGS_UI_PHENO_DATA_DIR` |
