@@ -8,6 +8,7 @@
 
 ### v6.2 — 2026-07-05
 
+- WGS 固定套組新增血液科 Lymphoid Neoplasm Panel 與 Myeloid Neoplasm Panel，SNV/indel、CNV、STR、Mitochondria 欄位合併為單一基因清單。
 - SNV/Indel 新增「本院 AF（AF_nckuh）」：顯示該變異在院內 WGS cohort 的等位基因頻率。
 - 個案清單新增 Phenotype 欄位，顯示該個案用於分析之 HPO/panel。
 - 主畫面 SNV/Indel filter 改為預設隱藏 `VAF < 0.2` 或 `zygosity=ref` 的點位；勾選 `VAF < 0.2 / zygosity=ref` 後才顯示。

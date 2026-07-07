@@ -93,7 +93,7 @@ analyses/{ver}/
 ```
 未登錄的樣本 = `tertiary_output/{X}/` 有 `snv_indel.annotated.tsv` 但沒有 `sample_metadata.json`；「載入新個案」modal 列這些。
 
-固定 WES-I / WES-II / WGS panel 檔與 custom panels 現在保留在 repo 的 `phenotype_data/gene_panels/`、`phenotype_data/fixed_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git pull 更新。
+固定 WES-I / WES-II / WGS panel 檔與 custom panels 現在保留在 repo 的 `phenotype_data/gene_panels/`、`phenotype_data/fixed_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git pull 更新。WGS 固定套組包含血液科 Lymphoid Neoplasm Panel 與 Myeloid Neoplasm Panel；來源 CSV 的 SNV/indel、CNV、STR、Mitochondria 欄位已合併成單一 gene list，不在 phenotype panel 層分 variant type。
 HPO reference、fixed/custom panel 與既有 `pheno_score.tsv` 讀入時都會先 canonicalize；fixed/custom panel 與 phenotype score 使用 `panel_deadzone.canonical_panel_gene_symbol()`（優先 `ngs_panel_deadzone/panel/panel_gene_aliases.tsv`，再 fallback VEP/HGNC map），SNV/CNV/SV/Mito adapter 端也 canonicalize variant gene 後才做 `pheno_score` / `in_panel` join，避免 VEP 舊 symbol 或 panel alias 漏算。`panel_gene_aliases.tsv` 由 `scripts/build_hgnc_panel_aliases.py` 從 HGNC 官方 `reference/hgnc/hgnc_complete_set.txt`、`reference/hgnc/withdrawn.txt` 與 `reference/hgnc/manual_panel_aliases.tsv` 重建；衝突項輸出到 `docs/ops/hgnc_alias_conflicts.tsv`，custom panel 轉換後仍非 current HGNC 的項目列在 `docs/ops/custom_panel_hgnc_review_20260613.tsv`。
 
 ---

@@ -237,6 +237,21 @@
           ]
         },
         {
+          "category": "血液科",
+          "panels": [
+            {
+              "name": "Lymphoid Neoplasm Panel",
+              "key": "WGS__血液科__Lymphoid_Neoplasm_Panel",
+              "gene_count": 122
+            },
+            {
+              "name": "Myeloid Neoplasm Panel",
+              "key": "WGS__血液科__Myeloid_Neoplasm_Panel",
+              "gene_count": 96
+            }
+          ]
+        },
+        {
           "category": "神經科",
           "panels": [
             {
