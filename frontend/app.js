@@ -134,6 +134,33 @@ function hideSampleLoading() {
   }
 }
 
+function resetSampleScopedUiState() {
+  activeTierTab = null;
+  activeCnvSvTab = null;
+  activeMitoTab = null;
+  activeStrTab = null;
+  document.querySelectorAll(".gene-search-input").forEach(inp => {
+    inp.value = "";
+  });
+  const modalInput = document.getElementById("gene-search-modal-input");
+  if (modalInput) {
+    modalInput.value = "";
+    modalInput.style.display = "";
+    modalInput.dataset.kind = "snv";
+  }
+  const modalTitle = document.getElementById("gene-search-title");
+  if (modalTitle) modalTitle.textContent = "基因變異搜尋";
+  const modalResults = document.getElementById("gene-search-results");
+  if (modalResults) modalResults.innerHTML = "";
+  const gnomadFilter = document.getElementById("gene-search-filter-gnomad-af");
+  if (gnomadFilter) gnomadFilter.checked = true;
+  const omimFilter = document.getElementById("gene-search-filter-omim");
+  if (omimFilter) omimFilter.checked = true;
+  document.getElementById("gene-search-modal")?.classList.remove("hide-omim");
+  hideModal("gene-search-modal");
+  _geneSearchToken += 1;
+}
+
 async function _loadSample(LIS_ID) {
   // The combobox carries the row's `sample_id` (which equals LIS_ID for
   // legacy samples). Look it up so we use the directory name the backend
@@ -164,6 +191,7 @@ async function _loadSample(LIS_ID) {
   _saveError       = "";
   _lastSavedAt     = null;
   clearTimeout(_autoSaveTimer);
+  resetSampleScopedUiState();
   // Reset manual-toggle tracking between samples so defaultOpen applies fresh.
   toggledBlocks.clear();
 
@@ -1132,11 +1160,18 @@ function variantUrls(v) {
   // comes from the R webdata writer (state.data.genome_build); falls
   // back to hg38 for older samples that predate the field.
   const build = state.data?.genome_build === "hg19" ? "hg19" : "hg38";
+  const omimId = String(v.OMIM_id || v.omim_ids || "")
+    .split(/[;,|\s]+/)
+    .map(x => x.trim())
+    .find(Boolean);
+  const gene = String(v.gene_symbol || "").trim();
   return {
     varsome:  `https://varsome.com/variant/${build}/${tag}`,
     franklin: `https://franklin.genoox.com/clinical-db/variant/snp/${tag}-${build}`,
     genebe:   `https://genebe.net/variant/${build}/${tag}`,
-    omim:     v.OMIM_link || (v.OMIM_id ? `https://www.omim.org/entry/${v.OMIM_id}` : null),
+    omim:     v.OMIM_link
+      || (omimId ? `https://www.omim.org/entry/${encodeURIComponent(omimId)}` : null)
+      || (gene ? `https://www.omim.org/search?index=geneMap&search=${encodeURIComponent(gene)}` : null),
   };
 }
 
@@ -7743,6 +7778,11 @@ document.addEventListener("click", ev => {
 // preview each time the reviewer scrubs the list.
 let _unregisteredById = {};
 let _unregisteredList = [];
+const UNREGISTERED_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const _unregisteredCache = {
+  loadedAt: 0,
+  list: null,
+};
 
 // Editable HPO/panel state for the load-new-case modal. Mirrors
 // phenoEdit on the analysis page but kept separate so the analysis
@@ -7862,6 +7902,43 @@ function _pickNewCaseLisOption(opt) {
   return _selectNewCaseLisId(lis_id);
 }
 
+function _setUnregisteredList(list) {
+  _unregisteredList = Array.isArray(list) ? list : [];
+  _unregisteredById = {};
+  _unregisteredList.forEach(r => { if (r?.lis_id) _unregisteredById[r.lis_id] = r; });
+}
+
+function _unregisteredCacheFresh() {
+  return Array.isArray(_unregisteredCache.list)
+    && (Date.now() - Number(_unregisteredCache.loadedAt || 0)) < UNREGISTERED_CACHE_TTL_MS;
+}
+
+async function _loadUnregisteredSamples({ force = false } = {}) {
+  if (!force && _unregisteredCacheFresh()) {
+    _setUnregisteredList(_unregisteredCache.list);
+    return _unregisteredList;
+  }
+  const list = await apiFetch("/samples/unregistered") || [];
+  _unregisteredCache.loadedAt = Date.now();
+  _unregisteredCache.list = list;
+  _setUnregisteredList(list);
+  return _unregisteredList;
+}
+
+function _removeUnregisteredFromCache(lis_id) {
+  if (!lis_id || !Array.isArray(_unregisteredCache.list)) return;
+  _unregisteredCache.list = _unregisteredCache.list.filter(r => r?.lis_id !== lis_id);
+  _setUnregisteredList(_unregisteredCache.list);
+}
+
+function _updateNewCaseLisPlaceholder() {
+  const input = document.getElementById("new-case-lis-id-search");
+  if (!input) return;
+  input.placeholder = _unregisteredList.length
+    ? "輸入 LIS ID / sample / 姓名 / MRN 搜尋"
+    : "（沒有未登錄的個案）";
+}
+
 document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   const form = document.getElementById("new-case-form");
   form?.reset();
@@ -7888,34 +7965,57 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
       opts.map(o => `<option value="${escapeAttr(o)}">${escapeHtml(o)}</option>`).join("");
   }
 
-  // Populate the LIS_ID typeahead from /api/samples/unregistered. Newest
-  // first so the just-finished pipeline output sits at the top.
+  // Populate the LIS_ID typeahead from a one-day front-end cache. The
+  // manual refresh button below can force a rescan when a just-finished
+  // pipeline output should appear immediately.
   const lisInput = document.getElementById("new-case-lis-id-search");
   const lisHidden = document.getElementById("new-case-lis-id");
   if (lisInput) {
     lisInput.value = "";
     lisInput.title = "";
-    lisInput.placeholder = "未登錄個案清單載入中…";
+    lisInput.placeholder = _unregisteredCacheFresh()
+      ? "輸入 LIS ID / sample / 姓名 / MRN 搜尋"
+      : "未登錄個案清單載入中…";
   }
   if (lisHidden) lisHidden.value = "";
-  _unregisteredList = [];
-  _unregisteredById = {};
   _initNewCasePanelTabs();
   _resetNewCasePanelTabs();
   renderNewCaseFixedPanelHosts();
   showModal("new-case-modal");
   try {
-    const list = await apiFetch("/samples/unregistered") || [];
-    _unregisteredList = list;
-    _unregisteredById = {};
-    list.forEach(r => { _unregisteredById[r.lis_id] = r; });
-    if (!list.length) {
-      if (lisInput) lisInput.placeholder = "（沒有未登錄的個案）";
-      return;
-    }
-    if (lisInput) lisInput.placeholder = "輸入 LIS ID / sample / 姓名 / MRN 搜尋";
+    await _loadUnregisteredSamples();
+    _updateNewCaseLisPlaceholder();
   } catch (e) {
     if (lisInput) lisInput.placeholder = `讀取失敗：${String(e.message || e)}`;
+  }
+});
+
+document.getElementById("btn-refresh-unregistered")?.addEventListener("click", async () => {
+  const btn = document.getElementById("btn-refresh-unregistered");
+  const input = document.getElementById("new-case-lis-id-search");
+  const hidden = document.getElementById("new-case-lis-id");
+  const oldText = btn?.textContent || "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "更新中…";
+  }
+  if (input) input.placeholder = "未登錄個案清單更新中…";
+  try {
+    await _loadUnregisteredSamples({ force: true });
+    if (hidden) hidden.value = "";
+    if (input) {
+      input.value = "";
+      input.title = "";
+    }
+    _updateNewCaseLisPlaceholder();
+    _renderNewCaseLisDropdown("", { showAll: true });
+  } catch (e) {
+    if (input) input.placeholder = `讀取失敗：${String(e.message || e)}`;
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText || "更新清單";
+    }
   }
 });
 
@@ -8239,6 +8339,8 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
       throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
     }
     const out = await resp.json();
+    _removeUnregisteredFromCache(lisHidden.value);
+    _removeUnregisteredFromCache(out.sample_id);
     hideModal("new-case-modal");
     await loadIndex();
     await loadSample(out.sample_id);

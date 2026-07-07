@@ -81,6 +81,7 @@ Environment=PYTHONPATH=/path/to/NGS_UI/NGS-UI/backend
 Environment=NGS_UI_HOME=/path/to/NGS_UI
 ExecStart=/usr/bin/env python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8765
 Restart=on-failure
+MemoryMax=16G
 KillMode=process
 ```
 
@@ -103,6 +104,8 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_HOME` | repo 的上層（找不到則 repo 自己） | 整棵資料樹的根 |
 | `TERTIARY_OUTPUT_ROOT` | `$NGS_UI_HOME/tertiary_output` | per-sample TSV |
 | `NGS_UI_DATA_ROOT` | `$NGS_UI_HOME/data` | users.db, jobs/ |
+| `NGS_UI_SNV_CACHE_MAX` | `2` | uvicorn process 內保留的 SNV review payload LRU 筆數；設 `0` 可關閉 |
+| `NGS_UI_SNV_CACHE_MAX_RAW_MB` | `100` | 只有小於此大小的完整 `snv_indel.annotated.tsv` fallback 解析結果才可進 SNV cache，避免 WGS 大檔常駐記憶體 |
 | `NGS_UI_TERTIARY_NF_WORK_ROOT` | `$NGS_UI_HOME/nf_work` | 三級分析 Nextflow work 暫存 |
 | `NGS_UI_VCF_DIR` | `$NGS_UI_HOME/vcf` | per-sample VCF |
 | `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt`、`{MRN}_clinical_presentation.txt` |
@@ -147,19 +150,21 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 若來源為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，Test type 會預設為 `WGS`；送出前仍可手動改回 `WES`；
    - Clinical presentation 可在檢體編號 / 病歷號下方輸入，會依病歷號 debounce 自動儲存為 `patient_phenotype/{MRN}_clinical_presentation.txt`，載入新個案與主畫面 Clinical presentation 會自動帶入；主畫面 reviewer 修改後也會同步寫回此檔，供 `/phenotype/` 後續載入。若沒有 MRN，才 fallback 使用 LIS_ID 暫存。
    - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
-   - 登錄新個案的未登錄個案欄位可直接輸入 LIS ID、source sample、姓名或 MRN 搜尋，也可從下拉清單選擇；不再需要在大量未登錄個案中純手動捲動。登錄時不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；若 VCF 尚不存在，Exomiser/LIRICAL 背景 job 開始前會自動建立或刷新。
+   - 登錄新個案的未登錄個案欄位可直接輸入 LIS ID、source sample、姓名或 MRN 搜尋，也可從下拉清單選擇；清單在前端快取一天，需要看到最新 pipeline output 時可按「更新清單」手動重抓。登錄時不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；若 VCF 尚不存在，Exomiser/LIRICAL 背景 job 開始前會自動建立或刷新。
    - HPO/panel 的 in-panel 狀態來自 `pheno_score.tsv` 動態補值，不再寫回大型 `snv_indel.annotated.tsv` 的 `IN_PANEL` 欄。
    - 勾「登錄後開始分析」會順便把 Exomiser/LIRICAL 排入佇列。
    - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` 篩選並全文搜尋；表格會摘要目前 active analysis 的 HPO/panel（HPO 顯示如 `Seizure HP:0001250`）、causative / other SNV、CNV、SV、Mito，已勾選 OMIM disease、Mito ClinVar disease 與 CNV/SV reviewer 輸入的 Disease、主畫面 comment、簽收與載入時間。多個 HPO/panel、variant / disease 會逐行顯示，長 HGVS 可自動折行。也可刪除 `NGS_UI_HOME/tertiary_output/{LIS_ID}/`；刪除時可選擇同步刪除或保留 `/home/pipeline/tertiary_output/{LIS_ID}/`，按取消則完全不刪除。
    - 主畫面搜尋框上方有可複選的 `WES` / `WGS` 圓形 filter，取消勾選後對應 test type 不出現在搜尋清單。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV、Mitochondria、STR 與 PGx 在背景載完後補上：
    - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。
+   - 載入或重新載入個案時會重設 sample-scoped UI 狀態：SNV/CNV/Mito/STR 分頁回到預設頁籤，主畫面 gene search 輸入與 gene search modal 舊結果會清空。
    - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
    - Patient phenotype 與 Comment 之間的 Dead zone 卡片會依目前 HPO + panel gene set 顯示 cohort-level dead exons；WES 用 20X，WGS（含 in-house / DRAGEN）用 DRAGEN 10X。主畫面先依 CDS dead percentage 分成 70-100%、50-70%、30-50%、<30% 四個區間，區間內再依 gene 的 pheno score 由高到低排序，最後用 CDS percentage 與 gene name 當 tie-breaker；預設只顯示 CDS ≥50% 的列，可用標題列或區塊底部的小三角形展開全部。Dead zone 列改用淡背景警示色：≥70% rose、50-70% orange、30-50% amber、<30% yellow。
    - SNV/Indel 顯示 filter 預設啟用 `Disease-associated`（優先使用 `ngs_panel_deadzone/panel/panel_loose_plus_clinical.hgnc_canonical.txt`，缺檔時 fallback 到 `panel_loose.hgnc_canonical.txt`）、`In panel only`、`gnomAD_G_AF < 0.01`；`VAF < 0.2 / zygosity=ref` 預設不勾選，主畫面預設隱藏低 VAF 或 ref genotype 點位，勾選後才顯示；`impact=MODIFIER` 預設不顯示，可手動勾選展開。`IMPACT=LOW` 仍會顯示。CNV/SV 與 gene search modal 不受 `Disease-associated` filter 限制。
    - TSV post-processing 只移除 `REF/ALT=*` 與非 primary contig；正式 v3.x pipeline 會自行處理 NCKUH/DRAGEN 前處理與 PASS/chrM 分流，舊版 DRAGEN staging 僅在 `NGS_UI_TERTIARY_LEGACY_STAGING=1` 時啟用。worker 會接受 v3.1-v3.4 的 65 欄 TSV，也接受 v3.5 移除 `MANE_ALL` 後的 64 欄 transcript TSV。
-   - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：SNV/Indel 會排除 chrM/MT，mtDNA variant 只顯示在 Mitochondria 區；WES 會先直接濾掉 read depth < 20 的位點，再保留 `NGS_UI_CDS_CANDIDATE_BED` 內且 `GNOMAD_G_AF < 0.01` 或 AF 缺值的位點，並 rescue ClinVar P/LP。reviewer 已標記但不在 review TSV 的 SNV 會用 `snv_gene_index.sqlite` 依 variant id 補入，補入時也套用 WES DP ≥ 20，不會因標記狀態變動而重建 review TSV。三級分析的 post-processing 階段會先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。
+   - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：SNV/Indel 會排除 chrM/MT，mtDNA variant 只顯示在 Mitochondria 區；WES 會先直接濾掉 read depth < 20 的位點，再保留 `NGS_UI_CDS_CANDIDATE_BED` 內且 `GNOMAD_G_AF < 0.01` 或 AF 缺值的位點，並 rescue ClinVar P/LP。reviewer 已標記但不在 review TSV 的 SNV 會用 `snv_gene_index.sqlite` 依 variant id 補入，補入時也套用 WES DP ≥ 20，不會因標記狀態變動而重建 review TSV。三級分析的 post-processing 階段會先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。若 gene index 缺失而必須 fallback 解析完整 annotation TSV，大型 raw TSV 結果預設不會進 process-wide SNV cache，避免 WGS 大檔長期佔用 uvicorn 記憶體。
    - SNV/Indel 卡片標籤列會依 GIAB genome-stratification 標出困難區（homopolymer / tandem repeat / segdup / low mappability / GC extreme / other difficult）的琥珀色 badge，提醒 reviewer 該位點 short-read calling 較不可靠。資料由 `scripts/annotate_giab_strata.py` 在三級分析尾段寫入 `snv_indel.annotated.tsv` 的 `GIAB_STRATA` 欄，BED 與 `strata_manifest.json` 放在 `NGS_UI_GIAB_STRAT_DIR`（部署時用 `scripts/download_giab_strata.sh` 下載；不在 git 內），缺 BED 目錄則自動略過。純 UI 提示，不影響 tier 排序或診斷報告。
+   - SNV/Indel 卡片的 OMIM 外部連結會優先使用 TSV 內 OMIM link / ID；若該變異沒有 OMIM disease/ID 但有 gene symbol，仍會顯示 OMIM 按鈕並連到該 gene 的 OMIM geneMap 搜尋頁，方便確認 OMIM 是否已有更新。
    - Secondary findings 從 `snv_indel.review.tsv` 產生，包含 ACMG SF、血脂相關基因（`lipid_fh`: `LDLR/APOB/PCSK9`）、腫瘤相關基因（`WES-I__腫瘤醫學__遺傳癌症`）、中風相關基因（`WGS__神經科__Stroke`）、Carrier screening 與 Proactive；需符合 panel gene、ClinVar P/LP 或卡片最終 ACMG P/LP（GeneBe 優先、再用 pipeline ACMG）、VAF ≥ 0.2、zygosity 非 ref。分析區預設展開並保留全部候選點位；ClinVar P/LP 預設 ✓，其他 ACMG P/LP 預設未勾，報告區只顯示 ✓ 點位。手動取消會寫入 `secondary_findings.{section}.dismissed`，不會下次載入又被預設勾回。
    - 「匯出健檢報告」會先跳出選擇畫面，預設勾 ACMG SF 與藥物基因體學，血脂/腫瘤/中風/Carrier/Proactive 預設不勾。DOCX 沿用診斷報告的章節骨架、固定寬度 `====` ASCII 表格、表格下方列點、檢測方法、注意事項與基因清單；開頭會置中列醫院與報告名稱，受檢者資料以雙列三欄呈現，檢體編號顯示時會去除 `-dragen` / `-nckuh` / `-inhouse` 來源後綴，檢驗項目使用「次世代定序全基因體定序檢測」等健檢文字，檢驗套組固定為「重大疾病基因篩檢」。類別依序輸出 ACMG SF、血脂、腫瘤、中風、帶因者篩查、主動篩查與藥物基因體學。空白區段寫「此類別於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。」。ACMG SF 內再分成血脂、腫瘤、心血管、代謝與內分泌、麻醉用藥風險與其它基因，疾病名稱使用 ClinGen/ACMG SF v3.3 表格，變異說明句改寫中文遺傳模式；健康報告 SNV 表格不輸出類別欄。PGx 每個 gene 先列基因/基因型/表型短表格，再列 Strong/Moderate/Optional 的 CPIC 用藥建議，無 actionable 結果時會寫「未檢出具臨床可應用之用藥建議之結果。」，並在基因清單列出 TSV 內實際輸出的 CPIC Level A gene 名稱。
    - 報告區 Causative / Other / Candidate 卡片依 SNV/Indel、CNV/SV、Mitochondria 排列；Secondary findings 報告區預設只展開 ACMG SF，其餘收合。分析區 Secondary findings 預設只展開 ACMG SF，PGx / PharmCAT 預設展開，其餘 secondary panels 預設收合。

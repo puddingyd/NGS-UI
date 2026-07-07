@@ -460,10 +460,13 @@
       <h2>載入新個案</h2>
       <div class="form-grid">
         <label class="form-grid-wide">未登錄個案
-          <span class="combobox-wrap">
-            <input id="new-case-lis-id-search" type="text" placeholder="未登錄個案清單載入中…" autocomplete="off" required />
-            <input name="lis_id" id="new-case-lis-id" type="hidden" />
-            <ul id="new-case-lis-id-dropdown" class="combobox-dropdown hidden"></ul>
+          <span class="new-case-lis-picker">
+            <span class="combobox-wrap">
+              <input id="new-case-lis-id-search" type="text" placeholder="未登錄個案清單載入中…" autocomplete="off" required />
+              <input name="lis_id" id="new-case-lis-id" type="hidden" />
+              <ul id="new-case-lis-id-dropdown" class="combobox-dropdown hidden"></ul>
+            </span>
+            <button type="button" id="btn-refresh-unregistered" class="btn btn-ghost" title="重新載入未登錄個案清單">更新清單</button>
           </span>
         </label>
         <label>姓名<input name="name" id="new-case-name" required /></label>

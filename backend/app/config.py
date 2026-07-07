@@ -18,6 +18,19 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
+def _env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if minimum is not None and value < minimum:
+        return minimum
+    return value
+
 # Default: parent of the repo only for the production-style
 # NGS_UI/NGS-UI checkout. A standalone checkout named NGS-UI (for
 # example ~/Desktop/NGS-UI) must fall back to the repo itself; otherwise
@@ -66,6 +79,12 @@ INDEX_PATH = Path(os.environ.get(
     "NGS_UI_INDEX_PATH",
     NGS_UI_HOME / "tertiary_output" / "_index.json",
 ))
+
+# Parsed SNV payloads are Python dict-heavy and can be far larger than
+# their TSV source. Cache compact review TSV payloads, but avoid retaining
+# multi-GB complete annotation fallbacks in a long-lived uvicorn process.
+SNV_CACHE_MAX = _env_int("NGS_UI_SNV_CACHE_MAX", 2, minimum=0)
+SNV_CACHE_MAX_RAW_MB = _env_int("NGS_UI_SNV_CACHE_MAX_RAW_MB", 100, minimum=0)
 
 VCF_DIR = Path(os.environ.get(
     "NGS_UI_VCF_DIR",

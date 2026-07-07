@@ -11,7 +11,10 @@
 - SNV/Indel 新增「本院 AF（AF_nckuh）」：顯示該變異在院內 WGS cohort 的等位基因頻率。
 - 個案清單新增 Phenotype 欄位，顯示該個案用於分析之 HPO/panel。
 - 主畫面 SNV/Indel filter 改為預設隱藏 `VAF < 0.2` 或 `zygosity=ref` 的點位；勾選 `VAF < 0.2 / zygosity=ref` 後才顯示。
-- 「載入新個案」的未登錄個案欄位可輸入 LIS ID、source sample、姓名或 MRN 搜尋。
+- 「載入新個案」的未登錄個案欄位可輸入 LIS ID、source sample、姓名或 MRN 搜尋；清單前端快取一天，可按「更新清單」手動重抓。
+- 載入或重新載入個案時，SNV/CNV/Mito/STR 分頁與 gene search 輸入會回到預設狀態。
+- SNV/Indel 卡片即使沒有 OMIM disease/ID，只要有 gene symbol 仍會顯示 OMIM 按鈕，連到 OMIM geneMap 搜尋頁。
+- 服務端限制 SNV payload cache：大型完整 annotation TSV fallback 不再常駐 uvicorn 記憶體，降低長時間使用後的記憶體累積。
 
 ### v6.1 — 2026-06-29
 

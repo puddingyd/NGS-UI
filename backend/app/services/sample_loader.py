@@ -40,7 +40,7 @@ from ..adapters.snv_tsv import (
     load_snv_tsv,
     merge_snv_variant_row,
 )
-from ..config import TERTIARY_OUTPUT_ROOT
+from ..config import SNV_CACHE_MAX, SNV_CACHE_MAX_RAW_MB, TERTIARY_OUTPUT_ROOT
 from . import analyses_store, hpo_ontology, omim_store, panel_deadzone, phenotype_scorer, snv_gene_index, snv_review
 
 
@@ -53,7 +53,6 @@ SECONDARY_SNV_PANELS = {
     "proactive": "proactive",
 }
 
-_SNV_CACHE_MAX = 8
 _snv_cache: OrderedDict[tuple, tuple[dict, dict, dict, str]] = OrderedDict()
 _snv_cache_lock = threading.Lock()
 _CASE_SUMMARY_CACHE_MAX = 128
@@ -75,6 +74,24 @@ def _fmt_size(path: Path) -> str:
             return f"{size:.1f}{unit}" if unit != "B" else f"{size}B"
         size /= 1024
     return f"{size:.1f}GB"
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _snv_cache_allowed(tsv_path: Path) -> bool:
+    """Keep compact SNV payloads hot, but do not retain giant raw fallbacks."""
+    if SNV_CACHE_MAX <= 0:
+        return False
+    if tsv_path.name != snv_review.REVIEW_TSV_NAME:
+        limit_bytes = SNV_CACHE_MAX_RAW_MB * 1024 * 1024
+        if limit_bytes <= 0 or _file_size(tsv_path) > limit_bytes:
+            return False
+    return True
 
 
 def _log_perf(event: str, started: float, **fields) -> None:
@@ -801,19 +818,22 @@ def _load_enriched_snv_cached(
         (test_type or "WES").upper(),
         omim_sig,
     )
-    with _snv_cache_lock:
-        cached = _snv_cache.get(key)
-        if cached is not None:
-            _snv_cache.move_to_end(key)
-            _log_perf(
-                "snv.enriched_cache",
-                started,
-                cache="hit",
-                tsv=snv_tsv.name,
-                size=_fmt_size(snv_tsv),
-                variants=len(cached[0]),
-            )
-            return cached
+    cache_allowed = _snv_cache_allowed(snv_tsv)
+    if cache_allowed:
+        with _snv_cache_lock:
+            cached = _snv_cache.get(key)
+            if cached is not None:
+                _snv_cache.move_to_end(key)
+                _log_perf(
+                    "snv.enriched_cache",
+                    started,
+                    cache="hit",
+                    tsv=snv_tsv.name,
+                    size=_fmt_size(snv_tsv),
+                    variants=len(cached[0]),
+                    max_entries=SNV_CACHE_MAX,
+                )
+                return cached
 
     old_format_error = ""
     parse_started = time.perf_counter()
@@ -833,22 +853,25 @@ def _load_enriched_snv_cached(
         categories[t] = sorted(ids, key=lambda i: (-_variant_total_score(variants, i), i))
 
     result = (variants, categories, pheno_by_gene, old_format_error)
-    with _snv_cache_lock:
-        # Callers treat the enriched maps as read-only; keeping the same
-        # objects avoids a full deep-copy cost on large cached payloads.
-        _snv_cache[key] = result
-        _snv_cache.move_to_end(key)
-        while len(_snv_cache) > _SNV_CACHE_MAX:
-            _snv_cache.popitem(last=False)
+    if cache_allowed:
+        with _snv_cache_lock:
+            # Callers treat the enriched maps as read-only; keeping the same
+            # objects avoids a full deep-copy cost on cached review payloads.
+            _snv_cache[key] = result
+            _snv_cache.move_to_end(key)
+            while len(_snv_cache) > SNV_CACHE_MAX:
+                _snv_cache.popitem(last=False)
     _log_perf(
         "snv.enriched_cache",
         started,
-        cache="miss",
+        cache="miss" if cache_allowed else "skip",
         tsv=snv_tsv.name,
         size=_fmt_size(snv_tsv),
         variants=len(variants),
         parse=f"{parse_elapsed:.3f}s",
         enrich=f"{time.perf_counter() - enrich_started:.3f}s",
+        max_entries=SNV_CACHE_MAX,
+        raw_cache_limit_mb=SNV_CACHE_MAX_RAW_MB,
     )
     return result
 
