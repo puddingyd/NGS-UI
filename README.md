@@ -36,6 +36,7 @@ NGS_UI/                    ← NGS_UI_HOME
 │                             + {MRN}_clinical_presentation.txt
 ├── patient_list/          ← 上傳的「未完成報告清單」xlsx + 衍生 roster.json
 ├── phenotype_data/        ← git-tracked fixed/custom panels; large HPO refs live in NGS_UI_HOME
+│   └── gene_disease/       ← optional GenCC / ClinGen / MONDO raw + SQLite disease補充
 ├── ngs_panel_deadzone/    ← expanded reportable gene list、HGNC alias map、dead-zone tables
 ├── OMIM/OMIM.xlsx         ← OMIM 疾病註解表（缺檔則 Disease 欄留空）
 └── data/                  ← server runtime state（users.db, jobs/, ...）
@@ -111,6 +112,9 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt`、`{MRN}_clinical_presentation.txt` |
 | `NGS_UI_PATIENT_LIST_DIR` | `$NGS_UI_HOME/patient_list` | 上傳清單 + roster.json |
 | `NGS_UI_PHENO_DATA_DIR` | `$NGS_UI_HOME/phenotype_data` | hp.obo / phenotype_to_genes 等大型 HPO reference |
+| `NGS_UI_GENE_DISEASE_DB` | `$NGS_UI_HOME/phenotype_data/gene_disease/gene_disease.sqlite` | optional GenCC / ClinGen / MONDO gene-disease SQLite index；缺檔時靜默停用 |
+| `NGS_UI_GENE_DISEASE_RAW_DIR` | `$NGS_UI_HOME/phenotype_data/gene_disease/raw` | GenCC / ClinGen / MONDO raw downloads |
+| `NGS_UI_GENE_DISEASE_TSV` | `$NGS_UI_HOME/phenotype_data/gene_disease/gene_disease.tsv` | audit / legacy fallback TSV；runtime 優先讀 SQLite |
 | `NGS_UI_GENE_PANELS_DIR` | `REPO_ROOT/phenotype_data/gene_panels` | git-tracked fixed panel gene lists |
 | `NGS_UI_FIXED_PANELS_DIR` | `REPO_ROOT/phenotype_data/fixed_panels` | git-tracked fixed panel UI index |
 | `NGS_UI_CUSTOM_GENE_PANELS_DIR` | `REPO_ROOT/phenotype_data/custom_panels` | git-tracked custom panel gene lists |
@@ -165,6 +169,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 主畫面讀取自動衍生的 `snv_indel.review.tsv`：SNV/Indel 會排除 chrM/MT，mtDNA variant 只顯示在 Mitochondria 區；WES 會先直接濾掉 read depth < 20 的位點，再保留 `NGS_UI_CDS_CANDIDATE_BED` 內且 `GNOMAD_G_AF < 0.01` 或 AF 缺值的位點，並 rescue ClinVar P/LP。reviewer 已標記但不在 review TSV 的 SNV 會用 `snv_gene_index.sqlite` 依 variant id 補入，補入時也套用 WES DP ≥ 20，不會因標記狀態變動而重建 review TSV。三級分析的 post-processing 階段會先建立它；舊樣本載入時仍可自動補建。原始 `snv_indel.annotated.tsv` 不會被覆寫。若 gene index 缺失，gene search fallback 會串流掃描完整 annotation TSV 並只保留目標 gene rows；大型 raw TSV 結果預設也不會進 process-wide SNV cache，避免 WGS 大檔長期佔用 uvicorn 記憶體。
    - SNV/Indel 卡片標籤列會依 GIAB genome-stratification 標出困難區（homopolymer / tandem repeat / segdup / low mappability / GC extreme / other difficult）的琥珀色 badge，提醒 reviewer 該位點 short-read calling 較不可靠。資料由 `scripts/annotate_giab_strata.py` 在三級分析尾段寫入 `snv_indel.annotated.tsv` 的 `GIAB_STRATA` 欄，BED 與 `strata_manifest.json` 放在 `NGS_UI_GIAB_STRAT_DIR`（部署時用 `scripts/download_giab_strata.sh` 下載；不在 git 內），缺 BED 目錄則自動略過。純 UI 提示，不影響 tier 排序或診斷報告。
    - SNV/Indel 卡片的 OMIM 外部連結會優先使用 TSV 內 OMIM link / ID；若該變異沒有 OMIM disease/ID 但有 gene symbol，仍會顯示 OMIM 按鈕並連到該 gene 的 OMIM geneMap 搜尋頁，方便確認 OMIM 是否已有更新。
+   - SNV/Indel 卡片的疾病清單仍以最新版 `OMIM.xlsx` 的 `Disease1..5` 作為 rich description / synopsis 來源；若部署了 `NGS_UI_GENE_DISEASE_DB`，後端會把 GenCC / ClinGen / MONDO association 依 gene 合併進 `disease_associations`，用 phenotype MIM、MONDO ID、source disease ID 與 gene-scoped normalized disease name 去重，補上 OMIM 沒列到或額外的非重複疾病。DB 由 `python scripts/update_gene_disease_db.py` 建置：下載 GenCC submissions CSV、ClinGen gene validity CSV、MONDO JSON，建立 `gene_disease.sqlite`、audit `gene_disease.tsv`、`source_manifest.json` 與 `build_report.tsv`；GenCC/ClinGen 只納入 `Limited` 以上，低於 `Limited`、disputed/refuted 等會略過。補充列目前只在 UI 顯示，不改 DOCX 的 `report_diseases` 選取；OMIM disease 只有單行、沒有下方 description/synopsis 時，summary 後會以小 `*` 提醒 curator 補描述，星號不寫回資料也不進列印輸出。
    - Secondary findings 從 `snv_indel.review.tsv` 產生，包含 ACMG SF、血脂相關基因（`lipid_fh`: `LDLR/APOB/PCSK9`）、腫瘤相關基因（`WES-I__腫瘤醫學__遺傳癌症`）、中風相關基因（`WGS__神經科__Stroke`）、Carrier screening 與 Proactive；需符合 panel gene、ClinVar P/LP 或卡片最終 ACMG P/LP（GeneBe 優先、再用 pipeline ACMG）、VAF ≥ 0.2、zygosity 非 ref。分析區預設展開並保留全部候選點位；ClinVar P/LP 預設 ✓，其他 ACMG P/LP 預設未勾，報告區只顯示 ✓ 點位。手動取消會寫入 `secondary_findings.{section}.dismissed`，不會下次載入又被預設勾回。
    - 「匯出健檢報告」會先跳出選擇畫面，預設勾 ACMG SF 與藥物基因體學，血脂/腫瘤/中風/Carrier/Proactive 預設不勾。DOCX 沿用診斷報告的章節骨架、固定寬度 `====` ASCII 表格、表格下方列點、檢測方法、注意事項與基因清單；開頭會置中列醫院與報告名稱，受檢者資料以雙列三欄呈現，檢體編號顯示時會去除 `-dragen` / `-nckuh` / `-inhouse` 來源後綴，檢驗項目使用「次世代定序全基因體定序檢測」等健檢文字，檢驗套組固定為「重大疾病基因篩檢」。類別依序輸出 ACMG SF、血脂、腫瘤、中風、帶因者篩查、主動篩查與藥物基因體學。空白區段寫「此類別於本次檢測涵蓋之基因中未檢出致病或疑似致病之基因變異。」。ACMG SF 內再分成血脂、腫瘤、心血管、代謝與內分泌、麻醉用藥風險與其它基因，疾病名稱使用 ClinGen/ACMG SF v3.3 表格，變異說明句改寫中文遺傳模式；健康報告 SNV 表格不輸出類別欄。PGx 每個 gene 先列基因/基因型/表型短表格，再列 Strong/Moderate/Optional 的 CPIC 用藥建議，無 actionable 結果時會寫「未檢出具臨床可應用之用藥建議之結果。」，並在基因清單列出 TSV 內實際輸出的 CPIC Level A gene 名稱。
    - 報告區 Causative / Other / Candidate 卡片依 SNV/Indel、CNV/SV、Mitochondria 排列；Secondary findings 報告區預設只展開 ACMG SF，其餘收合。分析區 Secondary findings 預設只展開 ACMG SF，PGx / PharmCAT 預設展開，其餘 secondary panels 預設收合。
@@ -271,6 +276,7 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 - **不要把病人資料 / 大檔 commit 進 git**：`.gitignore` 已排除 `tertiary_output/`、`data/`、`patient_list/`、`phenotype_data/` 內的大型 HPO reference、`_index.json`；但固定與自訂 panel 的 `phenotype_data/fixed_panels/`、`phenotype_data/gene_panels/` 與 `phenotype_data/custom_panels/` 例外追蹤。
 - 首頁歡迎文字與版本紀錄放在 `frontend/VERSION.md`，前端啟動時會讀取並顯示在尚未載入個案的首頁。之後若有影響判讀流程、報告輸出、資料載入或主要工具入口的更新，需評估是否同步更新這份版本紀錄。
 - 大型 HPO reference 必須放在 `NGS_UI_PHENO_DATA_DIR`（`hp.obo`、`phenotype_to_genes.txt` 等）；固定與自訂 panel data 則在 repo 的 `phenotype_data/fixed_panels/`、`phenotype_data/gene_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git 更新。
+- GenCC / ClinGen / MONDO 補充疾病資料用 `python scripts/update_gene_disease_db.py` 更新；若正式機不能出網，先手動下載 `gencc_submissions.csv`、`clingen_gene_validity.csv`、`mondo.json` 到 `NGS_UI_GENE_DISEASE_RAW_DIR`，再跑 `python scripts/update_gene_disease_db.py --skip-download`。
 - EMR 相關功能預設停用，需設 `NGS_UI_EMR_CLIENT_ID` 才會啟用，且只在內網可達。
 - `/api/phenotype-tool/*` 與 `/api/healthz` 是刻意公開無認證；`/api/patient_list` 與其餘 `/api/*` 需登入。
 - 大型 JSON response 會在瀏覽器支援時自動 gzip；SNV parse + phenotype / Exomiser / LIRICAL / OMIM join 使用有上限的 process-local LRU cache，輸入 TSV 或 sidecar 更新後自動失效。

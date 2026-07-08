@@ -112,6 +112,18 @@ PHENO_DATA_DIR = Path(os.environ.get(
     "NGS_UI_PHENO_DATA_DIR",
     NGS_UI_HOME / "phenotype_data",
 ))
+GENE_DISEASE_TSV = Path(os.environ.get(
+    "NGS_UI_GENE_DISEASE_TSV",
+    PHENO_DATA_DIR / "gene_disease" / "gene_disease.tsv",
+))
+GENE_DISEASE_DB = Path(os.environ.get(
+    "NGS_UI_GENE_DISEASE_DB",
+    PHENO_DATA_DIR / "gene_disease" / "gene_disease.sqlite",
+))
+GENE_DISEASE_RAW_DIR = Path(os.environ.get(
+    "NGS_UI_GENE_DISEASE_RAW_DIR",
+    PHENO_DATA_DIR / "gene_disease" / "raw",
+))
 GENE_PANELS_DIR = Path(os.environ.get(
     "NGS_UI_GENE_PANELS_DIR",
     REPO_ROOT / "phenotype_data" / "gene_panels",

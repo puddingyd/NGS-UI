@@ -26,7 +26,7 @@ import csv
 from pathlib import Path
 from typing import Iterable
 
-from ..services import panel_deadzone
+from ..services import gene_disease_store, panel_deadzone
 
 # Tier names mirror the frontend's CNV_SV_TIER_ORDER.
 CNV_TIERS = ["CNV-1A", "CNV-1B"]
@@ -138,6 +138,7 @@ def _split_row_to_gene(
     gene, _hid = panel_deadzone.canonical_gene_symbol(row.get("Gene_name", ""))
     score = pheno_by_gene.get(gene)
     matched = pheno_matched.get(gene, 0.0) if pheno_matched else 0.0
+    disease_associations = gene_disease_store.merged_associations(gene, None, refresh=False)
     return {
         "gene":             gene,
         "tx":               (row.get("Tx") or "").strip(),
@@ -157,6 +158,7 @@ def _split_row_to_gene(
         "pheno_matched":    matched,
         "pheno_total":      pheno_total,
         "in_panel":         bool(matched and matched > 0),
+        "disease_associations": disease_associations,
     }
 
 
@@ -334,7 +336,8 @@ def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], list[dict], 
     overflow_compact = [
         {"gene": g.get("gene"),
          "omim_id": g.get("omim_id"),
-         "in_panel": g.get("in_panel")}
+         "in_panel": g.get("in_panel"),
+         "disease_associations": g.get("disease_associations") or []}
         for g in rest if not g.get("in_panel")
     ]
     return visible, overflow_full, overflow_compact, len(genes)
@@ -356,6 +359,7 @@ def load_annotsv_tsv(
     """
     pheno_by_gene = pheno_by_gene or {}
     pheno_matched = pheno_matched or {}
+    gene_disease_store.ensure_loaded()
     tiers = list(CNV_TIERS) if source == "cnv" else list(SV_TIERS)
     variants: dict[str, dict] = {}
     categories: dict[str, list[str]] = {t: [] for t in tiers}

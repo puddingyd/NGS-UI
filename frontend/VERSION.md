@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v6.3 — 2026-07-08
+
+- SNV/Indel 疾病清單可合併 optional GenCC / ClinGen / MONDO gene-disease SQLite index，在 OMIM 未列 disease 或有額外非重複疾病時補充顯示；OMIM description / synopsis 仍即時取自最新版 OMIM.xlsx。
+- OMIM disease 若只有單行、尚未補 description / synopsis，卡片 summary 後會以小 `*` 提醒補齊；此標記只影響 UI，不進報告或列印輸出。
+
 ### v6.2 — 2026-07-05
 
 - WGS 固定套組新增血液科 Lymphoid Neoplasm Panel 與 Myeloid Neoplasm Panel，SNV/indel、CNV、STR、Mitochondria 欄位合併為單一基因清單。

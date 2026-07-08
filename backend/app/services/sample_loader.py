@@ -41,7 +41,7 @@ from ..adapters.snv_tsv import (
     merge_snv_variant_row,
 )
 from ..config import SNV_CACHE_MAX, SNV_CACHE_MAX_RAW_MB, TERTIARY_OUTPUT_ROOT
-from . import analyses_store, hpo_ontology, omim_store, panel_deadzone, phenotype_scorer, snv_gene_index, snv_review
+from . import analyses_store, gene_disease_store, hpo_ontology, omim_store, panel_deadzone, phenotype_scorer, snv_gene_index, snv_review
 
 
 SECONDARY_SNV_PANELS = {
@@ -174,6 +174,7 @@ def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> 
         list(_file_signature(sample_dir / "cnv.annotated.tsv")),
         list(_file_signature(sample_dir / "sv.annotated.tsv")),
         list(omim_sig if omim_sig is not None else omim_store.cache_signature()),
+        list(gene_disease_store.cache_signature()),
     ]
 
 
@@ -809,6 +810,7 @@ def _load_enriched_snv_cached(
     pheno_path = sidecar_dir / "pheno_score.tsv"
     analysis_path = sidecar_dir / "analysis.json"
     omim_sig = omim_store.cache_signature()
+    gene_disease_sig = gene_disease_store.cache_signature()
     key = (
         _file_signature(snv_tsv),
         _file_signature(analysis_path),
@@ -817,6 +819,7 @@ def _load_enriched_snv_cached(
         _file_signature(lir_path),
         (test_type or "WES").upper(),
         omim_sig,
+        gene_disease_sig,
     )
     cache_allowed = _snv_cache_allowed(snv_tsv)
     if cache_allowed:
@@ -998,9 +1001,10 @@ def _enrich_snv_variants(variants: dict[str, dict], sidecar_dir: Path) -> dict[s
             return None
         return int(round(n * 100))
 
-    # Refresh OMIM once per batch; individual variant joins use only
-    # in-memory dict lookups and no longer stat OMIM.xlsx repeatedly.
+    # Refresh OMIM and supplemental disease data once per batch; individual
+    # variant joins use only in-memory dict lookups.
     omim_store.ensure_loaded()
+    gene_disease_store.ensure_loaded()
     for vid, v in variants.items():
         gene = v.get("gene_symbol", "")
         pheno = pheno_by_gene.get(gene) if gene else None
@@ -1031,6 +1035,7 @@ def _enrich_snv_variants(variants: dict[str, dict], sidecar_dir: Path) -> dict[s
             v["Inheritance"]  = rec.get("Inheritance", "")
             for f in ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5"):
                 v[f] = rec.get(f, "")
+        v["disease_associations"] = gene_disease_store.merged_associations(gene, rec, refresh=False)
     return pheno_by_gene
 
 

@@ -2858,6 +2858,7 @@ function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
     ".more-extras", ".comment-row", ".cnv-sv-comment", ".transcript-picker",
     ".btn-add-manual", ".btn-remove-manual", ".same-gene-btn",
     ".disease-detail", ".disease-collapse",
+    ".disease-needs-description-star", ".disease-source-badges",
     ".cnv-sv-reasoning", ".cnv-sv-gene-overflow",
     ".block-header .count",
   ].join(",")).forEach(el => el.remove());
@@ -3757,22 +3758,84 @@ function updateManualVariant(mid, field, value) {
   state.dirty = true;
 }
 
+function diseaseAssociationSummary(a) {
+  if (!a) return "";
+  const name = a.display_name || "";
+  const mim = a.phenotype_mim ? ` (${a.phenotype_mim})` : "";
+  const inh = a.inheritance ? `(${a.inheritance})` : "";
+  return `${name}${mim}${inh}`.trim();
+}
+
+function diseaseAssociationDetail(a) {
+  if (!a) return "";
+  if (a.detail) return String(a.detail);
+  const lines = [diseaseAssociationSummary(a)].filter(Boolean);
+  const evidence = Array.isArray(a.evidence) ? a.evidence.filter(Boolean) : [];
+  const sources = Array.isArray(a.sources) ? a.sources.filter(Boolean) : [];
+  if (evidence.length) lines.push(`來源：${evidence.join("；")}`);
+  else if (sources.length) lines.push(`來源：${sources.join("；")}`);
+  if (a.mondo_id) lines.push(`MONDO：${a.mondo_id}`);
+  return lines.join("\n");
+}
+
+function diseaseSourceBadges(a) {
+  const labels = Array.isArray(a?.evidence) && a.evidence.length
+    ? a.evidence
+    : (Array.isArray(a?.sources) ? a.sources : []);
+  return labels.filter(Boolean).slice(0, 3).map(label =>
+    `<span class="disease-source-badge">${escapeHtml(label)}</span>`
+  ).join("");
+}
+
+function hasOmimDescriptionText(a, d) {
+  if (a && Object.prototype.hasOwnProperty.call(a, "needs_description")) {
+    return !a.needs_description;
+  }
+  return String(d || "").split("\n").some((line, idx) => idx > 0 && line.trim());
+}
+
 function renderDiseaseList(v, id, withCheckbox) {
   const rows = [];
   const picked = (getEdit(id, "report_diseases") || {});
-  for (let i = 1; i <= 5; i++) {
-    const d = v[`Disease${i}`];
-    if (!d || d === "NA") continue;
-    const summary = (String(d).split("\n")[0] || "").slice(0, 120);
-    const checked = picked[i] ? "checked" : "";
-    const checkbox = withCheckbox
-      ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${i}" ${checked} title="報告要發這個疾病" />`
-      : "";
-    rows.push(`
-      <details class="disease-row">
-        <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}</span></summary>
-        <div class="disease-detail">${escapeHtml(String(d))}<button type="button" class="disease-collapse">▴ 收合</button></div>
-      </details>`);
+  const associations = Array.isArray(v.disease_associations) ? v.disease_associations : null;
+
+  if (associations && associations.length) {
+    for (const a of associations) {
+      const d = diseaseAssociationDetail(a);
+      if (!d || d === "NA") continue;
+      const summary = (diseaseAssociationSummary(a) || String(d).split("\n")[0] || "").slice(0, 120);
+      const idx = Number(a.omim_slot || 0);
+      const canPick = Boolean(idx && a.source_kind === "omim");
+      const checked = canPick && picked[idx] ? "checked" : "";
+      const checkbox = withCheckbox && canPick
+        ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${idx}" ${checked} title="報告要發這個疾病" />`
+        : "";
+      const needsDescription = a.source_kind === "omim" && !hasOmimDescriptionText(a, d);
+      const star = needsDescription ? `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>` : "";
+      const badges = a.source_kind === "omim" ? diseaseSourceBadges(a).replace('<span class="disease-source-badge">OMIM</span>', "") : diseaseSourceBadges(a);
+      const extraClass = a.source_kind === "omim" ? "" : " disease-row-supplemental";
+      rows.push(`
+        <details class="disease-row${extraClass}">
+          <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}${star}</span><span class="disease-source-badges">${badges}</span></summary>
+          <div class="disease-detail">${escapeHtml(String(d))}<button type="button" class="disease-collapse">▴ 收合</button></div>
+        </details>`);
+    }
+  } else {
+    for (let i = 1; i <= 5; i++) {
+      const d = v[`Disease${i}`];
+      if (!d || d === "NA") continue;
+      const summary = (String(d).split("\n")[0] || "").slice(0, 120);
+      const checked = picked[i] ? "checked" : "";
+      const checkbox = withCheckbox
+        ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${i}" ${checked} title="報告要發這個疾病" />`
+        : "";
+      const star = hasOmimDescriptionText(null, d) ? "" : `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>`;
+      rows.push(`
+        <details class="disease-row">
+          <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}${star}</span></summary>
+          <div class="disease-detail">${escapeHtml(String(d))}<button type="button" class="disease-collapse">▴ 收合</button></div>
+        </details>`);
+    }
   }
   if (!rows.length) return "";
   return `<div class="disease-list">${rows.join("")}</div>`;
