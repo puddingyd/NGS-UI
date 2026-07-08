@@ -1177,6 +1177,23 @@ function variantUrls(v) {
 
 // ---------- Render: sample header / phenotype ----------------------
 
+function renderPloidySexStatus(reportedSex) {
+  const ploidyCall = String(state.data.ploidy?.karyotype || "").trim().toUpperCase();
+  const sex = String(reportedSex || "").trim().toUpperCase();
+  const sexControl = document.getElementById("m-sex-control");
+  const ploidyLabel = document.getElementById("m-ploidy-call");
+  const matches = (
+    (sex === "M" && ploidyCall === "XY") ||
+    (sex === "F" && ploidyCall === "XX")
+  );
+  sexControl?.classList.toggle("ploidy-match", !!ploidyCall && matches);
+  sexControl?.classList.toggle("ploidy-mismatch", !!ploidyCall && !matches);
+  if (ploidyLabel) {
+    ploidyLabel.textContent = ploidyCall ? `ploidy VCF: ${ploidyCall}` : "";
+    ploidyLabel.hidden = !ploidyCall || matches;
+  }
+}
+
 function renderSampleMeta() {
   const m = state.data.meta || {};
   document.getElementById("m-lis").textContent       = m.LIS_ID || "—";
@@ -1224,6 +1241,7 @@ function renderSampleMeta() {
   document.getElementById("m-test").value  = m.Test || "";
   document.getElementById("m-build").value = state.data.genome_build || "";
   document.getElementById("m-sex").value   = m.Sex || "";
+  renderPloidySexStatus(m.Sex || "");
   document.getElementById("m-sry-confirmed").checked = !!state.reports.sry_confirmed;
   // 科別 / 開單醫師 — <select> populated from /api/patient_list/options
   // (cached). Reviewer picks an existing value or "＋ 新增…" which
@@ -1286,7 +1304,11 @@ function _saveSampleMeta(patch) {
 document.addEventListener("change", ev => {
   if (ev.target.id === "m-test")  _saveSampleMeta({ test_type:    ev.target.value });
   if (ev.target.id === "m-build") _saveSampleMeta({ genome_build: ev.target.value });
-  if (ev.target.id === "m-sex")   _saveSampleMeta({ sex:          ev.target.value });
+  if (ev.target.id === "m-sex") {
+    if (state.data.meta) state.data.meta.Sex = ev.target.value;
+    renderPloidySexStatus(ev.target.value);
+    _saveSampleMeta({ sex: ev.target.value });
+  }
   if (ev.target.id === "m-department") _onRosterSelectChange("department", "科別");
   if (ev.target.id === "m-physician")  _onRosterSelectChange("physician",  "開單醫師");
 });

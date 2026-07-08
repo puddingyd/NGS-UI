@@ -15,6 +15,7 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
     4. copy pipeline outputs          → NGS_UI/tertiary_output/<SID>/
                                           snv_indel.annotated.tsv
                                           mito.annotated.tsv
+                                          ploidy.vcf.gz (DRAGEN only, when present)
                                           + pipeline_source.json (audit)
     5. post-processing                → filter / GeneBe / extra-VEP / CNV-AnnotSV
                                           + pre-build snv_indel.review.tsv
@@ -259,6 +260,44 @@ def _find_pipeline_pgx_files(*sample_ids: str) -> dict[str, Path]:
             if hit is not None and hit.is_file():
                 found[dst_name] = hit
     return found
+
+
+def _find_dragen_ploidy_vcf(source_vcf: str | Path, source_sample_id: str) -> Path | None:
+    """Find the DRAGEN ploidy VCF corresponding to one source VCF.
+
+    Candidate names are exact so a directory containing multiple samples
+    cannot accidentally donate another sample's karyotype.
+    """
+    source = Path(source_vcf)
+    name = source.name
+    stems: list[str] = []
+    for suffix in (".hard-filtered.vcf.gz", ".vcf.gz"):
+        if name.endswith(suffix):
+            stems.append(name[:-len(suffix)])
+            break
+    if source_sample_id:
+        stems.append(str(source_sample_id).strip())
+    for stem in dict.fromkeys(value for value in stems if value):
+        candidate = source.with_name(f"{stem}.ploidy.vcf.gz")
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _copy_dragen_ploidy_vcf(
+    source_vcf: str | Path,
+    source_sample_id: str,
+    sample_dir: Path,
+) -> tuple[Path, Path] | None:
+    source = _find_dragen_ploidy_vcf(source_vcf, source_sample_id)
+    destination = sample_dir / "ploidy.vcf.gz"
+    if source is None:
+        # Do not retain a stale karyotype when the same LIS ID is re-run
+        # against a DRAGEN source that has no matching ploidy sidecar.
+        destination.unlink(missing_ok=True)
+        return None
+    shutil.copyfile(source, destination)
+    return source, destination
 
 
 def _pipeline_outputs_for(
@@ -1007,6 +1046,13 @@ def main() -> int:
                 pipeline_type=mode,
             )
             _log(f"[copy] {sid}: {existing} → {gui_tsv}")
+            if mode == "dragen":
+                ploidy_copy = _copy_dragen_ploidy_vcf(source_vcf, source_sid, sample_dir)
+                if ploidy_copy is None:
+                    _log(f"[copy] {sid}: matching DRAGEN ploidy VCF not found beside {source_vcf}")
+                else:
+                    ploidy_src, ploidy_dst = ploidy_copy
+                    _log(f"[copy] {sid}: {ploidy_src} → {ploidy_dst}")
             mito_src = outputs.get("mito.tsv") or _find_pipeline_mito_tsv(sid, source_sid)
             if mito_src is None:
                 _log(

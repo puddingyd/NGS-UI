@@ -122,12 +122,15 @@
           <div class="m-sex-cell">
             <span class="label">性別</span>
             <div class="m-sex-stack">
-              <select id="m-sex" class="meta-select">
-                <option value="">—</option>
-                <option value="M">M</option>
-                <option value="F">F</option>
-                <option value="U">U</option>
-              </select>
+              <div id="m-sex-control" class="m-sex-control">
+                <div id="m-ploidy-call" class="m-ploidy-call" hidden></div>
+                <select id="m-sex" class="meta-select">
+                  <option value="">—</option>
+                  <option value="M">M</option>
+                  <option value="F">F</option>
+                  <option value="U">U</option>
+                </select>
+              </div>
               <div class="m-sry-line">
                 <label class="btn-emr btn-sry-confirmed" title="標記已在 IGV 內確認 SRY 區域">
                   <input id="m-sry-confirmed" type="checkbox" />

@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v6.4 — 2026-07-09
+
+- 健檢報告更新為「遺傳性疾病與藥物基因體健康檢測報告」；ACMG SF 維持原有變異表格，新增檢測警語、陰性結果限制，以及依 AD、AR、X-linked 與性染色體組成自動產生的結果意義和建議。
+- PGx 健檢結果新增 narrative summary，整合 CPIC Strong/Moderate 與 PharmCAT JSON 的 FDA therapeutic-management 資訊；優先顯示高風險基因－藥物組合，其餘建議保留於完整結果。
+- DRAGEN 三級分析新增 ploidy VCF sidecar 複製；基本資料性別欄會核對 M/XY、F/XX，一致顯示綠底，不一致或非典型性染色體 call 顯示紅底及 ploidy VCF 結果。
+
 ### v6.3 — 2026-07-08
 
 - SNV/Indel 疾病清單可合併 optional GenCC / ClinGen / MONDO gene-disease SQLite index，在 OMIM 未列 disease 或有額外非重複疾病時補充顯示；OMIM description / synopsis 仍即時取自最新版 OMIM.xlsx。

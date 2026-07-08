@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import csv
+import html
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -59,6 +61,82 @@ def _evidence_rank(row: dict) -> int:
     return min(EVIDENCE_ORDER.get(v, 5) for v in vals)
 
 
+def _plain_text(value) -> str:
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<li[^>]*>", "- ", text, flags=re.I)
+    text = re.sub(r"</?(?:ul|ol|p|div|br)[^>]*>", "\n", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _annotation_genes(annotation: dict) -> list[str]:
+    genes: list[str] = []
+    for genotype_group in annotation.get("genotypes") or []:
+        for diplotype in genotype_group.get("diplotypes") or []:
+            gene = _clean(diplotype.get("gene"))
+            if gene:
+                genes.append(gene)
+    for item in annotation.get("lookupKey") or []:
+        if isinstance(item, dict):
+            genes.extend(_clean(gene) for gene in item if _clean(gene))
+    for implication in annotation.get("implications") or []:
+        match = re.match(r"\s*([A-Za-z0-9-]+)\s*:", str(implication))
+        if match:
+            genes.append(match.group(1))
+    return list(dict.fromkeys(genes))
+
+
+def _fda_category(section: str, guideline_name: str) -> str:
+    if section != "FDA PGx Association":
+        return ""
+    text = guideline_name.lower()
+    if "therapeutic management" in text:
+        return "therapeutic_management"
+    if "potential impact" in text:
+        return "potential_impact"
+    if "pharmacokinetic properties only" in text:
+        return "pharmacokinetic_only"
+    return "unspecified"
+
+
+def _compact_drug_annotations(data: dict) -> list[dict]:
+    out: list[dict] = []
+    for section, drugs in (data.get("drugs") or {}).items():
+        if not isinstance(drugs, dict):
+            continue
+        for drug_key, payload in drugs.items():
+            if not isinstance(payload, dict):
+                continue
+            drug = _clean(payload.get("name")) or _clean(drug_key)
+            for guideline in payload.get("guidelines") or []:
+                guideline_name = _clean(guideline.get("name"))
+                source = _clean(guideline.get("source")) or _clean(payload.get("source"))
+                for annotation in guideline.get("annotations") or []:
+                    recommendation = _plain_text(annotation.get("drugRecommendation"))
+                    if not recommendation:
+                        continue
+                    out.append({
+                        "section": _clean(section),
+                        "source": source,
+                        "drug": drug,
+                        "guideline": guideline_name,
+                        "url": _clean(guideline.get("url")),
+                        "classification": _clean(annotation.get("classification")) or "Unspecified",
+                        "recommendation": recommendation,
+                        "implications": [
+                            _plain_text(value)
+                            for value in annotation.get("implications") or []
+                            if _plain_text(value)
+                        ],
+                        "genes": _annotation_genes(annotation),
+                        "fda_category": _fda_category(section, guideline_name),
+                        "dosing_information": bool(annotation.get("dosingInformation")),
+                        "alternate_drug_available": bool(annotation.get("alternateDrugAvailable")),
+                        "other_prescribing_guidance": bool(annotation.get("otherPrescribingGuidance")),
+                    })
+    return out
+
+
 def _compact_report_json(path: Path) -> dict:
     if not path.exists():
         return {}
@@ -102,6 +180,7 @@ def _compact_report_json(path: Path) -> dict:
         "timestamp": _clean(data.get("timestamp")),
         "messages": data.get("messages") or [],
         "genes": genes,
+        "guideline_annotations": _compact_drug_annotations(data),
     }
 
 
@@ -123,6 +202,7 @@ def load_pgx(pgx_tsv: Path, pharmcat_json: Path | None = None) -> dict:
         "data_version": report.get("data_version", ""),
         "timestamp": report.get("timestamp", ""),
         "messages": report.get("messages", []),
+        "guideline_annotations": report.get("guideline_annotations", []),
     }
     if not pgx_tsv.exists():
         return result

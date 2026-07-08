@@ -455,7 +455,39 @@ body.sidebar-collapsed .container { margin-left: auto; }
   min-width: 0;
   flex: 1 1 auto;
 }
-.m-sex-stack .meta-select { width: 100%; }
+.m-sex-control {
+  width: 100%;
+  min-width: 0;
+  border-radius: 5px;
+}
+.m-sex-control .meta-select {
+  width: 100%;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.m-sex-control.ploidy-match .meta-select {
+  background: #dafbe1;
+  border-color: #1f883d;
+  box-shadow: 0 0 0 1px rgba(31, 136, 61, 0.12);
+}
+.m-sex-control.ploidy-mismatch {
+  padding: 4px;
+  background: #ffebe9;
+  border: 1px solid #cf222e;
+}
+.m-sex-control.ploidy-mismatch .meta-select {
+  background: #fff5f5;
+  border-color: #cf222e;
+}
+.m-ploidy-call {
+  margin: 0 2px 3px;
+  color: #a40e26;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.m-ploidy-call[hidden] { display: none; }
 .m-sry-line {
   display: inline-flex;
   align-items: center;

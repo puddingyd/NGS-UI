@@ -41,7 +41,17 @@ from ..adapters.snv_tsv import (
     merge_snv_variant_row,
 )
 from ..config import SNV_CACHE_MAX, SNV_CACHE_MAX_RAW_MB, TERTIARY_OUTPUT_ROOT
-from . import analyses_store, gene_disease_store, hpo_ontology, omim_store, panel_deadzone, phenotype_scorer, snv_gene_index, snv_review
+from . import (
+    analyses_store,
+    gene_disease_store,
+    hpo_ontology,
+    omim_store,
+    panel_deadzone,
+    phenotype_scorer,
+    ploidy,
+    snv_gene_index,
+    snv_review,
+)
 
 
 SECONDARY_SNV_PANELS = {
@@ -1908,6 +1918,7 @@ def load_sample(sample_id: str, version: str | None = None,
 
     qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
     roh = _read_json_or(sub / "roh_summary.json", {}) or {}
+    ploidy_result = ploidy.load_sample_ploidy(sub)
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
     dead_zone_entries = []
     for gene, hit in dead_zone_hits.items():
@@ -1944,6 +1955,7 @@ def load_sample(sample_id: str, version: str | None = None,
         "vcf_path":          meta.get("vcf_path", ""),
         "qc_summary":        qc,
         "roh_summary":       roh,
+        "ploidy":            ploidy_result,
         "dead_zone": {
             "threshold": panel_deadzone.dead_zone_threshold(_test_type),
             "entries": dead_zone_entries,
