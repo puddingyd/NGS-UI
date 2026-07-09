@@ -209,18 +209,16 @@ def load_pgx(pgx_tsv: Path, pharmcat_json: Path | None = None) -> dict:
         "messages": report.get("messages", []),
         "guideline_annotations": report.get("guideline_annotations", []),
     }
-    if not pgx_tsv.exists():
-        return result
-
     rows_by_gene: dict[str, list[dict]] = {}
-    with pgx_tsv.open("r", encoding="utf-8-sig", newline="") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        for raw in reader:
-            row = {key: _clean(value) for key, value in raw.items()}
-            gene = row.get("GENE")
-            if not gene:
-                continue
-            rows_by_gene.setdefault(gene, []).append(row)
+    if pgx_tsv.exists():
+        with pgx_tsv.open("r", encoding="utf-8-sig", newline="") as fh:
+            reader = csv.DictReader(fh, delimiter="\t")
+            for raw in reader:
+                row = {key: _clean(value) for key, value in raw.items()}
+                gene = row.get("GENE")
+                if not gene:
+                    continue
+                rows_by_gene.setdefault(gene, []).append(row)
 
     details_by_gene = report.get("genes") or {}
     for gene, rows in rows_by_gene.items():

@@ -1,6 +1,9 @@
 import gzip
 import json
 
+from docx import Document
+
+from app.adapters import pgx_tsv
 from app.services import docx_export
 
 
@@ -71,6 +74,7 @@ def test_acmg_x_linked_uses_karyotype():
     )
 
     assert "性聯遺傳" in xy[0] and "可能具有較高" in xy[1]
+    assert "依本次檢測所判定" not in xy[1]
     assert "性聯遺傳" in xx[0] and "異型合子女性" in xx[1]
     assert "可能無症狀" in xx[1] and "臨床表現" in xx[1]
 
@@ -113,49 +117,42 @@ def test_health_karyotype_preserves_nonstandard_call(tmp_path, monkeypatch):
     assert docx_export._health_sex_karyotype("S1", {"Sex": "M"}) == "XXY"
 
 
-def test_pgx_summary_prefers_cpic_and_marks_priority():
+def test_pgx_summary_keeps_cpic_and_fda_actions_separate():
     pgx = {
-        "guideline_annotations": [{
-            "fda_category": "therapeutic_management",
-            "genes": ["CYP2C19"],
-            "drug": "clopidogrel",
-            "recommendation": "Consider an alternative.",
-        }],
-    }
-    groups = [{
-        "gene": "CYP2C19",
-        "recommendations": [{
-            "drug": "clopidogrel",
-            "level": "Strong",
-            "recommendation": "Use an alternative antiplatelet agent.",
-        }],
-    }]
-
-    alerts = docx_export._pgx_summary_alerts(pgx, groups)
-
-    assert len(alerts) == 1
-    assert alerts[0]["source"] == "CPIC"
-    assert alerts[0]["priority"] is True
-
-
-def test_pgx_report_genes_union_tsv_calls_and_fda_annotations():
-    pgx = {
-        "gene_order": ["CYP2C19", "CACNA1S"],
-        "genes": {
-            "CYP2C19": {"additional": False},
-            "CACNA1S": {"additional": False},
-            "VKORC1": {"additional": True},
-        },
         "guideline_annotations": [
-            {"section": "FDA PGx Association", "genes": ["CYP2C19", "VKORC1"]},
-            {"section": "DPWG Guideline Annotation", "genes": ["DPYD"]},
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Use an alternative antiplatelet agent.",
+            },
+            {
+                "section": "FDA PGx Association",
+                "fda_category": "therapeutic_management",
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Consider an alternative.",
+            },
         ],
     }
 
-    assert docx_export._pgx_report_genes(pgx) == ["CACNA1S", "CYP2C19", "VKORC1"]
+    alerts = docx_export._pgx_summary_alerts(pgx)
+
+    assert [row["source"] for row in alerts] == ["CPIC", "FDA"]
 
 
-def test_pgx_fda_groups_include_json_only_gene():
+def test_pgx_report_genes_are_fixed_cpic_level_a_scope():
+    genes = docx_export._pgx_report_genes({})
+
+    assert len(genes) == 22
+    assert "VKORC1" in genes
+    assert "NAT2" in genes
+    assert "CYP3A4" not in genes
+
+
+def test_pgx_full_groups_include_cpic_and_fda_for_json_only_gene():
     pgx = {
         "genes": {
             "VKORC1": {
@@ -166,25 +163,116 @@ def test_pgx_fda_groups_include_json_only_gene():
                 },
             },
         },
+        "guideline_annotations": [
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "genes": ["VKORC1"],
+                "drug": "warfarin",
+                "recommendation": "Use genotype-guided dosing.",
+            },
+            {
+                "section": "FDA PGx Association",
+                "fda_category": "therapeutic_management",
+                "classification": "Unspecified",
+                "genes": ["VKORC1"],
+                "drug": "warfarin",
+                "recommendation": "Select initial dosage using clinical and genetic factors.",
+            },
+        ],
+    }
+
+    assert docx_export._pgx_full_groups(pgx) == [{
+        "gene": "VKORC1",
+        "diplotype": "rs9923231 T/T（-1639 A/A）",
+        "phenotype": "—",
+        "recommendations": [
+            {
+                "drug": "warfarin",
+                "source": "CPIC",
+                "recommendation": "Use genotype-guided dosing.",
+                "level": "Strong",
+            },
+            {
+                "drug": "warfarin",
+                "source": "FDA PGx Association",
+                "recommendation": "Select initial dosage using clinical and genetic factors.",
+                "level": "Therapeutic Management",
+            },
+        ],
+    }]
+
+
+def test_pgx_summary_excludes_standard_cpic_action():
+    pgx = {
         "guideline_annotations": [{
-            "section": "FDA PGx Association",
-            "fda_category": "therapeutic_management",
-            "genes": ["VKORC1"],
-            "drug": "warfarin",
-            "recommendation": "Select initial dosage using clinical and genetic factors.",
+            "section": "CPIC Guideline Annotation",
+            "classification": "Strong",
+            "dosing_information": False,
+            "alternate_drug_available": False,
+            "other_prescribing_guidance": False,
+            "genes": ["DPYD"],
+            "drug": "fluorouracil",
+            "recommendation": "Use label-recommended dosage and administration.",
         }],
     }
 
-    assert docx_export._pgx_fda_groups(pgx) == [{
-        "gene": "VKORC1",
-        "diplotype": "rs9923231 variant (T)/rs9923231 variant (T)",
-        "phenotype": "-1639 AA",
-        "recommendations": [{
-            "drug": "warfarin",
-            "recommendation": "Select initial dosage using clinical and genetic factors.",
-            "level": "Therapeutic management",
+    assert docx_export._pgx_summary_alerts(pgx) == []
+
+
+def test_pgx_adapter_keeps_json_when_tsv_is_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(pgx_tsv, "_compact_report_json", lambda _path: {
+        "pharmcat_version": "3.2.0",
+        "data_version": "2026-02-09",
+        "timestamp": "2026-06-30",
+        "messages": [],
+        "genes": {
+            "VKORC1": {
+                "label": "rs9923231 variant (T)/rs9923231 variant (T)",
+                "phenotypes": ["-1639 AA"],
+            },
+        },
+        "guideline_annotations": [{
+            "section": "FDA PGx Association",
+            "genes": ["VKORC1"],
         }],
-    }]
+    })
+
+    result = pgx_tsv.load_pgx(
+        tmp_path / "missing.pgx.tsv",
+        tmp_path / "pharmcat.report.json",
+    )
+
+    assert result["pharmcat_version"] == "3.2.0"
+    assert result["additional_genes"] == ["VKORC1"]
+    assert result["genes"]["VKORC1"]["details"]["phenotypes"] == ["-1639 AA"]
+
+
+def test_pgx_only_annotation_lists_all_cpic_level_a_genes():
+    doc = Document()
+
+    docx_export._section_health_annotations(doc, {"pgx"}, {})
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "CPIC) Level A gene" in text
+    assert "ABCG2" in text and "VKORC1" in text
+    assert "CYP3A4" not in text
+    assert "FDA" not in text
+
+
+def test_health_pathogenicities_translate_and_combine():
+    assert docx_export._health_pathogenicities_zh([
+        "Pathogenic",
+        "Uncertain significance",
+    ]) == "致病性及不確定意義"
+
+
+def test_vkorc1_display_moves_position_phenotype_into_genotype():
+    assert docx_export._pgx_display_genotype(
+        "VKORC1",
+        "rs9923231 variant (T)/rs9923231 variant (T)",
+        "-1639 AA",
+    ) == ("rs9923231 T/T（-1639 A/A）", "—")
 
 
 def test_pgx_summary_rows_translate_and_group_recommendations():
