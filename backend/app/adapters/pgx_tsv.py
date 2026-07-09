@@ -166,6 +166,11 @@ def _compact_report_json(path: Path) -> dict:
             })
         genes[gene] = {
             "label": _clean(source.get("label")),
+            "phenotypes": [
+                _clean(value)
+                for value in source.get("phenotypes") or []
+                if _clean(value)
+            ],
             "allele1_name": _clean(allele1.get("name")),
             "allele1_function": _clean(allele1.get("function")),
             "allele2_name": _clean(allele2.get("name")),

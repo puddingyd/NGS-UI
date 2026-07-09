@@ -8,8 +8,10 @@
 
 ### v6.4 — 2026-07-09
 
-- 健檢報告更新為「遺傳性疾病與藥物基因體健康檢測報告」；ACMG SF 維持原有變異表格，新增檢測警語、陰性結果限制，以及依 AD、AR、X-linked 與性染色體組成自動產生的結果意義和建議。
-- PGx 健檢結果新增 narrative summary，整合 CPIC Strong/Moderate 與 PharmCAT JSON 的 FDA therapeutic-management 資訊；優先顯示高風險基因－藥物組合，其餘建議保留於完整結果。
+- 健檢報告保留原報告名稱與大格式；檢驗套組依 UI 勾選動態組合。ACMG SF 維持原有變異表格，更新 v3.3/ClinVar 警語、AD/AR/X-linked 三點說明及集中式檢測限制。
+- PGx 健檢結果新增中文 narrative summary，整合 CPIC Strong/Moderate 與 PharmCAT JSON 的 FDA therapeutic-management 資訊；完整英文建議仍保留於下方結果。
+- 健檢報告末尾的 PGx 基因清單改為合併本次 TSV pipeline call 與 FDA 結果基因，參考依據同列 CPIC 與 FDA，不再使用固定 CPIC Level A 白名單。
+- PGx 完整結果新增獨立的 FDA 藥物基因體資訊區，直接使用 PharmCAT JSON 的 therapeutic-management annotations；`VKORC1` 等未出現在 TSV 的 FDA gene 也會列出基因型、表型與用藥資訊。
 - DRAGEN 三級分析新增 ploidy VCF sidecar 複製；基本資料性別欄會核對 M/XY、F/XX，一致顯示綠底，不一致或非典型性染色體 call 顯示紅底及 ploidy VCF 結果。
 
 ### v6.3 — 2026-07-08

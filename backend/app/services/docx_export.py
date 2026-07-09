@@ -1329,45 +1329,52 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
 
 # ── Health screening DOCX ─────────────────────────────────────────
 
-_NO_HEALTH_VARIANT_TEXT = "本次檢測未檢出符合本報告回報條件之已知致病或疑似致病變異。"
+_NO_HEALTH_VARIANT_TEXT = "本次檢測未檢出疾病資料庫中已知致病性或疑似致病性變異。"
 
 _HEALTH_NEGATIVE_LIMITATION = (
-    "此結果不代表完全沒有相關疾病風險。本檢測可能無法辨識部分結構變異、重複序列變異、"
-    "低比例嵌合變異、特定調控區變異，或目前尚未被確認為致病的變異；此外，部分疾病亦可能"
-    "由本次檢測範圍以外的基因、環境或其他因素造成。若受檢者已有相關症狀或明確家族史，"
-    "仍建議接受專科評估。"
+    "本次未檢出疾病資料庫中已知致病性或疑似致病性變異，不能排除受檢者仍具有相關遺傳性疾病風險。"
+    "未被偵測或未被回報之情形可能包括：資料庫尚未收錄之新變異、目前證據不足或分類不一致之變異、"
+    "拷貝數變異、結構變異、重複序列變異、低比例鑲嵌、低覆蓋或比對困難區域，以及本檢測方法未涵蓋"
+    "之變異型態。變異分類與臨床意義可能隨資料庫與醫學知識更新而改變。若受檢者已有相關症狀或明確"
+    "家族史，仍建議接受專科評估。"
 )
 
 _HEALTH_ACMG_CAUTION = (
-    "本檢測依據美國醫學遺傳學暨基因體學學會（ACMG）次發現基因清單，分析與可採取醫療"
-    "處置之遺傳性疾病相關的基因變異。檢測結果代表於本次檢測範圍及技術限制內所辨識的變異，"
-    "不代表受檢者目前已罹患相關疾病，也不能完全排除未來發病或其他遺傳性疾病的可能性。"
-    "疾病風險仍須綜合個人病史、家族史、臨床檢查及其他檢驗結果評估。"
+    f"本檢測依據美國醫學遺傳學暨基因體學學會（ACMG）次發現基因清單第 3.3 版（2025 年發表），"
+    f"分析與可採取醫療處置之遺傳性疾病相關的風險基因，並涵蓋疾病資料庫 ClinVar（版本 "
+    f"{CLINVAR_DATE}）中已知致病性或疑似致病性變異。檢測結果代表於本次檢測範圍及技術限制內"
+    "所辨識的變異，不代表受檢者目前已罹患相關疾病，也不能完全排除未來發病或其他遺傳性疾病"
+    "的可能性。疾病風險仍須綜合個人病史、家族史、臨床檢查及其他檢驗結果評估。"
 )
 
 _HEALTH_PGX_CAUTION = (
-    "藥物基因體檢測用於評估基因差異可能對特定藥物之療效、不良反應或建議劑量造成的影響。"
-    "檢測結果不應單獨作為開始、停止或調整藥物的依據，實際用藥仍須由醫師綜合適應症、"
-    "疾病狀況、肝腎功能、併用藥物及其他臨床因素決定。"
+    "本報告之藥物基因體學結果係依本檢測涵蓋之基因與變異位點，推估受檢者對部分藥物之代謝能力、"
+    "療效或不良反應風險，僅供合格醫療專業人員作為處方與用藥評估參考。藥物反應亦受年齡、性別、"
+    "體重、肝腎功能、共病、懷孕狀態、飲食、吸菸、併用藥物、藥物交互作用及實際用藥適應症影響。"
+    "受檢者不應自行停藥、換藥或調整劑量；任何用藥變更應由處方醫師、臨床藥師或臨床藥物基因體學"
+    "門診評估。"
 )
 
 _HEALTH_SECTION_ORDER = [
-    ("acmg_sf", "第一類：ACMG 次發現相關基因之已知致病／疑似致病變異篩檢"),
+    ("acmg_sf", "第一類：可採取醫療處置之疾病風險基因"),
     ("lipid_fh", "第二類：血脂相關基因"),
     ("hereditary_cancer", "第三類：腫瘤相關基因"),
     ("stroke", "第四類：中風相關基因"),
     ("carrier", "第五類：帶因者篩查"),
     ("proactive", "第六類：主動篩查"),
-    ("pgx", "藥物基因體學檢測結果"),
+    ("pgx", "藥物基因體學"),
 ]
 
 _HEALTH_ACMG_GENE_LIST_TITLE = (
-    "第一類：重大可預防疾病風險基因（參考美國醫學遺傳學暨基因體學學會 "
+    "第一類：可採取醫療處置之疾病風險基因（參考美國醫學遺傳學暨基因體學學會 "
     "(American College of Medical Genetics and Genomics) 於 2025 年所公告之"
     "次發現 (Secondary findings) 基因清單 v3.3 版；PMID: 40568962）"
 )
 
-_HEALTH_PGX_GENE_LIST_TITLE = "藥物基因體學（參考 Clinical Pharmacogenetics Implementation Consortium (CPIC) 證據等級 A 級 (臨床可應用) 之藥物基因）"
+_HEALTH_PGX_GENE_LIST_TITLE = (
+    "藥物基因體學（參考 Clinical Pharmacogenetics Implementation Consortium (CPIC) "
+    "臨床指引及美國食品藥物管理局 (FDA) 藥物基因體資訊）"
+)
 
 
 def _meta_value(meta: dict, key: str) -> str:
@@ -1394,7 +1401,7 @@ def _health_meta_row(row: list[tuple[str, str]]) -> str:
 def _section_health_patient_header(doc, meta: dict) -> None:
     """Basic case metadata above the health-report sections."""
     _add_paragraph(doc, "國立成功大學醫學院附設醫院", bold=True, align="center")
-    _add_paragraph(doc, "<<遺傳性疾病與藥物基因體健康檢測報告>>", bold=True, align="center")
+    _add_paragraph(doc, "<<基因醫學部基因檢測檢驗報告（研究報告）>>", bold=True, align="center")
     _blank(doc)
     rows = [
         (
@@ -1555,22 +1562,6 @@ _ACMG_SF_DISEASES = {
 
 _PGX_REPORTABLE_STRENGTHS = {"strong", "moderate", "optional"}
 
-_PGX_LEVEL_A_GENE_INFO = {
-    "CYP2D6": ("StellarPGx（WGS）", "抗憂鬱劑、止痛藥、抗精神病藥"),
-    "CYP2C19": ("PharmCAT（VCF）", "clopidogrel、PPI、抗憂鬱劑"),
-    "CYP2C9": ("PharmCAT（VCF）", "warfarin、NSAIDs、phenytoin"),
-    "DPYD": ("PharmCAT（VCF）", "fluoropyrimidine（5-FU）毒性"),
-    "TPMT": ("PharmCAT（VCF）", "thiopurine（azathioprine）毒性"),
-    "NUDT15": ("PharmCAT（VCF）", "thiopurine（azathioprine）毒性（亞洲族群重要）"),
-    "SLCO1B1": ("PharmCAT（VCF）", "simvastatin 肌肉毒性"),
-    "HLA-A": ("OptiType（WGS）", "abacavir 過敏（*31:01 positive）"),
-    "HLA-B": ("OptiType（WGS）", "abacavir（*57:01）、carbamazepine（*15:02）、allopurinol（*58:01）過敏"),
-    "UGT1A1": ("PharmCAT（VCF）", "irinotecan 毒性"),
-    "G6PD": ("PharmCAT（VCF）", "多種藥物溶血風險"),
-    "MT-RNR1": ("mito pipeline + BAM mpileup", "aminoglycoside 致聾風險（CPIC Level A）"),
-}
-
-
 def _health_variant_gene(v: dict, edits: dict) -> str:
     return _snv_tx_field(v, edits, "gene_symbol") or v.get("gene_symbol") or v.get("GENE") or ""
 
@@ -1684,71 +1675,69 @@ def _health_acmg_narrative(
     zyg = _health_zygosity_key(zygosity)
     codes = set(inheritance_codes)
     inheritance = "、".join(_inheritance_zh(code) for code in inheritance_codes if code)
+    standard_advice = (
+        "建議至相關專科或遺傳諮詢門診，結合個人病史、家族史及適當的臨床檢查進一步評估。"
+        "必要時可考慮對具血緣關係的家屬進行此特定位點之驗證檢測。"
+    )
+    variable_risk = (
+        "本結果表示受檢者可能具有較高的相關疾病風險，但實際是否發病、發病年齡及疾病嚴重程度"
+        "可能因個人、家族及環境等因素而異。"
+    )
 
     if codes == {"AD"}:
         return [
-            f"{gene} 基因與「{disease}」相關，其主要遺傳模式為體染色體顯性遺傳。本次檢出一個異合子{patho}變異。",
-            "體染色體顯性遺傳疾病通常僅需一份基因發生致病性變異，即可能增加相關疾病的發生風險。"
-            "本結果表示受檢者具有較高的相關疾病風險，但實際是否發病、發病年齡及疾病嚴重程度可能因個人及家族而異。",
-            "建議攜帶本報告至相關專科或遺傳諮詢門診，結合個人病史、家族史及適當的臨床檢查進一步評估。"
-            "必要時可考慮對具血緣關係的家屬進行此特定位點之驗證檢測。",
+            f"{gene} 基因與「{disease}」相關，其遺傳模式為體染色體顯性遺傳。",
+            f"此為{patho}之變異位點，{variable_risk}",
+            standard_advice,
         ]
     if codes == {"AR"}:
         if zyg == "hom":
             return [
-                f"{gene} 基因與「{disease}」相關，其主要遺傳模式為體染色體隱性遺傳。本次檢出一個同合子{patho}變異。",
-                "本結果符合體染色體隱性遺傳疾病的分子遺傳學風險型態，受檢者可能具有相關疾病風險。"
-                "實際臨床表現仍可能受到疾病外顯率、變異特性及其他因素影響。",
-                "建議至相關專科或遺傳諮詢門診進一步評估，並依疾病特性安排相關生化、臨床及家族檢測。",
+                f"{gene} 基因與「{disease}」相關，其遺傳模式為體染色體隱性遺傳。",
+                f"此為{patho}之變異位點，{variable_risk}",
+                standard_advice,
             ]
         if same_gene_count >= 2:
             return [
-                f"{gene} 基因與「{disease}」相關，其主要遺傳模式為體染色體隱性遺傳。"
-                "本次檢出兩個或以上符合回報條件之變異，但目前無法由本次檢測判定變異是否分別位於兩條同源染色體上。",
-                "若變異分別位於兩條同源染色體上，受檢者可能具有相關疾病風險；若位於同一條染色體上，"
-                "則通常較符合帶因狀態。建議進一步進行家族或相位分析。",
-                "建議至相關專科或遺傳諮詢門診進一步評估，並考慮確認變異相位、相關生化或臨床檢查及家族檢測。",
+                f"{gene} 基因與「{disease}」相關，其遺傳模式為體染色體隱性遺傳。",
+                f"此為{patho}之變異位點，本結果表示受檢者可能具有較高的相關疾病風險，但仍需進行"
+                "相位分析以釐清致病之可能性。實際是否發病、發病年齡及疾病嚴重程度亦可能因個人、"
+                "家族及環境等因素而異。",
+                "建議至相關專科或遺傳諮詢門診，結合個人病史、家族史及適當的臨床檢查進一步評估，"
+                "並進行相位分析以釐清變異相位。必要時可考慮對具血緣關係的家屬進行此特定位點之驗證檢測。",
             ]
         return [
-            f"{gene} 基因與「{disease}」相關，其主要遺傳模式為體染色體隱性遺傳。本次檢出一個異合子{patho}變異。",
-            "本結果通常表示受檢者為相關疾病的帶因者。帶因者通常不會出現典型疾病症狀；"
-            "由於本次未檢出第二個符合回報條件的變異，目前結果不支持受檢者具有典型的體染色體隱性遺傳疾病基因型。",
-            "如有相關症狀、家族史或生育規劃，建議接受遺傳諮詢。伴侶或具血緣關係的家屬是否需要檢測，"
-            "應依疾病特性、家族史及生育需求評估。",
+            f"{gene} 基因與「{disease}」相關，其遺傳模式為體染色體隱性遺傳。",
+            f"此為{patho}之變異位點，本結果表示受檢者可能為相關疾病的帶因者，帶因者多數不會出現"
+            "典型疾病症狀。本檢測僅針對疾病資料庫中已知致病性或疑似致病性變異，仍可能存在資料庫尚未"
+            "收錄或本檢測方法未涵蓋的其他變異。",
+            standard_advice,
         ]
-    if codes and codes.issubset({"XL", "XLR"}):
+    if codes and codes.issubset({"XL", "XLR", "XLD"}):
         if sex_karyotype == "XY":
             return [
-                f"{gene} 基因與「{disease}」相關，其主要遺傳模式為性染色體隱性遺傳。本次檢出一個半合子{patho}變異。",
-                "依本次檢測所判定的性染色體組成，本結果可能增加受檢者發生相關疾病的風險。"
-                "實際臨床表現仍可能因疾病外顯率及變異特性而異。",
-                "建議至相關專科或遺傳諮詢門診進一步評估，並依疾病特性安排臨床檢查及家族檢測。",
+                f"{gene} 基因與「{disease}」相關，其遺傳模式為性聯遺傳。",
+                f"此為{patho}之變異位點，依本次檢測所判定的性染色體組成，{variable_risk}",
+                standard_advice,
             ]
         if sex_karyotype == "XX":
             return [
-                f"{gene} 基因與「{disease}」相關，其主要遺傳模式為性染色體隱性遺傳。本次檢出一個異合子{patho}變異。",
-                "本結果通常表示受檢者為相關疾病的帶因者。部分帶因者可能因 X 染色體失活差異而出現不同程度的"
-                "臨床表現，其實際風險須依疾病特性評估。",
-                "建議接受遺傳諮詢，並依個人症狀、家族史及疾病特性評估是否需要相關專科追蹤或家族檢測。",
+                f"{gene} 基因與「{disease}」相關，其遺傳模式為性聯遺傳。",
+                f"此為{patho}之變異位點，異型合子女性可能無症狀，也可能因疾病特性及 X 染色體失活差異"
+                "而出現不同程度的臨床表現。本結果表示受檢者可能具有相關疾病風險，實際是否發病、發病年齡"
+                "及疾病嚴重程度可能因個人、家族及環境等因素而異。",
+                standard_advice,
             ]
         return [
-            f"{gene} 基因與「{disease}」相關，其主要遺傳模式為性聯遺傳。本次檢出一個{patho}變異。",
-            "由於目前沒有足夠的性染色體組成資訊，無法僅依本結果判定其屬於疾病風險或帶因狀態。",
-            "建議確認性染色體組成，並至相關專科或遺傳諮詢門診進一步評估。",
-        ]
-    if "XLD" in codes:
-        zyg_text = "半合子" if sex_karyotype == "XY" else "異合子" if sex_karyotype == "XX" else ""
-        return [
-            f"{gene} 基因與「{disease}」相關，其主要遺傳模式為性染色體顯性遺傳。"
-            f"本次檢出一個{zyg_text}{patho}變異。",
-            "性染色體顯性遺傳疾病通常僅需一份基因發生致病性變異，即可能增加相關疾病的發生風險；"
-            "不同性染色體組成者的臨床表現及疾病嚴重程度可能不同。",
-            "建議至相關專科或遺傳諮詢門診，結合個人病史、家族史及相關臨床檢查進一步評估。",
+            f"{gene} 基因與「{disease}」相關，其遺傳模式為性聯遺傳。",
+            f"此為{patho}之變異位點；目前無足夠的性染色體組成資訊，無法進一步區分其疾病風險，"
+            "仍需結合臨床資料綜合評估。",
+            standard_advice,
         ]
     return [
-        f"{gene} 基因與「{disease}」相關。本次檢出一個{patho}變異；該疾病可能涉及{inheritance or '尚未明確'}。",
-        "本結果可能與相關疾病風險有關，但無法僅依此變異及遺傳模式判定受檢者是否會發病。",
-        "建議至相關專科或遺傳諮詢門診，結合臨床表現、家族史及必要的家族檢測進一步評估。",
+        f"{gene} 基因與「{disease}」相關{f'，其遺傳模式為{inheritance}' if inheritance else ''}。",
+        f"此為{patho}之變異位點，{variable_risk}",
+        standard_advice,
     ]
 
 
@@ -1805,7 +1794,6 @@ def _render_health_secondary_section(doc, title: str, ids: list[str], variants: 
     _add_paragraph(doc, title, bold=True)
     if not ids:
         _add_paragraph(doc, f"  {_NO_HEALTH_VARIANT_TEXT}")
-        _add_paragraph(doc, f"  {_HEALTH_NEGATIVE_LIMITATION}")
     else:
         edits = report.get("edits") or {}
         for idx, vid in enumerate(ids, start=1):
@@ -1880,8 +1868,7 @@ def _render_health_acmg_section(
                 sex_karyotype=sex_karyotype,
             )
             _blank(doc)
-    if not ids:
-        _add_paragraph(doc, f"  {_HEALTH_NEGATIVE_LIMITATION}")
+    _add_paragraph(doc, f"  {_HEALTH_NEGATIVE_LIMITATION}")
     _blank(doc)
 
 
@@ -1993,9 +1980,80 @@ def _pgx_summary_alerts(pgx: dict, groups: list[dict]) -> list[dict]:
     return alerts
 
 
+def _pgx_fda_groups(pgx: dict) -> list[dict]:
+    genes = pgx.get("genes") or {}
+    grouped: dict[str, dict] = {}
+    for annotation in pgx.get("guideline_annotations") or []:
+        if annotation.get("fda_category") != "therapeutic_management":
+            continue
+        recommendation = annotation.get("recommendation") or ""
+        if _pgx_no_action(recommendation):
+            continue
+        for gene in annotation.get("genes") or []:
+            gene_payload = genes.get(gene) or {}
+            details = gene_payload.get("details") or {}
+            group = grouped.setdefault(gene, {
+                "gene": gene,
+                "diplotype": gene_payload.get("diplotype") or details.get("label") or "",
+                "phenotype": gene_payload.get("phenotype") or "；".join(details.get("phenotypes") or []),
+                "recommendations": [],
+            })
+            key = (annotation.get("drug") or "", recommendation)
+            if any(
+                (row.get("drug") or "", row.get("recommendation") or "") == key
+                for row in group["recommendations"]
+            ):
+                continue
+            group["recommendations"].append({
+                "drug": annotation.get("drug") or "",
+                "recommendation": recommendation,
+                "level": "Therapeutic management",
+            })
+    for group in grouped.values():
+        group["recommendations"].sort(key=lambda row: row["drug"])
+    return sorted(grouped.values(), key=lambda group: group["gene"])
+
+
 def _pgx_drug_label(drug: str) -> str:
     text = str(drug or "").strip()
     return text[:1].upper() + text[1:] if text else ""
+
+
+def _pgx_action_zh(recommendation: str) -> str:
+    text = str(recommendation or "").lower()
+    if any(token in text for token in ("avoid", "alternative", "contraindicated", "do not use")):
+        return "建議考慮替代藥物。"
+    if any(token in text for token in ("dose", "dosage", "dosing", "titrate", "reduction", "increase")):
+        return "建議調整起始劑量並監測療效。"
+    if any(token in text for token in ("monitor", "adverse", "caution", "toxicity", "risk")):
+        return "建議加強不良反應監測。"
+    if any(token in text for token in ("confirm", "test", "phenotype", "activity")):
+        return "使用前建議確認相關表型或檢驗結果。"
+    return "目前無一致的處方調整建議，請參考最新藥品仿單。"
+
+
+def _pgx_summary_rows(alerts: list[dict]) -> list[dict]:
+    grouped: dict[tuple[str, str, str, str], dict] = {}
+    selected = [alert for alert in alerts if alert.get("priority")] or alerts
+    for alert in selected:
+        action = _pgx_action_zh(alert.get("recommendation") or "")
+        key = (
+            alert.get("gene") or "",
+            action,
+            alert.get("source") or "",
+            alert.get("level") or "",
+        )
+        row = grouped.setdefault(key, {
+            "gene": key[0],
+            "action": action,
+            "source": key[2],
+            "level": key[3],
+            "drugs": [],
+        })
+        drug = _pgx_drug_label(alert.get("drug") or "")
+        if drug and drug not in row["drugs"]:
+            row["drugs"].append(drug)
+    return sorted(grouped.values(), key=lambda row: (row["gene"], row["source"], row["level"], row["action"]))
 
 
 def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
@@ -2003,8 +2061,8 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
     title_paragraph.paragraph_format.keep_with_next = True
     _add_paragraph(doc, f"  {_HEALTH_PGX_CAUTION}")
     groups = _pgx_actionable_groups(pgx or {})
+    fda_groups = _pgx_fda_groups(pgx or {})
     alerts = _pgx_summary_alerts(pgx or {}, groups)
-    _add_paragraph(doc, "  重點摘要", bold=True)
     if not alerts:
         _add_paragraph(doc, "  本次檢測未發現符合目前回報規則之明確臨床可應用藥物基因體結果。")
         _add_paragraph(
@@ -2014,21 +2072,27 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
         )
     else:
         genes = "、".join(dict.fromkeys(row["gene"] for row in alerts if row.get("gene")))
-        drug_names = list(dict.fromkeys(_pgx_drug_label(row["drug"]) for row in alerts if row.get("drug")))
-        drugs = "、".join(drug_names) if len(drug_names) <= 8 else ""
+        summary_rows = _pgx_summary_rows(alerts)
+        summary_drugs = list(dict.fromkeys(
+            drug
+            for row in summary_rows
+            for drug in row["drugs"]
+        ))
+        drug_text = "、".join(summary_drugs[:12])
         _add_paragraph(
             doc,
             f"  本次檢測發現 {len(alerts)} 項具臨床用藥參考價值的結果"
-            f"{f'，涉及 {genes} 基因' if genes else ''}{f'及 {drugs}' if drugs else ''}。"
-            "若目前使用或未來考慮使用相關藥物，建議由處方醫師參考下方結果評估。",
+            f"{f'，涉及 {genes} 基因' if genes else ''}"
+            f"{f'，可能影響 {drug_text} 及其他藥物之使用' if drug_text else ''}。"
+            "此處列出重點摘要，完整基因型、表現型及藥物建議詳見下表。若目前使用或未來考慮使用"
+            "相關藥物，建議由處方醫師參考下方結果評估。",
         )
-        priority_alerts = [alert for alert in alerts if alert.get("priority")]
-        for alert in priority_alerts:
-            source = f"{alert['source']} {alert['level']}".strip()
+        _add_paragraph(doc, "  重點摘要", bold=True)
+        for row in summary_rows:
+            source = f"{row['source']} {row['level']}".strip()
             _add_paragraph(
                 doc,
-                f"  • {alert['gene']}－{_pgx_drug_label(alert['drug'])}："
-                f"{alert['recommendation']}（{source}）",
+                f"  • {row['gene']}－{'、'.join(row['drugs'])}：{row['action']}（{source}）",
             )
         remaining = [alert for alert in alerts if not alert.get("priority")]
         if remaining:
@@ -2050,7 +2114,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
     )
     if groups:
         _blank(doc)
-        _add_paragraph(doc, "  完整用藥建議", bold=True)
+        _add_paragraph(doc, "  CPIC 完整用藥建議", bold=True)
         for group in groups:
             _ascii_table(doc, columns=[
                 ("基因", 12),
@@ -2061,6 +2125,23 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
             for idx, rec in enumerate(group["recommendations"], start=1):
                 level = f" (CPIC Recommendation Strength: {rec['level']})" if rec.get("level") else ""
                 _add_paragraph(doc, f"    {idx}. {_pgx_drug_label(rec['drug'])}: {rec['recommendation']}{level}")
+            _blank(doc)
+    if fda_groups:
+        _blank(doc)
+        _add_paragraph(doc, "  FDA 藥物基因體資訊", bold=True)
+        for group in fda_groups:
+            _ascii_table(doc, columns=[
+                ("基因", 12),
+                ("基因型", 28, "buffered"),
+                ("表型", 44, "buffered"),
+            ], rows=[[group["gene"], group["diplotype"], group["phenotype"]]])
+            _add_paragraph(doc, "    FDA 用藥資訊：")
+            for idx, rec in enumerate(group["recommendations"], start=1):
+                _add_paragraph(
+                    doc,
+                    f"    {idx}. {_pgx_drug_label(rec['drug'])}: {rec['recommendation']} "
+                    f"(FDA: {rec['level']})",
+                )
             _blank(doc)
     _blank(doc)
 
@@ -2090,10 +2171,28 @@ def _health_panel_gene_sections(requested_set: set[str]) -> list[tuple[str, list
     return out
 
 
-def _pgx_level_a_genes(pgx: dict) -> list[str]:
+def _health_test_bundle_name(requested_set: set[str]) -> str:
+    has_pgx = "pgx" in requested_set
+    has_disease = any(section != "pgx" for section in requested_set)
+    if has_pgx and has_disease:
+        return "可採取醫療處置之疾病風險基因及藥物基因體學基因篩檢"
+    if has_pgx:
+        return "藥物基因體學基因篩檢"
+    return "可採取醫療處置之疾病風險基因篩檢"
+
+
+def _pgx_report_genes(pgx: dict) -> list[str]:
     genes = pgx.get("genes") or {}
-    tsv_genes = [g for g in (pgx.get("gene_order") or []) if g in genes and not (genes.get(g) or {}).get("additional")]
-    return [gene for gene in _PGX_LEVEL_A_GENE_INFO if gene in tsv_genes]
+    report_genes = {
+        gene
+        for gene in (pgx.get("gene_order") or [])
+        if gene in genes and not (genes.get(gene) or {}).get("additional")
+    }
+    for annotation in pgx.get("guideline_annotations") or []:
+        if not str(annotation.get("section") or "").startswith("FDA"):
+            continue
+        report_genes.update(str(gene).strip() for gene in annotation.get("genes") or [] if str(gene).strip())
+    return sorted(report_genes)
 
 
 def _section_health_annotations(doc, requested_set: set[str], pgx: dict | None = None) -> None:
@@ -2120,11 +2219,11 @@ def _section_health_annotations(doc, requested_set: set[str], pgx: dict | None =
         if sections:
             _blank(doc)
         _add_paragraph(doc, f"{_HEALTH_PGX_GENE_LIST_TITLE}:")
-        genes = _pgx_level_a_genes(pgx or {})
+        genes = _pgx_report_genes(pgx or {})
         if genes:
             _add_paragraph(doc, ", ".join(genes))
         else:
-            _add_paragraph(doc, "本次藥物基因體學分析未輸出 CPIC Level A 基因。")
+            _add_paragraph(doc, "本次藥物基因體學分析未輸出可列示之基因。")
 
 
 def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) -> bytes:
@@ -2151,7 +2250,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
 
     _section_health_patient_header(doc, meta)
     _section_test_info(doc, test_type, health=True)
-    _add_paragraph(doc, "二、檢驗套組: 遺傳性疾病與藥物基因體健康檢測")
+    _add_paragraph(doc, f"二、檢驗套組: {_health_test_bundle_name(requested_set)}")
     _blank(doc)
 
     _add_paragraph(doc, "三、檢測結果")

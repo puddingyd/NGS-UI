@@ -31,7 +31,7 @@ def test_acmg_ar_single_variant_uses_carrier_wording():
     )
 
     assert "帶因者" in lines[1]
-    assert "不支持受檢者具有典型" in lines[1]
+    assert "資料庫尚未收錄" in lines[1]
 
 
 def test_acmg_ar_multiple_variants_does_not_assume_phase():
@@ -45,8 +45,9 @@ def test_acmg_ar_multiple_variants_does_not_assume_phase():
         sex_karyotype="",
     )
 
-    assert "無法由本次檢測判定" in lines[0]
+    assert "體染色體隱性遺傳" in lines[0]
     assert "相位分析" in lines[1]
+    assert "相位分析" in lines[2]
 
 
 def test_acmg_x_linked_uses_karyotype():
@@ -69,8 +70,9 @@ def test_acmg_x_linked_uses_karyotype():
         sex_karyotype="XX",
     )
 
-    assert "半合子" in xy[0] and "疾病的風險" in xy[1]
-    assert "異合子" in xx[0] and "帶因者" in xx[1]
+    assert "性聯遺傳" in xy[0] and "可能具有較高" in xy[1]
+    assert "性聯遺傳" in xx[0] and "異型合子女性" in xx[1]
+    assert "可能無症狀" in xx[1] and "臨床表現" in xx[1]
 
 
 def test_health_karyotype_prefers_ploidy_sidecar(tmp_path, monkeypatch):
@@ -134,3 +136,89 @@ def test_pgx_summary_prefers_cpic_and_marks_priority():
     assert len(alerts) == 1
     assert alerts[0]["source"] == "CPIC"
     assert alerts[0]["priority"] is True
+
+
+def test_pgx_report_genes_union_tsv_calls_and_fda_annotations():
+    pgx = {
+        "gene_order": ["CYP2C19", "CACNA1S"],
+        "genes": {
+            "CYP2C19": {"additional": False},
+            "CACNA1S": {"additional": False},
+            "VKORC1": {"additional": True},
+        },
+        "guideline_annotations": [
+            {"section": "FDA PGx Association", "genes": ["CYP2C19", "VKORC1"]},
+            {"section": "DPWG Guideline Annotation", "genes": ["DPYD"]},
+        ],
+    }
+
+    assert docx_export._pgx_report_genes(pgx) == ["CACNA1S", "CYP2C19", "VKORC1"]
+
+
+def test_pgx_fda_groups_include_json_only_gene():
+    pgx = {
+        "genes": {
+            "VKORC1": {
+                "additional": True,
+                "details": {
+                    "label": "rs9923231 variant (T)/rs9923231 variant (T)",
+                    "phenotypes": ["-1639 AA"],
+                },
+            },
+        },
+        "guideline_annotations": [{
+            "section": "FDA PGx Association",
+            "fda_category": "therapeutic_management",
+            "genes": ["VKORC1"],
+            "drug": "warfarin",
+            "recommendation": "Select initial dosage using clinical and genetic factors.",
+        }],
+    }
+
+    assert docx_export._pgx_fda_groups(pgx) == [{
+        "gene": "VKORC1",
+        "diplotype": "rs9923231 variant (T)/rs9923231 variant (T)",
+        "phenotype": "-1639 AA",
+        "recommendations": [{
+            "drug": "warfarin",
+            "recommendation": "Select initial dosage using clinical and genetic factors.",
+            "level": "Therapeutic management",
+        }],
+    }]
+
+
+def test_pgx_summary_rows_translate_and_group_recommendations():
+    alerts = [
+        {
+            "gene": "G6PD",
+            "drug": "dapsone",
+            "source": "CPIC",
+            "level": "Strong",
+            "recommendation": "Avoid dapsone.",
+            "priority": True,
+        },
+        {
+            "gene": "G6PD",
+            "drug": "rasburicase",
+            "source": "CPIC",
+            "level": "Strong",
+            "recommendation": "Avoid rasburicase.",
+            "priority": True,
+        },
+    ]
+
+    assert docx_export._pgx_summary_rows(alerts) == [{
+        "gene": "G6PD",
+        "action": "建議考慮替代藥物。",
+        "source": "CPIC",
+        "level": "Strong",
+        "drugs": ["Dapsone", "Rasburicase"],
+    }]
+
+
+def test_health_bundle_name_follows_selected_sections():
+    assert docx_export._health_test_bundle_name({"acmg_sf", "pgx"}) == (
+        "可採取醫療處置之疾病風險基因及藥物基因體學基因篩檢"
+    )
+    assert docx_export._health_test_bundle_name({"pgx"}) == "藥物基因體學基因篩檢"
+    assert docx_export._health_test_bundle_name({"acmg_sf"}) == "可採取醫療處置之疾病風險基因篩檢"
