@@ -235,8 +235,12 @@ def _structure_label(v: dict) -> str:
     """VEP's EXON / INTRON fields look like "5/22" (rank/total). The
     report writes them as `exon5` or `intron6` — pick whichever has
     a value and prefix with the type."""
-    exon = (v.get("exon") or "").strip()
-    intron = (v.get("intron") or "").strip()
+    def rank(value) -> str:
+        text = str(value or "").strip()
+        return "" if text.upper() in {"", ".", "-", "NA", "N/A"} else text
+
+    exon = rank(v.get("exon"))
+    intron = rank(v.get("intron"))
     if exon:
         return "exon" + exon.split("/")[0].strip()
     if intron:
@@ -1353,7 +1357,8 @@ _HEALTH_PGX_CAUTION = (
     "療效或不良反應風險，僅供合格醫療專業人員作為處方與用藥評估參考。藥物反應亦受年齡、性別、"
     "體重、肝腎功能、共病、懷孕狀態、飲食、吸菸、併用藥物、藥物交互作用及實際用藥適應症影響。"
     "受檢者不應自行停藥、換藥或調整劑量；任何用藥變更應由處方醫師、臨床藥師或臨床藥物基因體學"
-    "門診評估。"
+    "門診評估。本報告可能包含受檢者目前未使用的藥物。相關結果可供未來處方時參考，不代表目前"
+    "需要使用、停用或更換任何藥物。"
 )
 
 _HEALTH_SECTION_ORDER = [
@@ -1728,9 +1733,9 @@ def _health_acmg_narrative(
             ]
         return [
             f"{gene} 基因與「{disease}」相關，其遺傳模式為體染色體隱性遺傳。",
-            f"此為{patho}之變異位點，本結果表示受檢者可能為相關疾病的帶因者，帶因者多數不會出現"
-            "典型疾病症狀。本檢測僅針對疾病資料庫中已知致病性或疑似致病性變異，仍可能存在資料庫尚未"
-            "收錄或本檢測方法未涵蓋的其他變異。",
+            f"此為{patho}之變異位點，本結果表示受檢者可能為相關疾病的帶因者。然而，本檢測僅針對"
+            "疾病資料庫中已知致病性或疑似致病性變異，故仍可能存在資料庫尚未收錄或本檢測方法未涵蓋"
+            "的其他變異。",
             standard_advice,
         ]
     if codes and codes.issubset({"XL", "XLR", "XLD"}):
@@ -1967,7 +1972,6 @@ def _pgx_no_action(text: str) -> bool:
         "no recommendation",
         "no need to avoid",
         "per standard dosing",
-        "standard dose",
         "standard prescribing",
     ))
 
@@ -1980,29 +1984,41 @@ def _pgx_annotation_genes(annotation: dict) -> list[str]:
     ]
 
 
+def _pgx_annotation_is_actionable(annotation: dict) -> bool:
+    section = str(annotation.get("section") or "")
+    classification = str(annotation.get("classification") or "").strip().lower()
+    recommendation = str(annotation.get("recommendation") or "")
+    if not recommendation or _pgx_no_action(recommendation):
+        return False
+    has_action = any((
+        annotation.get("dosing_information"),
+        annotation.get("alternate_drug_available"),
+        annotation.get("other_prescribing_guidance"),
+    ))
+    if section == "CPIC Guideline Annotation":
+        return classification in {"strong", "moderate"} and has_action
+    if section == "FDA PGx Association":
+        return annotation.get("fda_category") == "therapeutic_management"
+    if section == "FDA Label Annotation":
+        return has_action
+    return False
+
+
 def _pgx_summary_alerts(pgx: dict) -> list[dict]:
-    alerts: list[dict] = []
+    best_by_gene_drug: dict[tuple[str, str], dict] = {}
     seen: set[tuple[str, str, str, str]] = set()
     for item in pgx.get("guideline_annotations") or []:
         section = str(item.get("section") or "")
         classification = str(item.get("classification") or "").strip()
         recommendation = item.get("recommendation") or ""
-        if _pgx_no_action(recommendation):
+        if not _pgx_annotation_is_actionable(item):
             continue
-        is_cpic = (
-            section == "CPIC Guideline Annotation"
-            and classification.lower() in {"strong", "moderate"}
-            and any((
-                item.get("dosing_information"),
-                item.get("alternate_drug_available"),
-                item.get("other_prescribing_guidance"),
-            ))
-        )
-        is_fda = item.get("fda_category") == "therapeutic_management"
-        if not (is_cpic or is_fda):
+        if section == "FDA Label Annotation":
             continue
+        is_cpic = section == "CPIC Guideline Annotation"
         source = "CPIC" if is_cpic else "FDA"
         level = classification if is_cpic else "Therapeutic management"
+        rank = 0 if classification.lower() == "strong" else (1 if is_cpic else 2)
         for gene in _pgx_annotation_genes(item):
             _, phenotype = _pgx_gene_result(pgx, gene)
             if any(token in phenotype.lower() for token in ("indeterminate", "uncertain susceptibility")):
@@ -2011,14 +2027,19 @@ def _pgx_summary_alerts(pgx: dict) -> list[dict]:
             if key in seen:
                 continue
             seen.add(key)
-            alerts.append({
+            alert = {
                 "gene": gene,
                 "drug": item.get("drug") or "",
                 "source": source,
                 "level": level,
                 "recommendation": recommendation,
-                "rank": 0 if classification.lower() == "strong" else (1 if is_cpic else 2),
-            })
+                "rank": rank,
+            }
+            gene_drug = (gene, str(item.get("drug") or "").lower())
+            current = best_by_gene_drug.get(gene_drug)
+            if current is None or alert["rank"] < current["rank"]:
+                best_by_gene_drug[gene_drug] = alert
+    alerts = list(best_by_gene_drug.values())
     alerts.sort(key=lambda row: (row["rank"], row["gene"], row["drug"]))
     return alerts
 
@@ -2043,10 +2064,12 @@ def _pgx_full_groups(pgx: dict) -> list[dict]:
         }:
             continue
         recommendation = annotation.get("recommendation") or ""
-        if not recommendation:
+        if not _pgx_annotation_is_actionable(annotation):
             continue
         for gene in _pgx_annotation_genes(annotation):
             diplotype, phenotype = _pgx_gene_result(pgx, gene)
+            if any(token in phenotype.lower() for token in ("indeterminate", "uncertain susceptibility")):
+                continue
             group = grouped.setdefault(gene, {
                 "gene": gene,
                 "diplotype": diplotype,
@@ -2062,16 +2085,20 @@ def _pgx_full_groups(pgx: dict) -> list[dict]:
                 level = category.replace("_", " ").title()
             else:
                 level = classification
-            key = (annotation.get("drug") or "", source, level, recommendation)
-            if any(
-                (
+            matching = next((
+                row for row in group["recommendations"]
+                if (
                     row.get("drug") or "",
                     row.get("source") or "",
-                    row.get("level") or "",
                     row.get("recommendation") or "",
-                ) == key
-                for row in group["recommendations"]
-            ):
+                ) == (annotation.get("drug") or "", source, recommendation)
+            ), None)
+            if matching:
+                strength_rank = {"strong": 0, "moderate": 1, "optional": 2}
+                if strength_rank.get(level.lower(), 9) < strength_rank.get(
+                    str(matching.get("level") or "").lower(), 9
+                ):
+                    matching["level"] = level
                 continue
             group["recommendations"].append({
                 "drug": annotation.get("drug") or "",
@@ -2108,7 +2135,9 @@ def _pgx_drug_label(drug: str) -> str:
 
 def _pgx_action_zh(recommendation: str) -> str:
     text = str(recommendation or "").lower()
-    if any(token in text for token in ("avoid", "alternative", "contraindicated", "do not use")):
+    if any(token in text for token in (
+        "avoid", "alternative", "contraindicated", "do not use", "not recommended",
+    )):
         return "建議考慮替代藥物。"
     if any(token in text for token in ("dose", "dosage", "dosing", "titrate", "reduction", "increase")):
         return "建議調整起始劑量並監測療效。"
@@ -2139,13 +2168,21 @@ def _pgx_summary_rows(alerts: list[dict]) -> list[dict]:
         drug = _pgx_drug_label(alert.get("drug") or "")
         if drug and drug not in row["drugs"]:
             row["drugs"].append(drug)
-    return sorted(grouped.values(), key=lambda row: (row["gene"], row["source"], row["level"], row["action"]))
+    def rank(row: dict) -> tuple[int, str, str]:
+        level = str(row.get("level") or "").lower()
+        priority = 0 if row.get("source") == "CPIC" and level == "strong" else (
+            1 if row.get("source") == "CPIC" and level == "moderate" else 2
+        )
+        return priority, "、".join(row["drugs"]), row["action"]
+
+    return sorted(grouped.values(), key=lambda row: (row["gene"], *rank(row)))
 
 
 def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
     title_paragraph = _add_paragraph(doc, title, bold=True)
     title_paragraph.paragraph_format.keep_with_next = True
     _add_paragraph(doc, f"  {_HEALTH_PGX_CAUTION}")
+    _blank(doc)
     groups = _pgx_full_groups(pgx or {})
     alerts = _pgx_summary_alerts(pgx or {})
     if not alerts:
@@ -2174,17 +2211,18 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
             "相關藥物，建議由處方醫師參考下方結果評估。",
         )
         _add_paragraph(doc, "  重點摘要", bold=True)
+        rows_by_gene: dict[str, list[dict]] = {}
         for row in summary_rows:
-            source = f"{row['source']} {row['level']}".strip()
-            _add_paragraph(
-                doc,
-                f"  • {row['gene']}－{'、'.join(row['drugs'])}：{row['action']}（{source}）",
-            )
-    _add_paragraph(
-        doc,
-        "  本報告可能包含受檢者目前未使用的藥物。相關結果可供未來處方時參考，"
-        "不代表目前需要使用、停用或更換任何藥物。",
-    )
+            rows_by_gene.setdefault(row["gene"], []).append(row)
+        for gene, gene_rows in rows_by_gene.items():
+            _add_paragraph(doc, f"  • {gene}", bold=True)
+            for row in gene_rows:
+                source = f"{row['source']} {row['level']}".strip()
+                _add_paragraph(
+                    doc,
+                    f"      • {'、'.join(row['drugs'])}：{row['action']}（{source}）",
+                )
+    _blank(doc)
     if groups:
         _blank(doc)
         _add_paragraph(doc, "  完整用藥建議", bold=True)

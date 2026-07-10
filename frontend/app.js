@@ -3676,9 +3676,13 @@ function _renderSnvTsvErrorBanner() {
 }
 
 function fmtExonIntron(v) {
-  const e = String(v.exon || "").trim();
+  const cleanRank = value => {
+    const text = String(value || "").trim();
+    return ["", ".", "-", "NA", "N/A"].includes(text.toUpperCase()) ? "" : text;
+  };
+  const e = cleanRank(v.exon);
   if (e) return `exon ${e}`;
-  const i = String(v.intron || "").trim();
+  const i = cleanRank(v.intron);
   if (i) return `intron ${i}`;
   return "—";
 }
@@ -3822,7 +3826,16 @@ function renderDiseaseList(v, id, withCheckbox) {
   const associations = Array.isArray(v.disease_associations) ? v.disease_associations : null;
 
   if (associations && associations.length) {
-    for (const a of associations) {
+    const orderedAssociations = associations
+      .map((association, originalIndex) => ({ association, originalIndex }))
+      .sort((left, right) => {
+        const leftSupplemental = left.association?.source_kind === "omim" ? 0 : 1;
+        const rightSupplemental = right.association?.source_kind === "omim" ? 0 : 1;
+        return leftSupplemental - rightSupplemental || left.originalIndex - right.originalIndex;
+      })
+      .map(({ association }) => association);
+    let supplementalStarted = false;
+    for (const a of orderedAssociations) {
       const d = diseaseAssociationDetail(a);
       if (!d || d === "NA") continue;
       const summary = (diseaseAssociationSummary(a) || String(d).split("\n")[0] || "").slice(0, 120);
@@ -3835,7 +3848,12 @@ function renderDiseaseList(v, id, withCheckbox) {
       const needsDescription = a.source_kind === "omim" && !hasOmimDescriptionText(a, d);
       const star = needsDescription ? `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>` : "";
       const badges = a.source_kind === "omim" ? diseaseSourceBadges(a).replace('<span class="disease-source-badge">OMIM</span>', "") : diseaseSourceBadges(a);
-      const extraClass = a.source_kind === "omim" ? "" : " disease-row-supplemental";
+      const isOmim = a.source_kind === "omim";
+      const isFirstSupplemental = !isOmim && !supplementalStarted;
+      if (!isOmim) supplementalStarted = true;
+      const extraClass = isOmim
+        ? " disease-row-omim"
+        : ` disease-row-supplemental${isFirstSupplemental ? " disease-row-supplemental-first" : ""}`;
       rows.push(`
         <details class="disease-row${extraClass}">
           <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}${star}</span><span class="disease-source-badges">${badges}</span></summary>
@@ -3853,7 +3871,7 @@ function renderDiseaseList(v, id, withCheckbox) {
         : "";
       const star = hasOmimDescriptionText(null, d) ? "" : `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>`;
       rows.push(`
-        <details class="disease-row">
+        <details class="disease-row disease-row-omim">
           <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}${star}</span></summary>
           <div class="disease-detail">${escapeHtml(String(d))}<button type="button" class="disease-collapse">▴ 收合</button></div>
         </details>`);

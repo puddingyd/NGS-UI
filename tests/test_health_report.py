@@ -3,7 +3,7 @@ import json
 
 from docx import Document
 
-from app.adapters import pgx_tsv
+from app.adapters import pgx_tsv, snv_tsv
 from app.services import docx_export
 
 
@@ -34,7 +34,17 @@ def test_acmg_ar_single_variant_uses_carrier_wording():
     )
 
     assert "帶因者" in lines[1]
+    assert "多數不會出現典型疾病症狀" not in lines[1]
+    assert "然而" in lines[1] and "故仍可能" in lines[1]
     assert "資料庫尚未收錄" in lines[1]
+
+
+def test_structure_label_uses_intron_when_exon_is_placeholder():
+    assert docx_export._structure_label({
+        "exon": ".",
+        "intron": "10/10",
+    }) == "intron10"
+    assert snv_tsv._clean_vep_rank(".") == ""
 
 
 def test_acmg_ar_multiple_variants_does_not_assume_phase():
@@ -117,7 +127,7 @@ def test_health_karyotype_preserves_nonstandard_call(tmp_path, monkeypatch):
     assert docx_export._health_sex_karyotype("S1", {"Sex": "M"}) == "XXY"
 
 
-def test_pgx_summary_keeps_cpic_and_fda_actions_separate():
+def test_pgx_summary_prefers_cpic_for_same_gene_and_drug():
     pgx = {
         "guideline_annotations": [
             {
@@ -126,7 +136,7 @@ def test_pgx_summary_keeps_cpic_and_fda_actions_separate():
                 "alternate_drug_available": True,
                 "genes": ["CYP2C19"],
                 "drug": "clopidogrel",
-                "recommendation": "Use an alternative antiplatelet agent.",
+                "recommendation": "Use prasugrel or ticagrelor at standard dose.",
             },
             {
                 "section": "FDA PGx Association",
@@ -140,7 +150,8 @@ def test_pgx_summary_keeps_cpic_and_fda_actions_separate():
 
     alerts = docx_export._pgx_summary_alerts(pgx)
 
-    assert [row["source"] for row in alerts] == ["CPIC", "FDA"]
+    assert [row["source"] for row in alerts] == ["CPIC"]
+    assert alerts[0]["recommendation"] == "Use prasugrel or ticagrelor at standard dose."
 
 
 def test_pgx_report_genes_are_fixed_cpic_level_a_scope():
@@ -167,6 +178,7 @@ def test_pgx_full_groups_include_cpic_and_fda_for_json_only_gene():
             {
                 "section": "CPIC Guideline Annotation",
                 "classification": "Strong",
+                "dosing_information": True,
                 "genes": ["VKORC1"],
                 "drug": "warfarin",
                 "recommendation": "Use genotype-guided dosing.",
@@ -218,6 +230,62 @@ def test_pgx_summary_excludes_standard_cpic_action():
     }
 
     assert docx_export._pgx_summary_alerts(pgx) == []
+
+
+def test_pgx_not_recommended_is_actionable_alternative():
+    assert docx_export._pgx_action_zh("Ivacaftor is not recommended") == "建議考慮替代藥物。"
+
+
+def test_pgx_full_groups_exclude_standard_and_uncertain_results():
+    pgx = {
+        "genes": {
+            "DPYD": {"details": {"label": "Reference/Reference", "phenotypes": ["Normal Metabolizer"]}},
+            "CACNA1S": {"details": {"label": "Reference/Reference", "phenotypes": ["Uncertain Susceptibility"]}},
+        },
+        "guideline_annotations": [
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "genes": ["DPYD"],
+                "drug": "fluorouracil",
+                "recommendation": "Use label-recommended dosage and administration.",
+            },
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "other_prescribing_guidance": True,
+                "genes": ["CACNA1S"],
+                "drug": "sevoflurane",
+                "recommendation": "Clinical findings should guide use.",
+            },
+        ],
+    }
+
+    assert docx_export._pgx_full_groups(pgx) == []
+
+
+def test_pgx_full_groups_deduplicate_same_recommendation_at_strongest_level():
+    base = {
+        "section": "CPIC Guideline Annotation",
+        "alternate_drug_available": True,
+        "genes": ["CYP2C19"],
+        "drug": "clopidogrel",
+        "recommendation": "Avoid clopidogrel if possible.",
+    }
+    pgx = {
+        "genes": {
+            "CYP2C19": {"details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]}},
+        },
+        "guideline_annotations": [
+            {**base, "classification": "Moderate"},
+            {**base, "classification": "Strong"},
+        ],
+    }
+
+    groups = docx_export._pgx_full_groups(pgx)
+
+    assert len(groups[0]["recommendations"]) == 1
+    assert groups[0]["recommendations"][0]["level"] == "Strong"
 
 
 def test_pgx_adapter_keeps_json_when_tsv_is_absent(tmp_path, monkeypatch):

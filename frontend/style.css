@@ -1058,7 +1058,14 @@ body.sidebar-collapsed .container { margin-left: auto; }
   accent-color: var(--hit-patho, #d33);
 }
 .disease-row .disease-summary-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.disease-row-omim summary { background: #eaeef2; }
+.disease-row-omim summary:hover { background: #d8dee4; }
 .disease-row-supplemental summary { background: #f8fafc; }
+.disease-row-supplemental-first {
+  border-top: 1px solid #d8dee4;
+  margin-top: 7px;
+  padding-top: 7px;
+}
 .disease-needs-description-star {
   color: #9a6700;
   font-weight: 700;

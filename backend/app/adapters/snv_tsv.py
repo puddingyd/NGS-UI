@@ -115,6 +115,11 @@ def _to_int(v: str, default: int = 0) -> int:
         return default
 
 
+def _clean_vep_rank(value: str) -> str:
+    text = str(value or "").strip()
+    return "" if text.upper() in {"", ".", "-", "NA", "N/A"} else text
+
+
 def _first_num(v: str):
     """First value of a possibly per-ALT (comma-separated) numeric field, or
     None. Used for the in-house AF columns (Number=A, e.g. '0.44,0.42'); the
@@ -561,8 +566,8 @@ def _row_to_variant(row: dict) -> dict:
         "zygosity": row.get("ZYGOSITY", ""),
         "GT_DV": row.get("GT_DV", ""),
         "GT_HC": row.get("GT_HC", ""),
-        "exon":   row.get("EXON", ""),
-        "intron": row.get("INTRON", ""),
+        "exon":   _clean_vep_rank(row.get("EXON", "")),
+        "intron": _clean_vep_rank(row.get("INTRON", "")),
         # Old pipeline emits single AD/VAF; new pipeline splits per caller
         # (AD_DV/AD_HC, VAF_DV/VAF_HC). DV's VAF is more reliable for
         # heteroplasmy estimation, so prefer it. HC-only calls (no
