@@ -171,6 +171,8 @@ def test_pgx_full_groups_include_cpic_and_fda_for_json_only_gene():
                 "details": {
                     "label": "rs9923231 variant (T)/rs9923231 variant (T)",
                     "phenotypes": ["-1639 AA"],
+                    "allele1_function": "Higher coumarin sensitivity",
+                    "allele2_function": "Higher coumarin sensitivity",
                 },
             },
         },
@@ -197,7 +199,7 @@ def test_pgx_full_groups_include_cpic_and_fda_for_json_only_gene():
     assert docx_export._pgx_full_groups(pgx) == [{
         "gene": "VKORC1",
         "diplotype": "rs9923231 T/T（-1639 A/A）",
-        "phenotype": "—",
+        "phenotype": "Higher coumarin sensitivity",
         "recommendations": [
             {
                 "drug": "warfarin",
@@ -301,7 +303,81 @@ def test_pgx_genotype_rows_use_fixed_cpic_level_a_scope():
     assert len(rows) == 22
     assert ["CYP2C19", "*2/*2", "Poor Metabolizer"] in rows
     assert not any(row[0] == "CYP3A4" for row in rows)
-    assert any(row[0] == "ABCG2" and row[1:] == ["—", "—"] for row in rows)
+    assert any(row[0] == "ABCG2" and row[1:] == ["—", "No phenotype assigned"] for row in rows)
+
+
+def test_pgx_gene_result_falls_back_to_tsv_for_mt_rnr1():
+    pgx = {
+        "genes": {
+            "MT-RNR1": {
+                "diplotype": "m.1555A>G positive",
+                "phenotype": "HIGH risk",
+                "details": {
+                    "label": "Unknown",
+                    "phenotypes": ["No Result"],
+                },
+            },
+        },
+    }
+
+    assert docx_export._pgx_gene_result(pgx, "MT-RNR1") == ("m.1555A>G positive", "HIGH risk")
+
+
+def test_pgx_genotype_rows_treat_dash_phenotype_as_not_assigned():
+    pgx = {
+        "genes": {
+            "VKORC1": {
+                "details": {
+                    "label": "rs9923231 T/T",
+                    "phenotypes": ["—"],
+                },
+            },
+        },
+    }
+
+    rows = docx_export._pgx_genotype_rows(pgx)
+
+    assert ["VKORC1", "rs9923231 T/T", "No phenotype assigned"] in rows
+
+
+def test_pgx_gene_result_falls_back_to_allele_function_for_ifnl3():
+    pgx = {
+        "genes": {
+            "IFNL3": {
+                "details": {
+                    "label": "rs12979860 reference (C)/rs12979860 reference (C)",
+                    "phenotypes": ["n/a"],
+                    "allele1_function": "Favorable response allele",
+                    "allele2_function": "Favorable response allele",
+                },
+            },
+        },
+    }
+
+    assert docx_export._pgx_gene_result(pgx, "IFNL3") == (
+        "rs12979860 reference (C)/rs12979860 reference (C)",
+        "Favorable response allele",
+    )
+
+
+def test_pgx_gene_result_keeps_vkorc1_sensitivity_as_phenotype():
+    pgx = {
+        "genes": {
+            "VKORC1": {
+                "details": {
+                    "label": "rs9923231 variant (T)/rs9923231 variant (T)",
+                    "phenotypes": ["-1639 AA"],
+                    "allele1_function": "Higher coumarin sensitivity",
+                    "allele2_function": "Higher coumarin sensitivity",
+                },
+            },
+        },
+    }
+
+    assert docx_export._pgx_gene_result(pgx, "VKORC1") == (
+        "rs9923231 T/T（-1639 A/A）",
+        "Higher coumarin sensitivity",
+    )
 
 
 def test_pgx_drug_groups_are_drug_centric_and_keep_strongest_cpic():
@@ -355,9 +431,29 @@ def test_pgx_drug_groups_are_drug_centric_and_keep_strongest_cpic():
         for rec in groups[0]["recommendations"]
     ] == [
         ("CPIC", "Strong"),
-        ("FDA Label", "Unspecified"),
         ("FDA PGx Association", "Therapeutic Management"),
+        ("FDA Label", "Unspecified"),
     ]
+
+
+def test_pgx_recommendation_text_combines_fda_sources_after_content():
+    text = docx_export._pgx_recommendation_text({
+        "recommendations": [
+            {
+                "source": "FDA Label",
+                "level": "Unspecified",
+                "recommendation": '"Use label dosing."',
+            },
+            {
+                "source": "FDA PGx Association",
+                "level": "Therapeutic Management",
+                "recommendation": '"Adjust dose."',
+            },
+        ],
+    })
+
+    assert text == "Adjust dose. Use label dosing. (FDA Therapeutic Management / FDA Label)"
+    assert '"' not in text
 
 
 def test_pgx_adapter_keeps_json_when_tsv_is_absent(tmp_path, monkeypatch):

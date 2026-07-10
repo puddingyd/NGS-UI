@@ -1936,6 +1936,7 @@ def _render_health_acmg_section(
     report: dict,
     *,
     sex_karyotype: str = "",
+    reference_variants: list[dict] | None = None,
 ) -> None:
     _add_paragraph(doc, title, bold=True)
     _add_paragraph(doc, f"  {_HEALTH_ACMG_CAUTION}")
@@ -1993,6 +1994,13 @@ def _render_health_acmg_section(
             )
             _blank(doc)
     _blank(doc)
+    if reference_variants:
+        _add_paragraph(doc, "  參考資料:")
+        for v in reference_variants:
+            if not v:
+                continue
+            _add_paragraph(doc, _snv_reference_text(v, edits.get(v.get("id", ""), {})))
+            _blank(doc)
     _add_paragraph(doc, f"  {_HEALTH_NEGATIVE_LIMITATION}")
     _blank(doc)
 
@@ -2083,14 +2091,45 @@ def _pgx_gene_result(pgx: dict, gene: str) -> tuple[str, str]:
     details = payload.get("details") or {}
     diplotype = details.get("label") or ""
     phenotype = "；".join(details.get("phenotypes") or [])
-    return _pgx_display_genotype(gene, diplotype, phenotype)
+    raw_phenotype = phenotype
+    tsv_diplotype = payload.get("diplotype") or ""
+    tsv_phenotype = payload.get("phenotype") or ""
+    if (not diplotype or (gene == "MT-RNR1" and diplotype.lower() == "unknown")) and tsv_diplotype:
+        diplotype = tsv_diplotype
+    if (
+        not phenotype
+        or (gene == "MT-RNR1" and phenotype.lower() in {"no result", "unknown"})
+    ) and tsv_phenotype:
+        phenotype = tsv_phenotype
+        raw_phenotype = phenotype
+    allele_function = _pgx_allele_function(details)
+    diplotype, _ = _pgx_display_genotype(gene, diplotype, raw_phenotype)
+    if gene == "VKORC1" and allele_function:
+        phenotype = allele_function
+    elif not _pgx_display_phenotype(phenotype) and allele_function:
+        phenotype = allele_function
+    return diplotype, phenotype
+
+
+def _pgx_display_phenotype(phenotype: str) -> str:
+    value = str(phenotype or "").strip()
+    return "" if value.lower() in {"", "-", "—", "n/a", "na"} else phenotype
+
+
+def _pgx_allele_function(details: dict) -> str:
+    values: list[str] = []
+    for key in ("allele1_function", "allele2_function"):
+        value = str(details.get(key) or "").strip()
+        if value and _pgx_display_phenotype(value) and value not in values:
+            values.append(value)
+    return "；".join(values)
 
 
 def _pgx_genotype_rows(pgx: dict) -> list[list[str]]:
     rows: list[list[str]] = []
     for gene in _PGX_CPIC_LEVEL_A_GENES:
         diplotype, phenotype = _pgx_gene_result(pgx, gene)
-        rows.append([gene, diplotype or "—", phenotype or "—"])
+        rows.append([gene, diplotype or "—", _pgx_display_phenotype(phenotype) or "No phenotype assigned"])
     return rows
 
 
@@ -2101,10 +2140,10 @@ def _pgx_source_label(section: str, annotation: dict) -> tuple[str, str, int]:
         priority = 0 if classification.lower() == "strong" else 1
         return "CPIC", level, priority
     if section == "FDA Label Annotation":
-        return "FDA Label", classification or "Unspecified", 2
+        return "FDA Label", classification or "Unspecified", 3
     if section == "FDA PGx Association":
         category = annotation.get("fda_category") or "unspecified"
-        return "FDA PGx Association", category.replace("_", " ").title(), 3
+        return "FDA PGx Association", category.replace("_", " ").title(), 2
     return section, classification, 9
 
 
@@ -2372,14 +2411,42 @@ def _pgx_gene_phenotype_text(group: dict) -> str:
     return "；".join(parts)
 
 
+def _pgx_clean_recommendation_text(text: str) -> str:
+    value = str(text or "").strip()
+    value = value.replace('"', "")
+    value = value.replace("“", "").replace("”", "")
+    return value.strip()
+
+
 def _pgx_recommendation_text(group: dict) -> str:
-    parts = []
+    cpic_parts = []
+    fda_therapeutic_texts: list[str] = []
+    fda_label_texts: list[str] = []
     for rec in group.get("recommendations") or []:
         source = rec.get("source") or ""
         level = rec.get("level") or ""
+        recommendation = _pgx_clean_recommendation_text(rec.get("recommendation") or "")
+        if source == "CPIC":
+            label = _pgx_source_level_display(source, level)
+            cpic_parts.append(f"{label}: {recommendation}" if label else recommendation)
+            continue
+        if source == "FDA PGx Association":
+            fda_therapeutic_texts.append(recommendation)
+            continue
+        if source == "FDA Label":
+            fda_label_texts.append(recommendation)
+            continue
         label = _pgx_source_level_display(source, level)
-        recommendation = rec.get("recommendation") or ""
-        parts.append(f"{label}: {recommendation}" if label else recommendation)
+        cpic_parts.append(f"{label}: {recommendation}" if label else recommendation)
+    parts = cpic_parts[:]
+    fda_texts = fda_therapeutic_texts + fda_label_texts
+    if fda_texts:
+        fda_sources = []
+        if fda_therapeutic_texts:
+            fda_sources.append("FDA Therapeutic Management")
+        if fda_label_texts:
+            fda_sources.append("FDA Label")
+        parts.append(f"{' '.join(fda_texts)} ({' / '.join(fda_sources)})")
     return "；".join(parts)
 
 
@@ -2440,7 +2507,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
             doc,
             "    其餘未列於下方之藥物，未發現符合本報告回報規則之明確處方調整建議。",
         )
-        doc.add_page_break()
+        _blank(doc)
         _add_paragraph(doc, "  完整用藥建議", bold=True)
         _ascii_table(doc, columns=[
             ("藥物", 16, "buffered"),
@@ -2568,12 +2635,14 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             _render_health_pgx_section(doc, title, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
             continue
         ids = _health_selected_ids(report, key, categories.get(key) or [], variants)
-        for vid in ids:
-            if vid in referenced_ids:
-                continue
-            referenced_ids.add(vid)
-            referenced.append(variants.get(vid) or {})
         if key == "acmg_sf":
+            acmg_references: list[dict] = []
+            acmg_reference_ids: set[str] = set()
+            for vid in ids:
+                if vid in acmg_reference_ids:
+                    continue
+                acmg_reference_ids.add(vid)
+                acmg_references.append(variants.get(vid) or {})
             _render_health_acmg_section(
                 doc,
                 title,
@@ -2581,8 +2650,14 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
                 variants,
                 report,
                 sex_karyotype=_health_sex_karyotype(sample_id, meta),
+                reference_variants=acmg_references,
             )
         else:
+            for vid in ids:
+                if vid in referenced_ids:
+                    continue
+                referenced_ids.add(vid)
+                referenced.append(variants.get(vid) or {})
             _render_health_secondary_section(doc, title, ids, variants, report)
 
     if referenced:
