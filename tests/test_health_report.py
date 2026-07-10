@@ -233,7 +233,7 @@ def test_pgx_summary_excludes_standard_cpic_action():
 
 
 def test_pgx_not_recommended_is_actionable_alternative():
-    assert docx_export._pgx_action_zh("Ivacaftor is not recommended") == "建議考慮替代藥物。"
+    assert docx_export._pgx_action_zh("Ivacaftor is not recommended") == "考慮替代藥物"
 
 
 def test_pgx_full_groups_exclude_standard_and_uncertain_results():
@@ -286,6 +286,78 @@ def test_pgx_full_groups_deduplicate_same_recommendation_at_strongest_level():
 
     assert len(groups[0]["recommendations"]) == 1
     assert groups[0]["recommendations"][0]["level"] == "Strong"
+
+
+def test_pgx_genotype_rows_use_fixed_cpic_level_a_scope():
+    pgx = {
+        "genes": {
+            "CYP2C19": {"details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]}},
+            "CYP3A4": {"details": {"label": "*1/*1", "phenotypes": ["Normal Metabolizer"]}},
+        },
+    }
+
+    rows = docx_export._pgx_genotype_rows(pgx)
+
+    assert len(rows) == 22
+    assert ["CYP2C19", "*2/*2", "Poor Metabolizer"] in rows
+    assert not any(row[0] == "CYP3A4" for row in rows)
+    assert any(row[0] == "ABCG2" and row[1:] == ["—", "—"] for row in rows)
+
+
+def test_pgx_drug_groups_are_drug_centric_and_keep_strongest_cpic():
+    pgx = {
+        "genes": {
+            "CYP2C19": {"details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]}},
+        },
+        "guideline_annotations": [
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Moderate",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Avoid clopidogrel if possible. Consider an alternative P2Y12 inhibitor.",
+            },
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Avoid clopidogrel if possible. Use prasugrel or ticagrelor.",
+            },
+            {
+                "section": "FDA Label Annotation",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Consider use of another platelet P2Y12 inhibitor.",
+            },
+            {
+                "section": "FDA PGx Association",
+                "fda_category": "therapeutic_management",
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Consider use of another platelet P2Y12 inhibitor.",
+            },
+        ],
+    }
+
+    groups = docx_export._pgx_drug_groups(pgx)
+
+    assert len(groups) == 1
+    assert groups[0]["drug"] == "Clopidogrel"
+    assert groups[0]["action"] == "考慮替代藥物"
+    assert groups[0]["source_level"] == "CPIC Strong"
+    assert docx_export._pgx_gene_phenotype_text(groups[0]) == "CYP2C19 Poor Metabolizer"
+    assert [
+        (rec["source"], rec["level"])
+        for rec in groups[0]["recommendations"]
+    ] == [
+        ("CPIC", "Strong"),
+        ("FDA Label", "Unspecified"),
+        ("FDA PGx Association", "Therapeutic Management"),
+    ]
 
 
 def test_pgx_adapter_keeps_json_when_tsv_is_absent(tmp_path, monkeypatch):
@@ -367,13 +439,13 @@ def test_pgx_summary_rows_translate_and_sort_by_drug():
         {
             "drug": "Dapsone",
             "gene": "G6PD",
-            "action": "建議考慮替代藥物。",
+            "action": "考慮替代藥物",
             "source_level": "CPIC Strong",
         },
         {
             "drug": "Rasburicase",
             "gene": "G6PD",
-            "action": "建議考慮替代藥物。",
+            "action": "考慮替代藥物",
             "source_level": "CPIC Strong",
         },
     ]

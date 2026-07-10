@@ -10,7 +10,7 @@
 
 - 健檢報告匯出選單改用「可採取醫療處置之疾病風險基因」；ACMG SF 同基因多位點合併顯示，並修正 intron、中文分級與女性性聯遺傳說明。
 - 健檢 PGx 改為完全使用 PharmCAT JSON：narrative 依 CPIC Strong/Moderate 非標準處置與 FDA Section 1 自動產生，完整表格同時保留 CPIC 與 FDA 原文。
-- PGx 重點摘要改為固定寬度表格，欄位為「藥物、基因、建議處置、依據等級」，一個藥物一列並依藥物英文名稱 A-Z 排序；重複 gene–drug 優先 CPIC。完整建議只列 actionable 結果，排除 normal、uncertain、standard dosing 與 no-action。
+- PGx 報告改為重點摘要、基因型與表現型、用藥建議分類、完整用藥建議四段式；完整建議改以藥物為主，CPIC/FDA 建議合併於同一藥物列，並依藥物英文名稱 A-Z 排序。
 - SNV 卡片與 DOCX 將 EXON 的 `. / - / NA` 視為缺值並改讀 INTRON，避免 intronic variant 顯示成 `exon.`。
 - 健檢報告保留原報告名稱與大格式；檢驗套組依 UI 勾選動態組合。ACMG SF 維持原有變異表格，更新 v3.3/ClinVar 警語、AD/AR/X-linked 三點說明及集中式檢測限制。
 - PGx 健檢結果新增中文 narrative summary，整合 CPIC Strong/Moderate 與 PharmCAT JSON 的 FDA therapeutic-management 資訊；完整英文建議仍保留於下方結果。
