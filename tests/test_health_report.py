@@ -343,16 +343,8 @@ def test_vkorc1_display_moves_position_phenotype_into_genotype():
     ) == ("rs9923231 T/T（-1639 A/A）", "—")
 
 
-def test_pgx_summary_rows_translate_and_group_recommendations():
+def test_pgx_summary_rows_translate_and_sort_by_drug():
     alerts = [
-        {
-            "gene": "G6PD",
-            "drug": "dapsone",
-            "source": "CPIC",
-            "level": "Strong",
-            "recommendation": "Avoid dapsone.",
-            "priority": True,
-        },
         {
             "gene": "G6PD",
             "drug": "rasburicase",
@@ -361,15 +353,30 @@ def test_pgx_summary_rows_translate_and_group_recommendations():
             "recommendation": "Avoid rasburicase.",
             "priority": True,
         },
+        {
+            "gene": "G6PD",
+            "drug": "dapsone",
+            "source": "CPIC",
+            "level": "Strong",
+            "recommendation": "Avoid dapsone.",
+            "priority": True,
+        },
     ]
 
-    assert docx_export._pgx_summary_rows(alerts) == [{
-        "gene": "G6PD",
-        "action": "建議考慮替代藥物。",
-        "source": "CPIC",
-        "level": "Strong",
-        "drugs": ["Dapsone", "Rasburicase"],
-    }]
+    assert docx_export._pgx_summary_rows(alerts) == [
+        {
+            "drug": "Dapsone",
+            "gene": "G6PD",
+            "action": "建議考慮替代藥物。",
+            "source_level": "CPIC Strong",
+        },
+        {
+            "drug": "Rasburicase",
+            "gene": "G6PD",
+            "action": "建議考慮替代藥物。",
+            "source_level": "CPIC Strong",
+        },
+    ]
 
 
 def test_health_bundle_name_follows_selected_sections():

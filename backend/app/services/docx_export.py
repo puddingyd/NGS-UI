@@ -2149,33 +2149,20 @@ def _pgx_action_zh(recommendation: str) -> str:
 
 
 def _pgx_summary_rows(alerts: list[dict]) -> list[dict]:
-    grouped: dict[tuple[str, str, str, str], dict] = {}
+    rows: list[dict] = []
     for alert in alerts:
         action = _pgx_action_zh(alert.get("recommendation") or "")
-        key = (
-            alert.get("gene") or "",
-            action,
-            alert.get("source") or "",
-            alert.get("level") or "",
-        )
-        row = grouped.setdefault(key, {
-            "gene": key[0],
+        rows.append({
+            "drug": _pgx_drug_label(alert.get("drug") or ""),
+            "gene": alert.get("gene") or "",
             "action": action,
-            "source": key[2],
-            "level": key[3],
-            "drugs": [],
+            "source_level": f"{alert.get('source') or ''} {alert.get('level') or ''}".strip(),
         })
-        drug = _pgx_drug_label(alert.get("drug") or "")
-        if drug and drug not in row["drugs"]:
-            row["drugs"].append(drug)
-    def rank(row: dict) -> tuple[int, str, str]:
-        level = str(row.get("level") or "").lower()
-        priority = 0 if row.get("source") == "CPIC" and level == "strong" else (
-            1 if row.get("source") == "CPIC" and level == "moderate" else 2
-        )
-        return priority, "、".join(row["drugs"]), row["action"]
-
-    return sorted(grouped.values(), key=lambda row: (row["gene"], *rank(row)))
+    return sorted(rows, key=lambda row: (
+        str(row.get("drug") or "").casefold(),
+        str(row.get("gene") or "").casefold(),
+        str(row.get("source_level") or "").casefold(),
+    ))
 
 
 def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
@@ -2195,11 +2182,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
     else:
         genes = "、".join(dict.fromkeys(row["gene"] for row in alerts if row.get("gene")))
         summary_rows = _pgx_summary_rows(alerts)
-        summary_drugs = list(dict.fromkeys(
-            drug
-            for row in summary_rows
-            for drug in row["drugs"]
-        ))
+        summary_drugs = list(dict.fromkeys(row["drug"] for row in summary_rows if row.get("drug")))
         drug_text = "、".join(summary_drugs[:12])
         _add_paragraph(
             doc,
@@ -2211,17 +2194,15 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
             "相關藥物，建議由處方醫師參考下方結果評估。",
         )
         _add_paragraph(doc, "  重點摘要", bold=True)
-        rows_by_gene: dict[str, list[dict]] = {}
-        for row in summary_rows:
-            rows_by_gene.setdefault(row["gene"], []).append(row)
-        for gene, gene_rows in rows_by_gene.items():
-            _add_paragraph(doc, f"  • {gene}", bold=True)
-            for row in gene_rows:
-                source = f"{row['source']} {row['level']}".strip()
-                _add_paragraph(
-                    doc,
-                    f"      • {'、'.join(row['drugs'])}：{row['action']}（{source}）",
-                )
+        _ascii_table(doc, columns=[
+            ("藥物", 20, "buffered"),
+            ("基因", 12),
+            ("建議處置", 28, "buffered"),
+            ("依據等級", 25, "buffered"),
+        ], rows=[
+            [row["drug"], row["gene"], row["action"], row["source_level"]]
+            for row in summary_rows
+        ])
     _blank(doc)
     if groups:
         _blank(doc)
