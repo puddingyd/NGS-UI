@@ -306,6 +306,17 @@ def test_pgx_genotype_rows_use_fixed_cpic_level_a_scope():
     assert any(row[0] == "ABCG2" and row[1:] == ["—", "No phenotype assigned"] for row in rows)
 
 
+def test_pgx_full_recommendation_table_width_matches_genotype_table():
+    columns = docx_export._PGX_FULL_RECOMMENDATION_COLUMNS
+
+    assert columns == [
+        ("藥物", 17, "buffered"),
+        ("基因與表型", 18, "word-buffered"),
+        ("CPIC/FDA 建議", 49, "word-buffered"),
+    ]
+    assert sum(col[1] for col in columns) + 2 == 86
+
+
 def test_pgx_gene_result_falls_back_to_tsv_for_mt_rnr1():
     pgx = {
         "genes": {

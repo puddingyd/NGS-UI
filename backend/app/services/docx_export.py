@@ -1431,6 +1431,11 @@ _PGX_CPIC_LEVEL_A_GENES = (
     "UGT1A1", "VKORC1",
 )
 _PGX_CPIC_LEVEL_A_SET = set(_PGX_CPIC_LEVEL_A_GENES)
+_PGX_FULL_RECOMMENDATION_COLUMNS = [
+    ("藥物", 17, "buffered"),
+    ("基因與表型", 18, "word-buffered"),
+    ("CPIC/FDA 建議", 49, "word-buffered"),
+]
 
 
 def _meta_value(meta: dict, key: str) -> str:
@@ -2548,11 +2553,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
         )
         _blank(doc)
         _add_paragraph(doc, "  完整用藥建議", bold=True)
-        _ascii_table(doc, columns=[
-            ("藥物", 16, "buffered"),
-            ("基因與表型", 18, "word-buffered"),
-            ("CPIC/FDA 建議", 46, "word-buffered"),
-        ], rows=[
+        _ascii_table(doc, columns=_PGX_FULL_RECOMMENDATION_COLUMNS, rows=[
             [
                 group["drug"],
                 _pgx_gene_phenotype_text(group),
