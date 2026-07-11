@@ -13,6 +13,7 @@ will substitute when opening on a machine without 細明體 installed.
 from __future__ import annotations
 
 import io
+import html
 import re
 import unicodedata
 from typing import Iterable
@@ -402,6 +403,15 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
 
     if mode == "word-buffered":
         return _wrap_to_cols(s, max(1, width - 1), mode="word")
+
+    if mode == "genotype-buffered":
+        content_width = max(1, width - 1)
+        if _str_width(s) > content_width and "/" in s:
+            first, rest = s.split("/", 1)
+            left = f"{first}/"
+            if _str_width(left) <= content_width:
+                return [left] + _wrap_to_cols(rest, content_width, mode="char")
+        return _wrap_to_cols(s, content_width, mode="char")
 
     if mode == "hgvs":
         # Keep one blank display column between HGVS content and the next
@@ -2156,7 +2166,7 @@ def _pgx_recommendation_key(text: str) -> str:
 
 def _pgx_source_level_display(source: str, level: str) -> str:
     if source == "FDA PGx Association":
-        return "FDA Therapeutic mgmt"
+        return "FDA Therapeutic Management"
     if source == "FDA Label":
         return "FDA Label"
     return f"{source} {level}".strip()
@@ -2373,15 +2383,39 @@ def _pgx_summary_rows(alerts: list[dict]) -> list[dict]:
 
 
 def _pgx_summary_rows_from_drug_groups(groups: list[dict]) -> list[dict]:
-    return [
-        {
+    rows: list[dict] = []
+    action_rank = {
+        "調整劑量並監測": 0,
+        "考慮替代藥物": 1,
+        "加強不良反應監測": 2,
+        "使用前確認表型或檢驗": 3,
+        "參考最新藥品仿單": 4,
+    }
+    for group in sorted(groups, key=lambda row: str(row.get("drug") or "").casefold()):
+        summary_recs = [
+            rec for rec in group.get("recommendations") or []
+            if rec.get("source") in {"CPIC", "FDA PGx Association"}
+        ]
+        if not summary_recs:
+            continue
+        primary = min(
+            summary_recs,
+            key=lambda rec: (
+                action_rank.get(rec.get("action") or "", 9),
+                rec.get("source_priority", 9),
+            ),
+        )
+        genes = [rec.get("gene") for rec in summary_recs if rec.get("gene")]
+        rows.append({
             "drug": group["drug"],
-            "gene": "、".join(group["genes"].keys()),
-            "action": group.get("action") or "",
-            "source_level": group.get("source_level") or "",
-        }
-        for group in sorted(groups, key=lambda row: str(row.get("drug") or "").casefold())
-    ]
+            "gene": "、".join(dict.fromkeys(genes)),
+            "action": primary.get("action") or "",
+            "source_level": _pgx_source_level_display(
+                primary.get("source") or "",
+                primary.get("level") or "",
+            ),
+        })
+    return rows
 
 
 def _pgx_action_categories(groups: list[dict]) -> list[tuple[str, list[str]]]:
@@ -2412,9 +2446,14 @@ def _pgx_gene_phenotype_text(group: dict) -> str:
 
 
 def _pgx_clean_recommendation_text(text: str) -> str:
-    value = str(text or "").strip()
+    value = html.unescape(str(text or "").strip())
     value = value.replace('"', "")
     value = value.replace("“", "").replace("”", "")
+    value = re.sub(r"\[\s*\.\.\.\s*\]", "", value)
+    value = re.sub(r"(?<=[a-z0-9])\.\.\.(?=[A-Z])", ". ", value)
+    value = value.replace("...", " ")
+    value = re.sub(r"(?<![A-Za-z0-9])\.\.\.(?![A-Za-z0-9])", "", value)
+    value = re.sub(r"\s+", " ", value)
     return value.strip()
 
 
@@ -2428,7 +2467,7 @@ def _pgx_recommendation_text(group: dict) -> str:
         recommendation = _pgx_clean_recommendation_text(rec.get("recommendation") or "")
         if source == "CPIC":
             label = _pgx_source_level_display(source, level)
-            cpic_parts.append(f"{label}: {recommendation}" if label else recommendation)
+            cpic_parts.append(f"{recommendation} ({label})" if label else recommendation)
             continue
         if source == "FDA PGx Association":
             fda_therapeutic_texts.append(recommendation)
@@ -2437,7 +2476,7 @@ def _pgx_recommendation_text(group: dict) -> str:
             fda_label_texts.append(recommendation)
             continue
         label = _pgx_source_level_display(source, level)
-        cpic_parts.append(f"{label}: {recommendation}" if label else recommendation)
+        cpic_parts.append(f"{recommendation} ({label})" if label else recommendation)
     parts = cpic_parts[:]
     fda_texts = fda_therapeutic_texts + fda_label_texts
     if fda_texts:
@@ -2486,7 +2525,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
             ("藥物", 18, "buffered"),
             ("基因", 18, "buffered"),
             ("建議處置", 20, "buffered"),
-            ("建議依據及等級", 26, "buffered"),
+            ("建議依據及等級", 27, "buffered"),
         ], rows=[
             [row["drug"], row["gene"], row["action"], row["source_level"]]
             for row in summary_rows
@@ -2495,8 +2534,8 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
     _add_paragraph(doc, "  基因型與表現型", bold=True)
     _ascii_table(doc, columns=[
         ("基因", 12),
-        ("基因型", 28, "buffered"),
-        ("表型", 40, "buffered"),
+        ("基因型", 30, "genotype-buffered"),
+        ("表型", 42, "buffered"),
     ], rows=_pgx_genotype_rows(pgx or {}), indent="  ")
     _blank(doc)
     if drug_groups:
@@ -2520,7 +2559,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
                 _pgx_recommendation_text(group),
             ]
             for group in drug_groups
-        ], indent="")
+        ], indent="  ")
     _blank(doc)
 
 

@@ -440,6 +440,11 @@ def test_pgx_recommendation_text_combines_fda_sources_after_content():
     text = docx_export._pgx_recommendation_text({
         "recommendations": [
             {
+                "source": "CPIC",
+                "level": "Strong",
+                "recommendation": '"Use alternative therapy."',
+            },
+            {
                 "source": "FDA Label",
                 "level": "Unspecified",
                 "recommendation": '"Use label dosing."',
@@ -452,8 +457,67 @@ def test_pgx_recommendation_text_combines_fda_sources_after_content():
         ],
     })
 
-    assert text == "Adjust dose. Use label dosing. (FDA Therapeutic Management / FDA Label)"
+    assert text == (
+        "Use alternative therapy. (CPIC Strong)；"
+        "Adjust dose. Use label dosing. (FDA Therapeutic Management / FDA Label)"
+    )
     assert '"' not in text
+
+    cleaned = docx_export._pgx_clean_recommendation_text(
+        '&quot;[...]increase monitoring for adverse reactions.&quot; '
+        'In CYP2C19 poor metabolizers ... the starting dose should be reduced. '
+        'No dosage adjustment is needed...For known poor metabolizers, '
+        '...thioridazine is contraindicated...in patients.'
+    )
+    assert cleaned == (
+        "increase monitoring for adverse reactions. "
+        "In CYP2C19 poor metabolizers the starting dose should be reduced. "
+        "No dosage adjustment is needed. For known poor metabolizers, "
+        "thioridazine is contraindicated in patients."
+    )
+    assert "..." not in cleaned and "[...]" not in cleaned
+
+
+def test_pgx_summary_rows_exclude_fda_label_only_drugs():
+    rows = docx_export._pgx_summary_rows_from_drug_groups([
+        {
+            "drug": "Belzutifan",
+            "genes": {"CYP2C19": {}},
+            "action": "調整劑量並監測",
+            "source_level": "FDA Label",
+            "recommendations": [
+                {
+                    "gene": "CYP2C19",
+                    "source": "FDA Label",
+                    "level": "Unspecified",
+                    "action": "調整劑量並監測",
+                    "source_priority": 3,
+                },
+            ],
+        },
+        {
+            "drug": "Deutetrabenazine",
+            "genes": {"CYP2D6": {}},
+            "action": "調整劑量並監測",
+            "source_level": "FDA Therapeutic Management",
+            "recommendations": [
+                {
+                    "gene": "CYP2D6",
+                    "source": "FDA PGx Association",
+                    "level": "Therapeutic Management",
+                    "action": "調整劑量並監測",
+                    "source_priority": 2,
+                },
+            ],
+        },
+    ])
+
+    assert rows == [{
+        "drug": "Deutetrabenazine",
+        "gene": "CYP2D6",
+        "action": "調整劑量並監測",
+        "source_level": "FDA Therapeutic Management",
+    }]
 
 
 def test_pgx_adapter_keeps_json_when_tsv_is_absent(tmp_path, monkeypatch):
