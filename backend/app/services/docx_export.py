@@ -1404,7 +1404,7 @@ _HEALTH_PGX_CAUTION = (
 )
 
 _HEALTH_SECTION_ORDER = [
-    ("acmg_sf", "第一類：可採取醫療處置之疾病風險基因"),
+    ("acmg_sf", "第一類：ACMG疾病風險基因"),
     ("lipid_fh", "第二類：血脂相關基因"),
     ("hereditary_cancer", "第三類：腫瘤相關基因"),
     ("stroke", "第四類：中風相關基因"),
@@ -1414,7 +1414,7 @@ _HEALTH_SECTION_ORDER = [
 ]
 
 _HEALTH_ACMG_GENE_LIST_TITLE = (
-    "第一類：可採取醫療處置之疾病風險基因（參考美國醫學遺傳學暨基因體學學會 "
+    "第一類：ACMG疾病風險基因（參考美國醫學遺傳學暨基因體學學會 "
     "(American College of Medical Genetics and Genomics) 於 2025 年所公告之"
     "次發現 (Secondary findings) 基因清單 v3.3 版；PMID: 40568962）"
 )
@@ -1780,7 +1780,7 @@ def _health_acmg_narrative(
             ]
         return [
             f"{gene} 基因與「{disease}」相關，其遺傳模式為體染色體隱性遺傳。"
-            "本次僅檢出一個符合報告條件的變異，檢測結果符合帶因者狀態。",
+            "本次僅檢出一個符合報告條件之變異，檢測結果符合帶因者狀態。",
             f"此為{patho}之變異位點，本結果表示受檢者可能為相關疾病的帶因者。本檢測僅針對"
             "疾病資料庫中已收錄之致病性或疑似致病性變異，故仍可能存在資料庫尚未收錄或本檢測方法未涵蓋"
             "的其他變異。",

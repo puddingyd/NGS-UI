@@ -2786,7 +2786,7 @@ async function exportDiagnosticDocx() {
 
 function _pickHealthReportSections() {
   const options = [
-    { key: "acmg_sf", title: "可採取醫療處置之疾病風險基因", checked: true },
+    { key: "acmg_sf", title: "ACMG 疾病風險基因", checked: true },
     { key: "lipid_fh", title: "血脂相關基因", checked: false },
     { key: "hereditary_cancer", title: "腫瘤相關基因", checked: false },
     { key: "stroke", title: "中風相關基因", checked: false },

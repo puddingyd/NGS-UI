@@ -34,7 +34,8 @@ def test_acmg_ar_single_variant_uses_carrier_wording():
         sex_karyotype="",
     )
 
-    assert "本次僅檢出一個符合報告條件的變異" in lines[0]
+    assert "本次僅檢出一個符合報告條件之變異" in lines[0]
+    assert "符合報告條件的變異" not in lines[0]
     assert "檢測結果符合帶因者狀態" in lines[0]
     assert "帶因者" in lines[1]
     assert "多數不會出現典型疾病症狀" not in lines[1]
@@ -633,6 +634,12 @@ def test_health_bundle_name_follows_selected_sections():
     )
     assert docx_export._health_test_bundle_name({"pgx"}) == "藥物基因體學基因篩檢"
     assert docx_export._health_test_bundle_name({"acmg_sf"}) == "ACMG疾病風險基因篩檢"
+
+
+def test_health_acmg_section_titles_use_current_wording():
+    assert dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"] == "第一類：ACMG疾病風險基因"
+    assert docx_export._HEALTH_ACMG_GENE_LIST_TITLE.startswith("第一類：ACMG疾病風險基因")
+    assert "可採取醫療處置之疾病風險基因" not in dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"]
 
 
 def test_health_header_and_acmg_caution_follow_current_template():
