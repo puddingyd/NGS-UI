@@ -1387,7 +1387,7 @@ _HEALTH_NEGATIVE_LIMITATION = (
 )
 
 _HEALTH_ACMG_CAUTION = (
-    f"本檢測依據美國醫學遺傳學暨基因體學學會（ACMG）次發現基因清單第 3.3 版（2025 年發表），"
+    f"本檢測依據美國醫學遺傳學暨基因體學學會 ACMG SF 3.3（2025 年發表），"
     f"分析與可採取醫療處置之遺傳性疾病相關的風險基因，並涵蓋疾病資料庫 ClinVar（版本 "
     f"{CLINVAR_DATE}）中已收錄之致病性或疑似致病性變異。檢測結果代表於本次檢測範圍及技術限制內"
     "所辨識的變異，不代表受檢者目前已罹患相關疾病，也不能完全排除未來發病或其他遺傳性疾病"
@@ -1462,7 +1462,7 @@ def _health_meta_row(row: list[tuple[str, str]]) -> str:
 def _section_health_patient_header(doc, meta: dict) -> None:
     """Basic case metadata above the health-report sections."""
     _add_paragraph(doc, "國立成功大學醫學院附設醫院", bold=True, align="center")
-    _add_paragraph(doc, "<<基因醫學部基因檢測檢驗報告（研究報告）>>", bold=True, align="center")
+    _add_paragraph(doc, "<<基因醫學部基因檢測檢驗分析研究報告>>", bold=True, align="center")
     _blank(doc)
     rows = [
         (
@@ -1748,7 +1748,7 @@ def _health_acmg_narrative(
     codes = set(inheritance_codes)
     inheritance = "、".join(_inheritance_zh(code) for code in inheritance_codes if code)
     standard_advice = (
-        "建議至相關專科或遺傳諮詢門診，結合個人病史、家族史及適當的臨床檢查進一步評估。"
+        "建議至遺傳諮詢或門診相關專科，結合個人病史、家族史及適當的臨床檢查進一步評估。"
         "必要時可考慮對具血緣關係的家屬進行此特定位點之驗證檢測。"
     )
     variable_risk = (
@@ -1775,12 +1775,13 @@ def _health_acmg_narrative(
                 f"此為{patho}之變異位點，本結果表示受檢者可能具有較高的相關疾病風險，但仍需進行"
                 "相位分析以釐清致病之可能性。實際是否發病、發病年齡及疾病嚴重程度亦可能因個人、"
                 "家族及環境等因素而異。",
-                "建議至相關專科或遺傳諮詢門診，結合個人病史、家族史及適當的臨床檢查進一步評估，"
+                "建議至遺傳諮詢或門診相關專科，結合個人病史、家族史及適當的臨床檢查進一步評估，"
                 "並進行相位分析以釐清變異相位。必要時可考慮對具血緣關係的家屬進行此特定位點之驗證檢測。",
             ]
         return [
             f"{gene} 基因與「{disease}」相關，其遺傳模式為體染色體隱性遺傳。",
-            f"此為{patho}之變異位點，本結果表示受檢者可能為相關疾病的帶因者。然而，本檢測僅針對"
+            f"此為{patho}之變異位點。本次僅檢出一個符合報告條件的變異，檢測結果符合帶因者狀態。"
+            "本檢測僅針對"
             "疾病資料庫中已收錄之致病性或疑似致病性變異，故仍可能存在資料庫尚未收錄或本檢測方法未涵蓋"
             "的其他變異。",
             standard_advice,
@@ -2547,10 +2548,6 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> None:
         _add_paragraph(doc, "  用藥建議分類", bold=True)
         for action, drugs in _pgx_action_categories(drug_groups):
             _add_paragraph(doc, f"    {action}：{'、'.join(drugs)}")
-        _add_paragraph(
-            doc,
-            "    其餘未列於下方之藥物，未發現符合本報告回報規則之明確處方調整建議。",
-        )
         _blank(doc)
         _add_paragraph(doc, "  完整用藥建議", bold=True)
         _ascii_table(doc, columns=_PGX_FULL_RECOMMENDATION_COLUMNS, rows=[
@@ -2593,10 +2590,10 @@ def _health_test_bundle_name(requested_set: set[str]) -> str:
     has_pgx = "pgx" in requested_set
     has_disease = any(section != "pgx" for section in requested_set)
     if has_pgx and has_disease:
-        return "可採取醫療處置之疾病風險基因及藥物基因體學基因篩檢"
+        return "ACMG及藥物基因體學基因篩檢"
     if has_pgx:
         return "藥物基因體學基因篩檢"
-    return "可採取醫療處置之疾病風險基因篩檢"
+    return "ACMG基因篩檢"
 
 
 def _pgx_report_genes(pgx: dict) -> list[str]:

@@ -39,6 +39,12 @@ SAMPLE002,/datalake_Raw/.../SAMPLE002_R1.fastq.gz,/datalake_Raw/.../SAMPLE002_R2
 - `sex`: use `male`, `female`, or `unknown`.
 - All paths must be absolute paths as seen from DGX-2.
 
+### WGS FASTQ rule
+
+- WGS must use the original lane pairs named like `SAMPLE_S1_L001_R1_001.fastq.gz` / `R2`; do not use `SAMPLE_R1_merged.fastq.gz` / `R2_merged.fastq.gz` even when both forms exist in the run folder.
+- The NGS-UI picker shows one option per main sample and reports its lane count. Creating the samplesheet expands that option into one row per lane, repeats the same `sample` value, and writes the `lane` column.
+- For example, a sample with `L001` through `L008` appears once in the picker but produces eight samplesheet rows (16 FASTQ paths).
+
 ---
 
 ## Step 2 — Load the Environment

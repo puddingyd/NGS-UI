@@ -21,6 +21,7 @@ def _meta(idx: dict | None) -> dict:
             "updated_at": None,
             "wes_count": 0,
             "wgs_count": 0,
+            "wgs_lane_count": 0,
             "scan_duration_sec": None,
             "stale": True,
         }
@@ -28,6 +29,7 @@ def _meta(idx: dict | None) -> dict:
         "updated_at": idx.get("updated_at"),
         "wes_count": len(idx.get("wes", [])),
         "wgs_count": len(idx.get("wgs", [])),
+        "wgs_lane_count": sum(int(row.get("lane_count") or 1) for row in idx.get("wgs", [])),
         "scan_duration_sec": idx.get("scan_duration_sec"),
         "stale": secondary_analysis.index_is_stale(idx),
     }
@@ -72,3 +74,4 @@ def post_samplesheet(payload: dict = Body(...)):
         raise HTTPException(400, str(e))
     except OSError as e:
         raise HTTPException(500, f"建立 samplesheet 失敗：{e}")
+

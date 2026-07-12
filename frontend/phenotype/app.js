@@ -110,7 +110,11 @@ function createRow() {
 
 function initRows() { for (let i = 0; i < 5; i++) createRow(); }
 function addRow() { const r = createRow(); r.querySelector(".search-input")?.focus(); return r; }
-function removeRow(num) { document.getElementById(`row-${num}`)?.remove(); renumberRows(); }
+function removeRow(num) {
+  document.getElementById(`row-${num}`)?.remove();
+  renumberRows();
+  updatePreview();
+}
 function renumberRows() {
   document.querySelectorAll(".phenotype-row:not(.panel-row)").forEach((row, i) => {
     row.querySelector(".row-num").textContent = i + 1;
@@ -133,6 +137,7 @@ function onSearchInput(rowNum, query) {
     row.dataset.hpId = ""; row.dataset.hpName = "";
     row.querySelector(".search-input").classList.remove("selected");
     document.getElementById(`selected-${rowNum}`).textContent = "";
+    updatePreview();
   }
   if (query.length < 2) { dropdown.classList.remove("visible"); return; }
   let results;
@@ -228,6 +233,7 @@ function selectTerm(rowNum, hpId, hpName, genes) {
     <button type="button" class="gene-list-btn" onclick="openGeneListDrawer('hpo', '${escapeJs(hpId)}', '${escapeJs(`${hpId} ${hpName}`)}')">查看</button>
   `;
   document.getElementById(`dropdown-${rowNum}`).classList.remove("visible");
+  updatePreview();
 }
 
 function escapeHtml(str) {
@@ -274,7 +280,10 @@ function createPanelRow() {
 function clearAllPanelRows() { document.getElementById("panel-rows").innerHTML = ""; panelRowCount = 0; }
 function initPanelRows() { createPanelRow(); }
 function addPanelRow() { const r = createPanelRow(); r.querySelector(".search-input")?.focus(); }
-function removePanelRow(num) { document.getElementById(`panel-row-${num}`)?.remove(); }
+function removePanelRow(num) {
+  document.getElementById(`panel-row-${num}`)?.remove();
+  updatePreview();
+}
 
 function onPanelSearchInput(rowNum, query) {
   const dropdown = document.getElementById(`panel-dropdown-${rowNum}`);
@@ -284,6 +293,7 @@ function onPanelSearchInput(rowNum, query) {
     row.dataset.panelName = "";
     row.querySelector(".search-input").classList.remove("selected");
     document.getElementById(`panel-selected-${rowNum}`).textContent = "";
+    updatePreview();
   }
   if (query.length < 2 || !panelFuse) { dropdown.classList.remove("visible"); return; }
   const results = panelFuse.search(query, { limit: 10 });
@@ -334,6 +344,7 @@ function selectPanel(rowNum, name) {
     <button type="button" class="gene-list-btn" onclick="openGeneListDrawer('panel', '${escapeJs(name)}', '${escapeJs(name)}')">查看</button>
   `;
   document.getElementById(`panel-dropdown-${rowNum}`).classList.remove("visible");
+  updatePreview();
 }
 
 // ============================================================
@@ -769,6 +780,7 @@ function renderFixedPanelHosts() {
       if (cb.checked) selectedFixedPanels.set(cb.value, 1);
       else selectedFixedPanels.delete(cb.value);
       cb.closest(".fp-chip").classList.toggle("is-selected", cb.checked);
+      updatePreview();
     });
   });
   syncFixedPanelUiFromState();
@@ -915,6 +927,7 @@ async function loadPatient() {
     clearTimeout(clinicalAutosaveTimer);
     document.getElementById("clinical-presentation-text").value = "";
     resetPhenotypeSelections();
+    updatePreview();
     const clinicalResp = await fetch(`/api/phenotype-tool/clinical-presentation/load?${params}`);
     if (clinicalResp.ok) {
       const clinicalBody = await clinicalResp.json();
@@ -988,6 +1001,7 @@ async function loadPatient() {
     } else {
       showStatus(`已載入：${statusParts.join("；")}`, "success");
     }
+    updatePreview();
   } catch (e) {
     showStatus("讀取失敗：" + (e.message || e), "error");
   }
@@ -1020,7 +1034,10 @@ function createCustomPanelRow() {
 }
 function initCustomPanelRows() { /* none by default — added on demand */ }
 function addCustomPanelRow() { const r = createCustomPanelRow(); r.querySelector(".cp-name")?.focus(); }
-function removeCustomPanelRow(num) { document.getElementById(`custom-panel-row-${num}`)?.remove(); }
+function removeCustomPanelRow(num) {
+  document.getElementById(`custom-panel-row-${num}`)?.remove();
+  updatePreview();
+}
 
 function _collectCustomPanels() {
   // → [{rowEl, name, genes, weight}] for rows that have a name + genes.
@@ -1075,7 +1092,7 @@ function _fixedPanelDisplayName(key) {
 // human-readable signal: "Seizure HP:0001250" for HPO rows (name
 // first, then id), plain "<panel_name>" for panel rows (incl. custom
 // panels by their server-sanitised name).
-function _collectPreviewLines(customPanelNames) {
+function _collectPreviewLines() {
   const lines = [];
   document.querySelectorAll(".phenotype-row:not(.panel-row)").forEach((row) => {
     const hpId = row.dataset.hpId, hpName = row.dataset.hpName;
@@ -1088,10 +1105,21 @@ function _collectPreviewLines(customPanelNames) {
     const panelName = row.dataset.panelName;
     if (panelName) lines.push(panelName);
   });
-  for (const name of (customPanelNames || [])) {
-    if (name) lines.push(name);
-  }
+  document.querySelectorAll(".custom-panel-row").forEach((row) => {
+    const name = (row.querySelector(".cp-name")?.value || "").trim();
+    const genes = (row.querySelector(".cp-genes")?.value || "").trim();
+    if (name && genes) lines.push(name);
+  });
   return lines;
+}
+
+function updatePreview() {
+  const preview = document.getElementById("output-preview");
+  const content = document.getElementById("output-content");
+  if (!preview || !content) return;
+  const lines = _collectPreviewLines();
+  content.textContent = lines.join("\n");
+  preview.style.display = lines.length ? "block" : "none";
 }
 
 async function generateFile() {
@@ -1117,7 +1145,6 @@ async function generateFile() {
     //    server-sanitised name so the phenotype.txt references it
     //    correctly.
     const customLines = [];
-    const customPanelNames = [];
     for (const cp of customPanels) {
       const resp = await fetch("/api/phenotype-tool/custom-panel", {
         method: "POST",
@@ -1134,7 +1161,6 @@ async function generateFile() {
         if (nameInp && nameInp.value.trim() !== body.name) nameInp.value = body.name;
       }
       customLines.push(`${body.name}\t\t${cp.weight}`);
-      customPanelNames.push(body.name);
     }
 
     // 2) Save Clinical presentation sidecar first; the main reviewer UI
@@ -1162,13 +1188,11 @@ async function generateFile() {
       generatedContent = "";
     }
 
-    document.getElementById("output-preview").style.display = "block";
     // The file on disk keeps the full tab-separated format with
     // weights (parsed by phenotype_io.parse); the on-screen preview
     // strips weights + tabs so reviewers see a clean human-readable
     // list: "HP:0001250 Seizure" / "<panel_name>".
-    document.getElementById("output-content").textContent =
-      _collectPreviewLines(customPanelNames).join("\n");
+    updatePreview();
     // Refresh the panel autocomplete so the new custom panels show up.
     if (customPanels.length) loadPanelList();
     const cpNote = customPanels.length ? `（含 ${customPanels.length} 個自訂 panel）` : "";
@@ -1204,4 +1228,7 @@ function showStatus(msg, type, opts = {}) {
 // Boot
 // ============================================================
 initClinicalPresentationAutosave();
+document.querySelector("main")?.addEventListener("input", (event) => {
+  if (event.target.closest("#custom-panel-rows")) updatePreview();
+});
 loadHPOData();

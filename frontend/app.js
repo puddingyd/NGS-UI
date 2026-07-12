@@ -8703,11 +8703,16 @@ function _secondaryRenderMeta() {
   if (!m || !m.updated_at) { el.textContent = ""; return; }
   const when = new Date(m.updated_at).toLocaleString();
   const stale = m.stale ? "（已過期，自動背景刷新中）" : "";
-  el.textContent = `上次更新 ${when} · WES ${m.wes_count} · WGS ${m.wgs_count} ${stale}`;
+  const wgsLanes = Number(m.wgs_lane_count || 0);
+  const wgsMeta = wgsLanes ? `WGS ${m.wgs_count} samples / ${wgsLanes} lanes` : `WGS ${m.wgs_count}`;
+  el.textContent = `上次更新 ${when} · WES ${m.wes_count} · ${wgsMeta} ${stale}`;
 }
 
 function _secondaryFastqLabel(row) {
-  const lane = row.lane ? ` · ${row.lane}` : "";
+  const laneCount = Number(row.lane_count || 0);
+  const lane = laneCount
+    ? ` · ${laneCount} lanes (${Number(row.fastq_file_count || laneCount * 2)} FASTQ)`
+    : (row.lane ? ` · ${row.lane}` : "");
   const re = row.reanalysis ? " · reanalysis" : "";
   return `${row.sample_id || ""}${lane}${re} · ${row.run || ""} · ${_dragenFmtSize(row.size)} · ${_dragenFmtMtime(row.mtime)}`;
 }
@@ -8717,9 +8722,17 @@ function _secondaryMatchFastqs(mode, query, { showAll = false } = {}) {
   if (!q && !showAll) return [];
   return _secondaryCurrentList(mode).filter(row => {
     if (!q) return true;
-    return [row.sample_id, row.source_sample_id, row.run, row.input_dir, row.fastq_1, row.fastq_2, row.lane]
+    const laneValues = (row.lanes || []).flatMap(lane => [lane.lane, lane.fastq_1, lane.fastq_2]);
+    return [row.sample_id, row.source_sample_id, row.run, row.input_dir, row.fastq_1, row.fastq_2, row.lane, ...laneValues]
       .some(value => String(value || "").toLowerCase().includes(q));
   });
+}
+
+function _secondaryFastqTitle(row) {
+  if (!Array.isArray(row.lanes) || !row.lanes.length) {
+    return `${row.fastq_1 || ""}\n${row.fastq_2 || ""}`;
+  }
+  return row.lanes.map(lane => `${lane.lane || ""}: ${lane.fastq_1 || ""}\n${lane.lane || ""}: ${lane.fastq_2 || ""}`).join("\n");
 }
 
 function _secondaryRenderDropdown(mode, { showAll = false } = {}) {
@@ -8743,7 +8756,7 @@ function _secondaryRenderDropdown(mode, { showAll = false } = {}) {
     li.dataset.path = row.fastq_1 || "";
     li.innerHTML = `<span>${escapeHtml(row.sample_id || "")}</span>` +
       `<span class="opt-vcf-meta">${escapeHtml(_secondaryFastqLabel(row))}</span>`;
-    li.title = `${row.fastq_1 || ""}\n${row.fastq_2 || ""}`;
+    li.title = _secondaryFastqTitle(row);
     li.addEventListener("mousedown", ev => {
       ev.preventDefault();
       _secondaryPickFastq(mode, row);
@@ -8783,7 +8796,10 @@ function _secondaryRenderBatch() {
   }
   const uniqueSamples = new Set(rows.map(r => r.sample_id)).size;
   const body = rows.map((row, idx) => {
-    const path = row.lane ? `${row.fastq_1 || ""} (${row.lane})` : (row.fastq_1 || "");
+    const laneCount = Number(row.lane_count || 0);
+    const path = laneCount
+      ? `${row.input_dir || ""} (${laneCount} lanes / ${Number(row.fastq_file_count || laneCount * 2)} FASTQ)`
+      : (row.lane ? `${row.fastq_1 || ""} (${row.lane})` : (row.fastq_1 || ""));
     return `
       <div class="dragen-batch-row">
         <code>${escapeHtml(row.sample_id || "")}</code>
@@ -8796,7 +8812,7 @@ function _secondaryRenderBatch() {
   }).join("");
   box.innerHTML = `
     <div class="dragen-batch-head">
-      <span>批次清單：${rows.length} 列 / ${uniqueSamples} 個 sample / ${escapeHtml(rows[0].seq_type || "")}</span>
+      <span>批次清單：${uniqueSamples} 個 sample / ${escapeHtml(rows[0].seq_type || "")}</span>
       <button type="button" class="btn btn-ghost btn-link" id="secondary-batch-clear">清空</button>
     </div>
     ${body}

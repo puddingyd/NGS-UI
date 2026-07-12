@@ -28,6 +28,7 @@ _SAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _NEXTSEQ_RE = re.compile(r"^(.+)_S\d+_R([12])_001\.fastq\.gz$", re.I)
 _WGS_LANE_RE = re.compile(r"^(.+)_S\d+_L(\d{3})_R([12])_001\.fastq\.gz$", re.I)
 _REANALYSIS_RE = re.compile(r"^(.+)\.R([12])\.clean\.fastq\.gz$", re.I)
+_FASTQ_INDEX_SCHEMA_VERSION = 2
 
 
 def _now() -> str:
@@ -196,19 +197,46 @@ def list_wgs_fastqs() -> list[dict]:
                 sample, lane, read = m.group(1), f"L{m.group(2)}", m.group(3)
                 lanes.setdefault((sample, run, str(p.parent), lane), {})[read] = p
 
-    out: list[dict] = []
+    grouped_samples: dict[tuple[str, str, str], list[dict]] = {}
     for (sample, run, input_dir, lane), reads in lanes.items():
         if "1" in reads and "2" in reads:
-            out.append(_entry(
-                seq_type="WGS",
-                sample_id=sample,
-                fastq_1=reads["1"],
-                fastq_2=reads["2"],
-                run=run,
-                input_dir=Path(input_dir),
-                lane=lane,
-            ))
-    out.sort(key=lambda r: (-_run_sort_date(r.get("run", "")), r["sample_id"], r.get("lane", "")))
+            grouped_samples.setdefault((sample, run, input_dir), []).append({
+                "lane": lane,
+                "fastq_1": str(reads["1"]),
+                "fastq_2": str(reads["2"]),
+            })
+
+    out: list[dict] = []
+    for (sample, run, input_dir), sample_lanes in grouped_samples.items():
+        sample_lanes.sort(key=lambda item: item["lane"])
+        first = sample_lanes[0]
+        total_size = 0
+        latest_mtime = 0.0
+        for lane_payload in sample_lanes:
+            for path_key in ("fastq_1", "fastq_2"):
+                try:
+                    stat = Path(lane_payload[path_key]).stat()
+                except OSError:
+                    continue
+                total_size += stat.st_size
+                latest_mtime = max(latest_mtime, stat.st_mtime)
+        row = _entry(
+            seq_type="WGS",
+            sample_id=sample,
+            fastq_1=Path(first["fastq_1"]),
+            fastq_2=Path(first["fastq_2"]),
+            run=run,
+            input_dir=Path(input_dir),
+        )
+        row.update({
+            "lanes": sample_lanes,
+            "lane_count": len(sample_lanes),
+            "fastq_file_count": len(sample_lanes) * 2,
+            "size": total_size,
+            "mtime": latest_mtime,
+        })
+        out.append(row)
+    out.sort(key=lambda r: (-_run_sort_date(r.get("run", "")), r["sample_id"]))
     return out
 
 
@@ -217,9 +245,12 @@ def load_index() -> dict | None:
     if not p.is_file():
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        idx = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
+    if idx.get("schema_version") != _FASTQ_INDEX_SCHEMA_VERSION:
+        return None
+    return idx
 
 
 def save_index(idx: dict) -> None:
@@ -235,6 +266,7 @@ def refresh_index() -> dict:
     wes = list_wes_fastqs()
     wgs = list_wgs_fastqs()
     idx = {
+        "schema_version": _FASTQ_INDEX_SCHEMA_VERSION,
         "updated_at": _now(),
         "scan_duration_sec": round(time.time() - t0, 2),
         "wes": wes,
@@ -292,19 +324,64 @@ def suggest_batch_name(seq_type: str, samples: list[dict]) -> str:
     return _unique_batch_name(f"{date}_{seq}")
 
 
-def _normalize_sample(payload: dict, seq_type: str) -> dict:
-    sample_id = _validate_sample_id(payload.get("sample_id") or "")
-    f1 = Path(str(payload.get("fastq_1") or ""))
-    f2 = Path(str(payload.get("fastq_2") or ""))
+def _validate_fastq_pair(f1: Path, f2: Path) -> None:
     roots = SECONDARY_WES_FASTQ_ROOTS + SECONDARY_WGS_FASTQ_ROOTS
     for p in (f1, f2):
         if not p.is_file():
             raise FileNotFoundError(f"FASTQ not found: {p}")
         if _first_existing_parent(p, roots) is None:
             raise ValueError(f"FASTQ is outside configured roots: {p}")
-    lane = (payload.get("lane") or "").strip()
-    if seq_type == "WGS" and not lane:
-        raise ValueError("WGS samplesheet must use lane FASTQs; refresh the FASTQ index and select L00x rows, not merged FASTQs")
+
+
+def _normalize_wgs_lanes(payload: dict) -> list[dict]:
+    raw_lanes = payload.get("lanes")
+    if not isinstance(raw_lanes, list) or not raw_lanes:
+        raw_lanes = [payload]
+    normalized: list[dict] = []
+    seen: set[str] = set()
+    source_sample_id = ""
+    for raw in raw_lanes:
+        lane = str(raw.get("lane") or "").strip().upper()
+        f1 = Path(str(raw.get("fastq_1") or ""))
+        f2 = Path(str(raw.get("fastq_2") or ""))
+        m1 = _WGS_LANE_RE.match(f1.name)
+        m2 = _WGS_LANE_RE.match(f2.name)
+        if (
+            not re.fullmatch(r"L\d{3}", lane)
+            or not m1
+            or not m2
+            or m1.group(1) != m2.group(1)
+            or m1.group(2) != m2.group(2)
+            or m1.group(3) != "1"
+            or m2.group(3) != "2"
+            or lane != f"L{m1.group(2)}"
+        ):
+            raise ValueError("WGS samplesheet must use matching L00x R1/R2 lane FASTQs, not merged FASTQs")
+        if lane in seen:
+            raise ValueError(f"duplicate WGS lane: {lane}")
+        if source_sample_id and m1.group(1) != source_sample_id:
+            raise ValueError("all WGS lanes in one selection must belong to the same source sample")
+        _validate_fastq_pair(f1, f2)
+        source_sample_id = m1.group(1)
+        seen.add(lane)
+        normalized.append({"lane": lane, "fastq_1": str(f1), "fastq_2": str(f2)})
+    normalized.sort(key=lambda item: item["lane"])
+    return normalized
+
+
+def _normalize_sample(payload: dict, seq_type: str) -> dict:
+    sample_id = _validate_sample_id(payload.get("sample_id") or "")
+    if seq_type == "WGS":
+        wgs_lanes = _normalize_wgs_lanes(payload)
+        f1 = Path(wgs_lanes[0]["fastq_1"])
+        f2 = Path(wgs_lanes[0]["fastq_2"])
+        lane = ""
+    else:
+        f1 = Path(str(payload.get("fastq_1") or ""))
+        f2 = Path(str(payload.get("fastq_2") or ""))
+        _validate_fastq_pair(f1, f2)
+        lane = (payload.get("lane") or "").strip()
+        wgs_lanes = []
     return {
         "sample_id": sample_id,
         "source_sample_id": payload.get("source_sample_id") or sample_id,
@@ -316,6 +393,7 @@ def _normalize_sample(payload: dict, seq_type: str) -> dict:
         "run": payload.get("run") or "",
         "input_dir": payload.get("input_dir") or str(f1.parent),
         "reanalysis": bool(payload.get("reanalysis")),
+        "lanes": wgs_lanes,
     }
 
 
@@ -392,21 +470,27 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
     except OSError:
         pass
 
-    has_lane = any(s.get("lane") for s in normalized)
+    has_lane = seq == "WGS" or any(s.get("lane") for s in normalized)
     fields = ["sample", "fastq_1", "fastq_2", "sex"] + (["lane"] if has_lane else [])
+    sheet_rows: list[tuple[dict, dict | None]] = []
+    for sample in normalized:
+        if seq == "WGS":
+            sheet_rows.extend((sample, lane) for lane in sample["lanes"])
+        else:
+            sheet_rows.append((sample, None))
     sheet = staging_dir / "samplesheet.csv"
     with sheet.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
-        for sample in normalized:
+        for sample, lane_payload in sheet_rows:
             row = {
                 "sample": sample["sample_id"],
-                "fastq_1": _server_path_to_dgx(sample["fastq_1"]),
-                "fastq_2": _server_path_to_dgx(sample["fastq_2"]),
+                "fastq_1": _server_path_to_dgx((lane_payload or sample)["fastq_1"]),
+                "fastq_2": _server_path_to_dgx((lane_payload or sample)["fastq_2"]),
                 "sex": sample["sex"] if sample["sex"] in {"male", "female", "unknown"} else "unknown",
             }
             if has_lane:
-                row["lane"] = sample.get("lane", "")
+                row["lane"] = (lane_payload or sample).get("lane", "")
             writer.writerow(row)
     try:
         sheet.chmod(0o644)
@@ -418,12 +502,13 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
         "batch_name": batch,
         "seq_type": seq,
         "sample_count": len(normalized),
+        "samplesheet_row_count": len(sheet_rows),
         "samplesheet_path": str(sheet),
         "staged_samplesheet_path": str(sheet),
         "output_dir": str(output_dir),
         "dgx_output_dir": dgx_output_dir,
         "dgx_staged_samplesheet_path": str(SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch / "samplesheet.csv"),
         "tmux_session": f"ngs2_{batch}",
-        "command": _launch_command(batch, seq, len(normalized) == 1),
+        "command": _launch_command(batch, seq, len({s["sample_id"] for s in normalized}) == 1),
         "warnings": [],
     }
