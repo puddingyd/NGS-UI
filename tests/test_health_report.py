@@ -34,11 +34,11 @@ def test_acmg_ar_single_variant_uses_carrier_wording():
         sex_karyotype="",
     )
 
+    assert "本次僅檢出一個符合報告條件的變異" in lines[0]
+    assert "檢測結果符合帶因者狀態" in lines[0]
     assert "帶因者" in lines[1]
-    assert "本次僅檢出一個符合報告條件的變異" in lines[1]
-    assert "檢測結果符合帶因者狀態" in lines[1]
     assert "多數不會出現典型疾病症狀" not in lines[1]
-    assert "變異位點，" not in lines[1]
+    assert "然而" not in lines[1]
     assert "故仍可能" in lines[1]
     assert "資料庫尚未收錄" in lines[1]
 
@@ -628,9 +628,11 @@ def test_pgx_summary_rows_translate_and_sort_by_drug():
 
 
 def test_health_bundle_name_follows_selected_sections():
-    assert docx_export._health_test_bundle_name({"acmg_sf", "pgx"}) == "ACMG及藥物基因體學基因篩檢"
+    assert docx_export._health_test_bundle_name({"acmg_sf", "pgx"}) == (
+        "ACMG疾病風險基因及藥物基因體學基因篩檢"
+    )
     assert docx_export._health_test_bundle_name({"pgx"}) == "藥物基因體學基因篩檢"
-    assert docx_export._health_test_bundle_name({"acmg_sf"}) == "ACMG基因篩檢"
+    assert docx_export._health_test_bundle_name({"acmg_sf"}) == "ACMG疾病風險基因篩檢"
 
 
 def test_health_header_and_acmg_caution_follow_current_template():
@@ -642,10 +644,11 @@ def test_health_header_and_acmg_caution_follow_current_template():
     assert "<<基因醫學部基因檢測檢驗分析研究報告>>" in text
     assert "研究報告）" not in text
     assert "ACMG SF 3.3" in docx_export._HEALTH_ACMG_CAUTION
-    assert "ACMG）次發現基因清單第 3.3" not in docx_export._HEALTH_ACMG_CAUTION
+    assert "分析與 ACMG SF 3.3 所列遺傳性疾病相關的風險基因" in docx_export._HEALTH_ACMG_CAUTION
+    assert "可採取醫療處置之遺傳性疾病" not in docx_export._HEALTH_ACMG_CAUTION
 
 
-def test_health_pgx_action_categories_do_not_add_residual_drug_note():
+def test_health_pgx_action_categories_remove_below_from_residual_drug_note():
     doc = Document()
     pgx = {
         "genes": {
@@ -665,4 +668,5 @@ def test_health_pgx_action_categories_do_not_add_residual_drug_note():
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "其餘未列於下方之藥物" not in text
+    assert "其餘未列之藥物" in text
     assert "完整用藥建議" in text
