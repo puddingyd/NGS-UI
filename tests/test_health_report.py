@@ -97,8 +97,14 @@ def test_acmg_x_linked_uses_karyotype():
 
     assert "性聯遺傳" in xy[0] and "可能具有較高" in xy[1]
     assert "依本次檢測所判定" not in xy[1]
-    assert "性聯遺傳" in xx[0] and "異型合子女性" in xx[1]
-    assert "可能無症狀" in xx[1] and "臨床表現" in xx[1]
+    assert xx == [
+        "ABCD1 基因與「X-linked adrenoleukodystrophy」相關，其遺傳模式為性聯遺傳。",
+        "此為致病性之變異位點。女性帶有單一變異時，臨床表現可能受 X 染色體失活型態"
+        "及疾病本身表現範圍影響，可能無症狀或出現不同程度之相關表徵。"
+        "實際是否發病、發病年齡及疾病嚴重程度亦可能因個人、家族及環境等因素而異。",
+        "建議至遺傳諮詢或門診相關專科，結合個人病史、家族史及適當的臨床檢查進一步評估。"
+        "必要時可考慮對具血緣關係的家屬進行此特定位點之驗證檢測。",
+    ]
 
 
 def test_acmg_reference_order_matches_display_grouping():
