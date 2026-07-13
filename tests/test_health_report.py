@@ -64,7 +64,10 @@ def test_acmg_ar_multiple_variants_does_not_assume_phase():
     )
 
     assert "體染色體隱性遺傳" in lines[0]
+    assert "此為致病性之變異位點。由於兩變異之相位尚未確認" in lines[1]
+    assert "此為致病性之變異位點，由於兩變異之相位尚未確認" not in lines[1]
     assert "由於兩變異之相位尚未確認" in lines[1]
+    assert "建議進行家族成員檢測，以釐清" in lines[1]
     assert "兩變異是否位於不同等位基因" in lines[1]
     assert "體染色體隱性疾病之雙等位基因致病型態" in lines[1]
     assert "本結果表示受檢者可能具有較高的相關疾病風險" not in lines[1]
