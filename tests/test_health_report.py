@@ -656,7 +656,8 @@ def test_health_header_and_acmg_caution_follow_current_template():
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "<<基因醫學部基因檢測檢驗分析研究報告>>" in text
     assert "研究報告）" not in text
-    assert "ACMG SF 3.3" in docx_export._HEALTH_ACMG_CAUTION
+    assert "次發現基因清單第 3.3 版（2025 年發表）" in docx_export._HEALTH_ACMG_CAUTION
+    assert "次發現基因清單 ACMG SF 3.3" not in docx_export._HEALTH_ACMG_CAUTION
     assert "分析與 ACMG SF 3.3 所列遺傳性疾病相關的風險基因" in docx_export._HEALTH_ACMG_CAUTION
     assert "可採取醫療處置之遺傳性疾病" not in docx_export._HEALTH_ACMG_CAUTION
 
