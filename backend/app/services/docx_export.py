@@ -1654,6 +1654,29 @@ def _health_selected_ids(report: dict, category: str, candidate_ids: list[str], 
     return out
 
 
+def _health_acmg_display_order_ids(ids: list[str], variants: dict, edits: dict) -> list[str]:
+    ordered: list[str] = []
+    used: set[str] = set()
+    for group in _ACMG_SF_GROUPS:
+        group_genes = set(group["genes"])
+        group_ids = [
+            vid for vid in ids
+            if _health_variant_gene(variants.get(vid, {}), edits.get(vid) or {}) in group_genes
+        ]
+        ids_by_gene: dict[str, list[str]] = {}
+        for vid in group_ids:
+            gene = _health_variant_gene(variants.get(vid, {}), edits.get(vid) or {})
+            ids_by_gene.setdefault(gene, []).append(vid)
+        for gene_ids in ids_by_gene.values():
+            for vid in gene_ids:
+                if vid not in used:
+                    used.add(vid)
+                    ordered.append(vid)
+    for vid in sorted(set(ids) - used):
+        ordered.append(vid)
+    return ordered
+
+
 def _acmg_disease_text(gene: str) -> str:
     rows = _ACMG_SF_DISEASES.get(gene) or []
     parts: list[str] = []
@@ -2680,7 +2703,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
         if key == "acmg_sf":
             acmg_references: list[dict] = []
             acmg_reference_ids: set[str] = set()
-            for vid in ids:
+            for vid in _health_acmg_display_order_ids(ids, variants, report.get("edits") or {}):
                 if vid in acmg_reference_ids:
                     continue
                 acmg_reference_ids.add(vid)

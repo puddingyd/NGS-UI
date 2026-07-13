@@ -101,6 +101,21 @@ def test_acmg_x_linked_uses_karyotype():
     assert "可能無症狀" in xx[1] and "臨床表現" in xx[1]
 
 
+def test_acmg_reference_order_matches_display_grouping():
+    ids = ["casq2-a", "ryr2", "casq2-b"]
+    variants = {
+        "casq2-a": {"gene_symbol": "CASQ2"},
+        "ryr2": {"gene_symbol": "RYR2"},
+        "casq2-b": {"gene_symbol": "CASQ2"},
+    }
+
+    assert docx_export._health_acmg_display_order_ids(ids, variants, {}) == [
+        "casq2-a",
+        "casq2-b",
+        "ryr2",
+    ]
+
+
 def test_health_karyotype_prefers_ploidy_sidecar(tmp_path, monkeypatch):
     sample_dir = tmp_path / "S1"
     sample_dir.mkdir()
