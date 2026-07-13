@@ -26,7 +26,7 @@
 - SNV 卡片與 DOCX 將 EXON 的 `. / - / NA` 視為缺值並改讀 INTRON，避免 intronic variant 顯示成 `exon.`。
 - 健檢報告保留原報告名稱與大格式；檢驗套組依 UI 勾選動態組合。ACMG SF 維持原有變異表格，更新 v3.3/ClinVar 警語、AD/AR/X-linked 三點說明及集中式檢測限制。
 - PGx 健檢結果新增中文 narrative summary，整合 CPIC Strong/Moderate 與 PharmCAT JSON 的 FDA therapeutic-management 資訊；完整英文建議仍保留於下方結果。
-- 健檢報告末尾 PGx 基因清單更新為 22 個 CPIC Level A genes，不列 CYP3A4，標題與參考依據不再列 FDA；validation scope 待確效完成後再縮減。
+- 健檢報告 PGx 回報範圍更新為 21 個 CPIC Level A genes；IFNL3 從重點摘要、基因型與表現型、用藥建議分類、完整用藥建議及末尾基因清單排除，標題與參考依據不列 FDA；validation scope 待確效完成後再縮減。
 - DRAGEN 三級分析新增 ploidy VCF sidecar 複製；基本資料性別欄會核對 M/XY、F/XX，一致顯示綠底，不一致或非典型性染色體 call 顯示紅底及 ploidy VCF 結果。
 - 疾病清單固定將 OMIM disease 排在補充來源之前；OMIM 列改用稍深灰底，並以細分隔線區隔 GenCC / ClinGen 補充疾病。
 

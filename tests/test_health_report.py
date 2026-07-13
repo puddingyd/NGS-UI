@@ -184,9 +184,10 @@ def test_pgx_summary_prefers_cpic_for_same_gene_and_drug():
 def test_pgx_report_genes_are_fixed_cpic_level_a_scope():
     genes = docx_export._pgx_report_genes({})
 
-    assert len(genes) == 22
+    assert len(genes) == 21
     assert "VKORC1" in genes
     assert "NAT2" in genes
+    assert "IFNL3" not in genes
     assert "CYP3A4" not in genes
 
 
@@ -327,10 +328,60 @@ def test_pgx_genotype_rows_use_fixed_cpic_level_a_scope():
 
     rows = docx_export._pgx_genotype_rows(pgx)
 
-    assert len(rows) == 22
+    assert len(rows) == 21
     assert ["CYP2C19", "*2/*2", "Poor Metabolizer"] in rows
+    assert not any(row[0] == "IFNL3" for row in rows)
     assert not any(row[0] == "CYP3A4" for row in rows)
     assert any(row[0] == "ABCG2" and row[1:] == ["—", "No phenotype assigned"] for row in rows)
+
+
+def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():
+    pgx = {
+        "genes": {
+            "CYP2C19": {
+                "details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]},
+            },
+            "IFNL3": {
+                "details": {
+                    "label": "rs12979860 C/C",
+                    "phenotypes": ["Favorable response"],
+                },
+            },
+        },
+        "guideline_annotations": [
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Use prasugrel or ticagrelor at standard dose.",
+            },
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "alternate_drug_available": True,
+                "genes": ["IFNL3"],
+                "drug": "peginterferon alfa-2a",
+                "recommendation": "Consider an alternative treatment.",
+            },
+        ],
+    }
+    doc = Document()
+
+    docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
+    docx_export._section_health_annotations(doc, {"pgx"}, pgx)
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert all(heading in text for heading in (
+        "重點摘要",
+        "基因型與表現型",
+        "用藥建議分類",
+        "完整用藥建議",
+    ))
+    assert "CYP2C19" in text and "Clopidogrel" in text
+    assert "IFNL3" not in text
+    assert "peginterferon" not in text.lower()
 
 
 def test_pgx_full_recommendation_table_width_matches_genotype_table():
@@ -378,23 +429,23 @@ def test_pgx_genotype_rows_treat_dash_phenotype_as_not_assigned():
     assert ["VKORC1", "rs9923231 T/T", "No phenotype assigned"] in rows
 
 
-def test_pgx_gene_result_falls_back_to_allele_function_for_ifnl3():
+def test_pgx_gene_result_falls_back_to_allele_function_for_cyp4f2():
     pgx = {
         "genes": {
-            "IFNL3": {
+            "CYP4F2": {
                 "details": {
-                    "label": "rs12979860 reference (C)/rs12979860 reference (C)",
+                    "label": "*1/*3",
                     "phenotypes": ["n/a"],
-                    "allele1_function": "Favorable response allele",
-                    "allele2_function": "Favorable response allele",
+                    "allele1_function": "Normal function",
+                    "allele2_function": "Decreased function",
                 },
             },
         },
     }
 
-    assert docx_export._pgx_gene_result(pgx, "IFNL3") == (
-        "rs12979860 reference (C)/rs12979860 reference (C)",
-        "Favorable response allele",
+    assert docx_export._pgx_gene_result(pgx, "CYP4F2") == (
+        "*1/*3",
+        "Normal function；Decreased function",
     )
 
 
