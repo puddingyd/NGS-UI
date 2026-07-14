@@ -122,6 +122,26 @@ def test_acmg_reference_order_matches_display_grouping():
     ]
 
 
+def test_health_secondary_default_selection_uses_clinvar_only():
+    variants = {
+        "clinvar-plp": {"CLNSIG": "Likely_pathogenic"},
+        "acmg-only": {"CLNSIG": "Likely_benign", "ACMG_classification": "Likely pathogenic"},
+    }
+
+    assert docx_export._health_selected_ids(
+        {},
+        "acmg_sf",
+        ["clinvar-plp", "acmg-only"],
+        variants,
+    ) == ["clinvar-plp"]
+    assert docx_export._health_selected_ids(
+        {"secondary_findings": {"acmg_sf": {"selected": ["acmg-only"]}}},
+        "acmg_sf",
+        ["clinvar-plp", "acmg-only"],
+        variants,
+    ) == ["clinvar-plp", "acmg-only"]
+
+
 def test_health_karyotype_prefers_ploidy_sidecar(tmp_path, monkeypatch):
     sample_dir = tmp_path / "S1"
     sample_dir.mkdir()
@@ -375,14 +395,15 @@ def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():
     }
     doc = Document()
 
-    docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
+    groups = docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
     docx_export._section_health_annotations(doc, {"pgx"}, pgx)
+    docx_export._render_health_pgx_appendix(doc, "附錄一、完整用藥建議", groups)
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert all(heading in text for heading in (
-        "重點摘要",
+        "用藥建議概覽",
+        "藥物建議摘要",
         "基因型與表現型",
-        "用藥建議分類",
         "完整用藥建議",
     ))
     assert "CYP2C19" in text and "Clopidogrel" in text
@@ -660,6 +681,70 @@ def test_health_pathogenicities_translate_and_combine():
         "Pathogenic",
         "Uncertain significance",
     ]) == "致病性及不確定意義"
+    assert [
+        docx_export._health_pathogenicity_zh(label)
+        for label in (
+            "Benign",
+            "Likely benign",
+            "Uncertain significance",
+            "Likely pathogenic",
+            "Pathogenic",
+        )
+    ] == ["良性", "疑似良性", "不確定意義", "疑似致病性", "致病性"]
+
+
+def test_health_acmg_table_displays_all_five_classes_in_chinese():
+    doc = Document()
+    labels = (
+        "Benign",
+        "Likely benign",
+        "Uncertain significance",
+        "Likely pathogenic",
+        "Pathogenic",
+    )
+    rows = [
+        ({
+            "gene_symbol": "TEST",
+            "ACMG_classification": label,
+            "zygosity": "Heterozygous",
+        }, {})
+        for label in labels
+    ]
+
+    docx_export._health_snv_gene_block(
+        doc,
+        rows,
+        disease_text="Test disease",
+        inheritance_codes=["AD"],
+        sex_karyotype="",
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    for translated in ("良性", "疑似良性", "不確定意義", "疑似致病性", "致病性"):
+        assert translated in text
+    for source in labels:
+        assert source not in text
+
+
+def test_health_variant_reference_appendix_translates_acmg_class():
+    doc = Document()
+    variant = {
+        "id": "test-variant",
+        "gene_symbol": "TEST",
+        "HGVS_C": "c.1A>G",
+        "ACMG_classification": "Likely benign",
+    }
+
+    docx_export._render_health_variant_reference_appendix(
+        doc,
+        "附錄一、變異位點參考資料",
+        [variant],
+        {"edits": {}},
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "評測此變異位點為「疑似良性」" in text
+    assert "評測此變異位點為「Likely benign」" not in text
 
 
 def test_vkorc1_display_moves_position_phenotype_into_genotype():
@@ -715,8 +800,13 @@ def test_health_bundle_name_follows_selected_sections():
 
 
 def test_health_acmg_section_titles_use_current_wording():
-    assert dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"] == "第一類：ACMG疾病風險基因"
+    assert dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"] == (
+        "第一類：與疾病風險相關之致病性或疑似致病性變異位點"
+    )
     assert docx_export._HEALTH_ACMG_GENE_LIST_TITLE.startswith("第一類：ACMG疾病風險基因")
+    assert docx_export._NO_HEALTH_CARRIER_VARIANT_TEXT == (
+        "於本次檢測之基因中，未檢出疾病資料庫中已收錄且符合帶因者狀態之致病性或疑似致病性變異。"
+    )
     assert "可採取醫療處置之疾病風險基因" not in dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"]
 
 
@@ -726,7 +816,9 @@ def test_health_header_and_acmg_caution_follow_current_template():
     docx_export._section_health_patient_header(doc, {"LIS_ID": "SF1-dragen"})
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
-    assert "<<基因醫學部基因檢測檢驗分析研究報告>>" in text
+    assert "<<基因醫學部基因檢測檢驗分析研究報告>>" not in text
+    assert "<<基因醫學部基因檢測分析研究報告>>" in text
+    assert "國立成功大學醫學院附設醫院" in text
     assert "研究報告）" not in text
     assert "次發現基因清單第 3.3 版（2025 年發表）" in docx_export._HEALTH_ACMG_CAUTION
     assert "次發現基因清單 ACMG SF 3.3" not in docx_export._HEALTH_ACMG_CAUTION
@@ -750,9 +842,138 @@ def test_health_pgx_action_categories_remove_below_from_residual_drug_note():
         }],
     }
 
-    docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
+    groups = docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "其餘未列於下方之藥物" not in text
     assert "其餘未列之藥物" in text
-    assert "完整用藥建議" in text
+    assert text.index("用藥建議概覽") < text.index("藥物建議摘要")
+    assert "完整用藥建議" not in text
+    assert groups
+
+
+def test_health_acmg_main_body_lists_findings_without_subgroup_catalog():
+    doc = Document()
+    variants = {
+        "ldlr": {
+            "id": "ldlr",
+            "gene_symbol": "LDLR",
+            "ACMG_classification": "Pathogenic",
+            "CLNSIG": "Pathogenic",
+            "zygosity": "Heterozygous",
+        },
+    }
+
+    docx_export._render_health_acmg_section(
+        doc,
+        dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"],
+        ["ldlr"],
+        variants,
+        {"edits": {}},
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "LDLR" in text
+    assert "血脂相關基因，包含 APOB, LDLR, PCSK9" not in text
+    assert text.count(docx_export._NO_HEALTH_VARIANT_TEXT) == 0
+
+
+def test_health_acmg_categories_split_by_inheritance_count_and_zygosity():
+    variants = {
+        "ldlr": {"gene_symbol": "LDLR", "zygosity": "Heterozygous"},
+        "gla": {"gene_symbol": "GLA", "zygosity": "Heterozygous"},
+        "casq2-a": {"gene_symbol": "CASQ2", "zygosity": "Heterozygous"},
+        "casq2-b": {"gene_symbol": "CASQ2", "zygosity": "Heterozygous"},
+        "btd-hom": {"gene_symbol": "BTD", "zygosity": "Homozygous"},
+        "mutyh-carrier": {"gene_symbol": "MUTYH", "zygosity": "Heterozygous"},
+    }
+
+    risk_ids, carrier_ids = docx_export._health_acmg_categorized_ids(
+        list(variants),
+        variants,
+        {},
+    )
+
+    assert risk_ids == ["ldlr", "casq2-a", "casq2-b", "gla", "btd-hom"]
+    assert carrier_ids == ["mutyh-carrier"]
+
+
+def test_health_acmg_first_class_keeps_requested_negative_when_only_carrier_found():
+    doc = Document()
+    variants = {
+        "mutyh-carrier": {
+            "id": "mutyh-carrier",
+            "gene_symbol": "MUTYH",
+            "ACMG_classification": "Likely pathogenic",
+            "CLNSIG": "Likely pathogenic",
+            "zygosity": "Heterozygous",
+        },
+    }
+
+    docx_export._render_health_acmg_section(
+        doc,
+        dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"],
+        ["mutyh-carrier"],
+        variants,
+        {"edits": {}},
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert docx_export._NO_HEALTH_VARIANT_TEXT in text
+    assert "第二類：符合帶因者狀態之致病性或疑似致病性變異位點" in text
+    assert "MUTYH" in text
+    assert docx_export._NO_HEALTH_CARRIER_VARIANT_TEXT not in text
+
+
+def test_health_acmg_both_categories_use_exact_negative_text():
+    doc = Document()
+
+    docx_export._render_health_acmg_section(
+        doc,
+        dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"],
+        [],
+        {},
+        {"edits": {}},
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert docx_export._NO_HEALTH_VARIANT_TEXT in text
+    assert docx_export._NO_HEALTH_CARRIER_VARIANT_TEXT in text
+
+
+def test_health_gene_list_contains_acmg_subgroups(monkeypatch):
+    monkeypatch.setattr(
+        docx_export,
+        "_health_panel_gene_sections",
+        lambda requested: [(docx_export._HEALTH_ACMG_GENE_LIST_TITLE, ["LDLR"])],
+    )
+    doc = Document()
+
+    docx_export._section_health_annotations(doc, {"acmg_sf"})
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "1. 血脂相關基因，包含 APOB, LDLR, PCSK9" in text
+    assert "2. 腫瘤相關基因，包含 APC, BMPR1A" in text
+    assert "6. 其它基因，包含 RPE65, TTR" in text
+
+
+def test_health_pgx_appendix_includes_official_clickable_resources():
+    doc = Document()
+    groups = [{
+        "drug": "Clopidogrel",
+        "genes": {"CYP2C19": {"phenotype": "Poor Metabolizer"}},
+        "recommendations": [{
+            "source": "CPIC",
+            "level": "Strong",
+            "recommendation": "Use an alternative antiplatelet agent.",
+        }],
+    }]
+
+    docx_export._render_health_pgx_appendix(doc, "附錄一、完整用藥建議", groups)
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    targets = {rel.target_ref for rel in doc.part.rels.values() if rel.is_external}
+    assert "附錄一、完整用藥建議" in text
+    assert "官方用藥資訊查詢" in text
+    assert "並非 FDA 核准仿單" in text
+    assert {url for _, url in docx_export._HEALTH_PGX_RESOURCES}.issubset(targets)
