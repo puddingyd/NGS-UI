@@ -1,5 +1,6 @@
 import gzip
 import json
+import re
 
 from docx import Document
 
@@ -415,11 +416,49 @@ def test_pgx_full_recommendation_table_width_matches_genotype_table():
     columns = docx_export._PGX_FULL_RECOMMENDATION_COLUMNS
 
     assert columns == [
-        ("藥物", 17, "buffered"),
+        ("藥物", 23, "word-buffered"),
         ("基因與表型", 18, "word-buffered"),
-        ("CPIC/FDA 建議", 49, "word-buffered"),
+        ("CPIC/FDA 建議", 43, "word-buffered"),
     ]
     assert sum(col[1] for col in columns) + 2 == 86
+    assert docx_export._wrap_to_cols(
+        "Amifampridine phosphate",
+        24,
+        mode="word-buffered",
+    ) == ["Amifampridine phosphate"]
+    assert docx_export._wrap_to_cols(
+        "FDA Therapeutic Management",
+        27,
+        mode="buffered",
+    ) == ["FDA Therapeutic Management"]
+
+
+def test_pgx_multigene_recommendation_only_lists_actionable_gene():
+    pgx = {
+        "genes": {
+            "NUDT15": {
+                "details": {"label": "*1/*3", "phenotypes": ["Intermediate Metabolizer"]},
+            },
+            "TPMT": {
+                "details": {"label": "*1/*1", "phenotypes": ["Normal Metabolizer"]},
+            },
+        },
+        "guideline_annotations": [{
+            "section": "CPIC Guideline Annotation",
+            "classification": "Moderate",
+            "dosing_information": True,
+            "genes": ["NUDT15", "TPMT"],
+            "drug": "thioguanine",
+            "recommendation": "Reduce the starting dose and monitor blood counts.",
+        }],
+    }
+
+    groups = docx_export._pgx_drug_groups(pgx)
+    rows = docx_export._pgx_summary_rows_from_drug_groups(groups)
+
+    assert list(groups[0]["genes"]) == ["NUDT15"]
+    assert {rec["gene"] for rec in groups[0]["recommendations"]} == {"NUDT15"}
+    assert rows[0]["gene"] == "NUDT15"
 
 
 def test_pgx_gene_result_falls_back_to_tsv_for_mt_rnr1():
@@ -693,7 +732,7 @@ def test_health_pathogenicities_translate_and_combine():
     ] == ["良性", "疑似良性", "不確定意義", "疑似致病性", "致病性"]
 
 
-def test_health_acmg_table_displays_all_five_classes_in_chinese():
+def test_health_acmg_table_keeps_all_five_classes_in_english():
     doc = Document()
     labels = (
         "Benign",
@@ -720,10 +759,11 @@ def test_health_acmg_table_displays_all_five_classes_in_chinese():
     )
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    normalized_text = re.sub(r"\s+", " ", text)
+    for source in labels:
+        assert source in normalized_text
     for translated in ("良性", "疑似良性", "不確定意義", "疑似致病性", "致病性"):
         assert translated in text
-    for source in labels:
-        assert source not in text
 
 
 def test_health_variant_reference_appendix_translates_acmg_class():
@@ -843,11 +883,20 @@ def test_health_pgx_action_categories_remove_below_from_residual_drug_note():
     }
 
     groups = docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
+    docx_export._section_methods(doc, "WGS", health=True)
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    paragraph_texts = [paragraph.text for paragraph in doc.paragraphs]
+    summary_index = next(
+        index for index, value in enumerate(paragraph_texts)
+        if value.startswith("  本次檢測發現")
+    )
     assert "其餘未列於下方之藥物" not in text
     assert "其餘未列之藥物" in text
+    assert "參考下方結果或最新 FDA/CPIC 指引進行評估" in text
+    assert paragraph_texts[summary_index + 1] == ""
     assert text.index("用藥建議概覽") < text.index("藥物建議摘要")
+    assert text.index("官方用藥資訊查詢") < text.index("四、檢測方法說明")
     assert "完整用藥建議" not in text
     assert groups
 
@@ -876,6 +925,9 @@ def test_health_acmg_main_body_lists_findings_without_subgroup_catalog():
     assert "LDLR" in text
     assert "血脂相關基因，包含 APOB, LDLR, PCSK9" not in text
     assert text.count(docx_export._NO_HEALTH_VARIANT_TEXT) == 0
+    assert text.index(docx_export._HEALTH_ACMG_CAUTION) < text.index(
+        "第一類：與疾病風險相關之致病性或疑似致病性變異位點"
+    )
 
 
 def test_health_acmg_categories_split_by_inheritance_count_and_zygosity():
@@ -941,6 +993,65 @@ def test_health_acmg_both_categories_use_exact_negative_text():
     assert docx_export._NO_HEALTH_CARRIER_VARIANT_TEXT in text
 
 
+def test_health_wgs_methods_include_scope_specific_cnv_notes():
+    doc = Document()
+
+    docx_export._section_methods(doc, "WGS", health=True)
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "3. 本次檢測平均定序深度 ≧ 27X" in text
+    assert "無法檢測出拷貝數變異 (copy number variant)、轉位" in text
+    assert "5. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異" in text
+    assert "僅用於 CYP2D6 藥物基因體學判讀" in text
+    assert "6. 本實驗方法以次世代方法定序粒線體DNA基因序列" in text
+    assert "7. 本檢測報告僅供醫療專業人員參考" in text
+
+
+def test_diagnosis_wgs_methods_keep_existing_depth_and_numbering():
+    doc = Document()
+
+    docx_export._section_methods(doc, "WGS", health=False)
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "3. 本次檢測平均定序深度 ≧ 30X" in text
+    assert "CYP2D6 基因型判定" not in text
+    assert "5. 本實驗方法以次世代方法定序粒線體DNA基因序列" in text
+    assert "6. 本檢測報告僅供醫療專業人員參考" in text
+
+
+def test_health_appendix_orders_acmg_references_before_pgx_recommendations():
+    doc = Document()
+    variant = {
+        "id": "test-variant",
+        "gene_symbol": "LDLR",
+        "HGVS_C": "c.1A>G",
+        "ACMG_classification": "Pathogenic",
+    }
+    groups = [{
+        "drug": "Clopidogrel",
+        "genes": {"CYP2C19": {"phenotype": "Poor Metabolizer"}},
+        "recommendations": [{
+            "source": "CPIC",
+            "level": "Strong",
+            "recommendation": "Use an alternative antiplatelet agent.",
+        }],
+    }]
+
+    docx_export._add_paragraph(doc, "附錄", bold=True)
+    docx_export._render_health_variant_reference_appendix(
+        doc,
+        "ACMG SF 變異位點參考資料",
+        [variant],
+        {"edits": {}},
+    )
+    docx_export._render_health_pgx_appendix(doc, "完整用藥建議", groups)
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert text.index("附錄") < text.index("ACMG SF 變異位點參考資料")
+    assert text.index("ACMG SF 變異位點參考資料") < text.index("完整用藥建議")
+    assert "附錄一" not in text and "附錄二" not in text
+
+
 def test_health_gene_list_contains_acmg_subgroups(monkeypatch):
     monkeypatch.setattr(
         docx_export,
@@ -957,23 +1068,20 @@ def test_health_gene_list_contains_acmg_subgroups(monkeypatch):
     assert "6. 其它基因，包含 RPE65, TTR" in text
 
 
-def test_health_pgx_appendix_includes_official_clickable_resources():
+def test_health_pgx_section_includes_visible_official_urls():
     doc = Document()
-    groups = [{
-        "drug": "Clopidogrel",
-        "genes": {"CYP2C19": {"phenotype": "Poor Metabolizer"}},
-        "recommendations": [{
-            "source": "CPIC",
-            "level": "Strong",
-            "recommendation": "Use an alternative antiplatelet agent.",
-        }],
-    }]
-
-    docx_export._render_health_pgx_appendix(doc, "附錄一、完整用藥建議", groups)
+    docx_export._render_health_pgx_resources(doc)
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    visible_xml_text = "".join(
+        node.text or ""
+        for node in doc.element.iter()
+        if node.tag.endswith("}t")
+    )
     targets = {rel.target_ref for rel in doc.part.rels.values() if rel.is_external}
-    assert "附錄一、完整用藥建議" in text
     assert "官方用藥資訊查詢" in text
-    assert "並非 FDA 核准仿單" in text
+    assert "未提供完整的劑量調整指示" in text
+    assert "請務必諮詢臨床醫師或臨床藥理專業人員" in text
     assert {url for _, url in docx_export._HEALTH_PGX_RESOURCES}.issubset(targets)
+    for _, url in docx_export._HEALTH_PGX_RESOURCES:
+        assert url in visible_xml_text
