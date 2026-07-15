@@ -2548,8 +2548,8 @@ function setupPatientListUpload() {
   });
 }
 
-// 個案清單: lists registered NGS-UI samples and allows an intentional
-// removal of the UI copy, with a separate opt-in prompt for pipeline data.
+// 個案清單: lists registered NGS-UI samples and lets reviewers remove
+// registration/report state while keeping local tertiary outputs available.
 let _caseListRows = [];
 const _caseListTestFilters = new Set(["WES", "WGS"]);
 
@@ -2654,8 +2654,7 @@ function setupCaseList() {
     pendingSid = sid;
     pendingDeleteButton = del;
     document.getElementById("case-delete-sid").textContent = sid;
-    document.getElementById("case-delete-ui-path").textContent = `NGS_UI/tertiary_output/${sid}/`;
-    document.getElementById("case-delete-pipeline-path").textContent = `/home/pipeline/tertiary_output/${sid}/`;
+    document.getElementById("case-delete-ui-path").textContent = `NGS_UI/tertiary_output/${sid}/sample_metadata.json`;
     showModal("case-delete-modal");
   });
 
@@ -2665,7 +2664,7 @@ function setupCaseList() {
     hideModal("case-delete-modal");
   };
 
-  async function deletePendingCase(deletePipeline) {
+  async function deletePendingCase() {
     const sid = pendingSid;
     const del = pendingDeleteButton;
     if (!sid) return;
@@ -2676,7 +2675,7 @@ function setupCaseList() {
     if (status) status.textContent = `刪除 ${sid} 中…`;
     try {
       const resp = await fetch(
-        `${API_BASE}/samples/${encodeURIComponent(sid)}?delete_pipeline_output=${deletePipeline}`,
+        `${API_BASE}/samples/${encodeURIComponent(sid)}?delete_pipeline_output=false`,
         { method: "DELETE", credentials: "same-origin" },
       );
       if (resp.status === 401) { showLoginModal(); throw new Error("尚未登入"); }
@@ -2687,14 +2686,12 @@ function setupCaseList() {
         return;
       }
       await loadIndex();
+      _unregisteredCache.loadedAt = 0;
+      _unregisteredCache.list = null;
       _caseListRows = await loadCaseListRows();
       await _renderCaseList({ refresh: false });
       if (status) {
-        status.textContent = body.pipeline_output_error
-          ? `已刪除 ${sid}，但三級分析資料刪除失敗：${body.pipeline_output_error}`
-          : deletePipeline
-            ? `已刪除 ${sid}，三級分析資料${body.pipeline_output_deleted ? "已一併刪除" : "不存在"}。`
-            : `已刪除 ${sid}。`;
+        status.textContent = `已刪除 ${sid} 的載入狀態，三級分析輸出檔案已保留，可重新載入。`;
       }
     } catch (e) {
       if (status) status.textContent = `刪除失敗：${e.message || e}`;
@@ -2703,11 +2700,8 @@ function setupCaseList() {
   }
 
   document.getElementById("case-delete-cancel")?.addEventListener("click", cancelDelete);
-  document.getElementById("case-delete-keep-pipeline")?.addEventListener("click", () => {
-    deletePendingCase(false);
-  });
-  document.getElementById("case-delete-all")?.addEventListener("click", () => {
-    deletePendingCase(true);
+  document.getElementById("case-delete-confirm")?.addEventListener("click", () => {
+    deletePendingCase();
   });
 }
 

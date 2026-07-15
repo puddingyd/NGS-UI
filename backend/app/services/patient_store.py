@@ -61,7 +61,13 @@ def is_registered(lis_id: str) -> bool:
 
 
 def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
-    """Remove one UI sample directory and optionally its pipeline output."""
+    """Delete or unregister one sample.
+
+    By default this only removes reviewer-side registration/report state,
+    preserving pipeline outputs so the sample appears in the unregistered
+    list again. Passing delete_pipeline_output keeps the older destructive
+    behavior used by pipeline-output management.
+    """
     _validate_lis_id(lis_id)
     ui_dir = TERTIARY_OUTPUT_ROOT / lis_id
     if not ui_dir.is_dir():
@@ -80,8 +86,18 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
         }
 
     deleted = []
-    shutil.rmtree(ui_dir)
-    deleted.append(str(ui_dir))
+    for path in (
+        ui_dir / "sample_metadata.json",
+        ui_dir / "case_summary.json",
+    ):
+        if path.exists():
+            path.unlink()
+            deleted.append(str(path))
+
+    analyses_dir = ui_dir / "analyses"
+    if analyses_dir.is_dir():
+        shutil.rmtree(analyses_dir)
+        deleted.append(str(analyses_dir))
 
     from . import sample_loader
     sample_loader.invalidate_sample_cache(ui_dir)
@@ -89,6 +105,7 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     return {
         "sample_id": lis_id,
         "deleted": deleted,
+        "unregistered": True,
         "pipeline_output_requested": False,
         "pipeline_output_deleted": False,
         "pipeline_output_error": "",

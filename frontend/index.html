@@ -572,8 +572,8 @@
     </div>
   </div>
 
-  <!-- Registered case list: reviewers can remove the UI copy and
-       optionally the in-house tertiary pipeline output + job logs. -->
+  <!-- Registered case list: reviewers can remove reviewer-side state
+       while keeping local tertiary outputs available for re-registration. -->
   <div id="case-list-modal" class="modal hidden">
     <div class="modal-card modal-card-wide">
       <h2>個案清單</h2>
@@ -597,15 +597,13 @@
     <div class="modal-card case-delete-card">
       <h2>刪除個案</h2>
       <p>確定要刪除個案 <strong id="case-delete-sid"></strong>？</p>
-      <p class="muted">請選擇是否一併刪除三級分析原始檔案：</p>
+      <p class="muted">這會清除已載入個案的基本資料、報告勾選、註解與分析版本，保留三級分析輸出檔案。刪除後此 sample 會回到「載入新個案」的未登錄個案清單。</p>
       <div class="case-delete-paths">
         <code id="case-delete-ui-path"></code>
-        <code id="case-delete-pipeline-path"></code>
       </div>
       <div class="modal-actions case-delete-actions">
         <button type="button" class="btn btn-ghost" id="case-delete-cancel">取消</button>
-        <button type="button" class="btn btn-ghost" id="case-delete-keep-pipeline">保留三級分析原始檔案</button>
-        <button type="button" class="btn btn-danger" id="case-delete-all">確認刪除</button>
+        <button type="button" class="btn btn-danger" id="case-delete-confirm">確認刪除</button>
       </div>
     </div>
   </div>

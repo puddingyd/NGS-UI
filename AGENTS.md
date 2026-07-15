@@ -115,9 +115,9 @@ UI 流程：
   載入新個案 (modal；未登錄個案欄位支援 LIS ID/source sample/姓名/MRN typeahead 搜尋，清單前端快取一天，可按「更新清單」強制重抓) → POST /api/samples → 寫 sample_metadata.json + analyses/default/analysis.json
                                           + (write_version side-effect 寫 pheno_score.tsv；SNV in_panel 動態由 pheno_score.tsv 補值)
                                           + 記錄既有 vcf_from_tsv.vcf.gz；缺 VCF 時交給 Exomiser/LIRICAL worker 背景建立
-  個案清單 (modal) → DELETE /api/samples/{id}?delete_pipeline_output={bool}
-                  → 刪 NGS_UI_HOME/tertiary_output/{id}/
-                  → 三選一確認：同時刪 /home/pipeline/tertiary_output/{id}/ + NGS-UI job logs（執行中拒絕刪除）、保留三級分析原始檔案、取消全部刪除
+  個案清單 (modal) → DELETE /api/samples/{id}?delete_pipeline_output=false
+                  → 只刪 sample_metadata.json、case_summary.json 與 analyses/，保留 annotation/PGx/ploidy 等 local tertiary outputs
+                  → sample 從已載入個案清單消失，並回到「載入新個案」的未登錄清單；真正刪 pipeline output 走三級分析清單 / DELETE /api/dragen/outputs/{id}
   選樣本 (combobox) → GET /api/samples/{id}  (核心 payload，aux_pending=true)
                     → 背景分別 GET /api/samples/{id}/secondary-snv、/cnv、/sv 和 /mito（SNV 先顯示；Secondary findings、CNV 可各自載完先顯示）
                     → GET /api/samples/{id}/report  (reviewer 編輯狀態)

@@ -119,7 +119,7 @@ def list_unregistered_samples():
 
 @router.delete("/samples/{sample_id}")
 def delete_sample(sample_id: str, delete_pipeline_output: bool = False):
-    """Remove one UI sample directory and optionally its pipeline output."""
+    """Unregister one sample, or optionally delete its pipeline output."""
     try:
         return patient_store.delete(
             sample_id, delete_pipeline_output=delete_pipeline_output,
