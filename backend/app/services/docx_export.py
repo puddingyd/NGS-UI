@@ -484,40 +484,36 @@ def _ascii_table(doc,
     total  = sum(widths) + 2   # +1 pad on each side
     sep    = "=" * total
 
-    def emit_row(cells: list[str], header: bool = False) -> list:
+    def row_lines(cells: list[str], header: bool = False) -> list[str]:
         # Headers don't wrap (kept short by design).
         if header:
             parts = [_pad_right(str(c or ""), w) for c, w in zip(cells, widths)]
-            return [_add_paragraph(doc, f"{indent} {''.join(parts)} ")]
+            return [f"{indent} {''.join(parts)} "]
         wrapped = [
             _wrap_to_cols(str(c or ""), w, mode=m)
             for c, w, m in zip(cells, widths, modes)
         ]
         n = max((len(w) for w in wrapped), default=1)
-        paragraphs = []
+        lines = []
         for i in range(n):
             parts = [
                 _pad_right(cell_lines[i] if i < len(cell_lines) else "", w)
                 for cell_lines, w in zip(wrapped, widths)
             ]
-            paragraphs.append(_add_paragraph(doc, f"{indent} {''.join(parts)} "))
-        for paragraph in paragraphs[:-1]:
-            paragraph.paragraph_format.keep_with_next = True
-        return paragraphs
+            lines.append(f"{indent} {''.join(parts)} ")
+        return lines
 
-    top_separator = _add_paragraph(doc, f"{indent}{sep}")
-    header_paragraphs = emit_row([h for h, _, _ in cols], header=True)
-    header_separator = _add_paragraph(doc, f"{indent}{sep}")
-    top_separator.paragraph_format.keep_with_next = True
-    header_paragraphs[-1].paragraph_format.keep_with_next = True
-    if rows:
-        header_separator.paragraph_format.keep_with_next = True
-    last_row_paragraphs = []
-    for row in rows:
-        last_row_paragraphs = emit_row(row)
-    if last_row_paragraphs:
-        last_row_paragraphs[-1].paragraph_format.keep_with_next = True
-    _add_paragraph(doc, f"{indent}{sep}")
+    header_lines = [
+        f"{indent}{sep}",
+        *row_lines([h for h, _, _ in cols], header=True),
+        f"{indent}{sep}",
+    ]
+    _add_paragraph(doc, "\n".join(header_lines))
+    for row_index, row in enumerate(rows):
+        lines = row_lines(row)
+        if row_index == len(rows) - 1:
+            lines.append(f"{indent}{sep}")
+        _add_paragraph(doc, "\n".join(lines))
 
 
 # ── Variant-bucketing helpers ─────────────────────────────────────
@@ -1302,7 +1298,7 @@ def _section_methods(doc, test_type: str, *, health: bool = False) -> None:
             doc,
             "  5. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異 "
             "(copy number variation) 分析結果；此項專一性分析僅用於 CYP2D6 藥物基因體學判讀，"
-            "不代表本檢測已涵蓋 ACMG SF 或其他基因之拷貝數變異。",
+            "不代表本檢測已涵蓋其他基因之拷貝數變異。",
         )
         next_note_number = 6
     else:
@@ -1447,8 +1443,8 @@ _HEALTH_PGX_CAUTION = (
 )
 
 _HEALTH_PGX_RESOURCE_INTRO = (
-    "以下簡要判讀說明未提供完整的劑量調整指示。可協助處方決策的遺傳資訊，"
-    "可於藥物之 FDA 核准仿單及目前的藥物基因體學相關生物標記表中查詢。"
+    "以上簡要判讀說明未提供完整的劑量調整指示。可供臨床處方決策參考的藥物基因體資訊，"
+    "可於如下之 CPIC 最新臨床指引、藥物之 FDA 核准仿單及目前的藥物基因體學相關生物標記表中查詢。"
 )
 
 _HEALTH_PGX_RESOURCE_CLOSING = (
@@ -1456,6 +1452,10 @@ _HEALTH_PGX_RESOURCE_CLOSING = (
 )
 
 _HEALTH_PGX_RESOURCES = (
+    (
+        "CPIC 最新臨床指引",
+        "https://cpicpgx.org/guidelines/",
+    ),
     (
         "FDA 核准藥品仿單",
         "https://www.accessdata.fda.gov/scripts/cder/daf/index.cfm",
@@ -1467,10 +1467,6 @@ _HEALTH_PGX_RESOURCES = (
     (
         "FDA 藥品仿單之藥物基因體生物標記表",
         "https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling",
-    ),
-    (
-        "CPIC 最新臨床指引",
-        "https://cpicpgx.org/guidelines/",
     ),
 )
 
@@ -2094,7 +2090,6 @@ def _render_health_acmg_section(
     _add_paragraph(doc, f"  {_HEALTH_ACMG_CAUTION}")
     _blank(doc)
     _add_paragraph(doc, title, bold=True)
-    _blank(doc)
     edits = report.get("edits") or {}
     risk_ids, carrier_ids = _health_acmg_categorized_ids(ids, variants, edits)
 
@@ -2105,7 +2100,8 @@ def _render_health_acmg_section(
         for vid in risk_ids:
             gene = _health_variant_gene(variants.get(vid, {}), edits.get(vid) or {}) or "?"
             ids_by_gene.setdefault(gene, []).append(vid)
-        for gene, gene_ids in ids_by_gene.items():
+        gene_groups = list(ids_by_gene.items())
+        for group_index, (gene, gene_ids) in enumerate(gene_groups):
             _health_snv_gene_block(
                 doc,
                 [(variants.get(vid) or {}, edits.get(vid) or {}) for vid in gene_ids],
@@ -2113,8 +2109,10 @@ def _render_health_acmg_section(
                 inheritance_codes=_health_acmg_codes(gene),
                 sex_karyotype=sex_karyotype,
             )
-            _blank(doc)
+            if group_index < len(gene_groups) - 1:
+                _blank(doc)
 
+    _blank(doc)
     _add_paragraph(
         doc,
         "第二類：符合帶因者狀態之致病性或疑似致病性變異位點",
@@ -2654,8 +2652,7 @@ def _render_health_pgx_resources(doc) -> None:
 
 
 def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
-    title_paragraph = _add_paragraph(doc, title, bold=True)
-    title_paragraph.paragraph_format.keep_with_next = True
+    _add_paragraph(doc, title, bold=True)
     _add_paragraph(doc, f"  {_HEALTH_PGX_CAUTION}")
     _blank(doc)
     drug_groups = _pgx_drug_groups(pgx or {})
@@ -2704,8 +2701,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
             for row in summary_rows
         ], indent="  ")
     _blank(doc)
-    genotype_title = _add_paragraph(doc, "  基因型與表現型", bold=True)
-    genotype_title.paragraph_format.keep_with_next = True
+    _add_paragraph(doc, "  基因型與表現型", bold=True)
     _ascii_table(doc, columns=[
         ("基因", 12),
         ("基因型", 30, "genotype-buffered"),
@@ -2901,11 +2897,13 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     if referenced:
         _render_health_variant_reference_appendix(
             doc,
-            "ACMG SF 變異位點參考資料",
+            "變異位點參考資料",
             referenced,
             report,
         )
     if pgx_drug_groups:
+        if referenced:
+            _blank(doc)
         _render_health_pgx_appendix(
             doc,
             "完整用藥建議",

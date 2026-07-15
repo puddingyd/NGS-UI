@@ -970,11 +970,21 @@ def test_health_acmg_first_class_keeps_requested_negative_when_only_carrier_foun
         {"edits": {}},
     )
 
-    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    paragraph_texts = [paragraph.text for paragraph in doc.paragraphs]
+    text = "\n".join(paragraph_texts)
     assert docx_export._NO_HEALTH_VARIANT_TEXT in text
     assert "第二類：符合帶因者狀態之致病性或疑似致病性變異位點" in text
     assert "MUTYH" in text
     assert docx_export._NO_HEALTH_CARRIER_VARIANT_TEXT not in text
+    first_title_index = paragraph_texts.index(
+        "第一類：與疾病風險相關之致病性或疑似致病性變異位點"
+    )
+    first_result_index = paragraph_texts.index(f"  {docx_export._NO_HEALTH_VARIANT_TEXT}")
+    second_title_index = paragraph_texts.index(
+        "第二類：符合帶因者狀態之致病性或疑似致病性變異位點"
+    )
+    assert first_result_index == first_title_index + 1
+    assert paragraph_texts[second_title_index - 1] == ""
 
 
 def test_health_acmg_both_categories_use_exact_negative_text():
@@ -1003,6 +1013,8 @@ def test_health_wgs_methods_include_scope_specific_cnv_notes():
     assert "無法檢測出拷貝數變異 (copy number variant)、轉位" in text
     assert "5. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異" in text
     assert "僅用於 CYP2D6 藥物基因體學判讀" in text
+    assert "ACMG SF 或其他基因" not in text
+    assert "不代表本檢測已涵蓋其他基因之拷貝數變異" in text
     assert "6. 本實驗方法以次世代方法定序粒線體DNA基因序列" in text
     assert "7. 本檢測報告僅供醫療專業人員參考" in text
 
@@ -1040,15 +1052,19 @@ def test_health_appendix_orders_acmg_references_before_pgx_recommendations():
     docx_export._add_paragraph(doc, "附錄", bold=True)
     docx_export._render_health_variant_reference_appendix(
         doc,
-        "ACMG SF 變異位點參考資料",
+        "變異位點參考資料",
         [variant],
         {"edits": {}},
     )
+    docx_export._blank(doc)
     docx_export._render_health_pgx_appendix(doc, "完整用藥建議", groups)
 
-    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
-    assert text.index("附錄") < text.index("ACMG SF 變異位點參考資料")
-    assert text.index("ACMG SF 變異位點參考資料") < text.index("完整用藥建議")
+    paragraph_texts = [paragraph.text for paragraph in doc.paragraphs]
+    text = "\n".join(paragraph_texts)
+    assert text.index("附錄") < text.index("變異位點參考資料")
+    assert text.index("變異位點參考資料") < text.index("完整用藥建議")
+    complete_index = paragraph_texts.index("完整用藥建議")
+    assert paragraph_texts[complete_index - 1] == ""
     assert "附錄一" not in text and "附錄二" not in text
 
 
@@ -1080,8 +1096,26 @@ def test_health_pgx_section_includes_visible_official_urls():
     )
     targets = {rel.target_ref for rel in doc.part.rels.values() if rel.is_external}
     assert "官方用藥資訊查詢" in text
+    assert "以上簡要判讀說明" in text
     assert "未提供完整的劑量調整指示" in text
+    assert "可供臨床處方決策參考的藥物基因體資訊" in text
+    assert "如下之 CPIC 最新臨床指引" in text
     assert "請務必諮詢臨床醫師或臨床藥理專業人員" in text
+    assert docx_export._HEALTH_PGX_RESOURCES[0][0] == "CPIC 最新臨床指引"
     assert {url for _, url in docx_export._HEALTH_PGX_RESOURCES}.issubset(targets)
     for _, url in docx_export._HEALTH_PGX_RESOURCES:
         assert url in visible_xml_text
+
+
+def test_health_ascii_tables_do_not_emit_keep_next_markers():
+    doc = Document()
+
+    docx_export._ascii_table(
+        doc,
+        columns=[("欄位一", 10), ("欄位二", 10)],
+        rows=[["會換行的很長內容", "value"]],
+        indent="  ",
+    )
+    docx_export._render_health_pgx_section(doc, "藥物基因體學", {})
+
+    assert "keepNext" not in doc.element.xml
