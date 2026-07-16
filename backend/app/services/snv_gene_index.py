@@ -1,7 +1,7 @@
 """SQLite gene index for complete SNV/Indel TSV search.
 
 The main reviewer screen uses the compact snv_indel.review.tsv, while
-gene search needs the full snv_indel.annotated.tsv. WGS raw TSVs can be
+gene search needs the full 03_acmg raw TSV. WGS raw TSVs can be
 1-2 GB, so tertiary jobs prebuild this tiny lookup database once and the
 web request fetches only rows for requested genes.
 """
@@ -14,10 +14,11 @@ import time
 from pathlib import Path
 
 from . import panel_deadzone
+from .snv_rows import is_reportable_raw_row
 
 
 INDEX_NAME = "snv_gene_index.sqlite"
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 def index_path_for(raw_tsv: Path) -> Path:
@@ -31,6 +32,7 @@ def _log_perf(event: str, started: float, **fields) -> None:
 
 
 def _source_meta(raw_tsv: Path) -> dict[str, str]:
+    raw_tsv = Path(raw_tsv).resolve()
     st = raw_tsv.stat()
     return {
         "schema_version": SCHEMA_VERSION,
@@ -109,6 +111,8 @@ def build_index(raw_tsv: Path, index_path: Path | None = None) -> Path:
                 length = len(line)
                 values = line.decode("utf-8").rstrip("\n\r").split("\t")
                 row = dict(zip(header, values))
+                if not is_reportable_raw_row(row):
+                    continue
                 gene, _hgnc_id = panel_deadzone.canonical_gene_symbol(
                     row.get("GENE", ""),
                     row.get("HGNC_ID", ""),
@@ -157,11 +161,15 @@ def build_index(raw_tsv: Path, index_path: Path | None = None) -> Path:
     return index_path
 
 
-def query_rows(raw_tsv: Path, genes: list[str]) -> list[dict[str, str]] | None:
+def query_rows(
+    raw_tsv: Path,
+    genes: list[str],
+    index_path: Path | None = None,
+) -> list[dict[str, str]] | None:
     """Return raw TSV rows for genes, or None when the index is unavailable."""
     started = time.perf_counter()
     raw_tsv = Path(raw_tsv)
-    index_path = index_path_for(raw_tsv)
+    index_path = Path(index_path) if index_path else index_path_for(raw_tsv)
     canonical = {
         panel_deadzone.canonical_gene_symbol(g)[0].upper()
         for g in genes
@@ -205,11 +213,15 @@ def query_rows(raw_tsv: Path, genes: list[str]) -> list[dict[str, str]] | None:
     return out
 
 
-def query_rows_by_ids(raw_tsv: Path, variant_ids: set[str] | list[str]) -> list[dict[str, str]] | None:
+def query_rows_by_ids(
+    raw_tsv: Path,
+    variant_ids: set[str] | list[str],
+    index_path: Path | None = None,
+) -> list[dict[str, str]] | None:
     """Return raw TSV rows for exact variant ids, or None when unavailable."""
     started = time.perf_counter()
     raw_tsv = Path(raw_tsv)
-    index_path = index_path_for(raw_tsv)
+    index_path = Path(index_path) if index_path else index_path_for(raw_tsv)
     wanted = sorted({str(vid).strip() for vid in variant_ids if str(vid).strip()})
     if not wanted:
         return []

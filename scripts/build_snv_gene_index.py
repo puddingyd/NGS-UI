@@ -15,13 +15,17 @@ from app.services import snv_gene_index  # noqa: E402
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tsv", required=True, help="complete snv_indel.annotated.tsv")
+    ap.add_argument("--out", type=Path, help="output snv_gene_index.sqlite path")
     args = ap.parse_args()
 
     raw_tsv = Path(args.tsv).resolve()
     if not raw_tsv.is_file():
         print(f"ERROR: --tsv 找不到：{raw_tsv}", file=sys.stderr)
         return 2
-    index_path = snv_gene_index.build_index(raw_tsv)
+    index_path = snv_gene_index.build_index(
+        raw_tsv,
+        args.out.resolve() if args.out else None,
+    )
     print(f"[gene-index] {raw_tsv} → {index_path}")
     return 0
 

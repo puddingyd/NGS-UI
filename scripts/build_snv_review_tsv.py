@@ -13,8 +13,8 @@ sys.path.insert(0, str(REPO_ROOT / "backend"))
 from app.services.snv_review import ensure_review_tsv  # noqa: E402
 
 
-def _infer_test_type(raw_tsv: Path) -> str:
-    meta_path = raw_tsv.parent / "sample_metadata.json"
+def _infer_test_type(raw_tsv: Path, output_dir: Path | None = None) -> str:
+    meta_path = (output_dir or raw_tsv.parent) / "sample_metadata.json"
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -26,6 +26,8 @@ def _infer_test_type(raw_tsv: Path) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tsv", required=True, help="complete snv_indel.annotated.tsv")
+    ap.add_argument("--output-dir", type=Path, help="directory for derived review TSV")
+    ap.add_argument("--overlay", type=Path, help="sparse SNV annotation overlay SQLite")
     ap.add_argument(
         "--test-type",
         choices=["WES", "WGS"],
@@ -37,8 +39,14 @@ def main() -> int:
     if not raw_tsv.is_file():
         print(f"ERROR: --tsv 找不到：{raw_tsv}", file=sys.stderr)
         return 2
-    test_type = args.test_type or _infer_test_type(raw_tsv)
-    review_tsv = ensure_review_tsv(raw_tsv, test_type=test_type)
+    output_dir = args.output_dir.resolve() if args.output_dir else None
+    test_type = args.test_type or _infer_test_type(raw_tsv, output_dir)
+    review_tsv = ensure_review_tsv(
+        raw_tsv,
+        test_type=test_type,
+        output_dir=output_dir,
+        overlay_path=args.overlay.resolve() if args.overlay else None,
+    )
     print(f"[review-tsv] {raw_tsv} → {review_tsv}")
     return 0
 

@@ -2,20 +2,19 @@
 # =========================================================
 # run_stopgaps.sh — one-shot post-processing annotation chain
 # =========================================================
-# Runs every post-processing step on a single snv_indel.annotated.tsv in the
-# order they make sense:
+# Runs every post-processing step on a disposable working TSV. The immutable
+# pipeline TSV remains under 03_acmg; only sparse/derived artifacts persist.
 #
-#   1. filter_snv_tsv.py        — filter alt-contig / * only (silent)
-#   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
+#   1. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
 #                                  columns via the local GeneBe DB
 #                                  (offline SQLite lookup, no API/creds;
 #                                  pipeline's ACMG_* untouched)
-#   3. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
-#   4. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
-#   5. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
+#   2. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
+#   3. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
+#   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
 #                              gCNV + Delly VCFs. Skipped if none supplied.
-#   6. build_snv_review_tsv.py  — pre-build the compact main-screen TSV
-#   7. build_snv_gene_index.py  — pre-build complete-TSV gene search index
+#   5. build_snv_annotation_overlay.py — persist sparse field differences
+#   6. build_snv_review_tsv.py / build_snv_gene_index.py
 #
 # (ClinVar annotation was a compatibility step before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
@@ -33,7 +32,7 @@
 #       [--sample SID] [--seq-type WES|WGS]
 #
 # Env / flags:
-#   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 2
+#   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 1
 #                                         (default $HOME/NGS_UI/biotools/
 #                                         genebe/genebe_hg38.tsv.gz); builds
 #                                         genebe_hg38.sqlite lazily.
@@ -44,7 +43,7 @@
 #                                         $HOME/NGS_UI/biotools/spliceai/...
 #   --candidate-bed / --skip-candidate-bed
 #                                      — restrict GeneBe/Extra VEP candidates
-#   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 3
+#   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 2
 #   NGS_UI_MANE_SUMMARY / --mane-summary
 #                                      — MANE summary for RefSeq mapping
 #   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
@@ -81,6 +80,8 @@ run_silent_step() {
 }
 
 TSV=""
+RAW_TSV=""
+POST_DIR=""
 SID=""
 DRAGEN_VCF=""
 INHOUSE_CNV_VCF=""
@@ -104,7 +105,9 @@ SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vc
 CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$HOME/NGS_UI/biotools/cds_combined.bed}"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tsv)                TSV="$2"; shift 2;;
+    --tsv|--work-tsv)     TSV="$2"; shift 2;;
+    --raw-tsv)            RAW_TSV="$2"; shift 2;;
+    --post-dir)           POST_DIR="$2"; shift 2;;
     --sample)             SID="$2"; shift 2;;
     --seq-type)           SEQ_TYPE="$2"; shift 2;;
     --dragen-cnv-source)  DRAGEN_VCF="$2"; shift 2;;
@@ -131,6 +134,10 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TSV" ] || { echo "ERROR: --tsv required" >&2; exit 2; }
 [ -f "$TSV" ] || { echo "ERROR: --tsv not found: $TSV" >&2; exit 2; }
+if [ -z "$RAW_TSV" ]; then RAW_TSV="$TSV"; fi
+[ -f "$RAW_TSV" ] || { echo "ERROR: --raw-tsv not found: $RAW_TSV" >&2; exit 2; }
+if [ -z "$POST_DIR" ]; then POST_DIR="$(dirname "$TSV")"; fi
+mkdir -p "$POST_DIR"
 SEQ_TYPE="$(printf '%s' "$SEQ_TYPE" | tr '[:lower:]' '[:upper:]')"
 case "$SEQ_TYPE" in
   WES|WGS) ;;
@@ -153,10 +160,7 @@ else
   echo "  candidate BED: not found at $CANDIDATE_BED (GeneBe/Extra VEP use AF-only candidates)"
 fi
 
-# 1. Filter. Keep the cleanup, but keep it out of the user-facing log.
-run_silent_step "filter-snv" "$SCRIPT_DIR/filter_snv_tsv.py" --tsv "$TSV"
-
-# 2. GeneBe ACMG second opinion via the local DB (writes GENEBE_* columns;
+# 1. GeneBe ACMG second opinion via the local DB (writes GENEBE_* columns;
 #    pipeline ACMG_* preserved). Offline SQLite lookup — no API / creds.
 if [ "$SKIP_GENEBE" -eq 0 ]; then
   echo
@@ -233,7 +237,7 @@ if [ "$SKIP_MANE_REFSEQ" -eq 0 ]; then
 fi
 
 # 4. CNV/SV via AnnotSV.
-SAMPLE_DIR="$(dirname "$TSV")"
+SAMPLE_DIR="$POST_DIR"
 if [ "$SKIP_CNV" -eq 0 ] && { [ -n "$DRAGEN_VCF" ] || [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; }; then
   echo
   echo "[post-processing] run_annotsv_cnv_sv.sh"
@@ -252,29 +256,32 @@ if [ "$SKIP_CNV" -eq 0 ] && { [ -n "$DRAGEN_VCF" ] || [ -n "$INHOUSE_CNV_VCF" ] 
   step_done
 fi
 
-# Drop a copy at the GUI-expected path (no sample prefix).
-GUI_TSV="$SAMPLE_DIR/snv_indel.annotated.tsv"
-if [ "$TSV" != "$GUI_TSV" ]; then
-  echo
-  echo "[post-processing] copy → $GUI_TSV  (GUI-expected path)"
-  cp -v "$TSV" "$GUI_TSV"
-fi
+echo
+echo "[sample] sparse overlay  build_snv_annotation_overlay.py"
+step_start "snv-overlay" "sample-step"
+run_silent_step "snv-overlay" "$SCRIPT_DIR/build_snv_annotation_overlay.py" \
+  --raw "$RAW_TSV" --annotated "$TSV" --out "$POST_DIR/snv_annotations.sqlite"
+step_done
 
 echo
 echo "[sample] review TSV  build_snv_review_tsv.py"
 step_start "review-tsv" "sample-step"
-run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" --tsv "$GUI_TSV" --test-type "$SEQ_TYPE"
+run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" \
+  --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
+  --overlay "$POST_DIR/snv_annotations.sqlite" --test-type "$SEQ_TYPE"
 step_done
 
 echo
 echo "[sample] gene index  build_snv_gene_index.py"
 step_start "gene-index" "sample-step"
-run_silent_step "gene-index" "$SCRIPT_DIR/build_snv_gene_index.py" --tsv "$GUI_TSV"
+run_silent_step "gene-index" "$SCRIPT_DIR/build_snv_gene_index.py" \
+  --tsv "$RAW_TSV" --out "$POST_DIR/snv_gene_index.sqlite"
 step_done
 
 echo
 echo "================================================================"
-echo "  done. final TSV: $GUI_TSV"
+echo "  done. raw TSV: $RAW_TSV"
+echo "  sparse overlay: $POST_DIR/snv_annotations.sqlite"
 echo "================================================================"
-wc -l "$GUI_TSV"
+wc -l "$RAW_TSV"
 ls -la "$SAMPLE_DIR"/{cnv,sv,mito}.annotated.tsv 2>/dev/null || true

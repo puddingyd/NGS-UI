@@ -24,7 +24,6 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
-from ..config import TERTIARY_OUTPUT_ROOT  # noqa: F401 (kept for callers)
 from . import (
     cnv_sv_merge,
     hpo_ontology,
@@ -1853,7 +1852,8 @@ def _health_zygosity_key(value: str) -> str:
 
 def _health_sex_karyotype(sample_id: str, meta: dict) -> str:
     """Return XX/XY from a DRAGEN ploidy sidecar, then fall back to EMR sex."""
-    sample_dir = TERTIARY_OUTPUT_ROOT / sample_id
+    from . import sample_layout
+    sample_dir = sample_layout.state_dir(sample_id)
     karyotype = ploidy.load_sample_ploidy(sample_dir).get("karyotype") or ""
     if karyotype:
         return karyotype

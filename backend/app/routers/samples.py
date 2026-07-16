@@ -5,13 +5,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from ..auth import current_user
-from ..config import PHENOTYPE_DIR, TERTIARY_OUTPUT_ROOT
+from ..config import PHENOTYPE_DIR
 from ..services import (
     clinical_presentation_store,
     docx_export,
     patient_list_store,
     patient_store,
     report_store,
+    sample_layout,
     sample_loader,
 )
 
@@ -194,9 +195,8 @@ def register_sample(
 ):
     """Attach reviewer-side info to a pipeline-produced directory.
 
-    The TSV must already live at
-        tertiary_output/{lis_id}/snv_indel.annotated.tsv
-    (the pipeline puts it there). Exomiser/LIRICAL use the conventional
+    The unified layout marker and 03_acmg TSV must already exist.
+    Exomiser/LIRICAL use the conventional 08_postprocessing
     vcf_from_tsv.vcf.gz path; register records an existing VCF, and the
     background worker builds it when missing or stale.
 
@@ -220,7 +220,7 @@ def register_sample(
             hpo_payload = panels_payload = None
 
     source_sample_id = ""
-    pipeline_source = TERTIARY_OUTPUT_ROOT / lis_id / "pipeline_source.json"
+    pipeline_source = sample_layout.state_dir(lis_id) / "pipeline_source.json"
     if pipeline_source.is_file():
         try:
             source_info = _json.loads(pipeline_source.read_text(encoding="utf-8")) or {}
@@ -430,8 +430,7 @@ def put_sample_metadata(sample_id: str, payload: dict):
     import json as _json
     from datetime import datetime, timezone
 
-    from ..config import TERTIARY_OUTPUT_ROOT
-    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    sub = sample_layout.state_dir(sample_id)
     if not sub.is_dir():
         raise HTTPException(404, f"sample not found: {sample_id}")
     meta_path = sub / "sample_metadata.json"
@@ -485,10 +484,11 @@ def get_options():
     when present so reviewers can keep iterating on the tag vocabulary
     without a deploy.
     """
-    from ..config import TERTIARY_OUTPUT_ROOT
     import json as _json
     payload = {"category_options": list(_CATEGORY_OPTIONS), "tag_suggestions": []}
-    p = TERTIARY_OUTPUT_ROOT / "_options.json"
+    p = sample_layout.global_cache_path("_options.json")
+    if not p.exists():
+        p = sample_layout.legacy_ui_root() / "_options.json"
     if p.exists():
         try:
             extra = _json.loads(p.read_text(encoding="utf-8"))

@@ -9,16 +9,13 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
        └ MISS → run 2+3 below
     2. write a v3.x samplesheet       → data/jobs/tertiary/<job>/samplesheet.csv
        (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
-    3. nextflow main_tertiary.nf      → /home/pipeline/tertiary_output/<source SID>/
+    3. nextflow main_tertiary.nf      → unified tertiary root/<source SID>/
        then rename legacy source-ID-only output to <SID> when the UI ID
        carries -dragen / -nckuh / -inhouse
-    4. copy pipeline outputs          → NGS_UI/tertiary_output/<SID>/
-                                          snv_indel.annotated.tsv
-                                          mito.annotated.tsv
-                                          ploidy.vcf.gz (DRAGEN only, when present)
-                                          + pipeline_source.json (audit)
-    5. post-processing                → filter / GeneBe / extra-VEP / CNV-AnnotSV
-                                          + pre-build snv_indel.review.tsv
+    4. prepare 08_postprocessing      → audit + optional ploidy/MITOMAP output
+    5. post-processing                → disposable SNV working TSV → sparse
+                                          overlay + review TSV + gene index;
+                                          activate layout.json last
                                           (ClinVar removed — pipeline already
                                            does it; GeneBe writes a SECOND
                                            opinion to GENEBE_* columns)
@@ -45,6 +42,7 @@ import csv
 import json
 import os
 import re
+import signal
 import shlex
 import shutil
 import subprocess
@@ -55,9 +53,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
-                       TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT,
-                       TERTIARY_OUTPUT_ROOT)
-from ..services import dragen_jobs, mitomap_mito
+                       TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
+from ..services import dragen_jobs, mitomap_mito, sample_layout
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -540,7 +537,7 @@ def _track_pipeline_source(
         "source_sample_id": source_sample_id,
         "source_vcf_path": source_vcf_path,
         "pipeline_type": pipeline_type,
-        "copied_at":    _now(),
+        "annotated_at": _now(),
     }
     (sample_dir / "pipeline_source.json").write_text(
         json.dumps(rec, indent=2, ensure_ascii=False),
@@ -1022,32 +1019,34 @@ def main() -> int:
                             f"{sid}: {', '.join(missing)}"
                         )
                     existing_by_sid[sid] = outputs
-        # 4. Copy pipeline outputs → NGS-UI side; record source audit.
-        _set_step(job_id, "copy-pipeline-tsv")
-        pipeline_annotsv_copied: dict[str, set[str]] = {}
+        # 4. Prepare 08_postprocessing. Pipeline-owned 03-07 outputs stay in
+        # place and are read directly; only UI state and truly derived files
+        # belong below 08.
+        _set_step(job_id, "prepare-postprocessing")
+        pipeline_annotsv_available: dict[str, set[str]] = {}
+        raw_tsv_by_sid: dict[str, Path] = {}
         for sample in samples:
             sid = sample["sample_id"]
             source_sid = sample["source_sample_id"]
             source_vcf = sample["vcf_path"]
-            sample_dir = TERTIARY_OUTPUT_ROOT / sid
-            sample_dir.mkdir(parents=True, exist_ok=True)
-            gui_tsv = sample_dir / "snv_indel.annotated.tsv"
+            post_dir = sample_layout.unified_postprocessing_dir(sid)
+            post_dir.mkdir(parents=True, exist_ok=True)
             outputs = existing_by_sid.get(sid) or {}
             existing = outputs.get("snv_indel.acmg.tsv")
             if existing is None:
                 raise RuntimeError(f"internal error: no pipeline TSV for {sid}")
             _validate_acmg_tsv(existing, strict_v31=not legacy_staging)
-            shutil.copyfile(existing, gui_tsv)
+            raw_tsv_by_sid[sid] = existing
             _track_pipeline_source(
-                sample_dir,
+                post_dir,
                 existing,
                 source_sample_id=source_sid,
                 source_vcf_path=source_vcf,
                 pipeline_type=mode,
             )
-            _log(f"[copy] {sid}: {existing} → {gui_tsv}")
+            _log(f"[source] {sid}: immutable SNV TSV {existing}")
             if mode == "dragen":
-                ploidy_copy = _copy_dragen_ploidy_vcf(source_vcf, source_sid, sample_dir)
+                ploidy_copy = _copy_dragen_ploidy_vcf(source_vcf, source_sid, post_dir)
                 if ploidy_copy is None:
                     _log(f"[copy] {sid}: matching DRAGEN ploidy VCF not found beside {source_vcf}")
                 else:
@@ -1060,13 +1059,17 @@ def main() -> int:
                     f"{PIPELINE_OUT_ROOT}/{source_sid}/04_mito/"
                 )
             else:
-                mito_dst = sample_dir / "mito.annotated.tsv"
+                mito_dst = post_dir / "mito.annotated.tsv"
                 shutil.copyfile(mito_src, mito_dst)
                 try:
-                    mitomap_mito.annotate_mito_tsv(mito_dst)
+                    mito_changed = mitomap_mito.annotate_mito_tsv(mito_dst)
                 except Exception:
-                    pass
-                _log(f"[copy] {sid}: {mito_src} → {mito_dst}")
+                    mito_changed = False
+                if mito_changed:
+                    _log(f"[derived] {sid}: MITOMAP-enriched mito TSV → {mito_dst}")
+                else:
+                    mito_dst.unlink(missing_ok=True)
+                    _log(f"[source] {sid}: use pipeline mito TSV directly ({mito_src})")
             str_src = _find_pipeline_str_tsv(sid, source_sid)
             if str_src is None:
                 _log(
@@ -1074,9 +1077,7 @@ def main() -> int:
                     f"{PIPELINE_OUT_ROOT}/{source_sid}/05_str/"
                 )
             else:
-                str_dst = sample_dir / "str.tsv"
-                shutil.copyfile(str_src, str_dst)
-                _log(f"[copy] {sid}: {str_src} → {str_dst}")
+                _log(f"[source] {sid}: use pipeline STR TSV directly ({str_src})")
             pgx_files = _find_pipeline_pgx_files(sid, source_sid)
             if not pgx_files and not args.without_pgx:
                 _log(
@@ -1084,9 +1085,7 @@ def main() -> int:
                     f"{PIPELINE_OUT_ROOT}/{source_sid}/07_pgx/"
                 )
             for dst_name, pgx_src in sorted(pgx_files.items()):
-                pgx_dst = sample_dir / dst_name
-                shutil.copyfile(pgx_src, pgx_dst)
-                _log(f"[copy] {sid}: {pgx_src} → {pgx_dst}")
+                _log(f"[source] {sid}: use pipeline {dst_name} directly ({pgx_src})")
             for kind in ("cnv", "sv"):
                 key = f"{kind}.annotated.tsv"
                 annotsv_src = outputs.get(key) or _find_pipeline_annotsv_tsv(kind, sid, source_sid)
@@ -1096,10 +1095,8 @@ def main() -> int:
                         f"{PIPELINE_OUT_ROOT}/{source_sid}/06_cnv_sv/"
                     )
                     continue
-                annotsv_dst = sample_dir / f"{kind}.annotated.tsv"
-                shutil.copyfile(annotsv_src, annotsv_dst)
-                pipeline_annotsv_copied.setdefault(sid, set()).add(kind)
-                _log(f"[copy] {sid}: {annotsv_src} → {annotsv_dst}")
+                pipeline_annotsv_available.setdefault(sid, set()).add(kind)
+                _log(f"[source] {sid}: use pipeline {kind.upper()} TSV directly ({annotsv_src})")
 
         # 5. Post-processing chain (no ClinVar; pipeline already populates it).
         _set_step(job_id, "post-processing")
@@ -1122,14 +1119,33 @@ def main() -> int:
                 stopgap_sample_count=post_processing_count,
                 stopgap_sample_id=sid,
             )
-            gui_tsv = TERTIARY_OUTPUT_ROOT / sid / "snv_indel.annotated.tsv"
+            raw_tsv = raw_tsv_by_sid[sid]
+            post_dir = sample_layout.unified_postprocessing_dir(sid)
+            for stale_work in post_dir.glob(".snv_indel.*.working.tsv"):
+                stale_work.unlink(missing_ok=True)
+            work_tsv = post_dir / f".snv_indel.{job_id}.working.tsv"
+            previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+            def cleanup_work_on_sigterm(_signum, _frame):
+                work_tsv.unlink(missing_ok=True)
+                raise SystemExit(143)
+
+            signal.signal(signal.SIGTERM, cleanup_work_on_sigterm)
+            try:
+                shutil.copyfile(raw_tsv, work_tsv)
+            except BaseException:
+                work_tsv.unlink(missing_ok=True)
+                signal.signal(signal.SIGTERM, previous_sigterm)
+                raise
             stop_args = [str(scripts / "run_stopgaps.sh"),
-                         "--tsv",    str(gui_tsv),
+                         "--work-tsv", str(work_tsv),
+                         "--raw-tsv", str(raw_tsv),
+                         "--post-dir", str(post_dir),
                          "--sample", sid,
                          "--seq-type", sample["seq_type"]]
-            if pipeline_annotsv_copied.get(sid) == {"cnv", "sv"}:
+            if pipeline_annotsv_available.get(sid) == {"cnv", "sv"}:
                 stop_args += ["--skip-cnv"]
-                _log(f"[post-processing] {sid}: skip AnnotSV fallback; pipeline CNV/SV already copied")
+                _log(f"[post-processing] {sid}: skip AnnotSV fallback; pipeline CNV/SV are available")
             elif mode == "dragen":
                 stop_args += ["--dragen-cnv-source", sample["vcf_path"]]
             elif mode == "inhouse":
@@ -1141,7 +1157,8 @@ def main() -> int:
                 stop_args.append("--skip-extra-vep")
             display_stop_args = [
                 "post-processing",
-                "--tsv", str(gui_tsv),
+                "--raw-tsv", str(raw_tsv),
+                "--post-dir", str(post_dir),
                 "--sample", sid,
                 "--seq-type", sample["seq_type"],
             ]
@@ -1149,12 +1166,21 @@ def main() -> int:
                 display_stop_args.append("--skip-cnv")
             if "--skip-extra-vep" in stop_args:
                 display_stop_args.append("--skip-extra-vep")
-            _run(
-                stop_args,
-                label=f"post-processing {sid}",
-                on_line=track_post_processing,
-                display_cmd=display_stop_args,
-            )
+            try:
+                _run(
+                    stop_args,
+                    label=f"post-processing {sid}",
+                    on_line=track_post_processing,
+                    display_cmd=display_stop_args,
+                )
+                sample_layout.write_layout_marker(
+                    sid,
+                    source_id=sample["source_sample_id"],
+                    raw_tsv=raw_tsv,
+                )
+            finally:
+                work_tsv.unlink(missing_ok=True)
+                signal.signal(signal.SIGTERM, previous_sigterm)
 
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)

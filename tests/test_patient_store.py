@@ -1,10 +1,11 @@
+from app import config
 from app.services import patient_store, sample_loader
 
 
 def test_delete_unregisters_sample_without_removing_pipeline_outputs(tmp_path, monkeypatch):
-    monkeypatch.setattr(patient_store, "TERTIARY_OUTPUT_ROOT", tmp_path)
-    monkeypatch.setattr(patient_store, "PIPELINE_OUT_ROOT", tmp_path / "pipeline")
-    monkeypatch.setattr(sample_loader, "TERTIARY_OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(config, "LEGACY_TERTIARY_OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(config, "PIPELINE_OUT_ROOT", tmp_path / "pipeline")
+    monkeypatch.setattr(config, "LEGACY_PIPELINE_OUT_ROOT", tmp_path / "old_pipeline")
 
     from app.services import dragen_jobs, patient_list_store
 

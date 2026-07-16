@@ -9466,6 +9466,7 @@ function _dragenProgressPercent(state) {
     "nextflow:acmg-classify": 76,
     "nextflow:vep-annotate-done": 52,
     "copy-pipeline-tsv": 82,
+    "prepare-postprocessing": 82,
     "post-processing": 82,
     done: 100,
   };
@@ -9484,9 +9485,11 @@ function _dragenStopgapProgressPercent(state) {
     "post-processing:genebe": 0.20,
     "post-processing:extra-vep": 0.52,
     "post-processing:giab-strata": 0.66,
+    "post-processing:inhouse-af": 0.70,
     "post-processing:mane-refseq": 0.72,
     "post-processing:annotsv": 0.78,
-    "sample-step:review-tsv": 0.84,
+    "sample-step:snv-overlay": 0.82,
+    "sample-step:review-tsv": 0.86,
     "sample-step:gene-index": 0.92,
   };
   const within = sub[state.step] ?? 0;

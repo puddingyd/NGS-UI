@@ -13,8 +13,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import current_user
-from ..config import REDIS_URL, TERTIARY_OUTPUT_ROOT
-from ..services import analyses_store, job_store
+from ..config import REDIS_URL
+from ..services import analyses_store, job_store, sample_layout
 
 router = APIRouter(prefix="/api", tags=["jobs"], dependencies=[Depends(current_user)])
 
@@ -52,7 +52,7 @@ def _enqueue(
     kind: str = "exomiser_lirical",
     version: str | None = None,
 ) -> dict:
-    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    sub = sample_layout.state_dir(sample_id)
     if not sub.is_dir():
         raise HTTPException(404, f"sample not found: {sample_id}")
     try:

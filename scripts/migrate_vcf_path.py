@@ -27,20 +27,19 @@ from pathlib import Path
 HERE = Path(__file__).resolve()
 sys.path.insert(0, str(HERE.parent.parent / "backend"))
 
-from app.config import TERTIARY_OUTPUT_ROOT  # noqa: E402
-from app.services import vcf_writer           # noqa: E402
+from app.services import sample_layout, vcf_writer  # noqa: E402
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def migrate_one(sample_dir: Path) -> str:
-    sid = sample_dir.name
+def migrate_one(sid: str) -> str:
+    sample_dir = sample_layout.state_dir(sid)
     meta_path = sample_dir / "sample_metadata.json"
     if not meta_path.is_file():
         return "no-meta"
-    if not (sample_dir / "snv_indel.annotated.tsv").is_file():
+    if not sample_layout.snv_raw_tsv(sid).is_file():
         return "no-tsv"
 
     # If a previously-named LIS-prefixed VCF exists, rename it in
@@ -72,16 +71,11 @@ def migrate_one(sample_dir: Path) -> str:
 
 
 def main() -> int:
-    if not TERTIARY_OUTPUT_ROOT.is_dir():
-        print(f"!! {TERTIARY_OUTPUT_ROOT} not found", file=sys.stderr)
-        return 1
     counts: dict[str, int] = {}
-    for sub in sorted(TERTIARY_OUTPUT_ROOT.iterdir()):
-        if not sub.is_dir() or sub.name.startswith("_"):
-            continue
-        result = migrate_one(sub)
+    for sample_id in sorted(sample_layout.iter_sample_ids()):
+        result = migrate_one(sample_id)
         counts[result] = counts.get(result, 0) + 1
-        print(f"  {result:20} {sub.name}")
+        print(f"  {result:20} {sample_id}")
     print(f"\nDone: {counts}")
     return 0
 

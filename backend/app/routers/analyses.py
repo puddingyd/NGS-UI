@@ -11,14 +11,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import current_user
-from ..config import TERTIARY_OUTPUT_ROOT
-from ..services import analyses_store, sample_loader
+from ..services import analyses_store, sample_layout, sample_loader
 
 router = APIRouter(prefix="/api", tags=["analyses"], dependencies=[Depends(current_user)])
 
 
 def _require_sample(sample_id: str) -> None:
-    if not (TERTIARY_OUTPUT_ROOT / sample_id).is_dir():
+    if not sample_layout.state_dir(sample_id).is_dir():
         raise HTTPException(404, f"sample not found: {sample_id}")
 
 

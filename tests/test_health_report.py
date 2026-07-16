@@ -4,6 +4,7 @@ import re
 
 from docx import Document
 
+from app import config
 from app.adapters import pgx_tsv, snv_tsv
 from app.services import docx_export
 
@@ -148,7 +149,7 @@ def test_health_karyotype_prefers_ploidy_sidecar(tmp_path, monkeypatch):
     sample_dir.mkdir()
     with gzip.open(sample_dir / "ploidy.vcf.gz", "wt", encoding="utf-8") as handle:
         handle.write("##fileformat=VCFv4.2\n##estimatedSexKaryotype=XY\n#CHROM\tPOS\n")
-    monkeypatch.setattr(docx_export, "TERTIARY_OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(config, "LEGACY_TERTIARY_OUTPUT_ROOT", tmp_path)
 
     assert docx_export._health_sex_karyotype("S1", {"Sex": "F"}) == "XY"
 
@@ -166,7 +167,7 @@ def test_health_karyotype_does_not_read_uncopied_source_sibling(tmp_path, monkey
         json.dumps({"source_vcf_path": str(source_vcf)}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(docx_export, "TERTIARY_OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(config, "LEGACY_TERTIARY_OUTPUT_ROOT", tmp_path)
 
     assert docx_export._health_sex_karyotype("S1", {"Sex": "M"}) == "XY"
 
@@ -176,7 +177,7 @@ def test_health_karyotype_preserves_nonstandard_call(tmp_path, monkeypatch):
     sample_dir.mkdir()
     with gzip.open(sample_dir / "ploidy.vcf.gz", "wt", encoding="utf-8") as handle:
         handle.write("##estimatedSexKaryotype=XXY\n#CHROM\tPOS\n")
-    monkeypatch.setattr(docx_export, "TERTIARY_OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(config, "LEGACY_TERTIARY_OUTPUT_ROOT", tmp_path)
 
     assert docx_export._health_sex_karyotype("S1", {"Sex": "M"}) == "XXY"
 

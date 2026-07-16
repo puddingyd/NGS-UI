@@ -24,8 +24,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import current_user
-from ..config import TERTIARY_OUTPUT_ROOT
-from ..services import emr_client
+from ..services import emr_client, sample_layout
 
 router = APIRouter(prefix="/api", tags=["emr"], dependencies=[Depends(current_user)])
 
@@ -66,7 +65,7 @@ def sync_emr(sample_id: str):
     hadn't entered anything. Returns the changed fields + the raw
     EMR payload so the UI can show a diff."""
     _require_enabled()
-    sub = TERTIARY_OUTPUT_ROOT / sample_id
+    sub = sample_layout.state_dir(sample_id)
     meta_path = sub / "sample_metadata.json"
     if not meta_path.is_file():
         raise HTTPException(404, f"sample not found: {sample_id}")

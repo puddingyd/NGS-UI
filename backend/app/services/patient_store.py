@@ -1,13 +1,12 @@
 """Hydrate a per-patient sample directory the pipeline already produced.
 
-The tertiary pipeline lands variant calls in
-    tertiary_output/{LIS_ID}/snv_indel.annotated.tsv
-on its own. The 載入新個案 flow attaches reviewer-side info on top:
+The tertiary pipeline lands immutable calls in 03_acmg and the UI attaches
+reviewer-side info below 08_postprocessing:
 basic identifiers, an empty default analysis, optionally a parsed
 copy of the phenotype.txt. After hydration the directory looks like:
 
-    tertiary_output/{LIS_ID}/
-      snv_indel.annotated.tsv  (untouched; pipeline output)
+    tertiary_output/{LIS_ID}/08_postprocessing/
+      (03_acmg raw TSV lives at the sample root)
       sample_metadata.json     (basic info + empty reviewer state)
       analyses/default/
         analysis.json          (hpo + selected_panels + note)
@@ -26,8 +25,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import PIPELINE_OUT_ROOT, TERTIARY_OUTPUT_ROOT
-from . import analyses_store, emr_client, phenotype_io, vcf_writer
+from . import analyses_store, emr_client, phenotype_io, sample_layout, vcf_writer
 
 
 _LIS_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -53,11 +51,11 @@ def _validate_lis_id(lis_id: str) -> None:
 
 
 def sample_exists(lis_id: str) -> bool:
-    return (TERTIARY_OUTPUT_ROOT / lis_id).is_dir()
+    return sample_layout.is_ui_ready(lis_id)
 
 
 def is_registered(lis_id: str) -> bool:
-    return (TERTIARY_OUTPUT_ROOT / lis_id / "sample_metadata.json").is_file()
+    return (sample_layout.state_dir(lis_id) / "sample_metadata.json").is_file()
 
 
 def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
@@ -69,19 +67,17 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     behavior used by pipeline-output management.
     """
     _validate_lis_id(lis_id)
-    ui_dir = TERTIARY_OUTPUT_ROOT / lis_id
+    ui_dir = sample_layout.state_dir(lis_id)
     if not ui_dir.is_dir():
         raise FileNotFoundError(f"sample not found: {lis_id}")
 
-    pipeline_dir = PIPELINE_OUT_ROOT / lis_id
-    same_dir = pipeline_dir.resolve() == ui_dir.resolve()
     if delete_pipeline_output:
         from . import dragen_jobs
         result = dragen_jobs.delete_pipeline_output(lis_id)
         return {
             **result,
             "pipeline_output_requested": True,
-            "pipeline_output_deleted": same_dir or str(pipeline_dir) in result["deleted"],
+            "pipeline_output_deleted": bool(result["deleted"]),
             "pipeline_output_error": "",
         }
 
@@ -140,8 +136,7 @@ def register(
     """
     """Attach reviewer-side info to a pipeline-produced directory.
 
-    The directory tertiary_output/{lis_id}/ must already exist with at
-    least snv_indel.annotated.tsv inside (the pipeline drops it there).
+    The unified layout marker + 03_acmg raw TSV must already exist.
     Refuses if the dir is already registered (sample_metadata.json
     present).
     """
@@ -156,16 +151,14 @@ def register(
     if genome_build not in _GENOME_BUILDS:
         raise ValueError(f"genome_build must be one of {sorted(_GENOME_BUILDS)}")
 
-    sample_dir = TERTIARY_OUTPUT_ROOT / lis_id
-    if not sample_dir.is_dir():
+    sample_dir = sample_layout.state_dir(lis_id)
+    raw_tsv = sample_layout.snv_raw_tsv(lis_id)
+    if not sample_layout.is_ui_ready(lis_id) or not raw_tsv.is_file():
         raise FileNotFoundError(
-            f"pipeline directory not found: {sample_dir} "
+            f"pipeline SNV TSV not found for {lis_id} "
             "(tertiary pipeline drops the TSV here; nothing to register yet)"
         )
-    if not (sample_dir / "snv_indel.annotated.tsv").is_file():
-        raise FileNotFoundError(
-            f"snv_indel.annotated.tsv missing under {sample_dir}"
-        )
+    sample_dir.mkdir(parents=True, exist_ok=True)
     if (sample_dir / "sample_metadata.json").is_file():
         raise FileExistsError(f"sample already registered: {lis_id}")
 

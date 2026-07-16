@@ -38,7 +38,6 @@ from ..config import (
     JAVA_OPTS,
     LIRICAL_JAR,
     REPO_ROOT,
-    TERTIARY_OUTPUT_ROOT,
 )
 from ..services import analyses_store, job_store, vcf_writer
 from .results_parser import parse_exomiser_variants_tsv, parse_lirical_variant_tsv
@@ -168,7 +167,8 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
     directory. Pre-migration samples (no analyses/ dir) fall back to
     the sample root so old layouts keep working.
     """
-    sample_root = TERTIARY_OUTPUT_ROOT / sample_id
+    from ..services import sample_layout
+    sample_root = sample_layout.state_dir(sample_id)
     if not sample_root.is_dir():
         raise RuntimeError(f"sample dir not found: {sample_root}")
 

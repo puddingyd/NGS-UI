@@ -1,7 +1,7 @@
 """Build the compact SNV/Indel TSV used by the main review screen.
 
-The pipeline-owned snv_indel.annotated.tsv remains the complete source of
-truth.  This derived file is intentionally disposable: when the raw TSV
+The pipeline-owned 03_acmg TSV remains the complete source of truth. This
+derived file is intentionally disposable: when the raw TSV or overlay
 changes, the next sample load rebuilds it atomically.
 """
 from __future__ import annotations
@@ -13,6 +13,9 @@ import os
 import re
 import time
 from pathlib import Path
+
+from .snv_overlay import OverlayReader, overlay_signature
+from .snv_rows import is_reportable_raw_row
 
 REVIEW_TSV_NAME = "snv_indel.review.tsv"
 MAX_GNOMAD_G_AF = 0.01
@@ -186,6 +189,8 @@ def _overlaps_bed(row: dict[str, str], bed: BedIndex | None) -> bool:
 
 def _keep_row(row: dict[str, str], bed: BedIndex | None, *, is_wes: bool) -> bool:
     """Keep ClinVar P/LP rescue rows, then rare/unknown-AF BED rows."""
+    if not is_reportable_raw_row(row):
+        return False
     if _is_mito_chrom(row.get("CHROM") or ""):
         return False
     if is_wes and _row_depth(row) < WES_DP_HARD_FLOOR:
@@ -202,13 +207,17 @@ def ensure_review_tsv(
     *,
     keep_ids: set[str] | None = None,
     test_type: str = "WES",
+    output_dir: Path | None = None,
+    overlay_path: Path | None = None,
 ) -> Path:
     """Return an up-to-date compact review TSV derived from *raw_tsv*."""
     started = time.perf_counter()
     keep_ids = keep_ids or set()
     test_type_key = (test_type or "WES").upper()
     is_wes = test_type_key == "WES"
-    review_tsv = raw_tsv.with_name(REVIEW_TSV_NAME)
+    output_dir = Path(output_dir) if output_dir else raw_tsv.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    review_tsv = output_dir / REVIEW_TSV_NAME
     manifest = review_tsv.with_suffix(review_tsv.suffix + ".source.json")
     candidate_bed_path = _candidate_bed_path()
     source = {
@@ -218,6 +227,7 @@ def ensure_review_tsv(
         "test_type": test_type_key,
         "wes_dp_hard_floor": WES_DP_HARD_FLOOR if is_wes else None,
         "candidate_bed": _bed_signature(candidate_bed_path),
+        "overlay": overlay_signature(raw_tsv, overlay_path),
     }
     if review_tsv.is_file() and manifest.is_file():
         try:
@@ -240,20 +250,30 @@ def ensure_review_tsv(
     manifest_tmp = manifest.with_suffix(manifest.suffix + ".tmp")
     kept = 0
     scanned = 0
-    with raw_tsv.open("r", encoding="utf-8", newline="") as src:
+    with raw_tsv.open("r", encoding="utf-8", newline="") as src, \
+            OverlayReader(raw_tsv, overlay_path) as overlay:
         reader = csv.DictReader(src, delimiter="\t")
-        fieldnames = reader.fieldnames or []
+        fieldnames = list(reader.fieldnames or [])
+        for field in overlay.fields:
+            if field not in fieldnames:
+                fieldnames.append(field)
         with tmp.open("w", encoding="utf-8", newline="") as dst:
             writer = csv.DictWriter(
                 dst, fieldnames=fieldnames, delimiter="\t",
                 extrasaction="ignore", lineterminator="\n",
             )
             writer.writeheader()
+            batch: list[dict[str, str]] = []
             for row in reader:
                 scanned += 1
                 if _keep_row(row, candidate_bed, is_wes=is_wes):
-                    writer.writerow(row)
+                    batch.append(row)
                     kept += 1
+                    if len(batch) >= 1000:
+                        writer.writerows(overlay.apply_many(batch))
+                        batch.clear()
+            if batch:
+                writer.writerows(overlay.apply_many(batch))
     os.replace(tmp, review_tsv)
     manifest_tmp.write_text(
         json.dumps(source, ensure_ascii=False, indent=2),

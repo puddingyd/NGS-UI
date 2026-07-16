@@ -21,7 +21,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import TERTIARY_OUTPUT_ROOT
+from . import sample_layout
 
 VERSION_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")
 RESERVED_NAMES = {"default"}
@@ -39,7 +39,7 @@ def validate_name(name: str) -> None:
 
 
 def sample_dir(sample_id: str) -> Path:
-    return TERTIARY_OUTPUT_ROOT / sample_id
+    return sample_layout.state_dir(sample_id)
 
 
 def analyses_dir(sample_id: str) -> Path:

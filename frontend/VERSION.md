@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v6.9 — 2026-07-16
+
+- 三級分析輸出統一到 `/home/datalake_Intermediate/pipeline/tertiary_output/{sample}/`：Nextflow 保留 03–07，UI 的判讀狀態與衍生檔集中在 `08_postprocessing/`。
+- UI 直接讀取 03–07 的 SNV、CNV/SV、STR 與 PGx，不再永久複製大型 `snv_indel.annotated.tsv`。GeneBe、GIAB、院內 AF、MANE/extra-VEP 改存稀疏 SQLite overlay，再合併產生 review TSV 與 gene search 結果。
+- 新增安全的舊個案遷移工具：支援 dry-run、逐案 canary、批次遷移與 marker-only rollback；舊資料會保留到人工確認完成。
+
 ### v6.8 — 2026-07-16
 
 - SNV/Indel 主畫面移除重複的 gnomAD AF filter，直接顯示 review TSV 內通過其他顯示條件的候選點；`impact=MODIFIER` 仍預設隱藏一般 MODIFIER，但 ClinVar P/LP 點位會自動 rescue 顯示。Gene search 的 gnomAD AF filter 維持不變。

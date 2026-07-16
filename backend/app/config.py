@@ -5,13 +5,12 @@ Layout (production):
     ├── NGS-UI/                ← REPO_ROOT (this git checkout)
     ├── biotools/              ← Exomiser + LIRICAL CLIs
     ├── vcf/                   ← per-sample VCFs
-    ├── tertiary_output/       ← per-sample TSV + sidecars (NOT in git)
-    │   └── _index.json        ← optional sample-list cache (lives next to samples)
+    ├── tertiary_output/       ← legacy per-sample UI tree during migration
     └── data/                  ← server runtime state (users.db, jobs/, …)
 
-Every path is derived from NGS_UI_HOME so the whole tree can be moved
-by changing one env var (or the default below). Each piece can still be
-overridden individually with its own env var when the layout differs.
+New tertiary output is unified under /home/datalake_Intermediate/pipeline/
+tertiary_output (overridable independently); other runtime paths remain
+derived from NGS_UI_HOME.
 """
 import os
 from pathlib import Path
@@ -42,10 +41,15 @@ elif REPO_ROOT.name == "NGS-UI" and REPO_ROOT.parent.name == "NGS_UI":
 else:
     NGS_UI_HOME = REPO_ROOT
 
-TERTIARY_OUTPUT_ROOT = Path(os.environ.get(
-    "TERTIARY_OUTPUT_ROOT",
-    NGS_UI_HOME / "tertiary_output",
+# Legacy UI-owned per-sample directory.  New samples keep both pipeline output
+# and UI state below PIPELINE_OUT_ROOT; this root remains readable while old
+# cases are migrated.  Keep the historical TERTIARY_OUTPUT_ROOT name as a
+# compatibility alias for deployment scripts during the transition.
+LEGACY_TERTIARY_OUTPUT_ROOT = Path(os.environ.get(
+    "NGS_UI_LEGACY_TERTIARY_OUTPUT_ROOT",
+    os.environ.get("TERTIARY_OUTPUT_ROOT", NGS_UI_HOME / "tertiary_output"),
 ))
+TERTIARY_OUTPUT_ROOT = LEGACY_TERTIARY_OUTPUT_ROOT
 
 TERTIARY_NF_WORK_ROOT = Path(os.environ.get(
     "NGS_UI_TERTIARY_NF_WORK_ROOT",
@@ -60,13 +64,20 @@ REPORT_OUTPUT_DIR = Path(os.environ.get(
 ))
 REPORT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Pipeline (林伯昱's in-house Nextflow) production output root. The
-# new pipeline always writes here; the NGS-UI worker reads it
-# (one-time copy per sample) and otherwise keeps its own state
-# in TERTIARY_OUTPUT_ROOT. Override via env when running on a
-# non-DGM machine.
+# Unified tertiary root. Nextflow writes 00-07 below each sample and NGS-UI
+# writes derived/reviewer state to 08_postprocessing. NGS_UI_TERTIARY_ROOT is
+# the preferred override; retain NGS_UI_PIPELINE_OUT_ROOT as an alias.
 PIPELINE_OUT_ROOT = Path(os.environ.get(
-    "NGS_UI_PIPELINE_OUT_ROOT",
+    "NGS_UI_TERTIARY_ROOT",
+    os.environ.get(
+        "NGS_UI_PIPELINE_OUT_ROOT",
+        "/home/datalake_Intermediate/pipeline/tertiary_output",
+    ),
+))
+
+# Previous Nextflow output root, read-only during migration.
+LEGACY_PIPELINE_OUT_ROOT = Path(os.environ.get(
+    "NGS_UI_LEGACY_PIPELINE_OUT_ROOT",
     "/home/pipeline/tertiary_output",
 ))
 
@@ -77,7 +88,7 @@ DATA_ROOT = Path(os.environ.get(
 
 INDEX_PATH = Path(os.environ.get(
     "NGS_UI_INDEX_PATH",
-    NGS_UI_HOME / "tertiary_output" / "_index.json",
+    PIPELINE_OUT_ROOT / "_index.json",
 ))
 
 # Parsed SNV payloads are Python dict-heavy and can be far larger than

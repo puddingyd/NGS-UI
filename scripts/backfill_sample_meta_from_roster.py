@@ -22,8 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
-from app.config import TERTIARY_OUTPUT_ROOT  # noqa: E402
-from app.services import patient_list_store as pls  # noqa: E402
+from app.services import patient_list_store as pls, sample_layout  # noqa: E402
 
 
 # DRAGEN / in-house mode workers register sample IDs with these
@@ -68,17 +67,11 @@ def main() -> int:
         print("(roster is empty — nothing to backfill from)")
         return 0
 
-    root = TERTIARY_OUTPUT_ROOT
-    if not root.is_dir():
-        print(f"(no tertiary_output dir: {root})")
-        return 0
-
     examined = filled = skipped_complete = no_roster = 0
     pending: list[tuple[Path, dict, dict]] = []  # (meta_path, meta, patch)
 
-    for sub in sorted(root.iterdir()):
-        if not sub.is_dir() or sub.name.startswith("_"):
-            continue
+    for sample_id in sorted(sample_layout.iter_sample_ids()):
+        sub = sample_layout.state_dir(sample_id)
         meta_path = sub / "sample_metadata.json"
         if not meta_path.is_file():
             continue
@@ -86,12 +79,12 @@ def main() -> int:
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as e:
-            print(f"  ! {sub.name}: meta read failed ({e})")
+            print(f"  ! {sample_id}: meta read failed ({e})")
             continue
         if not isinstance(meta, dict):
             continue
 
-        keys = _candidate_lis_ids(meta.get("lis_id", ""), sub.name)
+        keys = _candidate_lis_ids(meta.get("lis_id", ""), sample_id)
         entry = None
         for k in keys:
             entry = roster.get(k)
@@ -113,7 +106,7 @@ def main() -> int:
 
         pending.append((meta_path, meta, patch))
         filled += 1
-        print(f"  + {sub.name}  ← roster[{k}]  "
+        print(f"  + {sample_id}  ← roster[{k}]  "
               + "  ".join(f"{k}={v!r}" for k, v in patch.items()))
 
     print(f"\nexamined={examined}  to_fill={filled}  "

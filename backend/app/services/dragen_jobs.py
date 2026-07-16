@@ -28,8 +28,9 @@ from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
                        LEGACY_DRAGEN_JOBS_DIR, TERTIARY_JOBS_DIR,
                        PIPELINE_VCF_INDEX_PATH,
                        PIPELINE_VCF_INDEX_TTL_HOURS, PIPELINE_OUT_ROOT,
-                       REPO_ROOT, TERTIARY_NF_WORK_ROOT,
-                       TERTIARY_OUTPUT_ROOT)
+                       LEGACY_PIPELINE_OUT_ROOT, REPO_ROOT,
+                       TERTIARY_NF_WORK_ROOT)
+from . import sample_layout
 
 # Final pipeline steps, in order — the worker writes the current one
 # into state.json so the UI can show progress.
@@ -39,7 +40,7 @@ PIPELINE_STEPS = [
     "samplesheet",
     "stage",  # legacy fallback only
     "nextflow",
-    "copy-pipeline-tsv",
+    "prepare-postprocessing",
     "post-processing",
     "done",
 ]
@@ -582,17 +583,20 @@ def list_pipeline_outputs() -> list[dict]:
                 jobs_by_source[source_sample_id] = (job, sample_id)
 
     sample_dirs: dict[str, tuple[Path, str]] = {}
-    if PIPELINE_OUT_ROOT.is_dir():
-        for child in PIPELINE_OUT_ROOT.iterdir():
-            if not child.is_dir() or child.name.startswith("_"):
-                continue
-            try:
-                _validate_sample_id(child.name)
-            except ValueError:
-                continue
-            source_job_entry = jobs_by_source.get(child.name)
-            ui_sample_id = source_job_entry[1] if source_job_entry else child.name
-            sample_dirs[ui_sample_id] = (child, child.name)
+    # New unified output wins; legacy Nextflow output stays visible until
+    # every case has been migrated.
+    for output_root in (PIPELINE_OUT_ROOT, LEGACY_PIPELINE_OUT_ROOT):
+        if output_root.is_dir():
+            for child in output_root.iterdir():
+                if not child.is_dir() or child.name.startswith("_"):
+                    continue
+                try:
+                    _validate_sample_id(child.name)
+                except ValueError:
+                    continue
+                source_job_entry = jobs_by_source.get(child.name)
+                ui_sample_id = source_job_entry[1] if source_job_entry else child.name
+                sample_dirs.setdefault(ui_sample_id, (child, child.name))
 
     for sample_id in set(sample_dirs) | set(latest_jobs):
         sample_entry = sample_dirs.get(sample_id)
@@ -635,7 +639,7 @@ def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
     _validate_sample_id(sample_id)
     job = _latest_job_for_sample(sample_id)
     if not job:
-        sample_dir = PIPELINE_OUT_ROOT / sample_id
+        sample_dir = sample_layout.pipeline_sample_dir(sample_id)
         if not sample_dir.is_dir():
             raise FileNotFoundError(f"pipeline output or job not found: {sample_id}")
         return {"sample_id": sample_id, "job_id": "", "log": ""}
@@ -670,22 +674,33 @@ def delete_pipeline_output(sample_id: str) -> dict:
         )
     source_sample_id = (matched_sample or {}).get("source_sample_id") or sample_id
     ui_sample_id = (matched_sample or {}).get("sample_id") or sample_id
-    pipeline_sample_id = ui_sample_id if (PIPELINE_OUT_ROOT / ui_sample_id).is_dir() else source_sample_id
-    sample_dir = PIPELINE_OUT_ROOT / pipeline_sample_id
-    ui_dir = TERTIARY_OUTPUT_ROOT / ui_sample_id
-    if not sample_dir.is_dir() and not ui_dir.is_dir() and not jobs:
+    pipeline_sample_id = source_sample_id
+    sample_dirs: set[Path] = set()
+    for root in (PIPELINE_OUT_ROOT, LEGACY_PIPELINE_OUT_ROOT):
+        ui_pipeline = root / ui_sample_id
+        source_pipeline = root / source_sample_id
+        if (ui_pipeline / "03_acmg").is_dir():
+            sample_dirs.add(ui_pipeline)
+            pipeline_sample_id = ui_sample_id
+        elif source_pipeline.is_dir():
+            sample_dirs.add(source_pipeline)
+        elif ui_pipeline.is_dir():
+            sample_dirs.add(ui_pipeline)
+    ui_dirs = {
+        sample_layout.unified_sample_dir(ui_sample_id),
+        sample_layout.legacy_ui_root() / ui_sample_id,
+    }
+    if not any(path.is_dir() for path in sample_dirs | ui_dirs) and not jobs:
         raise FileNotFoundError(f"pipeline output or job not found: {sample_id}")
     for job in jobs:
         job_id = job.get("job_id", "")
         if job.get("state") in ("queued", "running") and is_running(job_id):
             raise RuntimeError(f"pipeline output is still in use: {sample_id}")
     deleted: list[str] = []
-    if sample_dir.is_dir():
-        shutil.rmtree(sample_dir)
-        deleted.append(str(sample_dir))
-    if ui_dir.is_dir() and ui_dir.resolve() != sample_dir.resolve():
-        shutil.rmtree(ui_dir)
-        deleted.append(str(ui_dir))
+    for path in sorted(sample_dirs | ui_dirs, key=str):
+        if path.is_dir():
+            shutil.rmtree(path)
+            deleted.append(str(path))
     for job in jobs:
         if (job.get("sample_count") or 1) > 1:
             remaining = [

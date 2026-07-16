@@ -1,4 +1,4 @@
-"""Generate a minimal VCF from snv_indel.annotated.tsv for Exomiser/LIRICAL.
+"""Generate a minimal VCF from the immutable 03_acmg TSV for Exomiser/LIRICAL.
 
 Both tools look up gnomAD AFs / pathogenicity scores from their own
 databases by genomic coordinates, so a VCF carrying just CHROM /
@@ -8,9 +8,7 @@ gene-level scoring loses some compound-het fidelity. For the
 post-pipeline tertiary stage, that's the lesser of two evils
 compared with maintaining a separate VCF path per sample.
 
-Output filename is fixed (not LIS_ID-prefixed) so external scripts
-can hard-code the path:
-    tertiary_output/{LIS_ID}/vcf_from_tsv.vcf.gz
+Output filename is fixed below 08_postprocessing (not LIS_ID-prefixed).
 """
 from __future__ import annotations
 
@@ -20,7 +18,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import TERTIARY_OUTPUT_ROOT
+from . import sample_layout
+from .snv_rows import is_reportable_raw_row
 
 
 VCF_FILENAME = "vcf_from_tsv.vcf.gz"
@@ -32,11 +31,11 @@ CONTIGS = [f"chr{n}" for n in range(1, 23)] + ["chrX", "chrY", "chrM"]
 
 
 def vcf_path_for(lis_id: str) -> Path:
-    return TERTIARY_OUTPUT_ROOT / lis_id / VCF_FILENAME
+    return sample_layout.state_dir(lis_id) / VCF_FILENAME
 
 
 def _meta_path_for(lis_id: str) -> Path:
-    return TERTIARY_OUTPUT_ROOT / lis_id / VCF_META_FILENAME
+    return sample_layout.state_dir(lis_id) / VCF_META_FILENAME
 
 
 def _tsv_signature(path: Path) -> dict:
@@ -58,7 +57,7 @@ def needs_rebuild(lis_id: str) -> bool:
     out = vcf_path_for(lis_id)
     if not out.exists():
         return True
-    tsv = TERTIARY_OUTPUT_ROOT / lis_id / "snv_indel.annotated.tsv"
+    tsv = sample_layout.snv_raw_tsv(lis_id)
     if not tsv.exists():
         return False
     meta_path = _meta_path_for(lis_id)
@@ -102,10 +101,10 @@ def from_tsv(lis_id: str) -> Path:
     Returns the output path. Raises FileNotFoundError if the TSV is
     missing.
     """
-    sample_dir = TERTIARY_OUTPUT_ROOT / lis_id
-    tsv = sample_dir / "snv_indel.annotated.tsv"
+    sample_dir = sample_layout.state_dir(lis_id)
+    tsv = sample_layout.snv_raw_tsv(lis_id)
     if not tsv.is_file():
-        raise FileNotFoundError(f"snv_indel.annotated.tsv missing for {lis_id}")
+        raise FileNotFoundError(f"03_acmg SNV TSV missing for {lis_id}")
     out = vcf_path_for(lis_id)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -115,6 +114,8 @@ def from_tsv(lis_id: str) -> Path:
         reader = csv.DictReader(f, delimiter="\t")
         for r in reader:
             source_rows += 1
+            if not is_reportable_raw_row(r):
+                continue
             chrom = (r.get("CHROM") or "").strip()
             pos_s = (r.get("POS")   or "").strip()
             ref   = (r.get("REF")   or "").strip()

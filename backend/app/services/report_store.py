@@ -13,8 +13,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import TERTIARY_OUTPUT_ROOT
-from . import clinical_presentation_store
+from . import clinical_presentation_store, sample_layout
 
 
 _REVIEWER_FIELDS = {
@@ -52,7 +51,7 @@ _DEFAULT = {
 
 
 def _meta_path(sample_id: str) -> Path:
-    return TERTIARY_OUTPUT_ROOT / sample_id / "sample_metadata.json"
+    return sample_layout.state_dir(sample_id) / "sample_metadata.json"
 
 
 def _read_json(p: Path) -> dict:
