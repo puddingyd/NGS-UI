@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v6.8 — 2026-07-16
+
+- SNV/Indel 主畫面移除重複的 gnomAD AF filter，直接顯示 review TSV 內通過其他顯示條件的候選點；`impact=MODIFIER` 仍預設隱藏一般 MODIFIER，但 ClinVar P/LP 點位會自動 rescue 顯示。Gene search 的 gnomAD AF filter 維持不變。
+
 ### v6.7 — 2026-07-14
 
 - 健檢 DOCX 依最新 Word 註解調整段落與附錄：第一類標題後不留空行、第一類結果與第二類標題之間保留一行，兩個附錄之間保留一行；附錄標題改為「變異位點參考資料」。PGx 官方資訊改以 CPIC 為第一項並更新導讀文字，檢測限制只移除被標示的「ACMG SF 或」；ASCII 表格不再套用會在 Word 顯示黑色方塊的 keep-with-next 段落設定。

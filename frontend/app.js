@@ -4038,13 +4038,13 @@ function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false, ignoreDise
   if (!ignoreInPanelOnly
       && document.getElementById("filter-in-panel-only")?.checked
       && !v.in_panel) return false;
-  if (document.getElementById("filter-gnomad-af")?.checked && !_passesGnomadAfFilter(v)) return false;
   if (!document.getElementById("filter-vaf")?.checked) {
     const vaf = _numericValue(v.alt_af);
     if ((vaf != null && vaf < 0.2) || _isReferenceZygosity(v)) return false;
   }
   if (!document.getElementById("filter-impact-modifier")?.checked
-      && String(v.impact || "").toUpperCase() === "MODIFIER") return false;
+      && String(v.impact || "").toUpperCase() === "MODIFIER"
+      && !_isClinvarPlp(v)) return false;
   return true;
 }
 
@@ -7732,7 +7732,6 @@ function setupSnvDisplayFilters() {
   for (const id of [
     "filter-disease-associated",
     "filter-in-panel-only",
-    "filter-gnomad-af",
     "filter-vaf",
     "filter-impact-modifier",
   ]) {
