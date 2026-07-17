@@ -196,7 +196,8 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 │   ├── {SAMPLE_ID}.pangolin.vcf.gz                ← Splice variant 分數（中間檔）
 │   └── {SAMPLE_ID}.pangolin.vcf.gz.tbi
 ├── 03_acmg/
-│   └── {SAMPLE_ID}.snv_indel.acmg.tsv             ← ★ SNV/Indel 最終輸出（65 欄）
+│   ├── {SAMPLE_ID}.snv_indel.acmg.tsv             ← ★ SNV/Indel 最終輸出（65 欄）
+│   └── {SAMPLE_ID}.annotation_versions.json       ← annotation DB reproducibility metadata
 ├── 04_mito/                                        ← ★ v3.2 新增
 │   ├── {SAMPLE_ID}.mito.tsv                       ← mtDNA 輸出（21 欄）
 │   └── {SAMPLE_ID}.mito.vep.vcf.gz               ← VEP 中間檔
@@ -210,6 +211,26 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 ```
 
 > **v3.2 新增：** `04_mito/`、`05_str/`、`06_cnv_sv/` 目錄。STR TSV 只包含有對應 STRchive 記錄的 locus（已知致病 STR），DRAGEN 約 53 筆，NCKUH WES 約 5 筆。
+
+### Annotation database version sidecar
+
+產生 ACMG TSV 的同一個 process 必須一起輸出 `{SAMPLE_ID}.annotation_versions.json`；至少記錄該次 annotation 實際使用的 ClinVar snapshot。`release_date` 是資料庫 release 日期，不是 pipeline 執行日：
+
+```json
+{
+  "schema_version": 1,
+  "pipeline_version": "3.5.0",
+  "databases": {
+    "clinvar": {
+      "release_date": "2026-05-10",
+      "source": "clinvar_20260510.vcf.gz",
+      "sha256": "<optional>"
+    }
+  }
+}
+```
+
+建議先將 JSON 寫到同目錄暫存檔，再和 TSV 一樣原子 rename，避免 UI 在 pipeline 尚未完成時讀到半份 metadata。NGS-UI 缺少 sidecar 時會顯示「三級輸出未提供」，不以 mtime 或固定日期猜測。
 
 ---
 

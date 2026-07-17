@@ -388,61 +388,152 @@ function classifySignificance(text) {
   }
 }
 
-// Numeric classifiers for in-silico tools. Cutoffs are the ClinGen-recommended
-// calibrations:
-//   AlphaMissense / MetaRNN — Pejaver V et al, AJHG 2022 (PMID 36413997),
-//   the same calibration the R script uses for its ps grading.
-//   SpliceAI — Walker LC et al, AJHG 2023 (PMID 37352859), ClinGen SVI
-//   Splicing Subgroup recommendations.
-// Each entry holds the four boundary scores; classifyByThresholds() walks
-// them top-down and returns the first matching sig-* class.
-const TOOL_CUTOFFS = {
-  // Pejaver 2022 (AJHG, PMID 36413997) ClinGen-recommended calibrations.
-  alphamissense: { p: 0.990, lp: 0.792, vus: 0.170, lb: 0.071 },
-  metarnn:       { p: 0.939, lp: 0.748, vus: 0.267, lb: 0.108 },
-  revel:         { p: 0.932, lp: 0.773, vus: 0.290, lb: 0.183 },
-  bayesdel:      { p: 0.500, lp: 0.270, vus: -0.180, lb: -0.360 },
-  // Splice-impact probabilities — low value = "no predicted splice change",
-  // not "benign", so leave the low end uncoloured (no lb).
-  spliceai:      { p: 0.800, lp: 0.500, vus: 0.200 },
-  pangolin:      { p: 0.800, lp: 0.500, vus: 0.200 },
-  // P-KNN LLR — signed, ClinGen calibration (Pejaver 2022). The
-  // existing >= cascade naturally handles the bipartite split:
-  //   LLR > 7.65         → sig-p   (Strong P)
-  //   1.99 < LLR ≤ 7.65  → sig-lp  (Moderate / Supporting P → same light red)
-  //   |LLR| ≤ 1.99       → sig-vus (ambiguous, yellow)
-  //   -7.65 ≤ LLR < -1.99 → sig-lb (Moderate / Supporting B → light green)
-  //   LLR < -7.65         → sig-b   (Strong B)
-  pknn:          { p: 7.65, lp: 1.99, vus: -1.99, lb: -7.65 },
-  // ESM1b LLR — lower values predict a more damaging protein effect.
-  // Bergquist et al. 2025 ClinGen SVI calibration, compressed into
-  // the same five display buckets as the other predictors.
-  esm1b:         { p: -24.0, lp: -10.7, vus: -6.2, lb: 8.7 },
+// In-silico annotations use tool-specific evidence calibration.  Do not infer
+// a generic PP3/BP4 strength from a score merely because it is 0–1: only the
+// tools backed by Pejaver 2022, Bergquist 2025, or ClinGen SVI Splicing are
+// labelled PP3/BP4 below.  Other tools are explicitly marked as model cutoffs.
+const IN_SILICO_REFERENCES = {
+  pejaver:   { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9748256/", pmid: "36413997" },
+  bergquist: { url: "https://pubmed.ncbi.nlm.nih.gov/40084623/", pmid: "40084623" },
+  splicing:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10357475/", pmid: "37352859" },
+  pangolin:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9022248/", pmid: "35449021" },
+  pknn:      { url: "https://doi.org/10.1101/2025.09.24.678417", pmid: "" },
+  metarnn:   { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9548151/", pmid: "36209109" },
+  dann:      { url: "https://pubmed.ncbi.nlm.nih.gov/25338716/", pmid: "25338716" },
+  phactboost:{ url: "https://pubmed.ncbi.nlm.nih.gov/38934805/", pmid: "38934805" },
+  loftool:   { url: "https://doi.org/10.1093/bioinformatics/btv602", pmid: "27563026" },
+  logofunc:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10688473/", pmid: "38037155" },
+  maxentscan:{ url: "https://pubmed.ncbi.nlm.nih.gov/15285897/", pmid: "15285897" },
+  pdivas:    { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10563346/", pmid: "37817060" },
+};
+
+const IN_SILICO_CALIBRATIONS = {
+  pknn: {
+    lines: [
+      "顏色優先使用三級輸出的 PKNN_EVIDENCE（PP3/BP4 strength）",
+      "PKNN_LLR 僅顯示數值；不在 UI 重新推導 evidence strength",
+      "目前文獻為 preprint，尚無 PMID",
+    ], reference: IN_SILICO_REFERENCES.pknn,
+  },
+  alphamissense: {
+    lines: [
+      "PP3_Strong: ≥ 0.990", "PP3_3-point: 0.972–0.989",
+      "PP3_Moderate: 0.906–0.971", "PP3_Supporting: 0.792–0.905",
+      "Indeterminate: 0.170–0.791", "BP4_Supporting: 0.100–0.169",
+      "BP4_Moderate: 0.071–0.099", "BP4_3-point: ≤ 0.070",
+    ], reference: IN_SILICO_REFERENCES.bergquist,
+  },
+  pangolin: {
+    lines: [
+      "Predicted splice impact: |score| ≥ 0.20",
+      "Indeterminate: |score| < 0.20",
+      "這是原始模型 benchmark cutoff，並非通用 PP3/BP4 calibration",
+    ], reference: IN_SILICO_REFERENCES.pangolin,
+  },
+  esm1b: {
+    lines: [
+      "PP3_Strong: ≤ -24.0", "PP3_3-point: -23.9 to -14.0",
+      "PP3_Moderate: -13.9 to -12.2", "PP3_Supporting: -12.1 to -10.7",
+      "Indeterminate: -10.6 to -6.4", "BP4_Supporting: -6.3 to -3.2",
+      "BP4_Moderate: -3.1 to 8.7", "BP4_3-point: ≥ 8.8",
+    ], reference: IN_SILICO_REFERENCES.bergquist,
+  },
+  varity: {
+    lines: [
+      "PP3_Strong: ≥ 0.965", "PP3_3-point: 0.915–0.964",
+      "PP3_Moderate: 0.842–0.914", "PP3_Supporting: 0.675–0.841",
+      "Indeterminate: 0.252–0.674", "BP4_Supporting: 0.117–0.251",
+      "BP4_Moderate: 0.064–0.116", "BP4_3-point: 0.037–0.063",
+      "BP4_Strong: ≤ 0.036",
+    ], reference: IN_SILICO_REFERENCES.bergquist,
+  },
+  bayesdel: {
+    lines: [
+      "PP3_Strong: ≥ 0.50", "PP3_Moderate: 0.27 to < 0.50",
+      "PP3_Supporting: 0.13 to < 0.27", "Indeterminate: -0.18 to < 0.13",
+      "BP4_Supporting: > -0.36 to -0.18", "BP4_Moderate: ≤ -0.36",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  revel: {
+    lines: [
+      "PP3_Strong: ≥ 0.932", "PP3_Moderate: 0.773–0.931",
+      "PP3_Supporting: 0.644–0.772", "Indeterminate: 0.291–0.643",
+      "BP4_Supporting: 0.184–0.290", "BP4_Moderate: 0.017–0.183",
+      "BP4_Strong: ≤ 0.016",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  spliceai: {
+    lines: [
+      "PP3: ≥ 0.20", "BP4: ≤ 0.10", "Indeterminate: > 0.10 and < 0.20",
+      "須配合 variant context 與 ClinGen SVI splicing decision tree 使用",
+    ], reference: IN_SILICO_REFERENCES.splicing,
+  },
+  metarnn: {
+    lines: [
+      "Model pathogenic class: ≥ 0.50", "Model benign class: < 0.50",
+      "尚無可靠的通用 PP3/BP4 strength calibration；顏色只表示模型分類",
+    ], reference: IN_SILICO_REFERENCES.metarnn,
+  },
+  dann: {
+    lines: [
+      "分數越高表示模型預測越 deleterious",
+      "作者未提供可通用於臨床分類的 cutoff，亦無可靠 PP3/BP4 strength calibration",
+      "因此所有數值以黃色標示為 contextual evidence",
+    ], reference: IN_SILICO_REFERENCES.dann,
+  },
+  phactboost: {
+    lines: [
+      "Model pathogenic class: ≥ 0.50", "Model benign class: < 0.50",
+      "尚無可靠的通用 PP3/BP4 strength calibration；顏色只表示模型分類",
+    ], reference: IN_SILICO_REFERENCES.phactboost,
+  },
+  phylop: {
+    lines: [
+      "PP3_Moderate: ≥ 9.741", "PP3_Supporting: 7.367 to < 9.741",
+      "Indeterminate: > 1.879 to < 7.367", "BP4_Supporting: > 0.021 to 1.879",
+      "BP4_Moderate: ≤ 0.021", "文獻註明 PhyloP validation 為 marginal",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  gerp: {
+    lines: [
+      "Indeterminate / no PP3 cutoff: > 2.70",
+      "BP4_Supporting: > -4.54 to 2.70", "BP4_Moderate: ≤ -4.54",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  sift: {
+    lines: [
+      "PP3_Moderate: 0", "PP3_Supporting: > 0 to 0.001",
+      "Indeterminate: > 0.001 to < 0.080", "BP4_Supporting: 0.080 to < 0.327",
+      "BP4_Moderate: ≥ 0.327",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  loftool: {
+    lines: [
+      "LoF-intolerant gene quartile: ≤ 0.25", "Other genes: > 0.25",
+      "這是 gene-level intolerance，不是 variant-level PP3/BP4 evidence",
+    ], reference: IN_SILICO_REFERENCES.loftool,
+  },
 };
 
 // In-silico predictors in display order. The first three tools with
 // actual values land on the primary row of the card; the 4th onwards
 // go under ▾ More. Empty cells are skipped entirely — `IN_SILICO_TOOLS`
 // is just the priority order, not a fixed slot list.
-// In-silico predictor priority — 3 primary on the card, the rest in
-// ▾ More. Ordering matches the new pipeline's authoritative cascade
-// (P-KNN > AlphaMissense > Pangolin); ESM1b / VARITY_R / BayesDel sit
-// just below them (still high-confidence predictors); SpliceAI /
-// MetaRNN come from the extra-VEP post-processing step; the conservation /
-// gene-level / older tools sit further down.
+// Ordering is reviewer-defined; remaining populated tools live under More.
 const IN_SILICO_TOOLS = [
-  { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR",            extraField: "PKNN_evidence", cutoffs: "pknn" },
-  { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred", cutoffs: "alphamissense" },
+  { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR",            extraField: "PKNN_evidence" },
+  { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred" },
   // Pangolin is signed: -0.87 = strong splice loss, +0.87 = strong
   // splice gain. Classify by |score| so both colour-code the same way;
   // we still display the signed number so reviewers see the direction.
-  { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score",                                       cutoffs: "pangolin", absForColor: true },
-  // -- everything below this line lives in More --
-  { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred",         cutoffs: "esm1b", lowerIsPathogenic: true },
+  { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score" },
+  { key: "revel",         label: "REVEL",         scoreField: "REVEL_score" },
+  { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score" },
+  // -- everything below this line lives in More when all three above exist --
+  { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
   { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
-  { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred",      cutoffs: "bayesdel" },
-  { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score",                                       cutoffs: "spliceai" },
-  { key: "metarnn",       label: "MetaRNN",       scoreField: "MetaRNN_score",                                        cutoffs: "metarnn" },
+  { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred" },
+  { key: "metarnn",       label: "MetaRNN",       scoreField: "MetaRNN_score" },
   { key: "dann",          label: "DANN",          scoreField: "DANN" },
   { key: "phactboost",    label: "PhactBoost",    scoreField: "PhactBoost" },
   { key: "phylop",        label: "PhyloP",        scoreField: "PhyloP" },
@@ -455,81 +546,159 @@ const IN_SILICO_PRIMARY_COUNT = 3;
 function _hasNum(x) {
   return x != null && x !== "" && Number.isFinite(Number(x));
 }
+
+function _evidence(cls, label) { return { cls, label }; }
+
+function _pknnEvidence(text) {
+  const value = String(text || "").trim().replace(/[ -]+/g, "_");
+  if (/^PP3_(Strong|Very_Strong)$/i.test(value)) return _evidence("sig-p", value);
+  if (/^PP3_/i.test(value)) return _evidence("sig-lp", value);
+  if (/^BP4_(Strong|Very_Strong|Moderate)$/i.test(value)) return _evidence("sig-b", value);
+  if (/^BP4_/i.test(value)) return _evidence("sig-lb", value);
+  return _evidence("sig-vus", value || "Not assigned");
+}
+
+function _toolEvidence(v, tool) {
+  const x = Number(v[tool.scoreField]);
+  if (!Number.isFinite(x)) return _evidence("", "Not available");
+  switch (tool.key) {
+    case "pknn": return _pknnEvidence(v.PKNN_evidence);
+    case "alphamissense":
+      if (x >= .990) return _evidence("sig-p", "PP3_Strong");
+      if (x >= .972) return _evidence("sig-p", "PP3_3-point");
+      if (x >= .906) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= .792) return _evidence("sig-lp", "PP3_Supporting");
+      if (x >= .170) return _evidence("sig-vus", "Indeterminate");
+      if (x >= .100) return _evidence("sig-lb", "BP4_Supporting");
+      if (x >= .071) return _evidence("sig-b", "BP4_Moderate");
+      return _evidence("sig-b", "BP4_3-point");
+    case "pangolin": return Math.abs(x) >= .20
+      ? _evidence("sig-lp", "Predicted splice impact")
+      : _evidence("sig-vus", "Indeterminate");
+    case "esm1b":
+      if (x <= -24.0) return _evidence("sig-p", "PP3_Strong");
+      if (x <= -14.0) return _evidence("sig-p", "PP3_3-point");
+      if (x <= -12.2) return _evidence("sig-lp", "PP3_Moderate");
+      if (x <= -10.7) return _evidence("sig-lp", "PP3_Supporting");
+      if (x <= -6.4) return _evidence("sig-vus", "Indeterminate");
+      if (x <= -3.2) return _evidence("sig-lb", "BP4_Supporting");
+      if (x <= 8.7) return _evidence("sig-b", "BP4_Moderate");
+      return _evidence("sig-b", "BP4_3-point");
+    case "varity":
+      if (x >= .965) return _evidence("sig-p", "PP3_Strong");
+      if (x >= .915) return _evidence("sig-p", "PP3_3-point");
+      if (x >= .842) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= .675) return _evidence("sig-lp", "PP3_Supporting");
+      if (x >= .252) return _evidence("sig-vus", "Indeterminate");
+      if (x >= .117) return _evidence("sig-lb", "BP4_Supporting");
+      if (x >= .064) return _evidence("sig-b", "BP4_Moderate");
+      if (x >= .037) return _evidence("sig-b", "BP4_3-point");
+      return _evidence("sig-b", "BP4_Strong");
+    case "bayesdel":
+      if (x >= .50) return _evidence("sig-p", "PP3_Strong");
+      if (x >= .27) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= .13) return _evidence("sig-lp", "PP3_Supporting");
+      if (x > -.18) return _evidence("sig-vus", "Indeterminate");
+      if (x > -.36) return _evidence("sig-lb", "BP4_Supporting");
+      return _evidence("sig-b", "BP4_Moderate");
+    case "revel":
+      if (x >= .932) return _evidence("sig-p", "PP3_Strong");
+      if (x >= .773) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= .644) return _evidence("sig-lp", "PP3_Supporting");
+      if (x >= .291) return _evidence("sig-vus", "Indeterminate");
+      if (x >= .184) return _evidence("sig-lb", "BP4_Supporting");
+      if (x > .016) return _evidence("sig-b", "BP4_Moderate");
+      return _evidence("sig-b", "BP4_Strong");
+    case "spliceai":
+      if (x >= .20) return _evidence("sig-lp", "PP3");
+      if (x <= .10) return _evidence("sig-b", "BP4");
+      return _evidence("sig-vus", "Indeterminate");
+    case "metarnn": return x >= .50
+      ? _evidence("sig-lp", "Model pathogenic") : _evidence("sig-lb", "Model benign");
+    case "dann": return _evidence("sig-vus", "No calibrated evidence");
+    case "phactboost": return x >= .50
+      ? _evidence("sig-lp", "Model pathogenic") : _evidence("sig-lb", "Model benign");
+    case "phylop":
+      if (x >= 9.741) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= 7.367) return _evidence("sig-lp", "PP3_Supporting");
+      if (x > 1.879) return _evidence("sig-vus", "Indeterminate");
+      if (x > .021) return _evidence("sig-lb", "BP4_Supporting");
+      return _evidence("sig-b", "BP4_Moderate");
+    case "gerp":
+      if (x > 2.70) return _evidence("sig-vus", "No calibrated PP3");
+      if (x > -4.54) return _evidence("sig-lb", "BP4_Supporting");
+      return _evidence("sig-b", "BP4_Moderate");
+    case "sift":
+      if (x === 0) return _evidence("sig-lp", "PP3_Moderate");
+      if (x <= .001) return _evidence("sig-lp", "PP3_Supporting");
+      if (x < .080) return _evidence("sig-vus", "Indeterminate");
+      if (x < .327) return _evidence("sig-lb", "BP4_Supporting");
+      return _evidence("sig-b", "BP4_Moderate");
+    case "loftool": return x <= .25
+      ? _evidence("sig-lp", "LoF-intolerant gene quartile")
+      : _evidence("sig-vus", "Gene-level context only");
+    default: return _evidence("sig-vus", "No calibrated evidence");
+  }
+}
+
+function _annotationHint(title, lines, reference = null, options = {}) {
+  const body = [`<strong>${escapeHtml(title)}</strong>`]
+    .concat((lines || []).map(line => `<div>${escapeHtml(line)}</div>`));
+  if (reference?.url) {
+    const pmid = reference.pmid ? ` (PMID: ${escapeHtml(reference.pmid)})` : "";
+    body.push(`<div class="tip-reference">Reference: <a href="${escapeAttr(reference.url)}" target="_blank" rel="noopener">${escapeHtml(reference.url)}</a>${pmid}</div>`);
+  }
+  const className = ["info-hint", options.className || ""].filter(Boolean).join(" ");
+  const dataId = options.dataId != null ? ` data-id="${escapeAttr(options.dataId)}"` : "";
+  return `<button type="button" class="${className}"${dataId} aria-label="${escapeAttr(title)} 註解" data-tip-html="${escapeAttr(body.join(""))}">ⓘ</button>`;
+}
+
 function _renderInSilicoCell(v, tool) {
   const score = v[tool.scoreField];
   const has = _hasNum(score);
   const pred = tool.predField ? (v[tool.predField] || "").trim() : "";
-  const cutoffs = tool.cutoffs ? TOOL_CUTOFFS[tool.cutoffs] : null;
-  const scoreForCls = (has && tool.absForColor) ? Math.abs(Number(score)) : score;
-  const cls = has && cutoffs
-    ? ((tool.lowerIsPathogenic ? classifyByLowerThresholds(scoreForCls, cutoffs) : classifyByThresholds(scoreForCls, cutoffs)) || "")
-    : "";
+  const evidence = has ? _toolEvidence(v, tool) : _evidence("", "Not available");
+  const calibration = IN_SILICO_CALIBRATIONS[tool.key] || {};
+  const dynamicLines = [`本位點：${evidence.label}`].concat(calibration.lines || []);
+  const hint = _annotationHint(tool.label, dynamicLines, calibration.reference);
   const valueTxt = has
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
-  return `<span class="k">${escapeHtml(tool.label)}</span>`
-       + `<span class="v ${cls}">${valueTxt}</span>`;
-}
-function classifyByThresholds(score, cutoffs) {
-  if (score == null || score === "") return null;
-  const x = Number(score);
-  if (!Number.isFinite(x)) return null;
-  if (cutoffs.p   != null && x >= cutoffs.p)   return "sig-p";
-  if (cutoffs.lp  != null && x >= cutoffs.lp)  return "sig-lp";
-  if (cutoffs.vus != null && x >= cutoffs.vus) return "sig-vus";
-  if (cutoffs.lb  != null && x >= cutoffs.lb)  return "sig-lb";
-  // Below all configured thresholds. Tools that have an `lb` cutoff
-  // (real pathogenicity scores) get the dark-green B chip; tools that
-  // omit `lb` (e.g. SpliceAI) leave low-end scores uncoloured.
-  return cutoffs.lb == null ? null : "sig-b";
-}
-
-function classifyByLowerThresholds(score, cutoffs) {
-  if (score == null || score === "") return null;
-  const x = Number(score);
-  if (!Number.isFinite(x)) return null;
-  if (cutoffs.p   != null && x <= cutoffs.p)   return "sig-p";
-  if (cutoffs.lp  != null && x <= cutoffs.lp)  return "sig-lp";
-  if (cutoffs.vus != null && x <= cutoffs.vus) return "sig-vus";
-  if (cutoffs.lb  != null && x <= cutoffs.lb)  return "sig-lb";
-  return "sig-b";
+  return `<span class="k">${escapeHtml(tool.label)}${hint}</span>`
+       + `<span class="v ${evidence.cls}">${valueTxt}</span>`;
 }
 
 // LoGoFunc emits strings like "GOF (0.123)*", "LOF (0.456)", or "Neutral (...)".
 // A trailing star means probability > class-specific cutoff (deeper red);
-// no star but class is GOF / LOF gives a lighter red. Neutral / NA is uncoloured.
+// no star but class is GOF / LOF gives a lighter red. Neutral is a model-level
+// negative call (light green), not calibrated ACMG BP4 evidence.
 function classifyLoGoFunc(text) {
   if (text == null || text === "" || text === "—") return null;
   const s = String(text).trim();
   const m = s.match(/^(GOF|LOF|Neutral)/i);
   if (!m) return null;
-  if (m[1].toUpperCase() === "NEUTRAL") return null;
+  if (m[1].toUpperCase() === "NEUTRAL") return "sig-lb";
   return s.endsWith("*") ? "sig-p" : "sig-lp";
 }
 
-// MaxEntScan diff cutoffs from the Pejaver-style PS3 calibration the
-// R script uses internally: |diff| ≥ 7.65 strong / 5.96 moderate /
-// 4.24 supporting; below that no colour.
+// MaxEntScan_diff has no reliable, general-purpose PP3/BP4 calibration.
+// Keep it visibly yellow as contextual evidence instead of mapping an
+// arbitrary raw-score difference onto ACMG evidence strength.
 function classifyMaxEntScan(score) {
   if (score == null || score === "") return null;
-  const x = Math.abs(Number(score));
-  if (!Number.isFinite(x)) return null;
-  if (x >= 7.65) return "sig-p";
-  if (x >= 5.96) return "sig-lp";
-  if (x >= 4.24) return "sig-vus";
-  return null;
+  return Number.isFinite(Number(score)) ? "sig-vus" : null;
 }
 
-// PDIVAS cutoffs: ≥ 0.5 high-confidence pathogenic intronic, ≥ 0.082
-// (paper default) supporting; below that no colour.
+// PDIVAS paper sensitivity operating points (not PP3/BP4 calibration):
+// ~0.501 gives 80% sensitivity; 0.082 gives 95% sensitivity.
 // Source: Kurosawa R et al, BMC Genomics 2023.
 function classifyPDIVAS(score) {
   if (score == null || score === "") return null;
   const x = Number(score);
   if (!Number.isFinite(x)) return null;
-  if (x >= 0.5)   return "sig-p";
+  if (x >= 0.501) return "sig-p";
   if (x >= 0.082) return "sig-lp";
-  return null;
+  return "sig-vus";
 }
 
 // in_silico_prediction comes through as "<n_pathogenic> - <n_vus> - <n_benign>".
@@ -3371,6 +3540,47 @@ function setEdit(id, field, val) {
   state.dirty = true;
 }
 
+function _shortAcmgClass(value) {
+  const cls = classifySignificance(value);
+  return ({ "sig-p": "P", "sig-lp": "LP", "sig-vus": "VUS", "sig-lb": "LB", "sig-b": "B" })[cls]
+      || String(value || "—");
+}
+
+function _acmgSourceHint(id, v) {
+  const manual = getEdit(id, "ACMG_classification");
+  const manualScore = getEdit(id, "ACMG_score");
+  const manualCriteria = getEdit(id, "ACMG_criteria");
+  const geneBe = v.genebe_acmg_class;
+  const inHouse = v.ACMG_classification;
+  let source = "in-house";
+  const lines = [];
+  const hasManualEdit = [manual, manualScore, manualCriteria]
+    .some(value => value !== null && value !== undefined && value !== "");
+  if (hasManualEdit) source = "manual";
+  else if (geneBe !== null && geneBe !== undefined && geneBe !== "") source = "GeneBe";
+  lines.push(`source: ${source}`);
+  if (source === "manual") {
+    lines.push(`in-house: ${_shortAcmgClass(inHouse)}`);
+    lines.push(`GeneBe: ${_shortAcmgClass(geneBe)}`);
+  } else if (source === "GeneBe") {
+    lines.push(`in-house: ${_shortAcmgClass(inHouse)}`);
+  } else {
+    lines.push(`GeneBe: ${_shortAcmgClass(geneBe)}`);
+  }
+  return _annotationHint("ACMG source", lines, null, {
+    className: "acmg-source-hint", dataId: id,
+  });
+}
+
+function _refreshAcmgSourceHints(id) {
+  const v = state.data?.variants?.[id];
+  if (!v) return;
+  const replacement = _acmgSourceHint(id, v);
+  document.querySelectorAll(`.acmg-source-hint[data-id="${CSS.escape(id)}"]`).forEach(el => {
+    el.outerHTML = replacement;
+  });
+}
+
 function _syncEditControls(id, field, val, source = null) {
   const selectorByField = {
     comment: ".variant-comment",
@@ -3435,7 +3645,18 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const editComment   = getEdit(id, "comment")             ?? "";
 
   const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
-  const clinvarLabel = clinvarDate ? `ClinVar (${escapeHtml(clinvarDate)})` : "ClinVar";
+  const clinvarHint = _annotationHint("ClinVar", clinvarDate
+    ? [`version date: ${clinvarDate}`]
+    : [
+        "version date: 三級輸出未提供",
+        "請由 03_acmg 的 annotation_versions.json sidecar 記錄 ClinVar release_date",
+      ]);
+  const scoreHint = _annotationHint("Score", [
+    "Total score = Variant score + Phenotype score",
+    "Variant score：GeneBe 優先、否則使用 in-house ACMG points；points 限制於 -10 至 10，再用 round((points + 10) / 20 × 100) 轉為 0–100",
+    "Phenotype score：100 ×（此 gene 命中的 HPO/panel 權重總和）÷（全部有效輸入的 HPO/panel 權重總和）",
+    "Total score 可超過 100；手動修改 ACMG 不會即時重算排序 score",
+  ]);
   const hgvsLabel = displaySnvHgvs(v, id);
 
   // Extras shown only when the user clicks the "More" button. Each row is
@@ -3444,32 +3665,54 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const extras = [];
   if (v.in_silico_prediction != null && v.in_silico_prediction !== "") {
     extras.push({ key: "In silico prediction",
-                  html: fmtInSilico(v.in_silico_prediction) });
+                  html: fmtInSilico(v.in_silico_prediction),
+                  hint: _annotationHint("In silico prediction", [
+                    "格式：pathogenic tool count - VUS tool count - benign tool count",
+                    "此為工具計數摘要，不等同 PP3/BP4 evidence strength；請以各工具註解的 calibrated threshold 為準",
+                  ]) });
   }
   if (v.LoGoFunc != null && v.LoGoFunc !== "" && v.LoGoFunc !== "NA") {
     extras.push({ key: "LoGoFunc", text: String(v.LoGoFunc),
-                  cls: classifyLoGoFunc(v.LoGoFunc) });
+                  cls: classifyLoGoFunc(v.LoGoFunc),
+                  hint: _annotationHint("LoGoFunc", [
+                    "GOF/LOF: model-predicted functional direction",
+                    "*：probability 超過作者定義的 gene-level significance cutoff",
+                    "尚無通用 PP3/BP4 strength calibration",
+                  ], IN_SILICO_REFERENCES.logofunc) });
   }
   if (v.MaxEntScan_diff != null && v.MaxEntScan_diff !== "") {
     extras.push({ key: "MaxEntScan", text: fmtNum(v.MaxEntScan_diff),
-                  cls: classifyMaxEntScan(v.MaxEntScan_diff) });
+                  cls: classifyMaxEntScan(v.MaxEntScan_diff),
+                  hint: _annotationHint("MaxEntScan difference", [
+                    "顯示 alternate 與 reference splice-site score 的差值",
+                    "尚無可靠的通用 PP3/BP4 strength calibration，因此以黃色標示為 contextual evidence",
+                  ], IN_SILICO_REFERENCES.maxentscan) });
   }
   if (v.PDIVAS_score != null && v.PDIVAS_score !== "") {
     extras.push({ key: "PDIVAS", text: fmtNum(v.PDIVAS_score),
-                  cls: classifyPDIVAS(v.PDIVAS_score) });
+                  cls: classifyPDIVAS(v.PDIVAS_score),
+                  hint: _annotationHint("PDIVAS", [
+                    "80%-sensitivity benchmark: ≥ 0.501",
+                    "95%-sensitivity benchmark: ≥ 0.082",
+                    "適用 deep-intronic splice-altering variants；不是 PP3/BP4 calibration",
+                  ], IN_SILICO_REFERENCES.pdivas) });
   }
-  // The in-silico predictor row (AlphaMissense / BayesDel / Pangolin /
-  // SpliceAI primary; ESM / MetaRNN / REVEL / CADD / Evo2 / VARITY /
-  // SIFT / DANN / PhactBoost / PhyloP / GERP / LOFTOOL / P-KNN in More)
-  // is rendered separately below from IN_SILICO_TOOLS.
+  // The in-silico predictor row follows the reviewer-defined order in
+  // IN_SILICO_TOOLS; its first three populated values are shown directly and
+  // any remaining predictors are rendered under More.
   if (v.loftee_hc || v.loftee_filter || v.loftee_flags) {
     const parts = [v.loftee_hc, v.loftee_filter, v.loftee_flags]
       .filter(Boolean).join(" / ");
-    extras.push({ key: "LOFTEE", text: parts });
+    extras.push({ key: "LOFTEE", text: parts,
+                  cls: v.loftee_hc === "HC" ? "sig-lp" : "sig-vus",
+                  hint: _annotationHint("LOFTEE", [
+                    "HC 表示 high-confidence predicted loss-of-function",
+                    "此欄是 LoF transcript QC/filter，不是 PP3/BP4 score",
+                  ]) });
   }
   const extrasHtml = extras.map(x => {
     const valHtml = x.html != null ? x.html : escapeHtml(x.text);
-    return `<span class="k">${escapeHtml(x.key)}</span>`
+    return `<span class="k">${escapeHtml(x.key)}${x.hint || ""}</span>`
          + `<span class="v ${x.cls || ''}">${valHtml}</span>`;
   }).join("");
 
@@ -3505,7 +3748,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     </div>
     <div class="info-grid">
       <div>
-        <span class="k">Score</span><span class="v">${escapeHtml(scoreLine)}</span>
+        <span class="k">Score${scoreHint}</span><span class="v">${escapeHtml(scoreLine)}</span>
         <span class="k">Exomiser</span><span class="v">${escapeHtml(fmtScoreRank(v.total_score_exomiser_variant, v.rank_exomiser_variant))}</span>
         <span class="k">LIRICAL</span><span class="v">${escapeHtml(fmtScoreRank(v.lirical_variant_score, v.rank_lirical_variant))}</span>
       </div>
@@ -3519,8 +3762,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         </div>
       </div>
       <div>
-        <span class="k">${clinvarLabel}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
-        <span class="k">ACMG</span>
+        <span class="k">ClinVar${clinvarHint}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
+        <span class="k">ACMG${_acmgSourceHint(id, v)}</span>
         <span class="acmg-class-row">
           <select class="acmg-class ${classifySignificance(editAcmgClass) || ""}" data-id="${escapeAttr(id)}">
             <option value=""                       ${editAcmgClass === ""                      ? "selected" : ""}>—</option>
@@ -3908,9 +4151,8 @@ const REPORT_SECTION_DEFS = [
 const CANDIDATE_SECTION_DEFS = [
   { el: "cat-tier-1a", title: "1A — ClinVar P/LP ≥ 1★",        category: "1A", dropdown: "candidate", tier: "1A", defaultOpen: true },
   { el: "cat-tier-1b", title: "1B — Frameshift / Nonsense (LOFTEE HC)", category: "1B", dropdown: "candidate", tier: "1B", defaultOpen: true },
-  { el: "cat-tier-1c", title: "1C — ACMG points ≥ 4",          category: "1C", dropdown: "candidate", tier: "1C", defaultOpen: true },
-  { el: "cat-tier-2",  title: "2 — ClinVar P/LP 0★ or Conflicting (含 P)", category: "2", dropdown: "candidate", tier: "2" },
-  { el: "cat-tier-3",  title: "3 - Other",                     category: "3",  dropdown: "candidate", tier: "3"  },
+  { el: "cat-tier-1c", title: "1C — Predicted suspect",        category: "1C", dropdown: "candidate", tier: "1C", defaultOpen: true },
+  { el: "cat-tier-2",  title: "2 — Other",                     category: "2",  dropdown: "candidate", tier: "2"  },
   ...SECONDARY_PANEL_DEFS.map(def => ({
     el: `cat-${def.key.replace(/_/g, "-")}-c`,
     title: def.title,
@@ -4191,7 +4433,7 @@ function renderActiveSnvTier() {
 // Total Y' so the collapsed view still surfaces those numbers. The
 // active panel is whatever was active before, falling back to the
 // first tier with any visible variants, falling back to 1A.
-const TIER_ORDER = ["1A", "1B", "1C", "2", "3"];
+const TIER_ORDER = ["1A", "1B", "1C", "2"];
 let activeTierTab = null;
 
 function renderTierTabBar() {
@@ -4227,9 +4469,8 @@ function renderTierTabBar() {
   const titles = {
     "1A": "1A — ClinVar P/LP ≥ 1★",
     "1B": "1B — Frameshift / Nonsense",
-    "1C": "1C — ACMG points ≥ 4",
-    "2":  "2 — ClinVar P/LP 0★ or CONF",
-    "3":  "3 - Other",
+    "1C": "1C — Predicted suspect",
+    "2":  "2 — Other",
   };
   bar.innerHTML = TIER_ORDER.map(t => {
     const c = counts[t];
@@ -6096,6 +6337,7 @@ document.addEventListener("change", ev => {
     updateSaveHint();
   } else if (t.matches(".acmg-class")) {
     setEdit(t.dataset.id, "ACMG_classification", t.value);
+    _refreshAcmgSourceHints(t.dataset.id);
     updateSaveHint();
     // Re-apply significance color to match the edited value
     t.classList.remove(...SIG_CLASSES);
@@ -6105,9 +6347,11 @@ document.addEventListener("change", ev => {
     renderCandidateSections();
   } else if (t.matches(".acmg-score")) {
     setEdit(t.dataset.id, "ACMG_score", t.value);
+    _refreshAcmgSourceHints(t.dataset.id);
     updateSaveHint();
   } else if (t.matches(".acmg-crit")) {
     setEdit(t.dataset.id, "ACMG_criteria", t.value);
+    _refreshAcmgSourceHints(t.dataset.id);
     updateSaveHint();
   } else if (t.matches(".variant-comment")) {
     setEdit(t.dataset.id, "comment", t.value);
@@ -6162,10 +6406,12 @@ document.addEventListener("input", ev => {
   } else if (t.matches(".acmg-score")) {
     setEdit(t.dataset.id, "ACMG_score", t.value);
     _syncEditControls(t.dataset.id, "ACMG_score", t.value, t);
+    _refreshAcmgSourceHints(t.dataset.id);
     updateSaveHint();
   } else if (t.matches(".acmg-crit")) {
     setEdit(t.dataset.id, "ACMG_criteria", t.value);
     _syncEditControls(t.dataset.id, "ACMG_criteria", t.value, t);
+    _refreshAcmgSourceHints(t.dataset.id);
     updateSaveHint();
   } else if (t.matches(".manual-position")) {
     updateManualVariant(t.dataset.mid, "position", t.value);
@@ -8613,23 +8859,29 @@ function maybeShowVersionPicker(onPick) {
 // ---------- Lightweight hover tooltip (replaces native `title`) ------
 // Native `title` has a long (~1 s) delay and tiny multi-line text; for
 // the `ⓘ` hints (mito FILTER / TLOD, …) we use a 0.5 s custom popup.
-// Opt in by putting the text on `data-tip` ("\n" → <br>).
+// Opt in with escaped text on `data-tip` ("\n" → <br>) or trusted,
+// application-generated markup on `data-tip-html`.  HTML tooltips stay open
+// while hovered so evidence-reference links can be clicked.
 (() => {
-  let tipEl = null, timer = null, curTarget = null;
+  let tipEl = null, showTimer = null, hideTimer = null, curTarget = null;
   function ensureEl() {
     if (!tipEl) {
       tipEl = document.createElement("div");
       tipEl.className = "app-tooltip";
+      tipEl.setAttribute("role", "tooltip");
       tipEl.style.display = "none";
+      tipEl.addEventListener("mouseenter", cancelHide);
+      tipEl.addEventListener("mouseleave", scheduleHide);
       document.body.appendChild(tipEl);
     }
     return tipEl;
   }
   function show(el) {
     const txt = el.getAttribute("data-tip");
-    if (!txt) return;
+    const html = el.getAttribute("data-tip-html");
+    if (!txt && !html) return;
     const t = ensureEl();
-    t.innerHTML = String(txt).split("\n").map(escapeHtml).join("<br>");
+    t.innerHTML = html || String(txt).split("\n").map(escapeHtml).join("<br>");
     t.style.display = "block";
     t.style.left = "0px"; t.style.top = "0px";
     const r = el.getBoundingClientRect();
@@ -8645,24 +8897,43 @@ function maybeShowVersionPicker(onPick) {
     t.style.top = top + "px";
     curTarget = el;
   }
+  function cancelHide() {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  }
+  function scheduleHide() {
+    cancelHide();
+    hideTimer = setTimeout(hide, 140);
+  }
   function hide() {
-    if (timer) { clearTimeout(timer); timer = null; }
+    if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+    cancelHide();
     curTarget = null;
     if (tipEl) tipEl.style.display = "none";
   }
   document.addEventListener("mouseover", ev => {
-    const el = ev.target.closest("[data-tip]");
+    const el = ev.target.closest("[data-tip], [data-tip-html]");
     if (!el || el === curTarget) return;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => { timer = null; show(el); }, 500);
+    cancelHide();
+    if (showTimer) clearTimeout(showTimer);
+    showTimer = setTimeout(() => { showTimer = null; show(el); }, 350);
   });
   document.addEventListener("mouseout", ev => {
-    const el = ev.target.closest("[data-tip]");
+    const el = ev.target.closest("[data-tip], [data-tip-html]");
     if (!el) return;
     if (ev.relatedTarget && el.contains(ev.relatedTarget)) return;
-    hide();
+    scheduleHide();
   });
-  document.addEventListener("mousedown", hide, true);
+  document.addEventListener("focusin", ev => {
+    const el = ev.target.closest("[data-tip], [data-tip-html]");
+    if (el) { cancelHide(); show(el); }
+  });
+  document.addEventListener("focusout", ev => {
+    if (ev.target.closest("[data-tip], [data-tip-html]")) scheduleHide();
+  });
+  document.addEventListener("mousedown", ev => {
+    if (tipEl?.contains(ev.target) || ev.target.closest("[data-tip], [data-tip-html]")) return;
+    hide();
+  }, true);
   window.addEventListener("scroll", hide, true);
 })();
 

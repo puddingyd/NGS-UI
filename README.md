@@ -35,6 +35,7 @@ NGS_UI/                    ← NGS_UI_HOME
 ├── _index.json, _case_table.json
 └── {LIS_ID}/
     ├── 03_acmg/{source}.snv_indel.acmg.tsv   ← 唯一完整 SNV source of truth
+    │           {source}.annotation_versions.json ← ClinVar 等資料庫版本 sidecar
     ├── 04_mito/, 05_str/, 06_cnv_sv/, 07_pgx/ ← UI 直接讀，不再複製
     └── 08_postprocessing/
         ├── layout.json, pipeline_source.json
@@ -165,7 +166,9 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV、Mitochondria、STR 與 PGx 在背景載完後補上：
    - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。
    - 載入或重新載入個案時會重設 sample-scoped UI 狀態：SNV/CNV/Mito/STR 分頁回到預設頁籤，主畫面 gene search 輸入與 gene search modal 舊結果會清空。
-   - SNV/Indel tier：`1A / 1B / 1C / 2 / 3`（互斥）
+   - SNV/Indel tier：`1A / 1B / 1C / 2`（互斥）。`1C — Predicted suspect` 保留 ACMG points ≥4，並納入 Core predictors（AlphaMissense、BayesDel_noAF、Pangolin）及 Extra-VEP predictors（REVEL、SpliceAI）的規劃門檻；predictor 只用於收入 reviewer 候選，不顯示額外 trigger badge，也不修改 ACMG points/class。原本 ClinVar P/LP 0★/conflicting 專屬 tier 已移除，未符合其他 1C 條件者歸入 `2 — Other`。
+   - SNV/Indel 卡片的 Score、ClinVar、ACMG 與各個 in-silico predictor 旁有可 hover/focus 的 `ⓘ`：Score 說明 variant/phenotype 計分公式；ClinVar 顯示三級輸出的 release date；ACMG 顯示目前來源（`manual` / `GeneBe` / `in-house`）及其他來源分類；predictor 顯示本位點 evidence、PP3/BP4 calibrated threshold 或未校準警語，Reference URL 可直接點開。顯示順序固定為 P-KNN、AlphaMissense、Pangolin、REVEL、SpliceAI、ESM1b、VARITY_R、BayesDel、MetaRNN、DANN、PhactBoost、PhyloP、GERP、SIFT、LOFTOOL；有值的前三項直接顯示，其餘收在 More。AlphaMissense、ESM1b、VARITY_R、BayesDel、REVEL、SpliceAI、PhyloP、GERP、SIFT 使用文獻/ClinGen SVI threshold；P-KNN 使用 pipeline `PKNN_EVIDENCE`；其他工具只依作者模型 cutoff 或以黃色 contextual evidence 顯示，不冒充 PP3/BP4 strength。
+   - ClinVar release date 不從檔案 mtime、今天日期或報告常數猜測。三級 pipeline 應在 `03_acmg/{source}.annotation_versions.json` 寫入 `databases.clinvar.release_date`；舊資料也接受 `*.tsv.meta.json`、同目錄 `annotation_versions.json` 或 `08_postprocessing/pipeline_source.json.annotation_versions`。缺 sidecar 時 UI 明確顯示「三級輸出未提供」。
    - Patient phenotype 與 Comment 之間的 Dead zone 卡片會依目前 HPO + panel gene set 顯示 cohort-level dead exons；WES 用 20X，WGS（含 in-house / DRAGEN）用 DRAGEN 10X。主畫面先依 CDS dead percentage 分成 70-100%、50-70%、30-50%、<30% 四個區間，區間內再依 gene 的 pheno score 由高到低排序，最後用 CDS percentage 與 gene name 當 tie-breaker；預設只顯示 CDS ≥50% 的列，可用標題列或區塊底部的小三角形展開全部。Dead zone 列改用淡背景警示色：≥70% rose、50-70% orange、30-50% amber、<30% yellow。
    - SNV/Indel 主畫面直接顯示 `snv_indel.review.tsv` 內的候選點，不再另套 gnomAD AF filter；顯示 filter 預設啟用 `Disease-associated`（優先使用 `ngs_panel_deadzone/panel/panel_loose_plus_clinical.hgnc_canonical.txt`，缺檔時 fallback 到 `panel_loose.hgnc_canonical.txt`）與 `In panel only`。`VAF < 0.2 / zygosity=ref` 預設不勾選，主畫面預設隱藏低 VAF 或 ref genotype 點位，勾選後才顯示；`impact=MODIFIER` 預設不顯示，可手動勾選展開，但 ClinVar P/LP 點位不受 MODIFIER filter 限制。`IMPACT=LOW` 仍會顯示。Gene search modal 保留自己的 `gnomAD_G_AF < 0.01` filter；CNV/SV 與 gene search modal 不受 `Disease-associated` filter 限制。
    - `03_acmg/*.snv_indel.acmg.tsv` 保持 immutable；`REF/ALT=*` 與非 primary contig 改在 review/index/gene search/VCF consumer 端排除，不再整份改寫 raw TSV。worker 會接受 v3.1-v3.4 的 65 欄 TSV，也接受 v3.5 移除 `MANE_ALL` 後的 64 欄 transcript TSV。
@@ -198,6 +201,8 @@ SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越�
 二級分析 modal 由右上角「二級分析」開啟，後端掃描 WES roots（NextSeq2000 與 Reanalysis）與 WGS Novaseq FASTQ，提供 WES/WGS 兩個 typeahead 搜尋框、更新索引、批次清單與「加入同批全部樣本」。WGS 下拉選單依主 sample 聚合顯示，每個 sample 註明 lane 數與 FASTQ 檔案數；只收 `*_S*_L00*_R[12]_001.fastq.gz`，不使用同資料夾內的 merged FASTQ。建立 samplesheet 時，後端會把每個 WGS sample 展開成每 lane 一列並寫入 `lane` 欄，交由 FASTP 分 lane QC、FQ2BAM 合併；WES 的掃描、顯示與 samplesheet 行為不變。按「建立 sample sheet」後會先在 `NGS_UI_SECONDARY_SAMPLESHEET_STAGING_ROOT/<batch_name>/samplesheet.csv` 寫出 CSV，FASTQ 路徑會轉成 DGX2 可見路徑（移除最前面的 `/home`）；產生的 tmux launch block 會由 DGX2 runner 建立 `OUT_DIR`，再把 staged samplesheet 複製到 `OUT_DIR/samplesheet.csv` 後啟動 Nextflow，避免 NGS-UI 建立的 output dir owner 造成權限問題。Nextflow 結束或失敗時會複製 `${LAUNCH_DIR}/.nextflow.log` 到 `${OUT_DIR}/nextflow.log`，並保留 tmux pane 不自動關閉，方便確認最後狀態。單一主 sample 使用 `dgx_single` profile，多個主 sample 使用 `dgx`。Reanalysis FASTQ 也直接指向原始 `*.R1/R2.clean.fastq.gz`，不再複製或建立 symlink；只改 samplesheet 的 `sample` 欄。
 
 三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead。worker 為 v3.x pipeline 產生 sample sheet，執行 `nextflow ... --out_dir /home/datalake_Intermediate/pipeline/tertiary_output -resume`。pipeline 完成後，UI 直接讀 03-07，不再複製 SNV/CNV/SV/STR/PGx；Mito 只有本機 MITOMAP 確實補值時才在 08 留小型衍生檔，DRAGEN ploidy 與 reviewer state 也放在 08。SNV post-processing 會暫時複製 raw 成隱藏 working TSV，完成 GeneBe/extra-VEP/GIAB/院內 AF/MANE 後建 `snv_annotations.sqlite`，並在 `finally` 刪除 working TSV；因此不會永久留第二份數 GB TSV。接著以 03 raw 建 review/index，最後才原子寫入 `layout.json` 讓 UI 看見個案。若 06 已有 CNV/SV 就直接讀，缺檔才把本機 AnnotSV fallback 寫入 08。三級分析清單同時顯示新 root、legacy `/home/pipeline/tertiary_output` 與 job state；完整刪除會清掉對應 pipeline/UI tree 與 job log，執行中的 sample 不可刪。
+
+Extra VEP 預設讀取 `NGS_UI_HOME/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz`（dev 機即 `/home/n102968/NGS_UI/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz`）補 MetaRNN 與 REVEL；必須有同名 `.tbi`，啟動時會檢查實際 header，仍可用 `NGS_UI_EXTRA_VEP_DBNSFP` 或 `--extra-vep-dbnsfp` 覆寫。SpliceAI 維持讀取 `/home/n102968/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz` 與 `spliceai_scores.raw.indel.hg38.vcf.gz`，兩個 score VCF 都存在時才補 `SPLICEAI_MAX`，不使用桌面 `/Volumes` 路徑。
 
 三級分析重用既有 output 時，優先使用 UI sample ID（例如 `VAL-57-dragen` / `VAL-57-nckuh`），並檢查 SNV、Mito、CNV、SV 及被要求的 PGx 是否齊全，缺項就以 `-resume` 補齊。source-ID-only 與 suffix 修復邏輯仍保留；新產出與修復工具的目標 root 應設為統一路徑。
 

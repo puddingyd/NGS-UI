@@ -24,8 +24,21 @@ class OldFormatError(ValueError):
     pipeline" message in the UI instead of trying to render a broken card.
     """
 
-# Tier categories defined in 三級輸出計畫.md §2.3 Page 2.
-TIERS = ["1A", "1B", "1C", "2", "3"]
+# Reviewer-facing SNV/Indel analysis tiers. Tier 1C is a retrieval bucket:
+# predictor triggers surface variants for review but never modify ACMG points
+# or classification.
+TIERS = ["1A", "1B", "1C", "2"]
+
+PREDICTED_SUSPECT_THRESHOLDS = {
+    "alphamissense_moderate": 0.906,
+    "alphamissense_supporting": 0.792,
+    "bayesdel_moderate": 0.27,
+    "bayesdel_supporting": 0.13,
+    "pangolin": 0.20,
+    "revel_moderate": 0.773,
+    "revel_supporting": 0.644,
+    "spliceai": 0.20,
+}
 
 _PLP_SIGS = {
     "Pathogenic",
@@ -48,11 +61,6 @@ EXCLUDED_GENES = {
     "HLA-DQA1", "HLA-DQB1", "HLA-DRB1",
     "HLA-DPA1", "HLA-DPB1",
 }
-
-# Conflicting ClinVar interpretations are only worth surfacing in
-# tier 2 when at least one submitter called P / LP. CLNSIGCONF like
-# "Likely_benign(2)|Uncertain_significance(1)" alone is noise.
-_CONFLICTING_PATHO_RE = re.compile(r"\b(?:Likely_)?[Pp]athogenic\b")
 
 _CONSEQUENCE_RANK = {
     "transcript_ablation": 1,
@@ -223,46 +231,113 @@ def _loftee_hc_call(row: dict) -> bool:
     return raw.strip().upper() == "HC"
 
 
+def _effective_acmg_points(row: dict) -> float | int | None:
+    """ACMG score shown by the UI: GeneBe first, then pipeline/legacy."""
+    points = _to_num(_coalesce(
+        row.get("GENEBE_ACMG_SCORE"),
+        row.get("ACMG_SCORE"),
+        row.get("ACMG_POINTS"),
+    ))
+    return points if isinstance(points, (int, float)) else None
+
+
+def predicted_suspect_evidence(row: dict) -> dict[str, Any]:
+    """Return 1C retrieval triggers without changing ACMG evidence.
+
+    Core predictors exist in the standard tertiary TSV. Extra predictors are
+    populated only when Extra VEP had the corresponding local resources.
+    Missing scores are treated as not evaluated, never as benign.
+    """
+    t = PREDICTED_SUSPECT_THRESHOLDS
+    points = _effective_acmg_points(row)
+    alpha = _max_multi(row.get("ALPHAMISSENSE"))
+    bayes = _max_multi(row.get("BAYESDEL_NOAF"))
+    pangolin = _max_abs_multi(row.get("PANGOLIN_SCORE"))
+    revel = _max_multi(row.get("REVEL"))
+    spliceai = _max_multi(row.get("SPLICEAI_MAX"))
+
+    acmg_trigger = points is not None and points >= 4
+    core_reasons: list[str] = []
+    extra_reasons: list[str] = []
+
+    alpha_moderate = alpha is not None and alpha >= t["alphamissense_moderate"]
+    bayes_moderate = bayes is not None and bayes >= t["bayesdel_moderate"]
+    alpha_supporting = alpha is not None and alpha >= t["alphamissense_supporting"]
+    bayes_supporting = bayes is not None and bayes >= t["bayesdel_supporting"]
+
+    if alpha_moderate:
+        core_reasons.append(
+            f"AlphaMissense {alpha:g} ≥ {t['alphamissense_moderate']:g}"
+        )
+    if bayes_moderate:
+        core_reasons.append(f"BayesDel {bayes:g} ≥ {t['bayesdel_moderate']:g}")
+    if not alpha_moderate and not bayes_moderate and alpha_supporting and bayes_supporting:
+        core_reasons.append(
+            f"AlphaMissense {alpha:g} ≥ {t['alphamissense_supporting']:g} + "
+            f"BayesDel {bayes:g} ≥ {t['bayesdel_supporting']:g}"
+        )
+    if pangolin is not None and abs(pangolin) >= t["pangolin"]:
+        core_reasons.append(f"|Pangolin {pangolin:g}| ≥ {t['pangolin']:g}")
+
+    if revel is not None and revel >= t["revel_moderate"]:
+        extra_reasons.append(f"REVEL {revel:g} ≥ {t['revel_moderate']:g}")
+    elif (
+        revel is not None
+        and revel >= t["revel_supporting"]
+        and (alpha_supporting or bayes_supporting)
+    ):
+        partner = []
+        if alpha_supporting:
+            partner.append(f"AlphaMissense {alpha:g}")
+        if bayes_supporting:
+            partner.append(f"BayesDel {bayes:g}")
+        extra_reasons.append(
+            f"REVEL {revel:g} ≥ {t['revel_supporting']:g} + " + " / ".join(partner)
+        )
+    if spliceai is not None and spliceai >= t["spliceai"]:
+        extra_reasons.append(f"SpliceAI {spliceai:g} ≥ {t['spliceai']:g}")
+
+    reasons: list[str] = []
+    if acmg_trigger:
+        reasons.append(f"ACMG points {points:g} ≥ 4")
+    reasons.extend(f"Core: {reason}" for reason in core_reasons)
+    reasons.extend(f"Extra: {reason}" for reason in extra_reasons)
+    return {
+        "acmg_trigger": acmg_trigger,
+        "core_trigger": bool(core_reasons),
+        "extra_trigger": bool(extra_reasons),
+        "core_reasons": core_reasons,
+        "extra_reasons": extra_reasons,
+        "reasons": reasons,
+    }
+
+
 def classify_tier(row: dict) -> str:
-    """Map one TSV row to a tier (1A / 1B / 1C / 2 / 3).
+    """Map one TSV row to a tier (1A / 1B / 1C / 2).
 
     Per spec:
         1A — ClinVar P/LP ≥ 1★
         1B — Frameshift / nonsense (LOFTEE HC)
-        1C — ACMG points ≥ 4 (strong-evidence VUS+)
-        2  — ClinVar P/LP 0★ or Conflicting (含 P)
-        3  — 其餘 (ACMG points < 4)
+        1C — Predicted suspect (ACMG ≥4 or Core/Extra predictor trigger)
+        2  — Other
+
+    ClinVar P/LP 0★ and conflicting calls receive no special tier. They may
+    still enter 1C through an independent ACMG/predictor trigger; otherwise
+    they remain in Other.
     """
     sig = (row.get("CLINVAR_SIG") or "").strip()
     stars = _to_int(row.get("CLINVAR_STARS"), 0)
     loftee_hc = _loftee_hc_call(row)
     is_plp = sig in _PLP_SIGS
-    is_conflicting = "Conflicting" in sig
 
     if is_plp and stars >= 1:
         return "1A"
     if loftee_hc:
         return "1B"
-    # ACMG_SCORE priority mirrors the UI's display priority: prefer
-    # the GeneBe second-opinion score when present, fall back to the
-    # pipeline's classifier (ACMG_SCORE) and then to the legacy
-    # ACMG_POINTS column. Keeps tier classification consistent with
-    # what the reviewer sees on the card.
-    points = _to_num(_coalesce(row.get("GENEBE_ACMG_SCORE"),
-                                row.get("ACMG_SCORE"),
-                                row.get("ACMG_POINTS"))) or 0
-    if isinstance(points, (int, float)) and points >= 4:
+    evidence = predicted_suspect_evidence(row)
+    if evidence["acmg_trigger"] or evidence["core_trigger"] or evidence["extra_trigger"]:
         return "1C"
-    if is_plp and stars == 0:
-        return "2"
-    if is_conflicting:
-        # CLNSIGCONF format: "Likely_benign(2)|Uncertain_significance(1)" etc.
-        # Only count as tier 2 when at least one submitter weighed in
-        # with P / LP — pure VUS+LB conflict isn't actionable.
-        sigconf = (row.get("CLINVAR_SIGCONF") or row.get("CLINVAR_CONF") or "")
-        if _CONFLICTING_PATHO_RE.search(sigconf):
-            return "2"
-    return "3"
+    return "2"
 
 
 def _acmg_to_geno_score(acmg_points) -> int | None:
@@ -344,7 +419,7 @@ def _max_multi(v) -> float | None:
 def _min_multi(v) -> float | None:
     """Min numeric value across a `&`-separated multi-value cell.
 
-    ESM1b uses the opposite direction from the other protein-effect
+    ESM1b and SIFT use the opposite direction from most protein-effect
     predictors: lower scores are more damaging. Take the minimum so
     multi-transcript rows surface the most pathogenic prediction.
     """
@@ -543,7 +618,6 @@ def _row_to_variant(row: dict) -> dict:
     hgvs_full = ":".join(p for p in (gene, display_transcript,
                                       _strip_tx(display_hgvs_c),
                                       _strip_tx(hgvs_p)) if p)
-
     return {
         "id": vid,
         "CHROM": chrom,
@@ -624,16 +698,17 @@ def _row_to_variant(row: dict) -> dict:
         "VARITY_R":            _max_multi(row.get("VARITY_R")),
         "BayesDel":            _max_multi(row.get("BAYESDEL_NOAF")),
         "BayesDel_pred":       _first_str(row.get("BAYESDEL_NOAF_PRED")),
-        # SpliceAI + MetaRNN come from annotate_extra_vep post-processing (new
-        # pipeline doesn't ship them).
+        # SpliceAI + MetaRNN + REVEL come from annotate_extra_vep
+        # post-processing (new pipeline doesn't ship them).
         "SpliceAI_score":      _max_multi(row.get("SPLICEAI_MAX")),
         "MetaRNN_score":       _max_multi(row.get("METARNN")),
+        "REVEL_score":         _max_multi(row.get("REVEL")),
         # Others — under ▾ More on the card.
         "DANN":                _max_multi(row.get("DANN")),
         "PhactBoost":          _max_multi(row.get("PHACTBOOST")),
         "PhyloP":              _max_multi(row.get("PHYLOP100")),
         "GERP":                _max_multi(row.get("GERP")),
-        "SIFT_score":          _max_multi(row.get("SIFT")),
+        "SIFT_score":          _min_multi(row.get("SIFT")),
         "SIFT_pred":           _first_str(row.get("SIFT_PRED")),
         "LOFTOOL":             _max_multi(row.get("LOFTOOL")),
         "loftee_hc":           _coalesce(row.get("LOFTEE_HC"), row.get("LOFTEE")),
@@ -806,8 +881,9 @@ def load_snv_tsv(tsv_path: Path,
     """Read snv_indel.annotated.tsv → (variants, categories).
 
     `variants` is keyed by chr-pos-ref-alt id.
-    `categories` is keyed by tier (1A / 1B / 2 / 3 / 4 / 5) → ordered ids
-    (within tier 4: ACMG_POINTS desc; within tier 5: ACMG_POINTS desc).
+    `categories` is keyed by tier (1A / 1B / 1C / 2) → ordered ids.
+    The adapter keeps its established ACMG score/id ordering; sample loading
+    re-sorts every tier by the final total score after phenotype enrichment.
 
     `test_type` controls the depth gate:
       WES  → variants with DP < 20 dropped entirely.

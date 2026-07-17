@@ -6,6 +6,15 @@
 
 ## 版本紀錄
 
+### v6.10 — 2026-07-17
+
+- SNV/Indel 卡片的 Score、ClinVar、ACMG 與所有 in-silico tools 新增 `ⓘ` 註解；可查看計分公式、ClinVar 版本、ACMG 的 manual/GeneBe/in-house 來源比較，以及各工具的 PP3/BP4 threshold、文獻連結與 PMID。
+- AlphaMissense、ESM1b、VARITY_R、BayesDel、REVEL、SpliceAI、PhyloP、GERP、SIFT 改依正式 calibration/ClinGen 建議套色；其他尚無通用 PP3/BP4 calibration 的工具會清楚標示為模型 cutoff 或 contextual evidence。SIFT 多 transcript 分數改取較低、較 deleterious 的值。
+- 三級分析的 Extra VEP 現在會在 dbNSFP 實際提供 `REVEL_score` 時補入 REVEL，並與 MetaRNN、可選的 SpliceAI 一樣存入 sparse overlay；舊 dbNSFP 或未跑 Extra VEP 的個案保持缺值，不會被誤判為低分。
+- SNV/Indel tier 簡化為 `1A / 1B / 1C / 2`；`1C — Predicted suspect` 除 ACMG points ≥4 外，會依 Core（AlphaMissense、BayesDel、Pangolin）與 Extra-VEP（REVEL、SpliceAI）門檻納入 reviewer 候選，但不顯示額外 trigger badge、不改 ACMG 分數。原 ClinVar P/LP 0★/conflicting tier 移除，其餘歸入 `2 — Other`。
+- In-silico 顯示順序改為 P-KNN、AlphaMissense、Pangolin、REVEL、SpliceAI、ESM1b、VARITY_R、BayesDel、MetaRNN、DANN、PhactBoost、PhyloP、GERP、SIFT、LOFTOOL；前三個有值項目直接顯示。Extra VEP 預設 dbNSFP 改為 `biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz`，SpliceAI 仍使用 server 原有 `biotools/spliceai/` 路徑。
+- 三級輸出可在 `03_acmg/{source}.annotation_versions.json` 記錄 ClinVar release date；缺少 sidecar 的舊個案會明確顯示版本未提供，不會用檔案日期猜測。
+
 ### v6.9 — 2026-07-16
 
 - 三級分析輸出統一到 `/home/datalake_Intermediate/pipeline/tertiary_output/{sample}/`：Nextflow 保留 03–07，UI 的判讀狀態與衍生檔集中在 `08_postprocessing/`。

@@ -387,7 +387,6 @@
           <div id="cat-tier-1b" class="cat-block tier-1b tier-panel" data-tier="1B"></div>
           <div id="cat-tier-1c" class="cat-block tier-1c tier-panel" data-tier="1C"></div>
           <div id="cat-tier-2"  class="cat-block tier-2  tier-panel" data-tier="2"></div>
-          <div id="cat-tier-3"  class="cat-block tier-3  tier-panel" data-tier="3"></div>
         </div>
       </div>
       <!-- CNV/SV: same tab structure, two CNV tiers (blue) + two SV tiers (violet). -->
@@ -738,7 +737,7 @@
       <div class="dragen-form">
         <div class="dragen-form-row dragen-vcf-row">
           <span id="dragen-index-meta" class="muted dragen-index-meta"></span>
-          <label class="filter-toggle dragen-extra-toggle" title="勾選 → 對 GNOMAD_G_AF ≤ 0.01 的候選點額外用 VEP 補 SpliceAI 註解">
+          <label class="filter-toggle dragen-extra-toggle" title="勾選 → 對候選點額外用 VEP 補 MetaRNN、可用時的 REVEL，以及有 score VCF 時的 SpliceAI">
             <input id="dragen-extra-vep" type="checkbox" />
           </label>
           <label class="filter-toggle dragen-extra-toggle" title="勾選 → 執行 pipeline PGx module；取消勾選會加 --run_pgx false">

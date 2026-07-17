@@ -5,20 +5,22 @@ columns the main pipeline doesn't extract by default.
 The tertiary pipeline runs VEP + dbNSFP but only pulls a subset of
 dbNSFP fields (BayesDel_noAF, AlphaMissense, ESM1b, VARITY_R, SIFT,
 DANN, PHACTboost, phyloP100way, GERP++_RS, gnomAD_exomes). This
-script re-runs VEP on the small filtered set with MetaRNN (and
-optionally SpliceAI when a scores VCF is available) added to the
-dbNSFP/Plugin extract list, then joins those extra columns back
-into the TSV. Like the GeneBe post-processing, it keeps missing AF values
-eligible and skips sites whose GNOMAD_G_AF exceeds 0.01 by default.
+script re-runs VEP on the small filtered set with MetaRNN and REVEL
+(when REVEL_score exists in the selected dbNSFP branch), plus optional
+SpliceAI when a scores VCF is available, then joins those extra columns
+back into the TSV. Like the GeneBe post-processing, it keeps missing AF
+values eligible and skips sites whose GNOMAD_G_AF exceeds 0.01 by default.
 
 Workflow:
     1. Read TSV → build sites VCF (CHROM/POS/REF/ALT, sorted).
-    2. Run VEP via apptainer with --plugin dbNSFP,...,MetaRNN_score,
-       MetaRNN_pred (+ SpliceAI if --spliceai-snv / --spliceai-indel
-       supplied).
+    2. Inspect the dbNSFP header and run VEP via apptainer with
+       --plugin dbNSFP,...,MetaRNN_score,MetaRNN_pred,REVEL_score.
+       REVEL is omitted safely when the selected dbNSFP branch does not
+       provide it. SpliceAI is added if --spliceai-snv / --spliceai-indel
+       are supplied.
     3. Parse VEP VCF CSQ — pick the PICK=1 transcript per variant.
-    4. Append METARNN_score / METARNN_pred (and SpliceAI columns if
-       run) to the TSV. Existing values aren't touched.
+    4. Append METARNN / METARNN_PRED / REVEL (and SPLICEAI_MAX if run)
+       to the TSV. Existing values aren't touched.
 
 Usage:
     scripts/annotate_extra_vep.py \\
@@ -46,20 +48,65 @@ from pathlib import Path
 # Default pipeline reference paths (mirrors nextflow_tertiary.config dgm profile).
 DEFAULT_REF_DIR    = "/home/pipeline/reference/hg38"
 DEFAULT_VEP_SIF    = "/home/pipeline/nextflow_containers/vep_115.sif"
+DEFAULT_NGS_UI_HOME = os.environ.get("NGS_UI_HOME") or str(Path.home() / "NGS_UI")
+DEFAULT_DBNSFP = (
+    os.environ.get("NGS_UI_EXTRA_VEP_DBNSFP")
+    or f"{DEFAULT_NGS_UI_HOME}/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz"
+)
 
-# Extra dbNSFP fields we want on top of the pipeline's defaults.
-EXTRA_DBNSFP_FIELDS = ["MetaRNN_score", "MetaRNN_pred"]
+# Extra dbNSFP fields we want on top of the pipeline's defaults. REVEL remains
+# header-gated so an explicitly configured legacy database can degrade safely.
+REQUIRED_DBNSFP_FIELDS = ("MetaRNN_score", "MetaRNN_pred")
+OPTIONAL_DBNSFP_FIELDS = ("REVEL_score",)
 
 # TSV column names we'll write. Naming mirrors the pipeline's
 # convention so the SNV adapter picks them up automatically.
 TSV_COL_METARNN_SCORE = "METARNN"
 TSV_COL_METARNN_PRED  = "METARNN_PRED"
+TSV_COL_REVEL         = "REVEL"
 TSV_COL_SPLICEAI      = "SPLICEAI_MAX"
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 
 def _open_vcf(path):
     return gzip.open(path, "rt") if str(path).endswith(".gz") else open(path, "r")
+
+
+def dbnsfp_fieldnames(path: Path) -> set[str]:
+    """Return the tab-separated dbNSFP header fields.
+
+    VEP-ready dbNSFP 4.x/5.x files begin with a ``#chr`` header. Read only
+    that first record so multi-GB references are never scanned.
+    """
+    with _open_vcf(path) as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            if line.startswith("#chr"):
+                return set(line.rstrip("\r\n").split("\t"))
+            if not line.startswith("#"):
+                break
+    return set()
+
+
+def select_dbnsfp_fields(path: Path) -> tuple[list[str], list[str]]:
+    """Select supported Extra VEP fields and report unavailable optionals."""
+    available = dbnsfp_fieldnames(path)
+    if not available:
+        raise ValueError(f"dbNSFP header not found: {path}")
+    missing_required = [field for field in REQUIRED_DBNSFP_FIELDS if field not in available]
+    if missing_required:
+        raise ValueError(
+            "dbNSFP missing required Extra VEP fields: " + ", ".join(missing_required)
+        )
+    selected = list(REQUIRED_DBNSFP_FIELDS)
+    missing_optional: list[str] = []
+    for field in OPTIONAL_DBNSFP_FIELDS:
+        if field in available:
+            selected.append(field)
+        else:
+            missing_optional.append(field)
+    return selected, missing_optional
 
 
 def _row_max_af(row: dict, cols: list[str]) -> float:
@@ -192,10 +239,10 @@ def tsv_to_sites(
     return len(rows), n_af, n_bed
 
 
-def run_vep(args, sites: Path, vep_out: Path) -> None:
+def run_vep(args, sites: Path, vep_out: Path, dbnsfp_fields: list[str]) -> None:
     """Invoke vep via apptainer with the minimal set of plugins we need."""
-    dbnsfp_fields = ",".join(EXTRA_DBNSFP_FIELDS)
-    plugin_args = [f"--plugin", f"dbNSFP,{args.dbnsfp},{dbnsfp_fields}"]
+    dbnsfp_field_arg = ",".join(dbnsfp_fields)
+    plugin_args = ["--plugin", f"dbNSFP,{args.dbnsfp},{dbnsfp_field_arg}"]
     binds = [args.ref_dir, str(sites.parent), str(Path(args.dbnsfp).parent)]
     if args.spliceai_snv and args.spliceai_indel:
         plugin_args += ["--plugin",
@@ -311,7 +358,7 @@ def _spliceai_max_from_csq(csq_field_value: str) -> str:
 
 
 def parse_vep_vcf(vep_vcf: Path) -> dict:
-    """{(chrom, pos, ref, alt): {METARNN, METARNN_PRED, SPLICEAI_MAX}}.
+    """{site: {METARNN, METARNN_PRED, REVEL, SPLICEAI_MAX}}.
 
     Picks the CSQ entry with PICK=1 if multiple transcripts; falls
     back to the first. SpliceAI is split across 4 DS_* delta-score
@@ -324,6 +371,7 @@ def parse_vep_vcf(vep_vcf: Path) -> dict:
         return {}
     idx_metarnn_score = fmt.index("MetaRNN_score") if "MetaRNN_score" in fmt else -1
     idx_metarnn_pred  = fmt.index("MetaRNN_pred")  if "MetaRNN_pred"  in fmt else -1
+    idx_revel         = fmt.index("REVEL_score")   if "REVEL_score"   in fmt else -1
     # SpliceAI: capture all DS_* indices we can find
     SPLICEAI_DS_FIELDS = (
         "SpliceAI_pred_DS_AG",
@@ -364,6 +412,10 @@ def parse_vep_vcf(vep_vcf: Path) -> dict:
                 p = _first_of_multi(picked[idx_metarnn_pred])
                 if p:
                     row[TSV_COL_METARNN_PRED] = p
+            if idx_revel >= 0 and idx_revel < len(picked):
+                mx = _max_of_multi(picked[idx_revel])
+                if mx is not None:
+                    row[TSV_COL_REVEL] = f"{mx:g}"
             if idx_spliceai_ds:
                 deltas = []
                 for ix in idx_spliceai_ds:
@@ -387,7 +439,12 @@ def merge_into_tsv(in_tsv: Path, out_tsv: Path, ann: dict) -> tuple[int, int]:
     with open(in_tsv, "r", encoding="utf-8", newline="") as fi:
         reader = csv.DictReader(fi, delimiter="\t")
         fieldnames = list(reader.fieldnames or [])
-        for col in (TSV_COL_METARNN_SCORE, TSV_COL_METARNN_PRED, TSV_COL_SPLICEAI):
+        for col in (
+            TSV_COL_METARNN_SCORE,
+            TSV_COL_METARNN_PRED,
+            TSV_COL_REVEL,
+            TSV_COL_SPLICEAI,
+        ):
             if col not in fieldnames:
                 fieldnames.append(col)
         with open(target, "w", encoding="utf-8", newline="") as fo:
@@ -432,8 +489,8 @@ def main() -> int:
     ap.add_argument("--vep-sif",   default=DEFAULT_VEP_SIF)
     ap.add_argument("--vep-cache", default=None,
                     help="default $REF_DIR/tertiary/vep_cache")
-    ap.add_argument("--dbnsfp",    default=None,
-                    help="default $REF_DIR/tertiary/dbnsfp/dbNSFP4.9c_grch38.gz")
+    ap.add_argument("--dbnsfp", default=DEFAULT_DBNSFP,
+                    help=f"default {DEFAULT_DBNSFP}")
     ap.add_argument("--ref-fasta", default=None,
                     help="default $REF_DIR/Homo_sapiens_assembly38.fasta")
     ap.add_argument("--fork", type=int, default=4)
@@ -454,8 +511,6 @@ def main() -> int:
 
     if args.vep_cache is None:
         args.vep_cache = f"{args.ref_dir}/tertiary/vep_cache"
-    if args.dbnsfp is None:
-        args.dbnsfp = f"{args.ref_dir}/tertiary/dbnsfp/dbNSFP4.9c_grch38.gz"
     if args.ref_fasta is None:
         args.ref_fasta = f"{args.ref_dir}/Homo_sapiens_assembly38.fasta"
 
@@ -463,6 +518,30 @@ def main() -> int:
     if not in_tsv.is_file():
         print(f"ERROR: --tsv 找不到：{in_tsv}", file=sys.stderr)
         return 2
+    dbnsfp_path = Path(args.dbnsfp).resolve()
+    if not dbnsfp_path.is_file():
+        print(f"ERROR: --dbnsfp 找不到：{dbnsfp_path}", file=sys.stderr)
+        return 2
+    if not Path(str(dbnsfp_path) + ".tbi").is_file():
+        print(f"ERROR: dbNSFP tabix index 找不到：{dbnsfp_path}.tbi", file=sys.stderr)
+        return 2
+    args.dbnsfp = str(dbnsfp_path)
+    try:
+        selected_dbnsfp_fields, missing_optional_fields = select_dbnsfp_fields(dbnsfp_path)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(
+        "[extra-vep] dbNSFP fields enabled: " + ", ".join(selected_dbnsfp_fields),
+        file=sys.stderr,
+    )
+    if "REVEL_score" in missing_optional_fields:
+        print(
+            "[extra-vep] REVEL skipped: selected dbNSFP branch has no REVEL_score; "
+            "use a licensed dbNSFP branch containing REVEL via "
+            "--dbnsfp / NGS_UI_EXTRA_VEP_DBNSFP",
+            file=sys.stderr,
+        )
     out_tsv = Path(args.out_tsv).resolve() if args.out_tsv else in_tsv
     candidate_bed = None
     if args.candidate_bed:
@@ -496,7 +575,7 @@ def main() -> int:
         if n == 0:
             print("ERROR: 0 sites", file=sys.stderr)
             return 1
-        run_vep(args, sites, vep_vcf)
+        run_vep(args, sites, vep_vcf, selected_dbnsfp_fields)
         ann = parse_vep_vcf(vep_vcf)
         if args.spliceai_snv:
             print(f"[extra-vep] SpliceAI plugin enabled "

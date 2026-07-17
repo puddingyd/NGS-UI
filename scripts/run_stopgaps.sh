@@ -9,7 +9,7 @@
 #                                  columns via the local GeneBe DB
 #                                  (offline SQLite lookup, no API/creds;
 #                                  pipeline's ACMG_* untouched)
-#   2. annotate_extra_vep.py    — add MetaRNN + SpliceAI as new columns
+#   2. annotate_extra_vep.py    — add MetaRNN + REVEL + SpliceAI columns
 #   3. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
 #   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
 #                              gCNV + Delly VCFs. Skipped if none supplied.
@@ -41,9 +41,14 @@
 #                                         $HOME/NGS_UI/biotools/cds_combined.bed
 #   --spliceai-snv / --spliceai-indel  — optional, default
 #                                         $HOME/NGS_UI/biotools/spliceai/...
+#   NGS_UI_EXTRA_VEP_DBNSFP / --extra-vep-dbnsfp
+#                                      — dbNSFP VEP-ready BGZF used by Extra
+#                                        VEP; default
+#                                        $NGS_UI_HOME/biotools/dbnsfp/
+#                                        dbNSFP5.3.1a_grch38.gz
 #   --candidate-bed / --skip-candidate-bed
 #                                      — restrict GeneBe/Extra VEP candidates
-#   --skip-spliceai / --skip-extra-vep — disable MetaRNN/SpliceAI step 2
+#   --skip-spliceai / --skip-extra-vep — disable SpliceAI or all of step 2
 #   NGS_UI_MANE_SUMMARY / --mane-summary
 #                                      — MANE summary for RefSeq mapping
 #   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
@@ -100,6 +105,10 @@ GENEBE_DB="${NGS_UI_GENEBE_DB:-$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz}"
 MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5.summary.txt.gz}"
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 INHOUSE_AF_DB="${NGS_UI_INHOUSE_AF_DB:-$NGS_HOME_DEFAULT/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
+EXTRA_VEP_DBNSFP="${NGS_UI_EXTRA_VEP_DBNSFP:-$NGS_HOME_DEFAULT/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz}"
+# Keep the established production SpliceAI paths. On n102968 these resolve to
+# /home/n102968/NGS_UI/biotools/spliceai/...; do not point runtime at a desktop
+# /Volumes mount.
 SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
 SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
 CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$HOME/NGS_UI/biotools/cds_combined.bed}"
@@ -115,6 +124,7 @@ while [ $# -gt 0 ]; do
     --inhouse-sv-vcf)     INHOUSE_SV_VCF="$2"; shift 2;;
     --spliceai-snv)       SPLICEAI_SNV="$2"; shift 2;;
     --spliceai-indel)     SPLICEAI_INDEL="$2"; shift 2;;
+    --extra-vep-dbnsfp)   EXTRA_VEP_DBNSFP="$2"; shift 2;;
     --candidate-bed)      CANDIDATE_BED="$2"; shift 2;;
     --skip-candidate-bed) SKIP_CANDIDATE_BED=1; shift;;
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
@@ -177,12 +187,13 @@ if [ "$SKIP_GENEBE" -eq 0 ]; then
   step_done
 fi
 
-# 3. Extra VEP (MetaRNN + optional SpliceAI). Skippable.
+# 3. Extra VEP (MetaRNN + REVEL when available + optional SpliceAI). Skippable.
 if [ "$SKIP_EXTRA_VEP" -eq 0 ]; then
   echo
   echo "[post-processing] annotate_extra_vep.py"
   step_start "extra-vep"
-  EXTRA_VEP_ARGS=(--tsv "$TSV")
+  EXTRA_VEP_ARGS=(--tsv "$TSV" --dbnsfp "$EXTRA_VEP_DBNSFP")
+  echo "  + dbNSFP: $EXTRA_VEP_DBNSFP"
   if [ "$SKIP_SPLICEAI" -eq 0 ] && [ -f "$SPLICEAI_SNV" ] && [ -f "$SPLICEAI_INDEL" ]; then
     EXTRA_VEP_ARGS+=(--spliceai-snv "$SPLICEAI_SNV" --spliceai-indel "$SPLICEAI_INDEL")
     echo "  + SpliceAI enabled ($SPLICEAI_SNV)"
@@ -190,7 +201,7 @@ if [ "$SKIP_EXTRA_VEP" -eq 0 ]; then
     if [ "$SKIP_SPLICEAI" -eq 1 ]; then
       echo "  - SpliceAI skipped (--skip-spliceai)"
     else
-      echo "  - SpliceAI VCFs not found at $SPLICEAI_SNV — MetaRNN only"
+      echo "  - SpliceAI VCFs not found at $SPLICEAI_SNV — dbNSFP predictors only"
     fi
   fi
   "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}" "${CANDIDATE_BED_ARGS[@]}"

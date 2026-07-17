@@ -212,6 +212,30 @@
 
 ---
 
+## 十四、Annotation database version sidecar
+
+ClinVar release date 不應重複寫在 TSV 每一列，也不能由 TSV mtime 推測。三級 pipeline 在完成 `03_acmg/{source}.snv_indel.acmg.tsv` 時，應一起原子寫入：
+
+`03_acmg/{source}.annotation_versions.json`
+
+```json
+{
+  "schema_version": 1,
+  "pipeline_version": "3.5.0",
+  "databases": {
+    "clinvar": {
+      "release_date": "2026-05-10",
+      "source": "clinvar_20260510.vcf.gz",
+      "sha256": "<optional source checksum>"
+    }
+  }
+}
+```
+
+`release_date` 必須是 annotation run 實際使用的 ClinVar snapshot 日期（ISO `YYYY-MM-DD`），不是執行日期或下載日期。NGS-UI 也相容 `{tsv filename}.meta.json`、`03_acmg/annotation_versions.json`、`08_postprocessing/annotation_versions.json` 與 `pipeline_source.json.annotation_versions`，但新 pipeline 應優先使用上述 per-source sidecar。缺少 metadata 時 UI 顯示「三級輸出未提供」，不會以 hard-coded 日期代替。
+
+---
+
 ## 附錄：GUI 建議的顯示優先順序
 
 1. **主列表（需顯示）：** `GENE`, `HGVS_C`, `HGVS_P`, `CONSEQUENCE`, `ZYGOSITY`, `GNOMAD_G_EAS_AF`, `CLINVAR_SIG`, `CLINVAR_STARS`, `ACMG_CRITERIA`, `ACMG_CLASS`, `ACMG_SCORE`

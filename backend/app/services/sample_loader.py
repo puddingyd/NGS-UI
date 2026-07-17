@@ -42,6 +42,7 @@ from ..adapters.snv_tsv import (
 )
 from ..config import SNV_CACHE_MAX, SNV_CACHE_MAX_RAW_MB
 from . import (
+    annotation_versions,
     analyses_store,
     gene_disease_store,
     hpo_ontology,
@@ -1950,6 +1951,14 @@ def load_sample(sample_id: str, version: str | None = None,
     for category, ids in secondary_categories.items():
         categories[category] = ids
 
+    annotation_metadata = annotation_versions.load_annotation_versions(
+        raw_snv_tsv, sub
+    )
+    annotation_payload = {
+        key: value
+        for key, value in annotation_metadata.items()
+        if key != "metadata_path"
+    }
     payload = {
         "meta": {
             "LIS_ID":         meta.get("lis_id") or meta.get("sample_id") or sample_id,
@@ -1968,6 +1977,9 @@ def load_sample(sample_id: str, version: str | None = None,
         "sample_id":         sample_id,
         "genome_build":      meta.get("genome_build", "hg38"),
         "generated_at":      meta.get("run_date") or datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        # Database release metadata comes from a compact pipeline sidecar;
+        # never substitute today's date or a hard-coded report constant.
+        "annotation_versions": annotation_payload,
         "patient_phenotype": _normalize_phenotype(hpo_list),
         "selected_panels":   panels_list,
         "vcf_path":          meta.get("vcf_path", ""),
@@ -2013,6 +2025,9 @@ def load_sample(sample_id: str, version: str | None = None,
         "active_analysis":   chosen_version,
         "analyses":          analyses_store.list_versions(sample_id),
     }
+    payload["clinvar_date"] = (
+        payload["annotation_versions"].get("clinvar_date", "")
+    )
     _log_perf(
         "sample.load",
         started,
