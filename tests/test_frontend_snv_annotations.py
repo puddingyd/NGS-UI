@@ -43,7 +43,33 @@ def test_reference_tooltips_are_clickable_and_keyboard_accessible():
 
 def test_missing_clinvar_version_is_explicit():
     assert "version date: 三級輸出未提供" in APP_JS
-    assert "annotation_versions.json sidecar" in APP_JS
+    assert "請由 03_acmg 的 annotation_versions.json sidecar 記錄 ClinVar release_date" not in APP_JS
+
+
+def test_reviewer_requested_predictor_annotation_and_coloring_rules():
+    assert '"Uncertain: > -1 to < 1"' in APP_JS
+    assert '"PP3_Supporting: 1 to < 2"' in APP_JS
+    assert '"PP3_Moderate: 2 to < 4"' in APP_JS
+    assert '"PP3_Strong: ≥ 4"' in APP_JS
+    assert '"BP4_Supporting: > -2 to ≤ -1"' in APP_JS
+    assert '"BP4_Moderate: > -4 to ≤ -2"' in APP_JS
+    assert '"BP4_Strong: ≤ -4"' in APP_JS
+    assert 'case "pknn": return _pknnEvidence(v.PKNN_evidence);' in APP_JS
+    assert 'return _evidence("sig-vus", value || "Uncertain");' in APP_JS
+    assert 'case "dann": return _evidence("", "No calibrated evidence");' in APP_JS
+
+    loftee_start = APP_JS.index('extras.push({ key: "LOFTEE"')
+    loftee_hint = APP_JS.index('hint: _annotationHint("LOFTEE"', loftee_start)
+    assert "cls:" not in APP_JS[loftee_start:loftee_hint]
+
+
+def test_reviewer_requested_annotation_copy_is_streamlined():
+    assert "Variant score：ACMG score 轉換成 0–100" in APP_JS
+    assert "PKNN_LLR 僅顯示數值" not in APP_JS
+    assert "目前文獻為 preprint" not in APP_JS
+    assert "因此所有數值以黃色標示為 contextual evidence" not in APP_JS
+    assert "這是 gene-level intolerance，不是 variant-level PP3/BP4 evidence" not in APP_JS
+    assert "Total score 可超過 100；手動修改 ACMG 不會即時重算排序 score" not in APP_JS
 
 
 def test_predictor_display_order_and_primary_count_match_review_workflow():

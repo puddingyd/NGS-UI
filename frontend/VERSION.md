@@ -9,6 +9,7 @@
 ### v6.10 — 2026-07-17
 
 - SNV/Indel 卡片的 Score、ClinVar、ACMG 與所有 in-silico tools 新增 `ⓘ` 註解；可查看計分公式、ClinVar 版本、ACMG 的 manual/GeneBe/in-house 來源比較，以及各工具的 PP3/BP4 threshold、文獻連結與 PMID。
+- P-KNN 註解新增 LLR 的 ±1/±2/±4 門檻，空 evidence 改顯示 Uncertain；DANN 與 LOFTEE 不再套色，並精簡 Score、ClinVar、LOFTOOL 的註解文字。
 - AlphaMissense、ESM1b、VARITY_R、BayesDel、REVEL、SpliceAI、PhyloP、GERP、SIFT 改依正式 calibration/ClinGen 建議套色；其他尚無通用 PP3/BP4 calibration 的工具會清楚標示為模型 cutoff 或 contextual evidence。SIFT 多 transcript 分數改取較低、較 deleterious 的值。
 - 三級分析的 Extra VEP 現在會在 dbNSFP 實際提供 `REVEL_score` 時補入 REVEL，並與 MetaRNN、可選的 SpliceAI 一樣存入 sparse overlay；舊 dbNSFP 或未跑 Extra VEP 的個案保持缺值，不會被誤判為低分。
 - SNV/Indel tier 簡化為 `1A / 1B / 1C / 2`；`1C — Predicted suspect` 除 ACMG points ≥4 外，會依 Core（AlphaMissense、BayesDel、Pangolin）與 Extra-VEP（REVEL、SpliceAI）門檻納入 reviewer 候選，但不顯示額外 trigger badge、不改 ACMG 分數。原 ClinVar P/LP 0★/conflicting tier 移除，其餘歸入 `2 — Other`。

@@ -410,9 +410,10 @@ const IN_SILICO_REFERENCES = {
 const IN_SILICO_CALIBRATIONS = {
   pknn: {
     lines: [
-      "顏色優先使用三級輸出的 PKNN_EVIDENCE（PP3/BP4 strength）",
-      "PKNN_LLR 僅顯示數值；不在 UI 重新推導 evidence strength",
-      "目前文獻為 preprint，尚無 PMID",
+      "PP3_Strong: ≥ 4", "PP3_Moderate: 2 to < 4",
+      "PP3_Supporting: 1 to < 2", "Uncertain: > -1 to < 1",
+      "BP4_Supporting: > -2 to ≤ -1", "BP4_Moderate: > -4 to ≤ -2",
+      "BP4_Strong: ≤ -4",
     ], reference: IN_SILICO_REFERENCES.pknn,
   },
   alphamissense: {
@@ -478,7 +479,6 @@ const IN_SILICO_CALIBRATIONS = {
     lines: [
       "分數越高表示模型預測越 deleterious",
       "作者未提供可通用於臨床分類的 cutoff，亦無可靠 PP3/BP4 strength calibration",
-      "因此所有數值以黃色標示為 contextual evidence",
     ], reference: IN_SILICO_REFERENCES.dann,
   },
   phactboost: {
@@ -510,7 +510,6 @@ const IN_SILICO_CALIBRATIONS = {
   loftool: {
     lines: [
       "LoF-intolerant gene quartile: ≤ 0.25", "Other genes: > 0.25",
-      "這是 gene-level intolerance，不是 variant-level PP3/BP4 evidence",
     ], reference: IN_SILICO_REFERENCES.loftool,
   },
 };
@@ -555,7 +554,7 @@ function _pknnEvidence(text) {
   if (/^PP3_/i.test(value)) return _evidence("sig-lp", value);
   if (/^BP4_(Strong|Very_Strong|Moderate)$/i.test(value)) return _evidence("sig-b", value);
   if (/^BP4_/i.test(value)) return _evidence("sig-lb", value);
-  return _evidence("sig-vus", value || "Not assigned");
+  return _evidence("sig-vus", value || "Uncertain");
 }
 
 function _toolEvidence(v, tool) {
@@ -615,7 +614,7 @@ function _toolEvidence(v, tool) {
       return _evidence("sig-vus", "Indeterminate");
     case "metarnn": return x >= .50
       ? _evidence("sig-lp", "Model pathogenic") : _evidence("sig-lb", "Model benign");
-    case "dann": return _evidence("sig-vus", "No calibrated evidence");
+    case "dann": return _evidence("", "No calibrated evidence");
     case "phactboost": return x >= .50
       ? _evidence("sig-lp", "Model pathogenic") : _evidence("sig-lb", "Model benign");
     case "phylop":
@@ -3647,15 +3646,11 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
   const clinvarHint = _annotationHint("ClinVar", clinvarDate
     ? [`version date: ${clinvarDate}`]
-    : [
-        "version date: 三級輸出未提供",
-        "請由 03_acmg 的 annotation_versions.json sidecar 記錄 ClinVar release_date",
-      ]);
+    : ["version date: 三級輸出未提供"]);
   const scoreHint = _annotationHint("Score", [
     "Total score = Variant score + Phenotype score",
-    "Variant score：GeneBe 優先、否則使用 in-house ACMG points；points 限制於 -10 至 10，再用 round((points + 10) / 20 × 100) 轉為 0–100",
+    "Variant score：ACMG score 轉換成 0–100",
     "Phenotype score：100 ×（此 gene 命中的 HPO/panel 權重總和）÷（全部有效輸入的 HPO/panel 權重總和）",
-    "Total score 可超過 100；手動修改 ACMG 不會即時重算排序 score",
   ]);
   const hgvsLabel = displaySnvHgvs(v, id);
 
@@ -3704,7 +3699,6 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     const parts = [v.loftee_hc, v.loftee_filter, v.loftee_flags]
       .filter(Boolean).join(" / ");
     extras.push({ key: "LOFTEE", text: parts,
-                  cls: v.loftee_hc === "HC" ? "sig-lp" : "sig-vus",
                   hint: _annotationHint("LOFTEE", [
                     "HC 表示 high-confidence predicted loss-of-function",
                     "此欄是 LoF transcript QC/filter，不是 PP3/BP4 score",
