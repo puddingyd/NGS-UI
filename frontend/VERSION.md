@@ -8,6 +8,7 @@
 
 ### v6.10 — 2026-07-17
 
+- 修正三級分析清單刪除新 unified-path sample 時，檔案已刪除但 cache cleanup 因舊變數名稱回傳 500 的問題；確認視窗也會顯示新的 datalake 路徑與 legacy fallback 路徑。
 - SNV/Indel 卡片的 Score、ClinVar、ACMG 與所有 in-silico tools 新增 `ⓘ` 註解；可查看計分公式、ClinVar 版本、ACMG 的 manual/GeneBe/in-house 來源比較，以及各工具的 PP3/BP4 threshold、文獻連結與 PMID。
 - P-KNN 註解新增 LLR 的 ±1/±2/±4 門檻，空 evidence 改顯示 Uncertain；DANN 與 LOFTEE 不再套色，並精簡 Score、ClinVar、LOFTOOL 的註解文字。
 - AlphaMissense、ESM1b、VARITY_R、BayesDel、REVEL、SpliceAI、PhyloP、GERP、SIFT 改依正式 calibration/ClinGen 建議套色；其他尚無通用 PP3/BP4 calibration 的工具會清楚標示為模型 cutoff 或 contextual evidence。SIFT 多 transcript 分數改取較低、較 deleterious 的值。

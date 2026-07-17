@@ -10092,7 +10092,7 @@ function setupPipelineList() {
       return;
     }
     const pipelineSid = delBtn.dataset.pipelineSampleId || sid;
-    if (!confirm(`確定刪除三級分析原始檔案、NGS-UI 個案資料與 job log？\n\n/home/pipeline/tertiary_output/${pipelineSid}/\nNGS_UI/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
+    if (!confirm(`確定刪除三級分析原始檔案、NGS-UI 個案資料與 job log？\n\n/home/datalake_Intermediate/pipeline/tertiary_output/${sid}/\n\n若為舊個案，也會清除：\n/home/pipeline/tertiary_output/${pipelineSid}/\nNGS_UI/tertiary_output/${sid}/\n\n此操作無法復原。`)) return;
     delBtn.disabled = true;
     if (status) status.textContent = `刪除 ${sid} 中…`;
     try {

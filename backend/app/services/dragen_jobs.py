@@ -675,6 +675,9 @@ def delete_pipeline_output(sample_id: str) -> dict:
     source_sample_id = (matched_sample or {}).get("source_sample_id") or sample_id
     ui_sample_id = (matched_sample or {}).get("sample_id") or sample_id
     pipeline_sample_id = source_sample_id
+    # Resolve the state path before deleting the unified sample tree.  Once the
+    # layout marker is gone, state_dir() can no longer identify 08_postprocessing.
+    ui_state_dir = sample_layout.state_dir(ui_sample_id)
     sample_dirs: set[Path] = set()
     for root in (PIPELINE_OUT_ROOT, LEGACY_PIPELINE_OUT_ROOT):
         ui_pipeline = root / ui_sample_id
@@ -736,7 +739,7 @@ def delete_pipeline_output(sample_id: str) -> dict:
             shutil.rmtree(job_dir)
             deleted.append(str(job_dir))
     from . import sample_loader
-    sample_loader.invalidate_sample_cache(ui_dir)
+    sample_loader.invalidate_sample_cache(ui_state_dir)
     sample_loader.remove_case_table_row(ui_sample_id)
     return {"sample_id": ui_sample_id, "source_sample_id": pipeline_sample_id, "deleted": deleted}
 
