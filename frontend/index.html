@@ -692,6 +692,8 @@
       <div class="dragen-form secondary-form">
         <div class="dragen-form-row dragen-vcf-row">
           <span id="secondary-index-meta" class="muted dragen-index-meta"></span>
+          <button id="secondary-show-clean-command" class="btn btn-ghost dragen-toolbar-btn" type="button"
+                  title="產生需貼到 DGX2 執行的 Nextflow work 清理指令">顯示 DGX2 清理指令</button>
           <button id="secondary-refresh-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="重新掃描 FASTQ root 目錄">↻ 更新索引</button>
         </div>
 
@@ -733,6 +735,16 @@
           <button id="secondary-create-btn" class="btn btn-primary" type="button">建立 sample sheet</button>
           <button type="button" class="btn btn-ghost" data-close="secondary-modal">關閉</button>
         </div>
+      </div>
+
+      <div id="secondary-clean-result-panel" class="secondary-result-panel" hidden>
+        <div class="secondary-result-head">
+          <strong>DGX2 Nextflow 暫存清理指令</strong>
+          <span id="secondary-clean-result-meta" class="muted"></span>
+          <button id="secondary-copy-clean-command" class="btn btn-ghost dragen-toolbar-btn" type="button">複製</button>
+        </div>
+        <pre id="secondary-clean-command" class="dragen-job-log secondary-command"></pre>
+        <div class="secondary-tmux-help muted">請將完整指令貼到 DGX2 terminal 執行；NGS-UI 所在的 DGM 不會直接刪除 DGX2 檔案。</div>
       </div>
 
       <div id="secondary-result-panel" class="secondary-result-panel" hidden>

@@ -578,6 +578,48 @@ def test_pgx_report_view_is_shared_docx_projection():
     }]
     assert view["full_recommendations"][0]["gene_phenotype"] == "CYP2C19 Poor Metabolizer"
     assert view["summary"]["actionable_genes"] == ["CYP2C19"]
+    cyp2c19 = next(row for row in view["analysis_genes"] if row["gene"] == "CYP2C19")
+    assert cyp2c19["requires_attention"] is True
+    assert cyp2c19["related_drugs"] == ["Clopidogrel"]
+    assert cyp2c19["recommendation_rows"][0]["recommendation"].endswith("(CPIC Strong)")
+    assert [row["action"] for row in view["analysis_action_categories"]] == [
+        "調整劑量並監測",
+        "考慮替代藥物",
+        "加強不良反應監測",
+        "使用前確認表型或檢驗",
+        "參考最新藥品仿單",
+        "不需調整／無明確調整建議",
+    ]
+    assert view["analysis_action_categories"][0]["drugs"] == []
+
+
+def test_pgx_analysis_lists_related_drugs_for_normal_genes():
+    pgx = {
+        "genes": {
+            "DPYD": {
+                "details": {"label": "*1/*1", "phenotypes": ["Normal Metabolizer"]},
+            },
+        },
+        "guideline_annotations": [{
+            "section": "CPIC Guideline Annotation",
+            "classification": "Strong",
+            "genes": ["DPYD"],
+            "drug": "fluorouracil",
+            "recommendation": "Use standard dosing.",
+        }],
+    }
+
+    view = docx_export.build_pgx_report_view(pgx)
+
+    dpyd = next(row for row in view["analysis_genes"] if row["gene"] == "DPYD")
+    assert dpyd["requires_attention"] is False
+    assert dpyd["related_drugs"] == ["Fluorouracil"]
+    assert dpyd["recommendation_rows"] == [{
+        "drug": "Fluorouracil",
+        "gene_phenotype": "DPYD Normal Metabolizer",
+        "recommendation": "目前基因型／表型未符合本報告需調整用藥的條件。",
+    }]
+    assert view["analysis_action_categories"][-1]["drugs"] == ["Fluorouracil"]
 
 
 def test_pgx_genotype_rows_treat_dash_phenotype_as_not_assigned():

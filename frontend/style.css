@@ -1499,7 +1499,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   border-bottom: 1px solid var(--border);
   font-family: ui-monospace, monospace;
 }
-.pharmcat-variants th { color: var(--muted); font-weight: 500; }
+.pharmcat-variants th { color: var(--muted); font-weight: 500; text-align: left; }
 
 /* New 2-section pharmacogenomics layout: Clinically actionable on top,
    Routine condensed below. */
@@ -1709,6 +1709,33 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .pgx-analysis-gene:last-child { border-bottom: 0; }
 .pgx-analysis-gene .pgx-gene-head { margin-bottom: 0; }
+.pgx-gene-head .pgx-gene-phenotype { color: var(--muted); }
+.pgx-gene-head-attention strong,
+.pgx-gene-head-attention .pgx-gene-phenotype {
+  color: #b42318;
+}
+.pgx-gene-recommendations { margin: 7px 0; }
+.pgx-related-drugs,
+.pgx-allele-placeholder { margin: 6px 0; }
+.pgx-star-alleles-note {
+  margin: 7px 0 3px;
+  padding: 5px 7px;
+  border-left: 3px solid #94a3b8;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.pgx-star-alleles summary {
+  cursor: pointer;
+  color: #475569;
+  white-space: nowrap;
+}
+.pgx-star-alleles div {
+  margin-top: 4px;
+  white-space: normal;
+  line-height: 1.45;
+}
 .pgx-global-messages {
   margin-top: 10px;
   padding: 8px 10px;

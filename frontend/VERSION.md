@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v6.12 — 2026-07-19
+
+- PGx 分析區新增包含空項目的完整用藥概覽與「不需調整／無明確調整建議」，每個 CPIC Level A gene 的詳細內容會列出相關藥物及 CPIC/FDA 建議；需注意表型改用紅字，normal/uncertain 等仍列出相關藥物但標示不需調整。
+- PGx allele evidence 不再顯示無意義的 `Messages: [object Object]` 或 MT-RNR1 raw `Unknown` placeholder；variant 的 allele 欄改名為「可對應之 star alleles」，長清單預設收合並說明它不是病人同時具有的 alleles，表頭也統一靠左。
+- 二級 WGS Nextflow 指令新增 `--run_automap`。因 NGS-UI 位於 DGM、無法直接控制 DGX2，二級分析 modal 改為產生可複製的 DGX2 暫存清理指令；指令會先檢查 Nextflow process、列出 `/raid/DGM/work` 待刪項目並要求人工確認。
+
 ### v6.11 — 2026-07-18
 
 - Test type 新增 `TITAN-WGS`；`25T...`、`26T...`、`27T...` 等年份加 T 開頭的 sample 自動歸類，分析與報告規則沿用 WGS。主畫面個案搜尋與個案清單的三種 test type filter 旁新增 `only` 快速單選。

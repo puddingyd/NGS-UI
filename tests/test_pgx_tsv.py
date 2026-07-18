@@ -87,6 +87,28 @@ def test_load_pgx_marks_missing_json_explicitly(tmp_path):
     assert result["pharmcat_available"] is False
 
 
+def test_load_pgx_omits_unrenderable_object_messages(tmp_path):
+    report = {
+        "messages": [{"unexpected": "object"}, {"message": "Readable global message"}],
+        "genes": {
+            "CYP2B6": {
+                "sourceDiplotypes": [{"label": "*1/*4"}],
+                "messages": [
+                    {"unexpected": "object"},
+                    {"text": "Readable gene message"},
+                ],
+            },
+        },
+    }
+    json_path = tmp_path / "sample.pharmcat.report.json"
+    json_path.write_text(json.dumps(report), encoding="utf-8")
+
+    result = load_pgx(tmp_path / "missing.tsv", json_path)
+
+    assert result["messages"] == ["Readable global message"]
+    assert result["genes"]["CYP2B6"]["details"]["messages"] == ["Readable gene message"]
+
+
 def test_staged_pgx_loader_attaches_shared_report_view(tmp_path, monkeypatch):
     sample_dir = tmp_path / "S1"
     sample_dir.mkdir()

@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import shlex
 import subprocess
 import time
 from datetime import datetime, timedelta, timezone
@@ -401,6 +402,7 @@ def _launch_command(batch_name: str, seq_type: str, has_one_sample: bool) -> str
     session = f"ngs2_{batch_name}"
     profile = "dgx_single" if has_one_sample else "dgx"
     run_gcnv = " \\\n    --run_gcnv true" if seq_type == "WES" else ""
+    run_automap = " \\\n    --run_automap" if seq_type == "WGS" else ""
     script_path = f"/tmp/{session}.sh"
     staged_sheet = SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch_name / "samplesheet.csv"
     return f"""cat > "{script_path}" <<'NGS2_EOF'
@@ -443,13 +445,47 @@ nextflow -c "${{PIPELINE_CONFIG}}" run "${{PIPELINE_CODE}}/main.nf" \\
     -profile {profile} \\
     --input_csv "${{OUT_DIR}}/samplesheet.csv" \\
     --seq_type {seq_type}{run_gcnv} \\
-    --out_dir "${{OUT_DIR}}" \\
+    --out_dir "${{OUT_DIR}}"{run_automap} \\
     -w "${{WORK_DIR}}" \\
     -resume
 NGS2_EOF
 tmux new-session -d -s "{session}" "bash {script_path}"
 tmux attach -t "{session}"
 """
+
+
+def cleanup_nf_work_command() -> dict:
+    """Return a guarded cleanup script to run manually on DGX2."""
+    root = SECONDARY_DGX_WORK_ROOT
+    if not root.is_absolute() or str(root) in {"", "/"} or root == root.parent:
+        raise ValueError(f"不安全的二級分析 Nextflow work root：{root}")
+    root_text = str(root)
+    command = f'''SECONDARY_WORK_ROOT={shlex.quote(root_text)}
+
+if [ ! -d "${{SECONDARY_WORK_ROOT}}" ]; then
+    echo "找不到二級分析 Nextflow 暫存路徑：${{SECONDARY_WORK_ROOT}}"
+    exit 1
+fi
+
+if pgrep -af '[n]extflow' >/dev/null; then
+    echo "偵測到 Nextflow 程序，停止清理："
+    pgrep -af '[n]extflow'
+    exit 1
+fi
+
+echo "準備清理 ${{SECONDARY_WORK_ROOT}}；以下項目將被刪除："
+find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -print
+read -r -p "確定刪除以上二級分析 Nextflow 暫存？[y/N] " answer
+case "${{answer}}" in
+    y|Y|yes|YES)
+        find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} +
+        echo "已清理：${{SECONDARY_WORK_ROOT}}"
+        ;;
+    *)
+        echo "已取消。"
+        ;;
+esac'''
+    return {"path": root_text, "command": command}
 
 
 def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "") -> dict:

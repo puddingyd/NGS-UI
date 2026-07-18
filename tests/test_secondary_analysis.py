@@ -101,3 +101,32 @@ def test_wes_samplesheet_remains_single_row(monkeypatch, tmp_path):
     assert result["sample_count"] == 1
     assert result["samplesheet_row_count"] == 1
     assert list(rows[0]) == ["sample", "fastq_1", "fastq_2", "sex"]
+
+
+def test_wgs_launch_command_runs_automap_without_changing_other_flags():
+    command = secondary._launch_command("260719_WGS", "WGS", has_one_sample=True)
+
+    assert "-profile dgx_single" in command
+    assert '--seq_type WGS \\\n    --out_dir "${OUT_DIR}" \\\n    --run_automap \\\n    -w "${WORK_DIR}" \\\n    -resume' in command
+    assert "--run_gcnv" not in command
+
+
+def test_wes_launch_command_does_not_run_automap():
+    command = secondary._launch_command("260719_WES", "WES", has_one_sample=True)
+
+    assert "--run_gcnv true" in command
+    assert "--run_automap" not in command
+
+
+def test_cleanup_secondary_nextflow_work_returns_guarded_dgx_command(monkeypatch):
+    work_root = Path("/raid/DGM/work")
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", work_root)
+
+    result = secondary.cleanup_nf_work_command()
+
+    assert result["path"] == "/raid/DGM/work"
+    assert 'if [ ! -d "${SECONDARY_WORK_ROOT}" ]' in result["command"]
+    assert "pgrep -af '[n]extflow'" in result["command"]
+    assert 'find "${SECONDARY_WORK_ROOT}" -mindepth 1 -maxdepth 1 -print' in result["command"]
+    assert 'read -r -p "確定刪除以上二級分析 Nextflow 暫存？[y/N] "' in result["command"]
+    assert '-exec rm -rf -- {} +' in result["command"]

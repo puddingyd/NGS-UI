@@ -6084,12 +6084,16 @@ function renderPharmcatReportBody(pc) {
 
 function _hasPharmcatGeneDetails(g) {
   const details = g?.details || {};
+  const meaningful = value => {
+    const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+    return !!text && !["unknown", "no result", "n/a", "na", ".", "-", "—"].includes(text);
+  };
   return !!(
-    details.allele1_name || details.allele1_function
-    || details.allele2_name || details.allele2_function
+    meaningful(details.allele1_name) || meaningful(details.allele1_function)
+    || meaningful(details.allele2_name) || meaningful(details.allele2_function)
     || (details.variants || []).length
     || (details.uncalled || []).length
-    || (details.messages || []).length
+    || (details.messages || []).some(message => typeof message === "string" && message.trim())
   );
 }
 
@@ -6099,14 +6103,13 @@ function renderPharmcatAnalysisGene(pc, row) {
   const mtRnr1Supplement = gene === "MT-RNR1"
     ? [payload.mtrn1_risk, payload.outside_caller, payload.notes].filter(Boolean).join(" · ")
     : "";
-  const detail = _hasPharmcatGeneDetails(payload)
-    ? renderPharmcatGeneDetails(payload)
-    : "";
+  const detail = renderPharmcatGeneDetails(payload, row);
+  const attentionClass = row.requires_attention ? " pgx-gene-head-attention" : "";
   return `<div class="pgx-analysis-gene">
-    <div class="pgx-gene-head">
+    <div class="pgx-gene-head${attentionClass}">
       <strong>${escapeHtml(gene)}</strong>
       <span>${escapeHtml(row.genotype || "—")}</span>
-      <span class="muted">${escapeHtml(row.phenotype || "No phenotype assigned")}</span>
+      <span class="pgx-gene-phenotype">${escapeHtml(row.phenotype || "No phenotype assigned")}</span>
       ${mtRnr1Supplement ? `<span class="pgx-evidence-badge">${escapeHtml(mtRnr1Supplement)}</span>` : ""}
     </div>
     ${detail}
@@ -6116,7 +6119,19 @@ function renderPharmcatAnalysisGene(pc, row) {
 function renderPharmcatAnalysisBody(pc) {
   const view = pc.report_view || {};
   const fullRows = Array.isArray(view.full_recommendations) ? view.full_recommendations : [];
-  const genotypeRows = Array.isArray(view.genotype_rows) ? view.genotype_rows : [];
+  const genotypeRows = Array.isArray(view.analysis_genes)
+    ? view.analysis_genes
+    : (Array.isArray(view.genotype_rows) ? view.genotype_rows : []);
+  const actionCategories = Array.isArray(view.analysis_action_categories)
+    ? view.analysis_action_categories
+    : (Array.isArray(view.action_categories) ? view.action_categories : []);
+  const overview = actionCategories.map(category => {
+    const drugs = Array.isArray(category.drugs) ? category.drugs.filter(Boolean) : [];
+    return `<div class="pgx-overview-row">
+      <strong>${escapeHtml(category.action || "")}</strong>
+      <span>${escapeHtml(drugs.length ? drugs.join("、") : "無")}</span>
+    </div>`;
+  }).join("") || `<div class="muted">（無 PGx 用藥分類資料）</div>`;
   const recommendationTable = fullRows.length
     ? _pgxTable(
         ["藥物", "基因與表型", "CPIC/FDA 建議"],
@@ -6125,23 +6140,45 @@ function renderPharmcatAnalysisBody(pc) {
       )
     : `<div class="muted">（無符合完整回報規則的用藥建議）</div>`;
   const genes = genotypeRows.map(row => renderPharmcatAnalysisGene(pc, row)).join("");
-  const messages = (pc.messages || []).length
-    ? `<div class="pgx-global-messages"><strong>PharmCAT messages</strong><ul>${pc.messages.map(message => `<li>${escapeHtml(String(message))}</li>`).join("")}</ul></div>`
+  const globalMessages = (pc.messages || []).filter(message => typeof message === "string" && message.trim());
+  const messages = globalMessages.length
+    ? `<div class="pgx-global-messages"><strong>PharmCAT messages</strong><ul>${globalMessages.map(message => `<li>${escapeHtml(message)}</li>`).join("")}</ul></div>`
     : "";
   return `${_pgxSourceWarning(pc)}${_pgxMetaHtml(pc)}
+    <div class="pgx-section">
+      <h4 class="pgx-heading">用藥建議概覽</h4>
+      <div class="pgx-overview">${overview}</div>
+    </div>
     <div class="pgx-section">
       <h4 class="pgx-heading">完整用藥建議</h4>
       ${recommendationTable}
     </div>
     <div class="pgx-section">
-      <h4 class="pgx-heading">21 個 CPIC Level A 基因詳細結果</h4>
+      <h4 class="pgx-heading">CPIC Level A 基因詳細結果</h4>
       <div class="pgx-analysis-genes">${genes}</div>
     </div>
     ${messages}`;
 }
 
-function renderPharmcatGeneDetails(g) {
+function _pharmcatMeaningfulDetail(value) {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  return ["", "unknown", "no result", "n/a", "na", ".", "-", "—"].includes(text.toLowerCase())
+    ? ""
+    : text;
+}
+
+function _pharmcatStarAllelesCell(value) {
+  const alleles = String(value || "").split(",").map(item => item.trim()).filter(Boolean);
+  if (!alleles.length) return "—";
+  if (alleles.length <= 4) return escapeHtml(alleles.join(", "));
+  return `<details class="pgx-star-alleles"><summary>${alleles.length} 個可能的 star allele 定義</summary><div>${escapeHtml(alleles.join(", "))}</div></details>`;
+}
+
+function renderPharmcatGeneDetails(g, analysisRow = {}) {
   const fnLine = (name, fn) => {
+    name = _pharmcatMeaningfulDetail(name);
+    fn = _pharmcatMeaningfulDetail(fn);
     if (!name && !fn) return "";
     const left  = name ? escapeHtml(name) : "—";
     const right = fn   ? ` <span class="muted">(${escapeHtml(fn)})</span>` : "";
@@ -6153,25 +6190,42 @@ function renderPharmcatGeneDetails(g) {
       <td>${escapeHtml(v.rsid || "—")}</td>
       <td>${escapeHtml(v.chr || "")}:${escapeHtml(String(v.pos ?? ""))}</td>
       <td>${escapeHtml(v.call || "")}</td>
-      <td>${escapeHtml(v.alleles || "")}</td>
+      <td>${_pharmcatStarAllelesCell(v.alleles)}</td>
     </tr>`).join("");
-  const uncalled = (details.uncalled && details.uncalled.length)
-    ? `<div class="muted">Uncalled: ${details.uncalled.map(escapeHtml).join(", ")}</div>`
+  const uncalledValues = (details.uncalled || []).filter(value => typeof value === "string" && value.trim());
+  const uncalled = uncalledValues.length
+    ? `<div class="muted">Uncalled: ${uncalledValues.map(escapeHtml).join(", ")}</div>`
     : "";
-  const messages = (details.messages && details.messages.length)
-    ? `<div class="muted">Messages: ${details.messages.map(m => escapeHtml(String(m))).join(", ")}</div>`
+  const messageValues = (details.messages || []).filter(value => typeof value === "string" && value.trim());
+  const messages = messageValues.length
+    ? `<div class="muted">Messages: ${messageValues.map(escapeHtml).join(", ")}</div>`
     : "";
   const variants = vrows
-    ? `<table class="pharmcat-variants"><thead><tr><th>rsID</th><th>Position</th><th>Call</th><th>Alleles</th></tr></thead><tbody>${vrows}</tbody></table>`
+    ? `<div class="pgx-star-alleles-note">Call 是病人實際檢出的基因型；「可對應之 star alleles」列出此位點可參與定義的 PharmCAT star alleles，不代表病人同時具有全部 alleles。</div>
+       <table class="pharmcat-variants"><thead><tr><th>rsID</th><th>Position</th><th>Call</th><th>可對應之 star alleles</th></tr></thead><tbody>${vrows}</tbody></table>`
     : "";
+  const recommendationRows = Array.isArray(analysisRow.recommendation_rows)
+    ? analysisRow.recommendation_rows
+    : [];
+  const relatedDrugs = Array.isArray(analysisRow.related_drugs)
+    ? analysisRow.related_drugs.filter(Boolean)
+    : [];
+  const recommendations = recommendationRows.length
+    ? _pgxTable(
+        ["藥物", "基因與表型", "CPIC/FDA 建議"],
+        recommendationRows.map(row => [row.drug, row.gene_phenotype, row.recommendation]),
+        "pgx-full-recommendation-table pgx-gene-recommendation-table",
+      )
+    : `<div class="muted pgx-related-drugs">相關藥物：${escapeHtml(relatedDrugs.length ? relatedDrugs.join("、") : "無")}</div>`;
+  const alleleEvidence = _hasPharmcatGeneDetails(g)
+    ? `<div class="pharmcat-alleles">
+         ${fnLine(details.allele1_name, details.allele1_function)}
+         ${fnLine(details.allele2_name, details.allele2_function)}
+       </div>${uncalled}${messages}${variants}`
+    : `<div class="muted pgx-allele-placeholder">（無其他 PharmCAT allele 證據）</div>`;
   return `<details class="pgx-detail"><summary>詳細</summary>
-            <div class="pharmcat-alleles">
-              ${fnLine(details.allele1_name, details.allele1_function)}
-              ${fnLine(details.allele2_name, details.allele2_function)}
-            </div>
-            ${uncalled}
-            ${messages}
-            ${variants}
+            <div class="pgx-gene-recommendations">${recommendations}</div>
+            ${alleleEvidence}
           </details>`;
 }
 
@@ -9476,10 +9530,48 @@ function setupSecondaryButton() {
     try { await loadSecondaryFastqList({ force: true }); }
     finally { if (b) { b.disabled = false; b.textContent = "↻ 更新索引"; } }
   });
+  document.getElementById("secondary-show-clean-command")?.addEventListener("click", _secondaryShowCleanupCommand);
   document.getElementById("secondary-add-batch-btn")?.addEventListener("click", _secondaryAddCurrentToBatch);
   document.getElementById("secondary-add-folder-btn")?.addEventListener("click", _secondaryAddFolderToBatch);
   document.getElementById("secondary-create-btn")?.addEventListener("click", _secondaryCreateSamplesheet);
   document.getElementById("secondary-copy-command")?.addEventListener("click", _secondaryCopyCommand);
+  document.getElementById("secondary-copy-clean-command")?.addEventListener("click", _secondaryCopyCleanupCommand);
+}
+
+async function _secondaryShowCleanupCommand() {
+  const btn = document.getElementById("secondary-show-clean-command");
+  const panel = document.getElementById("secondary-clean-result-panel");
+  const commandEl = document.getElementById("secondary-clean-command");
+  const meta = document.getElementById("secondary-clean-result-meta");
+  if (btn) { btn.disabled = true; btn.textContent = "產生中…"; }
+  try {
+    const result = await apiFetch("/secondary/nf-work/cleanup-command");
+    if (!result?.command) throw new Error("後端未回傳 DGX2 清理指令");
+    if (commandEl) commandEl.textContent = result.command;
+    if (meta) meta.textContent = `請在 DGX2 執行 · ${result?.path || "/raid/DGM/work"}`;
+    if (panel) panel.hidden = false;
+  } catch (e) {
+    if (commandEl) commandEl.textContent = `產生清理指令失敗：${e.message || e}`;
+    if (meta) meta.textContent = "";
+    if (panel) panel.hidden = false;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "顯示 DGX2 清理指令"; }
+  }
+}
+
+async function _secondaryCopyCleanupCommand() {
+  const command = document.getElementById("secondary-clean-command")?.textContent || "";
+  if (!command || command.startsWith("產生清理指令失敗")) return;
+  try {
+    await navigator.clipboard.writeText(command);
+    const btn = document.getElementById("secondary-copy-clean-command");
+    if (btn) {
+      btn.textContent = "已複製";
+      setTimeout(() => { btn.textContent = "複製"; }, 1200);
+    }
+  } catch (_e) {
+    prompt("請複製以下 DGX2 清理指令：", command);
+  }
 }
 
 // 三級分析 — DRAGEN VCF kicker (UI for /api/dragen/*)

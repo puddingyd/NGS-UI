@@ -59,6 +59,14 @@ async def post_refresh_index():
     }
 
 
+@router.get("/nf-work/cleanup-command")
+def get_cleanup_nf_work_command():
+    try:
+        return secondary_analysis.cleanup_nf_work_command()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/samplesheet")
 def post_samplesheet(payload: dict = Body(...)):
     seq_type = (payload.get("seq_type") or "").strip()
@@ -74,4 +82,3 @@ def post_samplesheet(payload: dict = Body(...)):
         raise HTTPException(400, str(e))
     except OSError as e:
         raise HTTPException(500, f"建立 samplesheet 失敗：{e}")
-

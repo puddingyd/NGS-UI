@@ -2379,6 +2379,29 @@ def _pgx_gene_has_actionable_result(pgx: dict, gene: str) -> bool:
     ))
 
 
+def _pgx_gene_requires_attention(pgx: dict, gene: str) -> bool:
+    """Classify the fixed-gene phenotype for analysis-screen emphasis only."""
+    _, phenotype = _pgx_gene_result(pgx, gene)
+    normalized = str(phenotype or "").strip().lower()
+    if normalized in {"", "-", "—", "n/a", "na", "unknown", "no result", "no phenotype assigned"}:
+        return False
+    if str(gene or "").strip().upper().startswith("HLA-"):
+        if "positive" in normalized:
+            return True
+        if "negative" in normalized:
+            return False
+    return not any(token in normalized for token in (
+        "normal",
+        "negative",
+        "no increased risk",
+        "low risk",
+        "indeterminate",
+        "uncertain",
+        "standard dosing",
+        "standard dose",
+    ))
+
+
 def _pgx_display_phenotype(phenotype: str) -> str:
     value = str(phenotype or "").strip()
     return "" if value.lower() in {"", "-", "—", "n/a", "na"} else phenotype
@@ -2680,23 +2703,46 @@ def _pgx_summary_rows_from_drug_groups(groups: list[dict]) -> list[dict]:
     return rows
 
 
-def _pgx_action_categories(groups: list[dict]) -> list[tuple[str, list[str]]]:
-    labels = [
-        "調整劑量並監測",
-        "考慮替代藥物",
-        "加強不良反應監測",
-        "使用前確認表型或檢驗",
-        "參考最新藥品仿單",
-    ]
-    by_action: dict[str, list[str]] = {label: [] for label in labels}
+_PGX_ACTION_LABELS = (
+    "調整劑量並監測",
+    "考慮替代藥物",
+    "加強不良反應監測",
+    "使用前確認表型或檢驗",
+    "參考最新藥品仿單",
+)
+
+
+def _pgx_action_categories(
+    groups: list[dict],
+    *,
+    include_empty: bool = False,
+) -> list[tuple[str, list[str]]]:
+    by_action: dict[str, list[str]] = {label: [] for label in _PGX_ACTION_LABELS}
     for group in groups:
         action = group.get("action") or "參考最新藥品仿單"
         by_action.setdefault(action, []).append(group["drug"])
     return [
         (label, sorted(dict.fromkeys(drugs), key=str.casefold))
         for label, drugs in by_action.items()
-        if drugs
+        if drugs or include_empty
     ]
+
+
+def _pgx_related_drugs_by_gene(pgx: dict) -> dict[str, list[str]]:
+    related: dict[str, set[str]] = {
+        gene: set() for gene in _PGX_CPIC_LEVEL_A_GENES
+    }
+    for item in pgx.get("guideline_annotations") or []:
+        drug = _pgx_drug_label(item.get("drug") or "")
+        if not drug:
+            continue
+        for gene in _pgx_annotation_genes(item):
+            if gene in related:
+                related[gene].add(drug)
+    return {
+        gene: sorted(drugs, key=str.casefold)
+        for gene, drugs in related.items()
+    }
 
 
 def _pgx_gene_phenotype_text(group: dict) -> str:
@@ -2779,6 +2825,64 @@ def build_pgx_report_view(pgx: dict) -> dict:
         }
         for group in drug_groups
     ]
+    related_drugs = _pgx_related_drugs_by_gene(payload)
+    analysis_genes: list[dict] = []
+    no_adjust_drugs: list[str] = []
+    for genotype_row in genotype_rows:
+        gene = genotype_row["gene"]
+        phenotype = genotype_row.get("phenotype") or "No phenotype assigned"
+        requires_attention = _pgx_gene_requires_attention(payload, gene)
+        gene_rows: list[dict] = []
+        actionable_drugs: set[str] = set()
+        for group in drug_groups:
+            matching = [
+                recommendation
+                for recommendation in group.get("recommendations") or []
+                if recommendation.get("gene") == gene
+            ]
+            if not matching:
+                continue
+            drug = group.get("drug") or ""
+            actionable_drugs.add(str(drug).casefold())
+            gene_rows.append({
+                "drug": drug,
+                "gene_phenotype": f"{gene} {phenotype}",
+                "recommendation": _pgx_recommendation_text({"recommendations": matching}),
+            })
+        if requires_attention:
+            for drug in related_drugs.get(gene, []):
+                if drug.casefold() in actionable_drugs:
+                    continue
+                gene_rows.append({
+                    "drug": drug,
+                    "gene_phenotype": f"{gene} {phenotype}",
+                    "recommendation": "未找到符合目前回報規則的明確處方調整建議。",
+                })
+        else:
+            no_adjust_drugs.extend(related_drugs.get(gene, []))
+            gene_rows = [
+                {
+                    "drug": drug,
+                    "gene_phenotype": f"{gene} {phenotype}",
+                    "recommendation": "目前基因型／表型未符合本報告需調整用藥的條件。",
+                }
+                for drug in related_drugs.get(gene, [])
+            ]
+        gene_rows.sort(key=lambda row: str(row.get("drug") or "").casefold())
+        analysis_genes.append({
+            **genotype_row,
+            "requires_attention": requires_attention,
+            "related_drugs": related_drugs.get(gene, []),
+            "recommendation_rows": gene_rows,
+        })
+    analysis_action_categories = [
+        {"action": action, "drugs": drugs}
+        for action, drugs in _pgx_action_categories(drug_groups, include_empty=True)
+    ]
+    analysis_action_categories.append({
+        "action": "不需調整／無明確調整建議",
+        "drugs": sorted(dict.fromkeys(no_adjust_drugs), key=str.casefold),
+    })
     actionable_genes = list(dict.fromkeys(
         gene
         for group in drug_groups
@@ -2792,6 +2896,8 @@ def build_pgx_report_view(pgx: dict) -> dict:
         "action_categories": action_categories,
         "summary_rows": summary_rows,
         "genotype_rows": genotype_rows,
+        "analysis_genes": analysis_genes,
+        "analysis_action_categories": analysis_action_categories,
         "full_recommendations": full_recommendations,
         "drug_groups": drug_groups,
         "summary": {

@@ -146,6 +146,16 @@ def _compact_report_json(path: Path) -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
 
+    def message_text(value) -> str:
+        if isinstance(value, str):
+            return _plain_text(value)
+        if isinstance(value, dict):
+            for key in ("message", "text", "description", "title"):
+                text = _plain_text(value.get(key))
+                if text:
+                    return text
+        return ""
+
     genes = {}
     for gene, payload in (data.get("genes") or {}).items():
         source = (payload.get("sourceDiplotypes") or [{}])[0] or {}
@@ -176,14 +186,22 @@ def _compact_report_json(path: Path) -> dict:
             "allele2_name": _clean(allele2.get("name")),
             "allele2_function": _clean(allele2.get("function")),
             "uncalled": payload.get("uncalledHaplotypes") or [],
-            "messages": payload.get("messages") or [],
+            "messages": [
+                text
+                for value in payload.get("messages") or []
+                if (text := message_text(value))
+            ],
             "variants": variants[:80],
         }
     return {
         "pharmcat_version": _clean(data.get("pharmcatVersion")),
         "data_version": _clean(data.get("dataVersion")),
         "timestamp": _clean(data.get("timestamp")),
-        "messages": data.get("messages") or [],
+        "messages": [
+            text
+            for value in data.get("messages") or []
+            if (text := message_text(value))
+        ],
         "genes": genes,
         "guideline_annotations": _compact_drug_annotations(data),
     }
