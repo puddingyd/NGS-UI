@@ -155,7 +155,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 2. **載入新個案** — 點「載入新個案」：
    - LIS_ID 下拉會列出 `08_postprocessing/layout.json` 已啟用、但尚未登錄的三級個案；尚在 post-processing 或失敗而沒有 marker 的新目錄不會提早出現。未遷移舊個案仍從 legacy UI root 列出；
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；三級分析輸出若使用 `{LIS_ID}-dragen` / `{LIS_ID}-nckuh` / `{LIS_ID}-inhouse` 這類 UI 後綴，會先保留後綴作為 sample ID，再回查未加後綴的 roster LIS_ID；
-   - Test type 提供 `WES`、`WGS`、`TITAN-WGS`；LIS/sample ID 以兩位數年份加 `T` 開頭（例如 `25T...`、`26T...`、`27T...`）時會自動歸為 `TITAN-WGS`。其他來源若為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，仍預設為 `WGS`；`TITAN-WGS` 的分析門檻、dead zone 與報告方法文字皆沿用 WGS 規則；
+   - Test type 提供 `WES`、`WGS`、`TITAN-WGS`；LIS/sample ID 以兩位數年份加 `T` 開頭（例如 `25T...`、`26T...`、`27T...`）時會自動歸為 `TITAN-WGS`。其他來源若為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，仍預設為 `WGS`；`TITAN-WGS` 的分析門檻、dead zone 與報告方法文字皆沿用 WGS 規則。TITAN-WGS 載入時會預設隱藏診斷分析，可從基本資料下方的小三角切換；Secondary findings、PGx/PharmCAT、健檢報告及儲存仍顯示。WES/WGS 不顯示此切換且維持完整畫面；
    - Clinical presentation 可在檢體編號 / 病歷號下方輸入，會依病歷號 debounce 自動儲存為 `patient_phenotype/{MRN}_clinical_presentation.txt`，載入新個案與主畫面 Clinical presentation 會自動帶入；主畫面 reviewer 修改後也會同步寫回此檔，供 `/phenotype/` 後續載入。若沒有 MRN，才 fallback 使用 LIS_ID 暫存。
    - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
    - 登錄新個案的未登錄個案欄位可直接輸入 LIS ID、source sample、姓名或 MRN 搜尋，也可從下拉清單選擇；清單在前端快取一天，需要看到最新 pipeline output 時可按「更新清單」手動重抓。登錄完成會同步切換主畫面與上方個案搜尋框。登錄時不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；至少有一個 HPO term 時才會排入 Exomiser/LIRICAL，若 VCF 尚不存在，背景 job 開始前會自動建立或刷新。

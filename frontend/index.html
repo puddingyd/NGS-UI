@@ -34,11 +34,11 @@
       <button type="button" class="sidebar-link" data-target="report-sections">報告</button>
       <details class="sidebar-group" open>
         <summary>分析</summary>
-        <button type="button" class="sidebar-link sub" data-target="card-snv">SNV/Indel</button>
-        <button type="button" class="sidebar-link sub" data-target="card-cnv-sv">CNV/SV</button>
-        <button type="button" class="sidebar-link sub" data-target="card-mito">Mitochondria</button>
-        <button type="button" class="sidebar-link sub" data-target="card-str">STR</button>
-        <button type="button" class="sidebar-link sub" data-target="card-roh">ROH</button>
+        <button type="button" class="sidebar-link sub diagnostic-analysis-sidebar-link" data-target="card-snv">SNV/Indel</button>
+        <button type="button" class="sidebar-link sub diagnostic-analysis-sidebar-link" data-target="card-cnv-sv">CNV/SV</button>
+        <button type="button" class="sidebar-link sub diagnostic-analysis-sidebar-link" data-target="card-mito">Mitochondria</button>
+        <button type="button" class="sidebar-link sub diagnostic-analysis-sidebar-link" data-target="card-str">STR</button>
+        <button type="button" class="sidebar-link sub diagnostic-analysis-sidebar-link" data-target="card-roh">ROH</button>
         <details class="sidebar-group sidebar-subgroup" open>
           <summary>Secondary findings</summary>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-acmg-sf-c">ACMG SF</button>
@@ -183,6 +183,15 @@
       </div>
       <div id="m-meta-hint" class="muted" style="margin-top:6px;font-size:11px"></div>
     </section>
+
+    <!-- TITAN-WGS is primarily a health-screening workflow. Diagnostic
+         sections stay available on demand but start hidden for each newly
+         selected TITAN case. WES/WGS never show this control. -->
+    <div id="diagnostic-analysis-toggle-row" class="diagnostic-analysis-toggle-row hidden">
+      <button id="btn-toggle-diagnostic-analysis" type="button" aria-expanded="false">
+        ▸ 顯示診斷分析
+      </button>
+    </div>
 
     <!-- QC blacklist warnings (rendered only when qc_summary.json has entries) -->
     <section id="qc-card" class="card hidden">

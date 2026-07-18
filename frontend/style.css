@@ -183,6 +183,46 @@ body.sidebar-collapsed .container { margin-left: auto; }
 .muted { color: var(--muted); font-size: 12px; }
 .error { color: var(--danger); font-size: 13px; margin: 8px 0; }
 
+/* TITAN-WGS health-screening cases start with diagnostic-only UI hidden.
+   The shared report/analysis containers stay visible because they also hold
+   Secondary findings and Pharmacogenomics. */
+.diagnostic-analysis-toggle-row {
+  margin: -10px 0 12px;
+  padding-left: 4px;
+}
+.diagnostic-analysis-toggle-row button {
+  border: 0;
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.diagnostic-analysis-toggle-row button:hover,
+.diagnostic-analysis-toggle-row button:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+body.titan-diagnostic-analysis-hidden .diagnostic-analysis-sidebar-link,
+body.titan-diagnostic-analysis-hidden #counseling-card,
+body.titan-diagnostic-analysis-hidden #clinical-card,
+body.titan-diagnostic-analysis-hidden #phenotype-card,
+body.titan-diagnostic-analysis-hidden #dead-zone-card,
+body.titan-diagnostic-analysis-hidden .btn-export-clinical,
+body.titan-diagnostic-analysis-hidden .btn-print-report,
+body.titan-diagnostic-analysis-hidden #sec-causative,
+body.titan-diagnostic-analysis-hidden #sec-other,
+body.titan-diagnostic-analysis-hidden #sec-candidate,
+body.titan-diagnostic-analysis-hidden #category-sections > .section-header .filter-toggle,
+body.titan-diagnostic-analysis-hidden #card-snv,
+body.titan-diagnostic-analysis-hidden #card-cnv-sv,
+body.titan-diagnostic-analysis-hidden #card-mito,
+body.titan-diagnostic-analysis-hidden #card-str,
+body.titan-diagnostic-analysis-hidden #card-roh {
+  display: none !important;
+}
+
 .welcome-card {
   padding: 0;
   overflow: hidden;

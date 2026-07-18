@@ -14,6 +14,7 @@ const state = {
   reports:      null,      // { status, edits, panels, category, updated_at }
   currentLIS:   null,
   dirty:        false,
+  diagnosticAnalysisVisible: true,
 };
 const SAMPLE_TEST_TYPES = ["WES", "WGS", "TITAN-WGS"];
 const sampleTestFilters = new Set(SAMPLE_TEST_TYPES);
@@ -25,6 +26,41 @@ function normalizeSampleTestType(value = "", sampleId = "") {
 
 function isWgsTestType(value) {
   return ["WGS", "TITAN-WGS"].includes(String(value || "").trim().toUpperCase());
+}
+
+function currentSampleTestType() {
+  const meta = state.data?.meta || {};
+  return normalizeSampleTestType(
+    meta.Test || meta.test_type || "",
+    meta.LIS_ID || meta.lis_id || state.currentLIS || "",
+  );
+}
+
+function applyDiagnosticAnalysisVisibility() {
+  const isTitan = currentSampleTestType() === "TITAN-WGS";
+  if (!isTitan) state.diagnosticAnalysisVisible = true;
+  const visible = !isTitan || state.diagnosticAnalysisVisible;
+
+  document.body.classList.toggle(
+    "titan-diagnostic-analysis-hidden",
+    isTitan && !visible,
+  );
+
+  const row = document.getElementById("diagnostic-analysis-toggle-row");
+  row?.classList.toggle("hidden", !isTitan);
+  const btn = document.getElementById("btn-toggle-diagnostic-analysis");
+  if (btn) {
+    btn.setAttribute("aria-expanded", visible ? "true" : "false");
+    btn.textContent = visible ? "▾ 隱藏診斷分析" : "▸ 顯示診斷分析";
+  }
+}
+
+function setupDiagnosticAnalysisToggle() {
+  document.getElementById("btn-toggle-diagnostic-analysis")?.addEventListener("click", () => {
+    if (currentSampleTestType() !== "TITAN-WGS") return;
+    state.diagnosticAnalysisVisible = !state.diagnosticAnalysisVisible;
+    applyDiagnosticAnalysisVisibility();
+  });
 }
 
 // Tracks blocks the user has manually toggled (by host id).
@@ -178,6 +214,8 @@ async function _loadSample(LIS_ID) {
   // The combobox carries the row's `sample_id` (which equals LIS_ID for
   // legacy samples). Look it up so we use the directory name the backend
   // wants on the URL path.
+  const previousTestType = currentSampleTestType();
+  const sameTitanSample = state.currentLIS === LIS_ID && previousTestType === "TITAN-WGS";
   const row = (state.index || []).find(r => r.LIS_ID === LIS_ID);
   const sid = row?.sample_id || LIS_ID;
   const data = await apiFetch(`/samples/${encodeURIComponent(sid)}`);
@@ -200,6 +238,10 @@ async function _loadSample(LIS_ID) {
   state.snvSearchVariants = {};
   state.reports    = reports;
   state.currentLIS = LIS_ID;
+  const loadedTestType = currentSampleTestType();
+  state.diagnosticAnalysisVisible = loadedTestType === "TITAN-WGS"
+    ? (sameTitanSample && state.diagnosticAnalysisVisible)
+    : true;
   state.dirty      = false;
   _saveError       = "";
   _lastSavedAt     = null;
@@ -1442,6 +1484,7 @@ function renderSampleMeta() {
   }).join("");
 
   document.getElementById("sample-card").classList.remove("hidden");
+  applyDiagnosticAnalysisVisibility();
   renderQcWarnings();
 }
 
@@ -1485,7 +1528,20 @@ function _saveSampleMeta(patch) {
 }
 
 document.addEventListener("change", ev => {
-  if (ev.target.id === "m-test")  _saveSampleMeta({ test_type:    ev.target.value });
+  if (ev.target.id === "m-test") {
+    const meta = state.data?.meta || {};
+    const testType = normalizeSampleTestType(
+      ev.target.value,
+      meta.LIS_ID || meta.lis_id || state.currentLIS || "",
+    );
+    ev.target.value = testType;
+    if (state.data?.meta) state.data.meta.Test = testType;
+    const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
+    if (row) row.Test = testType;
+    state.diagnosticAnalysisVisible = testType !== "TITAN-WGS";
+    applyDiagnosticAnalysisVisibility();
+    _saveSampleMeta({ test_type: testType });
+  }
   if (ev.target.id === "m-build") _saveSampleMeta({ genome_build: ev.target.value });
   if (ev.target.id === "m-sex") {
     if (state.data.meta) state.data.meta.Sex = ev.target.value;
@@ -7979,6 +8035,7 @@ async function bootAfterAuth() {
 
 (async function boot() {
   setupCombobox();
+  setupDiagnosticAnalysisToggle();
   loadWelcomeVersion();
   updateWelcomeVisibility();
   setupSnvDisplayFilters();

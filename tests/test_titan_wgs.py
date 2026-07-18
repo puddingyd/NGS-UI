@@ -8,6 +8,7 @@ from app.services import docx_export, patient_list_store, sample_loader, test_ty
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_JS = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
 INDEX_HTML = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+STYLE_CSS = (REPO_ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
 
 
 def test_year_t_sample_ids_are_titan_wgs():
@@ -41,3 +42,35 @@ def test_frontend_has_three_test_filters_and_only_buttons():
     assert INDEX_HTML.count('value="TITAN-WGS"') == 4
     for test_type in ("WES", "WGS", "TITAN-WGS"):
         assert INDEX_HTML.count(f'data-test-type="{test_type}"') == 2
+
+
+def test_titan_wgs_has_diagnostic_analysis_visibility_toggle():
+    assert 'id="diagnostic-analysis-toggle-row"' in INDEX_HTML
+    assert 'id="btn-toggle-diagnostic-analysis"' in INDEX_HTML
+    assert INDEX_HTML.count("diagnostic-analysis-sidebar-link") == 5
+    assert "function applyDiagnosticAnalysisVisibility()" in APP_JS
+    assert "function setupDiagnosticAnalysisToggle()" in APP_JS
+    assert '"titan-diagnostic-analysis-hidden"' in APP_JS
+    assert 'btn.textContent = visible ? "▾ 隱藏診斷分析" : "▸ 顯示診斷分析";' in APP_JS
+
+    for selector in (
+        "#counseling-card",
+        "#clinical-card",
+        "#phenotype-card",
+        "#dead-zone-card",
+        ".btn-export-clinical",
+        ".btn-print-report",
+        "#sec-causative",
+        "#sec-other",
+        "#sec-candidate",
+        "#card-snv",
+        "#card-cnv-sv",
+        "#card-mito",
+        "#card-str",
+        "#card-roh",
+    ):
+        assert f"body.titan-diagnostic-analysis-hidden {selector}" in STYLE_CSS
+
+    # Health-screening content must not be hidden by the diagnostic-only rule.
+    for selector in ("#sec-acmg-sf", "#sec-stroke", "#sec-carrier", "#sec-pharmcat"):
+        assert f"body.titan-diagnostic-analysis-hidden {selector}" not in STYLE_CSS
