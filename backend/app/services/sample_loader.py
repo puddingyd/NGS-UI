@@ -926,25 +926,6 @@ def _is_clinvar_plp(variant: dict) -> bool:
     }
 
 
-def _is_plp_text(raw: str) -> bool:
-    key = str(raw or "").strip().lower().replace("_", " ")
-    return key in {
-        "pathogenic",
-        "likely pathogenic",
-        "pathogenic/likely pathogenic",
-        "likely pathogenic/pathogenic",
-    }
-
-
-def _is_acmg_plp(variant: dict) -> bool:
-    cls = (
-        variant.get("genebe_acmg_class")
-        or variant.get("ACMG_classification")
-        or ""
-    )
-    return _is_plp_text(cls)
-
-
 def _secondary_panel_genes() -> dict[str, set[str]]:
     from . import phenotype_scorer
     out: dict[str, set[str]] = {}
@@ -991,8 +972,13 @@ def _secondary_zygosity_pass(variant: dict) -> bool:
 
 
 def _is_secondary_snv_candidate(variant: dict) -> bool:
+    # Keep every existing ClinVar P/LP candidate, then broaden retrieval with
+    # the same 1A/1B/1C buckets used by the main SNV/Indel card.  Tier 1B is
+    # LOFTEE HC; tier 1C covers ACMG points >=4 and calibrated predictor
+    # triggers.  Selection into the report remains ClinVar-only by default.
+    tier = str(variant.get("tier") or "").strip().upper()
     return (
-        (_is_clinvar_plp(variant) or _is_acmg_plp(variant))
+        (_is_clinvar_plp(variant) or tier in {"1A", "1B", "1C"})
         and _secondary_vaf_pass(variant)
         and _secondary_zygosity_pass(variant)
     )
@@ -1682,6 +1668,11 @@ def load_sample_pgx(sample_id: str, version: str | None = None) -> dict | None:
     pgx_path = sample_layout.pgx_tsv(sample_id)
     pharmcat_path = sample_layout.pharmcat_json(sample_id)
     pgx = load_pgx(pgx_path, pharmcat_path if pharmcat_path.exists() else None)
+    # Lazily import the DOCX presenter to avoid a module-load cycle:
+    # docx_export itself uses this staged loader when building health reports.
+    # The resulting view is the single shared projection for DOCX + browser.
+    from .docx_export import build_pgx_report_view
+    pgx["report_view"] = build_pgx_report_view(pgx)
     _log_perf(
         "sample.pgx",
         started,

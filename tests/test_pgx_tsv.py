@@ -1,6 +1,7 @@
 import json
 
 from app.adapters.pgx_tsv import load_pgx
+from app.services import sample_loader
 
 
 def test_load_pgx_preserves_compact_fda_association(tmp_path):
@@ -36,6 +37,7 @@ def test_load_pgx_preserves_compact_fda_association(tmp_path):
 
     result = load_pgx(tsv, json_path)
 
+    assert result["pharmcat_available"] is True
     assert result["genes"]["CYP2C19"]["drugs"][0]["drug"] == "clopidogrel"
     assert result["guideline_annotations"] == [{
         "section": "FDA PGx Association",
@@ -75,5 +77,46 @@ def test_load_pgx_without_tsv_still_returns_json_annotations(tmp_path):
 
     result = load_pgx(tmp_path / "missing.tsv", json_path)
 
+    assert result["pharmcat_available"] is True
     assert result["guideline_annotations"][0]["fda_category"] == "potential_impact"
 
+
+def test_load_pgx_marks_missing_json_explicitly(tmp_path):
+    result = load_pgx(tmp_path / "missing.tsv", tmp_path / "missing.json")
+
+    assert result["pharmcat_available"] is False
+
+
+def test_staged_pgx_loader_attaches_shared_report_view(tmp_path, monkeypatch):
+    sample_dir = tmp_path / "S1"
+    sample_dir.mkdir()
+    json_path = sample_dir / "sample.pharmcat.report.json"
+    json_path.write_text(json.dumps({
+        "pharmcatVersion": "3.2.0",
+        "genes": {
+            "CYP2C19": {
+                "sourceDiplotypes": [{
+                    "label": "*2/*2",
+                    "phenotypes": ["Poor Metabolizer"],
+                }],
+            },
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(sample_loader.sample_layout, "state_dir", lambda _sample: sample_dir)
+    monkeypatch.setattr(
+        sample_loader.sample_layout,
+        "pgx_tsv",
+        lambda _sample: sample_dir / "missing.pgx.tsv",
+    )
+    monkeypatch.setattr(sample_loader.sample_layout, "pharmcat_json", lambda _sample: json_path)
+
+    payload = sample_loader.load_sample_pgx("S1")
+
+    assert payload is not None
+    assert payload["pgx"]["pharmcat_available"] is True
+    assert len(payload["pgx"]["report_view"]["genotype_rows"]) == 21
+    assert payload["pgx"]["report_view"]["genotype_rows"][4] == {
+        "gene": "CYP2C19",
+        "genotype": "*2/*2",
+        "phenotype": "Poor Metabolizer",
+    }

@@ -2330,14 +2330,18 @@ def _pgx_gene_result(pgx: dict, gene: str) -> tuple[str, str]:
     raw_phenotype = phenotype
     tsv_diplotype = payload.get("diplotype") or ""
     tsv_phenotype = payload.get("phenotype") or ""
-    if (not diplotype or (gene == "MT-RNR1" and diplotype.lower() == "unknown")) and tsv_diplotype:
-        diplotype = tsv_diplotype
-    if (
-        not phenotype
-        or (gene == "MT-RNR1" and phenotype.lower() in {"no result", "unknown"})
-    ) and tsv_phenotype:
-        phenotype = tsv_phenotype
-        raw_phenotype = phenotype
+    # PharmCAT JSON is authoritative for the fixed report scope.  MT-RNR1 is
+    # the sole exception because PharmCAT may emit Unknown / No Result while
+    # the dedicated pipeline TSV carries the validated mitochondrial call.
+    if gene == "MT-RNR1":
+        if (not diplotype or diplotype.lower() == "unknown") and tsv_diplotype:
+            diplotype = tsv_diplotype
+        if (
+            not phenotype
+            or phenotype.lower() in {"no result", "unknown"}
+        ) and tsv_phenotype:
+            phenotype = tsv_phenotype
+            raw_phenotype = phenotype
     allele_function = _pgx_allele_function(details)
     diplotype, _ = _pgx_display_genotype(gene, diplotype, raw_phenotype)
     if gene == "VKORC1" and allele_function:
@@ -2747,6 +2751,58 @@ def _pgx_recommendation_text(group: dict) -> str:
     return "；".join(parts)
 
 
+def build_pgx_report_view(pgx: dict) -> dict:
+    """Build the shared PGx presentation used by DOCX and the main UI.
+
+    Keep the clinical inclusion, source-priority, fixed-gene scope and
+    genotype/phenotype fallback rules in one backend path so the browser is a
+    faithful preview of the exported health report rather than a second
+    independent interpretation of PharmCAT.
+    """
+    payload = pgx or {}
+    drug_groups = _pgx_drug_groups(payload)
+    summary_rows = _pgx_summary_rows_from_drug_groups(drug_groups)
+    genotype_rows = [
+        {"gene": gene, "genotype": genotype, "phenotype": phenotype}
+        for gene, genotype, phenotype in _pgx_genotype_rows(payload)
+    ]
+    action_categories = [
+        {"action": action, "drugs": drugs}
+        for action, drugs in _pgx_action_categories(drug_groups)
+    ]
+    full_recommendations = [
+        {
+            "drug": group.get("drug") or "",
+            "gene_phenotype": _pgx_gene_phenotype_text(group),
+            "recommendation": _pgx_recommendation_text(group),
+            "genes": list(group.get("genes") or {}),
+        }
+        for group in drug_groups
+    ]
+    actionable_genes = list(dict.fromkeys(
+        gene
+        for group in drug_groups
+        for gene in (group.get("genes") or {})
+    ))
+    summary_drugs = list(dict.fromkeys(
+        row.get("drug") for row in summary_rows if row.get("drug")
+    ))
+    return {
+        "report_genes": list(_PGX_CPIC_LEVEL_A_GENES),
+        "action_categories": action_categories,
+        "summary_rows": summary_rows,
+        "genotype_rows": genotype_rows,
+        "full_recommendations": full_recommendations,
+        "drug_groups": drug_groups,
+        "summary": {
+            "actionable_drugs": len(drug_groups),
+            "summary_drugs": len(summary_drugs),
+            "appendix_only_drugs": max(0, len(drug_groups) - len(summary_drugs)),
+            "actionable_genes": actionable_genes,
+        },
+    }
+
+
 def _render_health_pgx_resources(doc) -> None:
     _blank(doc)
     _add_paragraph(doc, "  官方用藥資訊查詢", bold=True)
@@ -2762,7 +2818,8 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
     _add_paragraph(doc, title, bold=True)
     _add_paragraph(doc, f"  {_HEALTH_PGX_CAUTION}")
     _blank(doc)
-    drug_groups = _pgx_drug_groups(pgx or {})
+    report_view = (pgx or {}).get("report_view") or build_pgx_report_view(pgx or {})
+    drug_groups = report_view["drug_groups"]
     if not drug_groups:
         _add_paragraph(doc, "  本次檢測未發現符合目前回報規則之明確臨床可應用藥物基因體結果。")
         _add_paragraph(
@@ -2776,7 +2833,7 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
             for group in drug_groups
             for gene in group.get("genes", {})
         ))
-        summary_rows = _pgx_summary_rows_from_drug_groups(drug_groups)
+        summary_rows = report_view["summary_rows"]
         summary_drugs = list(dict.fromkeys(row["drug"] for row in summary_rows if row.get("drug")))
         drug_text = "、".join(summary_drugs)
         appendix_only_count = max(0, len(drug_groups) - len(summary_drugs))
@@ -2802,8 +2859,11 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
         )
         _blank(doc)
         _add_paragraph(doc, "  用藥建議概覽", bold=True)
-        for action, drugs in _pgx_action_categories(drug_groups):
-            _add_paragraph(doc, f"    {action}：{'、'.join(drugs)}")
+        for category in report_view["action_categories"]:
+            _add_paragraph(
+                doc,
+                f"    {category['action']}：{'、'.join(category['drugs'])}",
+            )
         _add_paragraph(
             doc,
             "    其餘未列之藥物，未發現符合本報告回報規則之明確處方調整建議。",
@@ -2825,7 +2885,10 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
         ("基因", 12),
         ("基因型", 30, "genotype-buffered"),
         ("表型", 42, "buffered"),
-    ], rows=_pgx_genotype_rows(pgx or {}), indent="  ")
+    ], rows=[
+        [row["gene"], row["genotype"], row["phenotype"]]
+        for row in report_view["genotype_rows"]
+    ], indent="  ")
     _render_health_pgx_resources(doc)
     return drug_groups
 

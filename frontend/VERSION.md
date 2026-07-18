@@ -9,11 +9,13 @@
 ### v6.11 — 2026-07-18
 
 - Test type 新增 `TITAN-WGS`；`25T...`、`26T...`、`27T...` 等年份加 T 開頭的 sample 自動歸類，分析與報告規則沿用 WGS。主畫面個案搜尋與個案清單的三種 test type filter 旁新增 `only` 快速單選。
-- TITAN-WGS 載入個案時預設隱藏診斷分析；基本資料下方可顯示／隱藏 Genetic counseling、phenotype/dead zone、診斷報告按鈕、Causative/Other/Candidate 與 SNV/CNV-SV/Mito/STR/ROH。Secondary findings、PGx/PharmCAT、健檢報告及儲存維持顯示，WES/WGS 畫面不變。
+- TITAN-WGS 載入個案時預設隱藏診斷分析；基本資料下方可顯示／隱藏 Genetic counseling、phenotype/dead zone、診斷報告按鈕、Causative/Other/Candidate 與 SNV/CNV-SV/Mito/STR/ROH。Secondary findings、PGx/PharmCAT、健檢報告及儲存維持顯示，且 TITAN 的報告區與分析區 Secondary findings 子區域全部預設展開；WES/WGS 維持既有開合狀態。主畫面「分析」標題字級也已與「報告」一致。
 - 登錄新個案後會同步切換上方個案搜尋框；登錄狀態不再顯示 job ID。Exomiser/LIRICAL 改為至少有一個 HPO term 才排入，只有 panel 時仍會更新 pheno score，但不再產生 prepare-vcf 失敗訊息。
 - 主畫面 Secondary findings 精簡為 ACMG SF、中風相關基因與 Carrier screening（PGx / PharmCAT 保留）；同一 variant 命中多個 panel 時仍會在每個分類分別顯示，但所有卡片共用同一筆勾選、ACMG、Comment、transcript 與疾病選取資料。既有勾選衝突以明確取消為準，健檢匯出時才合併去重。
+- Secondary findings 分析候選擴大為 ClinVar P/LP 加上 SNV `1A/1B/1C` 規則，納入 LOFTEE HC、ACMG points ≥4 與 predictor 候選；只有 ClinVar P/LP 仍會預設勾選進報告。
 - 健檢 DOCX 匯出選項精簡為 ACMG 疾病風險基因、中風相關基因、帶因者篩查與藥物基因體學；所選疾病 panel 點位先合併去重，再統一套用疾病風險／帶因者兩類規則。基因清單移除類別序號，附錄改為另起新頁、標題置中並留一空行。
 - 健檢 DOCX 的 PGx 概覽會完整列出摘要表內所有藥物並標示只列於完整建議附錄的項數；新增官方用藥連結提示，HLA 多 allele 結果只要有任一 positive 即保留對應用藥建議。
+- 主畫面 PGx 報告區改為健檢輸出預覽（用藥概覽、摘要、固定 21-gene 基因型/表型），分析區顯示完整 CPIC/FDA 建議與 JSON evidence；畫面和 DOCX 共用同一個後端 projection，TSV 只補 MT-RNR1。
 - 三級分析畫面的黑底 log 可視高度調整為原本約 1.22 倍。
 
 ### v6.10 — 2026-07-17

@@ -532,6 +532,54 @@ def test_pgx_gene_result_falls_back_to_tsv_for_mt_rnr1():
     assert docx_export._pgx_gene_result(pgx, "MT-RNR1") == ("m.1555A>G positive", "HIGH risk")
 
 
+def test_pgx_gene_result_does_not_fall_back_to_tsv_outside_mt_rnr1():
+    pgx = {
+        "genes": {
+            "CYP2C19": {
+                "diplotype": "*2/*2",
+                "phenotype": "Poor Metabolizer",
+                "details": {},
+            },
+        },
+    }
+
+    assert docx_export._pgx_gene_result(pgx, "CYP2C19") == ("", "")
+
+
+def test_pgx_report_view_is_shared_docx_projection():
+    pgx = {
+        "genes": {
+            "CYP2C19": {
+                "details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]},
+            },
+        },
+        "guideline_annotations": [{
+            "section": "CPIC Guideline Annotation",
+            "classification": "Strong",
+            "alternate_drug_available": True,
+            "genes": ["CYP2C19"],
+            "drug": "clopidogrel",
+            "recommendation": "Use an alternative antiplatelet agent.",
+        }],
+    }
+
+    view = docx_export.build_pgx_report_view(pgx)
+
+    assert len(view["report_genes"]) == 21
+    assert view["summary_rows"] == [{
+        "drug": "Clopidogrel",
+        "gene": "CYP2C19",
+        "action": "考慮替代藥物",
+        "source_level": "CPIC Strong",
+    }]
+    assert view["action_categories"] == [{
+        "action": "考慮替代藥物",
+        "drugs": ["Clopidogrel"],
+    }]
+    assert view["full_recommendations"][0]["gene_phenotype"] == "CYP2C19 Poor Metabolizer"
+    assert view["summary"]["actionable_genes"] == ["CYP2C19"]
+
+
 def test_pgx_genotype_rows_treat_dash_phenotype_as_not_assigned():
     pgx = {
         "genes": {

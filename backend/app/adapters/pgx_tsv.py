@@ -206,6 +206,7 @@ def load_pgx(pgx_tsv: Path, pharmcat_json: Path | None = None) -> dict:
         "pharmcat_version": report.get("pharmcat_version", ""),
         "data_version": report.get("data_version", ""),
         "timestamp": report.get("timestamp", ""),
+        "pharmcat_available": bool(report),
         "messages": report.get("messages", []),
         "guideline_annotations": report.get("guideline_annotations", []),
     }

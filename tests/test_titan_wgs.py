@@ -74,3 +74,14 @@ def test_titan_wgs_has_diagnostic_analysis_visibility_toggle():
     # Health-screening content must not be hidden by the diagnostic-only rule.
     for selector in ("#sec-acmg-sf", "#sec-stroke", "#sec-carrier", "#sec-pharmcat"):
         assert f"body.titan-diagnostic-analysis-hidden {selector}" not in STYLE_CSS
+
+
+def test_titan_wgs_opens_all_secondary_findings_by_default():
+    assert "function applyTitanSecondaryFindingsDefault()" in APP_JS
+    assert 'currentSampleTestType() === "TITAN-WGS"' in APP_JS
+    assert '(isPanel && currentSampleTestType() === "TITAN-WGS")' in APP_JS
+    assert 'currentSampleTestType() === "TITAN-WGS" || hostId === "cat-pharmcat-c"' in APP_JS
+
+
+def test_analysis_heading_matches_report_heading_size():
+    assert ".section-header h2 { margin: 0; font-size: 1.5em; }" in STYLE_CSS

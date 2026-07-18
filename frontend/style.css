@@ -1623,6 +1623,102 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   padding: 6px 8px;
 }
 
+/* PGx report preview + evidence layout.  The report block mirrors the DOCX
+   projection; the analysis block keeps the complete recommendation and JSON
+   evidence without repeating the old TSV-driven actionable/routine cards. */
+.pgx-source-warning {
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 12px;
+}
+.pgx-report-intro {
+  margin: 8px 0 10px;
+  line-height: 1.55;
+}
+.pgx-overview {
+  display: grid;
+  gap: 5px;
+}
+.pgx-overview-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) 1fr;
+  gap: 10px;
+  padding: 6px 8px;
+  border-left: 3px solid #8b5cf6;
+  background: #f5f3ff;
+  line-height: 1.4;
+}
+.pgx-residual-note {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pgx-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+.pgx-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.pgx-report-table th,
+.pgx-report-table td {
+  padding: 6px 8px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.pgx-report-table th:last-child,
+.pgx-report-table td:last-child { border-right: 0; }
+.pgx-report-table tbody tr:last-child td { border-bottom: 0; }
+.pgx-report-table th {
+  background: #f6f8fa;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pgx-summary-table td:first-child,
+.pgx-summary-table td:nth-child(2),
+.pgx-summary-table td:nth-child(3),
+.pgx-summary-table td:nth-child(4),
+.pgx-genotype-table td:first-child,
+.pgx-full-recommendation-table td:first-child {
+  white-space: nowrap;
+}
+.pgx-genotype-table td:first-child { font-weight: 600; }
+.pgx-full-recommendation-table td:first-child { width: 18%; }
+.pgx-full-recommendation-table td:nth-child(2) { width: 22%; }
+.pgx-analysis-genes {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+.pgx-analysis-gene {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--border);
+}
+.pgx-analysis-gene:last-child { border-bottom: 0; }
+.pgx-analysis-gene .pgx-gene-head { margin-bottom: 0; }
+.pgx-global-messages {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafbfc;
+  font-size: 12px;
+}
+.pgx-global-messages ul { margin: 4px 0 0 18px; padding: 0; }
+
 @media (max-width: 720px) {
   .pgx-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pgx-additional-body { grid-template-columns: 1fr; }
@@ -1631,6 +1727,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   .pharmcat-table th,
   .pharmcat-table td { padding: 4px 5px; font-size: 12px; }
   .pharmcat-variants { font-size: 10px; }
+  .pgx-overview-row { grid-template-columns: 1fr; gap: 2px; }
 }
 
 /* ---- Tier color bands (per 三級輸出計畫.md §2.3) ---------------- */
@@ -2173,7 +2270,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   margin: 16px 0 8px;
 }
 .section-header .filter-toggle:first-of-type { margin-left: auto; }
-.section-header h2 { margin: 0; font-size: 18px; }
+.section-header h2 { margin: 0; font-size: 1.5em; }
 .filter-toggle {
   display: inline-flex;
   align-items: center;

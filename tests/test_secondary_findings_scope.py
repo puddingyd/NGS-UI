@@ -62,6 +62,33 @@ def test_overlapping_secondary_variants_show_in_each_panel_with_global_status():
     assert 'function _syncVariantCheckboxes(selector, id, idx, checked, source = null)' in APP_JS
 
 
+def test_secondary_candidates_use_main_snv_retrieval_tiers_but_default_clinvar_only():
+    base = {"alt_af": 0.35, "zygosity": "Heterozygous", "CLNSIG": "Benign"}
+    assert sample_loader._is_secondary_snv_candidate({**base, "tier": "1A"}) is True
+    assert sample_loader._is_secondary_snv_candidate({**base, "tier": "1B"}) is True
+    assert sample_loader._is_secondary_snv_candidate({**base, "tier": "1C"}) is True
+    assert sample_loader._is_secondary_snv_candidate({**base, "tier": "2"}) is False
+    assert sample_loader._is_secondary_snv_candidate({
+        **base,
+        "tier": "2",
+        "CLNSIG": "Likely_pathogenic",
+    }) is True
+    assert sample_loader._is_secondary_snv_candidate({
+        **base,
+        "tier": "1C",
+        "alt_af": 0.1,
+    }) is False
+
+    eligible = APP_JS.split("function _isSecondaryEligible(id)", 1)[1].split(
+        "function _secondarySection", 1,
+    )[0]
+    selected = APP_JS.split("function isSecondarySelected(id, panel)", 1)[1].split(
+        "function getPanelStatus", 1,
+    )[0]
+    assert '["1A", "1B", "1C"].includes' in eligible
+    assert "return _isClinvarPlp(v);" in selected
+
+
 def test_tertiary_log_height_is_about_122_percent_of_original():
     style = (REPO_ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
     assert "#dragen-job-log {\n  max-height: 342px;\n}" in style
