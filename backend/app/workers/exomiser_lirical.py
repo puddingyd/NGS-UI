@@ -175,6 +175,29 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
     meta_path = sample_root / "sample_metadata.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
+    # HPO is a hard prerequisite for both tools. Check it before VCF
+    # preparation so an old/stale queued job cannot waste time scanning a
+    # large TSV or surface a misleading prepare-vcf failure after HPO was
+    # cleared.
+    active = analyses_store.active_version(sample_id)
+    if active:
+        analysis = analyses_store.read_version(sample_id, active) or {}
+        hpo_list = analysis.get("hpo") or []
+    else:
+        hpo_list = meta.get("hpo") or []
+    hpo_ids = _hpo_ids(hpo_list)
+    if not hpo_ids:
+        result = {
+            "status": "succeeded",
+            "step": "skipped:no-hpo",
+            "finished_at": _now(),
+            "skipped": True,
+            "n_exomiser_variants": 0,
+            "n_lirical_variants": 0,
+        }
+        job_store.update(job_id, result)
+        return result
+
     # VCF is convention-driven: tertiary_output/{lis_id}/vcf_from_tsv.vcf.gz.
     # Registration no longer blocks on building it; this worker creates
     # or refreshes it in the background before invoking the tools.
@@ -200,18 +223,6 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
     assembly = (meta.get("genome_build") or "hg38").lower()
     if assembly not in ("hg19", "hg38"):
         raise RuntimeError(f"unsupported genome_build: {assembly!r}")
-
-    # HPO comes from the active analysis version; fall back to legacy
-    # meta.hpo for pre-migration samples that haven't been touched yet.
-    active = analyses_store.active_version(sample_id)
-    if active:
-        analysis = analyses_store.read_version(sample_id, active) or {}
-        hpo_list = analysis.get("hpo") or []
-    else:
-        hpo_list = meta.get("hpo") or []
-    hpo_ids = _hpo_ids(hpo_list)
-    if not hpo_ids:
-        raise RuntimeError("no HP: terms in active analysis (or legacy meta.hpo)")
 
     work_dir = analyses_store.active_version_dir(sample_id)
     work_dir.mkdir(parents=True, exist_ok=True)

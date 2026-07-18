@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v6.11 — 2026-07-18
+
+- 登錄新個案後會同步切換上方個案搜尋框；登錄狀態不再顯示 job ID。Exomiser/LIRICAL 改為至少有一個 HPO term 才排入，只有 panel 時仍會更新 pheno score，但不再產生 prepare-vcf 失敗訊息。
+- 主畫面 Secondary findings 精簡為 ACMG SF、中風相關基因與 Carrier screening（PGx / PharmCAT 保留），分析區與報告區同步調整。
+- 健檢 DOCX 匯出選項精簡為 ACMG 疾病風險基因、中風相關基因、帶因者篩查與藥物基因體學；所選疾病 panel 點位先合併去重，再統一套用疾病風險／帶因者兩類規則。基因清單移除類別序號，附錄改為另起新頁、標題置中並留一空行。
+
 ### v6.10 — 2026-07-17
 
 - 修正三級分析清單刪除新 unified-path sample 時，檔案已刪除但 cache cleanup 因舊變數名稱回傳 500 的問題；確認視窗也會顯示新的 datalake 路徑與 legacy fallback 路徑。

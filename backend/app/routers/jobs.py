@@ -55,6 +55,16 @@ def _enqueue(
     sub = sample_layout.state_dir(sample_id)
     if not sub.is_dir():
         raise HTTPException(404, f"sample not found: {sample_id}")
+
+    target_version = version or analyses_store.active_version(sample_id)
+    if not target_version:
+        raise HTTPException(400, "sample has no analysis version")
+    analysis = analyses_store.read_version(sample_id, target_version)
+    if analysis is None:
+        raise HTTPException(400, f"unknown analysis version: {target_version}")
+    if not analysis.get("hpo"):
+        raise HTTPException(400, "Exomiser/LIRICAL require at least one HPO term")
+
     try:
         from redis import Redis
         from rq import Queue
@@ -76,7 +86,7 @@ def _enqueue(
         "job_id":    job_id,
         "sample_id": sample_id,
         "kind":      kind,
-        "version":   version or analyses_store.active_version(sample_id),
+        "version":   target_version,
         "status":    "queued",
         "step":      "queued",
     })

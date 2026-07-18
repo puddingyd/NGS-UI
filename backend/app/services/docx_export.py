@@ -1469,18 +1469,15 @@ _HEALTH_PGX_RESOURCES = (
     ),
 )
 
+_HEALTH_RISK_SECTION_TITLE = "第一類：與疾病風險相關之致病性或疑似致病性變異位點"
+_HEALTH_DISEASE_SECTIONS = ("acmg_sf", "stroke", "carrier")
 _HEALTH_SECTION_ORDER = [
-    ("acmg_sf", "第一類：與疾病風險相關之致病性或疑似致病性變異位點"),
-    ("lipid_fh", "第二類：血脂相關基因"),
-    ("hereditary_cancer", "第三類：腫瘤相關基因"),
-    ("stroke", "第四類：中風相關基因"),
-    ("carrier", "第五類：帶因者篩查"),
-    ("proactive", "第六類：主動篩查"),
+    ("acmg_sf", _HEALTH_RISK_SECTION_TITLE),
     ("pgx", "藥物基因體學"),
 ]
 
 _HEALTH_ACMG_GENE_LIST_TITLE = (
-    "第一類：ACMG疾病風險基因（參考美國醫學遺傳學暨基因體學學會 "
+    "ACMG疾病風險基因（參考美國醫學遺傳學暨基因體學學會 "
     "(American College of Medical Genetics and Genomics) 於 2025 年所公告之"
     "次發現 (Secondary findings) 基因清單 v3.3 版；PMID: 40568962）"
 )
@@ -1729,6 +1726,31 @@ def _health_selected_ids(report: dict, category: str, candidate_ids: list[str], 
     return out
 
 
+def _health_combined_selected_ids(
+    requested_set: set[str],
+    report: dict,
+    categories: dict,
+    variants: dict,
+) -> list[str]:
+    """Merge selected disease-panel findings once, preserving panel order."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for category in _HEALTH_DISEASE_SECTIONS:
+        if category not in requested_set:
+            continue
+        for vid in _health_selected_ids(
+            report,
+            category,
+            categories.get(category) or [],
+            variants,
+        ):
+            if vid in seen:
+                continue
+            seen.add(vid)
+            out.append(vid)
+    return out
+
+
 def _health_acmg_display_order_ids(ids: list[str], variants: dict, edits: dict) -> list[str]:
     ordered: list[str] = []
     used: set[str] = set()
@@ -1747,9 +1769,57 @@ def _health_acmg_display_order_ids(ids: list[str], variants: dict, edits: dict) 
                 if vid not in used:
                     used.add(vid)
                     ordered.append(vid)
-    for vid in sorted(set(ids) - used):
-        ordered.append(vid)
+    remaining_by_gene: dict[str, list[str]] = {}
+    for vid in ids:
+        if vid in used:
+            continue
+        gene = _health_variant_gene(variants.get(vid, {}), edits.get(vid) or {}) or "?"
+        remaining_by_gene.setdefault(gene, []).append(vid)
+    for gene_ids in remaining_by_gene.values():
+        for vid in gene_ids:
+            if vid not in used:
+                used.add(vid)
+                ordered.append(vid)
     return ordered
+
+
+def _health_inheritance_codes(value: str) -> list[str]:
+    return list(dict.fromkeys(
+        token.upper()
+        for token in re.split(r"\s*[/,;]\s*", str(value or ""))
+        if token.strip()
+    ))
+
+
+def _health_gene_profile(
+    gene: str,
+    gene_ids: list[str],
+    variants: dict,
+    edits: dict,
+) -> tuple[str, list[str]]:
+    """Return disease text and inheritance for ACMG or selected panel genes."""
+    static_rows = _ACMG_SF_DISEASES.get(gene) or []
+    if static_rows:
+        diseases = [str(row.get("disease") or "").strip() for row in static_rows]
+        codes = [str(row.get("inheritance") or "").strip() for row in static_rows]
+        return (
+            "；".join(dict.fromkeys(value for value in diseases if value)),
+            list(dict.fromkeys(value for value in codes if value)),
+        )
+
+    diseases: list[str] = []
+    codes: list[str] = []
+    for vid in gene_ids:
+        variant = variants.get(vid) or {}
+        disease, inheritance, _phenotype_mim = _disease_info(
+            _picked_disease_for_snv(variant, edits.get(vid) or {})
+        )
+        if disease and disease not in diseases:
+            diseases.append(disease)
+        for code in _health_inheritance_codes(inheritance):
+            if code not in codes:
+                codes.append(code)
+    return "；".join(diseases), codes
 
 
 def _health_acmg_categorized_ids(
@@ -1757,7 +1827,7 @@ def _health_acmg_categorized_ids(
     variants: dict,
     edits: dict,
 ) -> tuple[list[str], list[str]]:
-    """Split reportable ACMG findings into disease-risk and carrier groups."""
+    """Split reportable disease-panel findings into risk and carrier groups."""
     ordered_ids = _health_acmg_display_order_ids(ids, variants, edits)
     ids_by_gene: dict[str, list[str]] = {}
     for vid in ordered_ids:
@@ -1767,7 +1837,10 @@ def _health_acmg_categorized_ids(
     risk_ids: list[str] = []
     carrier_ids: list[str] = []
     for gene, gene_ids in ids_by_gene.items():
-        inheritance_codes = set(_health_acmg_codes(gene))
+        _disease_text, profile_codes = _health_gene_profile(
+            gene, gene_ids, variants, edits,
+        )
+        inheritance_codes = set(profile_codes)
         is_single_heterozygous_ar = (
             inheritance_codes == {"AR"}
             and len(gene_ids) == 1
@@ -2086,9 +2159,11 @@ def _render_health_acmg_section(
     report: dict,
     *,
     sex_karyotype: str = "",
+    show_acmg_caution: bool = True,
 ) -> None:
-    _add_paragraph(doc, f"  {_HEALTH_ACMG_CAUTION}")
-    _blank(doc)
+    if show_acmg_caution:
+        _add_paragraph(doc, f"  {_HEALTH_ACMG_CAUTION}")
+        _blank(doc)
     _add_paragraph(doc, title, bold=True)
     edits = report.get("edits") or {}
     risk_ids, carrier_ids = _health_acmg_categorized_ids(ids, variants, edits)
@@ -2102,11 +2177,14 @@ def _render_health_acmg_section(
             ids_by_gene.setdefault(gene, []).append(vid)
         gene_groups = list(ids_by_gene.items())
         for group_index, (gene, gene_ids) in enumerate(gene_groups):
+            disease_text, inheritance_codes = _health_gene_profile(
+                gene, gene_ids, variants, edits,
+            )
             _health_snv_gene_block(
                 doc,
                 [(variants.get(vid) or {}, edits.get(vid) or {}) for vid in gene_ids],
-                disease_text=_acmg_disease_text(gene),
-                inheritance_codes=_health_acmg_codes(gene),
+                disease_text=disease_text,
+                inheritance_codes=inheritance_codes,
                 sex_karyotype=sex_karyotype,
             )
             if group_index < len(gene_groups) - 1:
@@ -2126,11 +2204,14 @@ def _render_health_acmg_section(
             gene = _health_variant_gene(variants.get(vid, {}), edits.get(vid) or {}) or "?"
             ids_by_gene.setdefault(gene, []).append(vid)
         for gene, gene_ids in ids_by_gene.items():
+            disease_text, inheritance_codes = _health_gene_profile(
+                gene, gene_ids, variants, edits,
+            )
             _health_snv_gene_block(
                 doc,
                 [(variants.get(vid) or {}, edits.get(vid) or {}) for vid in gene_ids],
-                disease_text=_acmg_disease_text(gene),
-                inheritance_codes=_health_acmg_codes(gene),
+                disease_text=disease_text,
+                inheritance_codes=inheritance_codes,
                 sex_karyotype=sex_karyotype,
             )
             _blank(doc)
@@ -2727,14 +2808,14 @@ def _health_panel_gene_sections(requested_set: set[str]) -> list[tuple[str, list
     out: list[tuple[str, list[str]]] = []
     panel_keys = {
         "acmg_sf": "ACMG_SF_v3.3",
-        "lipid_fh": "lipid_fh",
-        "hereditary_cancer": "WES-I__腫瘤醫學__遺傳癌症",
         "stroke": "WGS__神經科__Stroke",
         "carrier": "carrier_mackenzie_1300+",
-        "proactive": "proactive",
     }
-    titles = dict(_HEALTH_SECTION_ORDER)
-    titles["acmg_sf"] = _HEALTH_ACMG_GENE_LIST_TITLE
+    titles = {
+        "acmg_sf": _HEALTH_ACMG_GENE_LIST_TITLE,
+        "stroke": "中風相關基因",
+        "carrier": "帶因者篩查",
+    }
     for key, panel_name in panel_keys.items():
         if key not in requested_set:
             continue
@@ -2749,13 +2830,20 @@ def _health_panel_gene_sections(requested_set: set[str]) -> list[tuple[str, list
 
 
 def _health_test_bundle_name(requested_set: set[str]) -> str:
-    has_pgx = "pgx" in requested_set
-    has_disease = any(section != "pgx" for section in requested_set)
-    if has_pgx and has_disease:
-        return "ACMG疾病風險基因及藥物基因體學基因篩檢"
-    if has_pgx:
-        return "藥物基因體學基因篩檢"
-    return "ACMG疾病風險基因篩檢"
+    labels = [
+        label
+        for key, label in (
+            ("acmg_sf", "ACMG疾病風險基因"),
+            ("stroke", "中風相關基因"),
+            ("carrier", "帶因者基因"),
+            ("pgx", "藥物基因體學基因"),
+        )
+        if key in requested_set
+    ]
+    if not labels:
+        return "基因篩檢"
+    joined = labels[0] if len(labels) == 1 else "、".join(labels[:-1]) + f"及{labels[-1]}"
+    return f"{joined}篩檢"
 
 
 def _pgx_report_genes(pgx: dict) -> list[str]:
@@ -2815,6 +2903,12 @@ def _render_health_variant_reference_appendix(
             _blank(doc)
 
 
+def _start_health_appendix(doc) -> None:
+    doc.add_page_break()
+    _add_paragraph(doc, "附錄", bold=True, align="center")
+    _blank(doc)
+
+
 def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) -> bytes:
     sample = sample_loader.load_sample(sample_id, include_aux=False)
     if sample is None:
@@ -2822,7 +2916,12 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     secondary = sample_loader.load_sample_secondary_snv(sample_id) or {}
     pgx_payload = sample_loader.load_sample_pgx(sample_id) or {}
 
-    requested = [str(s).strip() for s in (sections or []) if str(s).strip()]
+    allowed_sections = set(_HEALTH_DISEASE_SECTIONS) | {"pgx"}
+    requested = [
+        str(s).strip()
+        for s in (sections or [])
+        if str(s).strip() in allowed_sections
+    ]
     if not requested:
         requested = ["acmg_sf", "pgx"]
     requested_set = set(requested)
@@ -2848,52 +2947,42 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     _add_paragraph(doc, "  綜合說明:")
 
     referenced: list[dict] = []
-    referenced_ids: set[str] = set()
     pgx_drug_groups: list[dict] = []
-    for key, title in _HEALTH_SECTION_ORDER:
-        if key not in requested_set:
-            continue
-        if key == "pgx":
-            pgx_drug_groups = _render_health_pgx_section(
-                doc,
-                title,
-                pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {},
-            )
-            continue
-        ids = _health_selected_ids(report, key, categories.get(key) or [], variants)
-        if key == "acmg_sf":
-            risk_ids, carrier_ids = _health_acmg_categorized_ids(
-                ids,
-                variants,
-                report.get("edits") or {},
-            )
-            for vid in risk_ids + carrier_ids:
-                if vid in referenced_ids:
-                    continue
-                referenced_ids.add(vid)
-                referenced.append(variants.get(vid) or {})
-            _render_health_acmg_section(
-                doc,
-                title,
-                ids,
-                variants,
-                report,
-                sex_karyotype=_health_sex_karyotype(sample_id, meta),
-            )
-        else:
-            for vid in ids:
-                if vid in referenced_ids:
-                    continue
-                referenced_ids.add(vid)
-                referenced.append(variants.get(vid) or {})
-            _render_health_secondary_section(doc, title, ids, variants, report)
+    if any(key in requested_set for key in _HEALTH_DISEASE_SECTIONS):
+        ids = _health_combined_selected_ids(
+            requested_set,
+            report,
+            categories,
+            variants,
+        )
+        risk_ids, carrier_ids = _health_acmg_categorized_ids(
+            ids,
+            variants,
+            report.get("edits") or {},
+        )
+        referenced = [variants.get(vid) or {} for vid in risk_ids + carrier_ids]
+        _render_health_acmg_section(
+            doc,
+            _HEALTH_RISK_SECTION_TITLE,
+            ids,
+            variants,
+            report,
+            sex_karyotype=_health_sex_karyotype(sample_id, meta),
+            show_acmg_caution="acmg_sf" in requested_set,
+        )
+
+    if "pgx" in requested_set:
+        pgx_drug_groups = _render_health_pgx_section(
+            doc,
+            dict(_HEALTH_SECTION_ORDER)["pgx"],
+            pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {},
+        )
 
     _section_methods(doc, test_type, health=True)
     _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
 
     if referenced or pgx_drug_groups:
-        _blank(doc)
-        _add_paragraph(doc, "附錄", bold=True)
+        _start_health_appendix(doc)
     if referenced:
         _render_health_variant_reference_appendix(
             doc,

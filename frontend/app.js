@@ -312,6 +312,8 @@ async function loadSample(LIS_ID, opts = {}) {
   if (showLoading) showSampleLoading();
   try {
     const result = await _loadSample(LIS_ID);
+    const sampleInput = document.getElementById("q-lis");
+    if (sampleInput) sampleInput.value = LIS_ID || "";
     updateWelcomeVisibility();
     return result;
   } finally {
@@ -1823,6 +1825,7 @@ async function _resumeJobPollingIfAny() {
   if (!state.currentLIS) return;
   clearInterval(_jobPollTimer);
   _setJobStatus("");
+  if (!Array.isArray(phenoEdit.hpo) || !phenoEdit.hpo.length) return;
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sid = row?.sample_id || state.currentLIS;
   try {
@@ -2949,11 +2952,8 @@ async function exportDiagnosticDocx() {
 function _pickHealthReportSections() {
   const options = [
     { key: "acmg_sf", title: "ACMG 疾病風險基因", checked: true },
-    { key: "lipid_fh", title: "血脂相關基因", checked: false },
-    { key: "hereditary_cancer", title: "腫瘤相關基因", checked: false },
     { key: "stroke", title: "中風相關基因", checked: false },
     { key: "carrier", title: "帶因者篩查", checked: false },
-    { key: "proactive", title: "主動篩查", checked: false },
     { key: "pgx", title: "藥物基因體學", checked: true },
   ];
   return new Promise((resolve) => {
@@ -3263,7 +3263,8 @@ function _setJobStatus(text, busy = false) {
   if (btn) btn.disabled = !!busy;
 }
 
-// 「開始分析」: instant in-house pheno_score + queued Exomiser/LIRICAL.
+// 「開始分析」: instant in-house pheno_score; Exomiser/LIRICAL is queued
+// only when the analysis contains at least one HPO term.
 // The phenotype POST returns immediately so cards can apply the fresh
 // pheno_score.tsv-derived in-panel state; Exomiser/LIRICAL runs in the
 // background and the polling loop refreshes the sample once it lands.
@@ -3278,6 +3279,7 @@ async function startAnalysis(opts = {}) {
   const hint = document.getElementById("phenotype-hint");
   const version = opts.version || state.data?.active_analysis || "default";
   const mode    = opts.mode    || "overwrite";
+  const hasHpo  = Array.isArray(phenoEdit.hpo) && phenoEdit.hpo.length > 0;
 
   _setJobStatus("送出工作中…", true);
   hint.textContent = "計算中…";
@@ -3321,6 +3323,10 @@ async function startAnalysis(opts = {}) {
   } catch (e) {
     hint.textContent = "失敗：" + e.message;
     _setJobStatus("失敗", false);
+    return;
+  }
+  if (!hasHpo) {
+    _setJobStatus("", false);
     return;
   }
   try {
@@ -4116,11 +4122,8 @@ function renderDiseaseList(v, id, withCheckbox) {
 
 const SECONDARY_PANEL_DEFS = [
   { key: "acmg_sf",            title: "ACMG SF" },
-  { key: "lipid_fh",           title: "血脂相關基因" },
-  { key: "hereditary_cancer",  title: "腫瘤相關基因" },
   { key: "stroke",             title: "中風相關基因" },
   { key: "carrier",            title: "Carrier screening" },
-  { key: "proactive",          title: "Proactive" },
 ];
 
 const REPORT_SECTION_DEFS = [
@@ -7329,7 +7332,6 @@ async function loadPdfFonts() {
 // type. Cached after the first fetch.
 const PANEL_FILES = [
   { title: "重大疾病風險篩檢基因清單", url: "./ACMG_SF_v3.3.txt" },
-  { title: "主動性篩檢基因清單",       url: "./proactive.txt" },
   { title: "帶因者篩檢基因清單",       url: "./carrier_mackenzie_1300+.txt" },
 ];
 let _panelCache = null;
@@ -7644,11 +7646,8 @@ async function buildScreeningPDF() {
   w.gap(6);
 
   pdfWriteSection(w, "重大疾病風險篩檢（美國遺傳醫學會 ACMG 次要發現基因）", cats.acmg_sf,   data.variants, "acmg_sf");
-  pdfWriteSection(w, "血脂相關基因",                                        cats.lipid_fh, data.variants, "lipid_fh");
-  pdfWriteSection(w, "腫瘤相關基因",                                        cats.hereditary_cancer, data.variants, "hereditary_cancer");
   pdfWriteSection(w, "中風相關基因",                                        cats.stroke, data.variants, "stroke");
   pdfWriteSection(w, "帶因者篩檢",                                          cats.carrier,   data.variants, "carrier");
-  pdfWriteSection(w, "主動性篩檢",                                          cats.proactive, data.variants, "proactive");
   pdfWritePharmacogenomics(w, data.pgx || data.pharmcat);
 
   // 檢測方法說明 — fixed wording for the screening report (assumes WGS,
@@ -8655,9 +8654,6 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
   // authoritative phenotype (overrides reviewer txt + EMR fallback).
   fd.set("hpo_json",    JSON.stringify(newCaseEdit.hpo || []));
   fd.set("panels_json", JSON.stringify(newCaseEdit.panels || []));
-  // run_analysis=true so backend enqueues exomiser/lirical right
-  // after register, regardless of whether chips were edited.
-  fd.set("run_analysis", "true");
   showSampleLoading();
   try {
     const resp = await fetch(`${API_BASE}/samples`, {
@@ -8682,10 +8678,7 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
     await loadSample(out.sample_id);
     renderAll();
     const stEl = document.getElementById("search-status");
-    if (stEl) {
-      const job = out.job_id ? `；分析已排入 (${out.job_id})` : "";
-      stEl.textContent = `已登錄 ${out.sample_id}${job}`;
-    }
+    if (stEl) stEl.textContent = `已登錄 ${out.sample_id}`;
     if (out.job_id) _startJobPolling(out.sample_id, out.job_id);
   } catch (e) {
     errEl.textContent = e.message;

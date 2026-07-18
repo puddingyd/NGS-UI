@@ -1,0 +1,53 @@
+from pathlib import Path
+
+from app.services import sample_loader
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+APP_JS = (REPO_ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+INDEX_HTML = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+
+
+def test_secondary_findings_only_keep_requested_snv_panels():
+    assert sample_loader.SECONDARY_SNV_PANELS == {
+        "acmg_sf": "ACMG_SF_v3.3",
+        "stroke": "WGS__神經科__Stroke",
+        "carrier": "carrier_mackenzie_1300+",
+    }
+
+    defs = APP_JS.split("const SECONDARY_PANEL_DEFS = [", 1)[1].split("];", 1)[0]
+    assert 'key: "acmg_sf"' in defs
+    assert 'key: "stroke"' in defs
+    assert 'key: "carrier"' in defs
+    for removed in ("lipid_fh", "hereditary_cancer", "proactive"):
+        assert removed not in defs
+
+    for removed_id in (
+        "cat-lipid-fh-c",
+        "cat-hereditary-cancer-c",
+        "cat-proactive-c",
+        "sec-lipid-fh",
+        "sec-hereditary-cancer",
+        "sec-proactive",
+    ):
+        assert removed_id not in INDEX_HTML
+
+
+def test_health_export_picker_has_four_requested_options_and_defaults():
+    picker = APP_JS.split("function _pickHealthReportSections()", 1)[1].split(
+        "return new Promise", 1,
+    )[0]
+    assert picker.count("key:") == 4
+    assert '{ key: "acmg_sf", title: "ACMG 疾病風險基因", checked: true }' in picker
+    assert '{ key: "stroke", title: "中風相關基因", checked: false }' in picker
+    assert '{ key: "carrier", title: "帶因者篩查", checked: false }' in picker
+    assert '{ key: "pgx", title: "藥物基因體學", checked: true }' in picker
+
+
+def test_registration_status_and_analysis_queue_require_hpo_in_frontend():
+    assert "分析已排入" not in APP_JS
+    assert 'fd.set("run_analysis"' not in APP_JS
+    assert 'const hasHpo  = Array.isArray(phenoEdit.hpo) && phenoEdit.hpo.length > 0;' in APP_JS
+    assert 'if (!hasHpo)' in APP_JS
+    assert 'if (!Array.isArray(phenoEdit.hpo) || !phenoEdit.hpo.length) return;' in APP_JS
+    assert 'if (sampleInput) sampleInput.value = LIS_ID || "";' in APP_JS

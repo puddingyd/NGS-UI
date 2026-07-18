@@ -42,11 +42,8 @@
         <details class="sidebar-group sidebar-subgroup" open>
           <summary>Secondary findings</summary>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-acmg-sf-c">ACMG SF</button>
-          <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-lipid-fh-c">血脂相關基因</button>
-          <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-hereditary-cancer-c">腫瘤相關基因</button>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-stroke-c">中風相關基因</button>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-carrier-c">Carrier</button>
-          <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-proactive-c">Proactive</button>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-pharmcat-c">Pharmacogenomics</button>
         </details>
       </details>
@@ -262,7 +259,7 @@
       </div>
 
       <div class="phenotype-actions">
-        <button id="btn-start-analysis" class="btn btn-primary" title="即時計算 in-house pheno_score，並在 server 上重跑 Exomiser + LIRICAL">▶ 開始分析</button>
+        <button id="btn-start-analysis" class="btn btn-primary" title="即時計算 in-house pheno_score；至少有一個 HPO term 時才重跑 Exomiser + LIRICAL">▶ 開始分析</button>
         <span id="job-status" class="muted"></span>
         <span id="phenotype-hint" class="muted"></span>
       </div>
@@ -316,7 +313,7 @@
       <div id="sec-other"      class="report-block" data-kind="report"   data-status="2"></div>
       <div id="sec-candidate"  class="report-block" data-kind="report"   data-status="C"></div>
       <!-- Secondary findings group: collapsible umbrella around the
-           panel-style report sections (ACMG SF, Proactive, Carrier,
+           panel-style report sections (ACMG SF, Stroke, Carrier,
            Pharmacogenomics). Plain text header + triangle toggle — no card
            styling so it doesn't compete visually with the
            primary report sections above. -->
@@ -326,11 +323,8 @@
         </button>
         <div class="secondary-findings-body open">
           <div id="sec-acmg-sf"    class="report-block" data-kind="panel"    data-category="acmg_sf"></div>
-          <div id="sec-lipid-fh"   class="report-block" data-kind="panel"    data-category="lipid_fh"></div>
-          <div id="sec-hereditary-cancer" class="report-block" data-kind="panel" data-category="hereditary_cancer"></div>
           <div id="sec-stroke"     class="report-block" data-kind="panel"    data-category="stroke"></div>
           <div id="sec-carrier"    class="report-block" data-kind="panel"    data-category="carrier"></div>
-          <div id="sec-proactive"  class="report-block" data-kind="panel"    data-category="proactive"></div>
           <div id="sec-pharmcat"   class="report-block" data-kind="pharmcat"></div>
         </div>
       </div>
@@ -429,11 +423,8 @@
         <div class="analysis-card-empty">（無資料）</div>
       </div>
       <div id="cat-acmg-sf-c"  class="cat-block" data-category="acmg_sf"></div>
-      <div id="cat-lipid-fh-c" class="cat-block" data-category="lipid_fh"></div>
-      <div id="cat-hereditary-cancer-c" class="cat-block" data-category="hereditary_cancer"></div>
       <div id="cat-stroke-c" class="cat-block" data-category="stroke"></div>
       <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
-      <div id="cat-proactive-c" class="cat-block" data-category="proactive"></div>
       <div id="cat-pharmcat-c" class="cat-block" data-category="pharmcat"></div>
       <div class="save-row">
         <button id="btn-save-bottom" class="btn btn-primary js-btn-save">💾 儲存變更</button>

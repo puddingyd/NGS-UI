@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from ..auth import current_user
 from ..config import PHENOTYPE_DIR
 from ..services import (
+    analyses_store,
     clinical_presentation_store,
     docx_export,
     patient_list_store,
@@ -191,7 +192,6 @@ def register_sample(
     sign_received_at: str = Form(""),
     hpo_json:         str = Form(""),
     panels_json:      str = Form(""),
-    run_analysis:     str = Form(""),
 ):
     """Attach reviewer-side info to a pipeline-produced directory.
 
@@ -284,14 +284,12 @@ def register_sample(
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    # If the reviewer asked us to run analysis on register (or if any
-    # phenotype data ended up populated), enqueue exomiser/lirical so
-    # the cards have scores by the time they finish reading the
-    # patient's basic info. Failure to enqueue is non-fatal — the
-    # sample is registered, reviewer can hit ▶ 開始分析 manually.
+    # Exomiser/LIRICAL require at least one HPO term. Panels alone still
+    # produce pheno_score.tsv during registration, but must not enqueue
+    # a worker that cannot render valid Exomiser/LIRICAL inputs.
     job_id = None
-    should_run = (str(run_analysis).lower() in ("1", "true", "yes", "on")
-                  or bool(hpo_payload) or bool(panels_payload))
+    default_analysis = analyses_store.read_version(lis_id, "default") or {}
+    should_run = bool(default_analysis.get("hpo"))
     if should_run:
         try:
             enqueue_started = time.perf_counter()

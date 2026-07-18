@@ -144,6 +144,40 @@ def test_health_secondary_default_selection_uses_clinvar_only():
     ) == ["clinvar-plp", "acmg-only"]
 
 
+def test_health_selected_panels_merge_once_in_fixed_order():
+    variants = {
+        "shared": {"CLNSIG": "Pathogenic"},
+        "stroke-only": {"CLNSIG": "Pathogenic"},
+        "carrier-only": {"CLNSIG": "Pathogenic"},
+    }
+    categories = {
+        "acmg_sf": ["shared"],
+        "stroke": ["stroke-only", "shared"],
+        "carrier": ["carrier-only"],
+    }
+
+    assert docx_export._health_combined_selected_ids(
+        {"acmg_sf", "stroke", "carrier"},
+        {},
+        categories,
+        variants,
+    ) == ["shared", "stroke-only", "carrier-only"]
+
+
+def test_health_non_acmg_pure_ar_single_heterozygous_is_carrier():
+    variants = {
+        "carrier-variant": {
+            "gene_symbol": "TESTAR",
+            "zygosity": "Heterozygous",
+            "Disease1": "Test recessive disease (AR)",
+        },
+    }
+
+    assert docx_export._health_acmg_categorized_ids(
+        ["carrier-variant"], variants, {},
+    ) == ([], ["carrier-variant"])
+
+
 def test_health_karyotype_prefers_ploidy_sidecar(tmp_path, monkeypatch):
     sample_dir = tmp_path / "S1"
     sample_dir.mkdir()
@@ -838,13 +872,17 @@ def test_health_bundle_name_follows_selected_sections():
     )
     assert docx_export._health_test_bundle_name({"pgx"}) == "藥物基因體學基因篩檢"
     assert docx_export._health_test_bundle_name({"acmg_sf"}) == "ACMG疾病風險基因篩檢"
+    assert docx_export._health_test_bundle_name({"stroke", "carrier"}) == (
+        "中風相關基因及帶因者基因篩檢"
+    )
 
 
 def test_health_acmg_section_titles_use_current_wording():
     assert dict(docx_export._HEALTH_SECTION_ORDER)["acmg_sf"] == (
         "第一類：與疾病風險相關之致病性或疑似致病性變異位點"
     )
-    assert docx_export._HEALTH_ACMG_GENE_LIST_TITLE.startswith("第一類：ACMG疾病風險基因")
+    assert docx_export._HEALTH_ACMG_GENE_LIST_TITLE.startswith("ACMG疾病風險基因")
+    assert "第一類：" not in docx_export._HEALTH_ACMG_GENE_LIST_TITLE
     assert docx_export._NO_HEALTH_CARRIER_VARIANT_TEXT == (
         "於本次檢測之基因中，未檢出疾病資料庫中已收錄且符合帶因者狀態之致病性或疑似致病性變異。"
     )
@@ -1050,7 +1088,7 @@ def test_health_appendix_orders_acmg_references_before_pgx_recommendations():
         }],
     }]
 
-    docx_export._add_paragraph(doc, "附錄", bold=True)
+    docx_export._start_health_appendix(doc)
     docx_export._render_health_variant_reference_appendix(
         doc,
         "變異位點參考資料",
@@ -1066,6 +1104,10 @@ def test_health_appendix_orders_acmg_references_before_pgx_recommendations():
     assert text.index("變異位點參考資料") < text.index("完整用藥建議")
     complete_index = paragraph_texts.index("完整用藥建議")
     assert paragraph_texts[complete_index - 1] == ""
+    appendix_index = paragraph_texts.index("附錄")
+    assert paragraph_texts[appendix_index + 1] == ""
+    assert doc.paragraphs[appendix_index].alignment == 1
+    assert 'w:type="page"' in doc.element.xml
     assert "附錄一" not in text and "附錄二" not in text
 
 
@@ -1080,6 +1122,7 @@ def test_health_gene_list_contains_acmg_subgroups(monkeypatch):
     docx_export._section_health_annotations(doc, {"acmg_sf"})
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "第一類：ACMG疾病風險基因" not in text
     assert "1. 血脂相關基因，包含 APOB, LDLR, PCSK9" in text
     assert "2. 腫瘤相關基因，包含 APC, BMPR1A" in text
     assert "6. 其它基因，包含 RPE65, TTR" in text

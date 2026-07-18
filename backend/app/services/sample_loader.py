@@ -60,11 +60,8 @@ from .snv_rows import is_reportable_raw_row
 
 SECONDARY_SNV_PANELS = {
     "acmg_sf": "ACMG_SF_v3.3",
-    "lipid_fh": "lipid_fh",
-    "hereditary_cancer": "WES-I__腫瘤醫學__遺傳癌症",
     "stroke": "WGS__神經科__Stroke",
     "carrier": "carrier_mackenzie_1300+",
-    "proactive": "proactive",
 }
 
 _snv_cache: OrderedDict[tuple, tuple[dict, dict, dict, str]] = OrderedDict()
