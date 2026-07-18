@@ -164,6 +164,25 @@ def test_health_selected_panels_merge_once_in_fixed_order():
     ) == ["shared", "stroke-only", "carrier-only"]
 
 
+def test_health_overlapping_panel_dismissal_wins_globally():
+    variants = {"shared": {"CLNSIG": "Pathogenic"}}
+    categories = {
+        "acmg_sf": ["shared"],
+        "stroke": ["shared"],
+        "carrier": [],
+    }
+    report = {
+        "secondary_findings": {
+            "acmg_sf": {"selected": ["shared"]},
+            "stroke": {"dismissed": ["shared"]},
+        },
+    }
+
+    assert docx_export._health_combined_selected_ids(
+        {"acmg_sf", "stroke"}, report, categories, variants,
+    ) == []
+
+
 def test_health_non_acmg_pure_ar_single_heterozygous_is_carrier():
     variants = {
         "carrier-variant": {

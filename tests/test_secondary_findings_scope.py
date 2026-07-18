@@ -51,3 +51,17 @@ def test_registration_status_and_analysis_queue_require_hpo_in_frontend():
     assert 'if (!hasHpo)' in APP_JS
     assert 'if (!Array.isArray(phenoEdit.hpo) || !phenoEdit.hpo.length) return;' in APP_JS
     assert 'if (sampleInput) sampleInput.value = LIS_ID || "";' in APP_JS
+
+
+def test_overlapping_secondary_variants_show_in_each_panel_with_global_status():
+    assert "function _secondaryPanelsForVariant(id)" in APP_JS
+    assert "_secondaryCanonicalPanel" not in APP_JS
+    assert "Explicit dismissal wins" in APP_JS
+    assert "panels.forEach(key =>" in APP_JS
+    assert 'return ids.filter(id => _isSecondaryEligible(id));' in APP_JS
+    assert 'function _syncVariantCheckboxes(selector, id, idx, checked, source = null)' in APP_JS
+
+
+def test_tertiary_log_height_is_about_122_percent_of_original():
+    style = (REPO_ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+    assert "#dragen-job-log {\n  max-height: 342px;\n}" in style

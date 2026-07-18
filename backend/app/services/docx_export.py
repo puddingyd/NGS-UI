@@ -1732,19 +1732,37 @@ def _health_combined_selected_ids(
     categories: dict,
     variants: dict,
 ) -> list[str]:
-    """Merge selected disease-panel findings once, preserving panel order."""
+    """Merge disease-panel findings once with a variant-global review state."""
     out: list[str] = []
     seen: set[str] = set()
+    secondary = report.get("secondary_findings") or {}
+    legacy = report.get("panels") or {}
+
+    def globally_selected(vid: str) -> bool:
+        memberships = [
+            category for category in _HEALTH_DISEASE_SECTIONS
+            if vid in {str(x) for x in categories.get(category) or []}
+        ]
+        if any(
+            vid in {str(x) for x in (secondary.get(category) or {}).get("dismissed") or []}
+            or (legacy.get(vid, {}) or {}).get(category) == "0"
+            for category in memberships
+        ):
+            return False
+        if any(
+            vid in {str(x) for x in (secondary.get(category) or {}).get("selected") or []}
+            or (legacy.get(vid, {}) or {}).get(category) == "V"
+            for category in memberships
+        ):
+            return True
+        return _is_health_clinvar_plp(variants.get(vid, {}))
+
     for category in _HEALTH_DISEASE_SECTIONS:
         if category not in requested_set:
             continue
-        for vid in _health_selected_ids(
-            report,
-            category,
-            categories.get(category) or [],
-            variants,
-        ):
-            if vid in seen:
+        for raw_vid in categories.get(category) or []:
+            vid = str(raw_vid)
+            if vid in seen or not globally_selected(vid):
                 continue
             seen.add(vid)
             out.append(vid)

@@ -2917,6 +2917,9 @@ body.sidebar-collapsed .container { margin-left: auto; }
   white-space: pre;
   margin: 0;
 }
+#dragen-job-log {
+  max-height: 342px;
+}
 
 .dragen-caller-block {
   display: flex;

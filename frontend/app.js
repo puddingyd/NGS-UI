@@ -3419,7 +3419,8 @@ function getStatus(id) {
 
 function _syncStatusRadios(id, panel, val) {
   document.querySelectorAll(".status-radio").forEach(wrap => {
-    if (wrap.dataset.id !== id || (wrap.dataset.panel || "") !== (panel || "")) return;
+    if (wrap.dataset.id !== id) return;
+    if (panel ? !wrap.dataset.panel : !!wrap.dataset.panel) return;
     wrap.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
       input.checked = _statusHas(val, input.value);
     });
@@ -3493,39 +3494,59 @@ function _legacyPanelDismissed(id, panel) {
   return (m && m[panel]) === "0";
 }
 
+function _secondaryPanelsForVariant(id) {
+  const categories = state.data?.categories || {};
+  return SECONDARY_PANEL_DEFS
+    .map(def => def.key)
+    .filter(panel => (categories[panel] || []).map(String).includes(String(id)));
+}
+
 function isSecondarySelected(id, panel) {
-  const section = _secondarySection(panel);
-  if (section.selected.includes(id)) return true;
-  if (section.dismissed.includes(id)) return false;
-  if (_legacyPanelSelected(id, panel)) return true;
-  if (_legacyPanelDismissed(id, panel)) return false;
+  const panels = _secondaryPanelsForVariant(id);
+  if (!panels.length && panel) panels.push(panel);
+
+  // A secondary finding has one global review state even when its gene is
+  // present in multiple panels. Explicit dismissal wins so previously saved
+  // ACMG/stroke disagreements resolve to the reviewer's opt-out.
+  if (panels.some(key => {
+    const section = _secondarySection(key);
+    return section.dismissed.includes(String(id)) || _legacyPanelDismissed(id, key);
+  })) return false;
+  if (panels.some(key => {
+    const section = _secondarySection(key);
+    return section.selected.includes(String(id)) || _legacyPanelSelected(id, key);
+  })) return true;
   const v = state.data?.variants?.[id];
   return _isClinvarPlp(v);
 }
 
-// Panel-specific status (per secondary category, so ✓ in one panel
-// doesn't surface in another). New state lives in
-// reports.secondary_findings; reports.panels is read only for legacy V.
+// Secondary status is variant-specific across all retained panels. New state
+// lives in reports.secondary_findings; reports.panels is read only for legacy
+// V/0 values.
 function getPanelStatus(id, panel) {
   return isSecondarySelected(id, panel) ? "✓" : "";
 }
 
 function setPanelStatus(id, panel, val) {
   state.reports.secondary_findings = state.reports.secondary_findings || {};
-  const current = _secondarySection(panel);
-  const selected = new Set(current.selected);
-  const dismissed = new Set(current.dismissed);
-  if (val) {
-    selected.add(id);
-    dismissed.delete(id);
-  } else {
-    selected.delete(id);
-    dismissed.add(id);
-  }
-  state.reports.secondary_findings[panel] = {
-    selected: Array.from(selected).sort(),
-    dismissed: Array.from(dismissed).sort(),
-  };
+  const panels = _secondaryPanelsForVariant(id);
+  if (!panels.length && panel) panels.push(panel);
+  panels.forEach(key => {
+    const current = _secondarySection(key);
+    const selected = new Set(current.selected);
+    const dismissed = new Set(current.dismissed);
+    if (val) {
+      selected.add(String(id));
+      dismissed.delete(String(id));
+    } else {
+      selected.delete(String(id));
+      dismissed.add(String(id));
+    }
+    state.reports.secondary_findings[key] = {
+      selected: Array.from(selected).sort(),
+      dismissed: Array.from(dismissed).sort(),
+    };
+  });
   state.dirty = true;
   renderReportSections();
   renderCandidateSections();
@@ -3597,6 +3618,14 @@ function _syncEditControls(id, field, val, source = null) {
   document.querySelectorAll(`${selector}[data-id="${CSS.escape(id)}"]`).forEach(el => {
     if (el === source) return;
     el.value = val ?? "";
+  });
+}
+
+function _syncVariantCheckboxes(selector, id, idx, checked, source = null) {
+  document.querySelectorAll(
+    `${selector}[data-id="${CSS.escape(id)}"][data-idx="${CSS.escape(String(idx))}"]`
+  ).forEach(input => {
+    if (input !== source) input.checked = checked;
   });
 }
 
@@ -4241,7 +4270,9 @@ function idsForReportSection(def) {
   if (def.category) {
     const inCat = new Set(state.data.categories?.[def.category] || []);
     return all.filter(id =>
-      inCat.has(id) && _isSecondaryEligible(id) && isSecondarySelected(id, def.category)
+      inCat.has(id)
+      && _isSecondaryEligible(id)
+      && isSecondarySelected(id, def.category)
     );
   }
   return [];
@@ -6363,6 +6394,7 @@ document.addEventListener("change", ev => {
     if (t.checked) picked[idx] = true;
     else           delete picked[idx];
     setEdit(t.dataset.id, "report_diseases", picked);
+    _syncVariantCheckboxes(".disease-pick", t.dataset.id, idx, t.checked, t);
     updateSaveHint();
   } else if (t.matches(".mito-disease-pick")) {
     const picked = { ...(getEdit(t.dataset.id, "report_diseases_clinvar") || {}) };
@@ -6370,6 +6402,7 @@ document.addEventListener("change", ev => {
     if (t.checked) picked[idx] = true;
     else           delete picked[idx];
     setEdit(t.dataset.id, "report_diseases_clinvar", picked);
+    _syncVariantCheckboxes(".mito-disease-pick", t.dataset.id, idx, t.checked, t);
     updateSaveHint();
   }
 });
