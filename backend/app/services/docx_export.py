@@ -2353,6 +2353,13 @@ def _pgx_gene_has_actionable_result(pgx: dict, gene: str) -> bool:
     normalized = str(phenotype or "").strip().lower()
     if not normalized:
         return True
+    # HLA reports may combine multiple allele-specific screens in one string.
+    # A positive risk allele must not be suppressed by unrelated negatives.
+    if str(gene or "").strip().upper().startswith("HLA-"):
+        if "positive" in normalized:
+            return True
+        if "negative" in normalized:
+            return False
     if normalized in {"normal", "negative", "low risk"}:
         return False
     return not any(token in normalized for token in (
@@ -2771,15 +2778,27 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
         ))
         summary_rows = _pgx_summary_rows_from_drug_groups(drug_groups)
         summary_drugs = list(dict.fromkeys(row["drug"] for row in summary_rows if row.get("drug")))
-        drug_text = "、".join(summary_drugs[:12])
+        drug_text = "、".join(summary_drugs)
+        appendix_only_count = max(0, len(drug_groups) - len(summary_drugs))
+        summary_detail = ""
+        if summary_drugs:
+            summary_detail = (
+                f"；其中下方摘要表包含 {len(summary_drugs)} 項藥物：{drug_text}"
+                + (
+                    f"，其餘 {appendix_only_count} 項僅列於完整用藥建議"
+                    if appendix_only_count
+                    else ""
+                )
+            )
         _add_paragraph(
             doc,
             f"  本次檢測發現 {len(drug_groups)} 項具臨床用藥參考價值的藥物結果"
             f"{f'，涉及 {genes} 基因' if genes else ''}"
-            f"{f'，可能影響 {drug_text} 及其他藥物之使用' if drug_text else ''}。"
+            f"{summary_detail}。"
             "此處列出用藥建議概覽與摘要，完整藥物建議詳見報告末端附錄。"
             "若目前使用或未來考慮使用"
-            "相關藥物，建議由處方醫師參考下方結果或最新 FDA/CPIC 指引進行評估。",
+            "相關藥物，建議由處方醫師參考下方結果或最新 FDA/CPIC 指引進行評估，"
+            "或參考下述官方用藥說明處之連結。",
         )
         _blank(doc)
         _add_paragraph(doc, "  用藥建議概覽", bold=True)

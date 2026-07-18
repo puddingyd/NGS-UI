@@ -952,11 +952,82 @@ def test_health_pgx_action_categories_remove_below_from_residual_drug_note():
     assert "其餘未列於下方之藥物" not in text
     assert "其餘未列之藥物" in text
     assert "參考下方結果或最新 FDA/CPIC 指引進行評估" in text
+    assert "或參考下述官方用藥說明處之連結" in text
     assert paragraph_texts[summary_index + 1] == ""
     assert text.index("用藥建議概覽") < text.index("藥物建議摘要")
     assert text.index("官方用藥資訊查詢") < text.index("四、檢測方法說明")
     assert "完整用藥建議" not in text
     assert groups
+
+
+def test_health_pgx_intro_lists_every_summary_drug_without_truncation():
+    doc = Document()
+    pgx = {
+        "genes": {
+            "CYP2C19": {"details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]}},
+        },
+        "guideline_annotations": [
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": f"drug-{index:02d}",
+                "recommendation": "Use an alternative therapy.",
+            }
+            for index in range(1, 14)
+        ] + [{
+            "section": "FDA Label Annotation",
+            "classification": "Informative PGx",
+            "alternate_drug_available": True,
+            "genes": ["CYP2C19"],
+            "drug": "appendix-only-drug",
+            "recommendation": "See the FDA label for prescribing information.",
+        }],
+    }
+
+    docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
+
+    intro = next(
+        paragraph.text for paragraph in doc.paragraphs
+        if paragraph.text.startswith("  本次檢測發現")
+    )
+    assert "下方摘要表包含 13 項藥物" in intro
+    assert "其餘 1 項僅列於完整用藥建議" in intro
+    assert "Drug-13" in intro
+    assert "Appendix-only-drug" not in intro
+    assert "及其他藥物之使用" not in intro
+
+
+def test_health_pgx_hla_positive_wins_over_other_negative_alleles():
+    pgx = {
+        "genes": {
+            "HLA-B": {
+                "details": {
+                    "label": "*15:02 negative；*57:01 negative；*58:01 positive",
+                    "phenotypes": ["*15:02 negative；*57:01 negative；*58:01 positive"],
+                },
+            },
+        },
+        "guideline_annotations": [{
+            "section": "CPIC Guideline Annotation",
+            "classification": "Strong",
+            "alternate_drug_available": True,
+            "genes": ["HLA-B"],
+            "drug": "allopurinol",
+            "recommendation": "Avoid allopurinol and use an alternative therapy.",
+        }],
+    }
+
+    assert docx_export._pgx_gene_has_actionable_result(pgx, "HLA-B") is True
+    groups = docx_export._pgx_drug_groups(pgx)
+    assert [group["drug"] for group in groups] == ["Allopurinol"]
+    assert docx_export._pgx_summary_rows_from_drug_groups(groups) == [{
+        "drug": "Allopurinol",
+        "gene": "HLA-B",
+        "action": "考慮替代藥物",
+        "source_level": "CPIC Strong",
+    }]
 
 
 def test_health_acmg_main_body_lists_findings_without_subgroup_catalog():
