@@ -25,11 +25,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import analyses_store, emr_client, phenotype_io, sample_layout, vcf_writer
+from . import analyses_store, emr_client, phenotype_io, sample_layout, test_types, vcf_writer
 
 
 _LIS_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
-_TEST_TYPES = {"WES", "WGS"}
+_TEST_TYPES = test_types.VALID_TEST_TYPES
 _GENOME_BUILDS = {"hg19", "hg38"}
 
 
@@ -142,6 +142,7 @@ def register(
     """
     started = time.perf_counter()
     _validate_lis_id(lis_id)
+    test_type = test_types.normalize_test_type(test_type, sample_id=lis_id)
     if not name:
         raise ValueError("name is required")
     if not mrn:

@@ -155,13 +155,13 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 2. **載入新個案** — 點「載入新個案」：
    - LIS_ID 下拉會列出 `08_postprocessing/layout.json` 已啟用、但尚未登錄的三級個案；尚在 post-processing 或失敗而沒有 marker 的新目錄不會提早出現。未遷移舊個案仍從 legacy UI root 列出；
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）；三級分析輸出若使用 `{LIS_ID}-dragen` / `{LIS_ID}-nckuh` / `{LIS_ID}-inhouse` 這類 UI 後綴，會先保留後綴作為 sample ID，再回查未加後綴的 roster LIS_ID；
-   - 若來源為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，Test type 會預設為 `WGS`；送出前仍可手動改回 `WES`；
+   - Test type 提供 `WES`、`WGS`、`TITAN-WGS`；LIS/sample ID 以兩位數年份加 `T` 開頭（例如 `25T...`、`26T...`、`27T...`）時會自動歸為 `TITAN-WGS`。其他來源若為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，仍預設為 `WGS`；`TITAN-WGS` 的分析門檻、dead zone 與報告方法文字皆沿用 WGS 規則；
    - Clinical presentation 可在檢體編號 / 病歷號下方輸入，會依病歷號 debounce 自動儲存為 `patient_phenotype/{MRN}_clinical_presentation.txt`，載入新個案與主畫面 Clinical presentation 會自動帶入；主畫面 reviewer 修改後也會同步寫回此檔，供 `/phenotype/` 後續載入。若沒有 MRN，才 fallback 使用 LIS_ID 暫存。
    - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
    - 登錄新個案的未登錄個案欄位可直接輸入 LIS ID、source sample、姓名或 MRN 搜尋，也可從下拉清單選擇；清單在前端快取一天，需要看到最新 pipeline output 時可按「更新清單」手動重抓。登錄完成會同步切換主畫面與上方個案搜尋框。登錄時不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；至少有一個 HPO term 時才會排入 Exomiser/LIRICAL，若 VCF 尚不存在，背景 job 開始前會自動建立或刷新。
    - HPO/panel 的 in-panel 狀態來自 `pheno_score.tsv` 動態補值，不再寫回大型 `snv_indel.annotated.tsv` 的 `IN_PANEL` 欄。
-   - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` 篩選並全文搜尋；表格會摘要目前 active analysis 的 HPO/panel（HPO 顯示如 `Seizure HP:0001250`）、causative / other SNV、CNV、SV、Mito，已勾選 OMIM disease、Mito ClinVar disease 與 CNV/SV reviewer 輸入的 Disease、主畫面 comment、簽收與載入時間。多個 HPO/panel、variant / disease 會逐行顯示，長 HGVS 可自動折行。表格內「刪除」只移除 `08_postprocessing/sample_metadata.json`、`case_summary.json` 與 `analyses/` 等註冊/報告狀態，保留 00-07 pipeline output 與其他衍生檔；完成後該 sample 會回到「載入新個案」清單。
-   - 主畫面搜尋框上方有可複選的 `WES` / `WGS` 圓形 filter，取消勾選後對應 test type 不出現在搜尋清單。
+   - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` / `TITAN-WGS` 篩選並全文搜尋；表格會摘要目前 active analysis 的 HPO/panel（HPO 顯示如 `Seizure HP:0001250`）、causative / other SNV、CNV、SV、Mito，已勾選 OMIM disease、Mito ClinVar disease 與 CNV/SV reviewer 輸入的 Disease、主畫面 comment、簽收與載入時間。多個 HPO/panel、variant / disease 會逐行顯示，長 HGVS 可自動折行。表格內「刪除」只移除 `08_postprocessing/sample_metadata.json`、`case_summary.json` 與 `analyses/` 等註冊/報告狀態，保留 00-07 pipeline output 與其他衍生檔；完成後該 sample 會回到「載入新個案」清單。
+   - 主畫面搜尋框與個案清單上方有可複選的 `WES` / `WGS` / `TITAN-WGS` 圓形 filter；每類旁邊的 `only` 可一次只保留該類、反選另外兩類。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV、Mitochondria、STR 與 PGx 在背景載完後補上：
    - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。
    - 載入或重新載入個案時會重設 sample-scoped UI 狀態：SNV/CNV/Mito/STR 分頁回到預設頁籤，主畫面 gene search 輸入與 gene search modal 舊結果會清空。

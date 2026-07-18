@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import PATIENT_LIST_DIR
+from . import test_types
 
 _ROSTER_NAME = "roster.json"
 _UPLOADS_NAME = "uploads.json"
@@ -120,12 +121,14 @@ def _lis_id_from_specimen(specimen: str) -> str:
     return s
 
 
-def _test_type_from_name(test_name: str) -> str:
-    """檢驗名稱 → WES / WGS (best-effort; defaults WES)."""
+def _test_type_from_name(test_name: str, lis_id: str = "") -> str:
+    """檢驗名稱/LIS ID → WES, WGS, or TITAN-WGS."""
+    if test_types.is_titan_sample_id(lis_id):
+        return test_types.TITAN_WGS
     n = (test_name or "").upper()
     if "WGS" in n:
-        return "WGS"
-    return "WES"
+        return test_types.WGS
+    return test_types.WES
 
 
 def parse_xlsx(path: Path) -> list[dict]:
@@ -183,7 +186,7 @@ def parse_xlsx(path: Path) -> list[dict]:
             "mrn":        get(r, "病歷號"),
             "name":       get(r, "姓名"),
             "test_name":  test_name,
-            "test_type":  _test_type_from_name(test_name),
+            "test_type":  _test_type_from_name(test_name, lis_id),
             "department": get(r, "科別"),
             "physician":  get(r, "開單醫師"),
             # 簽收時間 — when LIS booked the sample in. Used as the

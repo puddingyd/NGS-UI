@@ -280,6 +280,11 @@ body.sidebar-collapsed .container { margin-left: auto; }
   align-items: center;
   min-height: 22px;
 }
+.sample-test-filter-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 .sample-test-chip {
   cursor: pointer;
   user-select: none;
@@ -306,6 +311,21 @@ body.sidebar-collapsed .container { margin-left: auto; }
   color: #0550ae;
 }
 .sample-test-chip input:checked + span::before { content: "● "; }
+.sample-test-only {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 1px;
+  text-transform: lowercase;
+}
+.sample-test-only:hover,
+.sample-test-only:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
 .search-row input {
   padding: 6px 8px;
   border: 1px solid var(--border);

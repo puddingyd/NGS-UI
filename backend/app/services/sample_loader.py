@@ -54,6 +54,7 @@ from . import (
     snv_gene_index,
     snv_overlay,
     snv_review,
+    test_types,
 )
 from .snv_rows import is_reportable_raw_row
 
@@ -73,6 +74,15 @@ CASE_SUMMARY_CACHE_NAME = "case_summary.json"
 CASE_TABLE_CACHE_NAME = "_case_table.json"
 CASE_TABLE_VERSION = 2
 _case_table_lock = threading.Lock()
+
+
+def _effective_test_type(meta: dict, sample_id: str, *, default: str = "") -> str:
+    identity = str(meta.get("lis_id") or meta.get("sample_id") or sample_id)
+    return test_types.normalize_test_type(
+        meta.get("test_type") or "",
+        sample_id=identity,
+        default=default,
+    )
 
 
 def _fmt_size(path: Path) -> str:
@@ -314,7 +324,7 @@ def _case_table_row_from_sample_dir(
         "name":          meta.get("name", ""),
         "mrn":           meta.get("mrn", ""),
         "sex":           meta.get("sex", ""),
-        "test_type":     meta.get("test_type", ""),
+        "test_type":     _effective_test_type(meta, dir_sample_id),
         "category":      meta.get("category", ""),
         "run_date":      meta.get("run_date", ""),
         "created_at":    meta.get("created_at", ""),
@@ -1219,7 +1229,7 @@ def list_index() -> list[dict]:
             "name":          meta.get("name", ""),
             "mrn":           meta.get("mrn", ""),
             "sex":           meta.get("sex", ""),
-            "test_type":     meta.get("test_type", ""),
+            "test_type":     _effective_test_type(meta, sample_id),
             "category":      meta.get("category", ""),
             "run_date":      meta.get("run_date", ""),
             "created_at":    meta.get("created_at", ""),
@@ -1257,7 +1267,17 @@ def list_case_summaries() -> list[dict]:
     payload = _read_case_table_payload()
     rows = payload.get("rows") if payload else []
     if rows and _case_table_is_complete(rows):
-        rows = list(rows)
+        rows = [
+            {
+                **row,
+                "test_type": test_types.normalize_test_type(
+                    row.get("test_type") or "",
+                    sample_id=row.get("lis_id") or row.get("sample_id") or "",
+                    default="",
+                ),
+            }
+            for row in rows
+        ]
         rows.sort(key=lambda r: (r.get("created_at") or "", r.get("lis_id") or ""), reverse=True)
         return rows
     return rebuild_case_table()
@@ -1419,7 +1439,11 @@ def list_unregistered() -> list[dict]:
             "roster":     {
                 "mrn":              (roster_entry or {}).get("mrn", ""),
                 "name":             (roster_entry or {}).get("name", ""),
-                "test_type":        (roster_entry or {}).get("test_type", ""),
+                "test_type":        test_types.normalize_test_type(
+                    (roster_entry or {}).get("test_type", ""),
+                    sample_id=lis_id,
+                    default="",
+                ),
                 "department":       (roster_entry or {}).get("department", ""),
                 "physician":        (roster_entry or {}).get("physician", ""),
                 "sign_received_at": (roster_entry or {}).get("sign_received_at", ""),
@@ -1687,7 +1711,7 @@ def _sample_snv_sidecar_context(sample_id: str, version: str | None = None):
         analyses_store.version_dir(sample_id, chosen_version)
         if chosen_version is not None else sub
     )
-    return sub, meta, sidecar_dir, (meta.get("test_type") or "WES").upper()
+    return sub, meta, sidecar_dir, _effective_test_type(meta, sample_id, default="WES")
 
 
 def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dict | None:
@@ -1772,6 +1796,7 @@ def load_sample(sample_id: str, version: str | None = None,
 
     raw_snv_tsv = sample_layout.snv_raw_tsv(sample_id)
     _meta_early = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    _meta_early["test_type"] = _effective_test_type(_meta_early, sample_id, default="WES")
     reported_ids = set((_meta_early.get("status") or {}).keys())
     snv_tsv = raw_snv_tsv
     if raw_snv_tsv.exists():
@@ -1780,7 +1805,7 @@ def load_sample(sample_id: str, version: str | None = None,
             snv_tsv = snv_review.ensure_review_tsv(
                 raw_snv_tsv,
                 keep_ids=reported_ids,
-                test_type=(_meta_early.get("test_type") or "WES").upper(),
+                test_type=_meta_early["test_type"],
                 output_dir=sub,
                 overlay_path=sample_layout.snv_overlay_path(sample_id),
             )
@@ -1810,8 +1835,9 @@ def load_sample(sample_id: str, version: str | None = None,
     # in correctly. meta is re-read below for the response payload —
     # this duplicate is cheap (one small JSON) and keeps the gating
     # logic out of the adapter's API.
-    _test_type  = (_meta_early.get("test_type") or "WES").upper()
+    _test_type = _meta_early["test_type"]
     meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    meta["test_type"] = _effective_test_type(meta, sample_id, default="WES")
 
     # Decide which directory holds the sidecar TSVs for this load.
     chosen_version = _resolve_version(
@@ -1963,7 +1989,7 @@ def load_sample(sample_id: str, version: str | None = None,
             "MRN":            meta.get("mrn", ""),
             "Sex":            meta.get("sex", ""),
             "DOB":            meta.get("date_of_birth", ""),
-            "Test":           meta.get("test_type", ""),
+            "Test":           _effective_test_type(meta, sample_id),
             "Category":       meta.get("category", ""),
             "Department":     meta.get("department", ""),
             "Physician":      meta.get("physician", ""),
@@ -2062,7 +2088,7 @@ def search_snv_by_genes(
         if chosen_version is not None else sub
     )
     wanted = {g.strip().upper() for g in genes if g.strip()}
-    test_type = (meta.get("test_type") or "WES").upper()
+    test_type = _effective_test_type(meta, sample_id, default="WES")
     indexed_rows = snv_gene_index.query_rows(
         raw_tsv, genes, sample_layout.snv_gene_index_path(sample_id)
     )

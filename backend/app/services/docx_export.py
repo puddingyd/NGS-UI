@@ -32,6 +32,7 @@ from . import (
     ploidy,
     report_store,
     sample_loader,
+    test_types,
 )
 
 # 細明體 (MingLiU) — the *monospace* CJK family. (新細明體 = PMingLiU
@@ -541,7 +542,7 @@ def _manual_for(report: dict, status: str) -> list[dict]:
 
 def _section_test_info(doc, test_type: str, *, health: bool = False) -> None:
     """一、檢驗項目"""
-    is_wgs = (test_type or "").upper() == "WGS"
+    is_wgs = test_types.is_wgs_type(test_type)
     if is_wgs:
         label = "次世代定序全基因體定序檢測"
     elif health:
@@ -580,7 +581,7 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
 
     statuses = report.get("status", {}) or {}
     edits    = report.get("edits", {})  or {}
-    is_wgs   = (test_type or "").upper() == "WGS"
+    is_wgs   = test_types.is_wgs_type(test_type)
 
     snv_vars  = sample.get("variants", {})       or {}
     cnv_vars, sv_vars = cnv_sv_merge.apply_confirmed_merges(
@@ -1279,7 +1280,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
 # ── §四 方法、§五 注釋 ───────────────────────────────────────────
 
 def _section_methods(doc, test_type: str, *, health: bool = False) -> None:
-    is_wgs = (test_type or "").upper() == "WGS"
+    is_wgs = test_types.is_wgs_type(test_type)
     seq    = "Illumina NovaSeq X Plus" if is_wgs else "Illumina NextSeq 2000"
     depth  = "27X" if is_wgs and health else ("30X" if is_wgs else "50X")
     _add_paragraph(doc, "四、檢測方法說明")

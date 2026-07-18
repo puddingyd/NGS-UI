@@ -15,7 +15,17 @@ const state = {
   currentLIS:   null,
   dirty:        false,
 };
-const sampleTestFilters = new Set(["WES", "WGS"]);
+const SAMPLE_TEST_TYPES = ["WES", "WGS", "TITAN-WGS"];
+const sampleTestFilters = new Set(SAMPLE_TEST_TYPES);
+
+function normalizeSampleTestType(value = "", sampleId = "") {
+  if (/^\d{2}T/i.test(String(sampleId || "").trim())) return "TITAN-WGS";
+  return String(value || "").trim().toUpperCase();
+}
+
+function isWgsTestType(value) {
+  return ["WGS", "TITAN-WGS"].includes(String(value || "").trim().toUpperCase());
+}
 
 // Tracks blocks the user has manually toggled (by host id).
 // If a block id is in this set, we respect its wasOpen dataset;
@@ -74,15 +84,18 @@ async function loadIndex() {
   // (LIS_ID / Name / MRN / Test / Category), so map both shapes here.
   const data = await apiFetch("/samples");
   const list = Array.isArray(data) ? data : [];
-  state.index = list.map(r => ({
-    LIS_ID:    r.lis_id || r.sample_id || r.LIS_ID || "",
-    Name:      r.name || r.Name || "",
-    MRN:       r.mrn || r.MRN || "",
-    Test:      r.test_type || r.Test || "",
-    Category:  r.category || r.Category || "",
-    Tag:       (r.tags || []).join(",") || r.Tag || "",
-    sample_id: r.sample_id || r.lis_id || r.LIS_ID || "",
-  }));
+  state.index = list.map(r => {
+    const lisId = r.lis_id || r.sample_id || r.LIS_ID || "";
+    return {
+      LIS_ID:    lisId,
+      Name:      r.name || r.Name || "",
+      MRN:       r.mrn || r.MRN || "",
+      Test:      normalizeSampleTestType(r.test_type || r.Test || "", lisId),
+      Category:  r.category || r.Category || "",
+      Tag:       (r.tags || []).join(",") || r.Tag || "",
+      sample_id: r.sample_id || r.lis_id || r.LIS_ID || "",
+    };
+  });
   const opts = await apiFetch("/options").catch(() => null);
   state.options = opts && typeof opts === "object"
     ? opts
@@ -2722,10 +2735,17 @@ function setupPatientListUpload() {
 // 個案清單: lists registered NGS-UI samples and lets reviewers remove
 // registration/report state while keeping local tertiary outputs available.
 let _caseListRows = [];
-const _caseListTestFilters = new Set(["WES", "WGS"]);
+const _caseListTestFilters = new Set(SAMPLE_TEST_TYPES);
 
 async function loadCaseListRows() {
-  return await apiFetch("/samples/case-summary") || [];
+  const rows = await apiFetch("/samples/case-summary") || [];
+  return rows.map(row => ({
+    ...row,
+    test_type: normalizeSampleTestType(
+      row.test_type || "",
+      row.lis_id || row.sample_id || "",
+    ),
+  }));
 }
 
 function _caseListVisibleRows() {
@@ -2814,6 +2834,17 @@ function setupCaseList() {
     filter.addEventListener("change", () => {
       if (filter.checked) _caseListTestFilters.add(filter.value);
       else _caseListTestFilters.delete(filter.value);
+      _renderCaseList({ refresh: false });
+    });
+  });
+  document.querySelectorAll(".case-list-test-filters .sample-test-only").forEach(button => {
+    button.addEventListener("click", () => {
+      const selected = button.dataset.testType || "";
+      _caseListTestFilters.clear();
+      if (selected) _caseListTestFilters.add(selected);
+      document.querySelectorAll(".case-list-test-filters input").forEach(filter => {
+        filter.checked = filter.value === selected;
+      });
       _renderCaseList({ refresh: false });
     });
   });
@@ -7203,7 +7234,7 @@ function renderVariantBlock(vid, v, kind) {
 function buildClinicalTXT() {
   const data = state.data || {};
   const meta = data.meta || {};
-  const isWGS = String(meta.Test || "").toUpperCase() === "WGS";
+  const isWGS = isWgsTestType(meta.Test);
   const build = data.genome_build || "hg38";
   const clinvarDate = ymdToCnDate(data.clinvar_date) || "—";
 
@@ -7674,7 +7705,7 @@ async function buildScreeningPDF() {
   w.kv("檢體編號", meta.LIS_ID || state.currentLIS || "");
   w.kv("姓名",     meta.Name || "");
   w.kv("病歷號",   meta.MRN || "");
-  w.kv("檢驗項目", meta.Test ? `次世代定序${meta.Test === "WGS" ? "全基因組" : "全外顯子"}定序檢測` : "");
+  w.kv("檢驗項目", meta.Test ? `次世代定序${isWgsTestType(meta.Test) ? "全基因組" : "全外顯子"}定序檢測` : "");
   w.kv("產生日期", todayYmd().replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3"));
   w.gap(6);
 
@@ -7873,6 +7904,17 @@ function setupCombobox() {
     filter.addEventListener("change", () => {
       if (filter.checked) sampleTestFilters.add(filter.value);
       else sampleTestFilters.delete(filter.value);
+      renderOptions(currentRows());
+    });
+  });
+  document.querySelectorAll(".search-combobox .sample-test-only").forEach(button => {
+    button.addEventListener("click", () => {
+      const selected = button.dataset.testType || "";
+      sampleTestFilters.clear();
+      if (selected) sampleTestFilters.add(selected);
+      document.querySelectorAll(".search-combobox .sample-test-chip input").forEach(filter => {
+        filter.checked = filter.value === selected;
+      });
       renderOptions(currentRows());
     });
   });
@@ -8166,6 +8208,10 @@ const NEW_CASE_WGS_VCF_SIZE_BYTES = 100 * 1024 * 1024;
 
 function inferNewCaseTestType(entry) {
   if (!entry) return "";
+  const sampleIds = [entry.lis_id, entry.source_sample_id].filter(Boolean);
+  if (sampleIds.some(sampleId => normalizeSampleTestType("", sampleId) === "TITAN-WGS")) {
+    return "TITAN-WGS";
+  }
   const pipelineType = String(entry.pipeline_type || "").toLowerCase();
   const sourcePath = String(entry.source_vcf_path || "").toLowerCase();
   const sourceSample = String(entry.source_sample_id || entry.lis_id || "").toLowerCase();

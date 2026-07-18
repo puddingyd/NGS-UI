@@ -8,6 +8,7 @@
 
 ### v6.11 — 2026-07-18
 
+- Test type 新增 `TITAN-WGS`；`25T...`、`26T...`、`27T...` 等年份加 T 開頭的 sample 自動歸類，分析與報告規則沿用 WGS。主畫面個案搜尋與個案清單的三種 test type filter 旁新增 `only` 快速單選。
 - 登錄新個案後會同步切換上方個案搜尋框；登錄狀態不再顯示 job ID。Exomiser/LIRICAL 改為至少有一個 HPO term 才排入，只有 panel 時仍會更新 pheno score，但不再產生 prepare-vcf 失敗訊息。
 - 主畫面 Secondary findings 精簡為 ACMG SF、中風相關基因與 Carrier screening（PGx / PharmCAT 保留）；同一 variant 命中多個 panel 時仍會在每個分類分別顯示，但所有卡片共用同一筆勾選、ACMG、Comment、transcript 與疾病選取資料。既有勾選衝突以明確取消為準，健檢匯出時才合併去重。
 - 健檢 DOCX 匯出選項精簡為 ACMG 疾病風險基因、中風相關基因、帶因者篩查與藥物基因體學；所選疾病 panel 點位先合併去重，再統一套用疾病風險／帶因者兩類規則。基因清單移除類別序號，附錄改為另起新頁、標題置中並留一空行。

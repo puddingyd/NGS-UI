@@ -15,6 +15,7 @@ from ..services import (
     report_store,
     sample_layout,
     sample_loader,
+    test_types,
 )
 
 router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
@@ -445,7 +446,14 @@ def put_sample_metadata(sample_id: str, payload: dict):
                 "department", "physician", "sign_received_at"}
     for k, v in (payload or {}).items():
         if k in EDITABLE:
-            meta[k] = v
+            meta[k] = (
+                test_types.normalize_test_type(
+                    str(v or ""),
+                    sample_id=str(meta.get("lis_id") or meta.get("sample_id") or sample_id),
+                )
+                if k == "test_type"
+                else v
+            )
     meta["metadata_updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     sample_loader.update_case_table_row(sample_id)

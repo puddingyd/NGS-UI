@@ -71,8 +71,18 @@
       <div class="search-row">
         <div class="combobox-wrap search-combobox">
           <span class="sample-test-filters">
-            <label class="sample-test-chip"><input type="checkbox" value="WES" checked /><span>WES</span></label>
-            <label class="sample-test-chip"><input type="checkbox" value="WGS" checked /><span>WGS</span></label>
+            <span class="sample-test-filter-option">
+              <label class="sample-test-chip"><input type="checkbox" value="WES" checked /><span>WES</span></label>
+              <button type="button" class="sample-test-only" data-test-type="WES" aria-label="只顯示 WES">only</button>
+            </span>
+            <span class="sample-test-filter-option">
+              <label class="sample-test-chip"><input type="checkbox" value="WGS" checked /><span>WGS</span></label>
+              <button type="button" class="sample-test-only" data-test-type="WGS" aria-label="只顯示 WGS">only</button>
+            </span>
+            <span class="sample-test-filter-option">
+              <label class="sample-test-chip"><input type="checkbox" value="TITAN-WGS" checked /><span>TITAN-WGS</span></label>
+              <button type="button" class="sample-test-only" data-test-type="TITAN-WGS" aria-label="只顯示 TITAN-WGS">only</button>
+            </span>
           </span>
           <input id="q-lis" type="text" autocomplete="off" placeholder="輸入檢體編號 (LIS_ID) / 姓名 / 病歷號以搜尋…" />
           <ul id="q-lis-dropdown" class="combobox-dropdown hidden"></ul>
@@ -143,6 +153,7 @@
               <option value="">—</option>
               <option value="WES">WES</option>
               <option value="WGS">WGS</option>
+              <option value="TITAN-WGS">TITAN-WGS</option>
             </select>
           </div>
         </div>
@@ -477,6 +488,7 @@
           <select name="test_type">
             <option value="WES" selected>WES</option>
             <option value="WGS">WGS</option>
+            <option value="TITAN-WGS">TITAN-WGS</option>
           </select>
         </label>
         <label>Genome build
@@ -565,8 +577,18 @@
       <h2>個案清單</h2>
       <div class="case-list-toolbar">
         <span class="sample-test-filters case-list-test-filters">
-          <label class="sample-test-chip"><input type="checkbox" value="WES" checked /><span>WES</span></label>
-          <label class="sample-test-chip"><input type="checkbox" value="WGS" checked /><span>WGS</span></label>
+          <span class="sample-test-filter-option">
+            <label class="sample-test-chip"><input type="checkbox" value="WES" checked /><span>WES</span></label>
+            <button type="button" class="sample-test-only" data-test-type="WES" aria-label="只顯示 WES">only</button>
+          </span>
+          <span class="sample-test-filter-option">
+            <label class="sample-test-chip"><input type="checkbox" value="WGS" checked /><span>WGS</span></label>
+            <button type="button" class="sample-test-only" data-test-type="WGS" aria-label="只顯示 WGS">only</button>
+          </span>
+          <span class="sample-test-filter-option">
+            <label class="sample-test-chip"><input type="checkbox" value="TITAN-WGS" checked /><span>TITAN-WGS</span></label>
+            <button type="button" class="sample-test-only" data-test-type="TITAN-WGS" aria-label="只顯示 TITAN-WGS">only</button>
+          </span>
         </span>
         <input id="case-list-search" type="text"
                placeholder="搜尋 ID、姓名、病歷號、variant、疾病、comment 或年份…" autocomplete="off" />
