@@ -30,6 +30,7 @@ class OldFormatError(ValueError):
 TIERS = ["1A", "1B", "1C", "2"]
 
 PREDICTED_SUSPECT_THRESHOLDS = {
+    "pknn": 1.0,
     "alphamissense_moderate": 0.906,
     "alphamissense_supporting": 0.792,
     "bayesdel_moderate": 0.27,
@@ -250,6 +251,7 @@ def predicted_suspect_evidence(row: dict) -> dict[str, Any]:
     """
     t = PREDICTED_SUSPECT_THRESHOLDS
     points = _effective_acmg_points(row)
+    pknn = _max_multi(row.get("PKNN_LLR"))
     alpha = _max_multi(row.get("ALPHAMISSENSE"))
     bayes = _max_multi(row.get("BAYESDEL_NOAF"))
     pangolin = _max_abs_multi(row.get("PANGOLIN_SCORE"))
@@ -265,6 +267,8 @@ def predicted_suspect_evidence(row: dict) -> dict[str, Any]:
     alpha_supporting = alpha is not None and alpha >= t["alphamissense_supporting"]
     bayes_supporting = bayes is not None and bayes >= t["bayesdel_supporting"]
 
+    if pknn is not None and pknn >= t["pknn"]:
+        core_reasons.append(f"P-KNN LLR {pknn:g} ≥ {t['pknn']:g}")
     if alpha_moderate:
         core_reasons.append(
             f"AlphaMissense {alpha:g} ≥ {t['alphamissense_moderate']:g}"
@@ -685,7 +689,7 @@ def _row_to_variant(row: dict) -> dict:
         # joined by '&' (e.g. AlphaMissense '.&0.9482&0.9432') — take
         # the worst case (max). Categorical _PRED columns get the first
         # non-empty value.
-        "PKNN_LLR":            _to_num(row.get("PKNN_LLR")),
+        "PKNN_LLR":            _max_multi(row.get("PKNN_LLR")),
         "PKNN_evidence":       _first_str(row.get("PKNN_EVIDENCE")),
         "AlphaMissense_score": _max_multi(row.get("ALPHAMISSENSE")),
         "AlphaMissense_pred":  _first_str(row.get("ALPHAMISSENSE_PRED")),

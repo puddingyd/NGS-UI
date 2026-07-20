@@ -974,8 +974,9 @@ def _secondary_zygosity_pass(variant: dict) -> bool:
 def _is_secondary_snv_candidate(variant: dict) -> bool:
     # Keep every existing ClinVar P/LP candidate, then broaden retrieval with
     # the same 1A/1B/1C buckets used by the main SNV/Indel card.  Tier 1B is
-    # LOFTEE HC; tier 1C covers ACMG points >=4 and calibrated predictor
-    # triggers.  Selection into the report remains ClinVar-only by default.
+    # LOFTEE HC; tier 1C covers ACMG points >=4, P-KNN LLR >=1, and the other
+    # configured predictor triggers. Selection into the report remains
+    # ClinVar-only by default.
     tier = str(variant.get("tier") or "").strip().upper()
     return (
         (_is_clinvar_plp(variant) or tier in {"1A", "1B", "1C"})

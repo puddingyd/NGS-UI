@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.adapters.snv_tsv import classify_tier
 from app.services import sample_loader
 
 
@@ -78,6 +79,13 @@ def test_secondary_candidates_use_main_snv_retrieval_tiers_but_default_clinvar_o
         "tier": "1C",
         "alt_af": 0.1,
     }) is False
+
+    pknn_tier = classify_tier({"PKNN_LLR": "1"})
+    assert pknn_tier == "1C"
+    assert sample_loader._is_secondary_snv_candidate({
+        **base,
+        "tier": pknn_tier,
+    }) is True
 
     eligible = APP_JS.split("function _isSecondaryEligible(id)", 1)[1].split(
         "function _secondarySection", 1,

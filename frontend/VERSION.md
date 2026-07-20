@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v6.13 — 2026-07-20
+
+- `1C — Predicted suspect` 的 Core predictors 新增 `P-KNN LLR ≥ 1`；因健檢 Secondary findings 分析候選共用 SNV `1A/1B/1C` tier，符合 panel gene、VAF ≥0.2 且非 ref genotype 的 P-KNN 候選也會同步進入分析區，但仍不會預設勾選進報告。
+
 ### v6.12 — 2026-07-19
 
 - PGx 分析區新增包含空項目的完整用藥概覽與「不需調整／無明確調整建議」，每個 CPIC Level A gene 的詳細內容會列出相關藥物及 CPIC/FDA 建議；需注意表型改用紅字，normal/uncertain 等仍列出相關藥物但標示不需調整。

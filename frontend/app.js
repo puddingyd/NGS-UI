@@ -3563,9 +3563,9 @@ function _isSecondaryEligible(id) {
   const v = state.data?.variants?.[id];
   // Secondary analysis mirrors the main SNV retrieval buckets: retain all
   // existing ClinVar P/LP calls plus 1A/1B/1C (LOFTEE HC, ACMG points >=4,
-  // and calibrated predictor triggers).  isSecondarySelected() below still
-  // defaults to ClinVar P/LP only, so the broader candidates are not silently
-  // added to the report.
+  // P-KNN LLR >=1, and the other predictor triggers). isSecondarySelected()
+  // below still defaults to ClinVar P/LP only, so the broader candidates are
+  // not silently added to the report.
   return _isClinvarPlp(v) || ["1A", "1B", "1C"].includes(String(v?.tier || "").toUpperCase());
 }
 
