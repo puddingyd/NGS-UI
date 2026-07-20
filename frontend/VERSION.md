@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v6.8 — 2026-07-20
+
+- 二級分析的 DGX2 清理指令「複製」改為一鍵寫入剪貼簿；plain-HTTP intranet 會自動使用隱藏文字框 fallback，不再顯示要求手動複製的視窗。
+- PGx 分析區的基因名稱維持黑字、diplotype/allele 改用淡紫底，只有需注意 phenotype 顯示紅字。逐 gene 用藥建議簡化為藥物與 CPIC/FDA 建議兩欄，需調整項目優先；概覽把 generic fallback 改為「其他用藥建議（參考完整建議與最新藥品仿單）」，並確保相關 JSON 藥物與 MT-RNR1 TSV 補充藥物各自只進一個主要分類。star allele 說明改為欄名 hover tooltip。
+
 ### v6.7 — 2026-07-18
 
 - Test type 新增 `TITAN-WGS`類別。主畫面個案搜尋與個案清單的三種類別旁新增 `only` 快速單選。

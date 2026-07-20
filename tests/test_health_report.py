@@ -587,7 +587,7 @@ def test_pgx_report_view_is_shared_docx_projection():
         "考慮替代藥物",
         "加強不良反應監測",
         "使用前確認表型或檢驗",
-        "參考最新藥品仿單",
+        "其他用藥建議（參考完整建議與最新藥品仿單）",
         "不需調整／無明確調整建議",
     ]
     assert view["analysis_action_categories"][0]["drugs"] == []
@@ -616,10 +616,155 @@ def test_pgx_analysis_lists_related_drugs_for_normal_genes():
     assert dpyd["related_drugs"] == ["Fluorouracil"]
     assert dpyd["recommendation_rows"] == [{
         "drug": "Fluorouracil",
-        "gene_phenotype": "DPYD Normal Metabolizer",
         "recommendation": "目前基因型／表型未符合本報告需調整用藥的條件。",
+        "requires_adjustment": False,
     }]
     assert view["analysis_action_categories"][-1]["drugs"] == ["Fluorouracil"]
+
+
+def test_pgx_analysis_orders_adjustment_before_no_adjustment():
+    pgx = {
+        "genes": {
+            "CYP2C19": {
+                "details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]},
+            },
+        },
+        "guideline_annotations": [
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": "z-drug",
+                "recommendation": "Use an alternative treatment.",
+            },
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Optional",
+                "genes": ["CYP2C19"],
+                "drug": "a-drug",
+                "recommendation": "Consider the clinical context.",
+            },
+        ],
+    }
+
+    view = docx_export.build_pgx_report_view(pgx)
+
+    cyp2c19 = next(row for row in view["analysis_genes"] if row["gene"] == "CYP2C19")
+    assert [row["drug"] for row in cyp2c19["recommendation_rows"]] == ["Z-drug", "A-drug"]
+    assert [row["requires_adjustment"] for row in cyp2c19["recommendation_rows"]] == [True, False]
+
+
+def test_pgx_overview_maps_generic_fallback_to_clear_other_category():
+    groups = [{
+        "drug": "Example drug",
+        "action": "參考最新藥品仿單",
+        "recommendations": [{
+            "gene": "CYP2C19",
+            "source": "CPIC",
+            "level": "Moderate",
+            "action": "參考最新藥品仿單",
+            "source_priority": 1,
+        }],
+    }]
+
+    assert docx_export._pgx_action_categories(groups) == [(
+        "其他用藥建議（參考完整建議與最新藥品仿單）",
+        ["Example drug"],
+    )]
+    assert docx_export._pgx_summary_rows_from_drug_groups(groups)[0]["action"] == (
+        "其他用藥建議（參考完整建議與最新藥品仿單）"
+    )
+    assert docx_export._pgx_action_zh("Confirm phenotype before treatment.") == "使用前確認表型或檢驗"
+
+
+def test_pgx_analysis_overview_covers_each_json_drug_once():
+    pgx = {
+        "genes": {
+            "CYP2C19": {
+                "details": {"label": "*2/*2", "phenotypes": ["Poor Metabolizer"]},
+            },
+        },
+        "guideline_annotations": [
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Strong",
+                "alternate_drug_available": True,
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "Use an alternative antiplatelet agent.",
+            },
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Moderate",
+                "other_prescribing_guidance": True,
+                "genes": ["CYP2C19"],
+                "drug": "fallback-drug",
+                "recommendation": "Consider the patient's overall clinical context.",
+            },
+            {
+                "section": "CPIC Guideline Annotation",
+                "classification": "Optional",
+                "genes": ["CYP2C19"],
+                "drug": "routine-drug",
+                "recommendation": "Use usual care.",
+            },
+            {
+                "section": "FDA Label Annotation",
+                "classification": "Unspecified",
+                "other_prescribing_guidance": True,
+                "genes": ["CYP2C19"],
+                "drug": "clopidogrel",
+                "recommendation": "See the current prescribing information.",
+            },
+        ],
+    }
+
+    view = docx_export.build_pgx_report_view(pgx)
+    by_action = {
+        row["action"]: row["drugs"]
+        for row in view["analysis_action_categories"]
+    }
+
+    assert by_action["考慮替代藥物"] == ["Clopidogrel"]
+    assert by_action["其他用藥建議（參考完整建議與最新藥品仿單）"] == ["Fallback-drug"]
+    assert by_action["不需調整／無明確調整建議"] == ["Routine-drug"]
+    categorized = [
+        drug
+        for category in view["analysis_action_categories"]
+        for drug in category["drugs"]
+    ]
+    assert sorted(categorized, key=str.casefold) == [
+        "Clopidogrel",
+        "Fallback-drug",
+        "Routine-drug",
+    ]
+
+
+def test_pgx_analysis_overview_allows_only_mt_rnr1_tsv_drug_supplement():
+    pgx = {
+        "genes": {
+            "MT-RNR1": {
+                "diplotype": "m.1555A>G positive",
+                "phenotype": "HIGH risk",
+                "drugs": [{"drug": "aminoglycosides", "recommendations": []}],
+                "details": {"label": "Unknown", "phenotypes": ["No Result"]},
+            },
+            "CYP2C19": {
+                "diplotype": "*2/*2",
+                "phenotype": "Poor Metabolizer",
+                "drugs": [{"drug": "legacy-tsv-drug", "recommendations": []}],
+                "details": {},
+            },
+        },
+    }
+
+    view = docx_export.build_pgx_report_view(pgx)
+
+    assert view["analysis_action_categories"][-1] == {
+        "action": "不需調整／無明確調整建議",
+        "drugs": ["Aminoglycosides"],
+    }
 
 
 def test_pgx_genotype_rows_treat_dash_phenotype_as_not_assigned():

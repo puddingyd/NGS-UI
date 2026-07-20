@@ -6108,7 +6108,7 @@ function renderPharmcatAnalysisGene(pc, row) {
   return `<div class="pgx-analysis-gene">
     <div class="pgx-gene-head${attentionClass}">
       <strong>${escapeHtml(gene)}</strong>
-      <span>${escapeHtml(row.genotype || "—")}</span>
+      <span class="pgx-gene-genotype">${escapeHtml(row.genotype || "—")}</span>
       <span class="pgx-gene-phenotype">${escapeHtml(row.phenotype || "No phenotype assigned")}</span>
       ${mtRnr1Supplement ? `<span class="pgx-evidence-badge">${escapeHtml(mtRnr1Supplement)}</span>` : ""}
     </div>
@@ -6201,8 +6201,7 @@ function renderPharmcatGeneDetails(g, analysisRow = {}) {
     ? `<div class="muted">Messages: ${messageValues.map(escapeHtml).join(", ")}</div>`
     : "";
   const variants = vrows
-    ? `<div class="pgx-star-alleles-note">Call 是病人實際檢出的基因型；「可對應之 star alleles」列出此位點可參與定義的 PharmCAT star alleles，不代表病人同時具有全部 alleles。</div>
-       <table class="pharmcat-variants"><thead><tr><th>rsID</th><th>Position</th><th>Call</th><th>可對應之 star alleles</th></tr></thead><tbody>${vrows}</tbody></table>`
+    ? `<table class="pharmcat-variants"><thead><tr><th>rsID</th><th>Position</th><th>Call</th><th class="pgx-star-alleles-header" data-tip="${escapeAttr("此處列出此位點可參與定義的 PharmCAT star alleles，不代表病人同時具有全部 alleles。")}">可對應之 star alleles <span aria-hidden="true">ⓘ</span></th></tr></thead><tbody>${vrows}</tbody></table>`
     : "";
   const recommendationRows = Array.isArray(analysisRow.recommendation_rows)
     ? analysisRow.recommendation_rows
@@ -6212,8 +6211,8 @@ function renderPharmcatGeneDetails(g, analysisRow = {}) {
     : [];
   const recommendations = recommendationRows.length
     ? _pgxTable(
-        ["藥物", "基因與表型", "CPIC/FDA 建議"],
-        recommendationRows.map(row => [row.drug, row.gene_phenotype, row.recommendation]),
+        ["藥物", "CPIC/FDA 建議"],
+        recommendationRows.map(row => [row.drug, row.recommendation]),
         "pgx-full-recommendation-table pgx-gene-recommendation-table",
       )
     : `<div class="muted pgx-related-drugs">相關藥物：${escapeHtml(relatedDrugs.length ? relatedDrugs.join("、") : "無")}</div>`;
@@ -9430,37 +9429,46 @@ function _secondaryRenderResult(result) {
   if (attach) attach.textContent = `tmux attach -t ${result.tmux_session || ""}`;
 }
 
-async function _secondaryCopyCommand() {
-  const text = document.getElementById("secondary-command")?.textContent || "";
-  if (!text) return;
-  const btn = document.getElementById("secondary-copy-command");
-  const markCopied = () => {
-    if (!btn) return;
-    const old = btn.textContent;
-    btn.textContent = "已複製";
-    setTimeout(() => { btn.textContent = old; }, 1200);
-  };
-  try {
-    if (navigator.clipboard?.writeText && window.isSecureContext) {
+async function _secondaryWriteClipboard(text) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
       await navigator.clipboard.writeText(text);
-      markCopied();
-      return;
+      return true;
+    } catch (_e) {
+      // Plain-HTTP intranet browsers may expose the API but still reject it.
     }
+  }
+  try {
     const ta = document.createElement("textarea");
     ta.value = text;
     ta.setAttribute("readonly", "");
     ta.style.position = "fixed";
-    ta.style.left = "-9999px";
+    ta.style.left = "0";
     ta.style.top = "0";
+    ta.style.width = "1px";
+    ta.style.height = "1px";
+    ta.style.opacity = "0";
     document.body.appendChild(ta);
     ta.focus();
     ta.select();
+    ta.setSelectionRange(0, text.length);
     const ok = document.execCommand("copy");
     document.body.removeChild(ta);
-    if (!ok) throw new Error("execCommand copy returned false");
-    markCopied();
+    return !!ok;
   } catch (_e) {
-    alert("無法使用瀏覽器剪貼簿，請手動選取指令複製。");
+    return false;
+  }
+}
+
+async function _secondaryCopyCommand() {
+  const text = document.getElementById("secondary-command")?.textContent || "";
+  if (!text) return;
+  const btn = document.getElementById("secondary-copy-command");
+  const old = btn?.textContent || "複製";
+  const copied = await _secondaryWriteClipboard(text);
+  if (btn) {
+    btn.textContent = copied ? "已複製" : "複製失敗";
+    setTimeout(() => { btn.textContent = old; }, 1200);
   }
 }
 
@@ -9562,15 +9570,11 @@ async function _secondaryShowCleanupCommand() {
 async function _secondaryCopyCleanupCommand() {
   const command = document.getElementById("secondary-clean-command")?.textContent || "";
   if (!command || command.startsWith("產生清理指令失敗")) return;
-  try {
-    await navigator.clipboard.writeText(command);
-    const btn = document.getElementById("secondary-copy-clean-command");
-    if (btn) {
-      btn.textContent = "已複製";
-      setTimeout(() => { btn.textContent = "複製"; }, 1200);
-    }
-  } catch (_e) {
-    prompt("請複製以下 DGX2 清理指令：", command);
+  const btn = document.getElementById("secondary-copy-clean-command");
+  const copied = await _secondaryWriteClipboard(command);
+  if (btn) {
+    btn.textContent = copied ? "已複製" : "複製失敗";
+    setTimeout(() => { btn.textContent = "複製"; }, 1200);
   }
 }
 

@@ -1709,22 +1709,30 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .pgx-analysis-gene:last-child { border-bottom: 0; }
 .pgx-analysis-gene .pgx-gene-head { margin-bottom: 0; }
+.pgx-gene-head strong { color: var(--fg); }
+.pgx-gene-genotype {
+  padding: 2px 7px;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-family: ui-monospace, monospace;
+}
 .pgx-gene-head .pgx-gene-phenotype { color: var(--muted); }
-.pgx-gene-head-attention strong,
 .pgx-gene-head-attention .pgx-gene-phenotype {
   color: #b42318;
 }
 .pgx-gene-recommendations { margin: 7px 0; }
+.pgx-gene-recommendation-table td:first-child { width: 22%; }
+.pgx-gene-recommendation-table td:nth-child(2) { width: auto; }
 .pgx-related-drugs,
 .pgx-allele-placeholder { margin: 6px 0; }
-.pgx-star-alleles-note {
-  margin: 7px 0 3px;
-  padding: 5px 7px;
-  border-left: 3px solid #94a3b8;
-  background: #f8fafc;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
+.pgx-star-alleles-header {
+  cursor: help;
+}
+.pgx-star-alleles-header span {
+  color: #64748b;
+  font-family: inherit;
 }
 .pgx-star-alleles summary {
   cursor: pointer;

@@ -2635,6 +2635,10 @@ def _pgx_drug_label(drug: str) -> str:
     return text[:1].upper() + text[1:] if text else ""
 
 
+_PGX_GENERIC_ACTION = "參考最新藥品仿單"
+_PGX_OTHER_ACTION_LABEL = "其他用藥建議（參考完整建議與最新藥品仿單）"
+
+
 def _pgx_action_zh(recommendation: str) -> str:
     text = str(recommendation or "").lower()
     if any(token in text for token in (
@@ -2647,13 +2651,17 @@ def _pgx_action_zh(recommendation: str) -> str:
         return "加強不良反應監測"
     if any(token in text for token in ("confirm", "test", "phenotype", "activity")):
         return "使用前確認表型或檢驗"
-    return "參考最新藥品仿單"
+    return _PGX_GENERIC_ACTION
+
+
+def _pgx_action_display(action: str) -> str:
+    return _PGX_OTHER_ACTION_LABEL if action == _PGX_GENERIC_ACTION else action
 
 
 def _pgx_summary_rows(alerts: list[dict]) -> list[dict]:
     rows: list[dict] = []
     for alert in alerts:
-        action = _pgx_action_zh(alert.get("recommendation") or "")
+        action = _pgx_action_display(_pgx_action_zh(alert.get("recommendation") or ""))
         rows.append({
             "drug": _pgx_drug_label(alert.get("drug") or ""),
             "gene": alert.get("gene") or "",
@@ -2694,7 +2702,7 @@ def _pgx_summary_rows_from_drug_groups(groups: list[dict]) -> list[dict]:
         rows.append({
             "drug": group["drug"],
             "gene": "、".join(dict.fromkeys(genes)),
-            "action": primary.get("action") or "",
+            "action": _pgx_action_display(primary.get("action") or ""),
             "source_level": _pgx_source_level_display(
                 primary.get("source") or "",
                 primary.get("level") or "",
@@ -2708,7 +2716,7 @@ _PGX_ACTION_LABELS = (
     "考慮替代藥物",
     "加強不良反應監測",
     "使用前確認表型或檢驗",
-    "參考最新藥品仿單",
+    _PGX_OTHER_ACTION_LABEL,
 )
 
 
@@ -2719,8 +2727,13 @@ def _pgx_action_categories(
 ) -> list[tuple[str, list[str]]]:
     by_action: dict[str, list[str]] = {label: [] for label in _PGX_ACTION_LABELS}
     for group in groups:
-        action = group.get("action") or "參考最新藥品仿單"
-        by_action.setdefault(action, []).append(group["drug"])
+        action = group.get("action") or _PGX_GENERIC_ACTION
+        action = _pgx_action_display(action)
+        if action not in by_action:
+            action = _PGX_OTHER_ACTION_LABEL
+        drug = _pgx_drug_label(group.get("drug") or "")
+        if drug:
+            by_action[action].append(drug)
     return [
         (label, sorted(dict.fromkeys(drugs), key=str.casefold))
         for label, drugs in by_action.items()
@@ -2739,6 +2752,15 @@ def _pgx_related_drugs_by_gene(pgx: dict) -> dict[str, list[str]]:
         for gene in _pgx_annotation_genes(item):
             if gene in related:
                 related[gene].add(drug)
+    # PharmCAT JSON remains authoritative for the fixed report scope.  The
+    # dedicated pipeline TSV may additionally carry the validated MT-RNR1
+    # result and its aminoglycoside drug label, so only that gene is allowed to
+    # supplement the overview's drug coverage.
+    mt_rnr1 = (pgx.get("genes") or {}).get("MT-RNR1") or {}
+    for group in mt_rnr1.get("drugs") or []:
+        drug = _pgx_drug_label(group.get("drug") or "")
+        if drug and drug.casefold() != "general":
+            related["MT-RNR1"].add(drug)
     return {
         gene: sorted(drugs, key=str.casefold)
         for gene, drugs in related.items()
@@ -2827,7 +2849,6 @@ def build_pgx_report_view(pgx: dict) -> dict:
     ]
     related_drugs = _pgx_related_drugs_by_gene(payload)
     analysis_genes: list[dict] = []
-    no_adjust_drugs: list[str] = []
     for genotype_row in genotype_rows:
         gene = genotype_row["gene"]
         phenotype = genotype_row.get("phenotype") or "No phenotype assigned"
@@ -2846,8 +2867,8 @@ def build_pgx_report_view(pgx: dict) -> dict:
             actionable_drugs.add(str(drug).casefold())
             gene_rows.append({
                 "drug": drug,
-                "gene_phenotype": f"{gene} {phenotype}",
                 "recommendation": _pgx_recommendation_text({"recommendations": matching}),
+                "requires_adjustment": True,
             })
         if requires_attention:
             for drug in related_drugs.get(gene, []):
@@ -2855,20 +2876,22 @@ def build_pgx_report_view(pgx: dict) -> dict:
                     continue
                 gene_rows.append({
                     "drug": drug,
-                    "gene_phenotype": f"{gene} {phenotype}",
                     "recommendation": "未找到符合目前回報規則的明確處方調整建議。",
+                    "requires_adjustment": False,
                 })
         else:
-            no_adjust_drugs.extend(related_drugs.get(gene, []))
             gene_rows = [
                 {
                     "drug": drug,
-                    "gene_phenotype": f"{gene} {phenotype}",
                     "recommendation": "目前基因型／表型未符合本報告需調整用藥的條件。",
+                    "requires_adjustment": False,
                 }
                 for drug in related_drugs.get(gene, [])
             ]
-        gene_rows.sort(key=lambda row: str(row.get("drug") or "").casefold())
+        gene_rows.sort(key=lambda row: (
+            0 if row.get("requires_adjustment") else 1,
+            str(row.get("drug") or "").casefold(),
+        ))
         analysis_genes.append({
             **genotype_row,
             "requires_attention": requires_attention,
@@ -2879,9 +2902,23 @@ def build_pgx_report_view(pgx: dict) -> dict:
         {"action": action, "drugs": drugs}
         for action, drugs in _pgx_action_categories(drug_groups, include_empty=True)
     ]
+    categorized_drug_keys = {
+        str(group.get("drug") or "").casefold()
+        for group in drug_groups
+        if str(group.get("drug") or "").strip()
+    }
+    all_related_drugs: dict[str, str] = {}
+    for drugs in related_drugs.values():
+        for drug in drugs:
+            all_related_drugs.setdefault(drug.casefold(), drug)
+    no_adjust_drugs = [
+        drug
+        for key, drug in all_related_drugs.items()
+        if key not in categorized_drug_keys
+    ]
     analysis_action_categories.append({
         "action": "不需調整／無明確調整建議",
-        "drugs": sorted(dict.fromkeys(no_adjust_drugs), key=str.casefold),
+        "drugs": sorted(no_adjust_drugs, key=str.casefold),
     })
     actionable_genes = list(dict.fromkeys(
         gene
