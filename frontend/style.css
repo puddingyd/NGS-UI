@@ -304,7 +304,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .analysis-flow-context-grid,
 .analysis-flow-grid {
   display: grid;
-  grid-template-columns: 0.85fr 1.05fr 1.05fr 2.4fr 1fr 0.8fr;
+  grid-template-columns: 0.85fr 1.05fr 1.05fr 2.55fr 1fr 0.65fr;
   column-gap: 12px;
 }
 .analysis-flow-columns {
@@ -393,6 +393,16 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   border-radius: 8px;
   background: #f3f6f9;
 }
+.analysis-flow-lane-band::before {
+  position: absolute;
+  top: 50%;
+  left: -7px;
+  content: "→";
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+}
 .analysis-flow-lane-title {
   position: absolute;
   top: 0;
@@ -420,7 +430,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .analysis-flow-row-pgx { grid-row: 5; }
 .analysis-flow-tier-strip {
   display: grid;
-  grid-template-columns: 1.2fr 1.2fr 1.8fr 0.8fr;
+  grid-template-columns: 1.2fr 1.2fr 1.8fr 0.75fr;
   gap: 4px;
 }
 .analysis-flow-tier {
@@ -492,7 +502,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   gap: 8px;
 }
 .analysis-flow-report-item {
-  padding: 8px 8px;
+  padding: 9px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card-bg);
