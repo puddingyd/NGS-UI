@@ -6251,16 +6251,215 @@ function updateWelcomeVisibility() {
 }
 
 async function loadWelcomeVersion() {
-  const host = document.getElementById("welcome-version-content");
-  if (!host) return;
+  const introHost = document.getElementById("welcome-intro-content");
+  const versionHost = document.getElementById("welcome-version-content");
+  if (!introHost || !versionHost) return;
   try {
     const resp = await fetch("./VERSION.md", { cache: "no-store" });
     if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
     const text = await resp.text();
-    host.innerHTML = renderSimpleMarkdown(text);
+    const sections = splitWelcomeVersionMarkdown(text);
+    introHost.innerHTML = renderSimpleMarkdown(sections.intro);
+    versionHost.innerHTML = renderSimpleMarkdown(sections.version);
   } catch (e) {
-    host.innerHTML = `<div class="muted">版本資訊載入失敗：${escapeHtml(e.message || String(e))}</div>`;
+    introHost.innerHTML = `<div class="muted">首頁資訊載入失敗：${escapeHtml(e.message || String(e))}</div>`;
+    versionHost.innerHTML = "";
   }
+}
+
+function splitWelcomeVersionMarkdown(text) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n");
+  const marker = normalized.match(/^##\s+版本紀錄\s*$/m);
+  if (!marker || marker.index == null) {
+    return { intro: normalized, version: "" };
+  }
+  return {
+    intro: normalized.slice(0, marker.index).trim(),
+    version: normalized.slice(marker.index).trim(),
+  };
+}
+
+async function loadAnalysisFlow() {
+  const shell = document.getElementById("welcome-analysis-flow");
+  const host = document.getElementById("analysis-flow-content");
+  if (!shell || !host) return;
+  try {
+    const resp = await fetch("./ANALYSIS_FLOW.md", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    const flow = parseAnalysisFlowMarkdown(await resp.text());
+    host.innerHTML = renderAnalysisFlow(flow);
+    shell.classList.remove("hidden");
+  } catch (e) {
+    shell.classList.add("hidden");
+    console.warn("Analysis flow unavailable:", e);
+  }
+}
+
+function parseAnalysisFlowMarkdown(text) {
+  const flow = { title: "", intro: [], sections: new Map() };
+  let currentSection = null;
+  let inComment = false;
+
+  for (const raw of String(text || "").replace(/\r\n/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (inComment) {
+      if (line.includes("-->")) inComment = false;
+      continue;
+    }
+    if (line.startsWith("<!--")) {
+      if (!line.includes("-->")) inComment = true;
+      continue;
+    }
+    if (!line) continue;
+
+    const h1 = line.match(/^#\s+(.+)$/);
+    if (h1) {
+      flow.title = h1[1].trim();
+      currentSection = null;
+      continue;
+    }
+    const h2 = line.match(/^##\s+(.+)$/);
+    if (h2) {
+      currentSection = h2[1].trim();
+      flow.sections.set(currentSection, []);
+      continue;
+    }
+    const item = line.match(/^-\s+(.+)$/);
+    if (item && currentSection) {
+      const value = item[1];
+      const separator = value.indexOf("|");
+      const key = (separator >= 0 ? value.slice(0, separator) : value).trim();
+      const detail = (separator >= 0 ? value.slice(separator + 1) : "").trim();
+      flow.sections.get(currentSection).push({ key, detail });
+      continue;
+    }
+    if (!currentSection) flow.intro.push(line);
+  }
+
+  const required = [
+    "Input & QC",
+    "Phenotype & clinical context",
+    "SNV / Indel",
+    "CNV / SV",
+    "mtDNA",
+    "STR",
+    "PGx",
+    "Review",
+    "Reports",
+  ];
+  const missing = required.filter(name => !flow.sections.has(name));
+  if (!flow.title || missing.length) {
+    throw new Error(`ANALYSIS_FLOW.md 格式不完整：${missing.join(", ") || "缺少標題"}`);
+  }
+  return flow;
+}
+
+function analysisFlowEntries(flow, sectionName) {
+  return flow.sections.get(sectionName) || [];
+}
+
+function analysisFlowValue(flow, sectionName, key) {
+  const item = analysisFlowEntries(flow, sectionName).find(row => row.key === key);
+  return item ? item.detail : "";
+}
+
+function renderAnalysisFlow(flow) {
+  const esc = value => escapeHtml(value || "");
+  const laneDefs = [
+    ["SNV / Indel", "snv"],
+    ["CNV / SV", "cnv"],
+    ["mtDNA", "mito"],
+    ["STR", "str"],
+    ["PGx", "pgx"],
+  ];
+
+  const lanes = laneDefs.map(([name, rowClass]) => {
+    const secondary = analysisFlowValue(flow, name, "secondary");
+    const secondaryTools = analysisFlowValue(flow, name, "secondary_tools");
+    const tertiary = analysisFlowValue(flow, name, "tertiary");
+    const tertiaryTools = analysisFlowValue(flow, name, "tertiary_tools");
+    const context = analysisFlowValue(flow, name, "context");
+    const priority = name === "SNV / Indel"
+      ? `<div class="analysis-flow-tier-strip">
+           ${["1A", "1B", "1C", "Other"].map(tier => `
+             <div class="analysis-flow-tier${tier === "1C" ? " analysis-flow-tier-1c" : ""}">
+               <div class="analysis-flow-tier-title">${esc(tier === "1C" ? "1C — Predicted suspect" : tier)}</div>
+               ${analysisFlowValue(flow, name, tier) ? `<div class="analysis-flow-tier-detail">${esc(analysisFlowValue(flow, name, tier))}</div>` : ""}
+             </div>`).join("")}
+         </div>`
+      : `<div class="analysis-flow-stage-title">${esc(analysisFlowValue(flow, name, "prioritization"))}</div>`;
+
+    return `
+      <section class="analysis-flow-stage analysis-flow-secondary analysis-flow-row-${rowClass} analysis-flow-from-left">
+        <div class="analysis-flow-lane-label">${esc(name)}</div>
+        <div class="analysis-flow-stage-title">${esc(secondary)}</div>
+        <div class="analysis-flow-stage-detail">${esc(secondaryTools)}</div>
+      </section>
+      <section class="analysis-flow-stage analysis-flow-tertiary analysis-flow-row-${rowClass} analysis-flow-from-left">
+        <div class="analysis-flow-stage-title">${esc(tertiary)}</div>
+        <div class="analysis-flow-stage-detail">${esc(tertiaryTools)}</div>
+      </section>
+      <section class="analysis-flow-stage analysis-flow-priority analysis-flow-row-${rowClass} analysis-flow-from-left">
+        ${priority}
+        ${context ? `<div class="analysis-flow-context-use">${esc(context)}</div>` : ""}
+      </section>`;
+  }).join("");
+
+  const input = analysisFlowEntries(flow, "Input & QC");
+  const inputValue = key => esc(input.find(row => row.key === key)?.detail || "");
+  const phenotype = esc(analysisFlowValue(flow, "Phenotype & clinical context", "items"));
+  const reviewItems = analysisFlowEntries(flow, "Review")
+    .filter(row => row.key === "item")
+    .map(row => `<div class="analysis-flow-review-item">${esc(row.detail)}</div>`)
+    .join("");
+  const reports = analysisFlowEntries(flow, "Reports")
+    .map(row => `
+      <div class="analysis-flow-report-item">
+        <div class="analysis-flow-report-title">${esc(row.key)}</div>
+        ${row.detail ? `<div class="analysis-flow-report-detail">${esc(row.detail)}</div>` : ""}
+      </div>`)
+    .join("");
+
+  return `
+    <div class="analysis-flow-copy">
+      <h2>${esc(flow.title)}</h2>
+      ${flow.intro.length ? `<p>${esc(flow.intro.join(" "))}</p>` : ""}
+    </div>
+    <div class="analysis-flow-scroll">
+      <div class="analysis-flow-diagram">
+        <div class="analysis-flow-columns" aria-hidden="true">
+          <div>輸入與 QC</div>
+          <div>二級分析</div>
+          <div>三級分析</div>
+          <div>Prioritization</div>
+          <div>判讀</div>
+          <div>報告輸出</div>
+        </div>
+        <div class="analysis-flow-context-grid">
+          <div class="analysis-flow-phenotype">
+            <div class="analysis-flow-phenotype-title">Phenotype &amp; clinical context</div>
+            <div class="analysis-flow-phenotype-detail">${phenotype}</div>
+          </div>
+        </div>
+        <div class="analysis-flow-grid">
+          <section class="analysis-flow-stage analysis-flow-common">
+            <div class="analysis-flow-stage-title">${inputValue("input")}</div>
+            <div class="analysis-flow-stage-detail">→ ${inputValue("qc")}</div>
+            <div class="analysis-flow-stage-detail">${inputValue("tools")}</div>
+            <div class="analysis-flow-split-note">${inputValue("split")}</div>
+          </section>
+          ${lanes}
+          <section class="analysis-flow-stage analysis-flow-review analysis-flow-from-left">
+            <div class="analysis-flow-stage-title">${esc(analysisFlowValue(flow, "Review", "summary"))}</div>
+            <div class="analysis-flow-stage-detail">${esc(analysisFlowValue(flow, "Review", "detail"))}</div>
+            <div class="analysis-flow-review-list">${reviewItems}</div>
+          </section>
+          <section class="analysis-flow-reports analysis-flow-from-left" aria-label="報告輸出">
+            ${reports}
+          </section>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderSimpleMarkdown(text) {
@@ -8117,6 +8316,7 @@ async function bootAfterAuth() {
   setupCombobox();
   setupDiagnosticAnalysisToggle();
   loadWelcomeVersion();
+  loadAnalysisFlow();
   updateWelcomeVisibility();
   setupSnvDisplayFilters();
   setupOmimFilter();

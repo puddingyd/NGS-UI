@@ -68,6 +68,7 @@
 | Exomiser/LIRICAL 輸入模板 | `REPO_ROOT/phenotype_reference/`（**在 repo 裡，不在 NGS_UI_HOME**） | — |
 | 前端靜態檔 | `REPO_ROOT/frontend/` | `FRONTEND_DIR` |
 | 首頁歡迎文字與版本紀錄 | `REPO_ROOT/frontend/VERSION.md`（前端啟動時讀取並顯示在未載入個案的首頁） | — |
+| 首頁 NGS 分析流程圖文字 | `REPO_ROOT/frontend/ANALYSIS_FLOW.md`（固定 section/key schema；可編輯 `|` 後文字） | — |
 | EMR client id（NCKU intranet） | — | `NGS_UI_EMR_CLIENT_ID`（空 = 整套 EMR 功能關閉） |
 | Redis（job queue） | `redis://127.0.0.1:6379/0` | `REDIS_URL` |
 | Java / Exomiser 路徑等 | 見 `config.py` | `EXOMISER_HOME`、`LIRICAL_HOME`、`JAVA_BIN`… |
@@ -172,7 +173,7 @@ UI 流程：
 ## 5. 前端版面 / 卡片（`frontend/index.html` + `app.js` + `style.css`）
 
 - **Topbar**（深色 `#24292f`，z-index 110 蓋過 login modal）：左 hamburger（toggle `#sidebar`），中標題「成大醫院基因醫學部 NGS 分析平台」，右 `登入/登出`（同一顆鈕 toggle：`data-loggedIn` 切 handler）·`輸入臨床表徵 (HPO/panel)`（`<a href="/phenotype/" target="_blank">`，**未登入也顯示**）·`上傳個案清單`（xlsx upload）。`.btn` 用 `text-decoration:none` + inline-flex，所以 `<a class="btn">` 跟 `<button class="btn">` 一樣。
-- **首頁歡迎 / 版本紀錄**：未載入個案時，搜尋卡片下方顯示 `#welcome-card`，內容由 `frontend/VERSION.md` 讀取並用前端的簡易 Markdown renderer 呈現；載入任一 sample 後自動隱藏。之後若有影響判讀流程、報告輸出、資料載入或主要工具入口的更新，要評估是否同步更新 `frontend/VERSION.md`。
+- **首頁歡迎 / 分析流程 / 版本紀錄**：未載入個案時，搜尋卡片下方顯示 `#welcome-card`。前端把 `frontend/VERSION.md` 依 `## 版本紀錄` 拆成歡迎與版本兩段，並在中間讀取 `frontend/ANALYSIS_FLOW.md`，呈現固定橫向的輸入/QC → 五條二級分析 → 三級分析 → Prioritization → 判讀 → 報告流程。`ANALYSIS_FLOW.md` 的 `##` section 名稱與 `|` 前 key 是版面 schema，不可任意更名；一般文字維護只改 `|` 後內容。Phenotype & clinical context 只跨 Prioritization 與判讀欄。流程檔缺失或格式不完整時會隱藏流程區，不影響原本首頁；載入任一 sample 後整張首頁卡片自動隱藏。之後若有影響判讀流程、報告輸出、資料載入或主要工具入口的更新，要評估是否同步更新 `frontend/VERSION.md` 與 `frontend/ANALYSIS_FLOW.md`。
 - **Test type / 個案篩選**：Test type 為 `WES`、`WGS`、`TITAN-WGS`。LIS/sample ID 符合 `^\d{2}T`（例如 `25T...`、`26T...`）時由 `services/test_types.py` 強制歸類 `TITAN-WGS`，既有 metadata/roster 即使仍寫 WGS 也會在讀取時正規化；其 SNV 門檻、dead zone 與報告方法內容沿用 WGS。主搜尋與個案清單三類 filter 皆預設勾選，每類旁有 `only`，按下後只保留該類。TITAN-WGS 每次新切入個案時預設隱藏診斷分析，基本資料下方提供「顯示／隱藏診斷分析」切換；隱藏 Genetic counseling、Clinical presentation、Patient phenotype、Dead zone、診斷 DOCX/PDF、Causative/Other/Candidate、SNV/CNV-SV/Mito/STR/ROH、診斷專用 filters 與對應 sidebar link，但保留 Secondary findings、PGx/PharmCAT、健檢報告與儲存。TITAN 的報告區與分析區 Secondary findings umbrella、ACMG SF、中風、Carrier、PGx/PharmCAT 全部預設展開；WES/WGS 維持既有預設（ACMG 與 analysis PGx 展開，其餘收合）。重新載入同一個案時保留診斷分析顯示狀態；WES/WGS 不顯示切換且一律完整顯示。此功能只控制 DOM 顯示，不停止 staged API 載入。
 - **登入 modal**：「申請帳號：PYTHONPATH=backend python -m app create-user」那段提示字用 `.login-hint`/`.login-hint-code`（白底白字，反白才看得到）。
 - **分析卡片**（`#card-snv`、`#card-cnv-sv`、`#card-mito`、`#card-str`）各有 tier-tab bar + tier panels；「分析」主標題字級與「報告」相同。`renderTierTabBar`/`renderCnvSvTabBar`/`renderMitoTabBar`/`renderStrTabBar`；tab-click dispatch 統一處理四組（用 `data-tier` 判斷）。tier-panel 顏色：SNV 紅/黃系、CNV 藍 `#bfdbfe`、SV 紫 `#ddd6fe`、Mito teal `#99f6e4`、STR amber `#fde68a`。卡片要包在 `.block-body` 裡才有 inset 效果（`.tier-panel > .block-body { padding-top: 8px }`）。ROH 卡片仍是「（無資料）」placeholder。

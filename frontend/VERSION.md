@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v6.9 — 2026-07-22
+
+- 首頁歡迎訊息與版本紀錄之間新增可由 `ANALYSIS_FLOW.md` 編輯的橫向 NGS 分析流程圖，呈現輸入/QC、五條二級分析、三級分析、Prioritization、Phenotype/clinical context、判讀與三種報告輸出。
+
 ### v6.8 — 2026-07-20
 
 - 二級分析的 DGX2 清理指令「複製」改為一鍵寫入剪貼簿；plain-HTTP intranet 會自動使用隱藏文字框 fallback，不再顯示要求手動複製的視窗。

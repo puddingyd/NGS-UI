@@ -303,7 +303,7 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 ## 7. 注意事項
 
 - **不要把病人資料 / 大檔 commit 進 git**：`.gitignore` 已排除 `tertiary_output/`、`data/`、`patient_list/`、`phenotype_data/` 內的大型 HPO reference、`_index.json`；但固定與自訂 panel 的 `phenotype_data/fixed_panels/`、`phenotype_data/gene_panels/` 與 `phenotype_data/custom_panels/` 例外追蹤。
-- 首頁歡迎文字與版本紀錄放在 `frontend/VERSION.md`，前端啟動時會讀取並顯示在尚未載入個案的首頁。之後若有影響判讀流程、報告輸出、資料載入或主要工具入口的更新，需評估是否同步更新這份版本紀錄。
+- 首頁歡迎文字與版本紀錄放在 `frontend/VERSION.md`；首頁中間的橫向 NGS 分析流程由 `frontend/ANALYSIS_FLOW.md` 管理。流程檔使用固定的 `##` section 與 `|` 前 key 決定版面位置，一般文字修改只需編輯 `|` 後內容。前端在未載入個案時依序顯示歡迎訊息、流程圖與版本紀錄；流程檔缺失或格式不完整時只隱藏流程區。之後若有影響判讀流程、報告輸出、資料載入或主要工具入口的更新，需評估是否同步更新這兩份檔案。
 - 大型 HPO reference 必須放在 `NGS_UI_PHENO_DATA_DIR`（`hp.obo`、`phenotype_to_genes.txt` 等）；固定與自訂 panel data 則在 repo 的 `phenotype_data/fixed_panels/`、`phenotype_data/gene_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git 更新。
 - GenCC / ClinGen / MONDO 補充疾病資料用 `python scripts/update_gene_disease_db.py` 更新；若正式機不能出網，先手動下載 `gencc_submissions.csv`、`clingen_gene_validity.csv`、`mondo.json` 到 `NGS_UI_GENE_DISEASE_RAW_DIR`，再跑 `python scripts/update_gene_disease_db.py --skip-download`。
 - EMR 相關功能預設停用，需設 `NGS_UI_EMR_CLIENT_ID` 才會啟用，且只在內網可達。
