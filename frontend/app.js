@@ -6398,8 +6398,10 @@ function renderAnalysisFlow(flow) {
         : `<div class="analysis-flow-stage-title">${esc(priorityItems[0] || "")}</div>`;
 
     return `
+      <div class="analysis-flow-lane-band analysis-flow-row-${rowClass}">
+        <div class="analysis-flow-lane-title">${esc(name)}</div>
+      </div>
       <section class="analysis-flow-stage analysis-flow-secondary analysis-flow-row-${rowClass} analysis-flow-from-left">
-        <div class="analysis-flow-lane-label">${esc(name)}</div>
         <div class="analysis-flow-stage-title">${esc(secondary)}</div>
         <div class="analysis-flow-stage-detail">${esc(secondaryTools)}</div>
       </section>
