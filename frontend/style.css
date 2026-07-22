@@ -416,6 +416,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   margin: 35px 8px 8px 0;
   background: #f9fafb;
 }
+.analysis-flow-priority.analysis-flow-row-pgx > .analysis-flow-stage-title {
+  text-align: center;
+}
 .analysis-flow-row-snv { grid-row: 1; }
 .analysis-flow-row-cnv { grid-row: 2; }
 .analysis-flow-row-mito { grid-row: 3; }

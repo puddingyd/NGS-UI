@@ -11,9 +11,7 @@ uses them to place content in the fixed horizontal layout.
 ## Input & QC
 
 - input | WES / WGS FASTQ or DRAGEN VCF / BAM
-- qc | QC & Alignment
-- tools | fastp · Parabricks / BWA · Mosdepth
-- split | 分流為五條分析線
+- qc | Alignment & QC
 
 ## Phenotype & clinical context
 
@@ -27,14 +25,14 @@ uses them to place content in the fixed horizontal layout.
 - tertiary_tools | ClinVar · gnomAD · dbNSFP · LOFTEE · Pangolin
 - 1A | ClinVar P/LP ≥ 1★
 - 1B | LOFTEE HC
-- 1C | ACMG score · P-KNN · AlphaMissense · Pangolin · BayesDel
+- 1C | ACMG score · AlphaMissense · P-KNN · Pangolin · BayesDel
 - Other
 
 ## CNV / SV
 
 - secondary | CNV / SV calling
 - secondary_tools | gCNV (WES) · CNVkit (WGS) · Delly or DRAGEN
-- tertiary | AnnotSV annotation
+- tertiary | AnnotSV
 - tertiary_tools | Gene content · ACMG class · region evidence
 - prioritization | Clinical
 - prioritization | Pathogenic
@@ -44,7 +42,7 @@ uses them to place content in the fixed horizontal layout.
 
 - secondary | mtDNA calling
 - secondary_tools | NCKUH / DRAGEN mitochondrial calls
-- tertiary | Mito annotation
+- tertiary | mtDNA annotation
 - tertiary_tools | VEP · ClinVar · gnomAD-mito
 - prioritization | Pathogenic
 - prioritization | Rare / reported
@@ -54,7 +52,7 @@ uses them to place content in the fixed horizontal layout.
 ## STR
 
 - secondary | Repeat calling
-- secondary_tools | GangSTR · ExpansionHunter
+- secondary_tools | GangSTR
 - tertiary | STRchive
 - tertiary_tools | Repeat count · thresholds · inheritance
 - prioritization | Pathogenic
@@ -69,12 +67,12 @@ uses them to place content in the fixed horizontal layout.
 - tertiary | PGx annotation
 - tertiary_tools | PharmCAT · StellarPGx · OptiType
 - prioritization | CPIC / FDA recommendations
-- context | Medication / clinical context
+- context | Medication × Gene × CPIC / FDA recommendations
 
 ## Review
 
 - summary | Evidence review
-- detail | IGV · Disease / phenotype concordance · Reviewer selection
+- detail | IGV · Genotype-phenotype correlation · Reviewer selection
 - item | Diagnostic findings
 - item | ACMG SF · Stroke · Carrier
 - item | PGx recommendations
