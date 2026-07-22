@@ -36,7 +36,8 @@ uses them to place content in the fixed horizontal layout.
 - secondary_tools | gCNV (WES) · CNVkit (WGS) · Delly or DRAGEN
 - tertiary | AnnotSV annotation
 - tertiary_tools | Gene content · ACMG class · region evidence
-- prioritization | Clinical · Pathogenic
+- prioritization | Clinical
+- prioritization | Pathogenic
 - context | Panel-gene overlap · pheno_score
 
 ## mtDNA
@@ -45,7 +46,9 @@ uses them to place content in the fixed horizontal layout.
 - secondary_tools | NCKUH / DRAGEN mitochondrial calls
 - tertiary | Mito annotation
 - tertiary_tools | VEP · ClinVar · gnomAD-mito
-- prioritization | Pathogenic · Rare / reported · Other
+- prioritization | Pathogenic
+- prioritization | Rare / reported
+- prioritization | Other
 - context | Disease / gene context
 
 ## STR
@@ -54,7 +57,9 @@ uses them to place content in the fixed horizontal layout.
 - secondary_tools | GangSTR · ExpansionHunter
 - tertiary | STRchive
 - tertiary_tools | Repeat count · thresholds · inheritance
-- prioritization | Pathogenic · Intermediate · Normal
+- prioritization | Pathogenic
+- prioritization | Intermediate
+- prioritization | Normal
 - context | Disease / gene context
 
 ## PGx

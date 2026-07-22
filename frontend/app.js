@@ -6379,15 +6379,23 @@ function renderAnalysisFlow(flow) {
     const tertiary = analysisFlowValue(flow, name, "tertiary");
     const tertiaryTools = analysisFlowValue(flow, name, "tertiary_tools");
     const context = analysisFlowValue(flow, name, "context");
+    const priorityItems = analysisFlowEntries(flow, name)
+      .filter(row => row.key === "prioritization")
+      .map(row => row.detail)
+      .filter(Boolean);
     const priority = name === "SNV / Indel"
       ? `<div class="analysis-flow-tier-strip">
            ${["1A", "1B", "1C", "Other"].map(tier => `
-             <div class="analysis-flow-tier${tier === "1C" ? " analysis-flow-tier-1c" : ""}">
+             <div class="analysis-flow-tier">
                <div class="analysis-flow-tier-title">${esc(tier === "1C" ? "1C — Predicted suspect" : tier)}</div>
                ${analysisFlowValue(flow, name, tier) ? `<div class="analysis-flow-tier-detail">${esc(analysisFlowValue(flow, name, tier))}</div>` : ""}
              </div>`).join("")}
          </div>`
-      : `<div class="analysis-flow-stage-title">${esc(analysisFlowValue(flow, name, "prioritization"))}</div>`;
+      : priorityItems.length > 1
+        ? `<div class="analysis-flow-priority-strip analysis-flow-priority-count-${priorityItems.length}">
+             ${priorityItems.map(item => `<div class="analysis-flow-priority-item">${esc(item)}</div>`).join("")}
+           </div>`
+        : `<div class="analysis-flow-stage-title">${esc(priorityItems[0] || "")}</div>`;
 
     return `
       <section class="analysis-flow-stage analysis-flow-secondary analysis-flow-row-${rowClass} analysis-flow-from-left">

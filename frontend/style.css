@@ -304,7 +304,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .analysis-flow-context-grid,
 .analysis-flow-grid {
   display: grid;
-  grid-template-columns: 0.85fr 1.05fr 1.15fr 2.35fr 0.95fr 1.15fr;
+  grid-template-columns: 0.85fr 1.05fr 1.15fr 2.3fr 1fr 0.8fr;
   column-gap: 12px;
 }
 .analysis-flow-columns {
@@ -320,8 +320,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .analysis-flow-phenotype {
   grid-column: 4 / 6;
   padding: 8px 10px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   background: #f6f8fa;
   text-align: center;
 }
@@ -406,7 +406,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .analysis-flow-tier-strip {
   display: grid;
-  grid-template-columns: 0.72fr 0.72fr 2.35fr 0.72fr;
+  grid-template-columns: 1fr 1fr 2fr 1fr;
   gap: 4px;
 }
 .analysis-flow-tier {
@@ -418,11 +418,33 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .analysis-flow-tier:first-child {
   border-left: 0;
 }
-.analysis-flow-tier-1c {
-  background: #f3f4f6;
-}
 .analysis-flow-tier-detail {
   font-size: 12px;
+}
+.analysis-flow-priority-strip {
+  display: grid;
+  gap: 4px;
+}
+.analysis-flow-priority-count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.analysis-flow-priority-count-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.analysis-flow-priority-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 6px;
+  border-left: 1px solid var(--border);
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.analysis-flow-priority-item:first-child {
+  border-left: 0;
 }
 .analysis-flow-context-use {
   margin-top: 6px;
