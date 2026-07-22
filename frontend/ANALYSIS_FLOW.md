@@ -17,7 +17,9 @@ uses them to place content in the fixed horizontal layout.
 
 ## Phenotype & clinical context
 
-- items | HPO · Gene panels · Clinical presentation · Exomiser / LIRICAL · pheno_score / in_panel · Medication context
+- items | HPO · Gene panels
+- items | Clinical presentation
+- items | Exomiser / LIRICAL / pheno_score
 
 ## SNV / Indel
 
