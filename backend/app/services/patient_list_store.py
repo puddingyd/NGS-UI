@@ -2,7 +2,7 @@
 
 The lab exports a weekly "未完成報告明細" spreadsheet listing the
 specimen ID (檢體編號), MRN (病歷號), patient name (姓名), test name
-(檢驗名稱) and ordering department (科別) for every pending case.
+(檢驗名稱/檢驗項目) and ordering department (科別) for every pending case.
 
 Uploading it here:
   1. archives the raw xlsx under patient_list/{ts}_{name}.xlsx
@@ -33,7 +33,18 @@ from . import test_types
 _ROSTER_NAME = "roster.json"
 _UPLOADS_NAME = "uploads.json"
 _SPECIMEN_PREFIX = "8BB1"
-_HEADER_KEY = "檢體編號"     # the cell that marks the header row in col 0
+_HEADER_KEY = "檢體編號"
+_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
+    _HEADER_KEY: (_HEADER_KEY,),
+    "病歷號": ("病歷號",),
+    "姓名": ("姓名",),
+    # The legacy 未完成報告清單 calls this 檢驗名稱, while the newer
+    # self-pay / rare-disease workbooks supplied by the lab use 檢驗項目.
+    "檢驗名稱": ("檢驗名稱", "檢驗項目"),
+    "科別": ("科別",),
+    "開單醫師": ("開單醫師",),
+    "簽收時間": ("簽收時間",),
+}
 _UI_ALIAS_SUFFIXES = ("-dragen", "-nckuh", "-inhouse")
 
 
@@ -82,6 +93,31 @@ def _now_iso() -> str:
 
 def _strip(v: Any) -> str:
     return str(v).strip() if v is not None else ""
+
+
+def _header_name(v: Any) -> str:
+    """Normalise harmless whitespace differences in xlsx column labels."""
+    return re.sub(r"\s+", "", _strip(v))
+
+
+def _column_map(row: tuple[Any, ...]) -> dict[str, int] | None:
+    """Return canonical column indices when *row* is a roster header."""
+    by_name: dict[str, int] = {}
+    for index, value in enumerate(row):
+        name = _header_name(value)
+        if name and name not in by_name:
+            by_name[name] = index
+    if _HEADER_KEY not in by_name:
+        return None
+
+    columns: dict[str, int] = {}
+    for canonical, aliases in _COLUMN_ALIASES.items():
+        for alias in aliases:
+            index = by_name.get(_header_name(alias))
+            if index is not None:
+                columns[canonical] = index
+                break
+    return columns
 
 
 def strip_ui_alias_suffix(sample_id: str) -> str:
@@ -135,67 +171,64 @@ def parse_xlsx(path: Path) -> list[dict]:
     """Pull the data rows out of the 未完成報告清單 xlsx.
 
     Returns a list of {lis_id, mrn, name, test_name, test_type,
-    department, specimen}. Robust to the variable header-row position
-    (the file has a few title rows before the real header): we find
-    the row whose first cell is 檢體編號, then take subsequent rows
-    whose first cell looks like a real specimen ID.
+    department, specimen}. Robust to variable sheet/header layouts:
+    every worksheet is scanned for a header row containing 檢體編號
+    in any column, and 檢驗名稱 / 檢驗項目 are treated as aliases.
+    Duplicate LIS IDs across worksheets keep their first occurrence.
     """
     import openpyxl
-    wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
-    ws = wb.worksheets[0]
-    rows = list(ws.iter_rows(values_only=True))
-    wb.close()
-
-    # Locate the header row + the column indices we care about.
-    header_idx = None
-    col = {}
-    for i, r in enumerate(rows):
-        cells = [_strip(c) for c in (r or [])]
-        if cells and cells[0] == _HEADER_KEY:
-            header_idx = i
-            for j, name in enumerate(cells):
-                col[name] = j
-            break
-    if header_idx is None:
-        return []
-
-    def get(r: tuple, name: str) -> str:
-        j = col.get(name)
-        if j is None or j >= len(r):
-            return ""
-        return _strip(r[j])
 
     out: list[dict] = []
     seen: set[str] = set()
-    for r in rows[header_idx + 1:]:
-        if not r:
-            continue
-        specimen = get(r, _HEADER_KEY)
-        if not specimen:
-            continue
-        lis_id = _lis_id_from_specimen(specimen)
-        if not lis_id or lis_id in seen:
-            # Dedupe by LIS_ID — a patient can appear on multiple rows
-            # (multiple 醫令). First occurrence wins.
-            continue
-        seen.add(lis_id)
-        test_name = get(r, "檢驗名稱")
-        out.append({
-            "lis_id":     lis_id,
-            "specimen":   specimen,
-            "mrn":        get(r, "病歷號"),
-            "name":       get(r, "姓名"),
-            "test_name":  test_name,
-            "test_type":  _test_type_from_name(test_name, lis_id),
-            "department": get(r, "科別"),
-            "physician":  get(r, "開單醫師"),
-            # 簽收時間 — when LIS booked the sample in. Used as the
-            # "日期" shown on the sample card and on the diagnostic
-            # report header. Format in the source xlsx is
-            # "YYYY-MM-DD HH:MM" (text or datetime cell — _strip handles
-            # both).
-            "sign_received_at": get(r, "簽收時間"),
-        })
+    wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+    try:
+        for ws in wb.worksheets:
+            col: dict[str, int] | None = None
+
+            def get(row: tuple[Any, ...], name: str) -> str:
+                if col is None:
+                    return ""
+                index = col.get(name)
+                if index is None or index >= len(row):
+                    return ""
+                return _strip(row[index])
+
+            for row in ws.iter_rows(values_only=True):
+                # A workbook can contain title rows, or even repeat its
+                # table header later in the same sheet. Re-detecting the
+                # header keeps both layouts safe without relying on row 1.
+                header_columns = _column_map(row)
+                if header_columns is not None:
+                    col = header_columns
+                    continue
+                if col is None:
+                    continue
+
+                specimen = get(row, _HEADER_KEY)
+                if not specimen:
+                    continue
+                lis_id = _lis_id_from_specimen(specimen)
+                if not lis_id or lis_id in seen:
+                    # A case may be repeated for multiple orders or on the
+                    # self-pay and rare-disease sheets. First occurrence wins.
+                    continue
+                seen.add(lis_id)
+                test_name = get(row, "檢驗名稱")
+                out.append({
+                    "lis_id":     lis_id,
+                    "specimen":   specimen,
+                    "mrn":        get(row, "病歷號"),
+                    "name":       get(row, "姓名"),
+                    "test_name":  test_name,
+                    "test_type":  _test_type_from_name(test_name, lis_id),
+                    "department": get(row, "科別"),
+                    "physician":  get(row, "開單醫師"),
+                    # 簽收時間 — when LIS booked the sample in. Used as the
+                    # "日期" shown on the sample card and diagnostic report.
+                    "sign_received_at": get(row, "簽收時間"),
+                })
+    finally:
+        wb.close()
     return out
 
 
@@ -277,7 +310,10 @@ def ingest_xlsx(content: bytes, original_filename: str) -> dict:
     except Exception as exc:  # noqa: BLE001 — surface a clean message
         raise ValueError(f"無法解析 xlsx：{exc}") from exc
     if not parsed:
-        raise ValueError("xlsx 裡找不到可辨識的資料列（缺『檢體編號』標題列？）")
+        raise ValueError(
+            "xlsx 裡找不到可辨識的資料列（需有『檢體編號』標題；"
+            "標題可在任一欄，檢驗欄可用『檢驗名稱』或『檢驗項目』）"
+        )
 
     # 3. Merge into roster.json (additive — never drop existing keys).
     roster = load_roster()
