@@ -17,27 +17,24 @@ uses them to place content in the fixed horizontal layout.
 
 ## Phenotype & clinical context
 
-- items | HPO · Gene panels
-- items | Clinical presentation
-- items | Exomiser / LIRICAL / pheno_score
+- items | HPO · Gene panels × Clinical presentation × Exomiser / LIRICAL / pheno_score
 
 ## SNV / Indel
 
 - secondary | Variant calling
-- secondary_tools | DeepVariant · HaplotypeCaller · Ensemble or DRAGEN
+- secondary_tools | DeepVariant + HaplotypeCaller or DRAGEN
 - tertiary | VEP annotation
 - tertiary_tools | ClinVar · gnomAD · dbNSFP · LOFTEE · Pangolin
 - 1A | ClinVar P/LP ≥ 1★
 - 1B | LOFTEE HC
-- 1C | ACMG score · P-KNN · AlphaMissense · Pangolin · REVEL · SpliceAI · BayesDel
+- 1C | ACMG score · P-KNN · AlphaMissense · Pangolin · BayesDel
 - Other
-- context | HPO / panel · Exomiser / LIRICAL · pheno_score
 
 ## CNV / SV
 
 - secondary | CNV / SV calling
-- secondary_tools | gCNV · CNVkit · Manta · DRAGEN
-- tertiary | AnnotSV
+- secondary_tools | gCNV (WES) · CNVkit (WGS) · Delly or DRAGEN
+- tertiary | AnnotSV annotation
 - tertiary_tools | Gene content · ACMG class · region evidence
 - prioritization | Clinical · Pathogenic
 - context | Panel-gene overlap · pheno_score
