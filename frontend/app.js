@@ -6372,6 +6372,12 @@ function renderAnalysisFlow(flow) {
     ["STR", "str"],
     ["PGx", "pgx"],
   ];
+  const snvTierTitles = {
+    "1A": "1A — Reported",
+    "1B": "1B — LOF variant",
+    "1C": "1C — Predicted suspect",
+    "Other": "Other",
+  };
 
   const lanes = laneDefs.map(([name, rowClass]) => {
     const secondary = analysisFlowValue(flow, name, "secondary");
@@ -6387,7 +6393,7 @@ function renderAnalysisFlow(flow) {
       ? `<div class="analysis-flow-tier-strip">
            ${["1A", "1B", "1C", "Other"].map(tier => `
              <div class="analysis-flow-tier">
-               <div class="analysis-flow-tier-title">${esc(tier === "1C" ? "1C — Predicted suspect" : tier)}</div>
+               <div class="analysis-flow-tier-title">${esc(snvTierTitles[tier])}</div>
                ${analysisFlowValue(flow, name, tier) ? `<div class="analysis-flow-tier-detail">${esc(analysisFlowValue(flow, name, tier))}</div>` : ""}
              </div>`).join("")}
          </div>`

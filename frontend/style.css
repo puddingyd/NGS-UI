@@ -395,12 +395,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .analysis-flow-lane-title {
   position: absolute;
-  top: -1px;
-  left: -1px;
-  padding: 5px 11px;
-  border: 1px solid #d9e0e8;
-  border-radius: 8px 0 7px 0;
-  background: #e5ebf1;
+  top: 0;
+  left: 0;
+  padding: 6px 11px;
 }
 .analysis-flow-secondary {
   grid-column: 2;
@@ -423,7 +420,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .analysis-flow-row-pgx { grid-row: 5; }
 .analysis-flow-tier-strip {
   display: grid;
-  grid-template-columns: 1fr 1fr 2fr 1fr;
+  grid-template-columns: 1fr 1fr 2fr 0.65fr;
   gap: 4px;
 }
 .analysis-flow-tier {
