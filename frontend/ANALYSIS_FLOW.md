@@ -72,9 +72,9 @@ uses them to place content in the fixed horizontal layout.
 ## Review
 
 - summary | Evidence review
-- detail | IGV · Genotype-phenotype correlation · Reviewer selection
+- detail | IGV genome viewer · Genotype-phenotype correlation · Manual review and selection
 - item | Diagnostic findings
-- item | ACMG SF · Stroke · Carrier
+- item | ACMG SF · Stroke · Carrier screening
 - item | PGx recommendations
 
 ## Reports
