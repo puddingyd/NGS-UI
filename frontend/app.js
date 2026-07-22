@@ -6462,7 +6462,7 @@ function renderAnalysisFlow(flow) {
             <div class="analysis-flow-stage-title">${inputValue("input")}</div>
             <div class="analysis-flow-stage-detail">→ ${inputValue("qc")}</div>
             <div class="analysis-flow-stage-detail">${inputValue("tools")}</div>
-            <div class="analysis-flow-split-note">${inputValue("split")}</div>
+            ${inputValue("split") ? `<div class="analysis-flow-split-note">${inputValue("split")}</div>` : ""}
           </section>
           ${lanes}
           <section class="analysis-flow-stage analysis-flow-review analysis-flow-from-left">
