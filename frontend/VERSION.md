@@ -12,6 +12,7 @@
 - 上傳個案清單支援新版院內 xlsx：標題列與「檢體編號」可位於任一列／欄，可用「檢驗項目」取代「檢驗名稱」，並會合併解析所有工作表。
 - 上傳個案清單可一次選擇多個 xlsx，完成後只顯示本次各檔案結果；歷次上傳紀錄預設收合，按小三角形才載入並展開。
 - 二級分析產生的 WES/WGS DGX2 指令預設啟用 Manta、ExpansionHunter 與 AutoMap，直接保留三個模組的輸出；WES 仍同時啟用 gCNV。
+- 修正二級分析 DGM→DGX2 FASTQ 路徑映射：`/home/datalake_Raw` 現在正確對應 DGX2 的 `/datalake_Raw/datalake_Raw`，避免 FASTP container 因 bind source 不存在而失敗。
 
 ### v6.8 — 2026-07-20
 

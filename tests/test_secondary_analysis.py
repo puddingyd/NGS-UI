@@ -46,6 +46,20 @@ def test_legacy_per_lane_index_is_invalidated(monkeypatch, tmp_path):
     assert secondary.load_index() is None
 
 
+def test_server_path_to_dgx_maps_home_raw_root_without_changing_direct_raw_paths(monkeypatch):
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_RAW_ROOT", Path("/datalake_Raw/datalake_Raw"))
+
+    assert secondary._server_path_to_dgx(
+        "/home/datalake_Raw/NextSeq2000/run/Analysis/1/Data/fastq/sample_R1_001.fastq.gz"
+    ) == (
+        "/datalake_Raw/datalake_Raw/NextSeq2000/run/Analysis/1/Data/fastq/"
+        "sample_R1_001.fastq.gz"
+    )
+    assert secondary._server_path_to_dgx(
+        "/datalake_Raw/Other/Reanalysis/sample.R1.clean.fastq.gz"
+    ) == "/datalake_Raw/Other/Reanalysis/sample.R1.clean.fastq.gz"
+
+
 def test_wgs_samplesheet_expands_group_to_lane_rows(monkeypatch, tmp_path):
     raw_root = tmp_path / "raw"
     folder = raw_root / "20260611_run" / "fastq.gz"

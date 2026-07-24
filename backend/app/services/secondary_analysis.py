@@ -14,6 +14,7 @@ from ..config import (
     SECONDARY_DGX_ENV_SCRIPT,
     SECONDARY_DGX_LAUNCH_ROOT,
     SECONDARY_DGX_OUTPUT_ROOT,
+    SECONDARY_DGX_RAW_ROOT,
     SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT,
     SECONDARY_DGX_WORK_ROOT,
     SECONDARY_FASTQ_INDEX_PATH,
@@ -292,17 +293,17 @@ def index_is_stale(idx: dict | None) -> bool:
 
 def _server_path_to_dgx(path: str) -> str:
     raw = str(path)
-    if raw == "/home" or raw.startswith("/home/"):
-        raw = raw[5:] or "/"
     replacements = [
         (str(SECONDARY_SAMPLESHEET_STAGING_ROOT), str(SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT)),
         (str(SECONDARY_OUTPUT_ROOT), str(SECONDARY_DGX_OUTPUT_ROOT)),
-        ("/home/datalake_Raw", "/datalake_Raw"),
+        ("/home/datalake_Raw", str(SECONDARY_DGX_RAW_ROOT)),
         ("/home/datalake_Intermediate", "/datalake_Intermediate"),
     ]
     for src, dst in replacements:
         if raw == src or raw.startswith(src + "/"):
             return dst + raw[len(src):]
+    if raw == "/home" or raw.startswith("/home/"):
+        return raw[5:] or "/"
     return raw
 
 

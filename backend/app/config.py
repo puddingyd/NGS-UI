@@ -324,6 +324,10 @@ SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT = Path(os.environ.get(
     "NGS_UI_SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT",
     "/datalake_Intermediate/pipeline/nextflow_samplesheet_staging",
 ))
+SECONDARY_DGX_RAW_ROOT = Path(os.environ.get(
+    "NGS_UI_SECONDARY_DGX_RAW_ROOT",
+    "/datalake_Raw/datalake_Raw",
+))
 SECONDARY_DGX_LAUNCH_ROOT = Path(os.environ.get(
     "NGS_UI_SECONDARY_DGX_LAUNCH_ROOT",
     "/datalake_Intermediate/pipeline/nextflow_launch",
