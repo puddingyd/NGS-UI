@@ -402,7 +402,11 @@ def _launch_command(batch_name: str, seq_type: str, has_one_sample: bool) -> str
     session = f"ngs2_{batch_name}"
     profile = "dgx_single" if has_one_sample else "dgx"
     run_gcnv = " \\\n    --run_gcnv true" if seq_type == "WES" else ""
-    run_automap = " \\\n    --run_automap" if seq_type == "WGS" else ""
+    extended_analysis = (
+        " \\\n    --run_manta"
+        " \\\n    --run_expansionhunter"
+        " \\\n    --run_automap"
+    )
     script_path = f"/tmp/{session}.sh"
     staged_sheet = SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch_name / "samplesheet.csv"
     return f"""cat > "{script_path}" <<'NGS2_EOF'
@@ -445,7 +449,7 @@ nextflow -c "${{PIPELINE_CONFIG}}" run "${{PIPELINE_CODE}}/main.nf" \\
     -profile {profile} \\
     --input_csv "${{OUT_DIR}}/samplesheet.csv" \\
     --seq_type {seq_type}{run_gcnv} \\
-    --out_dir "${{OUT_DIR}}"{run_automap} \\
+    --out_dir "${{OUT_DIR}}"{extended_analysis} \\
     -w "${{WORK_DIR}}" \\
     -resume
 NGS2_EOF

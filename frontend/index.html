@@ -21,7 +21,7 @@
       <button id="btn-secondary-launch" class="btn btn-ghost" type="button" hidden title="搜尋 FASTQ、建立二級分析 samplesheet，並產生 DGX2 tmux 執行指令">二級分析</button>
       <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 或 in-house ensemble Nextflow 輸出啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
-      <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" hidden />
+      <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" multiple hidden />
     </div>
   </header>
 
@@ -876,20 +876,26 @@
     </div>
   </div>
 
-  <!-- 上傳個案清單 modal: pick an xlsx, see history of past uploads -->
+  <!-- 上傳個案清單 modal: batch upload xlsx files; history is collapsed -->
   <div id="patient-list-modal" class="modal hidden">
     <div class="modal-card modal-card-wide">
       <h2>上傳個案清單</h2>
       <div class="patient-list-form">
         <div class="patient-list-actions">
-          <button id="patient-list-pick-btn" class="btn btn-primary" type="button">選擇 xlsx 上傳</button>
+          <button id="patient-list-pick-btn" class="btn btn-primary" type="button">選擇多個 xlsx 上傳</button>
           <span id="patient-list-status" class="muted"></span>
         </div>
-        <p class="muted">支援所有工作表；標題列可在任一列／欄，至少需有「檢體編號」，檢驗欄可使用「檢驗名稱」或「檢驗項目」。</p>
-        <h3 class="patient-list-history-title">歷次上傳記錄</h3>
-        <div id="patient-list-history" class="patient-list-history">
-          <div class="muted">載入中…</div>
-        </div>
+        <p class="muted">可一次選擇多個檔案；支援所有工作表。標題列可在任一列／欄，至少需有「檢體編號」，檢驗欄可使用「檢驗名稱」或「檢驗項目」。</p>
+        <section id="patient-list-current-upload" hidden>
+          <h3 class="patient-list-history-title">本次上傳結果</h3>
+          <div id="patient-list-current-results" class="patient-list-history"></div>
+        </section>
+        <details id="patient-list-history-details" class="patient-list-history-details">
+          <summary>歷次上傳記錄</summary>
+          <div id="patient-list-history" class="patient-list-history">
+            <div class="muted patient-list-history-placeholder">展開後載入…</div>
+          </div>
+        </details>
         <div class="dragen-actions">
           <button type="button" class="btn btn-ghost" data-close="patient-list-modal">關閉</button>
         </div>

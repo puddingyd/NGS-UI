@@ -103,19 +103,29 @@ def test_wes_samplesheet_remains_single_row(monkeypatch, tmp_path):
     assert list(rows[0]) == ["sample", "fastq_1", "fastq_2", "sex"]
 
 
-def test_wgs_launch_command_runs_automap_without_changing_other_flags():
+def test_wgs_launch_command_runs_extended_analysis_by_default():
     command = secondary._launch_command("260719_WGS", "WGS", has_one_sample=True)
 
     assert "-profile dgx_single" in command
-    assert '--seq_type WGS \\\n    --out_dir "${OUT_DIR}" \\\n    --run_automap \\\n    -w "${WORK_DIR}" \\\n    -resume' in command
+    assert (
+        '--seq_type WGS \\\n'
+        '    --out_dir "${OUT_DIR}" \\\n'
+        "    --run_manta \\\n"
+        "    --run_expansionhunter \\\n"
+        "    --run_automap \\\n"
+        '    -w "${WORK_DIR}" \\\n'
+        "    -resume"
+    ) in command
     assert "--run_gcnv" not in command
 
 
-def test_wes_launch_command_does_not_run_automap():
+def test_wes_launch_command_runs_gcnv_and_extended_analysis_by_default():
     command = secondary._launch_command("260719_WES", "WES", has_one_sample=True)
 
     assert "--run_gcnv true" in command
-    assert "--run_automap" not in command
+    assert "--run_manta" in command
+    assert "--run_expansionhunter" in command
+    assert "--run_automap" in command
 
 
 def test_cleanup_secondary_nextflow_work_returns_guarded_dgx_command(monkeypatch):

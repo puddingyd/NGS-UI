@@ -2712,10 +2712,11 @@ function setupGeneSearch() {
   });
 }
 
-// 上傳個案清單: opens a modal listing past uploads + a button that
-// picks an xlsx → POST /api/patient_list → re-renders history. The
-// roster it builds is what the 載入新個案 modal reads to auto-fill
-// MRN / 姓名 / Test type.
+// 上傳個案清單: one file picker accepts a batch of xlsx files. Files are
+// POSTed sequentially because every ingest merges and rewrites roster.json;
+// concurrent requests could otherwise overwrite one another. The current
+// batch stays visible, while past uploads load only when their <details>
+// section is expanded.
 function _fmtUploadTime(iso) {
   if (!iso) return "—";
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
@@ -2757,43 +2758,123 @@ async function _renderPatientListHistory() {
   }
 }
 
+function _renderPatientListCurrentUpload(rows) {
+  const section = document.getElementById("patient-list-current-upload");
+  const host = document.getElementById("patient-list-current-results");
+  if (!section || !host) return;
+  if (!rows.length) {
+    section.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  section.hidden = false;
+  const head = `
+    <tr>
+      <th>檔名</th>
+      <th>狀態</th>
+      <th class="num">解析</th>
+      <th class="num">新增</th>
+      <th class="num">更新</th>
+      <th class="num">roster</th>
+    </tr>`;
+  const body = rows.map(r => {
+    const statusClass = r.ok ? "patient-list-upload-ok" : "patient-list-upload-error";
+    const statusText = r.ok ? "✓ 完成" : `✕ ${r.error || "上傳失敗"}`;
+    return `
+      <tr>
+        <td class="fn" title="${escapeAttr(r.filename || "")}">${escapeHtml(r.filename || "—")}</td>
+        <td class="${statusClass}" title="${escapeAttr(statusText)}">${escapeHtml(statusText)}</td>
+        <td class="num">${escapeHtml(String(r.parsed ?? "—"))}</td>
+        <td class="num">${escapeHtml(String(r.added ?? "—"))}</td>
+        <td class="num">${escapeHtml(String(r.updated ?? "—"))}</td>
+        <td class="num">${escapeHtml(String(r.total ?? "—"))}</td>
+      </tr>`;
+  }).join("");
+  host.innerHTML = `<table>${head}${body}</table>`;
+}
+
 function setupPatientListUpload() {
   const btn  = document.getElementById("btn-upload-list");
   const file = document.getElementById("upload-list-file");
   const pick = document.getElementById("patient-list-pick-btn");
   const status = document.getElementById("patient-list-status");
+  const historyDetails = document.getElementById("patient-list-history-details");
   if (!btn || !file) return;
-  btn.addEventListener("click", async () => {
+  btn.addEventListener("click", () => {
     showModal("patient-list-modal");
     if (status) status.textContent = "";
-    await _renderPatientListHistory();
+    _renderPatientListCurrentUpload([]);
+    if (historyDetails) historyDetails.open = false;
+  });
+  historyDetails?.addEventListener("toggle", () => {
+    if (historyDetails.open) _renderPatientListHistory();
   });
   pick?.addEventListener("click", () => { file.value = ""; file.click(); });
   file.addEventListener("change", async () => {
-    const f = file.files && file.files[0];
-    if (!f) return;
-    if (pick) { pick.disabled = true; pick.textContent = "上傳中…"; }
-    if (status) status.textContent = "";
-    try {
-      const fd = new FormData();
-      fd.append("file", f, f.name);
-      const resp = await fetch(`${API_BASE}/patient_list`, {
-        method: "POST",
-        credentials: "same-origin",
-        body: fd,
-      });
-      if (resp.status === 401) { showLoginModal(); throw new Error("尚未登入"); }
-      const body = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
-      if (status) status.textContent = `✓ ${f.name}：解析 ${body.parsed} · 新增 ${body.added} · 更新 ${body.updated} · roster ${body.total}`;
+    const files = Array.from(file.files || []);
+    if (!files.length) return;
+    if (historyDetails) historyDetails.open = false;
+    const results = [];
+    let successCount = 0;
+    let stoppedForAuth = false;
+    _renderPatientListCurrentUpload([]);
+    if (pick) { pick.disabled = true; pick.textContent = `上傳中 0/${files.length}…`; }
+    if (status) status.textContent = `上傳中 0/${files.length}…`;
+
+    for (let index = 0; index < files.length; index += 1) {
+      const current = files[index];
+      if (pick) pick.textContent = `上傳中 ${index + 1}/${files.length}…`;
+      if (status) status.textContent = `上傳中 ${index + 1}/${files.length}：${current.name}`;
+      try {
+        const fd = new FormData();
+        fd.append("file", current, current.name);
+        const resp = await fetch(`${API_BASE}/patient_list`, {
+          method: "POST",
+          credentials: "same-origin",
+          body: fd,
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (resp.status === 401) {
+          showLoginModal();
+          stoppedForAuth = true;
+          throw new Error("尚未登入");
+        }
+        if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+        results.push({
+          filename: current.name,
+          ok: true,
+          parsed: body.parsed,
+          added: body.added,
+          updated: body.updated,
+          total: body.total,
+        });
+        successCount += 1;
+      } catch (e) {
+        results.push({
+          filename: current.name,
+          ok: false,
+          error: e?.message || String(e),
+        });
+      }
+      _renderPatientListCurrentUpload(results);
+      if (stoppedForAuth) {
+        for (const skipped of files.slice(index + 1)) {
+          results.push({ filename: skipped.name, ok: false, error: "未上傳（尚未登入）" });
+        }
+        _renderPatientListCurrentUpload(results);
+        break;
+      }
+    }
+
+    const failureCount = results.length - successCount;
+    if (status) {
+      status.textContent = `本次完成：成功 ${successCount}、失敗 ${failureCount}，共 ${results.length} 個檔案`;
+    }
+    if (successCount) {
       _unregisteredById = {};
       _rosterOptions = null;          // refresh 科別/開單醫師 datalists
-      await _renderPatientListHistory();
-    } catch (e) {
-      if (status) status.textContent = "上傳失敗：" + (e.message || e);
-    } finally {
-      if (pick) { pick.disabled = false; pick.textContent = "選擇 xlsx 上傳"; }
     }
+    if (pick) { pick.disabled = false; pick.textContent = "選擇多個 xlsx 上傳"; }
   });
 }
 
