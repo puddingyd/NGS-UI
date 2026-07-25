@@ -124,6 +124,16 @@ def _to_int(v: str, default: int = 0) -> int:
         return default
 
 
+def _optional_int(v) -> int | None:
+    text = str(v or "").strip()
+    if not text or text.upper() in {".", "NA", "N/A"}:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
 def _clean_vep_rank(value: str) -> str:
     text = str(value or "").strip()
     return "" if text.upper() in {"", ".", "-", "NA", "N/A"} else text
@@ -530,6 +540,57 @@ def _depth_from_ad(ad: str) -> int:
     return total
 
 
+def _depth_from_ad_optional(ad: str) -> int | None:
+    if not str(ad or "").strip():
+        return None
+    values: list[int] = []
+    for part in str(ad).split(","):
+        value = part.strip()
+        if not value or value == "." or value.upper() in {"NA", "N/A"}:
+            continue
+        try:
+            values.append(int(float(value)))
+        except ValueError:
+            return None
+    return sum(values) if values else None
+
+
+def _alt_depth_from_ad(ad: str) -> int | None:
+    parts = str(ad or "").split(",")
+    if len(parts) < 2:
+        return None
+    return _optional_int(parts[1])
+
+
+def _strand_bias_payload(row: dict, ref: str, alt: str) -> dict[str, Any]:
+    """Normalize v3.5 STRAND_BIAS while leaving old TSVs badge-free."""
+    if "STRAND_BIAS" not in row:
+        return {
+            "strand_bias_status": "",
+            "strand_bias_raw": "",
+            "strand_bias_fs": None,
+            "strand_bias_sor": None,
+            "strand_bias_threshold": "",
+        }
+    raw = str(row.get("STRAND_BIAS") or "").strip()
+    is_indel = len(ref) != len(alt)
+    threshold = (
+        "Indel: FS>200 or SOR>10.0"
+        if is_indel
+        else "SNV: FS>60 or SOR>3.0"
+    )
+    status = "pass" if raw.upper() == "PASS" else "warn" if raw.upper().startswith("WARN") else "manual"
+    fs_match = re.search(r"(?:^|[,(])FS=([^,)]*)", raw, flags=re.I)
+    sor_match = re.search(r"(?:^|[,(])SOR=([^,)]*)", raw, flags=re.I)
+    return {
+        "strand_bias_status": status,
+        "strand_bias_raw": raw,
+        "strand_bias_fs": _to_num(fs_match.group(1)) if fs_match else None,
+        "strand_bias_sor": _to_num(sor_match.group(1)) if sor_match else None,
+        "strand_bias_threshold": threshold,
+    }
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -541,6 +602,24 @@ def _row_to_variant(row: dict) -> dict:
     ref = row["REF"]
     alt = row["ALT"]
     vid = f"{chrom}-{pos}-{ref}-{alt}"
+    ad = _coalesce(row.get("AD"), row.get("AD_DV"), row.get("AD_HC"))
+    depth = next(
+        (
+            value
+            for value in (
+                _optional_int(row.get("DP")),
+                _optional_int(row.get("DP_DV")),
+                _optional_int(row.get("DP_HC")),
+                _depth_from_ad_optional(ad),
+            )
+            if value is not None
+        ),
+        None,
+    )
+    alt_depth = _alt_depth_from_ad(ad)
+    vaf_value = _to_num(_coalesce(row.get("VAF"), row.get("VAF_DV"), row.get("VAF_HC")))
+    if vaf_value is None:
+        vaf_value = _vaf_from_ad(ad)
 
     hgnc_id = (row.get("HGNC_ID") or "").strip()
     gene, hgnc_id = panel_deadzone.canonical_gene_symbol(row.get("GENE", ""), hgnc_id)
@@ -622,7 +701,7 @@ def _row_to_variant(row: dict) -> dict:
     hgvs_full = ":".join(p for p in (gene, display_transcript,
                                       _strip_tx(display_hgvs_c),
                                       _strip_tx(hgvs_p)) if p)
-    return {
+    variant = {
         "id": vid,
         "CHROM": chrom,
         "POS": pos,
@@ -651,22 +730,16 @@ def _row_to_variant(row: dict) -> dict:
         # heteroplasmy estimation, so prefer it. HC-only calls (no
         # FORMAT/VAF in HaplotypeCaller) get VAF derived from AD so the
         # card doesn't show '—' just because the column is missing.
-        "AD":     _coalesce(row.get("AD"),  row.get("AD_DV"),  row.get("AD_HC")),
+        "AD": ad,
         # Total read depth at the position — DV column preferred (more
         # accurate for short reads), HC fallback. Used by the UI for
-        # depth-based filtering (drop < 20 on WES) and the low-depth
-        # red flag (< 20). Falls back to sum(AD) when neither DP column
-        # is set.
-        "depth": (
-            _to_int(row.get("DP")) or
-            _to_int(row.get("DP_DV")) or
-            _to_int(row.get("DP_HC")) or
-            _depth_from_ad(_coalesce(row.get("AD"),
-                                     row.get("AD_DV"),
-                                     row.get("AD_HC")))
-        ),
-        "alt_af": (_to_num(_coalesce(row.get("VAF"), row.get("VAF_DV"), row.get("VAF_HC")))
-                   or _vaf_from_ad(_coalesce(row.get("AD"), row.get("AD_DV"), row.get("AD_HC")))),
+        # depth-based filtering (drop < 20 on WES) and the WGS/TITAN
+        # low-depth red flag (< 10). Falls back to sum(AD) when neither
+        # DP column is set.
+        "depth": depth,
+        "alt_depth": alt_depth,
+        "low_alt_support": bool(alt_depth is not None and alt_depth < 10),
+        "alt_af": vaf_value,
         "CLNSIG": row.get("CLINVAR_SIG", ""),
         "clinvar_stars": _to_num(row.get("CLINVAR_STARS")),
         "clinvar_dn": row.get("CLINVAR_DN", ""),
@@ -766,6 +839,8 @@ def _row_to_variant(row: dict) -> dict:
         "report_class": row.get("REPORT_CLASS", ""),
         "tier": classify_tier(row),
     }
+    variant.update(_strand_bias_payload(row, ref, alt))
+    return variant
 
 
 def _transcript_option_from_variant(v: dict) -> dict:
@@ -918,10 +993,10 @@ def load_snv_tsv(tsv_path: Path,
             if canonical_gene in EXCLUDED_GENES:
                 continue
             v = _row_to_variant(row)
-            dp = v.get("depth") or 0
-            if is_wes and dp < _DP_HARD_FLOOR_WES:
+            dp = v.get("depth")
+            if is_wes and (dp is None or dp < _DP_HARD_FLOOR_WES):
                 continue
-            v["low_depth"] = bool(dp and dp < low_flag)
+            v["low_depth"] = bool(dp is not None and dp < low_flag)
             merge_snv_variant_row(variants, v)
 
     by_tier: dict[str, list[tuple[float, str]]] = {t: [] for t in TIERS}

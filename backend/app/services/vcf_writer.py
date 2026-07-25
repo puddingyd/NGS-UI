@@ -8,7 +8,8 @@ gene-level scoring loses some compound-het fidelity. For the
 post-pipeline tertiary stage, that's the lesser of two evils
 compared with maintaining a separate VCF path per sample.
 
-Output filename is fixed below 08_postprocessing (not LIS_ID-prefixed).
+Layout v3 prefixes the filename with the LIS ID; layout-v2 names remain
+readable through :mod:`sample_layout`.
 """
 from __future__ import annotations
 
@@ -30,12 +31,16 @@ WRITER_VERSION = 2
 CONTIGS = [f"chr{n}" for n in range(1, 23)] + ["chrX", "chrY", "chrM"]
 
 
-def vcf_path_for(lis_id: str) -> Path:
-    return sample_layout.state_dir(lis_id) / VCF_FILENAME
+def vcf_path_for(lis_id: str, *, for_write: bool = False) -> Path:
+    return sample_layout.state_file(lis_id, VCF_FILENAME, for_write=for_write)
 
 
-def _meta_path_for(lis_id: str) -> Path:
-    return sample_layout.state_dir(lis_id) / VCF_META_FILENAME
+def _meta_path_for(lis_id: str, *, for_write: bool = False) -> Path:
+    return sample_layout.state_file(
+        lis_id,
+        VCF_META_FILENAME,
+        for_write=for_write,
+    )
 
 
 def _tsv_signature(path: Path) -> dict:
@@ -105,7 +110,7 @@ def from_tsv(lis_id: str) -> Path:
     tsv = sample_layout.snv_raw_tsv(lis_id)
     if not tsv.is_file():
         raise FileNotFoundError(f"03_acmg SNV TSV missing for {lis_id}")
-    out = vcf_path_for(lis_id)
+    out = vcf_path_for(lis_id, for_write=True)
     out.parent.mkdir(parents=True, exist_ok=True)
 
     rows_by_key: dict[tuple[str, int, str, str], str] = {}
@@ -146,7 +151,7 @@ def from_tsv(lis_id: str) -> Path:
         for (chrom, pos, ref, alt), gt in rows:
             f.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\tPASS\t.\tGT\t{gt}\n")
 
-    _meta_path_for(lis_id).write_text(
+    _meta_path_for(lis_id, for_write=True).write_text(
         json.dumps(
             {
                 "writer_version": WRITER_VERSION,

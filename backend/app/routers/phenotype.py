@@ -73,7 +73,7 @@ def update_phenotype(sample_id: str, payload: dict):
     # Update sample_metadata.json's active_analysis pointer + clean up
     # any legacy `hpo` / `selected_panels` left over from before the
     # migration so the loader can stop reading them on next load.
-    meta_path = sub / "sample_metadata.json"
+    meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
     meta = {}
     if meta_path.exists():
         try:

@@ -208,6 +208,8 @@ def ensure_review_tsv(
     keep_ids: set[str] | None = None,
     test_type: str = "WES",
     output_dir: Path | None = None,
+    output_path: Path | None = None,
+    manifest_path: Path | None = None,
     overlay_path: Path | None = None,
 ) -> Path:
     """Return an up-to-date compact review TSV derived from *raw_tsv*."""
@@ -215,10 +217,18 @@ def ensure_review_tsv(
     keep_ids = keep_ids or set()
     test_type_key = (test_type or "WES").upper()
     is_wes = test_type_key == "WES"
-    output_dir = Path(output_dir) if output_dir else raw_tsv.parent
+    output_dir = (
+        Path(output_path).parent
+        if output_path is not None
+        else Path(output_dir) if output_dir else raw_tsv.parent
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
-    review_tsv = output_dir / REVIEW_TSV_NAME
-    manifest = review_tsv.with_suffix(review_tsv.suffix + ".source.json")
+    review_tsv = Path(output_path) if output_path is not None else output_dir / REVIEW_TSV_NAME
+    manifest = (
+        Path(manifest_path)
+        if manifest_path is not None
+        else review_tsv.with_suffix(review_tsv.suffix + ".source.json")
+    )
     candidate_bed_path = _candidate_bed_path()
     source = {
         "raw_mtime_ns": raw_tsv.stat().st_mtime_ns,

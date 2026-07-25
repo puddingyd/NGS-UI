@@ -783,16 +783,69 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   background: #fff5f5;
   border-color: #cf222e;
 }
+.m-sex-control.ploidy-aneuploid {
+  padding: 4px;
+  background: #f3e8ff;
+  border: 1px solid #7e22ce;
+}
+.m-sex-control.ploidy-aneuploid .meta-select {
+  background: #faf5ff;
+  border-color: #7e22ce;
+}
 .m-ploidy-call {
+  display: block;
   margin: 0 2px 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #a40e26;
   font-size: 10px;
   font-weight: 600;
   line-height: 1.2;
   white-space: normal;
   overflow-wrap: anywhere;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
 }
+.ploidy-match .m-ploidy-call { color: #116329; }
+.ploidy-aneuploid .m-ploidy-call { color: #6b21a8; }
 .m-ploidy-call[hidden] { display: none; }
+.ploidy-card { max-width: 820px; }
+.ploidy-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ploidy-modal-head h2 { margin-bottom: 0; }
+.ploidy-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 14px 0 8px;
+  font-size: 13px;
+}
+.ploidy-summary-warn { color: #6b21a8; }
+.ploidy-summary-pass { color: #116329; }
+.ploidy-note { margin: 8px 0 12px; }
+.ploidy-table-wrap { max-height: 56vh; overflow: auto; }
+.ploidy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ploidy-table th,
+.ploidy-table td {
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  text-align: right;
+}
+.ploidy-table th:first-child,
+.ploidy-table td:first-child,
+.ploidy-table th:nth-child(2),
+.ploidy-table td:nth-child(2) { text-align: left; }
+.ploidy-row-warn { background: #f3e8ff; color: #581c87; font-weight: 600; }
 .m-sry-line {
   display: inline-flex;
   align-items: center;
@@ -2510,6 +2563,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .badge-blacklist          { background: #fee2e2; color: #991b1b; border-color: #fca5a5; font-weight: 600; }
 .badge-loftee-hc          { background: #fed7aa; color: #9a3412; border-color: #fdba74; }
 .badge-giab               { background: #fef9c3; color: #854d0e; border-color: #fde047; }
+.badge-strand-pass        { background: #dcfce7; color: #166534; border-color: #86efac; font-weight: 600; }
+.badge-strand-alert,
+.badge-alt-support        { background: #fee2e2; color: #991b1b; border-color: #ef4444; font-weight: 700; }
 /* MANE_ALL master-detail */
 .mane-all {
   margin-top: 8px;

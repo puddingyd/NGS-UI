@@ -5,14 +5,15 @@ New samples use this layout::
     <PIPELINE_OUT_ROOT>/<sample>/00-07...
     <PIPELINE_OUT_ROOT>/<sample>/08_postprocessing/...
 
-The ``08_postprocessing/layout.json`` marker is written last.  Until that
-marker exists, an existing legacy UI directory remains authoritative, which
-makes canary migration and rollback safe.
+The sample-prefixed ``08_postprocessing/{sample_id}.layout.json`` marker is
+written last for layout v3.  Layout v2 used the unprefixed ``layout.json``.
+Both remain readable so existing cases do not need an eager rename.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Iterable
@@ -22,7 +23,8 @@ from .. import config
 
 POSTPROCESSING_DIRNAME = "08_postprocessing"
 LAYOUT_MARKER_NAME = "layout.json"
-LAYOUT_VERSION = 2
+LAYOUT_VERSION = 3
+SUPPORTED_LAYOUT_VERSIONS = frozenset({2, 3})
 
 
 def unified_root() -> Path:
@@ -45,8 +47,76 @@ def unified_postprocessing_dir(sample_id: str) -> Path:
     return unified_sample_dir(sample_id) / POSTPROCESSING_DIRNAME
 
 
+def prefixed_filename(sample_id: str, name: str) -> str:
+    """Return the layout-v3 filename for one sample-owned artifact."""
+    return f"{sample_id}.{name}"
+
+
+def _scoped_candidates(directory: Path, sample_id: str, name: str) -> tuple[Path, Path]:
+    return (
+        directory / prefixed_filename(sample_id, name),
+        directory / name,
+    )
+
+
+def scoped_file(
+    directory: Path,
+    sample_id: str,
+    name: str,
+    *,
+    for_write: bool = False,
+    force_prefixed: bool = False,
+) -> Path:
+    """Resolve a sample-owned file with layout-v3 → legacy precedence.
+
+    Reads always prefer the sample-prefixed filename.  Ordinary writes keep a
+    layout-v2 case internally consistent until it is explicitly reprocessed;
+    new/v3 cases write the prefixed form.  Post-processing can pass
+    ``force_prefixed=True`` while constructing a complete v3 state tree before
+    atomically publishing the v3 marker.
+    """
+    prefixed, legacy = _scoped_candidates(Path(directory), sample_id, name)
+    if not for_write:
+        if prefixed.is_file():
+            return prefixed
+        if legacy.is_file():
+            return legacy
+        return prefixed
+    if force_prefixed:
+        return prefixed
+    post = unified_postprocessing_dir(sample_id)
+    try:
+        in_unified_post = Path(directory).resolve().is_relative_to(post.resolve())
+    except (OSError, ValueError):
+        in_unified_post = False
+    if not in_unified_post:
+        return legacy
+    prefixed_marker, legacy_marker = _scoped_candidates(
+        post, sample_id, LAYOUT_MARKER_NAME
+    )
+    if prefixed_marker.is_file() or not legacy_marker.is_file():
+        return prefixed
+    return legacy
+
+
+def postprocessing_file(
+    sample_id: str,
+    name: str,
+    *,
+    for_write: bool = False,
+    force_prefixed: bool = False,
+) -> Path:
+    return scoped_file(
+        unified_postprocessing_dir(sample_id),
+        sample_id,
+        name,
+        for_write=for_write,
+        force_prefixed=force_prefixed,
+    )
+
+
 def layout_marker_path(sample_id: str) -> Path:
-    return unified_postprocessing_dir(sample_id) / LAYOUT_MARKER_NAME
+    return postprocessing_file(sample_id, LAYOUT_MARKER_NAME)
 
 
 def uses_unified_layout(sample_id: str) -> bool:
@@ -55,7 +125,10 @@ def uses_unified_layout(sample_id: str) -> bool:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    return isinstance(payload, dict) and payload.get("layout_version") == LAYOUT_VERSION
+    return (
+        isinstance(payload, dict)
+        and payload.get("layout_version") in SUPPORTED_LAYOUT_VERSIONS
+    )
 
 
 def is_ui_ready(sample_id: str) -> bool:
@@ -125,7 +198,7 @@ def _first_file(directory: Path, exact_name: str, pattern: str) -> Path:
 
 
 def _pipeline_source(sample_id: str) -> dict:
-    path = state_dir(sample_id) / "pipeline_source.json"
+    path = state_file(sample_id, "pipeline_source.json")
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -212,24 +285,28 @@ def _pipeline_artifact(
     return unified_sample_dir(sample_id) / subdir / f"{source_id}{exact_suffix}"
 
 
-def review_tsv(sample_id: str) -> Path:
-    return state_dir(sample_id) / "snv_indel.review.tsv"
+def review_tsv(sample_id: str, *, for_write: bool = False) -> Path:
+    return state_file(sample_id, "snv_indel.review.tsv", for_write=for_write)
 
 
-def review_manifest(sample_id: str) -> Path:
-    return state_dir(sample_id) / "snv_indel.review.tsv.source.json"
+def review_manifest(sample_id: str, *, for_write: bool = False) -> Path:
+    return state_file(
+        sample_id,
+        "snv_indel.review.tsv.source.json",
+        for_write=for_write,
+    )
 
 
-def snv_overlay_path(sample_id: str) -> Path:
-    return state_dir(sample_id) / "snv_annotations.sqlite"
+def snv_overlay_path(sample_id: str, *, for_write: bool = False) -> Path:
+    return state_file(sample_id, "snv_annotations.sqlite", for_write=for_write)
 
 
-def snv_gene_index_path(sample_id: str) -> Path:
-    return state_dir(sample_id) / "snv_gene_index.sqlite"
+def snv_gene_index_path(sample_id: str, *, for_write: bool = False) -> Path:
+    return state_file(sample_id, "snv_gene_index.sqlite", for_write=for_write)
 
 
 def cnv_tsv(sample_id: str) -> Path:
-    legacy = state_dir(sample_id) / "cnv.annotated.tsv"
+    legacy = state_file(sample_id, "cnv.annotated.tsv")
     if not uses_unified_layout(sample_id) and legacy.is_file():
         return legacy
     source = _pipeline_artifact(
@@ -241,7 +318,7 @@ def cnv_tsv(sample_id: str) -> Path:
 
 
 def sv_tsv(sample_id: str) -> Path:
-    legacy = state_dir(sample_id) / "sv.annotated.tsv"
+    legacy = state_file(sample_id, "sv.annotated.tsv")
     if not uses_unified_layout(sample_id) and legacy.is_file():
         return legacy
     source = _pipeline_artifact(
@@ -255,7 +332,7 @@ def sv_tsv(sample_id: str) -> Path:
 def mito_tsv(sample_id: str) -> Path:
     # A locally enriched mito file is intentionally preferred; it is small and
     # may contain MITOMAP columns not present in the pipeline source.
-    derived = state_dir(sample_id) / "mito.annotated.tsv"
+    derived = state_file(sample_id, "mito.annotated.tsv")
     if derived.is_file():
         return derived
     source = _pipeline_artifact(sample_id, "04_mito", ".mito.tsv", "*.mito.tsv")
@@ -267,21 +344,21 @@ def mito_tsv(sample_id: str) -> Path:
 def str_tsv(sample_id: str) -> Path:
     if not uses_unified_layout(sample_id):
         for name in ("str.tsv", "str.annotated.tsv"):
-            path = state_dir(sample_id) / name
+            path = state_file(sample_id, name)
             if path.is_file():
                 return path
     source = _pipeline_artifact(sample_id, "05_str", ".str.tsv", "*.str.tsv")
     if source.is_file():
         return source
     for name in ("str.tsv", "str.annotated.tsv"):
-        path = state_dir(sample_id) / name
+        path = state_file(sample_id, name)
         if path.is_file():
             return path
-    return state_dir(sample_id) / "str.tsv"
+    return state_file(sample_id, "str.tsv")
 
 
 def pgx_tsv(sample_id: str) -> Path:
-    legacy = state_dir(sample_id) / "pgx.tsv"
+    legacy = state_file(sample_id, "pgx.tsv")
     if not uses_unified_layout(sample_id) and legacy.is_file():
         return legacy
     source = _pipeline_artifact(sample_id, "07_pgx", ".pgx.tsv", "*.pgx.tsv")
@@ -291,7 +368,7 @@ def pgx_tsv(sample_id: str) -> Path:
 
 
 def pharmcat_json(sample_id: str) -> Path:
-    legacy = state_dir(sample_id) / "pharmcat.report.json"
+    legacy = state_file(sample_id, "pharmcat.report.json")
     if not uses_unified_layout(sample_id) and legacy.is_file():
         return legacy
     source_id = source_sample_id(sample_id)
@@ -310,8 +387,69 @@ def pharmcat_json(sample_id: str) -> Path:
     return legacy
 
 
-def state_file(sample_id: str, name: str) -> Path:
-    return state_dir(sample_id) / name
+def state_file(sample_id: str, name: str, *, for_write: bool = False) -> Path:
+    return scoped_file(
+        state_dir(sample_id),
+        sample_id,
+        name,
+        for_write=for_write,
+    )
+
+
+def state_file_candidates(sample_id: str, name: str) -> tuple[Path, Path]:
+    """Return (sample-prefixed, legacy-unprefixed) candidates."""
+    return _scoped_candidates(state_dir(sample_id), sample_id, name)
+
+
+def analysis_file(
+    sample_id: str,
+    version: str,
+    name: str,
+    *,
+    for_write: bool = False,
+) -> Path:
+    directory = state_dir(sample_id) / "analyses" / version
+    return scoped_file(
+        directory,
+        sample_id,
+        name,
+        for_write=for_write,
+    )
+
+
+def analysis_file_candidates(
+    sample_id: str,
+    version: str,
+    name: str,
+) -> tuple[Path, Path]:
+    directory = state_dir(sample_id) / "analyses" / version
+    return _scoped_candidates(directory, sample_id, name)
+
+
+def promote_state_tree_to_v3(sample_id: str) -> list[tuple[Path, Path]]:
+    """Non-destructively copy remaining v2 files to sample-prefixed names.
+
+    A full worker reprocess calls this immediately before publishing the v3
+    marker. Existing files are never overwritten or deleted; freshly-built
+    prefixed artifacts therefore win, while legacy reviewer/analysis state is
+    copied forward for exact-name v3 reads.
+    """
+    post = unified_postprocessing_dir(sample_id)
+    if not post.is_dir():
+        return []
+    copied: list[tuple[Path, Path]] = []
+    for source in sorted(path for path in post.rglob("*") if path.is_file()):
+        if source.name == LAYOUT_MARKER_NAME:
+            continue
+        if source.name.startswith((".", f"{sample_id}.")):
+            continue
+        destination = source.with_name(prefixed_filename(sample_id, source.name))
+        if destination.exists():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination, follow_symlinks=False)
+        copied.append((source, destination))
+    return copied
 
 
 def write_layout_marker(
@@ -337,7 +475,12 @@ def write_layout_marker(
         "activated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "migration": bool(migration),
     }
-    path = post / LAYOUT_MARKER_NAME
+    path = postprocessing_file(
+        sample_id,
+        LAYOUT_MARKER_NAME,
+        for_write=True,
+        force_prefixed=True,
+    )
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, path)

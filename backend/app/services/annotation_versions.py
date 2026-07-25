@@ -91,9 +91,16 @@ def sidecar_candidates(raw_tsv: Path, state_dir: Path | None = None) -> list[Pat
     ]
     if state_dir is not None:
         state_dir = Path(state_dir)
+        state_sample_id = (
+            state_dir.parent.name
+            if state_dir.name == "08_postprocessing"
+            else state_dir.name
+        )
         out.extend(
             [
+                state_dir / f"{state_sample_id}.annotation_versions.json",
                 state_dir / "annotation_versions.json",
+                state_dir / f"{state_sample_id}.pipeline_source.json",
                 state_dir / "pipeline_source.json",
             ]
         )

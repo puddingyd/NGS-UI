@@ -393,6 +393,7 @@ def write_pheno_table(
     pheno_score: dict[str, float],
     *,
     target_dir: Path | None = None,
+    version: str | None = None,
 ) -> Path:
     """Persist gene → score as `pheno_score.tsv` (sorted desc).
 
@@ -404,8 +405,15 @@ def write_pheno_table(
     if target_dir is None:
         from . import analyses_store
         target_dir = analyses_store.active_version_dir(sample_id)
+        version = analyses_store.active_version(sample_id)
     target_dir.mkdir(parents=True, exist_ok=True)
-    out = target_dir / "pheno_score.tsv"
+    from . import sample_layout
+    out = sample_layout.scoped_file(
+        target_dir,
+        sample_id,
+        "pheno_score.tsv",
+        for_write=True,
+    )
     rows = sorted(pheno_score.items(), key=lambda kv: -kv[1])
     with out.open("w", encoding="utf-8", newline="") as f:
         f.write("gene_symbol\tpheno_score\n")

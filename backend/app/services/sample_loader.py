@@ -108,7 +108,7 @@ def _snv_cache_allowed(tsv_path: Path) -> bool:
     """Keep compact SNV payloads hot, but do not retain giant raw fallbacks."""
     if SNV_CACHE_MAX <= 0:
         return False
-    if tsv_path.name != snv_review.REVIEW_TSV_NAME:
+    if not tsv_path.name.endswith(snv_review.REVIEW_TSV_NAME):
         limit_bytes = SNV_CACHE_MAX_RAW_MB * 1024 * 1024
         if limit_bytes <= 0 or _file_size(tsv_path) > limit_bytes:
             return False
@@ -167,6 +167,21 @@ def _read_tsv_dict(path: Path, key_col: str = "VARIANT_ID") -> dict[str, dict]:
     return out
 
 
+def _sidecar_file(
+    sample_id: str,
+    sidecar_dir: Path,
+    name: str,
+    *,
+    for_write: bool = False,
+) -> Path:
+    return sample_layout.scoped_file(
+        sidecar_dir,
+        sample_id,
+        name,
+        for_write=for_write,
+    )
+
+
 def _to_num(s):
     if s in (None, ""):
         return None
@@ -189,7 +204,7 @@ def _file_signature(path: Path) -> tuple[str, int, int]:
 def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> list:
     sample_id = _sample_id_from_state_dir(sample_dir)
     return [
-        list(_file_signature(sample_dir / "sample_metadata.json")),
+        list(_file_signature(sample_layout.state_file(sample_id, "sample_metadata.json"))),
         list(_file_signature(sample_layout.snv_raw_tsv(sample_id))),
         list(_file_signature(sample_layout.snv_overlay_path(sample_id))),
         list(_file_signature(sample_layout.snv_gene_index_path(sample_id))),
@@ -203,7 +218,13 @@ def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> 
 
 
 def _case_summary_cache_path(sample_dir: Path) -> Path:
-    return sample_dir / CASE_SUMMARY_CACHE_NAME
+    sample_id = _sample_id_from_state_dir(sample_dir)
+    return sample_layout.scoped_file(
+        sample_dir,
+        sample_id,
+        CASE_SUMMARY_CACHE_NAME,
+        for_write=True,
+    )
 
 
 def _read_case_summary_disk(sample_dir: Path, signature: list) -> dict[str, str] | None:
@@ -266,7 +287,7 @@ def _write_case_table_rows(rows: list[dict]) -> None:
 def _registered_sample_ids() -> set[str]:
     return {
         sample_id for sample_id in sample_layout.iter_sample_ids()
-        if (sample_layout.state_dir(sample_id) / "sample_metadata.json").is_file()
+        if sample_layout.state_file(sample_id, "sample_metadata.json").is_file()
     }
 
 
@@ -311,11 +332,11 @@ def _case_table_row_from_sample_dir(
     *,
     omim_sig: tuple | None = None,
 ) -> dict | None:
-    meta_path = sample_dir / "sample_metadata.json"
+    dir_sample_id = _sample_id_from_state_dir(sample_dir)
+    meta_path = sample_layout.state_file(dir_sample_id, "sample_metadata.json")
     if not meta_path.exists():
         return None
     meta = _read_json_or(meta_path, {}) or {}
-    dir_sample_id = _sample_id_from_state_dir(sample_dir)
     sample_id = str(meta.get("sample_id") or dir_sample_id)
     summary = _case_management_summary(sample_dir, meta, omim_sig=omim_sig)
     return {
@@ -616,7 +637,7 @@ def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, di
             if variant.get("id") in wanted:
                 variants[variant["id"]] = variant
     if variants:
-        _enrich_snv_variants(variants, sample_dir)
+        _enrich_snv_variants(variants, sample_id, sample_dir)
     return variants
 
 
@@ -629,7 +650,9 @@ def _case_mito_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, d
     try:
         from ..adapters.mito_tsv import load_mito_tsv
         sidecar_dir = analyses_store.active_version_dir(sample_id)
-        pheno_by_gene = _read_pheno_scores(sidecar_dir / "pheno_score.tsv")
+        pheno_by_gene = _read_pheno_scores(
+            _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
+        )
         variants, _categories = load_mito_tsv(mito_tsv, pheno_by_gene=pheno_by_gene)
     except Exception as e:
         print(f"[case-summary] mito lookup failed for {sample_id}: {e}", flush=True)
@@ -832,15 +855,16 @@ def _case_management_summary(
 def _load_enriched_snv_cached(
     snv_tsv: Path,
     *,
+    sample_id: str,
     sidecar_dir: Path,
     test_type: str,
 ) -> tuple[dict, dict, dict, str]:
     """Parse + enrich SNVs once per input revision, with a bounded LRU."""
     started = time.perf_counter()
-    exo_path = sidecar_dir / "exomiser_results.tsv"
-    lir_path = sidecar_dir / "lirical_results.tsv"
-    pheno_path = sidecar_dir / "pheno_score.tsv"
-    analysis_path = sidecar_dir / "analysis.json"
+    exo_path = _sidecar_file(sample_id, sidecar_dir, "exomiser_results.tsv")
+    lir_path = _sidecar_file(sample_id, sidecar_dir, "lirical_results.tsv")
+    pheno_path = _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
+    analysis_path = _sidecar_file(sample_id, sidecar_dir, "analysis.json")
     omim_sig = omim_store.cache_signature()
     gene_disease_sig = gene_disease_store.cache_signature()
     key = (
@@ -883,7 +907,7 @@ def _load_enriched_snv_cached(
     parse_elapsed = time.perf_counter() - parse_started
 
     enrich_started = time.perf_counter()
-    pheno_by_gene = _enrich_snv_variants(variants, sidecar_dir)
+    pheno_by_gene = _enrich_snv_variants(variants, sample_id, sidecar_dir)
     for t, ids in categories.items():
         categories[t] = sorted(ids, key=lambda i: (-_variant_total_score(variants, i), i))
 
@@ -1005,11 +1029,15 @@ def _build_secondary_snv_categories(variants: dict[str, dict]) -> dict[str, list
     return categories
 
 
-def _enrich_snv_variants(variants: dict[str, dict], sidecar_dir: Path) -> dict[str, float]:
+def _enrich_snv_variants(
+    variants: dict[str, dict],
+    sample_id: str,
+    sidecar_dir: Path,
+) -> dict[str, float]:
     """Join pheno / Exomiser / LIRICAL / OMIM data into variant payloads."""
-    exo_path = sidecar_dir / "exomiser_results.tsv"
-    lir_path = sidecar_dir / "lirical_results.tsv"
-    pheno_path = sidecar_dir / "pheno_score.tsv"
+    exo_path = _sidecar_file(sample_id, sidecar_dir, "exomiser_results.tsv")
+    lir_path = _sidecar_file(sample_id, sidecar_dir, "lirical_results.tsv")
+    pheno_path = _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
     exo = _read_tsv_dict(exo_path)
     lir = _read_tsv_dict(lir_path)
     pheno_by_gene = _read_pheno_scores(pheno_path)
@@ -1073,10 +1101,10 @@ def _variants_from_rows(rows: list[dict[str, str]], *, test_type: str) -> dict[s
         if canonical_gene in EXCLUDED_GENES:
             continue
         v = _row_to_variant(row)
-        dp = v.get("depth") or 0
-        if is_wes and dp < _DP_HARD_FLOOR_WES:
+        dp = v.get("depth")
+        if is_wes and (dp is None or dp < _DP_HARD_FLOOR_WES):
             continue
-        v["low_depth"] = bool(dp and dp < low_flag)
+        v["low_depth"] = bool(dp is not None and dp < low_flag)
         merge_snv_variant_row(out, v)
     return out
 
@@ -1144,6 +1172,7 @@ def _supplement_marked_snv_variants(
     categories: dict[str, list[str]],
     raw_tsv: Path,
     *,
+    sample_id: str,
     keep_ids: set[str],
     sidecar_dir: Path,
     test_type: str,
@@ -1175,7 +1204,7 @@ def _supplement_marked_snv_variants(
     with snv_overlay.OverlayReader(raw_tsv, overlay_path) as overlay:
         rows = overlay.apply_many(rows)
     extra = _variants_from_rows(rows, test_type=test_type)
-    _enrich_snv_variants(extra, sidecar_dir)
+    _enrich_snv_variants(extra, sample_id, sidecar_dir)
     for vid, variant in extra.items():
         variants[vid] = variant
         tier = variant.get("tier")
@@ -1204,7 +1233,7 @@ def list_index() -> list[dict]:
     out: list[dict] = []
     for sample_id in sorted(sample_layout.iter_sample_ids()):
         sub = sample_layout.state_dir(sample_id)
-        meta_path = sub / "sample_metadata.json"
+        meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
         if not meta_path.exists():
             # Pipeline-dropped sample that hasn't been registered yet —
             # surfaces through /samples/unregistered, not the search bar.
@@ -1301,7 +1330,7 @@ def list_unregistered() -> list[dict]:
         sub = sample_layout.state_dir(lis_id)
         pipeline_sub = sample_layout.pipeline_sample_dir(lis_id)
         tsv = sample_layout.snv_raw_tsv(lis_id)
-        meta = sub / "sample_metadata.json"
+        meta = sample_layout.state_file(lis_id, "sample_metadata.json")
         if not tsv.exists() or meta.exists():
             continue
         if lis_id in active_tertiary_samples:
@@ -1310,7 +1339,7 @@ def list_unregistered() -> list[dict]:
         source_info = {}
         source_vcf_path = ""
         source_vcf_size = 0
-        pipeline_source = sub / "pipeline_source.json"
+        pipeline_source = sample_layout.state_file(lis_id, "pipeline_source.json")
         if pipeline_source.is_file():
             try:
                 source_info = json.loads(pipeline_source.read_text(encoding="utf-8")) or {}
@@ -1475,10 +1504,10 @@ def _resolve_version(sample_id: str, requested: str | None,
     return None
 
 
-def _read_pheno_by_gene(sidecar_dir) -> dict:
+def _read_pheno_by_gene(sample_id: str, sidecar_dir: Path) -> dict:
     """Read pheno_score.tsv → {gene_symbol: 0-100 score}. Empty if absent."""
     out: dict[str, float] = {}
-    p = sidecar_dir / "pheno_score.tsv"
+    p = _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
     if not p.exists():
         return out
     import csv as _csv
@@ -1504,7 +1533,7 @@ def _load_pheno_context(sample_id: str, version: str | None):
     sub = sample_layout.state_dir(sample_id)
     if not sub.is_dir():
         return None
-    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
     chosen_version = _resolve_version(
         sample_id, requested=version, meta_active=meta.get("active_analysis"))
     sidecar_dir = (analyses_store.version_dir(sample_id, chosen_version)
@@ -1516,7 +1545,7 @@ def _load_pheno_context(sample_id: str, version: str | None):
     else:
         hpo_list    = meta.get("hpo") or meta.get("patient_phenotype") or []
         panels_list = meta.get("selected_panels") or []
-    return sub, sidecar_dir, hpo_list, panels_list, _read_pheno_by_gene(sidecar_dir)
+    return sub, sidecar_dir, hpo_list, panels_list, _read_pheno_by_gene(sample_id, sidecar_dir)
 
 
 def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | None:
@@ -1693,7 +1722,7 @@ def _sample_snv_sidecar_context(sample_id: str, version: str | None = None):
     sub = sample_layout.state_dir(sample_id)
     if not sub.is_dir():
         return None
-    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
     chosen_version = _resolve_version(
         sample_id,
         requested=version,
@@ -1721,6 +1750,8 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
             keep_ids=set(),
             test_type=test_type,
             output_dir=sub,
+            output_path=sample_layout.review_tsv(sample_id, for_write=True),
+            manifest_path=sample_layout.review_manifest(sample_id, for_write=True),
             overlay_path=sample_layout.snv_overlay_path(sample_id),
         )
     except OSError:
@@ -1745,6 +1776,7 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
         snv_tsv = review_tsv
     all_variants, _tiers, _pheno, _old_format_error = _load_enriched_snv_cached(
         snv_tsv,
+        sample_id=sample_id,
         sidecar_dir=sidecar_dir,
         test_type=test_type,
     )
@@ -1787,7 +1819,9 @@ def load_sample(sample_id: str, version: str | None = None,
         return None
 
     raw_snv_tsv = sample_layout.snv_raw_tsv(sample_id)
-    _meta_early = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    _meta_early = _read_json_or(
+        sample_layout.state_file(sample_id, "sample_metadata.json"), {}
+    ) or {}
     _meta_early["test_type"] = _effective_test_type(_meta_early, sample_id, default="WES")
     reported_ids = set((_meta_early.get("status") or {}).keys())
     snv_tsv = raw_snv_tsv
@@ -1799,6 +1833,8 @@ def load_sample(sample_id: str, version: str | None = None,
                 keep_ids=reported_ids,
                 test_type=_meta_early["test_type"],
                 output_dir=sub,
+                output_path=sample_layout.review_tsv(sample_id, for_write=True),
+                manifest_path=sample_layout.review_manifest(sample_id, for_write=True),
                 overlay_path=sample_layout.snv_overlay_path(sample_id),
             )
             _log_perf(
@@ -1828,7 +1864,7 @@ def load_sample(sample_id: str, version: str | None = None,
     # this duplicate is cheap (one small JSON) and keeps the gating
     # logic out of the adapter's API.
     _test_type = _meta_early["test_type"]
-    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
     meta["test_type"] = _effective_test_type(meta, sample_id, default="WES")
 
     # Decide which directory holds the sidecar TSVs for this load.
@@ -1853,13 +1889,13 @@ def load_sample(sample_id: str, version: str | None = None,
         hpo_list      = meta.get("hpo") or meta.get("patient_phenotype") or []
         panels_list   = meta.get("selected_panels") or []
 
-    pheno_path = sidecar_dir / "pheno_score.tsv"
+    pheno_path = _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
 
     # Lazy backfill: legacy samples + any pheno_score.tsv predating its
     # analysis.json (e.g. HPO/panels touched by a tool that bypassed
     # write_version) get recomputed inline so the Clinical/in-panel
     # consumers downstream always see a fresh table.
-    analysis_path = sidecar_dir / "analysis.json"
+    analysis_path = _sidecar_file(sample_id, sidecar_dir, "analysis.json")
     needs_backfill = (
         analysis_path.is_file() and (
             not pheno_path.exists()
@@ -1881,7 +1917,10 @@ def load_sample(sample_id: str, version: str | None = None,
 
     variants, categories, pheno_by_gene, old_format_error = (
         _load_enriched_snv_cached(
-            snv_tsv, sidecar_dir=sidecar_dir, test_type=_test_type,
+            snv_tsv,
+            sample_id=sample_id,
+            sidecar_dir=sidecar_dir,
+            test_type=_test_type,
         )
     )
     review_variants_for_secondary = variants
@@ -1889,11 +1928,12 @@ def load_sample(sample_id: str, version: str | None = None,
     # depend on reviewer status, so copy before adding marked variants.
     variants = dict(variants)
     categories = {tier: list(ids) for tier, ids in categories.items()}
-    if raw_snv_tsv.exists() and snv_tsv.name == snv_review.REVIEW_TSV_NAME:
+    if raw_snv_tsv.exists() and snv_tsv.name.endswith(snv_review.REVIEW_TSV_NAME):
         _supplement_marked_snv_variants(
             variants,
             categories,
             raw_snv_tsv,
+            sample_id=sample_id,
             keep_ids=reported_ids,
             sidecar_dir=sidecar_dir,
             test_type=_test_type,
@@ -1950,9 +1990,9 @@ def load_sample(sample_id: str, version: str | None = None,
         sv_variants,  sv_categories  = {}, {t: [] for t in SV_TIERS}
         mito_variants, mito_categories = {}, {t: [] for t in MITO_TIERS}
 
-    qc  = _read_json_or(sub / "qc_summary.json",  {}) or {}
-    roh = _read_json_or(sub / "roh_summary.json", {}) or {}
-    ploidy_result = ploidy.load_sample_ploidy(sub)
+    qc = _read_json_or(sample_layout.state_file(sample_id, "qc_summary.json"), {}) or {}
+    roh = _read_json_or(sample_layout.state_file(sample_id, "roh_summary.json"), {}) or {}
+    ploidy_result = ploidy.load_sample_ploidy(sample_id)
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
     dead_zone_entries = []
     for gene, hit in dead_zone_hits.items():
@@ -2071,7 +2111,7 @@ def search_snv_by_genes(
     raw_tsv = sample_layout.snv_raw_tsv(sample_id)
     if not raw_tsv.is_file():
         return {"variants": {}, "snv_tsv_error": ""}
-    meta = _read_json_or(sub / "sample_metadata.json", {}) or {}
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
     chosen_version = _resolve_version(
         sample_id, requested=version, meta_active=meta.get("active_analysis"),
     )
@@ -2091,7 +2131,7 @@ def search_snv_by_genes(
         ) as overlay:
             indexed_rows = overlay.apply_many(indexed_rows)
         variants = _variants_from_rows(indexed_rows, test_type=test_type)
-        _enrich_snv_variants(variants, sidecar_dir)
+        _enrich_snv_variants(variants, sample_id, sidecar_dir)
         matches = variants
         search_source = "gene_index"
         raw_variant_count = "indexed"
@@ -2102,7 +2142,7 @@ def search_snv_by_genes(
         ) as overlay:
             indexed_rows = overlay.apply_many(indexed_rows)
         variants = _variants_from_rows(indexed_rows, test_type=test_type)
-        _enrich_snv_variants(variants, sidecar_dir)
+        _enrich_snv_variants(variants, sample_id, sidecar_dir)
         matches = variants
         search_source = "raw_stream_fallback"
         raw_variant_count = "streamed"

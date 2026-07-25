@@ -69,12 +69,12 @@ def test_canary_migration_activates_marker_last_and_keeps_legacy(tmp_path, monke
     )
 
     post = target / "S1" / "08_postprocessing"
-    assert (post / "layout.json").is_file()
-    assert (post / "snv_annotations.sqlite").is_file()
-    assert (post / "snv_indel.review.tsv").is_file()
-    assert (post / "snv_gene_index.sqlite").is_file()
+    assert (post / "S1.layout.json").is_file()
+    assert (post / "S1.snv_annotations.sqlite").is_file()
+    assert (post / "S1.snv_indel.review.tsv").is_file()
+    assert (post / "S1.snv_gene_index.sqlite").is_file()
     assert not (post / "snv_indel.annotated.tsv").exists()
     assert not (post / "str.tsv").exists()
-    assert (post / "cnv.annotated.tsv").read_text(encoding="utf-8") == "locally enriched\n"
+    assert (post / "S1.cnv.annotated.tsv").read_text(encoding="utf-8") == "locally enriched\n"
     assert old_full.is_file()
     assert sample_layout.state_dir("S1") == post

@@ -51,7 +51,7 @@ _DEFAULT = {
 
 
 def _meta_path(sample_id: str) -> Path:
-    return sample_layout.state_dir(sample_id) / "sample_metadata.json"
+    return sample_layout.state_file(sample_id, "sample_metadata.json")
 
 
 def _read_json(p: Path) -> dict:

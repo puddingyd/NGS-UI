@@ -221,7 +221,7 @@ def register_sample(
             hpo_payload = panels_payload = None
 
     source_sample_id = ""
-    pipeline_source = sample_layout.state_dir(lis_id) / "pipeline_source.json"
+    pipeline_source = sample_layout.state_file(lis_id, "pipeline_source.json")
     if pipeline_source.is_file():
         try:
             source_info = _json.loads(pipeline_source.read_text(encoding="utf-8")) or {}
@@ -432,7 +432,7 @@ def put_sample_metadata(sample_id: str, payload: dict):
     sub = sample_layout.state_dir(sample_id)
     if not sub.is_dir():
         raise HTTPException(404, f"sample not found: {sample_id}")
-    meta_path = sub / "sample_metadata.json"
+    meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
     meta = {}
     if meta_path.exists():
         try:

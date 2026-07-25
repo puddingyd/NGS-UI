@@ -205,7 +205,7 @@ def _bam_hits(sid: str, *, source: str = "") -> list[dict]:
 
 
 def _sidecar_for(sid: str) -> dict:
-    path = sample_layout.state_dir(sid) / "pipeline_source.json"
+    path = sample_layout.state_file(sid, "pipeline_source.json")
     try:
         data = json.loads(path.read_text(encoding="utf-8")) or {}
     except (OSError, json.JSONDecodeError):

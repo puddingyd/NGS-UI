@@ -71,8 +71,7 @@ def main() -> int:
     pending: list[tuple[Path, dict, dict]] = []  # (meta_path, meta, patch)
 
     for sample_id in sorted(sample_layout.iter_sample_ids()):
-        sub = sample_layout.state_dir(sample_id)
-        meta_path = sub / "sample_metadata.json"
+        meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
         if not meta_path.is_file():
             continue
         examined += 1

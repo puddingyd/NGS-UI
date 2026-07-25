@@ -65,8 +65,7 @@ def sync_emr(sample_id: str):
     hadn't entered anything. Returns the changed fields + the raw
     EMR payload so the UI can show a diff."""
     _require_enabled()
-    sub = sample_layout.state_dir(sample_id)
-    meta_path = sub / "sample_metadata.json"
+    meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
     if not meta_path.is_file():
         raise HTTPException(404, f"sample not found: {sample_id}")
     try:

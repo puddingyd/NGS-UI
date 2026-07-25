@@ -55,7 +55,7 @@ def sample_exists(lis_id: str) -> bool:
 
 
 def is_registered(lis_id: str) -> bool:
-    return (sample_layout.state_dir(lis_id) / "sample_metadata.json").is_file()
+    return sample_layout.state_file(lis_id, "sample_metadata.json").is_file()
 
 
 def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
@@ -82,13 +82,11 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
         }
 
     deleted = []
-    for path in (
-        ui_dir / "sample_metadata.json",
-        ui_dir / "case_summary.json",
-    ):
-        if path.exists():
-            path.unlink()
-            deleted.append(str(path))
+    for name in ("sample_metadata.json", "case_summary.json"):
+        for path in sample_layout.state_file_candidates(lis_id, name):
+            if path.exists():
+                path.unlink()
+                deleted.append(str(path))
 
     analyses_dir = ui_dir / "analyses"
     if analyses_dir.is_dir():
@@ -160,7 +158,7 @@ def register(
             "(tertiary pipeline drops the TSV here; nothing to register yet)"
         )
     sample_dir.mkdir(parents=True, exist_ok=True)
-    if (sample_dir / "sample_metadata.json").is_file():
+    if sample_layout.state_file(lis_id, "sample_metadata.json").is_file():
         raise FileExistsError(f"sample already registered: {lis_id}")
 
     # Parse the reviewer-curated phenotype.txt first; if it had any
@@ -247,7 +245,11 @@ def register(
         "updated_at":           now,
     }
     meta_started = time.perf_counter()
-    (sample_dir / "sample_metadata.json").write_text(
+    sample_layout.state_file(
+        lis_id,
+        "sample_metadata.json",
+        for_write=True,
+    ).write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

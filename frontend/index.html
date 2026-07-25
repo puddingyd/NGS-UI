@@ -136,7 +136,7 @@
             <span class="label">性別</span>
             <div class="m-sex-stack">
               <div id="m-sex-control" class="m-sex-control">
-                <div id="m-ploidy-call" class="m-ploidy-call" hidden></div>
+                <button id="m-ploidy-call" class="m-ploidy-call" type="button" hidden></button>
                 <select id="m-sex" class="meta-select">
                   <option value="">—</option>
                   <option value="M">M</option>
@@ -627,6 +627,23 @@
       <div class="modal-actions case-delete-actions">
         <button type="button" class="btn btn-ghost" id="case-delete-cancel">取消</button>
         <button type="button" class="btn btn-danger" id="case-delete-confirm">確認刪除</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ploidy-modal" class="modal hidden">
+    <div class="modal-card modal-card-wide ploidy-card">
+      <div class="ploidy-modal-head">
+        <h2>Ploidy status</h2>
+        <button type="button" class="btn btn-ghost" data-close="ploidy-modal">關閉</button>
+      </div>
+      <div id="ploidy-summary" class="ploidy-summary"></div>
+      <p class="muted ploidy-note">SUSPECT 代表 normalized coverage 顯示可能的 chromosome dosage 異常，並非確診；請配合原始 reads、臨床資料及適當的確認檢驗判讀。</p>
+      <div class="ploidy-table-wrap">
+        <table class="ploidy-table">
+          <thead><tr><th>CHROM</th><th>FILTER</th><th>END</th><th>DC</th><th>NDC</th><th>RATIO</th></tr></thead>
+          <tbody id="ploidy-table-body"></tbody>
+        </table>
       </div>
     </div>
   </div>

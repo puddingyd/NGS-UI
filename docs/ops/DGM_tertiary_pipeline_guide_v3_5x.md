@@ -1,8 +1,11 @@
 # 臨床三級分析 Pipeline 使用說明
 
-**版本：v3.4**
-**更新日期：2026-06-08**
+**版本：v3.5**
+**更新日期：2026-07-23**
 **負責人：林伯昱（p88124019@gs.ncku.edu.tw）**
+
+> v3.5 更新：新增 `STRAND_BIAS` 欄位（SNV/indel 表）、DRAGEN 原生 ploidy QC
+> （`00_prepare/{SAMPLE_ID}.ploidy_qc.txt`），並修正 DRAGEN mito 已納入 annotation 的說明。
 
 ---
 
@@ -16,7 +19,7 @@
 | PREPARE_VCF_DRAGEN | DRAGEN VCF 前處理（CALLERS=DRAGEN、chrM 分流、自動建 tabix index）| ✅ 測試通過 |
 | VEP_ANNOTATE | VEP 115 annotation（dbNSFP、LOFTEE、ClinVar、gnomAD、1000G）| ✅ 測試通過 |
 | PANGOLIN_SCORE | Splice variant GPU inference | ✅ 測試通過 |
-| PARSE_CSQ | VEP CSQ 解析 + ClinVar lookup + 輸出 TSV（60 欄，含 HGNC_ID）| ✅ 測試通過 |
+| PARSE_CSQ | VEP CSQ 解析 + ClinVar lookup + 輸出 TSV（61 欄，含 STRAND_BIAS、HGNC_ID）| ✅ 測試通過 |
 | ACMG_CLASSIFY | ACMG/AMP Phase 1 自動分類（ClinGen SVI 2022）| ✅ 測試通過 |
 | MITO_ANNOTATE | mtDNA annotation（VEP 輕量 + gnomAD mito v3.1（CC0）+ ClinVar，NCKUH/DRAGEN 雙支援）| ✅ 測試通過 |
 | STR_ANNOTATE | STR threshold 分類（STRchive，NCKUH GangSTR/DRAGEN ExpansionHunter）| ✅ 測試通過 |
@@ -106,7 +109,10 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 > **DRAGEN 注意事項：**
 > - `input_dir` 指向 DRAGEN 輸出的**上層資料夾**（含多個樣本的 VCF），pipeline 會自動用 `{sample_id}.hard-filtered.vcf.gz` 搜尋
 > - `.tbi` index 如果不存在，pipeline 會自動建立，不需要手動準備
-> - chrM variant 會自動分流到獨立的 mito VCF（備用，目前不進入 annotation pipeline）
+> - chrM variant 會自動分流到獨立的 mito VCF（`00_prepare/{sample_id}.mito_for_annotation.vcf.gz`），
+>   並**進入** mito annotation pipeline → `04_mito/{sample_id}.mito.tsv`
+> - 若 DRAGEN 輸出含原生 `{sample_id}.ploidy.vcf.gz`，pipeline 會自動產生性別/倍體 QC
+>   `00_prepare/{sample_id}.ploidy_qc.txt`（找不到則 warn 後跳過，不影響其他分析）
 
 #### PGx（Pharmacogenomics）選項
 
@@ -187,8 +193,9 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 │   ├── {SAMPLE_ID}.snv_for_annotation.vcf.gz      ← 前處理後的 SNV（中間檔）
 │   └── {SAMPLE_ID}.snv_for_annotation.vcf.gz.tbi
 │   （DRAGEN 額外輸出）
-│   ├── {SAMPLE_ID}.mito_for_annotation.vcf.gz     ← chrM variants（中間檔）
-│   └── {SAMPLE_ID}.mito_for_annotation.vcf.gz.tbi
+│   ├── {SAMPLE_ID}.mito_for_annotation.vcf.gz     ← chrM variants（→ 04_mito）
+│   ├── {SAMPLE_ID}.mito_for_annotation.vcf.gz.tbi
+│   └── {SAMPLE_ID}.ploidy_qc.txt                  ← 性別/倍體 QC（DRAGEN 原生 ploidy.vcf）
 ├── 01_vep/
 │   ├── {SAMPLE_ID}.vep.vcf.gz                     ← VEP annotation 結果（中間檔）
 │   └── {SAMPLE_ID}.vep.vcf.gz.tbi
@@ -202,11 +209,17 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 │   └── {SAMPLE_ID}.mito.vep.vcf.gz               ← VEP 中間檔
 ├── 05_str/                                         ← ★ v3.2 新增
 │   └── {SAMPLE_ID}.str.tsv                        ← STR 輸出（22 欄）
-└── 06_cnv_sv/                                      ← ★ v3.2 新增
-    ├── {SAMPLE_ID}.cnv.annotated.tsv              ← CNV AnnotSV 輸出
-    ├── {SAMPLE_ID}.cnv.unannotated.tsv
-    ├── {SAMPLE_ID}.sv.annotated.tsv               ← SV AnnotSV 輸出
-    └── {SAMPLE_ID}.sv.unannotated.tsv
+├── 06_cnv_sv/                                      ← ★ v3.2 新增
+│   ├── {SAMPLE_ID}.cnv.annotated.tsv              ← CNV AnnotSV 輸出
+│   ├── {SAMPLE_ID}.cnv.unannotated.tsv
+│   ├── {SAMPLE_ID}.sv.annotated.tsv               ← SV AnnotSV 輸出
+│   └── {SAMPLE_ID}.sv.unannotated.tsv
+└── 07_pgx/                                         ← 藥物基因組學（PGx）
+    ├── {SAMPLE_ID}.pgx.tsv                        ← ★ PGx 報告（16 欄，CPIC Level A）
+    ├── {SAMPLE_ID}.pharmcat.report.json           ← PharmCAT 完整報告
+    ├── {SAMPLE_ID}.outside_calls.tsv              ← PharmCAT outside calls
+    ├── {SAMPLE_ID}.stellarpgx.tsv                 ← CYP2D6 diplotype（WGS only）
+    └── {SAMPLE_ID}.optitype.tsv                   ← HLA-A/B/C（WGS only）
 ```
 
 > **v3.2 新增：** `04_mito/`、`05_str/`、`06_cnv_sv/` 目錄。STR TSV 只包含有對應 STRchive 記錄的 locus（已知致病 STR），DRAGEN 約 53 筆，NCKUH WES 約 5 筆。
@@ -221,7 +234,7 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 | CHROM, POS, REF, ALT | 變異座標 |
 | RS_ID | dbSNP rsID（如 rs72631890）|
 
-#### Transcript 資訊（欄 6–15）
+#### Transcript 資訊（欄 6–14）
 | 欄位 | 說明 |
 |------|------|
 | GENE | HGNC gene symbol |
@@ -232,14 +245,19 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 | IMPACT | HIGH / MODERATE / LOW / MODIFIER |
 | EXON, INTRON | Exon/Intron 編號（格式：2/19）|
 
-#### Caller 資訊（欄 16–24）
+#### Caller 資訊（欄 15–23）
 | 欄位 | 說明 |
 |------|------|
 | CALLERS | `DV+HC` / `DV` / `HC`（NCKUH）或 `DRAGEN` |
-| DP_DV, AD_DV, VAF_DV | DeepVariant read depth、allelic depth、VAF |
-| DP_HC, AD_HC | HaplotypeCaller read depth、allelic depth |
+| DP_DV, AD_DV, VAF_DV | DeepVariant（DRAGEN 樣本為 DRAGEN）read depth、allelic depth、VAF |
+| DP_HC, AD_HC | HaplotypeCaller read depth、allelic depth（DRAGEN 無 HC，此二欄為空）|
 | ZYGOSITY | het / hom / hemizygous / unknown |
 | GT_DV, GT_HC | Genotype |
+
+#### Strand bias（欄 24）
+| 欄位 | 說明 |
+|------|------|
+| STRAND_BIAS | 股偏警示：`PASS` / `WARN(FS=..,SOR=..)`（GATK 門檻：SNV FS>60/SOR>3.0，indel FS>200/SOR>10.0）；`.` = 無 FS/SOR（DeepVariant-only 位點）→ 需人工複核。germline 只標記、不硬刪 |
 
 #### 族群頻率（欄 25–31）
 | 欄位 | 說明 |
@@ -327,7 +345,6 @@ nextflow -c /home/pipeline/tertiary_code/nextflow_tertiary.config \
 | CONSEQUENCE, IMPACT, BIOTYPE | VEP 後果 |
 | GENOTYPE, DP | 樣本 GT 和 read depth |
 | AF_SAMPLE | Heteroplasmy level（FORMAT/AF，0-1）|
-| GNOMAD_MITO_AF | gnomAD mito AF（目前全為 `.`，VEP cache 限制）|
 | CLINVAR_SIG, CLINVAR_DN | ClinVar 致病性和疾病名稱 |
 | GNOMAD_MITO_AF_HOM | gnomAD mito v3.1 同質性 AF（heteroplasmy ≥ 0.95，CC0）|
 | GNOMAD_MITO_AF_HET | gnomAD mito v3.1 異質性 AF（heteroplasmy 0.10-0.95）|
@@ -522,10 +539,10 @@ awk 'NR>1' $TSV | wc -l
 
 echo ""
 echo "========================================="
-echo "Step 4：CALLERS 欄位確認"
+echo "Step 4：CALLERS 欄位確認（第 15 欄）"
 echo "（NCKUH 應為 DV+HC/DV/HC；DRAGEN 應為 DRAGEN）"
 echo "========================================="
-awk -F'\t' 'NR>1 {print $16}' $TSV | sort | uniq -c | sort -rn | head -5
+awk -F'\t' 'NR>1 {print $15}' $TSV | sort | uniq -c | sort -rn | head -5
 
 echo ""
 echo "========================================="
@@ -564,7 +581,7 @@ ls -lh /home/pipeline/tertiary_output/${SAMPLE_ID}/04_mito/
 # 總 variant 數（NCKUH 約 30-60 筆，DRAGEN 約 40-60 筆）
 wc -l $MITO
 
-# MITOMAP 命中筆數
+# gnomAD mito 命中筆數（$14 = GNOMAD_MITO_AF_HOM）
 awk -F'\t' 'NR>1 && $14!="."' $MITO | wc -l
 
 # CONSEQUENCE 分布
@@ -611,6 +628,15 @@ head -1 $CNV_DIR/${SAMPLE_ID}.cnv.annotated.tsv | tr '	' '
 
 # SV：確認 unannotated 筆數（沒有對應基因的 SV，通常為少數）
 wc -l $CNV_DIR/${SAMPLE_ID}.sv.unannotated.tsv
+```
+
+### DRAGEN ploidy QC 確認（僅 DRAGEN 樣本）
+
+```bash
+SAMPLE_ID=VAL-10
+cat /home/pipeline/tertiary_output/${SAMPLE_ID}/00_prepare/${SAMPLE_ID}.ploidy_qc.txt
+# 預期：estimated_sex_karyotype 與 samplesheet 宣告一致 → sex_check: OK
+# 每條 contig 的 NDC 應 ~1.0；偏離過多的 contig 會列在 WARNINGS（疑似非整倍體，需人工確認）
 ```
 
 ### PGx 輸出確認

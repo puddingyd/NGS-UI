@@ -153,8 +153,21 @@ case "$SEQ_TYPE" in
   WES|WGS) ;;
   *) echo "ERROR: --seq-type must be WES or WGS (got: $SEQ_TYPE)" >&2; exit 2;;
 esac
-# Derive sample id from path if not supplied: tertiary_output/<SID>/...
-if [ -z "$SID" ]; then SID="$(basename "$(dirname "$TSV")")"; fi
+# Derive sample id from path if not supplied. Working TSVs now live below
+# tertiary_output/<SID>/08_postprocessing/, while legacy invocations may
+# still point directly below tertiary_output/<SID>/.
+if [ -z "$SID" ]; then
+  TSV_DIR="$(dirname "$TSV")"
+  if [ "$(basename "$TSV_DIR")" = "08_postprocessing" ]; then
+    SID="$(basename "$(dirname "$TSV_DIR")")"
+  else
+    SID="$(basename "$TSV_DIR")"
+  fi
+fi
+OVERLAY_PATH="$POST_DIR/$SID.snv_annotations.sqlite"
+REVIEW_PATH="$POST_DIR/$SID.snv_indel.review.tsv"
+REVIEW_MANIFEST_PATH="$POST_DIR/$SID.snv_indel.review.tsv.source.json"
+GENE_INDEX_PATH="$POST_DIR/$SID.snv_gene_index.sqlite"
 
 echo "================================================================"
 echo "  post-processing : $TSV"
@@ -271,7 +284,7 @@ echo
 echo "[sample] sparse overlay  build_snv_annotation_overlay.py"
 step_start "snv-overlay" "sample-step"
 run_silent_step "snv-overlay" "$SCRIPT_DIR/build_snv_annotation_overlay.py" \
-  --raw "$RAW_TSV" --annotated "$TSV" --out "$POST_DIR/snv_annotations.sqlite"
+  --raw "$RAW_TSV" --annotated "$TSV" --out "$OVERLAY_PATH"
 step_done
 
 echo
@@ -279,20 +292,21 @@ echo "[sample] review TSV  build_snv_review_tsv.py"
 step_start "review-tsv" "sample-step"
 run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" \
   --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
-  --overlay "$POST_DIR/snv_annotations.sqlite" --test-type "$SEQ_TYPE"
+  --output-path "$REVIEW_PATH" --manifest-path "$REVIEW_MANIFEST_PATH" \
+  --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE"
 step_done
 
 echo
 echo "[sample] gene index  build_snv_gene_index.py"
 step_start "gene-index" "sample-step"
 run_silent_step "gene-index" "$SCRIPT_DIR/build_snv_gene_index.py" \
-  --tsv "$RAW_TSV" --out "$POST_DIR/snv_gene_index.sqlite"
+  --tsv "$RAW_TSV" --out "$GENE_INDEX_PATH"
 step_done
 
 echo
 echo "================================================================"
 echo "  done. raw TSV: $RAW_TSV"
-echo "  sparse overlay: $POST_DIR/snv_annotations.sqlite"
+echo "  sparse overlay: $OVERLAY_PATH"
 echo "================================================================"
 wc -l "$RAW_TSV"
-ls -la "$SAMPLE_DIR"/{cnv,sv,mito}.annotated.tsv 2>/dev/null || true
+ls -la "$SAMPLE_DIR"/"$SID".{cnv,sv,mito}.annotated.tsv 2>/dev/null || true

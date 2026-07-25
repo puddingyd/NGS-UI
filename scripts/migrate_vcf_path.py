@@ -35,20 +35,13 @@ def _now() -> str:
 
 
 def migrate_one(sid: str) -> str:
-    sample_dir = sample_layout.state_dir(sid)
-    meta_path = sample_dir / "sample_metadata.json"
+    meta_path = sample_layout.state_file(sid, "sample_metadata.json")
     if not meta_path.is_file():
         return "no-meta"
     if not sample_layout.snv_raw_tsv(sid).is_file():
         return "no-tsv"
 
-    # If a previously-named LIS-prefixed VCF exists, rename it in
-    # place — the new convention drops the prefix so external scripts
-    # can hard-code the filename.
-    legacy = sample_dir / f"{sid}.from_tsv.vcf.gz"
     canonical_path = vcf_writer.vcf_path_for(sid)
-    if legacy.exists() and not canonical_path.exists():
-        legacy.rename(canonical_path)
 
     # (Re)generate the VCF if missing or stale.
     if vcf_writer.needs_rebuild(sid):

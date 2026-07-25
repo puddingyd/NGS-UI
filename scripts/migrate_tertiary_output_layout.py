@@ -3,7 +3,8 @@
 
 The default is a read-only dry run. ``--apply`` copies 00-07 and reviewer
 state, rebuilds the SNV sparse overlay/review/index, verifies the result, and
-only then writes ``08_postprocessing/layout.json``. Old data is never deleted.
+only then writes ``08_postprocessing/{sample}.layout.json``. Old data is never
+deleted.
 """
 from __future__ import annotations
 
@@ -62,6 +63,22 @@ def _copy_entry(source: Path, destination: Path) -> None:
         shutil.copy2(source, destination, follow_symlinks=False)
 
 
+def _copy_state_entry_prefixed(source: Path, destination_dir: Path, sample_id: str) -> None:
+    """Copy one legacy state entry while prefixing every sample-owned file."""
+    if source.is_dir():
+        target_dir = destination_dir / source.name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for child in sorted(source.iterdir()):
+            _copy_state_entry_prefixed(child, target_dir, sample_id)
+        return
+    name = (
+        source.name
+        if source.name.startswith(f"{sample_id}.")
+        else sample_layout.prefixed_filename(sample_id, source.name)
+    )
+    _copy_entry(source, destination_dir / name)
+
+
 def _same_content(left: Path, right: Path) -> bool:
     try:
         if left.stat().st_size != right.stat().st_size:
@@ -111,7 +128,12 @@ def _test_type(legacy_state: Path) -> str:
 
 
 def _rollback(sample_id: str, target_root: Path, *, apply: bool) -> bool:
-    marker = target_root / sample_id / sample_layout.POSTPROCESSING_DIRNAME / sample_layout.LAYOUT_MARKER_NAME
+    post = target_root / sample_id / sample_layout.POSTPROCESSING_DIRNAME
+    marker = post / sample_layout.prefixed_filename(
+        sample_id, sample_layout.LAYOUT_MARKER_NAME
+    )
+    if not marker.is_file():
+        marker = post / sample_layout.LAYOUT_MARKER_NAME
     if not marker.is_file():
         print(f"[{sample_id}] no active unified marker: {marker}")
         return True
@@ -139,13 +161,16 @@ def migrate_one(
         source_pipeline = source_pipeline_root / source_id
     target_sample = target_root / sample_id
     post_dir = target_sample / sample_layout.POSTPROCESSING_DIRNAME
-    marker_path = post_dir / sample_layout.LAYOUT_MARKER_NAME
+    marker_path = post_dir / sample_layout.prefixed_filename(
+        sample_id, sample_layout.LAYOUT_MARKER_NAME
+    )
+    legacy_marker_path = post_dir / sample_layout.LAYOUT_MARKER_NAME
     old_annotated = legacy_state / "snv_indel.annotated.tsv"
 
     print(f"[{sample_id}] source pipeline: {source_pipeline}")
     print(f"[{sample_id}] source UI state: {legacy_state}")
     print(f"[{sample_id}] target: {target_sample}")
-    if marker_path.is_file():
+    if marker_path.is_file() or legacy_marker_path.is_file():
         print(f"[{sample_id}] already active; skip (rollback first if re-migration is intended)")
         return True
     if not source_pipeline.is_dir() and not (target_sample / "03_acmg").is_dir():
@@ -176,23 +201,34 @@ def migrate_one(
                 omitted_exact_copies.append(entry.name)
                 print(f"[{sample_id}] omit exact copy: {entry.name} == {pipeline_copy}")
                 continue
-            _copy_entry(entry, post_dir / entry.name)
+            _copy_state_entry_prefixed(entry, post_dir, sample_id)
 
     raw_tsv = _find_raw(target_sample, source_id)
     if not raw_tsv.is_file():
         print(f"[{sample_id}] ERROR: target raw TSV missing: {raw_tsv}", file=sys.stderr)
         return False
 
-    overlay_path = post_dir / snv_overlay.OVERLAY_NAME
+    overlay_path = post_dir / sample_layout.prefixed_filename(
+        sample_id, snv_overlay.OVERLAY_NAME
+    )
     snv_overlay.build_overlay(raw_tsv, old_annotated, overlay_path)
     review_path = snv_review.ensure_review_tsv(
         raw_tsv,
         test_type=_test_type(legacy_state),
         output_dir=post_dir,
+        output_path=post_dir / sample_layout.prefixed_filename(
+            sample_id, snv_review.REVIEW_TSV_NAME
+        ),
+        manifest_path=post_dir / sample_layout.prefixed_filename(
+            sample_id, f"{snv_review.REVIEW_TSV_NAME}.source.json"
+        ),
         overlay_path=overlay_path,
     )
     index_path = snv_gene_index.build_index(
-        raw_tsv, post_dir / snv_gene_index.INDEX_NAME
+        raw_tsv,
+        post_dir / sample_layout.prefixed_filename(
+            sample_id, snv_gene_index.INDEX_NAME
+        ),
     )
 
     checks = {
@@ -202,7 +238,9 @@ def migrate_one(
         "index_current": snv_gene_index.is_current(raw_tsv, index_path),
     }
     old_meta = legacy_state / "sample_metadata.json"
-    new_meta = post_dir / "sample_metadata.json"
+    new_meta = post_dir / sample_layout.prefixed_filename(
+        sample_id, "sample_metadata.json"
+    )
     if old_meta.is_file():
         checks["metadata_checksum"] = new_meta.is_file() and _sha256(old_meta) == _sha256(new_meta)
     if not all(checks.values()):
@@ -225,7 +263,9 @@ def migrate_one(
         "old_data_deleted": False,
         "migrated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
     }
-    manifest_path = post_dir / "migration_manifest.json"
+    manifest_path = post_dir / sample_layout.prefixed_filename(
+        sample_id, "migration_manifest.json"
+    )
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # Configure the resolver used in this process, then activate last.

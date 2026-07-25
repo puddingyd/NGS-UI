@@ -6,6 +6,13 @@
 
 ## 版本紀錄
 
+### v7.0 — 2026-07-25
+
+- SNV/Indel 卡片新增 `Strand bias PASS / WARN / MANUAL` 標籤；WARN 顯示 FS/SOR，缺少 FS/SOR 的 DeepVariant-only 位點會提示 IGV／人工複核。主畫面、報告區、Secondary findings 與 gene search 共用相同顯示。
+- Read support 改為同時顯示 DP、AD、VAF；WGS/TITAN-WGS 總 DP<10 及 ALT AD<10 會分別標紅提醒，WES 仍維持 DP≥20 hard floor。
+- DRAGEN 與 NCKUH ploidy VCF 都會帶入三級分析。性別欄固定顯示可點擊的 ploidy 結果，完整視窗列出所有 chromosome 的 FILTER/DC/NDC/RATIO；aneuploidy 或任一核染色體非 PASS 顯示紫色，未輸入／不符性別顯示紅色，符合顯示綠色。
+- 新三級個案的 `08_postprocessing` 與 analysis sidecar 全面使用 `{LIS_ID}.<filename>`；舊版未加前綴檔仍可讀，並固定由 prefixed 檔優先。layout v3 marker 最後原子寫入，舊檔不會被自動刪除。
+
 ### v6.9 — 2026-07-22
 
 - 首頁歡迎訊息與版本紀錄之間新增可由 `ANALYSIS_FLOW.md` 編輯的橫向 NGS 分析流程圖，呈現輸入/QC、五條二級分析、三級分析、Prioritization、Phenotype/clinical context、判讀與三種報告輸出。

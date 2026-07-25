@@ -56,7 +56,7 @@ def active_version(sample_id: str) -> str | None:
     Falls back to 'default' if it exists, then the first available
     version, else None (un-migrated sample with no analyses dir).
     """
-    meta_path = sample_dir(sample_id) / "sample_metadata.json"
+    meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
     name: str | None = None
     if meta_path.exists():
         try:
@@ -64,9 +64,9 @@ def active_version(sample_id: str) -> str | None:
             name = data.get("active_analysis") if isinstance(data, dict) else None
         except (json.JSONDecodeError, OSError):
             pass
-    if name and (version_dir(sample_id, name) / "analysis.json").exists():
+    if name and sample_layout.analysis_file(sample_id, name, "analysis.json").exists():
         return name
-    if (version_dir(sample_id, "default") / "analysis.json").exists():
+    if sample_layout.analysis_file(sample_id, "default", "analysis.json").exists():
         return "default"
     versions = list_versions(sample_id)
     return versions[0]["name"] if versions else None
@@ -89,7 +89,11 @@ def set_active(sample_id: str, version: str) -> None:
     """Persist `active_analysis` on sample_metadata.json. Validates name."""
     if version not in {v["name"] for v in list_versions(sample_id)}:
         raise ValueError(f"unknown analysis version: {version}")
-    meta_path = sample_dir(sample_id) / "sample_metadata.json"
+    meta_path = sample_layout.state_file(
+        sample_id,
+        "sample_metadata.json",
+        for_write=True,
+    )
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if not isinstance(meta, dict):
@@ -116,7 +120,7 @@ def list_versions(sample_id: str) -> list[dict]:
     for sub in sorted(root.iterdir()):
         if not sub.is_dir():
             continue
-        ap = sub / "analysis.json"
+        ap = sample_layout.scoped_file(sub, sample_id, "analysis.json")
         if not ap.exists():
             continue
         try:
@@ -137,7 +141,7 @@ def list_versions(sample_id: str) -> list[dict]:
 
 
 def read_version(sample_id: str, version: str) -> dict | None:
-    p = version_dir(sample_id, version) / "analysis.json"
+    p = sample_layout.analysis_file(sample_id, version, "analysis.json")
     if not p.exists():
         return None
     try:
@@ -160,7 +164,12 @@ def write_version(
     validate_name(version)
     vdir = version_dir(sample_id, version)
     vdir.mkdir(parents=True, exist_ok=True)
-    p = vdir / "analysis.json"
+    p = sample_layout.analysis_file(
+        sample_id,
+        version,
+        "analysis.json",
+        for_write=True,
+    )
     existing: dict = {}
     if p.exists():
         try:
@@ -187,10 +196,20 @@ def write_version(
     # Empty HPO+panels → wipe any stale pheno_score.tsv from a
     # previous edit instead of leaving misleading content behind.
     from . import phenotype_scorer
-    pheno_tsv = vdir / "pheno_score.tsv"
+    pheno_tsv = sample_layout.analysis_file(
+        sample_id,
+        version,
+        "pheno_score.tsv",
+        for_write=True,
+    )
     if (hpo or panels):
         scores = phenotype_scorer.compute_pheno_score(hpo or [], panels or [])
-        phenotype_scorer.write_pheno_table(sample_id, scores, target_dir=vdir)
+        phenotype_scorer.write_pheno_table(
+            sample_id,
+            scores,
+            target_dir=vdir,
+            version=version,
+        )
     elif pheno_tsv.exists():
         try:
             pheno_tsv.unlink()
@@ -223,9 +242,9 @@ def clear_sidecars(sample_id: str, version: str) -> None:
     """
     vdir = version_dir(sample_id, version)
     for fname in ("pheno_score.tsv", "exomiser_results.tsv", "lirical_results.tsv"):
-        p = vdir / fname
-        if p.exists():
-            p.unlink()
+        for p in sample_layout.analysis_file_candidates(sample_id, version, fname):
+            if p.exists():
+                p.unlink()
     af = vdir / "analysis_files"
     if af.exists():
         shutil.rmtree(af)

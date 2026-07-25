@@ -39,7 +39,9 @@ def iter_repairs_from_sidecars(tertiary_root: Path, pipeline_root: Path):
     for sample_dir in sorted(tertiary_root.iterdir() if tertiary_root.is_dir() else []):
         if not sample_dir.is_dir() or sample_dir.name.startswith("_"):
             continue
-        sidecar = sample_dir / "pipeline_source.json"
+        sidecar = sample_dir / f"{sample_dir.name}.pipeline_source.json"
+        if not sidecar.is_file():
+            sidecar = sample_dir / "pipeline_source.json"
         if not sidecar.is_file():
             continue
         try:

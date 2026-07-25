@@ -39,7 +39,7 @@ from ..config import (
     LIRICAL_JAR,
     REPO_ROOT,
 )
-from ..services import analyses_store, job_store, vcf_writer
+from ..services import analyses_store, job_store, sample_layout, vcf_writer
 from .results_parser import parse_exomiser_variants_tsv, parse_lirical_variant_tsv
 
 EXOMISER_TEMPLATE = REPO_ROOT / "phenotype_reference" / "exomiser_input.yml"
@@ -100,21 +100,39 @@ def _hpo_ids(hpo_list: list) -> list[str]:
     ]
 
 
-def _render_exomiser_yml(template: Path, work_dir: Path, vcf: Path,
-                         hpo_ids: list[str], assembly: str) -> Path:
+def _render_exomiser_yml(
+    template: Path,
+    work_dir: Path,
+    sample_id: str,
+    vcf: Path,
+    hpo_ids: list[str],
+    assembly: str,
+) -> tuple[Path, Path]:
+    analysis_files = work_dir / "analysis_files"
+    result_path = sample_layout.scoped_file(
+        analysis_files,
+        sample_id,
+        "exomiser_result.variants.tsv",
+        for_write=True,
+    )
     doc = _read_yaml(template)
     analysis = doc.setdefault("analysis", {})
     analysis["genomeAssembly"] = assembly
     analysis["vcf"]    = str(vcf)
     analysis["hpoIds"] = hpo_ids
     output = doc.setdefault("outputOptions", {})
-    output["outputDirectory"] = str(work_dir / "analysis_files")
-    output["outputFileName"]  = "exomiser_result"
+    output["outputDirectory"] = str(analysis_files)
+    output["outputFileName"] = result_path.name.removesuffix(".variants.tsv")
     output["outputFormats"]   = ["TSV_VARIANT"]
-    out = work_dir / "analysis_files" / "exomiser_input.yml"
+    out = sample_layout.scoped_file(
+        analysis_files,
+        sample_id,
+        "exomiser_input.yml",
+        for_write=True,
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     _write_yaml(out, doc)
-    return out
+    return out, result_path
 
 
 def _render_lirical_yaml(template: Path, work_dir: Path, sample_id: str,
@@ -124,7 +142,12 @@ def _render_lirical_yaml(template: Path, work_dir: Path, sample_id: str,
     doc["hpoIds"]         = hpo_ids
     doc["negatedHpoIds"]  = doc.get("negatedHpoIds") or []
     doc["vcf"]            = str(vcf)
-    out = work_dir / "analysis_files" / "lirical_input.yaml"
+    out = sample_layout.scoped_file(
+        work_dir / "analysis_files",
+        sample_id,
+        "lirical_input.yaml",
+        for_write=True,
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     _write_yaml(out, doc)
     return out
@@ -167,12 +190,11 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
     directory. Pre-migration samples (no analyses/ dir) fall back to
     the sample root so old layouts keep working.
     """
-    from ..services import sample_layout
     sample_root = sample_layout.state_dir(sample_id)
     if not sample_root.is_dir():
         raise RuntimeError(f"sample dir not found: {sample_root}")
 
-    meta_path = sample_root / "sample_metadata.json"
+    meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
 
     # HPO is a hard prerequisite for both tools. Check it before VCF
@@ -226,7 +248,12 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
 
     work_dir = analyses_store.active_version_dir(sample_id)
     work_dir.mkdir(parents=True, exist_ok=True)
-    log_path = work_dir / "analysis_files" / "rerun.log"
+    log_path = sample_layout.scoped_file(
+        work_dir / "analysis_files",
+        sample_id,
+        "rerun.log",
+        for_write=True,
+    )
 
     # ---- Exomiser ----
     job_store.update(job_id, {
@@ -235,8 +262,13 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
         "started_at": _now(),
     })
     try:
-        exo_yml = _render_exomiser_yml(
-            EXOMISER_TEMPLATE, work_dir, vcf, hpo_ids, assembly,
+        exo_yml, exo_var_tsv = _render_exomiser_yml(
+            EXOMISER_TEMPLATE,
+            work_dir,
+            sample_id,
+            vcf,
+            hpo_ids,
+            assembly,
         )
     except Exception as e:
         _append_log(log_path, "ERROR during exomiser:render")
@@ -280,6 +312,12 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
     ed_flag = "-ed38" if assembly == "hg38" else "-ed19"
     lir_out_dir = work_dir / "analysis_files" / "lirical"
     lir_out_dir.mkdir(parents=True, exist_ok=True)
+    lir_var_tsv = sample_layout.scoped_file(
+        lir_out_dir,
+        sample_id,
+        "lirical_result.variant.tsv",
+        for_write=True,
+    )
     lir_cmd = [
         JAVA_BIN, *shlex.split(JAVA_OPTS),
         "-jar", str(LIRICAL_JAR),
@@ -287,7 +325,7 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
         "-y", str(lir_yaml),
         "--assembly", assembly,
         ed_flag, str(ed_dir),
-        "-x", "lirical_result.variant",
+        "-x", lir_var_tsv.name.removesuffix(".tsv"),
         "-o", str(lir_out_dir),
         "-f", "tsv",
     ]
@@ -298,10 +336,20 @@ def run_exomiser_lirical(job_id: str, sample_id: str) -> dict:
 
     # ---- Parse results into spec-compliant sidecars ----
     job_store.update(job_id, {"step": "parse"})
-    exo_var_tsv = work_dir / "analysis_files" / "exomiser_result.variants.tsv"
-    lir_var_tsv = lir_out_dir / "lirical_result.variant.tsv"
-    n_exo = parse_exomiser_variants_tsv(exo_var_tsv, work_dir / "exomiser_results.tsv")
-    n_lir = parse_lirical_variant_tsv(lir_var_tsv, work_dir / "lirical_results.tsv")
+    exo_results = sample_layout.scoped_file(
+        work_dir,
+        sample_id,
+        "exomiser_results.tsv",
+        for_write=True,
+    )
+    lir_results = sample_layout.scoped_file(
+        work_dir,
+        sample_id,
+        "lirical_results.tsv",
+        for_write=True,
+    )
+    n_exo = parse_exomiser_variants_tsv(exo_var_tsv, exo_results)
+    n_lir = parse_lirical_variant_tsv(lir_var_tsv, lir_results)
 
     result = {
         "status":      "succeeded",

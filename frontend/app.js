@@ -835,6 +835,24 @@ function fmtAdVaf(ad, vaf) {
   return `${adPart} (${vafPart})`;
 }
 
+function fmtDepthSupport(v) {
+  const dp = (v?.depth != null && v.depth !== "" && Number.isFinite(Number(v.depth)))
+    ? fmtInt(v.depth)
+    : "—";
+  const ad = (v?.AD == null || v.AD === "") ? "—" : String(v.AD);
+  const vaf = (v?.alt_af == null || v.alt_af === "" || !Number.isFinite(Number(v.alt_af)))
+    ? "—"
+    : fmtNum(v.alt_af);
+  return `DP ${dp} · AD ${ad} · VAF ${vaf}`;
+}
+
+function depthSupportHint(v) {
+  const lines = [];
+  if (v?.low_depth) lines.push(`Low total depth (DP ${v.depth ?? "?"})`);
+  if (v?.low_alt_support) lines.push(`Low ALT support (ALT AD ${v.alt_depth ?? "?"} < 10)`);
+  return lines.length ? `${lines.join("; ")} — 建議 IGV 複核，必要時 Sanger 確認` : "";
+}
+
 // ── IGV.js integration ─────────────────────────────────────────────
 // Reviewer-side BAM viewer. Click the IGV button on any SNV / CNV /
 // SV card → modal opens with igv.js pinned to that locus, BAM auto-
@@ -1412,21 +1430,63 @@ function variantUrls(v) {
 // ---------- Render: sample header / phenotype ----------------------
 
 function renderPloidySexStatus(reportedSex) {
-  const ploidyCall = String(state.data.ploidy?.karyotype || "").trim().toUpperCase();
+  const ploidy = state.data?.ploidy || {};
+  const ploidyCall = String(ploidy.karyotype || "").trim().toUpperCase();
   const sex = String(reportedSex || "").trim().toUpperCase();
   const sexControl = document.getElementById("m-sex-control");
   const ploidyLabel = document.getElementById("m-ploidy-call");
+  const hasPloidy = !!ploidy.exists;
+  const hasAneuploidy = hasPloidy && !!ploidy.aneuploidy_suspected;
   const matches = (
     (sex === "M" && ploidyCall === "XY") ||
     (sex === "F" && ploidyCall === "XX")
   );
-  sexControl?.classList.toggle("ploidy-match", !!ploidyCall && matches);
-  sexControl?.classList.toggle("ploidy-mismatch", !!ploidyCall && !matches);
+  sexControl?.classList.toggle("ploidy-aneuploid", hasAneuploidy);
+  sexControl?.classList.toggle("ploidy-match", hasPloidy && !hasAneuploidy && matches);
+  sexControl?.classList.toggle("ploidy-mismatch", hasPloidy && !hasAneuploidy && !matches);
   if (ploidyLabel) {
-    ploidyLabel.textContent = ploidyCall ? `ploidy VCF: ${ploidyCall}` : "";
-    ploidyLabel.hidden = !ploidyCall || matches;
+    ploidyLabel.textContent = hasPloidy ? `ploidy VCF: ${ploidyCall || "—"}` : "";
+    ploidyLabel.hidden = !hasPloidy;
   }
 }
+
+function openPloidyModal() {
+  const ploidy = state.data?.ploidy || {};
+  if (!ploidy.exists) return;
+  const modal = document.getElementById("ploidy-modal");
+  const summary = document.getElementById("ploidy-summary");
+  const tbody = document.getElementById("ploidy-table-body");
+  const warnings = Array.isArray(ploidy.warnings) ? ploidy.warnings : [];
+  if (summary) {
+    summary.innerHTML = `
+      <span><strong>Estimated:</strong> ${escapeHtml(ploidy.karyotype || "—")}</span>
+      <span><strong>Reference:</strong> ${escapeHtml(ploidy.reference_karyotype || "—")}</span>
+      <span><strong>Pipeline:</strong> ${escapeHtml(ploidy.pipeline_source || "—")}</span>
+      <span><strong>Seq type:</strong> ${escapeHtml(ploidy.seq_type || "—")}</span>
+      <span class="${ploidy.aneuploidy_suspected ? "ploidy-summary-warn" : "ploidy-summary-pass"}"><strong>Nuclear warnings:</strong> ${warnings.length}</span>`;
+  }
+  if (tbody) {
+    const rows = Array.isArray(ploidy.chromosomes) ? ploidy.chromosomes : [];
+    const warningChroms = new Set(warnings.map(row => String(row.chrom || "")));
+    tbody.innerHTML = rows.map(row => {
+      const filter = String(row.filter || ".");
+      const warn = warningChroms.has(String(row.chrom || ""));
+      return `<tr class="${warn ? "ploidy-row-warn" : ""}">
+        <td>${escapeHtml(row.chrom || "—")}</td>
+        <td>${escapeHtml(filter)}</td>
+        <td>${escapeHtml(fmtTxt(row.end))}</td>
+        <td>${escapeHtml(fmtTxt(row.DC))}</td>
+        <td>${escapeHtml(fmtTxt(row.NDC))}</td>
+        <td>${escapeHtml(fmtTxt(row.RATIO))}</td>
+      </tr>`;
+    }).join("");
+  }
+  modal?.classList.remove("hidden");
+}
+
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("#m-ploidy-call")) openPloidyModal();
+});
 
 function renderSampleMeta() {
   const m = state.data.meta || {};
@@ -3957,7 +4017,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
-        <span class="k">Read depth (VAF)</span><span class="v ${v.low_depth ? "sig-lp" : ""}" title="${v.low_depth ? `Low DP (DP ${v.depth || "?"}) — 建議 IGV / Sanger 確認` : ""}">${escapeHtml(fmtAdVaf(v.AD, v.alt_af))}</span>
+        <span class="k">Read support</span><span class="v ${(v.low_depth || v.low_alt_support) ? "sig-lp" : ""}" title="${escapeAttr(depthSupportHint(v))}">${escapeHtml(fmtDepthSupport(v))}</span>
         <span class="k">Consequence</span><span class="v">${_renderConsequenceCell(v.Consequence)}</span>
         <div class="more-extras hidden">
           <span class="k">Exon / Intron</span><span class="v">${fmtExonIntron(v)}</span>
@@ -4049,6 +4109,20 @@ function renderVariantBadges(v) {
   if (v.in_blacklist) chips.push(`<span class="badge badge-blacklist" title="Variant or gene flagged on the QC blacklist">⚠ Blacklist</span>`);
   if (v.loftee_hc === "HC") {
     chips.push(`<span class="badge badge-loftee-hc" title="LOFTEE high-confidence LoF">LOFTEE HC</span>`);
+  }
+  if (v.strand_bias_status === "pass") {
+    chips.push(`<span class="badge badge-strand-pass" title="${escapeAttr(`Strand bias PASS; ${v.strand_bias_threshold || ""}`)}">Strand bias PASS</span>`);
+  } else if (v.strand_bias_status === "warn") {
+    const detail = v.strand_bias_raw || [
+      v.strand_bias_fs != null ? `FS=${v.strand_bias_fs}` : "",
+      v.strand_bias_sor != null ? `SOR=${v.strand_bias_sor}` : "",
+    ].filter(Boolean).join(", ");
+    chips.push(`<span class="badge badge-strand-alert" title="${escapeAttr(`${detail || "Strand bias warning"}; ${v.strand_bias_threshold || ""}`)}">Strand bias WARN</span>`);
+  } else if (v.strand_bias_status === "manual") {
+    chips.push(`<span class="badge badge-strand-alert" title="無 FS/SOR（常見於 DeepVariant-only 位點）；需 IGV／人工複核">Strand bias MANUAL</span>`);
+  }
+  if (v.low_alt_support) {
+    chips.push(`<span class="badge badge-alt-support" title="${escapeAttr(`ALT AD ${v.alt_depth ?? "?"} < 10；建議 IGV 複核，必要時 Sanger 確認`)}">Low ALT support</span>`);
   }
   // GIAB genome-stratification flags — difficult regions where short-read
   // calls are less reliable (homopolymers, repeats, segdups, ...). One

@@ -281,13 +281,75 @@ def _find_dragen_ploidy_vcf(source_vcf: str | Path, source_sample_id: str) -> Pa
     return None
 
 
+def _find_nckuh_ploidy_vcf(source_vcf: str | Path, source_sample_id: str) -> Path | None:
+    """Find 03_alignment_qc/<source>.ploidy.vcf.gz for an NCKUH ensemble VCF."""
+    source = Path(source_vcf)
+    sample_root = source.parent.parent if source.parent.name == "04_snv_indel" else source.parent
+    qc_dir = sample_root / "03_alignment_qc"
+    name = source.name
+    stems: list[str] = []
+    for suffix in (".ensemble.fixed.vcf.gz", ".vcf.gz"):
+        if name.endswith(suffix):
+            stems.append(name[:-len(suffix)])
+            break
+    if source_sample_id:
+        stems.append(str(source_sample_id).strip())
+    for stem in dict.fromkeys(value for value in stems if value):
+        candidate = qc_dir / f"{stem}.ploidy.vcf.gz"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _find_ploidy_qc_txt(
+    ploidy_vcf: Path | None,
+    *,
+    sample_id: str,
+    source_sample_id: str,
+) -> Path | None:
+    """Locate the future-use ploidy QC text without consuming it in the UI."""
+    ids = list(dict.fromkeys(
+        value for value in (source_sample_id.strip(), sample_id.strip()) if value
+    ))
+    if ploidy_vcf is not None:
+        directory = ploidy_vcf.parent
+        stem = ploidy_vcf.name.removesuffix(".ploidy.vcf.gz")
+        for name in (
+            f"{stem}.ploidy_qc.txt",
+            *(f"{sid}.ploidy_qc.txt" for sid in ids),
+            "ploidy_qc.txt",
+        ):
+            candidate = directory / name
+            if candidate.is_file():
+                return candidate
+    for sid_dir in ids:
+        directory = PIPELINE_OUT_ROOT / sid_dir / "00_prepare"
+        for source_id in ids:
+            candidate = directory / f"{source_id}.ploidy_qc.txt"
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 def _copy_dragen_ploidy_vcf(
     source_vcf: str | Path,
     source_sample_id: str,
     sample_dir: Path,
+    sample_id: str | None = None,
 ) -> tuple[Path, Path] | None:
     source = _find_dragen_ploidy_vcf(source_vcf, source_sample_id)
-    destination = sample_dir / "ploidy.vcf.gz"
+    sid = sample_id or (
+        sample_dir.parent.name
+        if sample_dir.name == sample_layout.POSTPROCESSING_DIRNAME
+        else sample_dir.name
+    )
+    destination = sample_layout.scoped_file(
+        sample_dir,
+        sid,
+        "ploidy.vcf.gz",
+        for_write=True,
+        force_prefixed=True,
+    )
     if source is None:
         # Do not retain a stale karyotype when the same LIS ID is re-run
         # against a DRAGEN source that has no matching ploidy sidecar.
@@ -295,6 +357,54 @@ def _copy_dragen_ploidy_vcf(
         return None
     shutil.copyfile(source, destination)
     return source, destination
+
+
+def _copy_ploidy_artifacts(
+    *,
+    mode: str,
+    source_vcf: str | Path,
+    source_sample_id: str,
+    sample_id: str,
+    post_dir: Path,
+) -> tuple[tuple[Path, Path] | None, tuple[Path, Path] | None]:
+    source = (
+        _find_dragen_ploidy_vcf(source_vcf, source_sample_id)
+        if mode == "dragen"
+        else _find_nckuh_ploidy_vcf(source_vcf, source_sample_id)
+    )
+    vcf_destination = sample_layout.scoped_file(
+        post_dir,
+        sample_id,
+        "ploidy.vcf.gz",
+        for_write=True,
+        force_prefixed=True,
+    )
+    copied_vcf = None
+    if source is not None:
+        shutil.copyfile(source, vcf_destination)
+        copied_vcf = (source, vcf_destination)
+    else:
+        vcf_destination.unlink(missing_ok=True)
+
+    qc_source = _find_ploidy_qc_txt(
+        source,
+        sample_id=sample_id,
+        source_sample_id=source_sample_id,
+    )
+    qc_destination = sample_layout.scoped_file(
+        post_dir,
+        sample_id,
+        "ploidy_qc.txt",
+        for_write=True,
+        force_prefixed=True,
+    )
+    copied_qc = None
+    if qc_source is not None:
+        shutil.copyfile(qc_source, qc_destination)
+        copied_qc = (qc_source, qc_destination)
+    else:
+        qc_destination.unlink(missing_ok=True)
+    return copied_vcf, copied_qc
 
 
 def _pipeline_outputs_for(
@@ -440,8 +550,10 @@ def _validate_acmg_tsv(path: Path, *, strict_v31: bool) -> None:
             f"pipeline TSV missing required columns: {', '.join(missing)}"
         )
     is_v35_transcript_schema = "MANE_ALL" not in header
-    expected_cols = 64 if is_v35_transcript_schema else 65
+    expected_cols = 65
     schema_label = "v3.5 transcript schema" if is_v35_transcript_schema else "v3.1-v3.4 schema"
+    if strict_v31 and is_v35_transcript_schema and "STRAND_BIAS" not in header:
+        raise RuntimeError("pipeline TSV v3.5 schema is missing STRAND_BIAS")
     if strict_v31 and len(header) < expected_cols:
         raise RuntimeError(
             f"pipeline TSV has {len(header)} columns; {schema_label} expects at least {expected_cols}"
@@ -515,6 +627,7 @@ def _load_samples(args: argparse.Namespace) -> list[dict]:
 
 
 def _track_pipeline_source(
+    sample_id: str,
     sample_dir: Path,
     source: Path,
     *,
@@ -539,7 +652,13 @@ def _track_pipeline_source(
         "pipeline_type": pipeline_type,
         "annotated_at": _now(),
     }
-    (sample_dir / "pipeline_source.json").write_text(
+    sample_layout.scoped_file(
+        sample_dir,
+        sample_id,
+        "pipeline_source.json",
+        for_write=True,
+        force_prefixed=True,
+    ).write_text(
         json.dumps(rec, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -1038,6 +1157,7 @@ def main() -> int:
             _validate_acmg_tsv(existing, strict_v31=not legacy_staging)
             raw_tsv_by_sid[sid] = existing
             _track_pipeline_source(
+                sid,
                 post_dir,
                 existing,
                 source_sample_id=source_sid,
@@ -1045,13 +1165,21 @@ def main() -> int:
                 pipeline_type=mode,
             )
             _log(f"[source] {sid}: immutable SNV TSV {existing}")
-            if mode == "dragen":
-                ploidy_copy = _copy_dragen_ploidy_vcf(source_vcf, source_sid, post_dir)
-                if ploidy_copy is None:
-                    _log(f"[copy] {sid}: matching DRAGEN ploidy VCF not found beside {source_vcf}")
-                else:
-                    ploidy_src, ploidy_dst = ploidy_copy
-                    _log(f"[copy] {sid}: {ploidy_src} → {ploidy_dst}")
+            ploidy_copy, ploidy_qc_copy = _copy_ploidy_artifacts(
+                mode=mode,
+                source_vcf=source_vcf,
+                source_sample_id=source_sid,
+                sample_id=sid,
+                post_dir=post_dir,
+            )
+            if ploidy_copy is None:
+                _log(f"[copy] {sid}: matching {mode} ploidy VCF not found for {source_vcf}")
+            else:
+                ploidy_src, ploidy_dst = ploidy_copy
+                _log(f"[copy] {sid}: {ploidy_src} → {ploidy_dst}")
+            if ploidy_qc_copy is not None:
+                ploidy_qc_src, ploidy_qc_dst = ploidy_qc_copy
+                _log(f"[copy] {sid}: future-use ploidy QC {ploidy_qc_src} → {ploidy_qc_dst}")
             mito_src = outputs.get("mito.tsv") or _find_pipeline_mito_tsv(sid, source_sid)
             if mito_src is None:
                 _log(
@@ -1059,7 +1187,13 @@ def main() -> int:
                     f"{PIPELINE_OUT_ROOT}/{source_sid}/04_mito/"
                 )
             else:
-                mito_dst = post_dir / "mito.annotated.tsv"
+                mito_dst = sample_layout.scoped_file(
+                    post_dir,
+                    sid,
+                    "mito.annotated.tsv",
+                    for_write=True,
+                    force_prefixed=True,
+                )
                 shutil.copyfile(mito_src, mito_dst)
                 try:
                     mito_changed = mitomap_mito.annotate_mito_tsv(mito_dst)
@@ -1173,6 +1307,12 @@ def main() -> int:
                     on_line=track_post_processing,
                     display_cmd=display_stop_args,
                 )
+                promoted = sample_layout.promote_state_tree_to_v3(sid)
+                if promoted:
+                    _log(
+                        f"[layout] {sid}: copied {len(promoted)} legacy state file(s) "
+                        "to v3 sample-prefixed names"
+                    )
                 sample_layout.write_layout_marker(
                     sid,
                     source_id=sample["source_sample_id"],
