@@ -964,6 +964,38 @@ def test_pgx_summary_rows_exclude_fda_label_only_drugs():
     }]
 
 
+def test_pgx_summary_reuses_overview_primary_action_and_source():
+    rows = docx_export._pgx_summary_rows_from_drug_groups([{
+        "drug": "Eliglustat",
+        "genes": {"CYP2D6": {}},
+        "action": "調整劑量並監測",
+        "source_level": "FDA Label",
+        "recommendations": [
+            {
+                "gene": "CYP2D6",
+                "source": "FDA PGx Association",
+                "level": "Therapeutic Management",
+                "action": "考慮替代藥物",
+                "source_priority": 2,
+            },
+            {
+                "gene": "CYP2D6",
+                "source": "FDA Label",
+                "level": "Unspecified",
+                "action": "調整劑量並監測",
+                "source_priority": 3,
+            },
+        ],
+    }])
+
+    assert rows == [{
+        "drug": "Eliglustat",
+        "gene": "CYP2D6",
+        "action": "調整劑量並監測",
+        "source_level": "FDA Label",
+    }]
+
+
 def test_pgx_adapter_keeps_json_when_tsv_is_absent(tmp_path, monkeypatch):
     monkeypatch.setattr(pgx_tsv, "_compact_report_json", lambda _path: {
         "pharmcat_version": "3.2.0",

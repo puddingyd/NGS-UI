@@ -2677,13 +2677,6 @@ def _pgx_summary_rows(alerts: list[dict]) -> list[dict]:
 
 def _pgx_summary_rows_from_drug_groups(groups: list[dict]) -> list[dict]:
     rows: list[dict] = []
-    action_rank = {
-        "調整劑量並監測": 0,
-        "考慮替代藥物": 1,
-        "加強不良反應監測": 2,
-        "使用前確認表型或檢驗": 3,
-        "參考最新藥品仿單": 4,
-    }
     for group in sorted(groups, key=lambda row: str(row.get("drug") or "").casefold()):
         summary_recs = [
             rec for rec in group.get("recommendations") or []
@@ -2691,22 +2684,14 @@ def _pgx_summary_rows_from_drug_groups(groups: list[dict]) -> list[dict]:
         ]
         if not summary_recs:
             continue
-        primary = min(
-            summary_recs,
-            key=lambda rec: (
-                action_rank.get(rec.get("action") or "", 9),
-                rec.get("source_priority", 9),
-            ),
-        )
         genes = [rec.get("gene") for rec in summary_recs if rec.get("gene")]
         rows.append({
             "drug": group["drug"],
             "gene": "、".join(dict.fromkeys(genes)),
-            "action": _pgx_action_display(primary.get("action") or ""),
-            "source_level": _pgx_source_level_display(
-                primary.get("source") or "",
-                primary.get("level") or "",
+            "action": _pgx_action_display(
+                group.get("action") or _PGX_GENERIC_ACTION
             ),
+            "source_level": group.get("source_level") or "",
         })
     return rows
 

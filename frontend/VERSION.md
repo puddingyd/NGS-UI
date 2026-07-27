@@ -11,6 +11,7 @@
 - 三級分析的 GeneBe ACMG 第二意見改為主 DB 優先的 hybrid lookup：完整 TSV 先查本機 DB，再由中央 cache 補值；只有 DB/cache 都查不到且符合 SNV review 條件的點才送 live API。
 - GeneBe live API 未設定或暫時失敗不會中止三級分析；成功結果會跨個案重用，明確 no-result 預設 30 天後才重查。
 - API 新結果另存為正式 DB 相容的 7 欄去重 TSV 與 JSON sidecar，方便後續匯入；既有完整 working TSV 仍只在 post-processing 期間暫存並於結束時刪除，不增加永久大型 SNV 副本。
+- PGx 藥物建議摘要直接沿用用藥建議概覽已選出的主要分類與依據，不再用摘要來源子集合重新分類，避免同一藥物在兩處顯示不同處置。
 
 ### v7.1 — 2026-07-27
 
