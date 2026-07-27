@@ -638,13 +638,41 @@
         <button type="button" class="btn btn-ghost" data-close="ploidy-modal">關閉</button>
       </div>
       <div id="ploidy-summary" class="ploidy-summary"></div>
-      <p class="muted ploidy-note">SUSPECT 代表 normalized coverage 顯示可能的 chromosome dosage 異常，並非確診；請配合原始 reads、臨床資料及適當的確認檢驗判讀。</p>
-      <div class="ploidy-table-wrap">
-        <table class="ploidy-table">
-          <thead><tr><th>CHROM</th><th>FILTER</th><th>END</th><th>DC</th><th>NDC</th><th>RATIO</th></tr></thead>
-          <tbody id="ploidy-table-body"></tbody>
-        </table>
-      </div>
+      <p class="muted ploidy-note">Ploidy signal 代表整條染色體 coverage dosage 可能異常，並非確診；請配合原始 reads、臨床資料及適當的確認檢驗判讀。</p>
+
+      <section class="ploidy-section" aria-labelledby="ploidy-alert-title">
+        <div class="ploidy-section-head">
+          <h3 id="ploidy-alert-title">需要複核的染色體</h3>
+          <span id="ploidy-alert-count" class="ploidy-count"></span>
+        </div>
+        <p id="ploidy-alert-empty" class="ploidy-empty hidden">未偵測到 chromosome dosage signal。</p>
+        <div id="ploidy-alert-wrap" class="ploidy-table-wrap">
+          <table class="ploidy-table ploidy-review-table">
+            <thead><tr><th>Chr</th><th>判定</th><th>Dosage signal</th><th>品質</th></tr></thead>
+            <tbody id="ploidy-alert-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <details class="ploidy-details">
+        <summary>顯示全部染色體</summary>
+        <div class="ploidy-table-wrap">
+          <table class="ploidy-table ploidy-review-table">
+            <thead><tr><th>Chr</th><th>判定</th><th>Dosage signal</th><th>品質</th></tr></thead>
+            <tbody id="ploidy-all-table-body"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <details class="ploidy-details">
+        <summary>顯示原始測量值</summary>
+        <div class="ploidy-table-wrap">
+          <table class="ploidy-table ploidy-raw-table">
+            <thead><tr><th>Chr</th><th>ALT</th><th>FILTER</th><th>QUAL</th><th>DC</th><th>NDC</th><th>Raw ratio</th><th>END</th></tr></thead>
+            <tbody id="ploidy-raw-table-body"></tbody>
+          </table>
+        </div>
+      </details>
     </div>
   </div>
 

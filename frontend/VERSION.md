@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v7.1 — 2026-07-27
+
+- Ploidy status 改為 reviewer-first 畫面：先顯示 aneuploidy 結論、estimated karyotype／病歷性別核對及需要複核的染色體；完整染色體與原始測量值改為折疊顯示。
+- 修正 DRAGEN ploidy 判讀：`FILTER=PASS` 不再被誤當成染色體正常，改以 `ALT=<DEL>/<DUP>` 判定 gain/loss，並分開顯示 PASS、LowQual 與 NCKUH SUSPECT confidence。
+- DRAGEN 原始 VCF 沒有 RATIO 時，畫面會以 `DC / autosomeDepthOfCoverage` 顯示明確標註的 derived ratio；所有異常解讀維持 possible／疑似措辭。
+
 ### v7.0 — 2026-07-25
 
 - SNV/Indel 卡片新增 `Strand bias PASS / WARN / MANUAL` 標籤；WARN 顯示 FS/SOR，缺少 FS/SOR 的 DeepVariant-only 位點會提示 IGV／人工複核。主畫面、報告區、Secondary findings 與 gene search 共用相同顯示。

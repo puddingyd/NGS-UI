@@ -1450,34 +1450,124 @@ function renderPloidySexStatus(reportedSex) {
   }
 }
 
+function ploidyPipelineLabel(ploidy) {
+  if (ploidy.pipeline_kind === "dragen") return "DRAGEN";
+  if (ploidy.pipeline_kind === "nckuh") {
+    return `NCKUH${ploidy.seq_type ? ` · ${ploidy.seq_type}` : ""}`;
+  }
+  return ploidy.pipeline_source || "—";
+}
+
+function ploidySexSummary(karyotype, reportedSex) {
+  const call = String(karyotype || "").trim().toUpperCase();
+  const sex = String(reportedSex || "").trim().toUpperCase();
+  if (!sex || sex === "U") {
+    return { text: "病歷性別未輸入", cls: "ploidy-fact-alert" };
+  }
+  if ((sex === "M" && call === "XY") || (sex === "F" && call === "XX")) {
+    return { text: "✓ 相符", cls: "ploidy-fact-pass" };
+  }
+  if (call && !["XX", "XY"].includes(call)) {
+    return { text: "需人工核對", cls: "ploidy-fact-warn" };
+  }
+  return { text: "不符", cls: "ploidy-fact-alert" };
+}
+
+function ploidyDosageSignal(row) {
+  const ndc = (row?.NDC != null && Number.isFinite(Number(row.NDC)))
+    ? `NDC ${fmtNum(row.NDC)}`
+    : (row?.observed_ratio != null && Number.isFinite(Number(row.observed_ratio)))
+      ? `Ratio ${fmtNum(row.observed_ratio)}`
+      : "—";
+  const arrow = row?.dosage_call === "gain" ? " ↑"
+              : row?.dosage_call === "loss" ? " ↓"
+              : "";
+  return `${ndc}${arrow}`;
+}
+
+function ploidyQualityBadge(row) {
+  const filter = String(row?.filter || "—");
+  const confidence = String(row?.confidence || "");
+  const cls = confidence === "pass" ? "ploidy-quality-pass"
+            : confidence === "low" ? "ploidy-quality-low"
+            : confidence === "suspect" ? "ploidy-quality-suspect"
+            : "ploidy-quality-warning";
+  return `<span class="ploidy-quality ${cls}">${escapeHtml(filter)}</span>`;
+}
+
+function renderPloidyReviewRow(row) {
+  const abnormal = !!row?.is_abnormal;
+  const interpretation = abnormal && row.interpretation
+    ? `<small>${escapeHtml(row.interpretation)}</small>`
+    : "";
+  return `<tr class="${abnormal ? "ploidy-row-warn" : ""}">
+    <td>${escapeHtml(row?.chrom || "—")}</td>
+    <td><strong>${escapeHtml(row?.call_label || "—")}</strong>${interpretation}</td>
+    <td title="NDC 正常預期約為 1.0">${escapeHtml(ploidyDosageSignal(row))}</td>
+    <td>${ploidyQualityBadge(row)}</td>
+  </tr>`;
+}
+
 function openPloidyModal() {
   const ploidy = state.data?.ploidy || {};
   if (!ploidy.exists) return;
   const modal = document.getElementById("ploidy-modal");
   const summary = document.getElementById("ploidy-summary");
-  const tbody = document.getElementById("ploidy-table-body");
-  const warnings = Array.isArray(ploidy.warnings) ? ploidy.warnings : [];
+  const alertBody = document.getElementById("ploidy-alert-table-body");
+  const allBody = document.getElementById("ploidy-all-table-body");
+  const rawBody = document.getElementById("ploidy-raw-table-body");
+  const alertWrap = document.getElementById("ploidy-alert-wrap");
+  const alertEmpty = document.getElementById("ploidy-alert-empty");
+  const alertCount = document.getElementById("ploidy-alert-count");
+  const rows = Array.isArray(ploidy.chromosomes) ? ploidy.chromosomes : [];
+  const alerts = Array.isArray(ploidy.abnormal_chromosomes)
+    ? ploidy.abnormal_chromosomes
+    : Array.isArray(ploidy.warnings) ? ploidy.warnings : [];
+  const qcWarnings = Array.isArray(ploidy.qc_warnings) ? ploidy.qc_warnings : [];
+  const reportedSex = state.data?.meta?.Sex || "";
+  const sexSummary = ploidySexSummary(ploidy.karyotype, reportedSex);
+  const interpretation = [
+    ploidy.karyotype_interpretation,
+    ...alerts.map(row => row.interpretation),
+  ].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index);
+  const hasSignal = !!ploidy.aneuploidy_suspected;
   if (summary) {
     summary.innerHTML = `
-      <span><strong>Estimated:</strong> ${escapeHtml(ploidy.karyotype || "—")}</span>
-      <span><strong>Reference:</strong> ${escapeHtml(ploidy.reference_karyotype || "—")}</span>
-      <span><strong>Pipeline:</strong> ${escapeHtml(ploidy.pipeline_source || "—")}</span>
-      <span><strong>Seq type:</strong> ${escapeHtml(ploidy.seq_type || "—")}</span>
-      <span class="${ploidy.aneuploidy_suspected ? "ploidy-summary-warn" : "ploidy-summary-pass"}"><strong>Nuclear warnings:</strong> ${warnings.length}</span>`;
+      <div class="ploidy-status-banner ${hasSignal ? "ploidy-status-warn" : "ploidy-status-pass"}">
+        <span>Chromosome dosage</span>
+        <strong>${hasSignal ? "Aneuploidy signal detected" : "No aneuploidy signal"}</strong>
+        <small>${escapeHtml(interpretation.join(" · ") || "No chromosome-level dosage call")}</small>
+      </div>
+      <div class="ploidy-facts">
+        <div><span>Estimated karyotype</span><strong>${escapeHtml(ploidy.karyotype || "—")}</strong></div>
+        <div><span>病歷性別</span><strong>${escapeHtml(reportedSex || "—")}</strong><small class="${sexSummary.cls}">${escapeHtml(sexSummary.text)}</small></div>
+        <div><span>Pipeline</span><strong>${escapeHtml(ploidyPipelineLabel(ploidy))}</strong><small class="${qcWarnings.length ? "ploidy-fact-alert" : "ploidy-fact-pass"}">${qcWarnings.length ? `${qcWarnings.length} non-PASS QC` : "QC records PASS"}</small></div>
+      </div>`;
   }
-  if (tbody) {
-    const rows = Array.isArray(ploidy.chromosomes) ? ploidy.chromosomes : [];
-    const warningChroms = new Set(warnings.map(row => String(row.chrom || "")));
-    tbody.innerHTML = rows.map(row => {
-      const filter = String(row.filter || ".");
-      const warn = warningChroms.has(String(row.chrom || ""));
-      return `<tr class="${warn ? "ploidy-row-warn" : ""}">
+  if (alertBody) alertBody.innerHTML = alerts.map(renderPloidyReviewRow).join("");
+  if (alertWrap) alertWrap.classList.toggle("hidden", !alerts.length);
+  if (alertEmpty) alertEmpty.classList.toggle("hidden", !!alerts.length);
+  if (alertCount) alertCount.textContent = alerts.length ? `${alerts.length} 個` : "";
+  if (allBody) allBody.innerHTML = rows.map(renderPloidyReviewRow).join("");
+  if (rawBody) {
+    rawBody.innerHTML = rows.map(row => {
+      const ratio = row.observed_ratio == null
+        ? "—"
+        : `${fmtNum(row.observed_ratio)}${row.ratio_source === "derived" ? " (derived)" : ""}`;
+      const ratioTitle = row.ratio_source === "derived"
+        ? "Derived ratio = DC / autosomeDepthOfCoverage；非 DRAGEN 原始欄位"
+        : row.ratio_source === "native"
+          ? "來源 VCF 的原始 RATIO"
+          : "";
+      return `<tr class="${row.is_abnormal ? "ploidy-row-warn" : ""}">
         <td>${escapeHtml(row.chrom || "—")}</td>
-        <td>${escapeHtml(filter)}</td>
-        <td>${escapeHtml(fmtTxt(row.end))}</td>
+        <td>${escapeHtml(row.alt || "—")}</td>
+        <td>${escapeHtml(row.filter || "—")}</td>
+        <td>${escapeHtml(fmtTxt(row.qual))}</td>
         <td>${escapeHtml(fmtTxt(row.DC))}</td>
         <td>${escapeHtml(fmtTxt(row.NDC))}</td>
-        <td>${escapeHtml(fmtTxt(row.RATIO))}</td>
+        <td title="${escapeAttr(ratioTitle)}">${escapeHtml(ratio)}</td>
+        <td>${escapeHtml(fmtTxt(row.end))}</td>
       </tr>`;
     }).join("");
   }

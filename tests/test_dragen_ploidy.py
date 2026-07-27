@@ -56,6 +56,7 @@ def test_load_sample_ploidy_preserves_x_and_xxy(tmp_path):
     assert result["karyotype"] == "XXY"
     assert result["source"] == "ploidy.vcf.gz"
     assert result["aneuploidy_suspected"] is True
+    assert result["karyotype_interpretation"] == "possible 47,XXY"
 
     _write_ploidy(tmp_path / "ploidy.vcf.gz", "X")
     assert read_karyotype(tmp_path / "ploidy.vcf.gz") == "X"
@@ -110,7 +111,63 @@ def test_ploidy_parser_flags_non_pass_nuclear_contig(tmp_path):
     assert len(result["chromosomes"]) == 3
     assert result["chromosomes"][0]["end"] == 10
     assert [row["chrom"] for row in result["warnings"]] == ["chrY"]
+    assert result["warnings"][0]["dosage_call"] == "gain"
+    assert result["warnings"][0]["call_label"] == "Gain signal"
+    assert result["warnings"][0]["confidence"] == "suspect"
+    assert result["warnings"][0]["observed_ratio"] == 0.8
     assert result["aneuploidy_suspected"] is True
+
+
+def test_dragen_pass_dup_is_an_aneuploidy_signal_and_ratio_is_derived(tmp_path):
+    path = tmp_path / "ploidy.vcf.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(
+            "##source=DRAGEN_PLOIDY\n"
+            "##autosomeDepthOfCoverage=60\n"
+            "##estimatedSexKaryotype=XY\n"
+            "##referenceSexKaryotype=XY\n"
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n"
+            "chr1\t1\t.\tN\t.\t30\tPASS\tEND=10\tDC:NDC\t60:1.0\n"
+            "chr21\t1\t.\tN\t<DUP>\t35\tPASS\tEND=10;SVTYPE=DUP\tDC:NDC\t90:1.5\n"
+            "chrX\t1\t.\tN\t.\t30\tPASS\tEND=10\tDC:NDC\t30:1.0\n"
+        )
+
+    result = load_sample_ploidy(tmp_path)
+    chr21 = result["abnormal_chromosomes"][0]
+    chrx = result["chromosomes"][2]
+
+    assert result["pipeline_kind"] == "dragen"
+    assert result["autosome_depth"] == 60
+    assert result["aneuploidy_suspected"] is True
+    assert chr21["chrom"] == "chr21"
+    assert chr21["dosage_call"] == "gain"
+    assert chr21["call_label"] == "Gain"
+    assert chr21["confidence"] == "pass"
+    assert chr21["interpretation"] == "possible trisomy 21"
+    assert chr21["observed_ratio"] == 1.5
+    assert chr21["ratio_source"] == "derived"
+    assert chrx["expected_ratio"] == 0.5
+    assert chrx["observed_ratio"] == 0.5
+
+
+def test_dragen_lowqual_call_is_retained_but_lowqual_normal_is_qc_only(tmp_path):
+    path = tmp_path / "ploidy.vcf.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(
+            "##source=DRAGEN_PLOIDY\n"
+            "##estimatedSexKaryotype=XX\n"
+            "##referenceSexKaryotype=XX\n"
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n"
+            "chr18\t1\t.\tN\t<DEL>\t8\tLowQual\tEND=10;SVTYPE=DEL\tDC:NDC\t15:0.5\n"
+            "chr20\t1\t.\tN\t.\t8\tLowQual\tEND=10\tDC:NDC\t30:1.0\n"
+        )
+
+    result = load_sample_ploidy(tmp_path)
+
+    assert [row["chrom"] for row in result["abnormal_chromosomes"]] == ["chr18"]
+    assert result["abnormal_chromosomes"][0]["call_label"] == "Loss signal"
+    assert result["abnormal_chromosomes"][0]["confidence"] == "low"
+    assert [row["chrom"] for row in result["qc_warnings"]] == ["chr18", "chr20"]
 
 
 def test_missing_karyotype_is_not_mislabeled_as_aneuploidy(tmp_path):
