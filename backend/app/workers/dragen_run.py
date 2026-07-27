@@ -698,11 +698,11 @@ def _load_secrets() -> None:
     """Populate os.environ from $NGS_UI_HOME/secrets.env if present.
 
     uvicorn runs under systemd and doesn't inherit interactive shell
-    `export`s, so subprocess steps that need GENEBE_USER / GENEBE_API_KEY
-    fail unless they come from somewhere outside the repo. The file is
-    plain KEY=VAL lines (no quoting, no expansion), git-ignored, mode
-    0600 — populated once by the operator. Values already in
-    os.environ win (systemd Environment= can still override).
+    `export`s. Optional subprocess integrations such as the review-filtered
+    GeneBe live fallback therefore load credentials from this file. It uses
+    plain KEY=VAL lines (no quoting, no expansion), is git-ignored and should
+    be mode 0600. Values already in os.environ win, so systemd Environment=
+    can still override them.
     """
     path = NGS_UI_HOME / "secrets.env"
     if not path.is_file():

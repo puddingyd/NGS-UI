@@ -172,10 +172,12 @@ came from one of the build phases:
 So expect misses for: novel variants, most deep-intronic / intergenic positions,
 and indels never seen in ClinVar/gnomAD. A miss is **not** an error.
 
-**Recommended backend policy:**
+**NGS-UI backend policy:**
 
-1. Look up in `genebe_hg38.tsv.gz` (fast, offline, free).
-2. On a miss, fall back to the **live GeneBe API** and cache the result:
+1. Look up every TSV key in `genebe_hg38.tsv.gz` (fast, offline, free).
+2. On a miss, consult `genebe_api_cache.sqlite`.
+3. Only if the key still misses and passes the same WES/WGS filter used by
+   `snv_indel.review.tsv`, query the **live GeneBe API**:
 
    ```python
    import genebe as gnb
@@ -184,6 +186,43 @@ and indels never seen in ClinVar/gnomAD. A miss is **not** an error.
                      output_format="dataframe")
    hit = df.iloc[0] if df is not None and len(df) else None
    ```
+
+The deployed integration uses the historical pygenebe Apptainer CLI in
+bounded sites-only VCF batches. It requires `GENEBE_USER`, `GENEBE_API_KEY`
+and a pre-provisioned `GENEBE_SIF`; it never sends sample IDs or genotypes.
+Missing credentials/image, timeouts and individual batch failures are
+best-effort warnings and do not fail tertiary analysis.
+
+Provision the currently pinned historical client outside an analysis job:
+
+```bash
+apptainer pull --force "$HOME/NGS_UI/biotools/genebe.sif" \
+  docker://genebe/pygenebe:0.0.18
+chmod 600 "$HOME/NGS_UI/secrets.env"
+```
+
+`secrets.env` accepts plain `GENEBE_USER=...`, `GENEBE_API_KEY=...` and an
+optional `GENEBE_SIF=...`; the worker loads it without printing values.
+
+Successful live rows are cached and written below
+`NGS_UI_GENEBE_API_PENDING_DIR` using the exact official schema:
+
+```
+#chr	pos	ref	alt	acmg_classification	acmg_score	acmg_criteria
+chr1	10031	T	C	Likely_benign	-4	BP4_Strong
+```
+
+Pending chunks are deduplicated by `(chr,pos,ref,alt)`. Historical duplicate
+rows in a production DB do not need to be reproduced. Explicit API no-result
+responses are negative-cached for 30 days by default; transient failures are
+not negative-cached.
+
+Export one globally deduplicated TSV from all successful cached batches:
+
+```bash
+python scripts/export_genebe_api_cache.py \
+  --out "$HOME/NGS_UI/biotools/genebe/genebe_api_rows.tsv"
+```
 
 ---
 

@@ -2,20 +2,25 @@
 """GeneBe ACMG annotation — write a second opinion to GENEBE_* columns.
 
 Reads `--tsv snv_indel.annotated.tsv`, looks every variant up in the
-**local GeneBe database** (`genebe_hg38.tsv.gz`, a bgzip TSV) and writes
-the GeneBe classification into NEW columns:
+**local GeneBe database** (`genebe_hg38.tsv.gz`, a bgzip TSV), then uses
+the live GeneBe API only for unresolved variants that meet the exact
+review-TSV candidate filter. It writes the GeneBe classification into:
     GENEBE_ACMG_SCORE
     GENEBE_ACMG_CRITERIA
     GENEBE_ACMG_CLASS
 
-This replaces the old live-GeneBe-API call (pygenebe via apptainer):
-lookups are now fully offline, need no credentials/network, and have no
-rate limit. By default the WHOLE TSV is annotated (no AF / candidate-BED
-gate) — every variant present in the DB gets a second opinion, including
-those only reachable via gene search. The DB is a pre-computed cache, so
-a variant absent from it (e.g. a novel coding indel) simply gets no
-GeneBe second opinion; the pipeline's own ACMG_CLASS still shows. There
-is no API fallback by design (DB-only).
+The local DB remains first priority and is queried across the WHOLE TSV.
+Before any network request, unresolved keys are checked against a
+persistent API-result SQLite cache. Only cache misses that would be kept
+in `snv_indel.review.tsv` are submitted to the API in sites-only VCF
+batches. API absence/failure is best-effort and never hides the pipeline's
+own ACMG_CLASS or fails tertiary analysis.
+
+Successful live results are cached and also written as small, deduplicated
+import-ready TSV chunks with exactly:
+    #chr pos ref alt acmg_classification acmg_score acmg_criteria
+No full-size permanent TSV is added; the caller's existing disposable
+working TSV is still removed by the worker after the sparse overlay is built.
 
 Implementation: by default the bgzip TSV is lazily converted into a
 SQLite key-value cache next to the TSV, and lookups use that cache. If a
@@ -43,6 +48,12 @@ Score → class mapping (GeneBe acmg_score → 5-tier label):
 DB path (flag / env):
     --genebe-db   NGS_UI_GENEBE_DB   (default
                   $HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz)
+
+Live API (optional; active when credentials + SIF are available):
+    GENEBE_USER / GENEBE_API_KEY
+    GENEBE_SIF
+    NGS_UI_GENEBE_API_CACHE
+    NGS_UI_GENEBE_API_PENDING_DIR
 """
 from __future__ import annotations
 
@@ -50,13 +61,18 @@ import argparse
 import bisect
 import csv
 import gzip
+import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
+import uuid
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -68,6 +84,13 @@ BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 _MISSING = ("", ".", "NA", "N/A")
 SQLITE_SCHEMA_VERSION = "1"
+API_CACHE_SCHEMA_VERSION = "1"
+DB_EXPORT_FIELDS = (
+    "#chr", "pos", "ref", "alt",
+    "acmg_classification", "acmg_score", "acmg_criteria",
+)
+PAT_SCORE = re.compile(r"(?:^|;)acmg_score=([^;]+)", re.I)
+PAT_CRIT = re.compile(r"(?:^|;)acmg_criteria=([^;]+)", re.I)
 
 
 def classify(score: float | None) -> str:
@@ -78,6 +101,56 @@ def classify(score: float | None) -> str:
     if score >=  0:  return "Uncertain significance"
     if score >= -6:  return "Likely benign"
     return "Benign"
+
+
+def db_classification(value: str = "", score: float | None = None) -> str:
+    """Normalize a class to the official seven-column GeneBe DB spelling."""
+    key = re.sub(r"[\s-]+", "_", str(value or "").strip()).lower()
+    aliases = {
+        "pathogenic": "Pathogenic",
+        "likely_pathogenic": "Likely_pathogenic",
+        "vus": "VUS",
+        "uncertain_significance": "VUS",
+        "variant_of_uncertain_significance": "VUS",
+        "likely_benign": "Likely_benign",
+        "benign": "Benign",
+    }
+    if key in aliases:
+        return aliases[key]
+    return {
+        "Pathogenic": "Pathogenic",
+        "Likely pathogenic": "Likely_pathogenic",
+        "Uncertain significance": "VUS",
+        "Likely benign": "Likely_benign",
+        "Benign": "Benign",
+    }.get(classify(score), "")
+
+
+def _score_for_export(raw: str) -> str:
+    """Use integer spelling when the GeneBe score is mathematically integral."""
+    value = (raw or "").strip()
+    if value in _MISSING:
+        return "."
+    try:
+        number = float(value)
+    except ValueError:
+        return value
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+def _env_enabled(name: str, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return max(minimum, value)
 
 
 def _to_float(s: str) -> float | None:
@@ -127,12 +200,14 @@ def _chr_prefixed(chrom: str) -> str:
     body = s[3:] if s.lower().startswith("chr") else s
     if body in ("MT", "mt", "M", "m"):
         body = "M"
+    elif body.upper() in ("X", "Y"):
+        body = body.upper()
     return "chr" + body
 
 
 def _vkey(chrom: str, pos: str, ref: str, alt: str) -> str:
     """Canonical (chr-prefixed) variant key used to match TSV ↔ DB."""
-    return f"{_chr_prefixed(chrom)}:{pos}:{ref}:{alt}"
+    return f"{_chr_prefixed(chrom)}:{pos}:{ref.upper()}:{alt.upper()}"
 
 
 def load_bed(path: Path) -> BedIndex:
@@ -511,6 +586,402 @@ def sqlite_lookup(sqlite_path: Path, wanted: set[str]) -> dict[str, tuple[str, s
     return hits
 
 
+# ---- live API fallback + persistent result cache --------------------
+
+def default_api_cache_path(db: Path) -> Path:
+    return db.parent / "genebe_api_cache.sqlite"
+
+
+def default_api_pending_dir(db: Path) -> Path:
+    return db.parent / "api_pending"
+
+
+def _api_cache_connection(path: Path) -> sqlite3.Connection:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, timeout=30)
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS meta ("
+        "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+        ("schema_version", API_CACHE_SCHEMA_VERSION),
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS results ("
+        "vkey TEXT PRIMARY KEY, "
+        "chrom TEXT NOT NULL, "
+        "pos INTEGER NOT NULL, "
+        "ref TEXT NOT NULL, "
+        "alt TEXT NOT NULL, "
+        "acmg_classification TEXT NOT NULL DEFAULT '.', "
+        "acmg_score TEXT NOT NULL DEFAULT '.', "
+        "acmg_criteria TEXT NOT NULL DEFAULT '.', "
+        "status TEXT NOT NULL, "
+        "first_seen_at TEXT NOT NULL, "
+        "updated_at TEXT NOT NULL, "
+        "retry_after_epoch INTEGER)"
+    )
+    conn.commit()
+    return conn
+
+
+def api_cache_lookup(
+    path: Path,
+    wanted: set[str],
+    *,
+    now_epoch: int | None = None,
+) -> tuple[dict[str, tuple[str, str, str]], set[str]]:
+    """Return successful cached annotations and active negative-cache keys."""
+    hits: dict[str, tuple[str, str, str]] = {}
+    negative: set[str] = set()
+    if not wanted or not path.is_file():
+        return hits, negative
+    now_epoch = int(time.time()) if now_epoch is None else int(now_epoch)
+    conn = _api_cache_connection(path)
+    try:
+        conn.execute("CREATE TEMP TABLE wanted_api (vkey TEXT PRIMARY KEY)")
+        conn.executemany(
+            "INSERT OR IGNORE INTO wanted_api(vkey) VALUES (?)",
+            ((key,) for key in wanted),
+        )
+        for key, cls, score, criteria, status, retry_after in conn.execute(
+            "SELECT r.vkey, r.acmg_classification, r.acmg_score, "
+            "r.acmg_criteria, r.status, r.retry_after_epoch "
+            "FROM results r JOIN wanted_api w ON w.vkey = r.vkey"
+        ):
+            key = str(key)
+            if status == "success":
+                score_out = "" if score in _MISSING else str(score or "")
+                criteria_out = "" if criteria in _MISSING else str(criteria or "")
+                cls_out = "" if cls in _MISSING else str(cls or "")
+                if score_out or criteria_out or cls_out:
+                    hits[key] = (score_out, criteria_out, cls_out)
+            elif status == "no_result" and int(retry_after or 0) > now_epoch:
+                negative.add(key)
+    finally:
+        conn.close()
+    return hits, negative
+
+
+def _split_vkey(key: str) -> tuple[str, str, str, str]:
+    chrom, pos, ref, alt = key.split(":", 3)
+    return chrom, pos, ref, alt
+
+
+def cache_api_outcomes(
+    path: Path,
+    hits: dict[str, tuple[str, str, str]],
+    no_results: set[str],
+    *,
+    negative_ttl_days: int,
+    now: datetime | None = None,
+) -> None:
+    """Upsert successful API rows and temporary negative-cache entries."""
+    now = now or datetime.now(timezone.utc)
+    timestamp = now.isoformat()
+    retry_after = int((now + timedelta(days=max(0, negative_ttl_days))).timestamp())
+    rows: list[tuple] = []
+    for key, (score, criteria, cls) in hits.items():
+        chrom, pos, ref, alt = _split_vkey(key)
+        rows.append((
+            key, chrom, int(pos), ref, alt,
+            db_classification(cls, _to_float(score)) or ".",
+            _score_for_export(score),
+            (criteria or ".").strip() or ".",
+            "success", timestamp, timestamp, None,
+        ))
+    for key in no_results - set(hits):
+        chrom, pos, ref, alt = _split_vkey(key)
+        rows.append((
+            key, chrom, int(pos), ref, alt,
+            ".", ".", ".", "no_result", timestamp, timestamp, retry_after,
+        ))
+    if not rows:
+        return
+    conn = _api_cache_connection(path)
+    try:
+        conn.executemany(
+            "INSERT INTO results("
+            "vkey, chrom, pos, ref, alt, acmg_classification, acmg_score, "
+            "acmg_criteria, status, first_seen_at, updated_at, retry_after_epoch"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(vkey) DO UPDATE SET "
+            "chrom=excluded.chrom, pos=excluded.pos, ref=excluded.ref, "
+            "alt=excluded.alt, acmg_classification=excluded.acmg_classification, "
+            "acmg_score=excluded.acmg_score, acmg_criteria=excluded.acmg_criteria, "
+            "status=excluded.status, updated_at=excluded.updated_at, "
+            "retry_after_epoch=excluded.retry_after_epoch",
+            rows,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _is_concrete_api_variant(key: str) -> bool:
+    try:
+        _chrom, pos, ref, alt = _split_vkey(key)
+    except ValueError:
+        return False
+    return (
+        pos.isdigit()
+        and bool(re.fullmatch(r"[ACGTN]+", ref.upper()))
+        and bool(re.fullmatch(r"[ACGTN]+", alt.upper()))
+    )
+
+
+def collect_api_candidates(
+    tsv_in: Path,
+    unresolved: set[str],
+    *,
+    test_type: str,
+) -> set[str]:
+    """Apply the exact review.tsv filter to unresolved local-DB misses."""
+    if not unresolved:
+        return set()
+    repo_root = Path(__file__).resolve().parents[1]
+    backend = str(repo_root / "backend")
+    if backend not in sys.path:
+        sys.path.insert(0, backend)
+    from app.services import snv_review  # noqa: PLC0415
+
+    bed = snv_review.load_candidate_bed()
+    candidates: set[str] = set()
+    with tsv_in.open("r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            key = _vkey(
+                (row.get("CHROM") or "").strip(),
+                (row.get("POS") or "").strip(),
+                (row.get("REF") or "").strip().upper(),
+                (row.get("ALT") or "").strip().upper(),
+            )
+            if (
+                key in unresolved
+                and _is_concrete_api_variant(key)
+                and snv_review.is_review_candidate(row, test_type=test_type, bed=bed)
+            ):
+                candidates.add(key)
+    return candidates
+
+
+def write_sites_vcf(keys: set[str] | list[str], path: Path) -> None:
+    """Write a PHI-free, sites-only VCF for the live API."""
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write("##fileformat=VCFv4.2\n")
+        for contig in [
+            *(f"chr{i}" for i in range(1, 23)), "chrX", "chrY", "chrM",
+        ]:
+            handle.write(f"##contig=<ID={contig}>\n")
+        handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+        for key in sorted(keys, key=_variant_sort_key):
+            chrom, pos, ref, alt = _split_vkey(key)
+            handle.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
+
+
+def parse_api_vcf(path: Path) -> dict[str, tuple[str, str, str]]:
+    """Parse pygenebe VCF output into the same tuple used by local DB hits."""
+    hits: dict[str, tuple[str, str, str]] = {}
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line or line.startswith("#"):
+                continue
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 8:
+                continue
+            chrom, pos, _ident, ref, alt, _qual, _filter, info = fields[:8]
+            score_match = PAT_SCORE.search(info)
+            criteria_match = PAT_CRIT.search(info)
+            score = score_match.group(1).strip() if score_match else ""
+            criteria = criteria_match.group(1).strip() if criteria_match else ""
+            cls = db_classification(score=_to_float(score))
+            if score or criteria or cls:
+                hits[_vkey(chrom, pos, ref.upper(), alt.upper())] = (
+                    score, criteria, cls,
+                )
+    return hits
+
+
+def _variant_sort_key(key: str) -> tuple[int, int, str, str]:
+    chrom, pos, ref, alt = _split_vkey(key)
+    body = chrom[3:] if chrom.lower().startswith("chr") else chrom
+    order = {str(i): i for i in range(1, 23)}
+    order.update({"X": 23, "Y": 24, "M": 25, "MT": 25})
+    return order.get(body.upper(), 99), int(pos), ref, alt
+
+
+def run_api_batch(
+    keys: set[str],
+    *,
+    sif: Path,
+    username: str,
+    api_key: str,
+    timeout_seconds: int,
+    retries: int,
+) -> dict[str, tuple[str, str, str]]:
+    """Run the historical pygenebe/apptainer client for one bounded batch."""
+    with tempfile.TemporaryDirectory(prefix="genebe-api-") as tmp_dir:
+        work_dir = Path(tmp_dir)
+        sites = work_dir / "sites.vcf"
+        annotated = work_dir / "sites.genebe.vcf"
+        write_sites_vcf(keys, sites)
+        # Credentials are passed through the subprocess environment, not the
+        # host-side command arguments or job log. The container shell expands
+        # them only for the inner GeneBe CLI.
+        shell_command = (
+            'exec genebe annotate --genome hg38 --input "$1" --output "$2" '
+            '--username "$GENEBE_USER" --api_key "$GENEBE_API_KEY"'
+        )
+        command = [
+            "apptainer", "exec", "--bind", str(work_dir), str(sif),
+            "sh", "-c", shell_command, "genebe-api", str(sites), str(annotated),
+        ]
+        env = os.environ.copy()
+        env["GENEBE_USER"] = username
+        env["GENEBE_API_KEY"] = api_key
+        env["APPTAINERENV_GENEBE_USER"] = username
+        env["APPTAINERENV_GENEBE_API_KEY"] = api_key
+        last_error = ""
+        for attempt in range(1, max(1, retries) + 1):
+            try:
+                subprocess.run(
+                    command,
+                    check=True,
+                    text=True,
+                    capture_output=True,
+                    timeout=max(1, timeout_seconds),
+                    env=env,
+                )
+                if not annotated.is_file():
+                    raise GeneBeDBError("GeneBe API completed without an output VCF")
+                return parse_api_vcf(annotated)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError, GeneBeDBError) as exc:
+                stderr = getattr(exc, "stderr", "") or ""
+                detail = f"{exc}; {str(stderr).strip()[-1000:]}"
+                for secret in (username, api_key):
+                    if secret:
+                        detail = detail.replace(secret, "[REDACTED]")
+                last_error = detail
+                if attempt < max(1, retries):
+                    time.sleep(min(2 ** attempt, 8))
+        raise GeneBeDBError(last_error or "GeneBe API batch failed")
+
+
+def run_live_api(
+    candidates: set[str],
+    *,
+    sif: Path,
+    username: str,
+    api_key: str,
+    batch_size: int,
+    timeout_seconds: int,
+    retries: int,
+) -> tuple[dict[str, tuple[str, str, str]], set[str], int]:
+    """Query candidates in serial batches; return hits, true misses, failures."""
+    hits: dict[str, tuple[str, str, str]] = {}
+    no_results: set[str] = set()
+    failed = 0
+    ordered = sorted(candidates, key=_variant_sort_key)
+    size = max(1, batch_size)
+    for offset in range(0, len(ordered), size):
+        batch = set(ordered[offset:offset + size])
+        batch_number = offset // size + 1
+        try:
+            batch_hits = run_api_batch(
+                batch,
+                sif=sif,
+                username=username,
+                api_key=api_key,
+                timeout_seconds=timeout_seconds,
+                retries=retries,
+            )
+        except GeneBeDBError as exc:
+            failed += len(batch)
+            print(
+                f"[genebe] WARNING: API batch {batch_number} failed "
+                f"({len(batch)} variants): {exc}",
+                file=sys.stderr,
+            )
+            continue
+        batch_hits = {key: value for key, value in batch_hits.items() if key in batch}
+        hits.update(batch_hits)
+        no_results.update(batch - set(batch_hits))
+        print(
+            f"[genebe] API batch {batch_number}: requested={len(batch)} "
+            f"hits={len(batch_hits)} no_result={len(batch) - len(batch_hits)}",
+            file=sys.stderr,
+        )
+    return hits, no_results, failed
+
+
+def write_pending_tsv(
+    pending_dir: Path,
+    hits: dict[str, tuple[str, str, str]],
+    *,
+    source_db: Path,
+    queried_count: int,
+    no_result_count: int,
+    failed_count: int,
+    sif: Path,
+) -> Path | None:
+    """Atomically save a deduplicated, import-ready official seven-column TSV."""
+    if not hits:
+        return None
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stem = f"genebe_api_{stamp}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    output = pending_dir / f"{stem}.tsv"
+    tmp = pending_dir / f".{stem}.tsv.tmp"
+    with tmp.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(DB_EXPORT_FIELDS),
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        for key in sorted(hits, key=_variant_sort_key):
+            score, criteria, cls = hits[key]
+            chrom, pos, ref, alt = _split_vkey(key)
+            writer.writerow({
+                "#chr": chrom,
+                "pos": pos,
+                "ref": ref.upper(),
+                "alt": alt.upper(),
+                "acmg_classification": db_classification(cls, _to_float(score)) or ".",
+                "acmg_score": _score_for_export(score),
+                "acmg_criteria": (criteria or ".").strip() or ".",
+            })
+    os.replace(tmp, output)
+    source_stat = source_db.stat()
+    sidecar = {
+        "schema": "genebe-api-pending-v1",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "genome": "hg38",
+        "columns": list(DB_EXPORT_FIELDS),
+        "rows": len(hits),
+        "queried": queried_count,
+        "no_result": no_result_count,
+        "failed": failed_count,
+        "source_db": {
+            "path": str(source_db),
+            "size": source_stat.st_size,
+            "mtime_ns": source_stat.st_mtime_ns,
+        },
+        "api_client_sif": str(sif),
+    }
+    sidecar_path = output.with_suffix(".json")
+    sidecar_tmp = sidecar_path.with_suffix(".json.tmp")
+    sidecar_tmp.write_text(
+        json.dumps(sidecar, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(sidecar_tmp, sidecar_path)
+    return output
+
+
 # ---- merge back into the TSV ----------------------------------------
 
 def merge_into_tsv(in_tsv: Path, out_tsv: Path, gb: dict) -> tuple[int, int]:
@@ -591,6 +1062,29 @@ def main() -> int:
     ap.add_argument("--candidate-bed",
                     help="optional: restrict lookup to these BED regions "
                          "(default: whole TSV)")
+    ap.add_argument("--test-type", choices=("WES", "WGS"), default="WES",
+                    help="review filter used for live API fallback (default WES)")
+    ap.add_argument("--skip-api", action="store_true",
+                    help="disable live API fallback even when credentials exist")
+    ap.add_argument("--api-cache",
+                    help="persistent live-API result/negative cache SQLite "
+                         "(default beside --genebe-db)")
+    ap.add_argument("--api-pending-dir",
+                    help="directory for import-ready seven-column API TSV chunks "
+                         "(default <genebe-db-dir>/api_pending)")
+    ap.add_argument("--api-sif",
+                    default=os.environ.get(
+                        "GENEBE_SIF",
+                        str(Path.home() / "NGS_UI" / "biotools" / "genebe.sif")),
+                    help="pre-provisioned pygenebe Apptainer SIF")
+    ap.add_argument("--api-batch-size", type=int,
+                    default=_env_int("NGS_UI_GENEBE_API_BATCH_SIZE", 500, minimum=1))
+    ap.add_argument("--api-timeout-seconds", type=int,
+                    default=_env_int("NGS_UI_GENEBE_API_TIMEOUT_SECONDS", 900, minimum=1))
+    ap.add_argument("--api-retries", type=int,
+                    default=_env_int("NGS_UI_GENEBE_API_RETRIES", 3, minimum=1))
+    ap.add_argument("--api-negative-ttl-days", type=int,
+                    default=_env_int("NGS_UI_GENEBE_API_NEGATIVE_TTL_DAYS", 30))
     args = ap.parse_args()
 
     in_tsv = Path(args.tsv).resolve()
@@ -665,6 +1159,119 @@ def main() -> int:
     gb = assemble_gb(db_hits)
     print(f"[genebe] resolved DB hits in {time.time() - t0:.0f}s, "
           f"{len(gb)} variants matched", file=sys.stderr)
+
+    # Local API-result cache is second priority. It preserves prior live
+    # results across reruns and avoids sending the same site repeatedly.
+    unresolved = wanted - set(gb)
+    api_cache = (
+        Path(args.api_cache).resolve()
+        if args.api_cache
+        else Path(os.environ.get(
+            "NGS_UI_GENEBE_API_CACHE",
+            default_api_cache_path(db),
+        )).resolve()
+    )
+    cached_api: dict[str, tuple[str, str, str]] = {}
+    negative_cached: set[str] = set()
+    if unresolved:
+        try:
+            cached_api, negative_cached = api_cache_lookup(api_cache, unresolved)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            print(
+                f"[genebe] WARNING: API cache unavailable ({api_cache}): {exc}",
+                file=sys.stderr,
+            )
+        gb.update(cached_api)
+        print(
+            f"[genebe] API cache hits={len(cached_api)} "
+            f"active_no_result={len(negative_cached)}",
+            file=sys.stderr,
+        )
+
+    unresolved = wanted - set(gb) - negative_cached
+    api_candidates = collect_api_candidates(
+        in_tsv,
+        unresolved,
+        test_type=args.test_type,
+    )
+    print(
+        f"[genebe] review-filtered live API candidates={len(api_candidates)} "
+        f"from unresolved={len(unresolved)}",
+        file=sys.stderr,
+    )
+
+    username = (os.environ.get("GENEBE_USER") or "").strip()
+    api_key = (os.environ.get("GENEBE_API_KEY") or "").strip()
+    api_sif = Path(args.api_sif).expanduser().resolve()
+    api_enabled = (
+        not args.skip_api
+        and _env_enabled("NGS_UI_GENEBE_API_ENABLED", True)
+        and bool(username and api_key)
+        and api_sif.is_file()
+    )
+    live_hits: dict[str, tuple[str, str, str]] = {}
+    no_results: set[str] = set()
+    failed_count = 0
+    if api_candidates and api_enabled:
+        print(
+            f"[genebe] live API enabled: candidates={len(api_candidates)} "
+            f"batch_size={max(1, args.api_batch_size)}",
+            file=sys.stderr,
+        )
+        live_hits, no_results, failed_count = run_live_api(
+            api_candidates,
+            sif=api_sif,
+            username=username,
+            api_key=api_key,
+            batch_size=args.api_batch_size,
+            timeout_seconds=args.api_timeout_seconds,
+            retries=args.api_retries,
+        )
+        gb.update(live_hits)
+        try:
+            cache_api_outcomes(
+                api_cache,
+                live_hits,
+                no_results,
+                negative_ttl_days=args.api_negative_ttl_days,
+            )
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            print(f"[genebe] WARNING: cannot update API cache: {exc}", file=sys.stderr)
+        pending_dir = (
+            Path(args.api_pending_dir).resolve()
+            if args.api_pending_dir
+            else Path(os.environ.get(
+                "NGS_UI_GENEBE_API_PENDING_DIR",
+                default_api_pending_dir(db),
+            )).resolve()
+        )
+        try:
+            pending = write_pending_tsv(
+                pending_dir,
+                live_hits,
+                source_db=db,
+                queried_count=len(api_candidates),
+                no_result_count=len(no_results),
+                failed_count=failed_count,
+                sif=api_sif,
+            )
+            if pending is not None:
+                print(f"[genebe] import-ready API rows → {pending}", file=sys.stderr)
+        except (OSError, ValueError) as exc:
+            print(f"[genebe] WARNING: cannot save pending API TSV: {exc}", file=sys.stderr)
+    elif api_candidates:
+        reasons: list[str] = []
+        if args.skip_api or not _env_enabled("NGS_UI_GENEBE_API_ENABLED", True):
+            reasons.append("disabled")
+        if not (username and api_key):
+            reasons.append("GENEBE_USER/GENEBE_API_KEY missing")
+        if not api_sif.is_file():
+            reasons.append(f"SIF missing: {api_sif}")
+        print(
+            f"[genebe] live API skipped ({'; '.join(reasons) or 'not configured'}); "
+            "tertiary analysis continues with DB/pipeline ACMG",
+            file=sys.stderr,
+        )
 
     n_filled, n_total = merge_into_tsv(in_tsv, out_tsv, gb)
     print(f"[genebe] backfilled ACMG for {n_filled}/{n_total} TSV rows",

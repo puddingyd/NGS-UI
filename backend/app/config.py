@@ -171,12 +171,20 @@ GIAB_STRAT_DIR = Path(os.environ.get(
     BIOTOOLS_DIR / "giab_stratification",
 ))
 
-# Local GeneBe ACMG database (bgzip TSV + lazy SQLite cache) used by
-# scripts/annotate_acmg_genebe.py as an OFFLINE replacement for the live
-# GeneBe API. Large, not committed; placed under biotools.
+# Local GeneBe ACMG database (bgzip TSV + lazy SQLite cache). It is always
+# queried first; review-filtered misses can use the optional live API fallback.
+# Large, not committed; placed under biotools.
 GENEBE_DB = Path(os.environ.get(
     "NGS_UI_GENEBE_DB",
     BIOTOOLS_DIR / "genebe" / "genebe_hg38.tsv.gz",
+))
+GENEBE_API_CACHE = Path(os.environ.get(
+    "NGS_UI_GENEBE_API_CACHE",
+    GENEBE_DB.parent / "genebe_api_cache.sqlite",
+))
+GENEBE_API_PENDING_DIR = Path(os.environ.get(
+    "NGS_UI_GENEBE_API_PENDING_DIR",
+    GENEBE_DB.parent / "api_pending",
 ))
 
 # In-house allele frequency sites VCF (built from our own WGS cohort by

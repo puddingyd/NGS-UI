@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v7.2 — 2026-07-27
+
+- 三級分析的 GeneBe ACMG 第二意見改為主 DB 優先的 hybrid lookup：完整 TSV 先查本機 DB，再由中央 cache 補值；只有 DB/cache 都查不到且符合 SNV review 條件的點才送 live API。
+- GeneBe live API 未設定或暫時失敗不會中止三級分析；成功結果會跨個案重用，明確 no-result 預設 30 天後才重查。
+- API 新結果另存為正式 DB 相容的 7 欄去重 TSV 與 JSON sidecar，方便後續匯入；既有完整 working TSV 仍只在 post-processing 期間暫存並於結束時刪除，不增加永久大型 SNV 副本。
+
 ### v7.1 — 2026-07-27
 
 - Ploidy status 改為 reviewer-first 畫面：先顯示 aneuploidy 結論、estimated karyotype／病歷性別核對及需要複核的染色體；完整染色體與原始測量值改為折疊顯示。

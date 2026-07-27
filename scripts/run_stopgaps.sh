@@ -6,9 +6,10 @@
 # pipeline TSV remains under 03_acmg; only sparse/derived artifacts persist.
 #
 #   1. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
-#                                  columns via the local GeneBe DB
-#                                  (offline SQLite lookup, no API/creds;
-#                                  pipeline's ACMG_* untouched)
+#                                  columns via local DB first, then query
+#                                  review-filtered DB misses through the live
+#                                  API when credentials/SIF are configured;
+#                                  pipeline's ACMG_* stay untouched
 #   2. annotate_extra_vep.py    — add MetaRNN + REVEL + SpliceAI columns
 #   3. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
 #   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
@@ -37,6 +38,11 @@
 #                                         genebe/genebe_hg38.tsv.gz); builds
 #                                         genebe_hg38.sqlite lazily.
 #                                         --skip-genebe to disable.
+#   GENEBE_USER / GENEBE_API_KEY / GENEBE_SIF
+#                                      — optional live fallback; only DB misses
+#                                        retained by the review TSV filter are
+#                                        submitted. Results are cached and
+#                                        saved as import-ready seven-column TSV.
 #   NGS_UI_CDS_CANDIDATE_BED           — optional, default
 #                                         $HOME/NGS_UI/biotools/cds_combined.bed
 #   --spliceai-snv / --spliceai-indel  — optional, default
@@ -183,8 +189,9 @@ else
   echo "  candidate BED: not found at $CANDIDATE_BED (GeneBe/Extra VEP use AF-only candidates)"
 fi
 
-# 1. GeneBe ACMG second opinion via the local DB (writes GENEBE_* columns;
-#    pipeline ACMG_* preserved). Offline SQLite lookup — no API / creds.
+# 1. GeneBe ACMG second opinion. The local DB is always queried first across
+#    the complete TSV. Live API fallback is best-effort and only sees DB misses
+#    that meet the same WES/WGS filter as review.tsv.
 if [ "$SKIP_GENEBE" -eq 0 ]; then
   echo
   echo "[post-processing] annotate_acmg_genebe.py"
@@ -196,7 +203,8 @@ if [ "$SKIP_GENEBE" -eq 0 ]; then
   fi
   # Whole-TSV lookup (no candidate gate) — the DB read is one streaming
   # pass regardless of how many variants are queried.
-  "$SCRIPT_DIR/annotate_acmg_genebe.py" --tsv "$TSV" --genebe-db "$GENEBE_DB"
+  "$SCRIPT_DIR/annotate_acmg_genebe.py" \
+    --tsv "$TSV" --genebe-db "$GENEBE_DB" --test-type "$SEQ_TYPE"
   step_done
 fi
 

@@ -47,6 +47,11 @@ Keep the header line starting with `#`, with these column **names** present
   already split (one ALT per row), indels left-aligned + trimmed.
 - `acmg_score` integer; `acmg_criteria` comma-separated (e.g. `PVS1,PM2,PP3`);
   missing values are a single `.`.
+- The live-API pending exporter uses the same spelling as the production DB:
+  `Pathogenic`, `Likely_pathogenic`, `VUS`, `Likely_benign`, `Benign`.
+- Treat `(chr,pos,ref,alt)` as the unique key. Exact duplicate source rows may
+  exist in historical builds, but pending API TSVs intentionally emit one row
+  per key because duplicate seven-column rows carry no additional information.
 
 The slim 7-column layout above is fine; a full 55-column layout is fine too.
 
@@ -73,3 +78,29 @@ tabix genebe_hg38.tsv.gz chr7:140753336-140753336   # one+ clean rows, no W/E
 > NGS-UI streams the `.gz` directly and skips any non-integer-`pos` row
 > defensively, so it won't crash on a dirty DB — but cleaning at the source
 > keeps the DB correct for `tabix` consumers and avoids needless misses.
+
+## 6. Live-API pending rows
+
+When a review-eligible variant is absent from the main DB, NGS-UI can query the
+live API and writes each successful batch below
+`$NGS_UI_GENEBE_API_PENDING_DIR` (default `biotools/genebe/api_pending/`).
+Every `.tsv` is already deduplicated, naturally chromosome/position sorted and
+uses the exact seven-column header above. Its `.json` sidecar records the hg38
+build, source DB path/size/mtime, API client SIF and query/hit/failure counts.
+
+These files are intentionally small. They do not contain sample IDs, genotypes
+or patient data, and they do not replace or append to the production DB during
+tertiary analysis. Merge/rebuild/publish the main DB separately, with the main
+DB winning if the same key has appeared there since the API query.
+
+To consolidate all successful cached API rows across batches:
+
+```bash
+python scripts/export_genebe_api_cache.py \
+  --out /path/to/genebe_api_rows.tsv
+```
+
+The consolidated output uses the same seven columns, global key deduplication
+and natural chromosome/position sorting. It also receives a `.tsv.json`
+sidecar. This exports rows only; production DB merge, bgzip/tabix validation
+and atomic publication remain a separate operator action.

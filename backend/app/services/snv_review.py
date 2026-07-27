@@ -202,6 +202,27 @@ def _keep_row(row: dict[str, str], bed: BedIndex | None, *, is_wes: bool) -> boo
     return (af is None or af < MAX_GNOMAD_G_AF) and _overlaps_bed(row, bed)
 
 
+def load_candidate_bed() -> BedIndex | None:
+    """Load the configured review candidate BED.
+
+    GeneBe live-API fallback uses this same public helper so its network
+    candidate scope cannot drift from the rows retained in review.tsv.
+    A missing BED intentionally preserves the existing review behaviour:
+    rare/unknown-AF rows are not BED-restricted.
+    """
+    return _load_bed(_candidate_bed_path())
+
+
+def is_review_candidate(
+    row: dict[str, str],
+    *,
+    test_type: str,
+    bed: BedIndex | None,
+) -> bool:
+    """Return whether a raw row belongs to the compact review candidate set."""
+    return _keep_row(row, bed, is_wes=(test_type or "WES").upper() == "WES")
+
+
 def ensure_review_tsv(
     raw_tsv: Path,
     *,
@@ -276,7 +297,7 @@ def ensure_review_tsv(
             batch: list[dict[str, str]] = []
             for row in reader:
                 scanned += 1
-                if _keep_row(row, candidate_bed, is_wes=is_wes):
+                if is_review_candidate(row, test_type=test_type_key, bed=candidate_bed):
                     batch.append(row)
                     kept += 1
                     if len(batch) >= 1000:
