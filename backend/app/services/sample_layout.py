@@ -426,7 +426,12 @@ def analysis_file_candidates(
     return _scoped_candidates(directory, sample_id, name)
 
 
-def promote_state_tree_to_v3(sample_id: str) -> list[tuple[Path, Path]]:
+def promote_state_tree_in_directory_to_v3(
+    post: Path,
+    sample_id: str,
+    *,
+    exclude_names: set[str] | None = None,
+) -> list[tuple[Path, Path]]:
     """Non-destructively copy remaining v2 files to sample-prefixed names.
 
     A full worker reprocess calls this immediately before publishing the v3
@@ -434,14 +439,17 @@ def promote_state_tree_to_v3(sample_id: str) -> list[tuple[Path, Path]]:
     prefixed artifacts therefore win, while legacy reviewer/analysis state is
     copied forward for exact-name v3 reads.
     """
-    post = unified_postprocessing_dir(sample_id)
+    post = Path(post)
     if not post.is_dir():
         return []
+    excluded = set(exclude_names or ())
     copied: list[tuple[Path, Path]] = []
     for source in sorted(path for path in post.rglob("*") if path.is_file()):
         if source.name == LAYOUT_MARKER_NAME:
             continue
         if source.name.startswith((".", f"{sample_id}.")):
+            continue
+        if source.name in excluded:
             continue
         destination = source.with_name(prefixed_filename(sample_id, source.name))
         if destination.exists():
@@ -452,19 +460,40 @@ def promote_state_tree_to_v3(sample_id: str) -> list[tuple[Path, Path]]:
     return copied
 
 
-def write_layout_marker(
+def promote_state_tree_to_v3(
+    sample_id: str,
+    *,
+    exclude_names: set[str] | None = None,
+) -> list[tuple[Path, Path]]:
+    return promote_state_tree_in_directory_to_v3(
+        unified_postprocessing_dir(sample_id),
+        sample_id,
+        exclude_names=exclude_names,
+    )
+
+
+def write_layout_marker_in_sample_dir(
+    sample_dir: Path,
     sample_id: str,
     *,
     source_id: str | None = None,
     raw_tsv: Path | None = None,
     migration: bool = False,
 ) -> Path:
-    """Atomically activate the unified layout for one sample."""
-    post = unified_postprocessing_dir(sample_id)
+    """Write a v3 marker below an explicit sample tree.
+
+    The tertiary worker uses this for a job-private staging tree.  Keeping the
+    raw TSV path relative to *sample_dir* makes the marker valid after that
+    complete generation is promoted into the live unified root.
+    """
+    sample_dir = Path(sample_dir)
+    post = sample_dir / POSTPROCESSING_DIRNAME
     post.mkdir(parents=True, exist_ok=True)
-    raw = Path(raw_tsv) if raw_tsv else snv_raw_tsv(sample_id)
+    raw = Path(raw_tsv) if raw_tsv else (
+        sample_dir / "03_acmg" / f"{source_id or sample_id}.snv_indel.acmg.tsv"
+    )
     try:
-        raw_value = str(raw.relative_to(unified_sample_dir(sample_id)))
+        raw_value = str(raw.relative_to(sample_dir))
     except ValueError:
         raw_value = str(raw)
     payload = {
@@ -475,16 +504,28 @@ def write_layout_marker(
         "activated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "migration": bool(migration),
     }
-    path = postprocessing_file(
-        sample_id,
-        LAYOUT_MARKER_NAME,
-        for_write=True,
-        force_prefixed=True,
-    )
+    path = post / prefixed_filename(sample_id, LAYOUT_MARKER_NAME)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, path)
     return path
+
+
+def write_layout_marker(
+    sample_id: str,
+    *,
+    source_id: str | None = None,
+    raw_tsv: Path | None = None,
+    migration: bool = False,
+) -> Path:
+    """Atomically activate the unified layout for one sample."""
+    return write_layout_marker_in_sample_dir(
+        unified_sample_dir(sample_id),
+        sample_id,
+        source_id=source_id,
+        raw_tsv=raw_tsv or snv_raw_tsv(sample_id),
+        migration=migration,
+    )
 
 
 def global_cache_path(name: str) -> Path:

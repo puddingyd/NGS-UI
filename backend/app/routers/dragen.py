@@ -132,6 +132,8 @@ def post_dragen_job(payload: dict = Body(...)):
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
     return {"job_id": job_id}
 
 

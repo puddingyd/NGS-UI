@@ -108,3 +108,25 @@ def test_full_reprocess_copies_v2_state_without_deleting_old_files(tmp_path, mon
     assert old_meta.is_file()
     assert old_analysis.is_file()
     assert old_marker.is_file()
+
+
+def test_staged_layout_marker_keeps_raw_path_relative(tmp_path):
+    sample = tmp_path / "stage" / "SRC"
+    raw = sample / "03_acmg" / "SRC.snv_indel.acmg.tsv"
+    raw.parent.mkdir(parents=True)
+    raw.touch()
+
+    marker = sample_layout.write_layout_marker_in_sample_dir(
+        sample,
+        "S1-dragen",
+        source_id="SRC",
+        raw_tsv=raw,
+    )
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+
+    assert marker == (
+        sample / "08_postprocessing" / "S1-dragen.layout.json"
+    )
+    assert payload["sample_id"] == "S1-dragen"
+    assert payload["source_sample_id"] == "SRC"
+    assert payload["raw_tsv"] == "03_acmg/SRC.snv_indel.acmg.tsv"

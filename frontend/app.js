@@ -10446,6 +10446,7 @@ function _dragenProgressPercent(state) {
     "copy-pipeline-tsv": 82,
     "prepare-postprocessing": 82,
     "post-processing": 82,
+    "promote-output": 99,
     done: 100,
   };
   return byStep[state.step] ?? 0;

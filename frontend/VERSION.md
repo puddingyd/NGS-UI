@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v7.3 — 2026-07-28
+
+- 重跑同一個三級分析 sample 時，不再因正式資料夾已有 SNV/Mito/STR/CNV/SV/PGx 就略過 Nextflow；每次都啟動 `-resume`，由 Nextflow 自行判斷沿用 cache 或重跑。
+- Nextflow 先輸出到 job 專屬 staging，完整驗證 00–06、SNV/Mito/STR/CNV/SV 及勾選的 PGx 後才更新正式結果；Nextflow、驗證或 post-processing 失敗時，原本已載入個案與三級結果不受影響。
+- 正式切換會保留 reviewer 的標記、comment、個案資料與 phenotype analyses；批次切換失敗可還原，同一 UI/source sample 也不能同時啟動兩個三級分析 job。
+
 ### v7.2 — 2026-07-27
 
 - 三級分析的 GeneBe ACMG 第二意見改為主 DB 優先的 hybrid lookup：完整 TSV 先查本機 DB，再由中央 cache 補值；只有 DB/cache 都查不到且符合 SNV review 條件的點才送 live API。

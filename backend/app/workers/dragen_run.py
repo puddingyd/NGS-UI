@@ -4,18 +4,17 @@ Runs the tertiary chain end-to-end on either a DRAGEN hard-filtered
 VCF (`--mode dragen`) or an in-house ensemble Nextflow output
 (`--mode inhouse`). Steps:
 
-    1. detect existing pipeline output
-       ├ HIT  → skip Nextflow only when all requested outputs exist
-       └ MISS → run 2+3 below
+    1. acquire per-sample locks
     2. write a v3.x samplesheet       → data/jobs/tertiary/<job>/samplesheet.csv
        (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
-    3. nextflow main_tertiary.nf      → unified tertiary root/<source SID>/
-       then rename legacy source-ID-only output to <SID> when the UI ID
-       carries -dragen / -nckuh / -inhouse
-    4. prepare 08_postprocessing      → audit + optional ploidy/MITOMAP output
-    5. post-processing                → disposable SNV working TSV → sparse
+    3. always run Nextflow -resume    → job-private staging/<source SID>/
+    4. validate staged 00-07 outputs
+    5. prepare staged post-processing → audit + optional ploidy/MITOMAP output
+    6. post-processing                → disposable SNV working TSV → sparse
                                           overlay + review TSV + gene index;
-                                          activate layout.json last
+    7. transactionally promote 00-07 and derived files into the live sample,
+       preserving reviewer-owned 08_postprocessing state and publishing
+       layout.json last
                                           (ClinVar removed — pipeline already
                                            does it; GeneBe writes a SECOND
                                            opinion to GENEBE_* columns)
@@ -28,10 +27,10 @@ Mode differences:
             output folder as input_dir; CNV/SV AnnotSV runs separately on
             gcnv + delly VCFs.
 
-Existing-output detection (step 2): reuses only exact UI sample ID
-directories, so DRAGEN and in-house output can coexist as <SID>-dragen /
-<SID>-nckuh. After a real Nextflow run, source-ID-only output is renamed
-into the suffixed directory before copying into NGS-UI.
+Nextflow owns cache/re-run decisions.  Existing published files are never
+used to skip the workflow; a stable per-sample or per-batch launch/work
+context lets -resume reuse valid task outputs.  Publishing goes to a fresh
+job staging root so resumed publishDir rules cannot leave stale live files.
 
 Started by `python3 -m app.workers.dragen_run --job-id … --vcf …`.
 """
@@ -39,12 +38,15 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fcntl
+import hashlib
 import json
 import os
 import re
 import signal
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -60,6 +62,31 @@ TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
     "/home/pipeline/tertiary_code/nextflow_tertiary.config",
 ))
+
+PIPELINE_STAGE_DIRS = (
+    "00_prepare",
+    "01_vep",
+    "02_pangolin",
+    "03_acmg",
+    "04_mito",
+    "05_str",
+    "06_cnv_sv",
+    "07_pgx",
+)
+REQUIRED_PIPELINE_STAGE_DIRS = PIPELINE_STAGE_DIRS[:-1]
+MANAGED_POSTPROCESSING_NAMES = {
+    "layout.json",
+    "pipeline_source.json",
+    "snv_annotations.sqlite",
+    "snv_indel.review.tsv",
+    "snv_indel.review.tsv.source.json",
+    "snv_gene_index.sqlite",
+    "mito.annotated.tsv",
+    "ploidy.vcf.gz",
+    "ploidy_qc.txt",
+    "cnv.annotated.tsv",
+    "sv.annotated.tsv",
+}
 
 
 def _strip_sid_suffix(sid: str) -> str:
@@ -105,7 +132,10 @@ def _pipeline_candidate_ids(
     return candidates
 
 
-def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
+def _find_pipeline_acmg_tsv(
+    *sample_ids: str,
+    root: Path | None = None,
+) -> Path | None:
     """Look for a v3.1 <SID>.snv_indel.acmg.tsv under production output.
 
     The UI sample ID may intentionally differ from the source VCF sample
@@ -114,6 +144,7 @@ def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
     paths from sample_id + input_dir, so try source IDs first and then the
     UI ID / stripped legacy aliases.
     """
+    output_root = Path(root) if root is not None else PIPELINE_OUT_ROOT
     candidates: list[str] = []
     for sid in sample_ids:
         if not sid:
@@ -121,10 +152,10 @@ def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
         if sid not in candidates:
             candidates.append(sid)
     for s in candidates:
-        p = PIPELINE_OUT_ROOT / s / "03_acmg" / f"{s}.snv_indel.acmg.tsv"
+        p = output_root / s / "03_acmg" / f"{s}.snv_indel.acmg.tsv"
         if p.is_file():
             return p
-        d = PIPELINE_OUT_ROOT / s / "03_acmg"
+        d = output_root / s / "03_acmg"
         if d.is_dir():
             hit = next(d.glob("*.snv_indel.acmg.tsv"), None)
             if hit is not None and hit.is_file():
@@ -132,8 +163,12 @@ def _find_pipeline_acmg_tsv(*sample_ids: str) -> Path | None:
     return None
 
 
-def _find_pipeline_mito_tsv(*sample_ids: str) -> Path | None:
+def _find_pipeline_mito_tsv(
+    *sample_ids: str,
+    root: Path | None = None,
+) -> Path | None:
     """Look for a v3.2 <SID>.mito.tsv under production output."""
+    output_root = Path(root) if root is not None else PIPELINE_OUT_ROOT
     candidates: list[str] = []
     for sid in sample_ids:
         if not sid:
@@ -141,10 +176,10 @@ def _find_pipeline_mito_tsv(*sample_ids: str) -> Path | None:
         if sid not in candidates:
             candidates.append(sid)
     for s in candidates:
-        p = PIPELINE_OUT_ROOT / s / "04_mito" / f"{s}.mito.tsv"
+        p = output_root / s / "04_mito" / f"{s}.mito.tsv"
         if p.is_file():
             return p
-        d = PIPELINE_OUT_ROOT / s / "04_mito"
+        d = output_root / s / "04_mito"
         if d.is_dir():
             hit = next(d.glob("*.mito.tsv"), None)
             if hit is not None and hit.is_file():
@@ -152,8 +187,12 @@ def _find_pipeline_mito_tsv(*sample_ids: str) -> Path | None:
     return None
 
 
-def _find_pipeline_str_tsv(*sample_ids: str) -> Path | None:
+def _find_pipeline_str_tsv(
+    *sample_ids: str,
+    root: Path | None = None,
+) -> Path | None:
     """Look for v3.x 05_str/<SID>.str.tsv output."""
+    output_root = Path(root) if root is not None else PIPELINE_OUT_ROOT
     candidates: list[str] = []
     for sid in sample_ids:
         if not sid:
@@ -161,10 +200,10 @@ def _find_pipeline_str_tsv(*sample_ids: str) -> Path | None:
         if sid not in candidates:
             candidates.append(sid)
     for s in candidates:
-        p = PIPELINE_OUT_ROOT / s / "05_str" / f"{s}.str.tsv"
+        p = output_root / s / "05_str" / f"{s}.str.tsv"
         if p.is_file():
             return p
-        d = PIPELINE_OUT_ROOT / s / "05_str"
+        d = output_root / s / "05_str"
         if d.is_dir():
             hit = next(d.glob("*.str.tsv"), None)
             if hit is not None and hit.is_file():
@@ -172,8 +211,13 @@ def _find_pipeline_str_tsv(*sample_ids: str) -> Path | None:
     return None
 
 
-def _find_pipeline_annotsv_tsv(kind: str, *sample_ids: str) -> Path | None:
+def _find_pipeline_annotsv_tsv(
+    kind: str,
+    *sample_ids: str,
+    root: Path | None = None,
+) -> Path | None:
     """Look for v3.2 06_cnv_sv/<SID>.<kind>.annotated.tsv output."""
+    output_root = Path(root) if root is not None else PIPELINE_OUT_ROOT
     candidates: list[str] = []
     for sid in sample_ids:
         if not sid:
@@ -181,10 +225,10 @@ def _find_pipeline_annotsv_tsv(kind: str, *sample_ids: str) -> Path | None:
         if sid not in candidates:
             candidates.append(sid)
     for s in candidates:
-        p = PIPELINE_OUT_ROOT / s / "06_cnv_sv" / f"{s}.{kind}.annotated.tsv"
+        p = output_root / s / "06_cnv_sv" / f"{s}.{kind}.annotated.tsv"
         if p.is_file():
             return p
-        d = PIPELINE_OUT_ROOT / s / "06_cnv_sv"
+        d = output_root / s / "06_cnv_sv"
         if d.is_dir():
             hit = next(d.glob(f"*.{kind}.annotated.tsv"), None)
             if hit is not None and hit.is_file():
@@ -192,12 +236,16 @@ def _find_pipeline_annotsv_tsv(kind: str, *sample_ids: str) -> Path | None:
     return None
 
 
-def _find_pipeline_pgx_output(*sample_ids: str) -> Path | None:
+def _find_pipeline_pgx_output(
+    *sample_ids: str,
+    root: Path | None = None,
+) -> Path | None:
     """Return any PGx/PharmCAT-looking output file for a sample.
 
     The formal PGx output contract is still moving, so this intentionally
     accepts the known plan (`pgx.tsv`) plus common PharmCAT / PGx names.
     """
+    output_root = Path(root) if root is not None else PIPELINE_OUT_ROOT
     names = [
         "pgx.tsv",
         "pharmcat.json",
@@ -212,11 +260,11 @@ def _find_pipeline_pgx_output(*sample_ids: str) -> Path | None:
     for sid in sample_ids:
         if not sid:
             continue
-        root = PIPELINE_OUT_ROOT / sid
-        if not root.is_dir():
+        sample_root = output_root / sid
+        if not sample_root.is_dir():
             continue
         for sub in subdirs:
-            d = root / sub if sub else root
+            d = sample_root / sub if sub else sample_root
             if not d.is_dir():
                 continue
             for name in names:
@@ -230,8 +278,12 @@ def _find_pipeline_pgx_output(*sample_ids: str) -> Path | None:
     return None
 
 
-def _find_pipeline_pgx_files(*sample_ids: str) -> dict[str, Path]:
+def _find_pipeline_pgx_files(
+    *sample_ids: str,
+    root: Path | None = None,
+) -> dict[str, Path]:
     """Return known 07_pgx files keyed by their UI-side destination name."""
+    output_root = Path(root) if root is not None else PIPELINE_OUT_ROOT
     wanted = {
         "pgx.tsv": "*.pgx.tsv",
         "pharmcat.report.json": "*.pharmcat.report.json",
@@ -243,7 +295,7 @@ def _find_pipeline_pgx_files(*sample_ids: str) -> dict[str, Path]:
     for sid in sample_ids:
         if not sid:
             continue
-        d = PIPELINE_OUT_ROOT / sid / "07_pgx"
+        d = output_root / sid / "07_pgx"
         if not d.is_dir():
             continue
         for dst_name, pattern in wanted.items():
@@ -412,8 +464,11 @@ def _pipeline_outputs_for(
     source_sample_id: str,
     *,
     require_pgx: bool,
+    require_str: bool = True,
     include_legacy_aliases: bool = True,
+    root: Path | None = None,
 ) -> tuple[dict[str, Path], list[str], str]:
+    output_root = Path(root) if root is not None else PIPELINE_OUT_ROOT
     outputs: dict[str, Path] = {}
     found_under = ""
     candidate_ids = _pipeline_candidate_ids(
@@ -423,34 +478,58 @@ def _pipeline_outputs_for(
     )
     for sid in candidate_ids:
         checks: list[tuple[str, Path | None]] = [
-            ("snv_indel.acmg.tsv", _find_pipeline_acmg_tsv(sid)),
-            ("mito.tsv", _find_pipeline_mito_tsv(sid)),
-            ("cnv.annotated.tsv", _find_pipeline_annotsv_tsv("cnv", sid)),
-            ("sv.annotated.tsv", _find_pipeline_annotsv_tsv("sv", sid)),
+            ("snv_indel.acmg.tsv", _find_pipeline_acmg_tsv(sid, root=output_root)),
+            ("mito.tsv", _find_pipeline_mito_tsv(sid, root=output_root)),
+            (
+                "cnv.annotated.tsv",
+                _find_pipeline_annotsv_tsv("cnv", sid, root=output_root),
+            ),
+            (
+                "sv.annotated.tsv",
+                _find_pipeline_annotsv_tsv("sv", sid, root=output_root),
+            ),
         ]
+        if require_str:
+            checks.append(("str.tsv", _find_pipeline_str_tsv(sid, root=output_root)))
         if require_pgx:
-            checks.append(("PGx/PharmCAT", _find_pipeline_pgx_output(sid)))
+            checks.append((
+                "PGx/PharmCAT",
+                _find_pipeline_pgx_output(sid, root=output_root),
+            ))
         present = {name: path for name, path in checks if path is not None}
         if not found_under and present:
             found_under = sid
         missing = [name for name, path in checks if path is None]
         if not missing:
             return present, [], sid
-    all_names = ["snv_indel.acmg.tsv", "mito.tsv", "cnv.annotated.tsv", "sv.annotated.tsv"]
+    all_names = [
+        "snv_indel.acmg.tsv",
+        "mito.tsv",
+        "cnv.annotated.tsv",
+        "sv.annotated.tsv",
+    ]
+    if require_str:
+        all_names.append("str.tsv")
     if require_pgx:
         all_names.append("PGx/PharmCAT")
     missing = []
     for name in all_names:
         if name == "snv_indel.acmg.tsv":
-            path = _find_pipeline_acmg_tsv(*candidate_ids)
+            path = _find_pipeline_acmg_tsv(*candidate_ids, root=output_root)
         elif name == "mito.tsv":
-            path = _find_pipeline_mito_tsv(*candidate_ids)
+            path = _find_pipeline_mito_tsv(*candidate_ids, root=output_root)
         elif name == "cnv.annotated.tsv":
-            path = _find_pipeline_annotsv_tsv("cnv", *candidate_ids)
+            path = _find_pipeline_annotsv_tsv(
+                "cnv", *candidate_ids, root=output_root
+            )
         elif name == "sv.annotated.tsv":
-            path = _find_pipeline_annotsv_tsv("sv", *candidate_ids)
+            path = _find_pipeline_annotsv_tsv(
+                "sv", *candidate_ids, root=output_root
+            )
+        elif name == "str.tsv":
+            path = _find_pipeline_str_tsv(*candidate_ids, root=output_root)
         else:
-            path = _find_pipeline_pgx_output(*candidate_ids)
+            path = _find_pipeline_pgx_output(*candidate_ids, root=output_root)
         if path is None:
             missing.append(name)
         else:
@@ -458,41 +537,338 @@ def _pipeline_outputs_for(
     return outputs, missing, found_under
 
 
-def _rename_legacy_pipeline_output(sample_id: str, source_sample_id: str, legacy_sid: str) -> None:
-    """Move source-ID-only output into the UI-suffixed directory.
+def _nextflow_context(samples: list[dict]) -> tuple[Path, Path]:
+    """Return stable (launch_dir, work_dir) paths for one sample set.
 
-    This prevents future DRAGEN / in-house runs from re-detecting the
-    source-ID-only directory as an unrelated pipeline result.
+    Nextflow's bare ``-resume`` resumes the latest session in the launch
+    directory.  A deterministic context prevents an unrelated sample job from
+    becoming that "latest" session while still allowing the task hash to
+    invalidate individual processes when inputs or pipeline code change.
     """
-    if not sample_id or sample_id == legacy_sid:
-        return
-    src = PIPELINE_OUT_ROOT / legacy_sid
-    dst = PIPELINE_OUT_ROOT / sample_id
-    if not src.is_dir() or dst.exists():
-        return
-    src.rename(dst)
-    _log(f"[repair] renamed legacy pipeline output {src} -> {dst}")
+    identity = {
+        "mode": samples[0]["mode"] if samples else "",
+        "samples": sorted(
+            (
+                str(sample.get("sample_id") or ""),
+                str(sample.get("source_sample_id") or ""),
+            )
+            for sample in samples
+        ),
+    }
+    digest = hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
+    label = identity["samples"][0][0] if len(identity["samples"]) == 1 else "batch"
+    safe_label = re.sub(r"[^A-Za-z0-9._-]+", "_", label).strip("._-") or "sample"
+    context = TERTIARY_NF_WORK_ROOT / "contexts" / f"{safe_label[:48]}-{digest}"
+    if len(identity["samples"]) == 1:
+        # Preserve the pre-v7.3 work location so its hashed task directories
+        # remain available while the launch/cache metadata moves into an
+        # isolated context.
+        work = TERTIARY_NF_WORK_ROOT / identity["samples"][0][0]
+    else:
+        work = context / "work"
+    return context / "launch", work
 
 
-def _remove_legacy_pipeline_output_before_resume(sample_id: str, source_sample_id: str) -> None:
-    """Remove a source-ID publish dir before a suffixed resume.
+def _seed_legacy_nextflow_context(
+    samples: list[dict],
+    *,
+    launch_dir: Path,
+    work_dir: Path,
+) -> str | None:
+    """Copy the latest matching pre-context cache into a single-sample launch.
 
-    Nextflow resume state lives under the work directory, not the publish
-    directory, so clearing the legacy publish dir lets the resumed run decide
-    what is cached and republish into a clean source-ID directory that we can
-    later rename.
+    Older workers ran every job from REPO_ROOT, so bare ``-resume`` selected
+    whichever sample happened to run most recently.  On the first run in a
+    new isolated context, import only the latest successful session whose
+    command used this sample's stable work directory.  Nextflow still decides
+    task-by-task whether that cache is valid.
     """
-    if not sample_id or not source_sample_id or sample_id == source_sample_id:
-        return
-    src = PIPELINE_OUT_ROOT / source_sample_id
-    dst = PIPELINE_OUT_ROOT / sample_id
-    if not src.is_dir() or dst.exists():
-        return
-    shutil.rmtree(src)
-    _log(
-        f"[repair] removed legacy source-ID pipeline output {src}; "
-        f"nextflow -resume will republish for {sample_id}"
+    if len(samples) != 1:
+        return None
+    target_nf = Path(launch_dir) / ".nextflow"
+    if (target_nf / "history").is_file():
+        return None
+    legacy_nf = REPO_ROOT / ".nextflow"
+    history = legacy_nf / "history"
+    if not history.is_file():
+        return None
+    expected_work = str(Path(work_dir).absolute())
+    try:
+        lines = history.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        fields = line.split("\t", 6)
+        if len(fields) != 7 or fields[3] != "OK":
+            continue
+        session_id = fields[5].strip()
+        if not session_id:
+            continue
+        try:
+            command = shlex.split(fields[6])
+        except ValueError:
+            continue
+        previous_work = ""
+        for index, token in enumerate(command):
+            if token == "-work-dir" and index + 1 < len(command):
+                previous_work = command[index + 1]
+                break
+            if token.startswith("-work-dir="):
+                previous_work = token.split("=", 1)[1]
+                break
+        if not previous_work:
+            continue
+        try:
+            matches_work = str(Path(previous_work).absolute()) == expected_work
+        except OSError:
+            matches_work = previous_work == expected_work
+        if not matches_work:
+            continue
+        source_cache = legacy_nf / "cache" / session_id
+        if not source_cache.is_dir():
+            continue
+        target_cache = target_nf / "cache" / session_id
+        try:
+            target_cache.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_cache, target_cache)
+            (target_nf / "history").write_text(line + "\n", encoding="utf-8")
+        except OSError as exc:
+            shutil.rmtree(target_nf, ignore_errors=True)
+            _log(f"[nextflow] legacy cache seed skipped: {exc}")
+            return None
+        return session_id
+    return None
+
+
+def _acquire_sample_locks(sample_ids: list[str]) -> list[object]:
+    """Hold non-blocking advisory locks for every UI sample in a job."""
+    lock_dir = TERTIARY_JOBS_DIR / ".sample_locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    handles: list[object] = []
+    try:
+        for sample_id in sorted(set(sample_ids)):
+            handle = (lock_dir / f"{sample_id}.lock").open("a+", encoding="utf-8")
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                handle.close()
+                raise RuntimeError(
+                    f"tertiary analysis is already running for {sample_id}"
+                ) from exc
+            handle.seek(0)
+            handle.truncate()
+            handle.write(f"pid={os.getpid()} acquired_at={_now()}\n")
+            handle.flush()
+            handles.append(handle)
+        return handles
+    except BaseException:
+        _release_sample_locks(handles)
+        raise
+
+
+def _release_sample_locks(handles: list[object]) -> None:
+    for handle in reversed(handles):
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
+            handle.close()
+        except OSError:
+            pass
+
+
+def _prepare_job_staging(job_id: str) -> tuple[Path, Path]:
+    staging_parent = PIPELINE_OUT_ROOT / ".staging"
+    rollback_parent = PIPELINE_OUT_ROOT / ".rollback"
+    staging_root = staging_parent / job_id
+    rollback_root = rollback_parent / job_id
+    if staging_root.exists() or rollback_root.exists():
+        raise RuntimeError(f"job staging already exists: {job_id}")
+    staging_root.mkdir(parents=True, exist_ok=False)
+    try:
+        rollback_root.mkdir(parents=True, exist_ok=False)
+    except BaseException:
+        shutil.rmtree(staging_root, ignore_errors=True)
+        raise
+    return staging_root, rollback_root
+
+
+def _validate_staged_sample(
+    staging_root: Path,
+    source_sample_id: str,
+    *,
+    require_pgx: bool,
+) -> dict[str, Path]:
+    sample_dir = staging_root / source_sample_id
+    required_dirs = list(REQUIRED_PIPELINE_STAGE_DIRS)
+    if require_pgx:
+        required_dirs.append("07_pgx")
+    missing_dirs = [name for name in required_dirs if not (sample_dir / name).is_dir()]
+    if missing_dirs:
+        raise RuntimeError(
+            f"nextflow staging output for {source_sample_id} is missing director"
+            f"{'y' if len(missing_dirs) == 1 else 'ies'}: {', '.join(missing_dirs)}"
+        )
+    outputs, missing, found_under = _pipeline_outputs_for(
+        source_sample_id,
+        source_sample_id,
+        require_pgx=require_pgx,
+        require_str=True,
+        include_legacy_aliases=False,
+        root=staging_root,
     )
+    if missing or found_under != source_sample_id:
+        detail = ", ".join(missing) if missing else "unexpected sample directory"
+        raise RuntimeError(
+            f"nextflow staging output validation failed for {source_sample_id}: {detail}"
+        )
+    return outputs
+
+
+def _sqlite_set_meta(path: Path, key: str, value: str) -> None:
+    if not path.is_file():
+        return
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        conn.commit()
+
+
+def _rebase_staged_derived_paths(
+    *,
+    sample_id: str,
+    stage_post_dir: Path,
+    final_raw_tsv: Path,
+    final_post_dir: Path,
+) -> None:
+    """Make staged SQLite/JSON signatures valid after live promotion."""
+    final_raw = str(final_raw_tsv.absolute())
+    overlay = stage_post_dir / f"{sample_id}.snv_annotations.sqlite"
+    gene_index = stage_post_dir / f"{sample_id}.snv_gene_index.sqlite"
+    _sqlite_set_meta(overlay, "source_path", final_raw)
+    _sqlite_set_meta(gene_index, "source_path", final_raw)
+
+    manifest = stage_post_dir / f"{sample_id}.snv_indel.review.tsv.source.json"
+    if manifest.is_file():
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        overlay_sig = payload.get("overlay")
+        if isinstance(overlay_sig, dict) and overlay_sig.get("exists"):
+            overlay_stat = overlay.stat()
+            overlay_sig["path"] = str(
+                (final_post_dir / f"{sample_id}.snv_annotations.sqlite").absolute()
+            )
+            overlay_sig["mtime_ns"] = overlay_stat.st_mtime_ns
+            overlay_sig["size"] = overlay_stat.st_size
+            overlay_sig["current"] = True
+        tmp = manifest.with_suffix(manifest.suffix + ".tmp")
+        tmp.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(tmp, manifest)
+
+
+def _path_exists(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _promote_staged_generation(
+    *,
+    sample_id: str,
+    staged_sample_dir: Path,
+    live_sample_dir: Path,
+    rollback_sample_dir: Path,
+) -> list[tuple[Path | None, Path, Path]]:
+    """Promote validated 00-07 + derived state with rollback on failure.
+
+    Reviewer-owned files stay in the existing live 08_postprocessing
+    directory.  Only worker-managed prefixed artifacts are replaced, and the
+    new layout marker is the final rename in the transaction.
+    """
+    staged_post = staged_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
+    live_post = live_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
+    backup_post = rollback_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
+    live_sample_dir.mkdir(parents=True, exist_ok=True)
+    live_post.mkdir(parents=True, exist_ok=True)
+    rollback_sample_dir.mkdir(parents=True, exist_ok=True)
+
+    promoted_legacy = sample_layout.promote_state_tree_in_directory_to_v3(
+        live_post,
+        sample_id,
+        exclude_names=MANAGED_POSTPROCESSING_NAMES,
+    )
+    if promoted_legacy:
+        _log(
+            f"[layout] {sample_id}: copied {len(promoted_legacy)} legacy "
+            "reviewer/analysis state file(s) to v3 names"
+        )
+
+    operations: list[tuple[Path | None, Path, Path]] = []
+
+    def replace(new_path: Path | None, live_path: Path, backup_path: Path) -> None:
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        if _path_exists(live_path):
+            os.replace(live_path, backup_path)
+        operations.append((new_path, live_path, backup_path))
+        if new_path is not None:
+            if not _path_exists(new_path):
+                raise RuntimeError(f"staged promotion source disappeared: {new_path}")
+            live_path.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(new_path, live_path)
+
+    marker_name = f"{sample_id}.layout.json"
+    try:
+        for name in PIPELINE_STAGE_DIRS:
+            staged = staged_sample_dir / name
+            replace(
+                staged if staged.is_dir() else None,
+                live_sample_dir / name,
+                rollback_sample_dir / name,
+            )
+
+        for name in sorted(MANAGED_POSTPROCESSING_NAMES - {"layout.json"}):
+            staged = staged_post / f"{sample_id}.{name}"
+            replace(
+                staged if staged.is_file() else None,
+                live_post / f"{sample_id}.{name}",
+                backup_post / f"{sample_id}.{name}",
+            )
+
+        # Activation marker is deliberately last.
+        replace(
+            staged_post / marker_name,
+            live_post / marker_name,
+            backup_post / marker_name,
+        )
+    except BaseException:
+        _rollback_promotion_operations(operations)
+        raise
+    return operations
+
+
+def _rollback_promotion_operations(
+    operations: list[tuple[Path | None, Path, Path]],
+) -> None:
+    for new_path, live_path, backup_path in reversed(operations):
+        try:
+            if _path_exists(live_path):
+                if new_path is not None:
+                    new_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(live_path, new_path)
+                elif live_path.is_dir() and not live_path.is_symlink():
+                    shutil.rmtree(live_path)
+                else:
+                    live_path.unlink(missing_ok=True)
+            if _path_exists(backup_path):
+                live_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(backup_path, live_path)
+        except OSError:
+            pass
 
 
 def _pipeline_input_dir(vcf: Path, mode: str) -> Path:
@@ -634,6 +1010,7 @@ def _track_pipeline_source(
     source_sample_id: str,
     source_vcf_path: str,
     pipeline_type: str,
+    published_source: Path | None = None,
 ) -> None:
     """Write a small audit record so the reviewer (and a future
     re-sync endpoint) can tell where the SNV TSV originated.
@@ -645,7 +1022,7 @@ def _track_pipeline_source(
     except OSError:
         mtime = None
     rec = {
-        "source_path":  str(source),
+        "source_path":  str(published_source or source),
         "source_mtime": mtime,
         "source_sample_id": source_sample_id,
         "source_vcf_path": source_vcf_path,
@@ -788,7 +1165,14 @@ def _elapsed_minutes_label(elapsed: float | None) -> str:
     return f"elapsed={elapsed / 60:.1f}m"
 
 
-def _run(cmd: list[str], *, label: str, on_line=None, display_cmd: list[str] | None = None) -> None:
+def _run(
+    cmd: list[str],
+    *,
+    label: str,
+    on_line=None,
+    display_cmd: list[str] | None = None,
+    cwd: Path | None = None,
+) -> None:
     """Stream a subprocess's stdout/stderr into this worker's stdout
     (which is already redirected to log.txt by dragen_jobs.start_job).
     Raises on non-zero exit so the outer try/except records failure.
@@ -804,6 +1188,7 @@ def _run(cmd: list[str], *, label: str, on_line=None, display_cmd: list[str] | N
         text=True,
         errors="replace",
         bufsize=1,
+        cwd=str(cwd) if cwd is not None else None,
     )
     assert proc.stdout is not None
     for line in proc.stdout:
@@ -845,21 +1230,53 @@ def main() -> int:
     sample_ids = [sample["sample_id"] for sample in samples]
 
     scripts = REPO_ROOT / "scripts"
-    batch_slug = sample_ids[0] if len(sample_ids) == 1 else f"batch-{job_id}"
-    nf_work  = TERTIARY_NF_WORK_ROOT / batch_slug
+    nf_launch, nf_work = _nextflow_context(samples)
     pipeline_type = "dragen" if mode == "dragen" else "nckuh"
     legacy_staging = os.environ.get("NGS_UI_TERTIARY_LEGACY_STAGING", "").strip().lower() in {
         "1", "true", "yes", "y", "on"
     }
+    lock_handles: list[object] = []
+    staging_root: Path | None = None
+    rollback_root: Path | None = None
+    previous_main_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def cleanup_on_sigterm(_signum, _frame):
+        raise SystemExit(143)
+
+    signal.signal(signal.SIGTERM, cleanup_on_sigterm)
 
     started_at = _now()
     _set_step(job_id, "detect-pipeline-output", state="running", started_at=started_at)
     try:
-        # 1. Reuse existing pipeline output only when every requested
-        # pipeline artifact exists. PGx is required only when the UI
-        # checkbox is enabled; otherwise old non-PGx runs remain reusable.
+        lock_handles = _acquire_sample_locks(
+            sample_ids + [sample["source_sample_id"] for sample in samples]
+        )
+        staging_root, rollback_root = _prepare_job_staging(job_id)
+        nf_launch.mkdir(parents=True, exist_ok=True)
+        nf_work.mkdir(parents=True, exist_ok=True)
+        seeded_resume_session = _seed_legacy_nextflow_context(
+            samples,
+            launch_dir=nf_launch,
+            work_dir=nf_work,
+        )
+        _update(
+            job_id,
+            staging_root=str(staging_root),
+            nextflow_launch_dir=str(nf_launch),
+            nextflow_work_dir=str(nf_work),
+            legacy_resume_session=seeded_resume_session,
+        )
+        if seeded_resume_session:
+            _log(
+                "[nextflow] imported matching legacy cache session "
+                f"{seeded_resume_session} into isolated launch context"
+            )
+
+        # Existing live output is recorded for operator context only.
+        # It never decides whether Nextflow runs; dependency/cache decisions
+        # belong to Nextflow -resume.
         existing_by_sid: dict[str, dict[str, Path]] = {}
-        pending_samples: list[dict] = []
+        pending_samples: list[dict] = list(samples)
         for sample in samples:
             sid = sample["sample_id"]
             source_sid = sample["source_sample_id"]
@@ -867,42 +1284,18 @@ def main() -> int:
                 sid,
                 source_sid,
                 require_pgx=not args.without_pgx,
-                include_legacy_aliases=False,
+                require_str=True,
             )
-            if not missing:
-                if found_under and found_under != sid:
-                    _rename_legacy_pipeline_output(sid, source_sid, found_under)
-                    outputs, missing, found_under = _pipeline_outputs_for(
-                        sid,
-                        source_sid,
-                        require_pgx=not args.without_pgx,
-                    )
-                existing_by_sid[sid] = outputs
-                _log(
-                    f"[detect] {sid}: reusing complete pipeline output "
-                    f"under {PIPELINE_OUT_ROOT / (found_under or sid)}"
-                )
-            else:
-                pending_samples.append(sample)
-                present = ", ".join(sorted(outputs)) or "none"
-                _log(
-                    f"[detect] {sid}: missing {', '.join(missing)} "
-                    f"(present: {present}); running Nextflow with -resume"
-                )
+            present = ", ".join(sorted(outputs)) or "none"
+            status = "complete" if not missing else f"missing {', '.join(missing)}"
+            _log(
+                f"[detect] {sid}: live output {status} under "
+                f"{PIPELINE_OUT_ROOT / (found_under or sid)} "
+                f"(present: {present}); Nextflow -resume will run"
+            )
 
         if pending_samples:
-            for sample in pending_samples:
-                sid = sample["sample_id"]
-                source_sid = sample["source_sample_id"]
-                source_dir = PIPELINE_OUT_ROOT / source_sid
-                target_dir = PIPELINE_OUT_ROOT / sid
-                if source_sid != sid and source_dir.is_dir() and not target_dir.exists():
-                    _remove_legacy_pipeline_output_before_resume(sid, source_sid)
-            pending_samples = [sample for sample in pending_samples if sample["sample_id"] not in existing_by_sid]
-            if not pending_samples:
-                _set_step(job_id, "detect-pipeline-output", state="done")
-            else:
-                _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
+            _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
 
             if pending_samples:
                 # 2. v3.x pipeline input. The official pipeline now owns
@@ -1079,12 +1472,19 @@ def main() -> int:
                         "--sample_id", sid,
                         "--input_dir", str(nf_stage),
                         "--seq_type",  sample["seq_type"],
-                        "--out_dir",   str(PIPELINE_OUT_ROOT),
+                        "--out_dir",   str(staging_root),
                     ]
                     if args.without_pgx:
                         nextflow_cmd += ["--run_pgx", "false"]
                     nextflow_cmd.append("-resume")
-                    _run(nextflow_cmd, label="2b/4 nextflow legacy", on_line=track_nextflow)
+                    if seeded_resume_session:
+                        nextflow_cmd.append(seeded_resume_session)
+                    _run(
+                        nextflow_cmd,
+                        label="2b/4 nextflow legacy",
+                        on_line=track_nextflow,
+                        cwd=nf_launch,
+                    )
                 else:
                     samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
                     nextflow_cmd = [
@@ -1095,11 +1495,13 @@ def main() -> int:
                         "-work-dir", str(nf_work),
                         "--pipeline_type", pipeline_type,
                         "--samplesheet", str(samplesheet),
-                        "--out_dir", str(PIPELINE_OUT_ROOT),
+                        "--out_dir", str(staging_root),
                     ]
                     if args.without_pgx:
                         nextflow_cmd += ["--run_pgx", "false"]
                     nextflow_cmd.append("-resume")
+                    if seeded_resume_session:
+                        nextflow_cmd.append(seeded_resume_session)
                     inner = " ".join(shlex.quote(part) for part in nextflow_cmd)
                     env_script = os.environ.get(
                         "NGS_UI_TERTIARY_ENV_SCRIPT",
@@ -1115,40 +1517,32 @@ def main() -> int:
                         "bash",
                         "-lc",
                         shell_cmd,
-                    ], label="2b/4 nextflow v3.x", on_line=track_nextflow)
+                    ], label="2b/4 nextflow v3.x", on_line=track_nextflow, cwd=nf_launch)
 
                 for sample in pending_samples:
                     sid = sample["sample_id"]
                     source_sid = sample["source_sample_id"]
-                    outputs, missing, found_under = _pipeline_outputs_for(
-                        sid,
-                        source_sid,
+                    staged_pipeline_id = sid if legacy_staging else source_sid
+                    outputs = _validate_staged_sample(
+                        staging_root,
+                        staged_pipeline_id,
                         require_pgx=not args.without_pgx,
                     )
-                    if not missing and found_under and found_under != sid:
-                        _rename_legacy_pipeline_output(sid, source_sid, found_under)
-                        outputs, missing, found_under = _pipeline_outputs_for(
-                            sid,
-                            source_sid,
-                            require_pgx=not args.without_pgx,
-                        )
-                    if missing:
-                        raise RuntimeError(
-                            "nextflow finished but expected output(s) still missing for "
-                            f"{sid}: {', '.join(missing)}"
-                        )
                     existing_by_sid[sid] = outputs
-        # 4. Prepare 08_postprocessing. Pipeline-owned 03-07 outputs stay in
-        # place and are read directly; only UI state and truly derived files
-        # belong below 08.
+        # 4. Prepare job-private 08_postprocessing beside staged 00-07.
         _set_step(job_id, "prepare-postprocessing")
         pipeline_annotsv_available: dict[str, set[str]] = {}
         raw_tsv_by_sid: dict[str, Path] = {}
+        staged_sample_dir_by_sid: dict[str, Path] = {}
+        final_raw_tsv_by_sid: dict[str, Path] = {}
         for sample in samples:
             sid = sample["sample_id"]
             source_sid = sample["source_sample_id"]
             source_vcf = sample["vcf_path"]
-            post_dir = sample_layout.unified_postprocessing_dir(sid)
+            staged_pipeline_id = sid if legacy_staging else source_sid
+            staged_sample_dir = staging_root / staged_pipeline_id
+            staged_sample_dir_by_sid[sid] = staged_sample_dir
+            post_dir = staged_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
             post_dir.mkdir(parents=True, exist_ok=True)
             outputs = existing_by_sid.get(sid) or {}
             existing = outputs.get("snv_indel.acmg.tsv")
@@ -1156,6 +1550,11 @@ def main() -> int:
                 raise RuntimeError(f"internal error: no pipeline TSV for {sid}")
             _validate_acmg_tsv(existing, strict_v31=not legacy_staging)
             raw_tsv_by_sid[sid] = existing
+            final_raw_tsv = (
+                sample_layout.unified_sample_dir(sid)
+                / existing.relative_to(staged_sample_dir)
+            )
+            final_raw_tsv_by_sid[sid] = final_raw_tsv
             _track_pipeline_source(
                 sid,
                 post_dir,
@@ -1163,8 +1562,9 @@ def main() -> int:
                 source_sample_id=source_sid,
                 source_vcf_path=source_vcf,
                 pipeline_type=mode,
+                published_source=final_raw_tsv,
             )
-            _log(f"[source] {sid}: immutable SNV TSV {existing}")
+            _log(f"[source] {sid}: staged immutable SNV TSV {existing}")
             ploidy_copy, ploidy_qc_copy = _copy_ploidy_artifacts(
                 mode=mode,
                 source_vcf=source_vcf,
@@ -1180,11 +1580,11 @@ def main() -> int:
             if ploidy_qc_copy is not None:
                 ploidy_qc_src, ploidy_qc_dst = ploidy_qc_copy
                 _log(f"[copy] {sid}: future-use ploidy QC {ploidy_qc_src} → {ploidy_qc_dst}")
-            mito_src = outputs.get("mito.tsv") or _find_pipeline_mito_tsv(sid, source_sid)
+            mito_src = outputs.get("mito.tsv")
             if mito_src is None:
                 _log(
-                    f"[copy] {sid}: mito output not found under "
-                    f"{PIPELINE_OUT_ROOT}/{source_sid}/04_mito/"
+                    f"[copy] {sid}: mito output not found under staged "
+                    f"{staged_sample_dir}/04_mito/"
                 )
             else:
                 mito_dst = sample_layout.scoped_file(
@@ -1204,29 +1604,32 @@ def main() -> int:
                 else:
                     mito_dst.unlink(missing_ok=True)
                     _log(f"[source] {sid}: use pipeline mito TSV directly ({mito_src})")
-            str_src = _find_pipeline_str_tsv(sid, source_sid)
+            str_src = outputs.get("str.tsv")
             if str_src is None:
                 _log(
-                    f"[copy] {sid}: STR output not found under "
-                    f"{PIPELINE_OUT_ROOT}/{source_sid}/05_str/"
+                    f"[copy] {sid}: STR output not found under staged "
+                    f"{staged_sample_dir}/05_str/"
                 )
             else:
                 _log(f"[source] {sid}: use pipeline STR TSV directly ({str_src})")
-            pgx_files = _find_pipeline_pgx_files(sid, source_sid)
+            pgx_files = _find_pipeline_pgx_files(
+                staged_pipeline_id,
+                root=staging_root,
+            )
             if not pgx_files and not args.without_pgx:
                 _log(
-                    f"[copy] {sid}: PGx outputs not found under "
-                    f"{PIPELINE_OUT_ROOT}/{source_sid}/07_pgx/"
+                    f"[copy] {sid}: PGx outputs not found under staged "
+                    f"{staged_sample_dir}/07_pgx/"
                 )
             for dst_name, pgx_src in sorted(pgx_files.items()):
                 _log(f"[source] {sid}: use pipeline {dst_name} directly ({pgx_src})")
             for kind in ("cnv", "sv"):
                 key = f"{kind}.annotated.tsv"
-                annotsv_src = outputs.get(key) or _find_pipeline_annotsv_tsv(kind, sid, source_sid)
+                annotsv_src = outputs.get(key)
                 if annotsv_src is None:
                     _log(
-                        f"[copy] {sid}: {kind.upper()} AnnotSV output not found under "
-                        f"{PIPELINE_OUT_ROOT}/{source_sid}/06_cnv_sv/"
+                        f"[copy] {sid}: {kind.upper()} AnnotSV output not found "
+                        f"under staged {staged_sample_dir}/06_cnv_sv/"
                     )
                     continue
                 pipeline_annotsv_available.setdefault(sid, set()).add(kind)
@@ -1254,7 +1657,8 @@ def main() -> int:
                 stopgap_sample_id=sid,
             )
             raw_tsv = raw_tsv_by_sid[sid]
-            post_dir = sample_layout.unified_postprocessing_dir(sid)
+            staged_sample_dir = staged_sample_dir_by_sid[sid]
+            post_dir = staged_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
             for stale_work in post_dir.glob(".snv_indel.*.working.tsv"):
                 stale_work.unlink(missing_ok=True)
             work_tsv = post_dir / f".snv_indel.{job_id}.working.tsv"
@@ -1307,13 +1711,14 @@ def main() -> int:
                     on_line=track_post_processing,
                     display_cmd=display_stop_args,
                 )
-                promoted = sample_layout.promote_state_tree_to_v3(sid)
-                if promoted:
-                    _log(
-                        f"[layout] {sid}: copied {len(promoted)} legacy state file(s) "
-                        "to v3 sample-prefixed names"
-                    )
-                sample_layout.write_layout_marker(
+                _rebase_staged_derived_paths(
+                    sample_id=sid,
+                    stage_post_dir=post_dir,
+                    final_raw_tsv=final_raw_tsv_by_sid[sid],
+                    final_post_dir=sample_layout.unified_postprocessing_dir(sid),
+                )
+                sample_layout.write_layout_marker_in_sample_dir(
+                    staged_sample_dir,
                     sid,
                     source_id=sample["source_sample_id"],
                     raw_tsv=raw_tsv,
@@ -1321,6 +1726,40 @@ def main() -> int:
             finally:
                 work_tsv.unlink(missing_ok=True)
                 signal.signal(signal.SIGTERM, previous_sigterm)
+
+        # 6. Promote every fully prepared generation. Keep every backup until
+        # the whole batch has switched so a later sample failure can roll back
+        # earlier samples from the same job.
+        _set_step(job_id, "promote-output")
+        promoted_batches: list[list[tuple[Path | None, Path, Path]]] = []
+        try:
+            for sample in samples:
+                sid = sample["sample_id"]
+                operations = _promote_staged_generation(
+                    sample_id=sid,
+                    staged_sample_dir=staged_sample_dir_by_sid[sid],
+                    live_sample_dir=sample_layout.unified_sample_dir(sid),
+                    rollback_sample_dir=rollback_root / sid,
+                )
+                promoted_batches.append(operations)
+                live_post = sample_layout.unified_postprocessing_dir(sid)
+                for stale_work in live_post.glob(".snv_indel.*.working.tsv"):
+                    stale_work.unlink(missing_ok=True)
+                _log(f"[promote] {sid}: staged generation activated")
+        except BaseException:
+            for operations in reversed(promoted_batches):
+                _rollback_promotion_operations(operations)
+            raise
+
+        from ..services import sample_loader
+        for sid in sample_ids:
+            try:
+                sample_loader.invalidate_sample_cache(
+                    sample_layout.unified_postprocessing_dir(sid)
+                )
+                sample_loader.update_case_table_row(sid)
+            except Exception as cache_error:
+                _log(f"[cache] {sid}: refresh failed: {cache_error}")
 
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)
@@ -1335,6 +1774,12 @@ def main() -> int:
                 finished_at=_now())
         _log(f"[tertiary_run] FAILED: {e}")
         return 1
+    finally:
+        signal.signal(signal.SIGTERM, previous_main_sigterm)
+        _release_sample_locks(lock_handles)
+        for path in (staging_root, rollback_root):
+            if path is not None and path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
 
 
 if __name__ == "__main__":

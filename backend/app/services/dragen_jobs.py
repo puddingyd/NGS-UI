@@ -42,6 +42,7 @@ PIPELINE_STEPS = [
     "nextflow",
     "prepare-postprocessing",
     "post-processing",
+    "promote-output",
     "done",
 ]
 _SAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -424,7 +425,11 @@ def list_jobs(limit: int = 50) -> list[dict]:
         if not root.is_dir():
             continue
         for child in root.iterdir():
-            if not child.is_dir() or child.name in seen:
+            if (
+                not child.is_dir()
+                or child.name.startswith((".", "_"))
+                or child.name in seen
+            ):
                 continue
             seen.add(child.name)
             st = reconcile_job_state(child.name)
@@ -588,7 +593,7 @@ def list_pipeline_outputs() -> list[dict]:
     for output_root in (PIPELINE_OUT_ROOT, LEGACY_PIPELINE_OUT_ROOT):
         if output_root.is_dir():
             for child in output_root.iterdir():
-                if not child.is_dir() or child.name.startswith("_"):
+                if not child.is_dir() or child.name.startswith(("_", ".")):
                     continue
                 try:
                     _validate_sample_id(child.name)
@@ -837,13 +842,24 @@ def start_job(
             "mito_vcf": mito_vcf,
         }]
 
+    sample_ids = [s["sample_id"] for s in batch_samples]
+    source_sample_ids = [s["source_sample_id"] for s in batch_samples]
+    if len(set(sample_ids)) != len(sample_ids):
+        raise ValueError("duplicate UI sample_id in tertiary batch")
+    if len(set(source_sample_ids)) != len(source_sample_ids):
+        raise ValueError("duplicate source_sample_id in tertiary batch")
+    requested_ids = set(sample_ids) | set(source_sample_ids)
+    conflicts = sorted(requested_ids & active_sample_ids())
+    if conflicts:
+        raise RuntimeError(
+            "tertiary analysis is already running for: " + ", ".join(conflicts)
+        )
+
     job_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     jdir = _job_dir(job_id)
     jdir.mkdir(parents=True, exist_ok=True)
 
     created_at = _now()
-    sample_ids = [s["sample_id"] for s in batch_samples]
-    source_sample_ids = [s["source_sample_id"] for s in batch_samples]
     save_state(job_id, {
         "job_id":         job_id,
         "mode":           mode,
