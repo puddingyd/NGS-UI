@@ -5499,6 +5499,22 @@ function _formatMitoAf(v) {
   return parts.join(" · ") || "—";
 }
 
+function _formatMitoInhouseAf(v) {
+  if (v.inhouse_af == null || !Number.isFinite(Number(v.inhouse_af))) return "—";
+  let text = fmtNum(Number(v.inhouse_af), 5);
+  if (v.inhouse_ac != null && v.inhouse_an != null) {
+    text += ` (${v.inhouse_ac}/${v.inhouse_an}`;
+    const carrierKinds = [];
+    if (v.inhouse_nhom != null) carrierKinds.push(`hom ${v.inhouse_nhom}`);
+    if (v.inhouse_het_mt != null) carrierKinds.push(`het ${v.inhouse_het_mt}`);
+    if (carrierKinds.length) text += `; ${carrierKinds.join(" · ")}`;
+    text += ")";
+  }
+  return text;
+}
+
+const _MITO_INHOUSE_AF_TITLE = "院內 WGS cohort 的 mtDNA carrier frequency：AC 是帶有此 ALT 的樣本數，AN 是該位點可判讀的粒線體樣本數；hom/het 分別為 homoplasmic/heteroplasmic carriers。此欄只供辨識院內常見或重現變異，不直接用於 ACMG 分級。";
+
 function _mitoClinvarDiseaseList(v, id) {
   const diseases = Array.isArray(v.clinvar_diseases) ? v.clinvar_diseases : [];
   if (!diseases.length) return "";
@@ -5583,6 +5599,7 @@ function _renderMitoDetailBox(v, id) {
         return `<span><strong>ClinVar:</strong> <span class="acmg-class ${cls}">${escapeHtml(sig.replace(/_/g," "))}${escapeHtml(stars)}</span></span>`;
       })()}
       <span><strong>gnomAD mito:</strong> ${escapeHtml(_formatMitoAf(v))}</span>
+      <span data-tip="${escapeAttr(_MITO_INHOUSE_AF_TITLE)}"><strong>AF_nckuh:</strong> ${escapeHtml(_formatMitoInhouseAf(v))} <span class="muted" style="cursor:help">ⓘ</span></span>
       ${v.TLOD != null ? `<span data-tip="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>` : ""}
     </div>
   </div>`;
@@ -10433,6 +10450,7 @@ function _dragenProgressPercent(state) {
     "detect-pipeline-output": 2,
     samplesheet: 2,
     stage: 2,
+    "waiting-nextflow-cache": 2,
     nextflow: 3,
     "nextflow:prepare-vcf": 4,
     "nextflow:prepare-vcf-dragen": 4,

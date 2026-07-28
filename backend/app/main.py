@@ -9,7 +9,14 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
 from .routers import analyses, auth, dragen, emr, igv, jobs, phenotype, phenotype_tool, samples, secondary
-from .services import clinvar_mito, hpo_ontology, omim_store, phenotype_scorer, users
+from .services import (
+    clinvar_mito,
+    hpo_ontology,
+    inhouse_af_mito,
+    omim_store,
+    phenotype_scorer,
+    users,
+)
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
 logger = logging.getLogger(__name__)
@@ -50,6 +57,13 @@ def _warm_caches() -> None:
     # operator drops the VCF in and restarts.
     try:
         clinvar_mito._load()
+    except Exception:
+        pass
+    # The whole-genome in-house AF VCF is large; use its tabix index to
+    # cache only chrM records for Mitochondria cards. Missing DB/index/tools
+    # silently disable this optional annotation.
+    try:
+        inhouse_af_mito._load()
     except Exception:
         pass
 

@@ -35,68 +35,123 @@ def _sqlite_meta(path, source_path):
         )
 
 
-def test_nextflow_context_is_stable_per_sample_set(tmp_path, monkeypatch):
+def test_nextflow_context_is_shared_across_batches_per_mode(tmp_path, monkeypatch):
     monkeypatch.setattr(dragen_run, "TERTIARY_NF_WORK_ROOT", tmp_path)
-    samples = [{
+    first_batch = [{
         "mode": "dragen",
         "sample_id": "S1-dragen",
         "source_sample_id": "S1",
-    }]
-
-    first = dragen_run._nextflow_context(samples)
-    second = dragen_run._nextflow_context([dict(samples[0])])
-    other = dragen_run._nextflow_context([{
+    }, {
         "mode": "dragen",
         "sample_id": "S2-dragen",
         "source_sample_id": "S2",
-    }])
+    }]
+    overlapping_batch = [dict(first_batch[0])]
+    unrelated_batch = [{
+        "mode": "dragen",
+        "sample_id": "S3-dragen",
+        "source_sample_id": "S3",
+    }]
+    inhouse_batch = [{
+        "mode": "inhouse",
+        "sample_id": "S1-nckuh",
+        "source_sample_id": "S1",
+    }]
 
-    assert first == second
-    assert first != other
-    assert first[0].name == "launch"
-    assert first[1] == tmp_path / "S1-dragen"
+    first = dragen_run._nextflow_context(first_batch)
+
+    assert first == dragen_run._nextflow_context(overlapping_batch)
+    assert first == dragen_run._nextflow_context(unrelated_batch)
+    assert first != dragen_run._nextflow_context(inhouse_batch)
+    assert first == (
+        tmp_path / "contexts" / "shared-dragen" / "launch",
+        tmp_path / "contexts" / "shared-dragen" / "work",
+    )
 
 
-def test_first_isolated_context_imports_matching_legacy_cache(tmp_path, monkeypatch):
+def test_shared_context_adopts_prior_session_with_most_sample_overlap(
+    tmp_path,
+    monkeypatch,
+):
     repo = tmp_path / "repo"
-    launch = tmp_path / "nf_work" / "contexts" / "S1" / "launch"
-    work = tmp_path / "nf_work" / "S1-dragen"
-    session_id = "11111111-2222-3333-4444-555555555555"
+    work_root = tmp_path / "nf_work"
+    launch = work_root / "contexts" / "shared-dragen" / "launch"
+    best_session = "11111111-2222-3333-4444-555555555555"
     other_session = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-    legacy_nf = repo / ".nextflow"
-    (legacy_nf / "cache" / session_id).mkdir(parents=True)
-    (legacy_nf / "cache" / session_id / "index.run").touch()
-    (legacy_nf / "cache" / other_session).mkdir(parents=True)
-    history_lines = [
-        (
-            "2026-07-01 01:00:00\t1m\tother\tOK\thash\t"
-            f"{other_session}\tnextflow run main.nf -work-dir "
-            f"{tmp_path / 'nf_work' / 'S2'} -resume"
-        ),
-        (
-            "2026-07-01 02:00:00\t1m\tmatch\tOK\thash\t"
-            f"{session_id}\tnextflow run main.nf -work-dir {work} -resume"
-        ),
-    ]
-    (legacy_nf / "history").write_text(
-        "\n".join(history_lines) + "\n",
+    best_nf = work_root / "contexts" / "old-batch" / "launch" / ".nextflow"
+    other_nf = work_root / "contexts" / "other-batch" / "launch" / ".nextflow"
+    best_work = work_root / "contexts" / "old-batch" / "work"
+    other_work = work_root / "contexts" / "other-batch" / "work"
+    for nf_root, session_id in (
+        (best_nf, best_session),
+        (other_nf, other_session),
+    ):
+        (nf_root / "cache" / session_id).mkdir(parents=True)
+        (nf_root / "cache" / session_id / "index.run").touch()
+    best_work.mkdir(parents=True)
+    other_work.mkdir(parents=True)
+    best_sheet = tmp_path / "best.csv"
+    best_sheet.write_text(
+        "sample_id,pipeline_type,input_dir,seq_type,hpo\n"
+        "S1,dragen,/input,WGS,\n"
+        "S2,dragen,/input,WGS,\n",
+        encoding="utf-8",
+    )
+    other_sheet = tmp_path / "other.csv"
+    other_sheet.write_text(
+        "sample_id,pipeline_type,input_dir,seq_type,hpo\n"
+        "S1,dragen,/input,WGS,\n",
+        encoding="utf-8",
+    )
+    (best_nf / "history").write_text(
+        "2026-07-01 01:00:00\t1m\tbest\tERR\thash\t"
+        f"{best_session}\tnextflow run main.nf --pipeline_type dragen "
+        f"--samplesheet {best_sheet} -work-dir {best_work} -resume\n",
+        encoding="utf-8",
+    )
+    (other_nf / "history").write_text(
+        "2026-07-02 01:00:00\t1m\tother\tOK\thash\t"
+        f"{other_session}\tnextflow run main.nf --pipeline_type dragen "
+        f"--samplesheet {other_sheet} -work-dir {other_work} -resume\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(dragen_run, "REPO_ROOT", repo)
+    monkeypatch.setattr(dragen_run, "TERTIARY_NF_WORK_ROOT", work_root)
 
-    imported = dragen_run._seed_legacy_nextflow_context(
-        [{"sample_id": "S1-dragen", "source_sample_id": "S1"}],
+    imported = dragen_run._seed_shared_nextflow_context(
+        [
+            {
+                "mode": "dragen",
+                "sample_id": "S1-dragen",
+                "source_sample_id": "S1",
+            },
+            {
+                "mode": "dragen",
+                "sample_id": "S2-dragen",
+                "source_sample_id": "S2",
+            },
+        ],
         launch_dir=launch,
-        work_dir=work,
     )
 
-    assert imported == session_id
-    assert (launch / ".nextflow" / "cache" / session_id / "index.run").is_file()
-    assert session_id in (launch / ".nextflow" / "history").read_text()
-    assert dragen_run._seed_legacy_nextflow_context(
-        [{"sample_id": "S1-dragen", "source_sample_id": "S1"}],
+    assert imported == (best_session, best_work.resolve())
+    assert (
+        launch / ".nextflow" / "cache" / best_session / "index.run"
+    ).is_file()
+    assert best_session in (launch / ".nextflow" / "history").read_text()
+    dragen_run._write_shared_work_pointer(launch, imported[1])
+    assert dragen_run._nextflow_context([{
+        "mode": "dragen",
+        "sample_id": "S1-dragen",
+        "source_sample_id": "S1",
+    }])[1] == best_work.resolve()
+    assert dragen_run._seed_shared_nextflow_context(
+        [{
+            "mode": "dragen",
+            "sample_id": "S1-dragen",
+            "source_sample_id": "S1",
+        }],
         launch_dir=launch,
-        work_dir=work,
     ) is None
 
 
@@ -111,6 +166,33 @@ def test_sample_lock_rejects_concurrent_rerun_and_releases(tmp_path, monkeypatch
 
     second = dragen_run._acquire_sample_locks(["S1"])
     dragen_run._release_sample_locks(second)
+
+
+def test_nextflow_cache_lock_is_separate_per_mode(tmp_path, monkeypatch):
+    monkeypatch.setattr(dragen_run, "TERTIARY_JOBS_DIR", tmp_path / "jobs")
+    dragen_lock = dragen_run._acquire_nextflow_cache_lock(
+        "dragen",
+        blocking=False,
+    )
+    try:
+        with pytest.raises(BlockingIOError):
+            dragen_run._acquire_nextflow_cache_lock(
+                "dragen",
+                blocking=False,
+            )
+        nckuh_lock = dragen_run._acquire_nextflow_cache_lock(
+            "inhouse",
+            blocking=False,
+        )
+        dragen_run._release_nextflow_cache_lock(nckuh_lock)
+    finally:
+        dragen_run._release_nextflow_cache_lock(dragen_lock)
+
+    again = dragen_run._acquire_nextflow_cache_lock(
+        "dragen",
+        blocking=False,
+    )
+    dragen_run._release_nextflow_cache_lock(again)
 
 
 def test_start_job_rejects_active_sample_before_spawning(tmp_path, monkeypatch):

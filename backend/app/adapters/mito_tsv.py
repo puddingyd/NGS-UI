@@ -35,7 +35,7 @@ import re
 from urllib.parse import unquote
 from pathlib import Path
 
-from ..services import clinvar_mito, panel_deadzone
+from ..services import clinvar_mito, inhouse_af_mito, panel_deadzone
 
 MITO_TIERS = ["MITO-1", "MITO-2", "MITO-3"]
 
@@ -251,6 +251,7 @@ def load_mito_tsv(
                     plasmy = f"{homo or '-'}/{hetero or '-'}"
 
             cv = clinvar_mito.lookup(pos, ref, alt)
+            inhouse = inhouse_af_mito.lookup(pos, ref, alt)
             clnsig = _first(row, "CLINVAR_SIG") or cv.get("CLNSIG", "")
             clinvar_dn = _first(row, "CLINVAR_DN") or cv.get("CLNDN", "")
             gnomad_afs = _gnomad_af_values(row)
@@ -295,6 +296,14 @@ def load_mito_tsv(
                 "gnomad_mito_af_het": _first(row, "GNOMAD_MITO_AF_HET"),
                 "gnomad_mito_an":  _first(row, "GNOMAD_MITO_AN"),
                 "gnomad_mito_af_max": gnomad_max,
+                # In-house chrM values are carrier counts/frequency, not
+                # diploid nuclear-allele arithmetic. They are context only:
+                # tiering and ACMG classification remain unchanged.
+                "inhouse_af":      inhouse.get("inhouse_af"),
+                "inhouse_ac":      inhouse.get("inhouse_ac"),
+                "inhouse_an":      inhouse.get("inhouse_an"),
+                "inhouse_nhom":    inhouse.get("inhouse_nhom"),
+                "inhouse_het_mt":  inhouse.get("inhouse_het_mt"),
                 "mitomap_refs":    refs_raw,
                 "mitotip_score":   mitotip,
                 "mitomap_allele":  _first(row, "MITOMAP_ALLELE"),

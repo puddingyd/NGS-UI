@@ -6,6 +6,13 @@
 
 ## 版本紀錄
 
+### v7.4 — 2026-07-28
+
+- Mitochondria 卡片新增本院 mtDNA carrier frequency（`AF_nckuh`），顯示帶有該 ALT 的院內樣本數、可判讀粒線體樣本數，以及 homoplasmic / heteroplasmic carrier 數。
+- 本院 mtDNA AF 直接從 indexed in-house AF VCF 的 chrM slice 載入，只供院內常見／重現變異參考，不影響 Mito tier 或 ACMG 分級。
+- 三級分析改為 DRAGEN、NCKUH 各自共用一條 Nextflow cache lineage；同一 sample/input 即使前後放在不同 batch，也可由 Nextflow 沿用有效 cache，只有 hash 條件改變的 task 會重跑。
+- 同模式另一個三級分析 job 會先顯示等待共享 cache，等目前的 Nextflow 結束後再啟動；DRAGEN 與 NCKUH 不互相阻塞，後續驗證與 post-processing 也可並行。
+
 ### v7.3 — 2026-07-28
 
 - 重跑同一個三級分析 sample 時，不再因正式資料夾已有 SNV/Mito/STR/CNV/SV/PGx 就略過 Nextflow；每次都啟動 `-resume`，由 Nextflow 自行判斷沿用 cache 或重跑。

@@ -28,9 +28,10 @@ Mode differences:
             gcnv + delly VCFs.
 
 Nextflow owns cache/re-run decisions.  Existing published files are never
-used to skip the workflow; a stable per-sample or per-batch launch/work
-context lets -resume reuse valid task outputs.  Publishing goes to a fresh
-job staging root so resumed publishDir rules cannot leave stale live files.
+used to skip the workflow; one shared launch/work lineage per pipeline mode
+lets -resume reuse valid task outputs across different batch compositions.
+Publishing goes to a fresh job staging root so resumed publishDir rules
+cannot leave stale live files.
 
 Started by `python3 -m app.workers.dragen_run --job-id … --vcf …`.
 """
@@ -39,7 +40,6 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
-import hashlib
 import json
 import os
 import re
@@ -538,108 +538,239 @@ def _pipeline_outputs_for(
 
 
 def _nextflow_context(samples: list[dict]) -> tuple[Path, Path]:
-    """Return stable (launch_dir, work_dir) paths for one sample set.
+    """Return the shared cache lineage for one tertiary pipeline mode.
 
-    Nextflow's bare ``-resume`` resumes the latest session in the launch
-    directory.  A deterministic context prevents an unrelated sample job from
-    becoming that "latest" session while still allowing the task hash to
-    invalidate individual processes when inputs or pipeline code change.
+    A Nextflow task hash includes the session ID.  Keeping one launch/session
+    lineage per mode therefore lets the same sample/input task resume even
+    when the surrounding batch changes.  A mode-wide advisory lock serializes
+    access to the session's LevelDB cache.  A migrated lineage keeps using the
+    adopted session's original work root because cached task metadata and work
+    outputs are both required for resume.
     """
-    identity = {
-        "mode": samples[0]["mode"] if samples else "",
-        "samples": sorted(
-            (
-                str(sample.get("sample_id") or ""),
-                str(sample.get("source_sample_id") or ""),
-            )
-            for sample in samples
-        ),
-    }
-    digest = hashlib.sha256(
-        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()[:16]
-    label = identity["samples"][0][0] if len(identity["samples"]) == 1 else "batch"
-    safe_label = re.sub(r"[^A-Za-z0-9._-]+", "_", label).strip("._-") or "sample"
-    context = TERTIARY_NF_WORK_ROOT / "contexts" / f"{safe_label[:48]}-{digest}"
-    if len(identity["samples"]) == 1:
-        # Preserve the pre-v7.3 work location so its hashed task directories
-        # remain available while the launch/cache metadata moves into an
-        # isolated context.
-        work = TERTIARY_NF_WORK_ROOT / identity["samples"][0][0]
-    else:
-        work = context / "work"
-    return context / "launch", work
+    mode = str(samples[0].get("mode") or "") if samples else ""
+    scope = "dragen" if mode == "dragen" else "nckuh"
+    context = TERTIARY_NF_WORK_ROOT / "contexts" / f"shared-{scope}"
+    launch_dir = context / "launch"
+    work_dir = context / "work"
+    pointer = context / "work-dir.txt"
+    try:
+        pointed_work = _validated_nf_work_path(
+            pointer.read_text(encoding="utf-8").strip(),
+            require_exists=True,
+        )
+    except OSError:
+        pointed_work = None
+    if pointed_work is not None:
+        work_dir = pointed_work
+    return launch_dir, work_dir
 
 
-def _seed_legacy_nextflow_context(
+def _command_option(command: list[str], name: str) -> str:
+    for index, token in enumerate(command):
+        if token == name and index + 1 < len(command):
+            return command[index + 1]
+        if token.startswith(f"{name}="):
+            return token.split("=", 1)[1]
+    return ""
+
+
+def _history_command_samples(command: list[str]) -> set[str]:
+    sample_ids: set[str] = set()
+    direct = _command_option(command, "--sample_id")
+    if direct:
+        sample_ids.add(direct)
+    samplesheet_value = _command_option(command, "--samplesheet")
+    if not samplesheet_value:
+        return sample_ids
+    samplesheet = Path(samplesheet_value)
+    try:
+        with samplesheet.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                sample_id = str(row.get("sample_id") or "").strip()
+                if sample_id:
+                    sample_ids.add(sample_id)
+    except OSError:
+        pass
+    return sample_ids
+
+
+def _validated_nf_work_path(
+    value: str | Path,
+    *,
+    relative_to: Path | None = None,
+    require_exists: bool,
+) -> Path | None:
+    raw = str(value).strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = (relative_to or TERTIARY_NF_WORK_ROOT) / path
+    try:
+        resolved = path.resolve()
+        work_root = TERTIARY_NF_WORK_ROOT.resolve()
+        if not resolved.is_relative_to(work_root):
+            return None
+        if require_exists and not resolved.is_dir():
+            return None
+    except OSError:
+        return None
+    return resolved
+
+
+def _write_shared_work_pointer(launch_dir: Path, work_dir: Path) -> None:
+    context = Path(launch_dir).parent
+    validated = _validated_nf_work_path(work_dir, require_exists=True)
+    if validated is None:
+        raise RuntimeError(f"unsafe or missing shared Nextflow work root: {work_dir}")
+    context.mkdir(parents=True, exist_ok=True)
+    pointer = context / "work-dir.txt"
+    temporary = context / f".work-dir.{os.getpid()}.tmp"
+    temporary.write_text(str(validated) + "\n", encoding="utf-8")
+    temporary.replace(pointer)
+
+
+def _seed_shared_nextflow_context(
     samples: list[dict],
     *,
     launch_dir: Path,
-    work_dir: Path,
-) -> str | None:
-    """Copy the latest matching pre-context cache into a single-sample launch.
+) -> tuple[str, Path] | None:
+    """Adopt one previous session when creating a mode-wide cache lineage.
 
-    Older workers ran every job from REPO_ROOT, so bare ``-resume`` selected
-    whichever sample happened to run most recently.  On the first run in a
-    new isolated context, import only the latest successful session whose
-    command used this sample's stable work directory.  Nextflow still decides
-    task-by-task whether that cache is valid.
+    Cache entries from different session IDs cannot be merged because the
+    session ID participates in every task hash.  Choose the prior session with
+    the greatest overlap with the requested samples, preferring a successful
+    and then newer run, and preserve its original work directories.
     """
-    if len(samples) != 1:
-        return None
     target_nf = Path(launch_dir) / ".nextflow"
     if (target_nf / "history").is_file():
         return None
-    legacy_nf = REPO_ROOT / ".nextflow"
-    history = legacy_nf / "history"
-    if not history.is_file():
-        return None
-    expected_work = str(Path(work_dir).absolute())
-    try:
-        lines = history.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return None
-    for line in reversed(lines):
-        fields = line.split("\t", 6)
-        if len(fields) != 7 or fields[3] != "OK":
-            continue
-        session_id = fields[5].strip()
-        if not session_id:
-            continue
+    mode = str(samples[0].get("mode") or "") if samples else ""
+    expected_pipeline_type = "dragen" if mode == "dragen" else "nckuh"
+    requested_ids = {
+        str(value)
+        for sample in samples
+        for value in (sample.get("sample_id"), sample.get("source_sample_id"))
+        if value
+    }
+    candidate_nf_roots: list[Path] = [REPO_ROOT / ".nextflow"]
+    contexts = TERTIARY_NF_WORK_ROOT / "contexts"
+    if contexts.is_dir():
+        for candidate_launch in sorted(contexts.glob("*/launch")):
+            candidate_nf = candidate_launch / ".nextflow"
+            if candidate_nf != target_nf:
+                candidate_nf_roots.append(candidate_nf)
+
+    candidates: list[tuple[int, int, str, str, str, Path, Path]] = []
+    for source_nf in candidate_nf_roots:
+        history = source_nf / "history"
         try:
-            command = shlex.split(fields[6])
-        except ValueError:
-            continue
-        previous_work = ""
-        for index, token in enumerate(command):
-            if token == "-work-dir" and index + 1 < len(command):
-                previous_work = command[index + 1]
-                break
-            if token.startswith("-work-dir="):
-                previous_work = token.split("=", 1)[1]
-                break
-        if not previous_work:
-            continue
-        try:
-            matches_work = str(Path(previous_work).absolute()) == expected_work
+            lines = history.read_text(encoding="utf-8").splitlines()
         except OSError:
-            matches_work = previous_work == expected_work
-        if not matches_work:
             continue
-        source_cache = legacy_nf / "cache" / session_id
-        if not source_cache.is_dir():
-            continue
-        target_cache = target_nf / "cache" / session_id
-        try:
-            target_cache.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(source_cache, target_cache)
-            (target_nf / "history").write_text(line + "\n", encoding="utf-8")
-        except OSError as exc:
-            shutil.rmtree(target_nf, ignore_errors=True)
-            _log(f"[nextflow] legacy cache seed skipped: {exc}")
-            return None
-        return session_id
-    return None
+        for line in lines:
+            fields = line.split("\t", 6)
+            if len(fields) != 7 or fields[3] not in {"OK", "ERR"}:
+                continue
+            session_id = fields[5].strip()
+            source_cache = source_nf / "cache" / session_id
+            if not session_id or not source_cache.is_dir():
+                continue
+            try:
+                command = shlex.split(fields[6])
+            except ValueError:
+                continue
+            source_work = _validated_nf_work_path(
+                _command_option(command, "-work-dir"),
+                relative_to=source_nf.parent,
+                require_exists=True,
+            )
+            if source_work is None:
+                continue
+            pipeline_type = _command_option(command, "--pipeline_type").lower()
+            prior_samples = _history_command_samples(command)
+            overlap = len(requested_ids & prior_samples)
+            if pipeline_type:
+                accepted_pipeline_types = {expected_pipeline_type}
+                if expected_pipeline_type == "nckuh":
+                    accepted_pipeline_types.add("inhouse")
+                if pipeline_type not in accepted_pipeline_types:
+                    continue
+            elif overlap == 0:
+                # Legacy --sample_id runs did not record pipeline_type. Only
+                # adopt one when its sample identity matches this request.
+                continue
+            candidates.append((
+                overlap,
+                1 if fields[3] == "OK" else 0,
+                fields[0],
+                line,
+                session_id,
+                source_nf,
+                source_work,
+            ))
+    if not candidates:
+        return None
+
+    (
+        _overlap,
+        _success,
+        _timestamp,
+        line,
+        session_id,
+        source_nf,
+        source_work,
+    ) = max(
+        candidates,
+        key=lambda item: (item[0], item[1], item[2]),
+    )
+    source_cache = source_nf / "cache" / session_id
+    target_cache = target_nf / "cache" / session_id
+    try:
+        target_cache.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_cache, target_cache)
+        (target_nf / "history").write_text(line + "\n", encoding="utf-8")
+    except OSError as exc:
+        shutil.rmtree(target_nf, ignore_errors=True)
+        _log(f"[nextflow] shared cache seed skipped: {exc}")
+        return None
+    return session_id, source_work
+
+
+def _acquire_nextflow_cache_lock(
+    mode: str,
+    *,
+    blocking: bool = True,
+) -> object:
+    """Serialize access to one mode-wide Nextflow session cache."""
+    lock_dir = TERTIARY_JOBS_DIR / ".nextflow_locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    scope = "dragen" if mode == "dragen" else "nckuh"
+    handle = (lock_dir / f"{scope}.lock").open("a+", encoding="utf-8")
+    operation = fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB)
+    try:
+        fcntl.flock(handle.fileno(), operation)
+    except BaseException:
+        handle.close()
+        raise
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"pid={os.getpid()} acquired_at={_now()}\n")
+    handle.flush()
+    return handle
+
+
+def _release_nextflow_cache_lock(handle: object | None) -> None:
+    if handle is None:
+        return
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        handle.close()
+    except OSError:
+        pass
 
 
 def _acquire_sample_locks(sample_ids: list[str]) -> list[object]:
@@ -1236,8 +1367,10 @@ def main() -> int:
         "1", "true", "yes", "y", "on"
     }
     lock_handles: list[object] = []
+    nextflow_cache_lock: object | None = None
     staging_root: Path | None = None
     rollback_root: Path | None = None
+    seeded_resume_session: str | None = None
     previous_main_sigterm = signal.getsignal(signal.SIGTERM)
 
     def cleanup_on_sigterm(_signum, _frame):
@@ -1254,23 +1387,13 @@ def main() -> int:
         staging_root, rollback_root = _prepare_job_staging(job_id)
         nf_launch.mkdir(parents=True, exist_ok=True)
         nf_work.mkdir(parents=True, exist_ok=True)
-        seeded_resume_session = _seed_legacy_nextflow_context(
-            samples,
-            launch_dir=nf_launch,
-            work_dir=nf_work,
-        )
         _update(
             job_id,
             staging_root=str(staging_root),
             nextflow_launch_dir=str(nf_launch),
             nextflow_work_dir=str(nf_work),
-            legacy_resume_session=seeded_resume_session,
+            nextflow_cache_scope=pipeline_type,
         )
-        if seeded_resume_session:
-            _log(
-                "[nextflow] imported matching legacy cache session "
-                f"{seeded_resume_session} into isolated launch context"
-            )
 
         # Existing live output is recorded for operator context only.
         # It never decides whether Nextflow runs; dependency/cache decisions
@@ -1351,8 +1474,8 @@ def main() -> int:
                             f"input_dir={_pipeline_input_dir(Path(sample['vcf_path']), mode)}"
                         )
 
-                # 3. Nextflow → /home/pipeline/tertiary_output/<source SID>/...
-                _set_step(job_id, "nextflow")
+                # 3. Nextflow → job-private staging/<source SID>/...
+                _set_step(job_id, "waiting-nextflow-cache")
                 nextflow_stages = [
                     ("prepare-vcf-dragen-add-tag", ("PREPARE_VCF_DRAGEN:ADD_DRAGEN_TAG",), 0.5),
                     ("prepare-vcf-dragen", ("PREPARE_VCF_DRAGEN",), 0.5),
@@ -1460,6 +1583,38 @@ def main() -> int:
                             )
                         return suffix
 
+                _log(
+                    f"[nextflow] waiting for shared {pipeline_type} cache lineage"
+                )
+                nextflow_cache_lock = _acquire_nextflow_cache_lock(mode)
+                _log(f"[nextflow] acquired shared {pipeline_type} cache lock")
+                seeded_context = _seed_shared_nextflow_context(
+                    samples,
+                    launch_dir=nf_launch,
+                )
+                if seeded_context is not None:
+                    seeded_resume_session, nf_work = seeded_context
+                    _write_shared_work_pointer(nf_launch, nf_work)
+                else:
+                    # A job may have waited while another worker initialized
+                    # this lineage. Re-read its persisted work root after the
+                    # mode lock is acquired instead of using the stale path
+                    # calculated before the wait.
+                    _same_launch, nf_work = _nextflow_context(samples)
+                    nf_work.mkdir(parents=True, exist_ok=True)
+                    _write_shared_work_pointer(nf_launch, nf_work)
+                _update(
+                    job_id,
+                    shared_resume_session=seeded_resume_session,
+                    nextflow_work_dir=str(nf_work),
+                )
+                if seeded_resume_session:
+                    _log(
+                        "[nextflow] adopted previous cache session "
+                        f"{seeded_resume_session} into shared {pipeline_type} lineage"
+                    )
+                _set_step(job_id, "nextflow")
+
                 if legacy_staging:
                     sample = pending_samples[0]
                     sid = sample["sample_id"]
@@ -1479,12 +1634,8 @@ def main() -> int:
                     nextflow_cmd.append("-resume")
                     if seeded_resume_session:
                         nextflow_cmd.append(seeded_resume_session)
-                    _run(
-                        nextflow_cmd,
-                        label="2b/4 nextflow legacy",
-                        on_line=track_nextflow,
-                        cwd=nf_launch,
-                    )
+                    nextflow_run_cmd = nextflow_cmd
+                    nextflow_run_label = "2b/4 nextflow legacy"
                 else:
                     samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
                     nextflow_cmd = [
@@ -1513,11 +1664,23 @@ def main() -> int:
                         "else echo '[nextflow] env script not found; using current environment'; fi; "
                         f"{inner}"
                     )
-                    _run([
+                    nextflow_run_cmd = [
                         "bash",
                         "-lc",
                         shell_cmd,
-                    ], label="2b/4 nextflow v3.x", on_line=track_nextflow, cwd=nf_launch)
+                    ]
+                    nextflow_run_label = "2b/4 nextflow v3.x"
+
+                try:
+                    _run(
+                        nextflow_run_cmd,
+                        label=nextflow_run_label,
+                        on_line=track_nextflow,
+                        cwd=nf_launch,
+                    )
+                finally:
+                    _release_nextflow_cache_lock(nextflow_cache_lock)
+                    nextflow_cache_lock = None
 
                 for sample in pending_samples:
                     sid = sample["sample_id"]
@@ -1776,6 +1939,7 @@ def main() -> int:
         return 1
     finally:
         signal.signal(signal.SIGTERM, previous_main_sigterm)
+        _release_nextflow_cache_lock(nextflow_cache_lock)
         _release_sample_locks(lock_handles)
         for path in (staging_root, rollback_root):
             if path is not None and path.is_dir():

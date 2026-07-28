@@ -86,4 +86,4 @@ echo "done → $DEST (+ .tbi)"
 ls -la "$DEST" "$DEST.tbi"
 echo
 echo "接著在 NGS-UI 設定 NGS_UI_INHOUSE_AF_DB=$DEST（若 DEST 已是預設路徑則免）。"
-echo "注意：畫面出現 AF_nckuh 還需要 Phase 2 的 annotate/adapter/前端變更（見 PHASE2_PLAN.md）。"
+echo "重啟 NGS-UI 後，SNV 與 Mito 卡片會從這份 DB 顯示 AF_nckuh。"

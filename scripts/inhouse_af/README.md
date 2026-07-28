@@ -417,16 +417,61 @@ sites VCF is joined into the TSV as columns, NOT `bcftools annotate`, because
    index is rebuilt after the whole-TSV rewrite). `--skip-inhouse-af` /
    `--inhouse-af-db` flags.
 4. **`adapters/snv_tsv.py`** — surfaces `inhouse_af` / `inhouse_ac` / `inhouse_an`.
-5. **Front-end** — SNV card shows an **`AF_nckuh`** row `AF (AC/AN)` (e.g.
+5. **`services/inhouse_af_mito.py` + `adapters/mito_tsv.py`** — at backend
+   startup, query only the indexed chrM slice and cache
+   `INHOUSE_AC/AN/AF/NHOM/HET_MT`. For chrM, AC is the number of carriers, AN
+   is callable mitochondrial genomes, and AF is carrier frequency; the source
+   Mito TSV is not rewritten.
+6. **Front-end** — SNV card shows an **`AF_nckuh`** row `AF (AC/AN)` (e.g.
    `0.045 (61/1352)`) under `AF`/`AF_eas`; `1000G EAS` moved into *More*. No
-   display filter (deliberately). "—" when the variant isn't in the DB.
-6. **`scripts/backfill_inhouse_af.sh`** — for existing samples / after a batch
+   display filter (deliberately). Mito cards show
+   `AF (carrier AC/callable mito AN; hom/het carriers)`. "—" when the variant
+   isn't in the DB.
+7. **`scripts/backfill_inhouse_af.sh`** — for existing samples / after a batch
    refresh: annotate → rebuild review TSV → **rebuild gene index** (offsets shift).
-7. **`scripts/inhouse_af/deploy_inhouse_af_db.sh`** — atomic-install the sites VCF
+8. **`scripts/inhouse_af/deploy_inhouse_af_db.sh`** — atomic-install the sites VCF
    onto the NGS-UI host under `biotools/inhouse_af/`.
 
 Case list / DOCX intentionally NOT wired (main-screen display only). See
 `PHASE2_PLAN.md` for the decisions.
+
+### Verify chrM records and format on the NGS-UI server
+
+```bash
+ngs_af_db="${NGS_UI_INHOUSE_AF_DB:-$HOME/NGS_UI/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
+
+ls -lh "$ngs_af_db" "$ngs_af_db.tbi"
+
+# The matching contig row should have a non-zero record count.
+bcftools index -s "$ngs_af_db" \
+  | awk '$1 ~ /^(chrM|MT|M|chrMT)$/ {print}'
+
+# Confirm the published field definitions.
+bcftools view -h "$ngs_af_db" \
+  | grep -E '^##(source|contig=<ID=(chrM|MT|M|chrMT)|INFO=<ID=INHOUSE_)'
+
+# Inspect five real records. Expected columns:
+# CHROM POS REF ALT carrier_AC callable_mito_AN carrier_AF homoplasmic heteroplasmic
+bcftools query -r chrM \
+  -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/INHOUSE_AC\t%INFO/INHOUSE_AN\t%INFO/INHOUSE_AF\t%INFO/INHOUSE_NHOM\t%INFO/INHOUSE_HET_MT\n' \
+  "$ngs_af_db" | head -n 5
+
+# Every current chrM row should satisfy AC = NHOM + HET_MT.
+bcftools query -r chrM \
+  -f '%INFO/INHOUSE_AC\t%INFO/INHOUSE_NHOM\t%INFO/INHOUSE_HET_MT\n' \
+  "$ngs_af_db" \
+  | awk '$1 != $2 + $3 {bad++} END {print "bad_rows=" (bad+0)}'
+```
+
+The incremental publisher writes `chrM` and defines:
+
+- `INHOUSE_AC` (`Number=A`): samples carrying the ALT.
+- `INHOUSE_AN` (`Number=1`): callable mitochondrial genomes, one per sample at
+  the site.
+- `INHOUSE_AF` (`Number=A`): `AC / AN`, i.e. carrier frequency.
+- `INHOUSE_NHOM` (`Number=A`): homoplasmic carriers (`FORMAT/AF >= 0.95` at
+  ingest).
+- `INHOUSE_HET_MT` (`Number=A`): heteroplasmic carriers.
 
 ## Caveats to keep in mind
 

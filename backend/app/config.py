@@ -189,9 +189,11 @@ GENEBE_API_PENDING_DIR = Path(os.environ.get(
 
 # In-house allele frequency sites VCF (built from our own WGS cohort by
 # scripts/inhouse_af/publish_af.py). scripts/annotate_inhouse_af.py joins its
-# INHOUSE_AC/AN/AF into snv_indel.annotated.tsv and the SNV card shows an
-# AF_nckuh row. Large + patient-derived, not committed; deploy under biotools
-# via scripts/inhouse_af/deploy_inhouse_af_db.sh. Missing file = silently off.
+# INHOUSE_AC/AN/AF into snv_indel.annotated.tsv for the SNV card. The backend
+# also queries and caches the indexed chrM slice at runtime for Mitochondria
+# cards (where AC/AN/AF mean carrier count/callable mito genomes/carrier
+# frequency). Large + patient-derived, not committed; deploy under biotools via
+# scripts/inhouse_af/deploy_inhouse_af_db.sh. Missing file = silently off.
 INHOUSE_AF_DB = Path(os.environ.get(
     "NGS_UI_INHOUSE_AF_DB",
     BIOTOOLS_DIR / "inhouse_af" / "inhouse_af.hg38.vcf.gz",

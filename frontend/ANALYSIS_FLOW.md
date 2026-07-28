@@ -43,7 +43,7 @@ uses them to place content in the fixed horizontal layout.
 - secondary | mtDNA calling
 - secondary_tools | NCKUH / DRAGEN mitochondrial calls
 - tertiary | mtDNA annotation
-- tertiary_tools | VEP · ClinVar · gnomAD-mito
+- tertiary_tools | VEP · ClinVar · gnomAD-mito · NCKUH AF
 - prioritization | Pathogenic
 - prioritization | Rare / reported
 - prioritization | Other

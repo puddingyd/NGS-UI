@@ -39,6 +39,7 @@ PIPELINE_STEPS = [
     "detect-pipeline-output",
     "samplesheet",
     "stage",  # legacy fallback only
+    "waiting-nextflow-cache",
     "nextflow",
     "prepare-postprocessing",
     "post-processing",
