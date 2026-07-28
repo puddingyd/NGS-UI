@@ -5598,9 +5598,11 @@ function _renderMitoDetailBox(v, id) {
           ? ` ${"★".repeat(Number(v.clinvar_stars))}` : "";
         return `<span><strong>ClinVar:</strong> <span class="acmg-class ${cls}">${escapeHtml(sig.replace(/_/g," "))}${escapeHtml(stars)}</span></span>`;
       })()}
-      <span><strong>gnomAD mito:</strong> ${escapeHtml(_formatMitoAf(v))}</span>
-      <span data-tip="${escapeAttr(_MITO_INHOUSE_AF_TITLE)}"><strong>AF_nckuh:</strong> ${escapeHtml(_formatMitoInhouseAf(v))} <span class="muted" style="cursor:help">ⓘ</span></span>
       ${v.TLOD != null ? `<span data-tip="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>` : ""}
+    </div>
+    <div class="cnv-sv-detail-row mito-af-row">
+      <span><strong>AF_gnomAD:</strong> ${escapeHtml(_formatMitoAf(v))}</span>
+      <span data-tip="${escapeAttr(_MITO_INHOUSE_AF_TITLE)}"><strong>AF_nckuh:</strong> ${escapeHtml(_formatMitoInhouseAf(v))} <span class="muted" style="cursor:help">ⓘ</span></span>
     </div>
   </div>`;
 }

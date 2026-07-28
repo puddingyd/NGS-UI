@@ -85,6 +85,9 @@ def test_mito_adapter_surfaces_inhouse_af_without_changing_tier(tmp_path, monkey
 
 def test_mito_card_labels_inhouse_af_as_chrM_carrier_frequency():
     assert "function _formatMitoInhouseAf(v)" in APP_JS
+    assert '<div class="cnv-sv-detail-row mito-af-row">' in APP_JS
+    assert "<strong>AF_gnomAD:</strong>" in APP_JS
+    assert "<strong>gnomAD mito:</strong>" not in APP_JS
     assert "<strong>AF_nckuh:</strong>" in APP_JS
     assert "mtDNA carrier frequency" in APP_JS
     assert "AC 是帶有此 ALT 的樣本數" in APP_JS
