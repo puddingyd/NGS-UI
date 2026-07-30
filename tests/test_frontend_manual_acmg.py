@@ -20,6 +20,7 @@ def test_acmg_card_is_modal_only_and_shows_source_next_to_result():
     summary_css = CSS[CSS.index(".acmg-summary-btn"):CSS.index(".acmg-modal-card")]
     assert "border: 0;" in summary_css
     assert "white-space: nowrap;" in summary_css
+    assert "line-height: 1.5;" in summary_css
     assert "min-height: 30px" not in summary_css
     assert "border-left" not in summary_css
 

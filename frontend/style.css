@@ -2740,7 +2740,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   white-space: nowrap;
   font-family: ui-monospace, monospace;
   font-size: 12px;
-  line-height: normal;
+  line-height: 1.5;
 }
 .acmg-summary-btn:hover .acmg-summary-value { text-decoration: underline; }
 .acmg-summary-btn:focus-visible {
