@@ -86,6 +86,11 @@ DATA_ROOT = Path(os.environ.get(
     NGS_UI_HOME / "data",
 ))
 
+MANUAL_ACMG_DB = Path(os.environ.get(
+    "NGS_UI_MANUAL_ACMG_DB",
+    DATA_ROOT / "manual_acmg.sqlite",
+))
+
 INDEX_PATH = Path(os.environ.get(
     "NGS_UI_INDEX_PATH",
     PIPELINE_OUT_ROOT / "_index.json",

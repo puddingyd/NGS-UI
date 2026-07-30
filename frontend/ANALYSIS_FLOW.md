@@ -72,7 +72,7 @@ uses them to place content in the fixed horizontal layout.
 ## Review
 
 - summary | Evidence review
-- detail | IGV genome viewer · Genotype-phenotype correlation · Manual review and selection
+- detail | IGV genome viewer · Genotype-phenotype correlation · Structured manual ACMG · Observed cases
 - item | Diagnostic findings
 - item | ACMG SF · Stroke · Carrier screening
 - item | PGx recommendations

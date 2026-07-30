@@ -6,6 +6,14 @@
 
 ## 版本紀錄
 
+### v7.5 — 2026-07-29
+
+- SNV/Indel ACMG 改為 structured modal：完整列出 28 個 ACMG/AMP 2015 criteria、原始規範與 ClinGen 後續 guidance，支援啟用／停用及 Supporting、Moderate、Strong、Very strong strength，PP5/BP6 保留可用並標示 ClinGen 停用建議。
+- Modal 上方可比較並 Apply Manual、GeneBe、In-house 三個來源；儲存後即時計算 ACMG points、classification、variant/total score、tier 與排序。主卡片只顯示分類、分數及來源，不再直接編輯自由文字。
+- Manual ACMG 以 hg38 + normalized chr-pos-ref-alt 跨使用者共用，並保存 append-only revision、reviewer 帳號名稱與來源 sample；case/family-specific criteria 只留在該 sample、不自動套到其他個案。每個 sample 同時保留自己的最終快照，診斷／健檢報告沿用該 sample 畫面結果。
+- Manual ACMG 儲存後即由後端重算 tier、total score 與排序；若點位因此移動，畫面會自動切換到新 tier，並把同一張卡片維持在原本視野位置，不另外加醒目框。主卡片仍保留分類套色，並依文獻將 VUS 顯示細分為 low（0–1）、mid（2–3）、high（4–5 points）；黃色為共同底色，low 向右漸綠、high 向右漸紅，正式報告分類仍是 Uncertain significance。
+- 目前仍為 Causative／Other 的其他個案會在 HGVS 下方顯示 `Observed (N)` badge；點擊可查看 sample ID、status、reviewer 與時間。Candidate、已取消 status 及目前 sample 不計入，Observed 與 Manual ACMG 完全分開。
+
 ### v7.4 — 2026-07-28
 
 - Mitochondria 卡片第三行並列 `AF_gnomAD` 與本院 mtDNA carrier frequency（`AF_nckuh`）；後者顯示帶有該 ALT 的院內樣本數、可判讀粒線體樣本數，以及 homoplasmic / heteroplasmic carrier 數。

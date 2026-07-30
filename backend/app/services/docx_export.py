@@ -741,7 +741,12 @@ def _acmg_label(variant: dict, edits_for_v: dict) -> str:
     cls = (edits_for_v.get("ACMG_classification_mito") or "").strip()
     if cls:
         return cls
-    cls = (edits_for_v.get("ACMG_classification") or "").strip()
+    snapshot = edits_for_v.get("manual_acmg")
+    cls = (
+        (snapshot.get("classification") if isinstance(snapshot, dict) else "")
+        or edits_for_v.get("ACMG_classification")
+        or ""
+    ).strip()
     if cls:
         return cls
     raw_cnv = (edits_for_v.get("ACMG_class_sv") or "").strip()
@@ -752,6 +757,9 @@ def _acmg_label(variant: dict, edits_for_v: dict) -> str:
                 return _CNV_ACMG_INT_TO_LABEL[n]
         except ValueError:
             return raw_cnv
+    cls = (variant.get("effective_acmg_class") or "").strip()
+    if cls:
+        return cls
     cls = (variant.get("genebe_acmg_class") or "").strip()
     if cls:
         return cls

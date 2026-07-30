@@ -9,11 +9,10 @@ STYLE_CSS = (REPO_ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
 def test_core_snv_fields_have_annotation_hints():
     assert 'const scoreHint = _annotationHint("Score"' in APP_JS
     assert 'const clinvarHint = _annotationHint("ClinVar"' in APP_JS
-    assert 'source = "manual"' in APP_JS
-    assert 'source = "GeneBe"' in APP_JS
-    assert 'source = "in-house"' in APP_JS
-    assert "in-house: ${_shortAcmgClass(inHouse)}" in APP_JS
-    assert "GeneBe: ${_shortAcmgClass(geneBe)}" in APP_JS
+    assert 'class="acmg-summary-btn js-acmg-open"' in APP_JS
+    assert '["manual", "Manual"]' in APP_JS
+    assert '["genebe", "GeneBe"]' in APP_JS
+    assert '["inhouse", "In-house"]' in APP_JS
 
 
 def test_all_displayed_in_silico_tools_have_calibration_metadata():

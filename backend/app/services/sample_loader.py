@@ -22,6 +22,7 @@ and migration.
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 import time
 from collections import OrderedDict
@@ -46,6 +47,7 @@ from . import (
     analyses_store,
     gene_disease_store,
     hpo_ontology,
+    manual_acmg,
     omim_store,
     panel_deadzone,
     phenotype_scorer,
@@ -436,8 +438,14 @@ _ACMG_SHORT = {
 
 def _case_variant_label(variant: dict, edits: dict) -> str:
     """Compact SNV label for the case-management table."""
+    manual_snapshot = edits.get("manual_acmg")
     acmg = (
-        edits.get("ACMG_classification")
+        (
+            manual_snapshot.get("classification")
+            if isinstance(manual_snapshot, dict) else ""
+        )
+        or edits.get("ACMG_classification")
+        or variant.get("effective_acmg_class")
         or variant.get("genebe_acmg_class")
         or variant.get("ACMG_classification")
         or ""
@@ -638,6 +646,36 @@ def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, di
                 variants[variant["id"]] = variant
     if variants:
         _enrich_snv_variants(variants, sample_id, sample_dir)
+        meta = _read_json_or(
+            sample_layout.state_file(sample_id, "sample_metadata.json"), {}
+        ) or {}
+        try:
+            current = manual_acmg.bulk_current(
+                meta.get("genome_build") or "hg38", variants.keys()
+            )
+        except (OSError, ValueError, sqlite3.Error):
+            current = {}
+        for variant_id, variant in variants.items():
+            assertion = current.get(manual_acmg.normalize_variant_id(variant_id))
+            if assertion and (
+                assertion.get("reusable_criteria")
+                or not assertion.get("criteria")
+            ):
+                variant["effective_acmg_class"] = assertion[
+                    "reusable_classification"
+                ]
+                variant["effective_acmg_score"] = assertion["reusable_score"]
+                variant["effective_acmg_criteria"] = assertion[
+                    "reusable_criteria_text"
+                ]
+                variant["effective_acmg_source"] = "manual"
+                variant["effective_acmg_vus_subclass"] = (
+                    assertion.get("reusable_vus_subclass")
+                    or manual_acmg.vus_subclass(
+                        assertion["reusable_classification"],
+                        assertion["reusable_score"],
+                    )
+                )
     return variants
 
 
@@ -1084,6 +1122,156 @@ def _enrich_snv_variants(
                 v[f] = rec.get(f, "")
         v["disease_associations"] = gene_disease_store.merged_associations(gene, rec, refresh=False)
     return pheno_by_gene
+
+
+def _legacy_manual_snapshot(edit: dict) -> dict | None:
+    """Read pre-modal free-text ACMG edits as a per-sample snapshot."""
+    if not isinstance(edit, dict):
+        return None
+    if isinstance(edit.get("manual_acmg"), dict):
+        return edit["manual_acmg"]
+    values = (
+        edit.get("ACMG_classification"),
+        edit.get("ACMG_score"),
+        edit.get("ACMG_criteria"),
+    )
+    if not any(value not in (None, "") for value in values):
+        return None
+    parsed, unknown = manual_acmg.parse_criteria_text(edit.get("ACMG_criteria"))
+    return {
+        "criteria": parsed,
+        "criteria_text": str(edit.get("ACMG_criteria") or ""),
+        "score": edit.get("ACMG_score"),
+        "classification": str(edit.get("ACMG_classification") or ""),
+        "reviewer_username": "",
+        "source_sample_id": "",
+        "created_at": None,
+        "legacy": True,
+        "unrecognized_criteria": unknown,
+    }
+
+
+def _apply_effective_acmg(
+    variants: dict[str, dict],
+    categories: dict[str, list[str]],
+    *,
+    sample_id: str,
+    genome_build: str,
+    meta: dict,
+) -> None:
+    """Bulk overlay per-sample/global manual ACMG and observation counts."""
+    if not variants:
+        return
+    started = time.perf_counter()
+    try:
+        current = manual_acmg.bulk_current(genome_build, variants.keys())
+        observed = manual_acmg.bulk_observed_counts(
+            genome_build,
+            variants.keys(),
+            exclude_sample_id=sample_id,
+        )
+    except (OSError, ValueError, sqlite3.Error):
+        current = {}
+        observed = {}
+    edits = meta.get("edits") if isinstance(meta.get("edits"), dict) else {}
+    for variant_id, original in list(variants.items()):
+        variant = dict(original)
+        variants[variant_id] = variant
+        sample_snapshot = _legacy_manual_snapshot(edits.get(variant_id) or {})
+        global_assertion = current.get(manual_acmg.normalize_variant_id(variant_id))
+
+        if sample_snapshot:
+            source = "manual"
+            selected = sample_snapshot
+            source_scope = "sample"
+        elif global_assertion and (
+            global_assertion.get("reusable_criteria")
+            or not global_assertion.get("criteria")
+        ):
+            source = "manual"
+            selected = {
+                "classification": global_assertion.get(
+                    "reusable_classification", ""
+                ),
+                "score": global_assertion.get("reusable_score"),
+                "criteria_text": global_assertion.get(
+                    "reusable_criteria_text", ""
+                ),
+            }
+            source_scope = "global"
+        elif variant.get("genebe_acmg_class") not in (None, ""):
+            source = "GeneBe"
+            selected = {
+                "classification": variant.get("genebe_acmg_class") or "",
+                "score": variant.get("genebe_acmg_score"),
+                "criteria_text": variant.get("genebe_acmg_criteria") or "",
+            }
+            source_scope = "genebe"
+        else:
+            source = "in-house"
+            selected = {
+                "classification": variant.get("ACMG_classification") or "",
+                "score": variant.get("ACMG_score"),
+                "criteria_text": variant.get("ACMG_criteria") or "",
+            }
+            source_scope = "in_house"
+
+        variant["sample_acmg_snapshot"] = sample_snapshot
+        variant["manual_acmg_current"] = global_assertion
+        variant["effective_acmg_source"] = source
+        variant["effective_acmg_scope"] = source_scope
+        variant["effective_acmg_class"] = selected.get("classification") or ""
+        variant["effective_acmg_score"] = selected.get("score")
+        variant["effective_acmg_criteria"] = selected.get("criteria_text") or ""
+        variant["effective_acmg_vus_subclass"] = manual_acmg.vus_subclass(
+            selected.get("classification"), selected.get("score")
+        )
+        variant["observed_count"] = int(
+            observed.get(manual_acmg.normalize_variant_id(variant_id), 0)
+        )
+
+        geno_score = manual_acmg.acmg_to_variant_score(selected.get("score"))
+        variant["geno_score"] = geno_score
+        pheno_score = variant.get("pheno_score")
+        if geno_score is not None or pheno_score is not None:
+            variant["total_score"] = (geno_score or 0) + (pheno_score or 0)
+        else:
+            variant.pop("total_score", None)
+
+        original_tier = str(variant.get("tier") or "2").upper()
+        if original_tier in {"1A", "1B"}:
+            tier = original_tier
+        else:
+            try:
+                points_trigger = float(selected.get("score")) >= 4
+            except (TypeError, ValueError):
+                points_trigger = False
+            tier = (
+                "1C"
+                if points_trigger or variant.get("predicted_suspect_non_acmg")
+                else "2"
+            )
+        variant["tier"] = tier
+
+    for tier in ("1A", "1B", "1C", "2"):
+        categories[tier] = sorted(
+            (
+                variant_id for variant_id, variant in variants.items()
+                if variant.get("tier") == tier
+            ),
+            key=lambda variant_id: (
+                -_variant_total_score(variants, variant_id),
+                variant_id,
+            ),
+        )
+    _log_perf(
+        "sample.manual_acmg_overlay",
+        started,
+        sample=sample_id,
+        variants=len(variants),
+        manual_matches=len(current),
+        observed_matches=sum(1 for count in observed.values() if count),
+    )
 
 
 def _variants_from_rows(rows: list[dict[str, str]], *, test_type: str) -> dict[str, dict]:
@@ -1741,7 +1929,7 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
     ctx = _sample_snv_sidecar_context(sample_id, version)
     if ctx is None:
         return None
-    sub, _meta, sidecar_dir, test_type = ctx
+    sub, meta, sidecar_dir, test_type = ctx
     raw_snv_tsv = sample_layout.snv_raw_tsv(sample_id)
     review_tsv = sample_layout.review_tsv(sample_id)
     try:
@@ -1774,11 +1962,22 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
                 "secondary_pending": False,
             }
         snv_tsv = review_tsv
-    all_variants, _tiers, _pheno, _old_format_error = _load_enriched_snv_cached(
+    all_variants, tiers, _pheno, _old_format_error = _load_enriched_snv_cached(
         snv_tsv,
         sample_id=sample_id,
         sidecar_dir=sidecar_dir,
         test_type=test_type,
+    )
+    all_variants = {
+        variant_id: dict(variant) for variant_id, variant in all_variants.items()
+    }
+    tiers = {tier: list(ids) for tier, ids in tiers.items()}
+    _apply_effective_acmg(
+        all_variants,
+        tiers,
+        sample_id=sample_id,
+        genome_build=meta.get("genome_build") or "hg38",
+        meta=meta,
     )
     categories = _build_secondary_snv_categories(all_variants)
     wanted_ids = {vid for ids in categories.values() for vid in ids}
@@ -1923,10 +2122,9 @@ def load_sample(sample_id: str, version: str | None = None,
             test_type=_test_type,
         )
     )
-    review_variants_for_secondary = variants
     # The cache stores shared read-only maps. Per-load supplements
-    # depend on reviewer status, so copy before adding marked variants.
-    variants = dict(variants)
+    # and ACMG overlays depend on reviewer/global state, so copy before edits.
+    variants = {variant_id: dict(variant) for variant_id, variant in variants.items()}
     categories = {tier: list(ids) for tier, ids in categories.items()}
     if raw_snv_tsv.exists() and snv_tsv.name.endswith(snv_review.REVIEW_TSV_NAME):
         _supplement_marked_snv_variants(
@@ -1940,6 +2138,14 @@ def load_sample(sample_id: str, version: str | None = None,
             index_path=sample_layout.snv_gene_index_path(sample_id),
             overlay_path=sample_layout.snv_overlay_path(sample_id),
         )
+    _apply_effective_acmg(
+        variants,
+        categories,
+        sample_id=sample_id,
+        genome_build=meta.get("genome_build") or "hg38",
+        meta=meta,
+    )
+    review_variants_for_secondary = variants
 
     # CNV / SV: load only when the AnnotSV outputs are present beside
     # the SNV TSV (pipeline drops them per-sample). Empty dicts when

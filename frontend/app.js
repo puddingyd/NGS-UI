@@ -437,21 +437,48 @@ function formatClinvar(sig, conf, stars) {
 // null when the text doesn't match any known classification — in that
 // case no background color is applied (e.g. conflicting calls, blanks,
 // free-form user notes). P/LP → P (red), B/LB → B (dark green).
-const SIG_CLASSES = ["sig-p", "sig-lp", "sig-vus", "sig-lb", "sig-b"];
+const SIG_CLASSES = [
+  "sig-p", "sig-lp", "sig-vus", "sig-vus-low", "sig-vus-mid",
+  "sig-vus-high", "sig-lb", "sig-b",
+];
 function classifySignificance(text) {
   if (text == null) return null;
-  const t = String(text).trim().toLowerCase().replace(/_/g, " ");
+  const t = String(text).trim().toLowerCase().replace(/[_-]/g, " ");
   switch (t) {
     case "pathogenic":                        case "p":     return "sig-p";
     case "pathogenic/likely pathogenic":
     case "likely pathogenic/pathogenic":      case "p/lp":  return "sig-p";
     case "likely pathogenic":                 case "lp":    return "sig-lp";
-    case "uncertain significance":            case "vus":   return "sig-vus";
+    case "vus low":                                         return "sig-vus-low";
+    case "vus mid":                                         return "sig-vus-mid";
+    case "vus high":                                        return "sig-vus-high";
+    case "uncertain significance":
+    case "variant of uncertain significance": case "vus":   return "sig-vus";
     case "likely benign":                     case "lb":    return "sig-lb";
     case "benign":                            case "b":     return "sig-b";
     case "benign/likely benign":              case "b/lb":  return "sig-b";
     default:                                                return null;
   }
+}
+
+function vusSubclassForScore(classification, score) {
+  const normalized = String(classification || "").trim().toLowerCase().replace(/[_-]/g, " ");
+  if (normalized === "vus low") return "VUS-low";
+  if (normalized === "vus mid") return "VUS-mid";
+  if (normalized === "vus high") return "VUS-high";
+  if (!["vus", "uncertain significance", "variant of uncertain significance"].includes(normalized)) {
+    return "";
+  }
+  const points = Number(score);
+  if (!Number.isInteger(points)) return "";
+  if (points >= 0 && points <= 1) return "VUS-low";
+  if (points >= 2 && points <= 3) return "VUS-mid";
+  if (points >= 4 && points <= 5) return "VUS-high";
+  return "";
+}
+
+function acmgDisplayClassification(classification, score, backendSubclass = "") {
+  return backendSubclass || vusSubclassForScore(classification, score) || classification || "";
 }
 
 // In-silico annotations use tool-specific evidence calibration.  Do not infer
@@ -3890,52 +3917,9 @@ function setEdit(id, field, val) {
   state.dirty = true;
 }
 
-function _shortAcmgClass(value) {
-  const cls = classifySignificance(value);
-  return ({ "sig-p": "P", "sig-lp": "LP", "sig-vus": "VUS", "sig-lb": "LB", "sig-b": "B" })[cls]
-      || String(value || "—");
-}
-
-function _acmgSourceHint(id, v) {
-  const manual = getEdit(id, "ACMG_classification");
-  const manualScore = getEdit(id, "ACMG_score");
-  const manualCriteria = getEdit(id, "ACMG_criteria");
-  const geneBe = v.genebe_acmg_class;
-  const inHouse = v.ACMG_classification;
-  let source = "in-house";
-  const lines = [];
-  const hasManualEdit = [manual, manualScore, manualCriteria]
-    .some(value => value !== null && value !== undefined && value !== "");
-  if (hasManualEdit) source = "manual";
-  else if (geneBe !== null && geneBe !== undefined && geneBe !== "") source = "GeneBe";
-  lines.push(`source: ${source}`);
-  if (source === "manual") {
-    lines.push(`in-house: ${_shortAcmgClass(inHouse)}`);
-    lines.push(`GeneBe: ${_shortAcmgClass(geneBe)}`);
-  } else if (source === "GeneBe") {
-    lines.push(`in-house: ${_shortAcmgClass(inHouse)}`);
-  } else {
-    lines.push(`GeneBe: ${_shortAcmgClass(geneBe)}`);
-  }
-  return _annotationHint("ACMG source", lines, null, {
-    className: "acmg-source-hint", dataId: id,
-  });
-}
-
-function _refreshAcmgSourceHints(id) {
-  const v = state.data?.variants?.[id];
-  if (!v) return;
-  const replacement = _acmgSourceHint(id, v);
-  document.querySelectorAll(`.acmg-source-hint[data-id="${CSS.escape(id)}"]`).forEach(el => {
-    el.outerHTML = replacement;
-  });
-}
-
 function _syncEditControls(id, field, val, source = null) {
   const selectorByField = {
     comment: ".variant-comment",
-    ACMG_score: ".acmg-score",
-    ACMG_criteria: ".acmg-crit",
   };
   const selector = selectorByField[field];
   if (!selector) return;
@@ -3965,6 +3949,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     // Marked variant no longer present in current variants payload
     const card = document.createElement("div");
     card.className = "variant-card missing";
+    card.dataset.variantId = id;
     card.innerHTML = `
       <div class="variant-head">
         ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
@@ -3978,6 +3963,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const urls = variantUrls(v);
   const card = document.createElement("div");
   card.className = "variant-card";
+  card.dataset.variantId = id;
   card.dataset.inPanel = v.in_panel ? "true" : "false";
   v = _variantWithSelectedTranscript(v, id);
 
@@ -3989,17 +3975,22 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     urls.omim ? `<a href="${urls.omim}"     target="_blank" rel="noopener">OMIM</a>` : "",
   ].join("");
 
-  // ACMG priority: reviewer override > GeneBe (second-opinion post-processing)
-  // > pipeline. GeneBe ACMG_CLASS / SCORE / CRITERIA tend to be tighter
-  // calibrated than the pipeline's per-rule classifier, so use them
-  // when present and fall back to pipeline otherwise.
+  // Backend resolves per-sample manual > global manual > GeneBe > in-house,
+  // then recalculates score/tier/order. Keep a compatibility fallback for
+  // payloads loaded from an older backend during a rolling deployment.
   const firstNonBlank = (...values) => values.find(x => x !== null && x !== undefined && x !== "") ?? "";
-  const editAcmgClass = firstNonBlank(getEdit(id, "ACMG_classification"),
+  const editAcmgClass = firstNonBlank(v.effective_acmg_class,
+                                      getEdit(id, "ACMG_classification"),
                                       v.genebe_acmg_class, v.ACMG_classification);
-  const editAcmgCrit  = firstNonBlank(getEdit(id, "ACMG_criteria"),
-                                      v.genebe_acmg_criteria, v.ACMG_criteria);
-  const editAcmgScore = firstNonBlank(getEdit(id, "ACMG_score"),
+  const editAcmgScore = firstNonBlank(v.effective_acmg_score,
+                                      getEdit(id, "ACMG_score"),
                                       v.genebe_acmg_score, v.ACMG_score);
+  const editAcmgDisplayClass = acmgDisplayClassification(
+    editAcmgClass, editAcmgScore, v.effective_acmg_vus_subclass,
+  );
+  const acmgSource = v.effective_acmg_source
+    || (getEdit(id, "ACMG_classification") ? "manual"
+      : (v.genebe_acmg_class ? "GeneBe" : "in-house"));
   const editComment   = getEdit(id, "comment")             ?? "";
 
   const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
@@ -4093,7 +4084,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
       <span class="ext-links">${links}</span>
     </div>
-    ${renderVariantBadges(v)}
+    ${renderVariantBadges(v, id)}
     <div class="comment-row">
       <label>Comment:
         <input class="variant-comment" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editComment)}" />
@@ -4116,21 +4107,11 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">ClinVar${clinvarHint}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
-        <span class="k">ACMG${_acmgSourceHint(id, v)}</span>
-        <span class="acmg-class-row">
-          <select class="acmg-class ${classifySignificance(editAcmgClass) || ""}" data-id="${escapeAttr(id)}">
-            <option value=""                       ${editAcmgClass === ""                      ? "selected" : ""}>—</option>
-            <option value="Pathogenic"             ${editAcmgClass === "Pathogenic"            ? "selected" : ""}>Pathogenic</option>
-            <option value="Likely pathogenic"      ${editAcmgClass === "Likely pathogenic"     ? "selected" : ""}>Likely pathogenic</option>
-            <option value="Uncertain significance" ${editAcmgClass === "Uncertain significance"? "selected" : ""}>VUS</option>
-            <option value="Likely benign"          ${editAcmgClass === "Likely benign"         ? "selected" : ""}>Likely benign</option>
-            <option value="Benign"                 ${editAcmgClass === "Benign"                ? "selected" : ""}>Benign</option>
-          </select>
-          <span class="acmg-paren">(</span>
-          <input class="acmg-score" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editAcmgScore)}" />
-          <span class="acmg-paren">)</span>
-        </span>
-        <textarea class="acmg-crit" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(editAcmgCrit)}</textarea>
+        <span class="k">ACMG</span>
+        <button type="button" class="acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 manual ACMG/AMP criteria">
+          <span class="acmg-summary-value ${classifySignificance(editAcmgDisplayClass) || ""}">${escapeHtml(editAcmgDisplayClass || "—")} (${escapeHtml(editAcmgScore === "" ? "—" : editAcmgScore)})</span>
+          <span class="acmg-summary-source">${escapeHtml(acmgSource)}</span>
+        </button>
       </div>
       <div>
         ${(() => {
@@ -4181,7 +4162,7 @@ const GIAB_STRATA_DISPLAY = {
 // Top-of-card chip row: TRANSCRIPT_TYPE / CALLERS / panel/ROH/blacklist
 // hits / LOFTEE HC / GIAB strata. Empty-string entries are filtered out so
 // the row hides itself when nothing is worth showing.
-function renderVariantBadges(v) {
+function renderVariantBadges(v, id) {
   const chips = [];
   if (v.transcript_type) {
     const cls = "badge-tx badge-" + v.transcript_type.toLowerCase().replace(/_/g, "-");
@@ -4214,6 +4195,9 @@ function renderVariantBadges(v) {
   if (v.low_alt_support) {
     chips.push(`<span class="badge badge-alt-support" title="${escapeAttr(`ALT AD ${v.alt_depth ?? "?"} < 10；建議 IGV 複核，必要時 Sanger 確認`)}">Low ALT support</span>`);
   }
+  if (Number(v.observed_count) > 0) {
+    chips.push(`<button type="button" class="badge badge-observed js-observed-open" data-id="${escapeAttr(id)}">Observed (${Number(v.observed_count)})</button>`);
+  }
   // GIAB genome-stratification flags — difficult regions where short-read
   // calls are less reliable (homopolymers, repeats, segdups, ...). One
   // amber badge per label so reviewers treat the call with care.
@@ -4232,6 +4216,433 @@ function renderVariantBadges(v) {
     <span class="variant-badges-chips">${chips.join("")}</span>
     ${sameGeneBtn}
   </div>`;
+}
+
+// ---- Structured ACMG editor + separate observed-case modal -------
+
+let _acmgCatalog = null;
+let _acmgEditor = null;
+
+async function ensureAcmgCatalog() {
+  if (!_acmgCatalog) _acmgCatalog = await apiFetch("/acmg/catalog");
+  return _acmgCatalog;
+}
+
+function parseAcmgCriteriaText(raw, catalog) {
+  const defaults = Object.fromEntries(
+    (catalog?.criteria || []).map(item => [item.code, item.default_strength]),
+  );
+  const criteria = {};
+  const unknown = [];
+  String(raw || "").split(/[,|;\s]+/).filter(Boolean).forEach(token => {
+    const match = token.match(/^(PVS1|PS[1-4]|PM[1-6]|PP[1-5]|BA1|BS[1-4]|BP[1-7])(?:[_-](supporting|moderate|strong|very[_-]?strong|stand[_-]?alone))?$/i);
+    if (!match) {
+      unknown.push(token);
+      return;
+    }
+    const code = match[1].toUpperCase();
+    let strength = (match[2] || defaults[code] || "supporting").toLowerCase().replaceAll("-", "_");
+    strength = strength.replace("verystrong", "very_strong").replace("standalone", "stand_alone");
+    criteria[code] = { enabled: true, strength };
+  });
+  return { criteria, unknown };
+}
+
+function sourceCriteria(source, catalog) {
+  const structured = source?.apply_criteria || source?.reusable_criteria || source?.criteria;
+  if (structured && typeof structured === "object") {
+    return {
+      criteria: Object.fromEntries(
+        Object.entries(structured).map(([code, evidence]) => [
+          code, { ...evidence },
+        ]),
+      ),
+      unknown: [],
+    };
+  }
+  return parseAcmgCriteriaText(source?.criteria_text || "", catalog);
+}
+
+function calculateAcmgPreview(criteria) {
+  const points = { supporting: 1, moderate: 2, strong: 4, very_strong: 8, stand_alone: 8 };
+  let score = 0;
+  let pathogenic = false;
+  let benign = false;
+  Object.entries(criteria || {}).forEach(([code, evidence]) => {
+    if (!evidence?.enabled) return;
+    const value = points[evidence.strength] ?? 0;
+    if (/^(BA|BS|BP)/.test(code)) {
+      score -= value;
+      benign = true;
+    } else {
+      score += value;
+      pathogenic = true;
+    }
+  });
+  const classification = score >= 10 ? "Pathogenic"
+    : score >= 6 ? "Likely pathogenic"
+    : score >= 0 ? "Uncertain significance"
+    : score >= -6 ? "Likely benign"
+    : "Benign";
+  const variantScore = Math.round(((Math.max(-10, Math.min(10, score)) + 10) / 20) * 100);
+  return { score, classification, variantScore, conflict: pathogenic && benign };
+}
+
+function formatAcmgDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function renderAcmgSourceSummaries() {
+  const host = document.getElementById("acmg-source-summaries");
+  if (!host || !_acmgEditor) return;
+  const items = [
+    ["manual", "Manual"],
+    ["genebe", "GeneBe"],
+    ["inhouse", "In-house"],
+  ];
+  host.innerHTML = items.map(([key, label]) => {
+    const source = _acmgEditor.sources[key] || {};
+    const parsed = sourceCriteria(source, _acmgCatalog);
+    const canApply = Object.keys(parsed.criteria).length > 0 || !!source.classification;
+    const audit = key === "manual" && source.classification
+      ? [
+          source.reviewer_username ? `reviewer: ${source.reviewer_username}` : "",
+          source.source_sample_id ? `case: ${source.source_sample_id}` : "",
+          source.created_at ? formatAcmgDateTime(source.created_at) : "",
+        ].filter(Boolean).join(" · ")
+      : "";
+    const applyNote = key === "manual" && source.classification
+      ? "Apply 不會帶入 case/family-specific criteria"
+      : "";
+    const reusableLine = key === "manual" && source.classification
+      ? `Global reusable: ${acmgDisplayClassification(source.reusable_classification, source.reusable_score, source.reusable_vus_subclass) || "—"} (${source.reusable_score ?? "—"}) · ${source.reusable_criteria_text || "無 criteria"}`
+      : "";
+    const displayClass = acmgDisplayClassification(
+      source.classification, source.score, source.vus_subclass,
+    );
+    const significanceClass = classifySignificance(displayClass) || "";
+    return `<div class="acmg-source-card">
+      <div class="acmg-source-card-head">
+        <strong>${label}</strong>
+        <button type="button" class="btn btn-ghost acmg-apply-source" data-acmg-source="${key}" ${canApply ? "" : "disabled"}>Apply</button>
+      </div>
+      <div class="acmg-source-result"><span class="${significanceClass}">${escapeHtml(displayClass || "—")}${source.score !== null && source.score !== undefined && source.score !== "" ? ` (${escapeHtml(source.score)})` : ""}</span></div>
+      <div class="acmg-source-criteria">${escapeHtml(source.criteria_text || "無 criteria")}</div>
+      ${audit ? `<div class="acmg-source-audit">${escapeHtml(audit)}</div>` : ""}
+      ${reusableLine ? `<div class="acmg-source-audit">${escapeHtml(reusableLine)}</div>` : ""}
+      ${applyNote ? `<div class="acmg-source-audit">${escapeHtml(applyNote)}</div>` : ""}
+      ${parsed.unknown.length ? `<div class="acmg-retired-warning">無法辨識：${escapeHtml(parsed.unknown.join(", "))}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+function renderAcmgCriteriaEditor() {
+  const host = document.getElementById("acmg-criteria-list");
+  if (!host || !_acmgEditor || !_acmgCatalog) return;
+  host.innerHTML = (_acmgCatalog.criteria || []).map(item => {
+    const evidence = _acmgEditor.criteria[item.code] || {
+      enabled: false,
+      strength: item.default_strength,
+    };
+    const strengthValues = item.code === "BA1"
+      ? ["stand_alone", "supporting", "moderate", "strong", "very_strong"]
+      : ["supporting", "moderate", "strong", "very_strong"];
+    const options = strengthValues.map(value => {
+      const meta = (_acmgCatalog.strengths || []).find(x => x.value === value) || {};
+      const signedPoints = item.direction === "benign" ? -(meta.points || 0) : (meta.points || 0);
+      return `<option value="${value}" ${evidence.strength === value ? "selected" : ""}>${escapeHtml(meta.label || value)} (${signedPoints > 0 ? "+" : ""}${signedPoints})</option>`;
+    }).join("");
+    const refs = (item.references || []).map(ref =>
+      `<a href="${escapeAttr(ref.url)}" target="_blank" rel="noopener">${escapeHtml(ref.title)}</a>`
+    ).join("");
+    return `<div class="acmg-criterion ${item.direction} ${evidence.enabled ? "enabled" : ""}" data-code="${item.code}">
+      <input class="acmg-criterion-enabled" type="checkbox" data-code="${item.code}" ${evidence.enabled ? "checked" : ""} aria-label="啟用 ${item.code}" />
+      <span class="acmg-criterion-code">${item.code}</span>
+      <select class="acmg-criterion-strength" data-code="${item.code}" ${evidence.enabled ? "" : "disabled"}>${options}</select>
+      <div class="acmg-criterion-description">
+        ${escapeHtml(item.description)}
+        <div class="acmg-criterion-refs">${refs}</div>
+        ${item.scope_note ? `<div class="acmg-case-scope">只套用目前個案：${escapeHtml(item.scope_note)}</div>` : ""}
+        ${item.deprecated_warning ? `<div class="acmg-retired-warning">⚠ ${escapeHtml(item.deprecated_warning)}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  updateAcmgPreview();
+}
+
+function updateAcmgPreview() {
+  if (!_acmgEditor) return;
+  const result = calculateAcmgPreview(_acmgEditor.criteria);
+  const cls = document.getElementById("acmg-preview-class");
+  const displayClass = acmgDisplayClassification(
+    result.classification, result.score,
+  );
+  if (cls) {
+    cls.textContent = displayClass;
+    cls.className = classifySignificance(displayClass) || "";
+  }
+  const score = document.getElementById("acmg-preview-score");
+  if (score) score.textContent = `ACMG points ${result.score}`;
+  const variantScore = document.getElementById("acmg-preview-variant-score");
+  if (variantScore) variantScore.textContent = `Variant score ${result.variantScore}`;
+  document.getElementById("acmg-preview-conflict")?.classList.toggle("hidden", !result.conflict);
+}
+
+function currentSnvVariant(id) {
+  return state.data?.variants?.[id] || state.snvSearchVariants?.[id] || null;
+}
+
+function captureAcmgCardOrigin(trigger) {
+  const card = trigger?.closest?.(".variant-card");
+  let zone = "other";
+  if (card?.closest("#gene-search-modal")) zone = "gene-search";
+  else if (card?.closest("#report-sections")) zone = "report";
+  else if (card?.closest("#tier-tab-panels")) zone = "analysis-tier";
+  else if (card?.closest("#category-sections")) zone = "analysis-other";
+  const top = card?.getBoundingClientRect().top;
+  return {
+    zone,
+    viewportTop: Number.isFinite(top) ? top : Math.min(160, window.innerHeight / 3),
+  };
+}
+
+function findAcmgSavedCard(id, zone) {
+  const selector = `.variant-card[data-variant-id="${CSS.escape(id)}"]`;
+  const root = zone === "gene-search"
+    ? document.getElementById("gene-search-modal")
+    : zone === "report"
+      ? document.getElementById("report-sections")
+      : zone.startsWith("analysis")
+        ? document.getElementById("category-sections")
+        : document;
+  return root?.querySelector(selector) || document.querySelector(selector);
+}
+
+function restoreAcmgSavedCard(id, origin, updatedTier) {
+  requestAnimationFrame(() => {
+    let target = findAcmgSavedCard(id, origin?.zone || "other");
+    if (!target && TIER_ORDER.includes(updatedTier)) {
+      activeTierTab = updatedTier;
+      renderCandidateSections();
+      target = findAcmgSavedCard(id, "analysis-tier");
+    }
+    if (!target) return;
+    const blockBody = target.closest(".block-body");
+    if (blockBody && !blockBody.classList.contains("open")) {
+      blockBody.classList.add("open");
+      blockBody.previousElementSibling?.classList.add("open");
+      const block = blockBody.parentElement;
+      if (block?.id) {
+        block.dataset.wasOpen = "1";
+        toggledBlocks.add(block.id);
+      }
+    }
+    const savedViewportTop = Number(origin?.viewportTop);
+    const originalTop = Number.isFinite(savedViewportTop) ? savedViewportTop : 160;
+    const geneSearchScroller = target.closest("#gene-search-results");
+    if (geneSearchScroller) {
+      const scrollerTop = geneSearchScroller.getBoundingClientRect().top;
+      const desiredRelativeTop = Math.max(8, Math.min(
+        originalTop - scrollerTop,
+        Math.max(8, geneSearchScroller.clientHeight - Math.min(target.offsetHeight, 260) - 8),
+      ));
+      const currentRelativeTop = target.getBoundingClientRect().top - scrollerTop;
+      geneSearchScroller.scrollTop += currentRelativeTop - desiredRelativeTop;
+    } else {
+      const desiredTop = Math.max(12, Math.min(
+        originalTop,
+        Math.max(12, window.innerHeight - Math.min(target.offsetHeight, 260) - 12),
+      ));
+      const delta = target.getBoundingClientRect().top - desiredTop;
+      window.scrollBy({ top: delta, behavior: "auto" });
+    }
+  });
+}
+
+async function openAcmgModal(id, trigger = null) {
+  const variant = currentSnvVariant(id);
+  if (!variant || !state.currentLIS) return;
+  const origin = captureAcmgCardOrigin(trigger);
+  const status = document.getElementById("acmg-modal-status");
+  if (status) status.textContent = "載入中…";
+  showModal("acmg-modal");
+  try {
+    const catalog = await ensureAcmgCatalog();
+    const row = (state.index || []).find(item => item.LIS_ID === state.currentLIS);
+    const sampleId = row?.sample_id || state.currentLIS;
+    const detail = await apiFetch(
+      `/samples/${encodeURIComponent(sampleId)}/variants/${encodeURIComponent(id)}/acmg`,
+    ) || {};
+    const sources = {
+      manual: detail.manual_current || variant.manual_acmg_current || {},
+      genebe: {
+        classification: variant.genebe_acmg_class || "",
+        score: variant.genebe_acmg_score,
+        criteria_text: variant.genebe_acmg_criteria || "",
+      },
+      inhouse: {
+        classification: variant.ACMG_classification || "",
+        score: variant.ACMG_score,
+        criteria_text: variant.ACMG_criteria || "",
+      },
+    };
+    const initial = detail.sample_snapshot
+      || variant.sample_acmg_snapshot
+      || {
+        classification: variant.effective_acmg_class,
+        score: variant.effective_acmg_score,
+        criteria_text: variant.effective_acmg_criteria,
+      };
+    const parsed = sourceCriteria(initial, catalog);
+    _acmgEditor = {
+      id,
+      sampleId,
+      sources,
+      criteria: parsed.criteria,
+      origin,
+    };
+    document.getElementById("acmg-modal-variant").textContent =
+      `${displaySnvHgvs(variant, id)} · ${detail.genome_build || state.data?.genome_build || "hg38"} · ${id}`;
+    renderAcmgSourceSummaries();
+    renderAcmgCriteriaEditor();
+    if (status) {
+      status.textContent = parsed.unknown.length
+        ? `目前有無法辨識的舊 criteria：${parsed.unknown.join(", ")}；儲存時只保留上方已啟用項目。`
+        : "";
+    }
+  } catch (error) {
+    if (status) status.textContent = `載入失敗：${error.message}`;
+  }
+}
+
+function applyAcmgSource(key) {
+  if (!_acmgEditor || !_acmgCatalog) return;
+  const parsed = sourceCriteria(_acmgEditor.sources[key], _acmgCatalog);
+  _acmgEditor.criteria = parsed.criteria;
+  renderAcmgCriteriaEditor();
+  const status = document.getElementById("acmg-modal-status");
+  if (status) {
+    status.textContent = parsed.unknown.length
+      ? `已套用可辨識 criteria；略過：${parsed.unknown.join(", ")}`
+      : `已套用 ${key === "inhouse" ? "in-house" : key} criteria，尚未儲存。`;
+  }
+}
+
+async function saveAcmgEditor() {
+  if (!_acmgEditor) return;
+  const editedId = _acmgEditor.id;
+  const origin = _acmgEditor.origin;
+  const button = document.getElementById("acmg-save-btn");
+  const status = document.getElementById("acmg-modal-status");
+  button.disabled = true;
+  if (status) status.textContent = "儲存並重新計算中…";
+  try {
+    const flushed = await flushPendingSave();
+    if (!flushed) throw new Error("尚有其他個案編輯無法完成儲存");
+    const result = await apiPut(
+      `/samples/${encodeURIComponent(_acmgEditor.sampleId)}/variants/${encodeURIComponent(_acmgEditor.id)}/acmg`,
+      { criteria: _acmgEditor.criteria },
+    );
+    const saved = result.saved || {};
+    state.reports.edits ||= {};
+    state.reports.edits[_acmgEditor.id] ||= {};
+    Object.assign(state.reports.edits[_acmgEditor.id], {
+      manual_acmg: saved,
+      ACMG_classification: saved.classification,
+      ACMG_score: saved.score,
+      ACMG_criteria: saved.criteria_text,
+    });
+    if (result.variant) {
+      state.data.variants[_acmgEditor.id] = result.variant;
+      if (state.snvSearchVariants?.[_acmgEditor.id]) {
+        state.snvSearchVariants[_acmgEditor.id] = result.variant;
+      }
+    } else {
+      const existing = currentSnvVariant(_acmgEditor.id);
+      if (existing) {
+        existing.sample_acmg_snapshot = saved;
+        existing.manual_acmg_current = saved;
+        existing.effective_acmg_source = "manual";
+        existing.effective_acmg_scope = "sample";
+        existing.effective_acmg_class = saved.classification;
+        existing.effective_acmg_score = saved.score;
+        existing.effective_acmg_criteria = saved.criteria_text;
+        existing.effective_acmg_vus_subclass = saved.vus_subclass
+          || vusSubclassForScore(saved.classification, saved.score);
+        existing.geno_score = Math.round(
+          ((Math.max(-10, Math.min(10, Number(saved.score))) + 10) / 20) * 100,
+        );
+        existing.total_score = (existing.geno_score || 0) + (Number(existing.pheno_score) || 0);
+        if (!["1A", "1B"].includes(existing.tier)) {
+          existing.tier = Number(saved.score) >= 4 || existing.predicted_suspect_non_acmg
+            ? "1C" : "2";
+        }
+      }
+    }
+    Object.entries(result.categories || {}).forEach(([key, ids]) => {
+      state.data.categories[key] = ids;
+    });
+    state.dirty = false;
+    _lastSavedAt = new Date();
+    const updatedTier = result.variant?.tier || currentSnvVariant(editedId)?.tier || "";
+    if (origin?.zone === "analysis-tier" && TIER_ORDER.includes(updatedTier)) {
+      activeTierTab = updatedTier;
+    }
+    hideModal("acmg-modal");
+    _acmgEditor = null;
+    renderAll();
+    const geneModal = document.getElementById("gene-search-modal");
+    const geneInput = document.getElementById("gene-search-modal-input");
+    if (geneModal && !geneModal.classList.contains("hidden") && geneInput?.value) {
+      await renderGeneSearchResults(geneInput.dataset.kind || "snv", geneInput.value);
+    }
+    restoreAcmgSavedCard(editedId, origin, updatedTier);
+    updateSaveHint();
+  } catch (error) {
+    if (status) status.textContent = `儲存失敗：${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function openObservedModal(id) {
+  if (!state.currentLIS) return;
+  const row = (state.index || []).find(item => item.LIS_ID === state.currentLIS);
+  const sampleId = row?.sample_id || state.currentLIS;
+  const variant = currentSnvVariant(id);
+  document.getElementById("observed-modal-variant").textContent =
+    `${variant ? displaySnvHgvs(variant, id) : id} · ${id}`;
+  const host = document.getElementById("observed-case-list");
+  host.innerHTML = `<p class="muted">載入中…</p>`;
+  showModal("observed-modal");
+  try {
+    const result = await apiFetch(
+      `/samples/${encodeURIComponent(sampleId)}/variants/${encodeURIComponent(id)}/observed`,
+    ) || { cases: [], count: 0 };
+    if (variant) variant.observed_count = result.count;
+    document.querySelectorAll(
+      `.js-observed-open[data-id="${CSS.escape(id)}"]`,
+    ).forEach(badge => {
+      if (result.count > 0) badge.textContent = `Observed (${result.count})`;
+      else badge.remove();
+    });
+    const cases = result.cases || [];
+    host.innerHTML = cases.length
+      ? `<table class="observed-table">
+          <thead><tr><th>Sample ID</th><th>Status</th><th>Reviewer</th><th>Updated</th></tr></thead>
+          <tbody>${cases.map(item => `<tr>
+            <td>${escapeHtml(item.sample_id)}</td>
+            <td class="observed-status">${escapeHtml(item.status_label)}</td>
+            <td>${escapeHtml(item.reviewer_username || "—")}</td>
+            <td>${escapeHtml(formatAcmgDateTime(item.updated_at) || "—")}</td>
+          </tr>`).join("")}</tbody>
+        </table>`
+      : `<p class="muted">目前沒有其他仍標記為 Causative 或 Other 的個案。</p>`;
+  } catch (error) {
+    host.innerHTML = `<p class="muted">載入失敗：${escapeHtml(error.message)}</p>`;
+  }
 }
 
 // "trans / cis / unphased" — show phase group too when present so the
@@ -6858,7 +7269,27 @@ window.addEventListener("beforeunload", (ev) => {
 
 document.addEventListener("click", ev => {
   const t = ev.target;
-  if (t.matches(".js-btn-save")) {
+  const acmgOpen = t.closest?.(".js-acmg-open");
+  const observedOpen = t.closest?.(".js-observed-open");
+  const applySource = t.closest?.(".acmg-apply-source");
+  if (acmgOpen) {
+    ev.preventDefault();
+    openAcmgModal(acmgOpen.dataset.id, acmgOpen);
+  } else if (observedOpen) {
+    ev.preventDefault();
+    openObservedModal(observedOpen.dataset.id);
+  } else if (applySource) {
+    applyAcmgSource(applySource.dataset.acmgSource);
+  } else if (t.matches("#acmg-save-btn")) {
+    saveAcmgEditor();
+  } else if (t.matches("#acmg-clear-btn")) {
+    if (_acmgEditor) {
+      _acmgEditor.criteria = {};
+      renderAcmgCriteriaEditor();
+      const status = document.getElementById("acmg-modal-status");
+      if (status) status.textContent = "已全部關閉，尚未儲存。";
+    }
+  } else if (t.matches(".js-btn-save")) {
     saveChanges();
   } else if (t.matches("#btn-close-bottom")) {
     collapseCandidateSections();
@@ -6990,7 +7421,31 @@ document.addEventListener("change", ev => {
   const t = ev.target;
   // Status chips replace the old <select.status-select>. Main chips
   // use checkboxes (C + 0 may coexist); secondary ✓ chips are checkboxes too.
-  if (t.matches('.status-radio input[type="radio"], .status-radio input[type="checkbox"]')) {
+  if (t.matches(".acmg-criterion-enabled")) {
+    const code = t.dataset.code;
+    const item = (_acmgCatalog?.criteria || []).find(row => row.code === code);
+    if (_acmgEditor && item) {
+      if (t.checked) {
+        const select = t.closest(".acmg-criterion")?.querySelector(".acmg-criterion-strength");
+        _acmgEditor.criteria[code] = {
+          enabled: true,
+          strength: select?.value || item.default_strength,
+        };
+      } else {
+        delete _acmgEditor.criteria[code];
+      }
+      t.closest(".acmg-criterion")?.classList.toggle("enabled", t.checked);
+      const select = t.closest(".acmg-criterion")?.querySelector(".acmg-criterion-strength");
+      if (select) select.disabled = !t.checked;
+      updateAcmgPreview();
+    }
+  } else if (t.matches(".acmg-criterion-strength")) {
+    const code = t.dataset.code;
+    if (_acmgEditor?.criteria?.[code]) {
+      _acmgEditor.criteria[code].strength = t.value;
+      updateAcmgPreview();
+    }
+  } else if (t.matches('.status-radio input[type="radio"], .status-radio input[type="checkbox"]')) {
     const wrap = t.closest(".status-radio");
     if (!wrap) return;
     const panel = wrap.dataset.panel;
@@ -7008,24 +7463,6 @@ document.addEventListener("change", ev => {
   } else if (t.matches("#m-category")) {
     state.reports.category = t.value || null;
     state.dirty = true;
-    updateSaveHint();
-  } else if (t.matches(".acmg-class")) {
-    setEdit(t.dataset.id, "ACMG_classification", t.value);
-    _refreshAcmgSourceHints(t.dataset.id);
-    updateSaveHint();
-    // Re-apply significance color to match the edited value
-    t.classList.remove(...SIG_CLASSES);
-    const cls = classifySignificance(t.value);
-    if (cls) t.classList.add(cls);
-    renderReportSections();
-    renderCandidateSections();
-  } else if (t.matches(".acmg-score")) {
-    setEdit(t.dataset.id, "ACMG_score", t.value);
-    _refreshAcmgSourceHints(t.dataset.id);
-    updateSaveHint();
-  } else if (t.matches(".acmg-crit")) {
-    setEdit(t.dataset.id, "ACMG_criteria", t.value);
-    _refreshAcmgSourceHints(t.dataset.id);
     updateSaveHint();
   } else if (t.matches(".variant-comment")) {
     setEdit(t.dataset.id, "comment", t.value);
@@ -7078,16 +7515,6 @@ document.addEventListener("input", ev => {
   } else if (t.matches(".variant-comment")) {
     setEdit(t.dataset.id, "comment", t.value);
     _syncEditControls(t.dataset.id, "comment", t.value, t);
-    updateSaveHint();
-  } else if (t.matches(".acmg-score")) {
-    setEdit(t.dataset.id, "ACMG_score", t.value);
-    _syncEditControls(t.dataset.id, "ACMG_score", t.value, t);
-    _refreshAcmgSourceHints(t.dataset.id);
-    updateSaveHint();
-  } else if (t.matches(".acmg-crit")) {
-    setEdit(t.dataset.id, "ACMG_criteria", t.value);
-    _syncEditControls(t.dataset.id, "ACMG_criteria", t.value, t);
-    _refreshAcmgSourceHints(t.dataset.id);
     updateSaveHint();
   } else if (t.matches(".manual-position")) {
     updateManualVariant(t.dataset.mid, "position", t.value);

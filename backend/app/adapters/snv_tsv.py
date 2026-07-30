@@ -701,6 +701,7 @@ def _row_to_variant(row: dict) -> dict:
     hgvs_full = ":".join(p for p in (gene, display_transcript,
                                       _strip_tx(display_hgvs_c),
                                       _strip_tx(hgvs_p)) if p)
+    predicted_evidence = predicted_suspect_evidence(row)
     variant = {
         "id": vid,
         "CHROM": chrom,
@@ -838,6 +839,11 @@ def _row_to_variant(row: dict) -> dict:
         "ClinVar_link": row.get("CLINVAR_LINK", ""),
         "report_class": row.get("REPORT_CLASS", ""),
         "tier": classify_tier(row),
+        # Preserve the non-ACMG 1C triggers so a later manual ACMG overlay can
+        # recalculate the tier without losing independent predictor evidence.
+        "predicted_suspect_non_acmg": bool(
+            predicted_evidence["core_trigger"] or predicted_evidence["extra_trigger"]
+        ),
     }
     variant.update(_strand_bias_payload(row, ref, alt))
     return variant

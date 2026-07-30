@@ -466,8 +466,8 @@ def get_report(sample_id: str):
 
 
 @router.put("/samples/{sample_id}/report")
-def put_report(sample_id: str, payload: dict):
-    return report_store.save(sample_id, payload)
+def put_report(sample_id: str, payload: dict, user: dict = Depends(current_user)):
+    return report_store.save(sample_id, payload, user=user)
 
 
 # Canonical category list — drives both the load-new-case modal

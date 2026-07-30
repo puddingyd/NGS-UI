@@ -8,11 +8,12 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
-from .routers import analyses, auth, dragen, emr, igv, jobs, phenotype, phenotype_tool, samples, secondary
+from .routers import acmg, analyses, auth, dragen, emr, igv, jobs, phenotype, phenotype_tool, samples, secondary
 from .services import (
     clinvar_mito,
     hpo_ontology,
     inhouse_af_mito,
+    manual_acmg,
     omim_store,
     phenotype_scorer,
     users,
@@ -39,6 +40,12 @@ app.add_middleware(
 
 
 def _warm_caches() -> None:
+    # Rebuild the small active Causative/Other registry from sample JSON before
+    # the slower phenotype reference warm-up starts.
+    try:
+        manual_acmg.backfill_observations_from_samples()
+    except Exception:
+        pass
     # Parse hp.obo (~17 k terms) and load phenotype_to_genes.txt (~1 M
     # rows) once so subsequent requests don't pay the I/O cost.
     hpo_ontology.load()
@@ -91,6 +98,7 @@ def healthz():
 
 app.include_router(auth.router)
 app.include_router(samples.router)
+app.include_router(acmg.router)
 app.include_router(analyses.router)
 app.include_router(phenotype.router)
 app.include_router(phenotype_tool.router)

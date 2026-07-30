@@ -71,6 +71,12 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     if not ui_dir.is_dir():
         raise FileNotFoundError(f"sample not found: {lis_id}")
 
+    try:
+        from . import manual_acmg
+        manual_acmg.remove_sample_observations(lis_id)
+    except Exception:
+        pass
+
     if delete_pipeline_output:
         from . import dragen_jobs
         result = dragen_jobs.delete_pipeline_output(lis_id)
