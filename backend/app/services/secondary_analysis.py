@@ -399,9 +399,11 @@ def _normalize_sample(payload: dict, seq_type: str) -> dict:
     }
 
 
-def _launch_command(batch_name: str, seq_type: str, has_one_sample: bool) -> str:
+def _launch_command(batch_name: str, seq_type: str) -> str:
     session = f"ngs2_{batch_name}"
-    profile = "dgx_single" if has_one_sample else "dgx"
+    # DGX2 launches now always use the single-runner profile, including
+    # samplesheets containing more than one primary sample.
+    profile = "dgx_single"
     run_gcnv = " \\\n    --run_gcnv true" if seq_type == "WES" else ""
     extended_analysis = (
         " \\\n    --run_manta"
@@ -550,6 +552,6 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
         "dgx_output_dir": dgx_output_dir,
         "dgx_staged_samplesheet_path": str(SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch / "samplesheet.csv"),
         "tmux_session": f"ngs2_{batch}",
-        "command": _launch_command(batch, seq, len({s["sample_id"] for s in normalized}) == 1),
+        "command": _launch_command(batch, seq),
         "warnings": [],
     }

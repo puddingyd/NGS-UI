@@ -865,7 +865,10 @@
        the topbar (.topbar-job-status) and in the log pane here. -->
   <div id="dragen-modal" class="modal hidden">
     <div class="modal-card modal-card-wide">
-      <h2>三級分析</h2>
+      <div class="dragen-modal-head">
+        <h2>三級分析</h2>
+        <div id="dragen-litvar2-status" class="muted dragen-litvar2-status"></div>
+      </div>
       <div class="dragen-form">
         <div class="dragen-form-row dragen-vcf-row">
           <span id="dragen-index-meta" class="muted dragen-index-meta"></span>
@@ -880,7 +883,6 @@
           <button id="dragen-refresh-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="重新掃描所有 root 目錄">↻ 更新索引</button>
           <button id="btn-pipeline-list" class="btn btn-ghost dragen-toolbar-btn" type="button">三級分析清單</button>
         </div>
-        <div id="dragen-litvar2-status" class="muted dragen-litvar2-status"></div>
 
         <!-- Two stacked caller lists: pick from one and the other is
              auto-cleared. No mode dropdown — the implicit mode is

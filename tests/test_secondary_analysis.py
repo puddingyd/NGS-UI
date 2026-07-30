@@ -118,7 +118,7 @@ def test_wes_samplesheet_remains_single_row(monkeypatch, tmp_path):
 
 
 def test_wgs_launch_command_runs_extended_analysis_by_default():
-    command = secondary._launch_command("260719_WGS", "WGS", has_one_sample=True)
+    command = secondary._launch_command("260719_WGS", "WGS")
 
     assert "-profile dgx_single" in command
     assert (
@@ -134,12 +134,19 @@ def test_wgs_launch_command_runs_extended_analysis_by_default():
 
 
 def test_wes_launch_command_runs_gcnv_and_extended_analysis_by_default():
-    command = secondary._launch_command("260719_WES", "WES", has_one_sample=True)
+    command = secondary._launch_command("260719_WES", "WES")
 
     assert "--run_gcnv true" in command
     assert "--run_manta" in command
     assert "--run_expansionhunter" in command
     assert "--run_automap" in command
+
+
+def test_multi_sample_launch_also_uses_dgx_single_profile():
+    command = secondary._launch_command("260719_WGS_MULTI", "WGS")
+
+    assert "-profile dgx_single" in command
+    assert "-profile dgx \\" not in command
 
 
 def test_cleanup_secondary_nextflow_work_returns_guarded_dgx_command(monkeypatch):

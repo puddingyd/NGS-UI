@@ -1481,7 +1481,7 @@ function renderLitvar2(v) {
       .filter(value => /^\d+$/.test(value))
   )).slice(0, 5);
   const total = Math.max(0, Number.parseInt(data.pmid_count, 10) || 0);
-  let value = "—";
+  let value = "NA (請重跑三級)";
   if (data.status === "hit") {
     const links = pmids.map(pmid =>
       `<a class="litvar2-pmid-link" href="https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(pmid)}/" target="_blank" rel="noopener">PMID:${escapeHtml(pmid)}</a>`

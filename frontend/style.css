@@ -3535,6 +3535,16 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .topbar-job-status:hover { color: #fff; }
 
 #dragen-modal .modal-card-wide { max-width: 720px; }
+.dragen-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.dragen-modal-head h2 {
+  flex: none;
+  margin-bottom: 0;
+}
 .dragen-form { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 12px; }
 .dragen-form-row {
   display: flex;
@@ -3797,6 +3807,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   min-height: 16px;
   font-size: 11px;
   overflow-wrap: anywhere;
+  max-width: 72%;
+  text-align: right;
 }
 .dragen-seq-type-row {
   display: flex;

@@ -235,6 +235,9 @@ def test_frontend_places_litvar_below_acmg_with_required_links():
     assert "https://pubmed.ncbi.nlm.nih.gov/" in renderer
     assert "and ${remaining} others" in renderer
     assert "litvar2-title-link" in renderer
+    assert 'let value = "NA (請重跑三級)"' in renderer
+    assert 'data.status === "no_match"' in renderer
+    assert 'value = "No reference"' in renderer
 
 
 def test_manual_update_button_is_between_pgx_and_index_refresh():
@@ -242,3 +245,11 @@ def test_manual_update_button_is_between_pgx_and_index_refresh():
     litvar = INDEX_HTML.index('id="dragen-litvar2-update-btn"')
     refresh = INDEX_HTML.index('id="dragen-refresh-btn"')
     assert pgx < litvar < refresh
+
+
+def test_update_status_is_in_tertiary_modal_header():
+    head = INDEX_HTML[
+        INDEX_HTML.index('<div class="dragen-modal-head">'):
+        INDEX_HTML.index('<div class="dragen-form">')
+    ]
+    assert 'id="dragen-litvar2-status"' in head
