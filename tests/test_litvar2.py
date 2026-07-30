@@ -234,7 +234,10 @@ def test_frontend_places_litvar_below_acmg_with_required_links():
     ]
     assert "https://pubmed.ncbi.nlm.nih.gov/" in renderer
     assert "and ${remaining} others" in renderer
-    assert "litvar2-title-link" in renderer
+    assert "litvar2-title-link" not in renderer
+    assert "litvar2-external-link" in renderer
+    assert "LITVAR2_EXTERNAL_ICON_SVG" in renderer
+    assert 'title="在 LitVar2 開啟"' in renderer
     assert 'let value = "NA (請重跑三級)"' in renderer
     assert 'data.status === "no_match"' in renderer
     assert 'value = "No reference"' in renderer

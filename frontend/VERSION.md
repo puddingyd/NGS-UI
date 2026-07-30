@@ -8,7 +8,7 @@
 
 ### v7.6 — 2026-07-30
 
-- SNV/Indel 卡片在 ClinVar/ACMG 下新增 LitVar2 文獻列，顯示 bulk 版本日期；前五個 PMID 可直接開啟 PubMed，超過五篇以 `and N others` 連到該 variant 的 LitVar2 結果頁，LitVar2 標題本身也固定可點。
+- SNV/Indel 卡片在 ClinVar/ACMG 下新增 LitVar2 文獻列，顯示 bulk 版本日期；前五個 PMID 可直接開啟 PubMed，超過五篇以 `and N others` 連到該 variant 的 LitVar2 結果頁，標題旁的外部連結圖示也可固定開啟該結果頁，標題本身維持純文字。
 - 三級 post-processing 只對 review filter 留下的 genomic variants 查本地 LitVar2 SQLite；先精確比對 rsID，缺 rsID 才用 gene + HGVS，結果只供 reviewer 參考，不影響 tier、ACMG、排序或報告。舊個案重跑三級後才補註。
 - LitVar2 官方 bulk JSON 與 slim SQLite 放在 `NGS_UI_HOME/biotools/litvar2/`；三級 modal 新增手動更新按鈕，每月一號另由 systemd timer 背景更新。新資料完整建庫、驗證後才原子切換，更新失敗時保留舊 JSON/DB。
 - LitVar2 更新進度移到三級 modal 標題列右上角；舊個案或尚未跑到 LitVar2 annotation 的卡片改顯示 `NA (請重跑三級)`，和真正查無文獻的 `No reference` 明確區分。

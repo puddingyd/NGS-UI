@@ -1393,15 +1393,29 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .info-grid .k { color: var(--muted); font-size: 11px; }
 .info-grid .v { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
 .litvar2-key { margin-top: 2px; }
-.litvar2-title-link,
 .litvar2-pmid-link,
 .litvar2-others-link {
   color: #0969da;
   text-decoration: none;
 }
-.litvar2-title-link:hover,
 .litvar2-pmid-link:hover,
 .litvar2-others-link:hover { text-decoration: underline; }
+.litvar2-external-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 3px;
+  color: #0969da;
+  line-height: 1;
+  text-decoration: none;
+  vertical-align: -2px;
+}
+.litvar2-external-link:hover { color: #0550ae; }
+.litvar2-external-link:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid #0969da;
+  outline-offset: 1px;
+}
 .litvar2-references { line-height: 1.45; }
 .info-hint {
   display: inline-flex;

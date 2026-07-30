@@ -87,6 +87,17 @@ const COPY_ICON_SVG =
   + '<path d="M4 8c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2"/>'
   + '</svg>';
 
+// Lucide `SquareArrowOutUpRight`, used when only the external-link glyph
+// (rather than the adjacent label) should open a resource.
+const LITVAR2_EXTERNAL_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" '
+  + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+  + 'stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/>'
+  + '<path d="m21 3-9 9"/>'
+  + '<path d="M15 3h6v6"/>'
+  + '</svg>';
+
 // ---------- Backend fetch ------------------------------------------
 
 // All requests carry the session cookie; same-origin so credentials
@@ -1472,9 +1483,10 @@ function renderLitvar2(v) {
   const url = _safeLitvar2Url(data.url);
   const date = String(data.dataset_date || "").trim();
   const titleText = `LitVar2${date ? ` (${date})` : ""}`;
-  const title = url
-    ? `<a class="litvar2-title-link" href="${escapeAttr(url)}" target="_blank" rel="noopener">${escapeHtml(titleText)}</a>`
-    : escapeHtml(titleText);
+  const externalLink = url
+    ? `<a class="litvar2-external-link" href="${escapeAttr(url)}" target="_blank" rel="noopener" title="在 LitVar2 開啟" aria-label="在 LitVar2 開啟">${LITVAR2_EXTERNAL_ICON_SVG}</a>`
+    : "";
+  const title = `${escapeHtml(titleText)}${externalLink}`;
   const pmids = Array.from(new Set(
     (Array.isArray(data.pmids) ? data.pmids : [])
       .map(value => String(value || "").trim())
