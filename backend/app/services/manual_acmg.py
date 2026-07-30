@@ -31,6 +31,53 @@ CRITERIA_ORDER = (
     "BS1", "BS2", "BS3", "BS4",
     "BP1", "BP2", "BP3", "BP4", "BP5", "BP6", "BP7",
 )
+EVIDENCE_GROUPS = (
+    {
+        "value": "population",
+        "label": "Population data",
+        "criteria": ("BA1", "BS1", "BS2", "PM2", "PS4"),
+    },
+    {
+        "value": "computational_predictive",
+        "label": "Computational and predictive data",
+        "criteria": ("BP4", "BP1", "BP7", "BP3", "PP3", "PM5", "PM4", "PS1", "PVS1"),
+    },
+    {
+        "value": "functional",
+        "label": "Functional data",
+        "criteria": ("BS3", "PP2", "PM1", "PS3"),
+    },
+    {
+        "value": "segregation",
+        "label": "Segregation data",
+        "criteria": ("BS4", "PP1"),
+    },
+    {
+        "value": "de_novo",
+        "label": "De novo data",
+        "criteria": ("PM6", "PS2"),
+    },
+    {
+        "value": "allelic",
+        "label": "Allelic data",
+        "criteria": ("BP2", "PM3"),
+    },
+    {
+        "value": "other_database",
+        "label": "Other database",
+        "criteria": ("BP6", "PP5"),
+    },
+    {
+        "value": "other_data",
+        "label": "Other data",
+        "criteria": ("BP5", "PP4"),
+    },
+)
+_CRITERION_EVIDENCE_GROUP = {
+    code: (group["value"], group["label"], group_order, criterion_order)
+    for group_order, group in enumerate(EVIDENCE_GROUPS)
+    for criterion_order, code in enumerate(group["criteria"])
+}
 CASE_SCOPED_CRITERIA = frozenset({
     "PS2", "PM3", "PM6", "PP1", "PP4", "BS4", "BP2", "BP5",
 })
@@ -155,11 +202,18 @@ def catalog() -> dict[str, Any]:
     criteria = []
     for code in CRITERIA_ORDER:
         direction = "benign" if code.startswith(("BA", "BS", "BP")) else "pathogenic"
+        group_value, group_label, group_order, criterion_order = (
+            _CRITERION_EVIDENCE_GROUP[code]
+        )
         refs = [{"title": "ACMG/AMP 2015", "url": ACMG_2015_URL}]
         refs.extend({"title": title, "url": url} for title, url in _GUIDANCE.get(code, []))
         criteria.append({
             "code": code,
             "direction": direction,
+            "evidence_group": group_value,
+            "evidence_group_label": group_label,
+            "evidence_group_order": group_order,
+            "evidence_order": criterion_order,
             "default_strength": _DEFAULT_STRENGTH[code],
             "description": _DESCRIPTIONS[code],
             "scope": "case" if code in CASE_SCOPED_CRITERIA else "global",
@@ -175,6 +229,10 @@ def catalog() -> dict[str, Any]:
         })
     return {
         "criteria": criteria,
+        "evidence_groups": [
+            {"value": group["value"], "label": group["label"]}
+            for group in EVIDENCE_GROUPS
+        ],
         "strengths": [
             {"value": key, "label": label, "points": points}
             for key, label in _STRENGTH_LABELS.items()

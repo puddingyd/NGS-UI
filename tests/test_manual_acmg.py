@@ -18,6 +18,32 @@ def test_catalog_contains_all_28_criteria_and_keeps_pp5_bp6_usable():
     assert by_code["PVS1"]["scope"] == "global"
     assert "disabled" not in by_code["PP5"]
     assert "disabled" not in by_code["BP6"]
+    assert [group["value"] for group in payload["evidence_groups"]] == [
+        "population",
+        "computational_predictive",
+        "functional",
+        "segregation",
+        "de_novo",
+        "allelic",
+        "other_database",
+        "other_data",
+    ]
+    grouped_codes = [
+        code
+        for group in manual_acmg.EVIDENCE_GROUPS
+        for code in group["criteria"]
+    ]
+    assert len(grouped_codes) == 28
+    assert len(set(grouped_codes)) == 28
+    assert set(grouped_codes) == set(manual_acmg.CRITERIA_ORDER)
+    assert by_code["PS4"]["evidence_group"] == "population"
+    assert by_code["PVS1"]["evidence_group"] == "computational_predictive"
+    assert by_code["PM1"]["evidence_group"] == "functional"
+    assert by_code["PP1"]["evidence_group"] == "segregation"
+    assert by_code["PS2"]["evidence_group"] == "de_novo"
+    assert by_code["PM3"]["evidence_group"] == "allelic"
+    assert by_code["PP5"]["evidence_group"] == "other_database"
+    assert by_code["PP4"]["evidence_group"] == "other_data"
     assert payload["vus_subclasses"] == [
         {"value": "VUS-low", "min_points": 0, "max_points": 1},
         {"value": "VUS-mid", "min_points": 2, "max_points": 3},

@@ -2724,51 +2724,63 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .badge-observed:hover { background: #ddd6fe; }
 
 .acmg-summary-btn {
+  appearance: none;
   display: inline-flex;
-  align-items: stretch;
-  min-height: 30px;
+  align-items: baseline;
+  gap: 5px;
+  width: fit-content;
   max-width: 100%;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: #fff;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
-  overflow: hidden;
   text-align: left;
-}
-.acmg-summary-btn:hover { border-color: #64748b; background: #f8fafc; }
-.acmg-summary-value {
-  display: flex;
-  align-items: center;
-  padding: 3px 7px;
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
   font-size: 12px;
-  font-weight: 600;
+  line-height: normal;
+}
+.acmg-summary-btn:hover .acmg-summary-value { text-decoration: underline; }
+.acmg-summary-btn:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: 2px;
+}
+.acmg-summary-value {
+  display: inline;
+  padding: 0 4px;
+  border-radius: 3px;
+  font: inherit;
   min-width: 0;
 }
 .acmg-summary-source {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  min-height: 30px;
-  padding: 2px 5px;
-  border-left: 1px solid var(--border);
+  display: inline;
+  padding: 0;
   color: var(--muted);
   font-size: 9px;
-  line-height: 1.05;
-  text-align: center;
-  overflow-wrap: anywhere;
+  line-height: inherit;
+  white-space: nowrap;
 }
 
 .acmg-modal-card { max-width: 1040px; width: min(96vw, 1040px); }
 .observed-modal-card { max-width: 720px; }
 .acmg-modal-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 .acmg-modal-head h2 { margin-bottom: 3px; }
+.acmg-modal-top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
 .acmg-source-summaries {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2817,11 +2829,47 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .acmg-live-summary strong { font-size: 14px; }
 .acmg-live-summary span { font-size: 12px; }
 .acmg-conflict { color: #b91c1c; font-weight: 600; }
-.acmg-method-note { margin: 6px 0 10px; font-size: 11px; }
+.acmg-method-note { margin: 10px 0 0; font-size: 11px; }
 .acmg-criteria-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 7px;
+  gap: 10px;
+  align-items: start;
+  margin-top: 10px;
+}
+.acmg-criteria-column {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.acmg-criteria-column.pathogenic {
+  background: #fffafa;
+  border-color: #f1dfe1;
+}
+.acmg-criteria-column.benign {
+  background: #f8fcf8;
+  border-color: #dcebdd;
+}
+.acmg-criteria-column > h3 {
+  margin: 0 0 9px;
+  font-size: 14px;
+}
+.acmg-criteria-column.pathogenic > h3 { color: #9f3038; }
+.acmg-criteria-column.benign > h3 { color: #2f6f3e; }
+.acmg-evidence-group + .acmg-evidence-group { margin-top: 12px; }
+.acmg-evidence-group > h4 {
+  margin: 0 0 5px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgba(27, 31, 36, .12);
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 700;
+}
+.acmg-evidence-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .acmg-criterion {
   display: grid;
@@ -2829,12 +2877,25 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   gap: 7px;
   align-items: start;
   padding: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: #fff;
 }
-.acmg-criterion.enabled { border-color: #93c5fd; background: #f8fbff; }
-.acmg-criterion.benign.enabled { border-color: #86efac; background: #f7fff9; }
+.acmg-criterion.pathogenic {
+  background: #fff3f4;
+  border-color: #f3d7da;
+}
+.acmg-criterion.benign {
+  background: #f1f9f2;
+  border-color: #d4e9d7;
+}
+.acmg-criterion.pathogenic.enabled {
+  background: #ffecee;
+  border-color: #df9fa5;
+}
+.acmg-criterion.benign.enabled {
+  background: #eaf7ec;
+  border-color: #99cda2;
+}
 .acmg-criterion-code { font-weight: 700; font-size: 12px; padding-top: 2px; }
 .acmg-criterion select { width: 100%; font-size: 11px; padding: 3px; }
 .acmg-criterion-description { font-size: 11px; line-height: 1.35; }

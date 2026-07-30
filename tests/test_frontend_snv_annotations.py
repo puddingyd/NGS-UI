@@ -9,7 +9,7 @@ STYLE_CSS = (REPO_ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
 def test_core_snv_fields_have_annotation_hints():
     assert 'const scoreHint = _annotationHint("Score"' in APP_JS
     assert 'const clinvarHint = _annotationHint("ClinVar"' in APP_JS
-    assert 'class="acmg-summary-btn js-acmg-open"' in APP_JS
+    assert 'class="v acmg-summary-btn js-acmg-open"' in APP_JS
     assert '["manual", "Manual"]' in APP_JS
     assert '["genebe", "GeneBe"]' in APP_JS
     assert '["inhouse", "In-house"]' in APP_JS

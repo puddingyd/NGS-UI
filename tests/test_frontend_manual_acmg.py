@@ -11,12 +11,17 @@ def test_acmg_card_is_modal_only_and_shows_source_next_to_result():
     card_block = APP[APP.index("function renderVariantCard"):APP.index(
         "// ---- helpers used by renderVariantCard"
     )]
-    assert 'class="acmg-summary-btn js-acmg-open"' in card_block
+    assert 'class="v acmg-summary-btn js-acmg-open"' in card_block
     assert 'class="acmg-summary-source"' in card_block
     assert '<textarea class="acmg-crit"' not in card_block
     assert '<select class="acmg-class' not in card_block
     assert '<input class="acmg-score"' not in card_block
     assert "editAcmgDisplayClass" in card_block
+    summary_css = CSS[CSS.index(".acmg-summary-btn"):CSS.index(".acmg-modal-card")]
+    assert "border: 0;" in summary_css
+    assert "white-space: nowrap;" in summary_css
+    assert "min-height: 30px" not in summary_css
+    assert "border-left" not in summary_css
 
 
 def test_vus_subtiers_keep_formal_class_and_have_directional_colors():
@@ -44,9 +49,22 @@ def test_acmg_save_restores_the_same_variant_after_backend_reordering():
 
 
 def test_acmg_modal_has_three_apply_sources_and_all_criteria_editor():
-    assert 'id="acmg-modal"' in HTML
+    acmg_modal = HTML[HTML.index('id="acmg-modal"'):HTML.index('id="observed-modal"')]
+    assert 'id="acmg-modal"' in acmg_modal
+    assert "Manual ACMG/AMP variant classification" in acmg_modal
     assert 'id="acmg-source-summaries"' in HTML
     assert 'id="acmg-criteria-list"' in HTML
+    assert acmg_modal.count('class="btn btn-primary js-acmg-save"') == 2
+    assert acmg_modal.count('data-close="acmg-modal"') == 2
+    assert "全部關閉" not in acmg_modal
+    assert acmg_modal.index('id="acmg-criteria-list"') < acmg_modal.index(
+        "分類採 Tavtigian natural-scale points"
+    )
+    assert 'renderColumn("pathogenic", "Pathogenic criteria")' in APP
+    assert 'renderColumn("benign", "Benign criteria")' in APP
+    assert "data-evidence-group=" in APP
+    assert ".acmg-criteria-column.pathogenic" in CSS
+    assert ".acmg-criteria-column.benign" in CSS
     assert '["manual", "Manual"]' in APP
     assert '["genebe", "GeneBe"]' in APP
     assert '["inhouse", "In-house"]' in APP

@@ -740,10 +740,13 @@
     <div class="modal-card acmg-modal-card">
       <div class="acmg-modal-head">
         <div>
-          <h2>Manual ACMG/AMP</h2>
+          <h2>Manual ACMG/AMP variant classification</h2>
           <div id="acmg-modal-variant" class="muted"></div>
         </div>
-        <button type="button" class="btn btn-ghost" data-close="acmg-modal">關閉</button>
+        <div class="acmg-modal-top-actions">
+          <button type="button" class="btn btn-ghost" data-close="acmg-modal">關閉</button>
+          <button type="button" class="btn btn-primary js-acmg-save">儲存並套用</button>
+        </div>
       </div>
       <div id="acmg-source-summaries" class="acmg-source-summaries"></div>
       <div class="acmg-live-summary">
@@ -752,17 +755,17 @@
         <span id="acmg-preview-variant-score">Variant score —</span>
         <span id="acmg-preview-conflict" class="acmg-conflict hidden">同時使用致病與良性證據，請確認是否合理。</span>
       </div>
+      <div id="acmg-criteria-list" class="acmg-criteria-list"></div>
+      <div id="acmg-modal-status" class="muted"></div>
       <p class="muted acmg-method-note">
         分類採 Tavtigian natural-scale points；VUS 顯示細分為
         VUS-low（0–1）、VUS-mid（2–3）、VUS-high（4–5 points；
         <a href="https://doi.org/10.1016/j.gim.2024.101276" target="_blank" rel="noopener">Eldomery et al.</a>）。
         後端儲存時會重新驗證與計算，正式分類仍為 Uncertain significance。
       </p>
-      <div id="acmg-criteria-list" class="acmg-criteria-list"></div>
-      <div id="acmg-modal-status" class="muted"></div>
       <div class="modal-actions">
-        <button id="acmg-clear-btn" type="button" class="btn btn-ghost">全部關閉</button>
-        <button id="acmg-save-btn" type="button" class="btn btn-primary">儲存並套用</button>
+        <button type="button" class="btn btn-ghost" data-close="acmg-modal">關閉</button>
+        <button type="button" class="btn btn-primary js-acmg-save">儲存並套用</button>
       </div>
     </div>
   </div>

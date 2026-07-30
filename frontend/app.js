@@ -4108,7 +4108,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       <div>
         <span class="k">ClinVar${clinvarHint}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
         <span class="k">ACMG</span>
-        <button type="button" class="acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 manual ACMG/AMP criteria">
+        <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 manual ACMG/AMP criteria">
           <span class="acmg-summary-value ${classifySignificance(editAcmgDisplayClass) || ""}">${escapeHtml(editAcmgDisplayClass || "—")} (${escapeHtml(editAcmgScore === "" ? "—" : editAcmgScore)})</span>
           <span class="acmg-summary-source">${escapeHtml(acmgSource)}</span>
         </button>
@@ -4341,7 +4341,9 @@ function renderAcmgSourceSummaries() {
 function renderAcmgCriteriaEditor() {
   const host = document.getElementById("acmg-criteria-list");
   if (!host || !_acmgEditor || !_acmgCatalog) return;
-  host.innerHTML = (_acmgCatalog.criteria || []).map(item => {
+  const criteria = _acmgCatalog.criteria || [];
+  const groups = _acmgCatalog.evidence_groups || [];
+  const renderCriterion = item => {
     const evidence = _acmgEditor.criteria[item.code] || {
       enabled: false,
       strength: item.default_strength,
@@ -4368,7 +4370,25 @@ function renderAcmgCriteriaEditor() {
         ${item.deprecated_warning ? `<div class="acmg-retired-warning">⚠ ${escapeHtml(item.deprecated_warning)}</div>` : ""}
       </div>
     </div>`;
-  }).join("");
+  };
+  const renderColumn = (direction, title) => {
+    const groupHtml = groups.map(group => {
+      const items = criteria
+        .filter(item => item.direction === direction && item.evidence_group === group.value)
+        .sort((a, b) => Number(a.evidence_order || 0) - Number(b.evidence_order || 0));
+      if (!items.length) return "";
+      return `<section class="acmg-evidence-group" data-evidence-group="${escapeAttr(group.value)}">
+        <h4>${escapeHtml(group.label)}</h4>
+        <div class="acmg-evidence-group-items">${items.map(renderCriterion).join("")}</div>
+      </section>`;
+    }).join("");
+    return `<section class="acmg-criteria-column ${direction}">
+      <h3>${escapeHtml(title)}</h3>
+      ${groupHtml}
+    </section>`;
+  };
+  host.innerHTML = renderColumn("pathogenic", "Pathogenic criteria")
+    + renderColumn("benign", "Benign criteria");
   updateAcmgPreview();
 }
 
@@ -4534,9 +4554,9 @@ async function saveAcmgEditor() {
   if (!_acmgEditor) return;
   const editedId = _acmgEditor.id;
   const origin = _acmgEditor.origin;
-  const button = document.getElementById("acmg-save-btn");
+  const buttons = Array.from(document.querySelectorAll(".js-acmg-save"));
   const status = document.getElementById("acmg-modal-status");
-  button.disabled = true;
+  buttons.forEach(button => { button.disabled = true; });
   if (status) status.textContent = "儲存並重新計算中…";
   try {
     const flushed = await flushPendingSave();
@@ -4603,7 +4623,7 @@ async function saveAcmgEditor() {
   } catch (error) {
     if (status) status.textContent = `儲存失敗：${error.message}`;
   } finally {
-    button.disabled = false;
+    buttons.forEach(button => { button.disabled = false; });
   }
 }
 
@@ -7280,15 +7300,8 @@ document.addEventListener("click", ev => {
     openObservedModal(observedOpen.dataset.id);
   } else if (applySource) {
     applyAcmgSource(applySource.dataset.acmgSource);
-  } else if (t.matches("#acmg-save-btn")) {
+  } else if (t.matches(".js-acmg-save")) {
     saveAcmgEditor();
-  } else if (t.matches("#acmg-clear-btn")) {
-    if (_acmgEditor) {
-      _acmgEditor.criteria = {};
-      renderAcmgCriteriaEditor();
-      const status = document.getElementById("acmg-modal-status");
-      if (status) status.textContent = "已全部關閉，尚未儲存。";
-    }
   } else if (t.matches(".js-btn-save")) {
     saveChanges();
   } else if (t.matches("#btn-close-bottom")) {
