@@ -22,7 +22,7 @@ uses them to place content in the fixed horizontal layout.
 - secondary | Variant calling
 - secondary_tools | DeepVariant + HaplotypeCaller or DRAGEN
 - tertiary | VEP annotation
-- tertiary_tools | ClinVar · gnomAD · dbNSFP · LOFTEE · Pangolin
+- tertiary_tools | ClinVar · LitVar2 · gnomAD · dbNSFP · LOFTEE · Pangolin
 - 1A | ClinVar P/LP ≥ 1★
 - 1B | LOFTEE HC
 - 1C | ACMG score · AlphaMissense · P-KNN · Pangolin · BayesDel

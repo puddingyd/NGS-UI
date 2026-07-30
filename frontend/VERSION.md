@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v7.6 — 2026-07-30
+
+- SNV/Indel 卡片在 ClinVar/ACMG 下新增 LitVar2 文獻列，顯示 bulk 版本日期；前五個 PMID 可直接開啟 PubMed，超過五篇以 `and N others` 連到該 variant 的 LitVar2 結果頁，LitVar2 標題本身也固定可點。
+- 三級 post-processing 只對 review filter 留下的 genomic variants 查本地 LitVar2 SQLite；先精確比對 rsID，缺 rsID 才用 gene + HGVS，結果只供 reviewer 參考，不影響 tier、ACMG、排序或報告。舊個案重跑三級後才補註。
+- LitVar2 官方 bulk JSON 與 slim SQLite 放在 `NGS_UI_HOME/biotools/litvar2/`；三級 modal 新增手動更新按鈕，每月一號另由 systemd timer 背景更新。新資料完整建庫、驗證後才原子切換，更新失敗時保留舊 JSON/DB。
+
 ### v7.5 — 2026-07-29
 
 - SNV/Indel ACMG 改為 structured modal：完整列出 28 個 ACMG/AMP 2015 criteria、原始規範與 ClinGen 後續 guidance，支援啟用／停用及 Supporting、Moderate、Strong、Very strong strength，PP5/BP6 保留可用並標示 ClinGen 停用建議。

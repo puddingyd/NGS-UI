@@ -7,6 +7,8 @@
   GET  /api/dragen/jobs/{jid}      state + log tail for one job
   POST /api/dragen/jobs/{jid}/cancel
   POST /api/dragen/nf-work/cleanup
+  GET  /api/dragen/litvar2
+  POST /api/dragen/litvar2/update
   GET  /api/dragen/outputs         list pipeline output sample directories
   GET  /api/dragen/outputs/{sid}/log
   DELETE /api/dragen/outputs/{sid}
@@ -18,7 +20,7 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
 from ..auth import current_user
-from ..services import dragen_jobs
+from ..services import dragen_jobs, litvar2_jobs
 
 router = APIRouter(
     prefix="/api/dragen",
@@ -77,6 +79,21 @@ async def post_refresh_index():
         "dragen":  idx.get("dragen", []),
         "inhouse": idx.get("inhouse", []),
     }
+
+
+@router.get("/litvar2")
+def get_litvar2_status():
+    """Return local bulk/index version plus any active updater state."""
+    return litvar2_jobs.status()
+
+
+@router.post("/litvar2/update")
+def post_litvar2_update():
+    """Start an atomic local bulk download/index rebuild in the background."""
+    try:
+        return litvar2_jobs.start_background_update()
+    except OSError as exc:
+        raise HTTPException(500, f"LitVar2 更新無法啟動：{exc}") from exc
 
 
 @router.post("/jobs")

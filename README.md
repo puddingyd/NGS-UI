@@ -20,6 +20,7 @@
 NGS_UI/                    ← NGS_UI_HOME
 ├── NGS-UI/                ← 這個 git checkout（REPO_ROOT）
 ├── biotools/              ← Exomiser / LIRICAL CLI + data
+│   └── litvar2/           ← 官方 bulk JSON、slim SQLite、版本/更新狀態
 ├── vcf/                   ← per-sample VCF
 ├── tertiary_output/       ← 舊 UI sample root；只在舊個案遷移期間讀取
 ├── patient_phenotype/     ← {LIS_ID}_{MRN}_phenotype.txt（自動帶入 HPO）
@@ -94,6 +95,13 @@ KillMode=process
 sudo systemctl daemon-reload && sudo systemctl restart ngs-ui
 ```
 
+LitVar2 每月一號背景更新另有 systemd timer（正式機路徑已寫在 unit；首次可先從三級 modal 手動更新）：
+
+```bash
+scripts/install_litvar2_timer.sh
+systemctl list-timers ngs-ui-litvar2-update.timer
+```
+
 背景 worker（Exomiser / LIRICAL 重跑）另外跑：
 
 ```bash
@@ -134,6 +142,9 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_GENEBE_API_PENDING_DIR` | 主 DB 同目錄 `api_pending/` | 可匯入主 DB 的精確 7 欄去重 TSV + JSON sidecar |
 | `NGS_UI_GENEBE_API_ENABLED` | `true` | 設 `false` 關閉 live fallback；主 DB 查詢不受影響 |
 | `GENEBE_USER` / `GENEBE_API_KEY` / `GENEBE_SIF` | 空／`$NGS_UI_HOME/biotools/genebe.sif` | optional GeneBe live API 帳密與預先部署的 pygenebe Apptainer image；可放 mode 0600、git-ignored 的 `$NGS_UI_HOME/secrets.env` |
+| `NGS_UI_LITVAR2_DIR` | `$NGS_UI_HOME/biotools/litvar2` | LitVar2 bulk、SQLite、manifest、更新狀態與 log |
+| `NGS_UI_LITVAR2_BULK_PATH` / `NGS_UI_LITVAR2_DB` | 上述目錄內 `litvar2_variants.json.gz` / `litvar2.sqlite` | 可個別覆寫 bulk 與 slim index 路徑 |
+| `NGS_UI_LITVAR2_BULK_URL` | NCBI LitVar 官方 bulk URL | 每月／手動更新來源；三級分析本身不呼叫 LitVar2 API |
 | `phenotype_reference/` | `REPO_ROOT/phenotype_reference` | git-tracked Exomiser / LIRICAL rerun YAML templates |
 | `NGS_UI_INHOUSE_BAM_ROOT` | `/home/datalake_Intermediate/pipeline/nextflow_output` | IGV 搜尋 in-house / Nextflow BAM 的根目錄；可用 `:` 分隔多個 root；舊 `NGS_UI_BAM_ROOT` 仍作為 fallback |
 | `NGS_UI_DRAGEN_BAM_ROOT` | `/home/datalake_Raw/Novaseq:/home/datalake_Intermediate/n102968` | IGV 搜尋 DRAGEN raw / test BAM 的根目錄；尋找 `<run>/bam/{sample}.bam`，排除 `{sample}.repeats.bam` |
@@ -179,6 +190,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 載入或重新載入個案時會重設 sample-scoped UI 狀態：SNV/CNV/Mito/STR 分頁回到預設頁籤，主畫面 gene search 輸入與 gene search modal 舊結果會清空。
    - SNV/Indel tier：`1A / 1B / 1C / 2`（互斥）。`1C — Predicted suspect` 保留 ACMG points ≥4，並納入 Core predictors（P-KNN LLR ≥1、AlphaMissense、BayesDel_noAF、Pangolin）及 Extra-VEP predictors（REVEL、SpliceAI）的規劃門檻；predictor 只用於收入 reviewer 候選，不顯示額外 trigger badge，也不修改 ACMG points/class。原本 ClinVar P/LP 0★/conflicting 專屬 tier 已移除，未符合其他 1C 條件者歸入 `2 — Other`。
    - SNV/Indel 卡片的 Score、ClinVar 與各個 in-silico predictor 旁有可 hover/focus 的 `ⓘ`：Score 說明 variant/phenotype 計分公式；ClinVar 顯示三級輸出的 release date；predictor 顯示本位點 evidence、PP3/BP4 calibrated threshold 或未校準警語，Reference URL 可直接點開。ACMG 改成可點擊的「classification (points) + manual/GeneBe/in-house source」摘要，不再顯示自由文字 criteria 輸入格。顯示順序固定為 P-KNN、AlphaMissense、Pangolin、REVEL、SpliceAI、ESM1b、VARITY_R、BayesDel、MetaRNN、DANN、PhactBoost、PhyloP、GERP、SIFT、LOFTOOL；有值的前三項直接顯示，其餘收在 More。AlphaMissense、ESM1b、VARITY_R、BayesDel、REVEL、SpliceAI、PhyloP、GERP、SIFT 使用文獻/ClinGen SVI threshold；P-KNN 依三級輸出的 `PKNN_EVIDENCE` 套色，註解列出 LLR 的 ±1/±2/±4 門檻。沒有可參考 cutoff 的 DANN 與非 score 型的 LOFTEE 不套色。
+   - ClinVar/ACMG 下方顯示 `LitVar2 (版本日期)`：標題永遠連到該 variant 的 LitVar2 結果頁，前五個 PMID 分別直連 PubMed，超過五篇顯示 `and N others` 並連回 LitVar2。只讀三級 post-processing 從本地 bulk SQLite 寫入的結果，先 exact rsID、再 gene + HGVS；不在開卡片時查 API，也不影響 tier、ACMG、排序或報告。舊個案重跑三級後才會補上。
    - ClinVar release date 不從檔案 mtime、今天日期或報告常數猜測。三級 pipeline 應在 `03_acmg/{source}.annotation_versions.json` 寫入 `databases.clinvar.release_date`；舊資料也接受 `*.tsv.meta.json`、同目錄 `annotation_versions.json` 或 `08_postprocessing/pipeline_source.json.annotation_versions`。缺 sidecar 時 UI 明確顯示「三級輸出未提供」。
    - Patient phenotype 與 Comment 之間的 Dead zone 卡片會依目前 HPO + panel gene set 顯示 cohort-level dead exons；WES 用 20X，WGS（含 in-house / DRAGEN）用 DRAGEN 10X。主畫面先依 CDS dead percentage 分成 70-100%、50-70%、30-50%、<30% 四個區間，區間內再依 gene 的 pheno score 由高到低排序，最後用 CDS percentage 與 gene name 當 tie-breaker；預設只顯示 CDS ≥50% 的列，可用標題列或區塊底部的小三角形展開全部。Dead zone 列改用淡背景警示色：≥70% rose、50-70% orange、30-50% amber、<30% yellow。
    - SNV/Indel 主畫面直接顯示 `snv_indel.review.tsv` 內的候選點，不再另套 gnomAD AF filter；顯示 filter 預設啟用 `Disease-associated`（優先使用 `ngs_panel_deadzone/panel/panel_loose_plus_clinical.hgnc_canonical.txt`，缺檔時 fallback 到 `panel_loose.hgnc_canonical.txt`）與 `In panel only`。`VAF < 0.2 / zygosity=ref` 預設不勾選，主畫面預設隱藏低 VAF 或 ref genotype 點位，勾選後才顯示；`impact=MODIFIER` 預設不顯示，可手動勾選展開，但 ClinVar P/LP 點位不受 MODIFIER filter 限制。`IMPACT=LOW` 仍會顯示。Gene search modal 保留自己的 `gnomAD_G_AF < 0.01` filter；CNV/SV 與 gene search modal 不受 `Disease-associated` filter 限制。
@@ -217,9 +229,9 @@ SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越�
 
 二級分析 modal 由右上角「二級分析」開啟，後端掃描 WES roots（NextSeq2000 與 Reanalysis）與 WGS Novaseq FASTQ，提供 WES/WGS 兩個 typeahead 搜尋框、更新索引、批次清單與「加入同批全部樣本」。WGS 下拉選單依主 sample 聚合顯示，每個 sample 註明 lane 數與 FASTQ 檔案數；只收 `*_S*_L00*_R[12]_001.fastq.gz`，不使用同資料夾內的 merged FASTQ。建立 samplesheet 時，後端會把每個 WGS sample 展開成每 lane 一列並寫入 `lane` 欄，交由 FASTP 分 lane QC、FQ2BAM 合併；WES 的掃描、顯示與 samplesheet 行為不變。按「建立 sample sheet」後會先在 `NGS_UI_SECONDARY_SAMPLESHEET_STAGING_ROOT/<batch_name>/samplesheet.csv` 寫出 CSV；DGM `/home/datalake_Raw/...` 會映射到 DGX2 `NGS_UI_SECONDARY_DGX_RAW_ROOT/...`（預設 `/datalake_Raw/datalake_Raw/...`），已經位於 `/datalake_Raw/...` 的路徑不重寫。產生的 tmux launch block 會由 DGX2 runner 建立 `OUT_DIR`，再把 staged samplesheet 複製到 `OUT_DIR/samplesheet.csv` 後啟動 Nextflow，避免 NGS-UI 建立的 output dir owner 造成權限問題。Nextflow 結束或失敗時會複製 `${LAUNCH_DIR}/.nextflow.log` 到 `${OUT_DIR}/nextflow.log`，並保留 tmux pane 不自動關閉，方便確認最後狀態。單一主 sample 使用 `dgx_single` profile，多個主 sample 使用 `dgx`；WES 另加 `--run_gcnv true`，WES/WGS 都預設加入 `--run_manta`、`--run_expansionhunter`、`--run_automap`，讓二級分析直接產出三個模組的結果。Reanalysis FASTQ 也直接指向原始 `*.R1/R2.clean.fastq.gz`，不再複製或建立 symlink；只改 samplesheet 的 `sample` 欄。因 NGS-UI 跑在 DGM，不能直接清 DGX2；modal 的「顯示 DGX2 清理指令」會依 `NGS_UI_SECONDARY_DGX_WORK_ROOT`（預設 `/raid/DGM/work`）產生 guarded shell script，必須複製到 DGX2 terminal 執行。script 會先阻擋仍有 Nextflow process 的狀況、列出待刪項目並要求確認；「複製」會直接寫入剪貼簿，plain-HTTP intranet 自動使用隱藏文字框 fallback，不再跳出手動複製視窗。清理後既有批次不能再用 `-resume`。
 
-三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead。每次送出都會啟動 Nextflow `-resume`，不再由 UI 依正式資料夾中的檔案決定是否略過；DRAGEN 與 NCKUH 各自固定使用一條共享 launch/session/work lineage，因此同一 sample 即使前後放在不同 batch，只要 Nextflow 判定 task 的 input、script、container 與其他 hash 條件相同，就能沿用 cache，條件改變的 task 則自行重跑。同一 pipeline 類型一次只允許一個 Nextflow process 開啟共享 cache；後送 job 會停在 `waiting-nextflow-cache`，DRAGEN 與 NCKUH 彼此不互鎖，Nextflow 結束後的驗證與 post-processing 也可繼續並行。共享 lineage 第一次建立時會從舊 launch contexts 選擇與本次 sample 重疊最多的可用 session 承接；不同 session ID 的舊 cache 無法合併，未承接到的 task 會由 Nextflow 正常重算並逐步累積到共享 lineage。相同 UI/source sample 正在執行時，重複送出仍會回 HTTP 409。
+三級分析 modal 的 in-house 與 DRAGEN VCF 各自使用單一 typeahead。PGx 和「更新索引」之間的「更新 LitVar2」會啟動 detached worker，背景下載官方 bulk（壓縮檔約 1.8 GB）並重建本地 SQLite；新資料先驗證再原子切換，失敗繼續使用舊版，modal 會顯示進度、版本與錯誤。每次送出三級分析都會啟動 Nextflow `-resume`，不再由 UI 依正式資料夾中的檔案決定是否略過；DRAGEN 與 NCKUH 各自固定使用一條共享 launch/session/work lineage，因此同一 sample 即使前後放在不同 batch，只要 Nextflow 判定 task 的 input、script、container 與其他 hash 條件相同，就能沿用 cache，條件改變的 task 則自行重跑。同一 pipeline 類型一次只允許一個 Nextflow process 開啟共享 cache；後送 job 會停在 `waiting-nextflow-cache`，DRAGEN 與 NCKUH 彼此不互鎖，Nextflow 結束後的驗證與 post-processing 也可繼續並行。共享 lineage 第一次建立時會從舊 launch contexts 選擇與本次 sample 重疊最多的可用 session 承接；不同 session ID 的舊 cache 無法合併，未承接到的 task 會由 Nextflow 正常重算並逐步累積到共享 lineage。相同 UI/source sample 正在執行時，重複送出仍會回 HTTP 409。
 
-Nextflow 的 `--out_dir` 指向 job-private `.staging/{job_id}/`，不直接覆寫正式個案。結束後先驗證該 source sample 的 `00_prepare`–`06_cnv_sv` 目錄以及 SNV、Mito、STR、CNV、SV 產物；有勾 PGx 時再要求 `07_pgx` 與 PGx/PharmCAT 產物。驗證通過後，SNV post-processing 也在 staging 中完成 GeneBe/extra-VEP/GIAB/院內 AF/MANE、prefixed overlay/review/index、MITOMAP 與 ploidy 衍生檔；hidden working TSV 仍在 `finally` 刪除。最後進入 `promote-output`，以可 rollback 的 rename 切換正式 00–07 與 worker-owned 08 衍生檔，保留當下最新的 reviewer metadata、case summary 與 analyses，並最後才切換 `{LIS_ID}.layout.json`。任何 Nextflow、完整性驗證或 post-processing 失敗都只清理 staging，原本正式結果與已載入個案維持可用；批次切換中途失敗則還原同批已切換的 sample。若取消 PGx，舊 `07_pgx` 會在成功切換時移除，避免顯示上一次的 PGx 結果。三級分析清單會忽略 `.staging` / `.rollback`；完整刪除仍會清掉對應 pipeline/UI tree 與 job log，執行中的 sample 不可刪。
+Nextflow 的 `--out_dir` 指向 job-private `.staging/{job_id}/`，不直接覆寫正式個案。結束後先驗證該 source sample 的 `00_prepare`–`06_cnv_sv` 目錄以及 SNV、Mito、STR、CNV、SV 產物；有勾 PGx 時再要求 `07_pgx` 與 PGx/PharmCAT 產物。驗證通過後，SNV post-processing 也在 staging 中完成 GeneBe/extra-VEP/GIAB/院內 AF/MANE/LitVar2、prefixed overlay/review/index、MITOMAP 與 ploidy 衍生檔；LitVar2 僅查與 review TSV 相同篩選範圍的 genomic variants，缺 DB 或查詢失敗為 warning/no-op。hidden working TSV 仍在 `finally` 刪除。最後進入 `promote-output`，以可 rollback 的 rename 切換正式 00–07 與 worker-owned 08 衍生檔，保留當下最新的 reviewer metadata、case summary 與 analyses，並最後才切換 `{LIS_ID}.layout.json`。任何 Nextflow、完整性驗證或 post-processing 失敗都只清理 staging，原本正式結果與已載入個案維持可用；批次切換中途失敗則還原同批已切換的 sample。若取消 PGx，舊 `07_pgx` 會在成功切換時移除，避免顯示上一次的 PGx 結果。三級分析清單會忽略 `.staging` / `.rollback`；完整刪除仍會清掉對應 pipeline/UI tree 與 job log，執行中的 sample 不可刪。
 
 Extra VEP 預設讀取 `NGS_UI_HOME/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz`（dev 機即 `/home/n102968/NGS_UI/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz`）補 MetaRNN 與 REVEL；必須有同名 `.tbi`，啟動時會檢查實際 header，仍可用 `NGS_UI_EXTRA_VEP_DBNSFP` 或 `--extra-vep-dbnsfp` 覆寫。SpliceAI 維持讀取 `/home/n102968/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz` 與 `spliceai_scores.raw.indel.hg38.vcf.gz`，兩個 score VCF 都存在時才補 `SPLICEAI_MAX`，不使用桌面 `/Volumes` 路徑。
 

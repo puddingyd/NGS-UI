@@ -1,0 +1,12 @@
+[Unit]
+Description=Update the NGS-UI LitVar2 database on the first day of each month
+
+[Timer]
+OnCalendar=*-*-01 02:30:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=ngs-ui-litvar2-update.service
+
+[Install]
+WantedBy=timers.target
+

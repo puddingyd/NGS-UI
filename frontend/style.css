@@ -1392,6 +1392,17 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .info-grid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .info-grid .k { color: var(--muted); font-size: 11px; }
 .info-grid .v { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+.litvar2-key { margin-top: 2px; }
+.litvar2-title-link,
+.litvar2-pmid-link,
+.litvar2-others-link {
+  color: #0969da;
+  text-decoration: none;
+}
+.litvar2-title-link:hover,
+.litvar2-pmid-link:hover,
+.litvar2-others-link:hover { text-decoration: underline; }
+.litvar2-references { line-height: 1.45; }
 .info-hint {
   display: inline-flex;
   align-items: center;
@@ -3773,10 +3784,19 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   margin-top: 6px;
 }
 .dragen-caller-block + .dragen-caller-block { margin-top: 12px; }
-.dragen-vcf-row { justify-content: flex-end; }
+.dragen-vcf-row {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
 .dragen-index-meta {
   font-size: 11px;
   margin-left: auto;
+  min-width: 0;
+}
+.dragen-litvar2-status {
+  min-height: 16px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .dragen-seq-type-row {
   display: flex;

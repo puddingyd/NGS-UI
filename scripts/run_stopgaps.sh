@@ -12,10 +12,11 @@
 #                                  pipeline's ACMG_* stay untouched
 #   2. annotate_extra_vep.py    — add MetaRNN + REVEL + SpliceAI columns
 #   3. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
-#   4. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
+#   4. annotate_litvar2.py   — local bulk SQLite lookup for review candidates
+#   5. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
 #                              gCNV + Delly VCFs. Skipped if none supplied.
-#   5. build_snv_annotation_overlay.py — persist sparse field differences
-#   6. build_snv_review_tsv.py / build_snv_gene_index.py
+#   6. build_snv_annotation_overlay.py — persist sparse field differences
+#   7. build_snv_review_tsv.py / build_snv_gene_index.py
 #
 # (ClinVar annotation was a compatibility step before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
@@ -58,7 +59,9 @@
 #   NGS_UI_MANE_SUMMARY / --mane-summary
 #                                      — MANE summary for RefSeq mapping
 #   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
-#   --skip-cnv                         — disable AnnotSV step 4 even
+#   NGS_UI_LITVAR2_DB / --litvar2-db   — local bulk LitVar2 SQLite
+#   --skip-litvar2                     — disable local literature annotation
+#   --skip-cnv                         — disable AnnotSV step 5 even
 #                                         when --dragen-cnv-source is set
 # =========================================================
 set -euo pipefail
@@ -105,6 +108,7 @@ SKIP_GIAB=0
 SKIP_GENEBE=0
 SKIP_MANE_REFSEQ=0
 SKIP_INHOUSE_AF=0
+SKIP_LITVAR2=0
 SEQ_TYPE="${SEQ_TYPE:-WES}"
 NGS_HOME_DEFAULT="${NGS_UI_HOME:-$HOME/NGS_UI}"
 GENEBE_DB="${NGS_UI_GENEBE_DB:-$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz}"
@@ -112,6 +116,7 @@ MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 INHOUSE_AF_DB="${NGS_UI_INHOUSE_AF_DB:-$NGS_HOME_DEFAULT/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
 EXTRA_VEP_DBNSFP="${NGS_UI_EXTRA_VEP_DBNSFP:-$NGS_HOME_DEFAULT/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz}"
+LITVAR2_DB="${NGS_UI_LITVAR2_DB:-$NGS_HOME_DEFAULT/biotools/litvar2/litvar2.sqlite}"
 # Keep the established production SpliceAI paths. On n102968 these resolve to
 # /home/n102968/NGS_UI/biotools/spliceai/...; do not point runtime at a desktop
 # /Volumes mount.
@@ -144,6 +149,8 @@ while [ $# -gt 0 ]; do
     --skip-giab)          SKIP_GIAB=1; shift;;
     --inhouse-af-db)      INHOUSE_AF_DB="$2"; shift 2;;
     --skip-inhouse-af)    SKIP_INHOUSE_AF=1; shift;;
+    --litvar2-db)         LITVAR2_DB="$2"; shift 2;;
+    --skip-litvar2)       SKIP_LITVAR2=1; shift;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -268,7 +275,19 @@ if [ "$SKIP_MANE_REFSEQ" -eq 0 ]; then
   step_done
 fi
 
-# 4. CNV/SV via AnnotSV.
+# 4. LitVar2 literature references from the local bulk SQLite. Only rows
+#    retained by the review TSV filter are queried; missing/corrupt DB is a
+#    warning/no-op and never fails otherwise valid tertiary output.
+if [ "$SKIP_LITVAR2" -eq 0 ]; then
+  echo
+  echo "[post-processing] annotate_litvar2.py"
+  step_start "litvar2"
+  "$SCRIPT_DIR/annotate_litvar2.py" \
+    --tsv "$TSV" --db "$LITVAR2_DB" --test-type "$SEQ_TYPE"
+  step_done
+fi
+
+# 5. CNV/SV via AnnotSV.
 SAMPLE_DIR="$POST_DIR"
 if [ "$SKIP_CNV" -eq 0 ] && { [ -n "$DRAGEN_VCF" ] || [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; }; then
   echo

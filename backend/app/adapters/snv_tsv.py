@@ -591,6 +591,38 @@ def _strand_bias_payload(row: dict, ref: str, alt: str) -> dict[str, Any]:
     }
 
 
+def _litvar2_payload(row: dict) -> dict:
+    """Return a browser-safe literature payload from post-processing columns."""
+    pmids: list[str] = []
+    for token in re.findall(r"\d+", str(row.get("LITVAR2_PMIDS_TOP5") or "")):
+        if token not in pmids:
+            pmids.append(token)
+        if len(pmids) == 5:
+            break
+    count = _to_num(row.get("LITVAR2_PMID_COUNT"))
+    url = str(row.get("LITVAR2_URL") or "").strip()
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if not (
+            parsed.scheme == "https"
+            and parsed.hostname == "www.ncbi.nlm.nih.gov"
+            and parsed.path == "/research/litvar2/docsum"
+        ):
+            url = ""
+    except ValueError:
+        url = ""
+    return {
+        "id": str(row.get("LITVAR2_ID") or "").strip(),
+        "rsid": str(row.get("LITVAR2_RSID") or "").strip(),
+        "pmid_count": max(0, int(count or 0)),
+        "pmids": pmids,
+        "dataset_date": str(row.get("LITVAR2_DATASET_DATE") or "").strip(),
+        "match_method": str(row.get("LITVAR2_MATCH_METHOD") or "").strip(),
+        "status": str(row.get("LITVAR2_STATUS") or "").strip(),
+        "url": url,
+    }
+
+
 def _row_to_variant(row: dict) -> dict:
     """Reshape one TSV row into the per-variant dict the frontend expects.
 
@@ -837,6 +869,7 @@ def _row_to_variant(row: dict) -> dict:
         "OMIM_link": row.get("OMIM_LINK", ""),
         "gnomAD_link": row.get("GNOMAD_LINK", ""),
         "ClinVar_link": row.get("CLINVAR_LINK", ""),
+        "litvar2": _litvar2_payload(row),
         "report_class": row.get("REPORT_CLASS", ""),
         "tier": classify_tier(row),
         # Preserve the non-ACMG 1C triggers so a later manual ACMG overlay can

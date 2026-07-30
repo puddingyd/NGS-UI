@@ -1454,6 +1454,51 @@ function variantUrls(v) {
   };
 }
 
+function _safeLitvar2Url(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return (
+      url.protocol === "https:"
+      && url.hostname === "www.ncbi.nlm.nih.gov"
+      && url.pathname === "/research/litvar2/docsum"
+    ) ? url.href : "";
+  } catch (_e) {
+    return "";
+  }
+}
+
+function renderLitvar2(v) {
+  const data = v?.litvar2 || {};
+  const url = _safeLitvar2Url(data.url);
+  const date = String(data.dataset_date || "").trim();
+  const titleText = `LitVar2${date ? ` (${date})` : ""}`;
+  const title = url
+    ? `<a class="litvar2-title-link" href="${escapeAttr(url)}" target="_blank" rel="noopener">${escapeHtml(titleText)}</a>`
+    : escapeHtml(titleText);
+  const pmids = Array.from(new Set(
+    (Array.isArray(data.pmids) ? data.pmids : [])
+      .map(value => String(value || "").trim())
+      .filter(value => /^\d+$/.test(value))
+  )).slice(0, 5);
+  const total = Math.max(0, Number.parseInt(data.pmid_count, 10) || 0);
+  let value = "—";
+  if (data.status === "hit") {
+    const links = pmids.map(pmid =>
+      `<a class="litvar2-pmid-link" href="https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(pmid)}/" target="_blank" rel="noopener">PMID:${escapeHtml(pmid)}</a>`
+    );
+    const remaining = Math.max(0, total - pmids.length);
+    if (remaining && url) {
+      links.push(`<a class="litvar2-others-link" href="${escapeAttr(url)}" target="_blank" rel="noopener">and ${remaining} others</a>`);
+    }
+    value = links.length ? links.join(", ") : "No PMID";
+  } else if (data.status === "no_match") {
+    value = "No reference";
+  } else if (data.status === "ambiguous") {
+    value = "Ambiguous match";
+  }
+  return `<span class="k litvar2-key">${title}</span><span class="v litvar2-references">${value}</span>`;
+}
+
 // ---------- Render: sample header / phenotype ----------------------
 
 function renderPloidySexStatus(reportedSex) {
@@ -4112,6 +4157,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           <span class="acmg-summary-value ${classifySignificance(editAcmgDisplayClass) || ""}">${escapeHtml(editAcmgDisplayClass || "—")} (${escapeHtml(editAcmgScore === "" ? "—" : editAcmgScore)})</span>
           <span class="acmg-summary-source">${escapeHtml(acmgSource)}</span>
         </button>
+        ${renderLitvar2(v)}
       </div>
       <div>
         ${(() => {
@@ -10523,6 +10569,7 @@ const _DRAGEN_STATE = {
   lastProgressPct: 0,   // keep progress visually monotonic across polling races
   pollTimer: null,
   recoverTimer: null,
+  litvarPollTimer: null,
 };
 
 const DRAGEN_INHOUSE_WGS_SIZE_THRESHOLD = 100 * 1024 * 1024;
@@ -10817,6 +10864,76 @@ async function loadDragenVcfList({ force = false } = {}) {
   dragenInput.placeholder  = "輸入 sample / run / path 搜尋";
 }
 
+function _dragenRenderLitvar2Status(status) {
+  const el = document.getElementById("dragen-litvar2-status");
+  const btn = document.getElementById("dragen-litvar2-update-btn");
+  if (!el || !btn) return;
+  const running = !!status?.running;
+  btn.disabled = running;
+  btn.textContent = running ? "更新 LitVar2 中…" : "更新 LitVar2";
+  const database = status?.database || {};
+  const version = status?.dataset_date || database.dataset_date || "";
+  if (running) {
+    const step = String(status.step || "running");
+    const percent = Number.isFinite(Number(status.percent))
+      ? ` ${Math.round(Number(status.percent))}%`
+      : "";
+    const records = Number(status.indexed || status.processed || 0);
+    const recordText = records ? ` · ${records.toLocaleString()} records` : "";
+    el.textContent = `LitVar2：${step}${percent}${recordText}`;
+    return;
+  }
+  if (status?.state === "failed") {
+    el.textContent = `LitVar2 更新失敗：${status.error || "請查看 update.log"}${version ? `；目前仍使用 ${version}` : ""}`;
+    return;
+  }
+  if (database.available) {
+    const count = Number(database.record_count || 0);
+    el.textContent = `LitVar2 本地資料庫：${version || "版本日期不明"}${count ? ` · ${count.toLocaleString()} variants` : ""}`;
+    return;
+  }
+  el.textContent = "LitVar2 本地資料庫尚未建立；可按「更新 LitVar2」下載官方 bulk 資料。";
+}
+
+async function loadLitvar2Status() {
+  const status = await apiFetch("/dragen/litvar2");
+  _dragenRenderLitvar2Status(status);
+  if (status?.running) _dragenStartLitvar2Polling();
+  return status;
+}
+
+function _dragenStartLitvar2Polling() {
+  if (_DRAGEN_STATE.litvarPollTimer) return;
+  const tick = async () => {
+    try {
+      const status = await apiFetch("/dragen/litvar2");
+      _dragenRenderLitvar2Status(status);
+      if (!status?.running && _DRAGEN_STATE.litvarPollTimer) {
+        clearInterval(_DRAGEN_STATE.litvarPollTimer);
+        _DRAGEN_STATE.litvarPollTimer = null;
+      }
+    } catch (_e) {}
+  };
+  _DRAGEN_STATE.litvarPollTimer = setInterval(tick, 5000);
+}
+
+async function _dragenUpdateLitvar2() {
+  if (!confirm("LitVar2 官方 bulk 壓縮檔約 1.8 GB，將在背景下載並重建本地 SQLite。確定開始？")) return;
+  const btn = document.getElementById("dragen-litvar2-update-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "啟動中…";
+  }
+  try {
+    const status = await apiFetch("/dragen/litvar2/update", { method: "POST" });
+    _dragenRenderLitvar2Status(status);
+    if (status?.running) _dragenStartLitvar2Polling();
+  } catch (e) {
+    alert("LitVar2 更新啟動失敗：" + (e?.message || e));
+    try { await loadLitvar2Status(); } catch (_e) {}
+  }
+}
+
 function _dragenSetJob(state) {
   const isNewJob = state?.job_id && state.job_id !== _DRAGEN_STATE.job?.job_id;
   _DRAGEN_STATE.job = state;
@@ -10926,7 +11043,8 @@ function _dragenStopgapProgressPercent(state) {
     "post-processing:giab-strata": 0.66,
     "post-processing:inhouse-af": 0.70,
     "post-processing:mane-refseq": 0.72,
-    "post-processing:annotsv": 0.78,
+    "post-processing:litvar2": 0.76,
+    "post-processing:annotsv": 0.79,
     "sample-step:snv-overlay": 0.82,
     "sample-step:review-tsv": 0.86,
     "sample-step:gene-index": 0.92,
@@ -11105,7 +11223,10 @@ function setupDragenButton() {
   if (!btn) return;
   btn.addEventListener("click", async () => {
     showModal("dragen-modal");
-    await loadDragenVcfList();
+    await Promise.all([
+      loadDragenVcfList(),
+      loadLitvar2Status().catch(() => null),
+    ]);
   });
   _dragenWireCombobox("inhouse");
   _dragenWireCombobox("dragen");
@@ -11123,6 +11244,7 @@ function setupDragenButton() {
     try { await loadDragenVcfList({ force: true }); }
     finally { if (b) { b.disabled = false; b.textContent = "↻ 更新索引"; } }
   });
+  document.getElementById("dragen-litvar2-update-btn")?.addEventListener("click", _dragenUpdateLitvar2);
   document.getElementById("dragen-start-btn")?.addEventListener("click", _dragenStart);
   document.getElementById("dragen-add-batch-btn")?.addEventListener("click", _dragenAddCurrentToBatch);
   document.getElementById("dragen-job-log-toggle")?.addEventListener("click", _toggleDragenLog);

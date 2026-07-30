@@ -192,6 +192,30 @@ GENEBE_API_PENDING_DIR = Path(os.environ.get(
     GENEBE_DB.parent / "api_pending",
 ))
 
+# Local LitVar2 literature database.  The official bulk JSON stays beside a
+# slim SQLite index so tertiary post-processing never sends patient variants
+# to an external lookup API.  A monthly systemd timer and the manual button in
+# the tertiary modal both run the same atomic updater.
+LITVAR2_DIR = Path(os.environ.get(
+    "NGS_UI_LITVAR2_DIR",
+    BIOTOOLS_DIR / "litvar2",
+))
+LITVAR2_BULK_PATH = Path(os.environ.get(
+    "NGS_UI_LITVAR2_BULK_PATH",
+    LITVAR2_DIR / "litvar2_variants.json.gz",
+))
+LITVAR2_DB = Path(os.environ.get(
+    "NGS_UI_LITVAR2_DB",
+    LITVAR2_DIR / "litvar2.sqlite",
+))
+LITVAR2_BULK_URL = os.environ.get(
+    "NGS_UI_LITVAR2_BULK_URL",
+    "https://ftp.ncbi.nlm.nih.gov/pub/lu/LitVar/litvar2_variants.json.gz",
+)
+LITVAR2_MANIFEST_PATH = LITVAR2_DIR / "litvar2_manifest.json"
+LITVAR2_UPDATE_STATE_PATH = LITVAR2_DIR / "update_state.json"
+LITVAR2_UPDATE_LOG_PATH = LITVAR2_DIR / "update.log"
+
 # In-house allele frequency sites VCF (built from our own WGS cohort by
 # scripts/inhouse_af/publish_af.py). scripts/annotate_inhouse_af.py joins its
 # INHOUSE_AC/AN/AF into snv_indel.annotated.tsv for the SNV card. The backend
