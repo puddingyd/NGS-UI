@@ -369,13 +369,17 @@
         <h2>分析</h2>
         <label class="filter-toggle">
           <input id="filter-disease-associated" type="checkbox" checked />
-          <span>Disease-associated</span>
+          <span>疾病相關</span>
           <span id="disease-associated-count" class="muted"></span>
         </label>
         <label class="filter-toggle">
           <input id="filter-in-panel-only" type="checkbox" checked />
-          <span>In panel only</span>
+          <span>臨床相關</span>
           <span id="in-panel-count" class="muted"></span>
+        </label>
+        <label class="filter-toggle" title="勾選後顯示本院 AF ≥ 0.05 且 AC ≥ 50 的 local common variants">
+          <input id="filter-nckuh-common" type="checkbox" />
+          <span>AF_NCKUH ≥ 0.05 &amp; AC ≥ 50</span>
         </label>
         <label class="filter-toggle">
           <input id="filter-vaf" type="checkbox" />

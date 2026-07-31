@@ -3849,6 +3849,18 @@ function setStatus(id, val) {
   // so flipping a status pill feels instant instead of taking ~1 s.
   renderReportSections();
   renderDiseaseAssociatedReportWarning();
+  const { v, kind } = lookupAnyVariant(id);
+  if (_isNckuhCommon(v)) {
+    // Reviewer 1/2/C is a common-filter rescue. Re-render the affected
+    // analysis card immediately when that status is added or removed.
+    if (kind === "mito") {
+      renderMitoTabBar();
+    } else if (kind === "snv") {
+      renderTierTabBar();
+      renderActiveSnvTier();
+      updateInPanelCount();
+    }
+  }
   _syncStatusRadios(id, "", val);
   updateSaveHint();
 }
@@ -3872,6 +3884,43 @@ function _isPlpClass(text) {
 
 function _isClinvarPlp(v) {
   return _isPlpClass(v?.CLNSIG || "");
+}
+
+const NCKUH_COMMON_AF_THRESHOLD = 0.05;
+const NCKUH_COMMON_AC_THRESHOLD = 50;
+
+function _isNckuhCommon(v) {
+  const af = _numericValue(v?.inhouse_af);
+  const ac = _numericValue(v?.inhouse_ac);
+  return af != null && ac != null
+    && af >= NCKUH_COMMON_AF_THRESHOLD
+    && ac >= NCKUH_COMMON_AC_THRESHOLD;
+}
+
+function _hasPrimaryReviewerStatus(id) {
+  return _statusValues(getStatus(id)).some(status =>
+    status === "1" || status === "2" || status === "C"
+  );
+}
+
+function _isNckuhCommonRescued(v, id, kind) {
+  if (_hasPrimaryReviewerStatus(id) || _isClinvarPlp(v)) return true;
+  if (kind === "mito") {
+    return !!(v?.mitomap_pathogenic || v?.mitomap_reported)
+      || _isPlpClass(getEdit(id, "ACMG_classification_mito"));
+  }
+  return _isPlpClass(
+    getEdit(id, "ACMG_classification")
+      || v?.effective_acmg_class
+      || v?.genebe_acmg_class
+      || v?.ACMG_classification
+  );
+}
+
+function _passesNckuhCommonFilter(v, id, kind) {
+  if (!_isNckuhCommon(v)) return true;
+  if (document.getElementById("filter-nckuh-common")?.checked) return true;
+  return _isNckuhCommonRescued(v, id, kind);
 }
 
 function _isSecondaryEligible(id) {
@@ -5112,7 +5161,7 @@ function idsForCandidateSection(def, { ignoreInPanelOnly = false } = {}) {
   }
   return ids.filter(id => _passesMainSnvDisplayFilters(
     state.data.variants?.[id],
-    { ignoreInPanelOnly },
+    { id, ignoreInPanelOnly },
   ));
 }
 
@@ -5122,12 +5171,15 @@ function candidateIdsForSection(def) {
     return { displayIds: countIds, countIds };
   }
   const displayIds = countIds.filter(id =>
-    _passesMainSnvDisplayFilters(state.data.variants?.[id])
+    _passesMainSnvDisplayFilters(state.data.variants?.[id], { id })
   );
   return { displayIds, countIds };
 }
 
-function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false, ignoreDiseaseAssociated = false } = {}) {
+function _passesMainSnvDisplayFilters(
+  v,
+  { id = "", ignoreInPanelOnly = false, ignoreDiseaseAssociated = false } = {},
+) {
   if (!v) return false;
   if (!ignoreDiseaseAssociated
       && document.getElementById("filter-disease-associated")?.checked
@@ -5135,6 +5187,7 @@ function _passesMainSnvDisplayFilters(v, { ignoreInPanelOnly = false, ignoreDise
   if (!ignoreInPanelOnly
       && document.getElementById("filter-in-panel-only")?.checked
       && !v.in_panel) return false;
+  if (!_passesNckuhCommonFilter(v, id, "snv")) return false;
   if (!document.getElementById("filter-vaf")?.checked) {
     const vaf = _numericValue(v.alt_af);
     if ((vaf != null && vaf < 0.2) || _isReferenceZygosity(v)) return false;
@@ -5714,7 +5767,10 @@ const MITO_TITLES = {
 let activeMitoTab = null;
 
 function _mitoIdsForTier(tier) {
-  return (state.data?.mito_categories && state.data.mito_categories[tier]) || [];
+  const ids = (state.data?.mito_categories && state.data.mito_categories[tier]) || [];
+  return ids.filter(id =>
+    _passesNckuhCommonFilter(state.data?.mito_variants?.[id], id, "mito")
+  );
 }
 
 function renderMitoTabBar() {
@@ -6703,17 +6759,34 @@ document.getElementById("btn-sidebar-toggle")?.addEventListener("click", () => {
   _setSidebarToggleAria(!collapsed);
 });
 
-// Tally how many currently-loaded SNV variants pass each high-level gene
-// scope flag so reviewers can tell whether the filters are doing work.
+// Tally each high-level gene scope after applying every other active SNV
+// display filter. Each denominator intentionally ignores only its own scope
+// toggle so the numbers track the cards that can currently be shown.
 function updateInPanelCount() {
   const variants = state.data?.variants || {};
-  const total = Object.keys(variants).length;
-  const inPanel = Object.values(variants).filter(v => v.in_panel).length;
-  const diseaseAssociated = Object.values(variants).filter(v => v.disease_associated).length;
+  const ids = Object.keys(variants).filter(id => getStatus(id) !== "X");
+  const inPanelCandidates = ids.filter(id =>
+    _passesMainSnvDisplayFilters(variants[id], { id, ignoreInPanelOnly: true })
+  );
+  const diseaseCandidates = ids.filter(id =>
+    _passesMainSnvDisplayFilters(variants[id], { id, ignoreDiseaseAssociated: true })
+  );
+  const inPanel = inPanelCandidates.filter(id => variants[id]?.in_panel).length;
+  const diseaseAssociated = diseaseCandidates.filter(
+    id => variants[id]?.disease_associated
+  ).length;
   const el = document.getElementById("in-panel-count");
-  if (el) el.textContent = total ? `(${inPanel} / ${total})` : "";
+  if (el) {
+    el.textContent = inPanelCandidates.length
+      ? `(${inPanel} / ${inPanelCandidates.length})`
+      : "";
+  }
   const daEl = document.getElementById("disease-associated-count");
-  if (daEl) daEl.textContent = total ? `(${diseaseAssociated} / ${total})` : "";
+  if (daEl) {
+    daEl.textContent = diseaseCandidates.length
+      ? `(${diseaseAssociated} / ${diseaseCandidates.length})`
+      : "";
+  }
 }
 
 function renderPharmcatBlock(hostId) {
@@ -9161,6 +9234,7 @@ function setupSnvDisplayFilters() {
   for (const id of [
     "filter-disease-associated",
     "filter-in-panel-only",
+    "filter-nckuh-common",
     "filter-vaf",
     "filter-impact-modifier",
   ]) {

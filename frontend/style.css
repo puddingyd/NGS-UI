@@ -2988,6 +2988,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  box-sizing: border-box;
+  min-height: 27px;
   font-size: 13px;
   cursor: pointer;
   user-select: none;
