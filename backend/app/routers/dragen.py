@@ -51,10 +51,10 @@ def _meta(idx: dict | None) -> dict:
 async def get_pipeline_vcfs(background: BackgroundTasks):
     """Return the cached index of DRAGEN + in-house VCFs.
 
-    First call (no file yet) builds the index synchronously so the
-    modal has something to show. Subsequent stale calls return the old
-    index immediately and schedule a background refresh — the UI will
-    pick up the new data on the next open or via a manual refresh.
+    A production systemd timer refreshes the index daily at 02:00
+    Asia/Taipei. The first call (no file yet) still builds it
+    synchronously, while stale calls keep the old index responsive and
+    schedule a fallback background refresh.
     """
     idx = dragen_jobs.load_index()
     if idx is None:

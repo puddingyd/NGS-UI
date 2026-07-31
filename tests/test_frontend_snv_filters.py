@@ -72,8 +72,8 @@ def test_nckuh_common_rescues_known_pathogenic_and_primary_review_status_only():
 
 
 def test_scope_labels_counts_and_filter_heights_match_visible_cards():
-    assert "<span>疾病相關</span>" in INDEX_HTML
-    assert "<span>臨床相關</span>" in INDEX_HTML
+    assert "<span>疾病相關基因</span>" in INDEX_HTML
+    assert "<span>臨床表現相關基因</span>" in INDEX_HTML
     count_body = _function_body("updateInPanelCount")
     assert "ignoreInPanelOnly: true" in count_body
     assert "ignoreDiseaseAssociated: true" in count_body

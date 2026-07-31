@@ -13,6 +13,7 @@ seconds.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -262,18 +263,27 @@ def save_index(idx: dict) -> None:
 
 
 def refresh_index() -> dict:
-    """Run both scans, persist results, return the new index."""
-    t0 = time.time()
-    dragen  = list_dragen_vcfs()
-    inhouse = list_inhouse_vcfs()
-    idx = {
-        "updated_at":        _now(),
-        "scan_duration_sec": round(time.time() - t0, 2),
-        "dragen":            dragen,
-        "inhouse":           inhouse,
-    }
-    save_index(idx)
-    return idx
+    """Run both scans, persist results, and return the new index.
+
+    The daily systemd timer and the manual UI refresh can overlap.  A
+    cross-process lock keeps both callers from writing the same atomic
+    temporary file at once.
+    """
+    lock_path = PIPELINE_VCF_INDEX_PATH.with_suffix(".refresh.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        t0 = time.time()
+        dragen = list_dragen_vcfs()
+        inhouse = list_inhouse_vcfs()
+        idx = {
+            "updated_at":        _now(),
+            "scan_duration_sec": round(time.time() - t0, 2),
+            "dragen":            dragen,
+            "inhouse":           inhouse,
+        }
+        save_index(idx)
+        return idx
 
 
 def index_is_stale(idx: dict | None) -> bool:

@@ -324,9 +324,9 @@ INHOUSE_VCF_ROOTS = [
 # Cached scan results for both DRAGEN + in-house VCF discovery. find(1)
 # across the datalake can take 1–30 s; the modal reads this file
 # directly so it opens instantly. A 🔄 button POSTs to
-# /api/dragen/index/refresh to rescan on demand. The file is treated as
-# stale after PIPELINE_VCF_INDEX_TTL_HOURS so the modal kicks off a
-# background refresh on the next open.
+# /api/dragen/index/refresh to rescan on demand. Production also runs
+# deploy/systemd/ngs-ui-tertiary-index-update.timer every day at 02:00
+# Asia/Taipei. The stale-on-open refresh remains as a fallback.
 PIPELINE_VCF_INDEX_PATH = DATA_ROOT / "pipeline_vcf_index.json"
 PIPELINE_VCF_INDEX_TTL_HOURS = 24
 

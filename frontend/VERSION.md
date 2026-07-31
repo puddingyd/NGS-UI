@@ -8,9 +8,10 @@
 
 ### v7.7 — 2026-07-31
 
+- 三級分析的 DRAGEN / NCKUH VCF 索引改為每天台北時間 02:00 自動更新；人工更新按鈕與索引過期時的 fallback 仍保留。
 - 分析區新增 `AF_NCKUH ≥ 0.05 & AC ≥ 50` 顯示開關，預設不勾選；SNV/Indel 與 mtDNA 中同時達到兩項門檻的 local common variants 預設隱藏，勾選後可展開查看。
 - ClinVar non-conflicting P/LP、有效 ACMG P/LP、reviewer 已標記 `1/2/C` 的點位仍保留；mtDNA 另保留 MITOMAP pathogenic/reported 與手動 P/LP。Homozygous／hemizygous 及同一 recessive gene 的第二個 candidate 不單獨構成 rescue。
-- 分析區 filter 名稱改為「疾病相關」與「臨床相關」；兩者後方數字會先套用其他啟用中的顯示條件，再呈現目前可顯示的數量。
+- 分析區 filter 名稱改為「疾病相關基因」與「臨床表現相關基因」；兩者後方數字會先套用其他啟用中的顯示條件，再呈現目前可顯示的數量。
 - 統一分析區所有 filter 外框的最小高度，最右側 OMIM checkbox 現在與其他 filter 等高。
 
 ### v7.6 — 2026-07-30
