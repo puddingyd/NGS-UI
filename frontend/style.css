@@ -3624,6 +3624,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .dragen-sample-row input {
   flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   font-size: 13px;
   border: 1px solid var(--border);
@@ -3902,10 +3903,12 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .dragen-siblings .sib-miss { color: #cf222e; }
 
 @media (max-width: 760px) {
-  .secondary-sample-row {
+  .secondary-sample-row,
+  #dragen-modal .dragen-sample-row {
     flex-wrap: wrap;
   }
-  .secondary-sample-row input {
+  .secondary-sample-row input,
+  #dragen-modal .dragen-sample-row input {
     flex-basis: 100%;
   }
 }

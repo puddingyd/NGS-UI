@@ -101,8 +101,8 @@ _SUFFIX_RE = re.compile(r"\.hard-filtered\.vcf\.gz$", re.IGNORECASE)
 def list_dragen_vcfs() -> list[dict]:
     """Scan every configured DRAGEN_VCF_ROOTS for hard-filtered VCFs.
 
-    Returns most-recent-first list of
-        {path, sample_id, run, size, mtime}.
+    Returns most-recent-first rows containing path, sample_id, run,
+    input_dir/batch_dir, size, and mtime.
     `sample_id` is the basename minus the `.hard-filtered.vcf.gz`
     suffix; `run` is the closest parent directory that looks like a
     sequencing-run folder (basename of the dirname containing
@@ -142,6 +142,7 @@ def list_dragen_vcfs() -> list[dict]:
                     "sample_id": sid,
                     "run": run,
                     "input_dir": input_dir,
+                    "batch_dir": input_dir,
                     "size": st.st_size,
                     "mtime": st.st_mtime,
                 })
@@ -194,7 +195,8 @@ def list_inhouse_vcfs() -> list[dict]:
 
     Anchor on the SNV/Indel VCF, then discover three siblings under the
     sample dir. `run` is the parent-of-sample-dir basename (often a
-    batch / study id). Returns most-recent-first.
+    batch / study id), while `batch_dir` is that absolute parent path
+    for collision-safe UI grouping. Returns most-recent-first.
     """
     seen: set[str] = set()
     out: list[dict] = []
@@ -228,6 +230,7 @@ def list_inhouse_vcfs() -> list[dict]:
                 "sample_id":   sid,
                 "sample_dir":  str(sample_dir),
                 "input_dir":   str(sample_dir),
+                "batch_dir":   str(sample_dir.parent),
                 "run":         run,
                 "cnv_vcf":     cnv,
                 "sv_vcf":      sv,

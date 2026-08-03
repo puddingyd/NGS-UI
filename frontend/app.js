@@ -10798,6 +10798,20 @@ function _dragenBatchLocked() {
   return state === "queued" || state === "running" || !!_DRAGEN_STATE.job?.running;
 }
 
+function _dragenParentDirectory(path) {
+  const clean = String(path || "").replace(/\/+$/, "");
+  const splitAt = clean.lastIndexOf("/");
+  return splitAt > 0 ? clean.slice(0, splitAt) : clean;
+}
+
+function _dragenDirectoryKey(mode, row) {
+  if (row?.batch_dir) return String(row.batch_dir);
+  if (mode === "inhouse") {
+    return _dragenParentDirectory(row?.sample_dir || row?.input_dir || "");
+  }
+  return String(row?.input_dir || _dragenParentDirectory(row?.path || ""));
+}
+
 function _dragenBuildSample(mode, row, sampleId) {
   const sample = {
     mode,
@@ -10872,6 +10886,17 @@ function _dragenRenderBatch() {
   });
 }
 
+function _dragenAddSampleToBatch(sample) {
+  const batchMode = _dragenBatchMode();
+  if (batchMode && batchMode !== sample.mode) return "mode-mismatch";
+  const duplicate = _DRAGEN_STATE.batch.some(row =>
+    row.sample_id === sample.sample_id || row.source_sample_id === sample.source_sample_id || row.vcf_path === sample.vcf_path
+  );
+  if (duplicate) return "duplicate";
+  _DRAGEN_STATE.batch.push(sample);
+  return "added";
+}
+
 function _dragenAddCurrentToBatch() {
   if (_dragenBatchLocked()) {
     alert("三級分析執行中，請等這批完成後再修改批次清單。");
@@ -10879,16 +10904,40 @@ function _dragenAddCurrentToBatch() {
   }
   const sample = _dragenCurrentSampleFromForm();
   if (!sample) { alert("請先選一個 VCF 並確認 Sample ID"); return; }
-  const batchMode = _dragenBatchMode();
-  if (batchMode && batchMode !== sample.mode) {
+  const result = _dragenAddSampleToBatch(sample);
+  if (result === "mode-mismatch") {
     alert("同一批 sample sheet 只能包含同一種來源：請先清空批次或分開執行。");
     return;
   }
-  const dup = _DRAGEN_STATE.batch.find(row =>
-    row.sample_id === sample.sample_id || row.source_sample_id === sample.source_sample_id || row.vcf_path === sample.vcf_path
-  );
-  if (dup) { alert("這個 sample 已在批次清單中"); return; }
-  _DRAGEN_STATE.batch.push(sample);
+  if (result === "duplicate") { alert("這個 sample 已在批次清單中"); return; }
+  _dragenRenderBatch();
+}
+
+function _dragenAddDirectoryToBatch() {
+  if (_dragenBatchLocked()) {
+    alert("三級分析執行中，請等這批完成後再修改批次清單。");
+    return;
+  }
+  const mode = _dragenActiveMode();
+  const selectedPath = _DRAGEN_STATE.selected[mode] || "";
+  const current = _dragenCurrentList(mode).find(row => row.path === selectedPath);
+  if (!mode || !current) { alert("請先選一個 VCF"); return; }
+  const directory = _dragenDirectoryKey(mode, current);
+  if (!directory) { alert("無法判斷所選 VCF 的來源目錄"); return; }
+
+  const rows = _dragenCurrentList(mode).filter(row => _dragenDirectoryKey(mode, row) === directory);
+  let added = 0;
+  for (const row of rows) {
+    const sampleId = _dragenSuggestSid(row.sample_id || "", mode);
+    if (!sampleId) continue;
+    const result = _dragenAddSampleToBatch(_dragenBuildSample(mode, row, sampleId));
+    if (result === "mode-mismatch") {
+      alert("同一批 sample sheet 只能包含同一種來源：請先清空批次或分開執行。");
+      return;
+    }
+    if (result === "added") added += 1;
+  }
+  if (!added) alert("同目錄沒有可新增的其他檢體。");
   _dragenRenderBatch();
 }
 
@@ -11332,6 +11381,7 @@ function setupDragenButton() {
   });
   document.getElementById("dragen-litvar2-update-btn")?.addEventListener("click", _dragenUpdateLitvar2);
   document.getElementById("dragen-start-btn")?.addEventListener("click", _dragenStart);
+  document.getElementById("dragen-add-folder-btn")?.addEventListener("click", _dragenAddDirectoryToBatch);
   document.getElementById("dragen-add-batch-btn")?.addEventListener("click", _dragenAddCurrentToBatch);
   document.getElementById("dragen-job-log-toggle")?.addEventListener("click", _toggleDragenLog);
   document.getElementById("dragen-job-cancel-btn")?.addEventListener("click", _dragenCancelCurrentJob);
