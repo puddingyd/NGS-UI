@@ -1585,6 +1585,39 @@ function _litvar2PmidsHtml(data, url) {
   return total ? `${total} PMID records` : "No PMID";
 }
 
+function _litvar2SourcesHtml(data) {
+  const sources = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(data?.source_records) ? data.source_records : []) {
+    if (!raw || typeof raw !== "object") continue;
+    const id = String(raw.id || "").trim();
+    const url = _safeLitvar2Url(raw.url);
+    const key = id || url;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    sources.push({
+      id,
+      url,
+      pmidCount: Math.max(0, Number.parseInt(raw.pmid_count, 10) || 0),
+    });
+  }
+  const mergedCount = Math.max(
+    sources.length,
+    Number.parseInt(data?.merged_record_count, 10) || 0
+  );
+  if (mergedCount <= 1) return "";
+  const links = sources.map((source, index) => {
+    const label = source.id ? `LitVar ID: ${source.id}` : `Source ${index + 1}`;
+    const suffix = source.pmidCount ? ` (${source.pmidCount} PMIDs)` : "";
+    if (!source.url) return `<span>${escapeHtml(label + suffix)}</span>`;
+    return `<a href="${escapeAttr(source.url)}" target="_blank" rel="noopener">${escapeHtml(label + suffix)}${EXTERNAL_LINK_ICON_SVG}</a>`;
+  }).join("");
+  return `<details class="litvar2-merged-sources">
+    <summary>Merged from ${mergedCount} LitVar2 records</summary>
+    ${links ? `<div class="litvar2-source-links">${links}</div>` : ""}
+  </details>`;
+}
+
 function _litvar2AmbiguousHtml(data) {
   const candidates = Array.isArray(data?.candidates)
     ? data.candidates.filter(candidate => candidate && typeof candidate === "object")
@@ -1603,10 +1636,11 @@ function _litvar2AmbiguousHtml(data) {
       <a class="litvar2-candidate-link" href="${escapeAttr(externalUrl)}" target="_blank" rel="noopener" title="開啟這筆 LitVar2 record">${escapeHtml(recordLabel)}${EXTERNAL_LINK_ICON_SVG}</a>
       ${identifiers.length ? `<div class="litvar2-candidate-identifiers">${identifiers.map(escapeHtml).join(" · ")}</div>` : ""}
       <div class="litvar2-candidate-pmids">${_litvar2PmidsHtml(candidate, url)}</div>
+      ${_litvar2SourcesHtml(candidate)}
     </div>`;
   }).join("");
   return `<details class="litvar2-ambiguous-details">
-    <summary>Ambiguous match (${candidates.length} records)</summary>
+    <summary>Ambiguous match (${candidates.length} variants)</summary>
     <div class="litvar2-candidate-list">${rows}</div>
   </details>`;
 }
@@ -1616,7 +1650,7 @@ function _litvar2ValueHtml(v, id) {
   const url = _safeLitvar2Url(data.url);
   let value = "NA (請重跑三級)";
   if (data.status === "hit") {
-    value = _litvar2PmidsHtml(data, url);
+    value = `<div>${_litvar2PmidsHtml(data, url)}</div>${_litvar2SourcesHtml(data)}`;
   } else if (data.status === "no_match") {
     value = "No reference";
   } else if (data.status === "ambiguous") {
@@ -6994,8 +7028,8 @@ document.addEventListener("click", ev => {
   btn.textContent = expanded ? "▾ 收合" : "▸ 展開全部";
 });
 
-// Sidebar nav: clicking a button with data-target scrolls the matching
-// card into view. Cards declare an id (scroll-margin-top keeps the
+// Sidebar nav: clicking a button with data-target jumps directly to the
+// matching card. Cards declare an id (scroll-margin-top keeps the
 // landing position below the topbar). On narrow viewports we also
 // auto-collapse the sidebar after the click so it doesn't sit on top
 // of the freshly-revealed content.
@@ -7004,7 +7038,7 @@ document.addEventListener("click", ev => {
   if (!link) return;
   const target = document.getElementById(link.dataset.target);
   if (!target) return;
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  target.scrollIntoView({ block: "start" });
   if (window.matchMedia("(max-width: 768px)").matches) {
     document.body.classList.add("sidebar-collapsed");
     _setSidebarToggleAria(false);

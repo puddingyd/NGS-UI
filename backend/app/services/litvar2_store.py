@@ -41,14 +41,23 @@ from ..config import (
 )
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
+SUPPORTED_SCHEMA_VERSIONS = {"1", SCHEMA_VERSION}
 CHUNK_SIZE = 1024 * 1024
 DOWNLOAD_RETRIES = 4
 DOWNLOAD_TIMEOUT_SECONDS = 120
 _RSID_RE = re.compile(r"(?i)\brs(\d+)\b")
+_CLINGEN_CA_RE = re.compile(r"(?i)\bCA\d+\b")
 _HGVS_RE = re.compile(
     r"(?i)(?:^|:)(?:c|g|m|n|p|r)\.[A-Za-z0-9_*?+>\-=()\[\];:.]+$"
 )
+_AA_THREE_TO_ONE = {
+    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
+    "GLN": "Q", "GLU": "E", "GLY": "G", "HIS": "H", "ILE": "I",
+    "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
+    "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
+    "SEC": "U", "PYL": "O", "TER": "*",
+}
 Progress = Callable[[str, dict[str, object]], None]
 
 
@@ -198,6 +207,17 @@ def normalize_hgvs(value: str) -> str:
     return text.upper()
 
 
+def normalize_hgvs_identity(value: str) -> str:
+    """Normalize equivalent compact/three-letter protein HGVS for grouping."""
+    text = normalize_hgvs(value)
+    if not text.startswith("P."):
+        return text
+    body = text[2:].replace("(", "").replace(")", "")
+    for three, one in _AA_THREE_TO_ONE.items():
+        body = re.sub(three, one, body, flags=re.IGNORECASE)
+    return "P." + body.upper()
+
+
 def _looks_hgvs(value: str) -> bool:
     text = urllib.parse.unquote(str(value or "")).strip()
     return bool(_HGVS_RE.search(text.replace(" ", "")))
@@ -295,8 +315,9 @@ def database_metadata(
             "path": str(path),
             "error": str(exc),
         }
+    schema_version = meta.get("schema_version", "")
     valid = (
-        meta.get("schema_version") == SCHEMA_VERSION
+        schema_version in SUPPORTED_SCHEMA_VERSIONS
         and {"meta", "variants", "hgvs_aliases"} <= tables
         and bool(quick)
         and quick[0] == "ok"
@@ -304,6 +325,7 @@ def database_metadata(
     return {
         "available": valid,
         "path": str(path),
+        "schema_version": schema_version,
         "dataset_date": meta.get("dataset_date", ""),
         "record_count": _to_int(meta.get("record_count")),
         "alias_count": _to_int(meta.get("alias_count")),
@@ -348,7 +370,9 @@ def build_database(
             "primary_gene TEXT NOT NULL,"
             "preferred_hgvs TEXT NOT NULL,"
             "pmids_count INTEGER NOT NULL,"
-            "top_pmids_json TEXT NOT NULL)"
+            "top_pmids_json TEXT NOT NULL,"
+            "identifiers_json TEXT NOT NULL,"
+            "all_pmids_json TEXT NOT NULL)"
         )
         conn.execute(
             "CREATE TABLE hgvs_aliases ("
@@ -385,6 +409,11 @@ def build_database(
                 preferred_hgvs,
                 pmids_count,
                 json.dumps(pmids[:5], separators=(",", ":")),
+                json.dumps(
+                    {"rsids": rsids, "genes": genes, "hgvs": hgvs_values},
+                    separators=(",", ":"),
+                ),
+                json.dumps(pmids, separators=(",", ":")),
             ))
             indexed += 1
 
@@ -400,7 +429,7 @@ def build_database(
 
             if len(variant_batch) >= 10000:
                 conn.executemany(
-                    "INSERT INTO variants VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO variants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     variant_batch,
                 )
                 variant_batch.clear()
@@ -423,7 +452,7 @@ def build_database(
 
         if variant_batch:
             conn.executemany(
-                "INSERT INTO variants VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO variants VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 variant_batch,
             )
         if alias_batch:
@@ -607,10 +636,9 @@ def update_database(
         _notify(progress, "checking-source", source_url=source_url)
         remote = _remote_metadata(source_url)
         current = _read_json(manifest_path)
-        unchanged = (
-            not force
-            and bulk_path.is_file()
-            and db_path.is_file()
+        live_database = database_metadata(db_path)
+        source_unchanged = (
+            bulk_path.is_file()
             and current.get("source_last_modified")
             and current.get("source_last_modified") == remote.get("source_last_modified")
             and (
@@ -618,7 +646,13 @@ def update_database(
                 or current.get("source_content_length")
                 == remote.get("source_content_length")
             )
-            and database_metadata(db_path).get("available")
+        )
+        unchanged = (
+            not force
+            and db_path.is_file()
+            and source_unchanged
+            and live_database.get("available")
+            and live_database.get("schema_version") == SCHEMA_VERSION
         )
         if unchanged:
             result = database_metadata(db_path)
@@ -626,15 +660,24 @@ def update_database(
             _notify(progress, "already-current", **result)
             return result
 
-        download_tmp = bulk_path.with_suffix(bulk_path.suffix + ".download")
-        source_sha256 = _download(
-            source_url,
-            download_tmp,
-            expected_size=_to_int(remote.get("source_content_length")),
-            progress=progress,
-        )
-        candidate_bulk = download_tmp
-        candidate_is_temporary = True
+        if not force and source_unchanged:
+            # The bulk content is current but an older supported SQLite schema
+            # needs rebuilding. Reuse the existing ~GB local bulk instead of
+            # downloading the identical archive again.
+            source_sha256 = str(current.get("source_sha256") or "")
+            if not source_sha256:
+                source_sha256 = _sha256_file(bulk_path)
+            candidate_bulk = bulk_path
+        else:
+            download_tmp = bulk_path.with_suffix(bulk_path.suffix + ".download")
+            source_sha256 = _download(
+                source_url,
+                download_tmp,
+                expected_size=_to_int(remote.get("source_content_length")),
+                progress=progress,
+            )
+            candidate_bulk = download_tmp
+            candidate_is_temporary = True
 
     version_date = dataset_date or _dataset_date(
         str(remote.get("source_last_modified") or "")
@@ -689,6 +732,75 @@ def _rows_to_hits(rows: Iterable[sqlite3.Row]) -> dict[int, sqlite3.Row]:
     return {int(row["id"]): row for row in rows}
 
 
+def _row_value(row: sqlite3.Row, key: str, default=""):
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return default
+
+
+def _json_string_list(raw) -> list[str]:
+    try:
+        values = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(values, list):
+        return []
+    return list(dict.fromkeys(
+        str(value).strip() for value in values if str(value).strip()
+    ))
+
+
+def _row_identifiers(row: sqlite3.Row) -> dict[str, list[str]]:
+    try:
+        raw = json.loads(_row_value(row, "identifiers_json", ""))
+    except (TypeError, json.JSONDecodeError):
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    rsids = list(dict.fromkeys(
+        value for value in (
+            normalize_rsid(item) for item in raw.get("rsids", [])
+        ) if value
+    ))
+    genes = list(dict.fromkeys(
+        value for value in (
+            normalize_gene(item) for item in raw.get("genes", [])
+        ) if value
+    ))
+    hgvs_values = list(dict.fromkeys(
+        value for value in (
+            normalize_hgvs_identity(item) for item in raw.get("hgvs", [])
+        ) if value
+    ))
+    fallback_rsid = normalize_rsid(_row_value(row, "rsid", ""))
+    fallback_gene = normalize_gene(_row_value(row, "primary_gene", ""))
+    fallback_hgvs = normalize_hgvs_identity(_row_value(row, "preferred_hgvs", ""))
+    if fallback_rsid and fallback_rsid not in rsids:
+        rsids.append(fallback_rsid)
+    if fallback_gene and fallback_gene not in genes:
+        genes.append(fallback_gene)
+    if fallback_hgvs and fallback_hgvs not in hgvs_values:
+        hgvs_values.append(fallback_hgvs)
+    return {"rsids": rsids, "genes": genes, "hgvs": hgvs_values}
+
+
+def _row_pmids(row: sqlite3.Row) -> list[str]:
+    values = _json_string_list(_row_value(row, "all_pmids_json", ""))
+    if not values:
+        values = _json_string_list(_row_value(row, "top_pmids_json", ""))
+    return [value for value in values if value.isdigit()]
+
+
+def _row_query(row: sqlite3.Row, match_method: str) -> str:
+    if match_method == "rsid":
+        return str(row["rsid"] or "")
+    return " ".join(filter(None, (
+        str(row["primary_gene"] or ""),
+        str(row["preferred_hgvs"] or ""),
+    )))
+
+
 def _result_from_row(
     row: sqlite3.Row,
     *,
@@ -696,13 +808,8 @@ def _result_from_row(
     match_method: str,
     query: str,
 ) -> dict[str, object]:
-    try:
-        pmids = [
-            str(value) for value in json.loads(row["top_pmids_json"])
-            if str(value).isdigit()
-        ][:5]
-    except (TypeError, json.JSONDecodeError):
-        pmids = []
+    all_pmids = _row_pmids(row)
+    pmids = all_pmids[:5]
     litvar_id = str(row["litvar_id"])
     query_text = query or str(row["rsid"] or row["preferred_hgvs"] or "")
     params = urllib.parse.urlencode({
@@ -715,7 +822,7 @@ def _result_from_row(
         "rsid": str(row["rsid"] or ""),
         "gene": str(row["primary_gene"] or ""),
         "hgvs": str(row["preferred_hgvs"] or ""),
-        "pmids_count": _to_int(row["pmids_count"]),
+        "pmids_count": max(_to_int(row["pmids_count"]), len(all_pmids)),
         "pmids": pmids,
         "dataset_date": dataset_date,
         "match_method": match_method,
@@ -723,28 +830,143 @@ def _result_from_row(
     }
 
 
-def _ambiguous_result(
+def _same_logical_variant(
+    left: sqlite3.Row,
+    right: sqlite3.Row,
+    *,
+    match_method: str,
+) -> bool:
+    left_litvar_id = str(left["litvar_id"] or "")
+    right_litvar_id = str(right["litvar_id"] or "")
+    left_ca = {value.upper() for value in _CLINGEN_CA_RE.findall(left_litvar_id)}
+    right_ca = {value.upper() for value in _CLINGEN_CA_RE.findall(right_litvar_id)}
+    if left_ca & right_ca:
+        return True
+
+    left_ids = _row_identifiers(left)
+    right_ids = _row_identifiers(right)
+    shared_gene = bool(set(left_ids["genes"]) & set(right_ids["genes"]))
+    shared_hgvs = bool(set(left_ids["hgvs"]) & set(right_ids["hgvs"]))
+    if not (shared_gene and shared_hgvs):
+        return False
+    if match_method != "rsid":
+        return True
+    return bool(set(left_ids["rsids"]) & set(right_ids["rsids"]))
+
+
+def _logical_hit_groups(
+    hits: dict[int, sqlite3.Row],
+    *,
+    match_method: str,
+) -> list[list[sqlite3.Row]]:
+    rows = [row for _row_id, row in sorted(hits.items())]
+    parents = list(range(len(rows)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parents[right_root] = left_root
+
+    for left in range(len(rows)):
+        for right in range(left + 1, len(rows)):
+            if _same_logical_variant(
+                rows[left], rows[right], match_method=match_method,
+            ):
+                union(left, right)
+
+    grouped: dict[int, list[sqlite3.Row]] = {}
+    for index, row in enumerate(rows):
+        grouped.setdefault(find(index), []).append(row)
+    return list(grouped.values())
+
+
+def _merged_result_from_rows(
+    rows: list[sqlite3.Row],
+    *,
+    dataset_date: str,
+    match_method: str,
+) -> dict[str, object]:
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            -_to_int(row["pmids_count"]),
+            -len(_row_pmids(row)),
+            -int(bool(_CLINGEN_CA_RE.search(str(row["litvar_id"] or "")))),
+            int(row["id"]),
+        ),
+    )
+    representative = ranked[0]
+    merged_pmids: list[str] = []
+    seen_pmids: set[str] = set()
+    source_records: list[dict[str, object]] = []
+    pmids_complete = True
+    for row in ranked:
+        row_pmids = _row_pmids(row)
+        source_count = max(_to_int(row["pmids_count"]), len(row_pmids))
+        if len(row_pmids) < source_count:
+            pmids_complete = False
+        for pmid in row_pmids:
+            if pmid not in seen_pmids:
+                seen_pmids.add(pmid)
+                merged_pmids.append(pmid)
+        source_result = _result_from_row(
+            row,
+            dataset_date=dataset_date,
+            match_method=match_method,
+            query=_row_query(row, match_method),
+        )
+        source_records.append({
+            "litvar_id": source_result["litvar_id"],
+            "pmids_count": source_result["pmids_count"],
+            "url": source_result["url"],
+        })
+
+    result = _result_from_row(
+        representative,
+        dataset_date=dataset_date,
+        match_method=match_method,
+        query=_row_query(representative, match_method),
+    )
+    max_source_count = max(
+        (_to_int(record["pmids_count"]) for record in source_records),
+        default=0,
+    )
+    result.update({
+        "pmids": merged_pmids[:5],
+        "pmids_count": (
+            len(merged_pmids)
+            if pmids_complete
+            else max(len(merged_pmids), max_source_count)
+        ),
+        "merged_record_count": len(rows),
+        "source_records": source_records,
+    })
+    return result
+
+
+def _resolve_hits(
     hits: dict[int, sqlite3.Row],
     *,
     dataset_date: str,
     match_method: str,
 ) -> dict[str, object]:
-    candidates = []
-    for _row_id, row in sorted(hits.items()):
-        query = (
-            str(row["rsid"] or "")
-            if match_method == "rsid"
-            else " ".join(filter(None, (
-                str(row["primary_gene"] or ""),
-                str(row["preferred_hgvs"] or ""),
-            )))
-        )
-        candidates.append(_result_from_row(
-            row,
+    candidates = [
+        _merged_result_from_rows(
+            rows,
             dataset_date=dataset_date,
             match_method=match_method,
-            query=query,
-        ))
+        )
+        for rows in _logical_hit_groups(hits, match_method=match_method)
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
     return {
         "status": "ambiguous",
         "dataset_date": dataset_date,
@@ -773,15 +995,8 @@ def lookup_variant(
             (rsid,),
         ).fetchall()
         rsid_hits.update(_rows_to_hits(rows))
-    if len(rsid_hits) == 1:
-        return _result_from_row(
-            next(iter(rsid_hits.values())),
-            dataset_date=dataset_date,
-            match_method="rsid",
-            query=normalized_rsids[0],
-        )
-    if len(rsid_hits) > 1:
-        return _ambiguous_result(
+    if rsid_hits:
+        return _resolve_hits(
             rsid_hits,
             dataset_date=dataset_date,
             match_method="rsid",
@@ -803,19 +1018,8 @@ def lookup_variant(
                 (gene, hgvs),
             ).fetchall()
             hgvs_hits.update(_rows_to_hits(rows))
-    if len(hgvs_hits) == 1:
-        query = " ".join(filter(None, (
-            normalized_genes[0] if normalized_genes else "",
-            normalized_hgvs[0] if normalized_hgvs else "",
-        )))
-        return _result_from_row(
-            next(iter(hgvs_hits.values())),
-            dataset_date=dataset_date,
-            match_method="gene_hgvs",
-            query=query,
-        )
-    if len(hgvs_hits) > 1:
-        return _ambiguous_result(
+    if hgvs_hits:
+        return _resolve_hits(
             hgvs_hits,
             dataset_date=dataset_date,
             match_method="gene_hgvs",

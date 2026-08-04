@@ -9,6 +9,8 @@
 ### v8.0 — 2026-08-04
 
 - LitVar2 外部連結圖示改為固定顯示：唯一命中時連到該 variant 結果頁，`No reference`、`NA` 等其他狀態連到 LitVar2 首頁。多筆命中改顯示可展開的 `Ambiguous match (N records)`，完整列出每筆 LitVar ID、rsID/gene/HGVS、PMID 數、前五篇 PubMed 與各自的 LitVar2 結果頁，不再只顯示無法追查的 ambiguous 文字。
+- LitVar2 重複 records 會依 ClinGen CA 或 rsID + gene + normalized HGVS 聚合成 logical variant，完整 PMID 聯集去重後只顯示一次，來源收在 `Merged from N LitVar2 records`；只有仍不同的候選才顯示 `Ambiguous match (N variants)`。既有 v1 SQLite 可繼續讀取，手動／每月更新會直接用本地 bulk 升級 v2。
+- 左側「基本資料／報告／分析」與子區導覽改為直接跳到目標高度，不再顯示快速滑過整頁的 smooth scrolling。
 - 新版三級 v3.6 的 ClinGen Evidence Repository（ERepo）會在 SNV/Indel 卡片的 ClinVar 與 ACMG 之間顯示「分類（推導分數）」；點擊可在 structured ACMG modal 比較 VCEP criteria、Apply 至 manual 判讀，並標示這是 ClinGen experts 的評估。
 - 三級分析選項補上 `Research-only`：勾選時 Nextflow 加入 `--academic_dbnsfp true` 使用 dbNSFP 5.3a，顯示 REVEL、MutPred2、VEST4、CADD；post-processing 只補 SpliceAI，不再重跑 dbNSFP。未勾選時維持 dbNSFP 4.9c 並略過 SpliceAI。
 - In-silico 卡片順序更新為 P-KNN、AlphaMissense、Pangolin、REVEL、SpliceAI、ESM1b、VARITY_R、BayesDel、CADD、DANN、MutPred2、VEST4、PhactBoost、PhyloP、GERP、SIFT、LOFTOOL；新工具依文獻 PP3/BP4 calibration threshold 套色並附註。

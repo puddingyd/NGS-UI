@@ -621,6 +621,34 @@ def _litvar2_payload(row: dict) -> dict:
             pass
         return ""
 
+    def parsed_sources(value: object) -> list[dict]:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value or "[]")
+            except (TypeError, json.JSONDecodeError):
+                value = []
+        sources = []
+        seen: set[str] = set()
+        for raw_source in value if isinstance(value, list) else []:
+            if not isinstance(raw_source, dict):
+                continue
+            litvar_id = str(
+                raw_source.get("litvar_id") or raw_source.get("id") or ""
+            ).strip()
+            source_url = safe_url(raw_source.get("url"))
+            dedupe_key = litvar_id or source_url
+            if not dedupe_key or dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            sources.append({
+                "id": litvar_id,
+                "pmid_count": max(
+                    0, int(_to_num(raw_source.get("pmids_count")) or 0),
+                ),
+                "url": source_url,
+            })
+        return sources
+
     pmids: list[str] = []
     for token in re.findall(r"\d+", str(row.get("LITVAR2_PMIDS_TOP5") or "")):
         if token not in pmids:
@@ -658,7 +686,12 @@ def _litvar2_payload(row: dict) -> dict:
             "pmid_count": max(0, int(_to_num(raw.get("pmids_count")) or 0)),
             "pmids": candidate_pmids,
             "url": candidate_url,
+            "merged_record_count": max(
+                1, int(_to_num(raw.get("merged_record_count")) or 1),
+            ),
+            "source_records": parsed_sources(raw.get("source_records")),
         })
+    source_records = parsed_sources(row.get("LITVAR2_SOURCES_JSON") or "[]")
     return {
         "id": str(row.get("LITVAR2_ID") or "").strip(),
         "rsid": str(row.get("LITVAR2_RSID") or "").strip(),
@@ -668,6 +701,8 @@ def _litvar2_payload(row: dict) -> dict:
         "match_method": str(row.get("LITVAR2_MATCH_METHOD") or "").strip(),
         "status": str(row.get("LITVAR2_STATUS") or "").strip(),
         "url": safe_url(row.get("LITVAR2_URL")),
+        "merged_record_count": max(1, len(source_records)),
+        "source_records": source_records,
         "candidates": candidates,
     }
 

@@ -1488,6 +1488,30 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   overflow-wrap: anywhere;
 }
 .litvar2-candidate-pmids { margin-top: 1px; overflow-wrap: anywhere; }
+.litvar2-merged-sources { margin-top: 2px; }
+.litvar2-merged-sources > summary {
+  color: #57606a;
+  cursor: pointer;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+}
+.litvar2-source-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+  padding-left: 8px;
+}
+.litvar2-source-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: fit-content;
+  color: #0969da;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.litvar2-source-links a:hover { text-decoration: underline; }
 .info-hint {
   display: inline-flex;
   align-items: center;

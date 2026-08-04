@@ -24,6 +24,7 @@ from . import litvar2_store, sample_layout, snv_gene_index
 
 CACHE_SCHEMA_VERSION = "1"
 MARKER_SCHEMA_VERSION = 1
+LOOKUP_RESULT_VERSION = "2"
 MAX_BATCH_VARIANTS = 1000
 MAX_RAW_FALLBACK_BYTES = 100 * 1024 * 1024
 _RSID_RE = re.compile(r"(?i)\brs\d+\b")
@@ -55,18 +56,22 @@ def _marker(sample_id: str) -> dict:
 def _database_fingerprint(metadata: dict, db_path: Path) -> str:
     sha = str(metadata.get("source_sha256") or "").strip()
     dataset_date = str(metadata.get("dataset_date") or "").strip()
+    schema_version = str(metadata.get("schema_version") or "legacy").strip()
+    result_prefix = f"result:{LOOKUP_RESULT_VERSION}:schema:{schema_version}:"
     if sha:
         # The displayed LitVar2 version is the bulk dataset date. Include it
         # even when identical compressed content was republished with a new
         # release date, otherwise a cached payload would keep showing the old
         # date after the atomic DB switch.
-        return f"sha256:{sha}:date:{dataset_date}"
+        return f"{result_prefix}sha256:{sha}:date:{dataset_date}"
     try:
         stat = Path(db_path).stat()
         fallback = f"{dataset_date}:{stat.st_mtime_ns}:{stat.st_size}"
     except OSError:
         fallback = dataset_date or "unavailable"
-    return "file:" + hashlib.sha256(fallback.encode("utf-8")).hexdigest()
+    return result_prefix + "file:" + hashlib.sha256(
+        fallback.encode("utf-8")
+    ).hexdigest()
 
 
 def sample_status(sample_id: str) -> dict[str, object]:
@@ -169,6 +174,18 @@ def _identifier_fingerprint(identifiers: dict[str, list[str]]) -> str:
 
 
 def _browser_payload(result: dict[str, object]) -> dict[str, object]:
+    def source_records(payload: dict[str, object]) -> list[dict[str, object]]:
+        out = []
+        for raw_source in payload.get("source_records") or []:
+            if not isinstance(raw_source, dict):
+                continue
+            out.append({
+                "id": str(raw_source.get("litvar_id") or ""),
+                "pmid_count": max(0, int(raw_source.get("pmids_count") or 0)),
+                "url": str(raw_source.get("url") or ""),
+            })
+        return out
+
     candidates = []
     for raw in result.get("candidates") or []:
         if not isinstance(raw, dict):
@@ -184,6 +201,10 @@ def _browser_payload(result: dict[str, object]) -> dict[str, object]:
                 if str(value).isdigit()
             ][:5],
             "url": str(raw.get("url") or ""),
+            "merged_record_count": max(
+                1, int(raw.get("merged_record_count") or 1),
+            ),
+            "source_records": source_records(raw),
         })
     return {
         "id": str(result.get("litvar_id") or ""),
@@ -197,6 +218,10 @@ def _browser_payload(result: dict[str, object]) -> dict[str, object]:
         "match_method": str(result.get("match_method") or ""),
         "status": str(result.get("status") or "no_match"),
         "url": str(result.get("url") or ""),
+        "merged_record_count": max(
+            1, int(result.get("merged_record_count") or 1),
+        ),
+        "source_records": source_records(result),
         "candidates": candidates,
     }
 

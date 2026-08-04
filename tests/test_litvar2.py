@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import importlib.util
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,7 @@ def _records():
         },
         {
             "_id": "litvar-ambiguous-a",
+            "rsid": "rs300",
             "gene": ["GENE3"],
             "all_hgvs": ["NM_000003.1:c.3G>A"],
             "pmids": [],
@@ -49,9 +51,34 @@ def _records():
         },
         {
             "_id": "litvar-ambiguous-b",
+            "rsid": "rs300",
             "gene": ["GENE3"],
-            "all_hgvs": ["NM_000003.2:c.3G>A"],
+            "all_hgvs": ["NM_000003.2:c.4G>A"],
             "pmids": [],
+            "data_tax_id": 9606,
+        },
+        {
+            "_id": "litvar@rs541208827##",
+            "rsid": "rs541208827",
+            "gene": ["ATP7B"],
+            "all_hgvs": ["NP_000044.2:p.V1106I"],
+            "pmids": [
+                "41454338", "35222532", "36253962", "14966923",
+                "17587212", "11111111",
+            ],
+            "pmids_count": 6,
+            "data_tax_id": 9606,
+        },
+        {
+            "_id": "litvar@CA6988741#rs541208827##",
+            "rsid": "rs541208827",
+            "gene": ["ATP7B"],
+            "all_hgvs": ["NP_000044.2:p.Val1106Ile"],
+            "pmids": [
+                "41454338", "35222532", "36253962", "14966923",
+                "17587212", "22222222",
+            ],
+            "pmids_count": 6,
             "data_tax_id": 9606,
         },
         {
@@ -87,6 +114,41 @@ def _build_db(tmp_path: Path) -> tuple[Path, Path]:
     return bulk, db
 
 
+def _write_v1_db(path: Path) -> Path:
+    with sqlite3.connect(path) as conn:
+        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute(
+            "CREATE TABLE variants (id INTEGER PRIMARY KEY, litvar_id TEXT NOT NULL, "
+            "rsid TEXT NOT NULL, primary_gene TEXT NOT NULL, preferred_hgvs TEXT NOT NULL, "
+            "pmids_count INTEGER NOT NULL, top_pmids_json TEXT NOT NULL)"
+        )
+        conn.execute(
+            "CREATE TABLE hgvs_aliases (gene TEXT NOT NULL, hgvs TEXT NOT NULL, "
+            "variant_id INTEGER NOT NULL)"
+        )
+        conn.executemany(
+            "INSERT INTO meta(key, value) VALUES (?, ?)",
+            [
+                ("schema_version", "1"),
+                ("dataset_date", "2026-07-01"),
+                ("source_last_modified", "Wed, 01 Jul 2026 00:00:00 GMT"),
+                ("source_sha256", "legacy-sha"),
+                ("record_count", "1"),
+                ("alias_count", "1"),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO variants VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (1, "legacy-record", "rs123", "GENE1", "C.1A>G", 8,
+             json.dumps(["9005", "9004", "9003", "9002", "9001"])),
+        )
+        conn.execute(
+            "INSERT INTO hgvs_aliases VALUES (?, ?, ?)",
+            ("GENE1", "C.1A>G", 1),
+        )
+    return path
+
+
 def test_bulk_build_and_lookup_preserves_source_pmid_order(tmp_path):
     _bulk, db = _build_db(tmp_path)
 
@@ -99,9 +161,9 @@ def test_bulk_build_and_lookup_preserves_source_pmid_order(tmp_path):
         )
         ambiguous = litvar2_store.lookup_variant(
             conn,
-            genes=["GENE3"],
-            hgvs_values=["c.3G>A"],
+            rsids=["rs300"],
         )
+        merged = litvar2_store.lookup_variant(conn, rsids=["rs541208827"])
         mouse = litvar2_store.lookup_variant(conn, rsids=["rs999"])
 
     assert hit["status"] == "hit"
@@ -119,7 +181,10 @@ def test_bulk_build_and_lookup_preserves_source_pmid_order(tmp_path):
         "litvar-ambiguous-b",
     ]
     assert all(candidate["gene"] == "GENE3" for candidate in ambiguous["candidates"])
-    assert all(candidate["hgvs"].upper().endswith("C.3G>A") for candidate in ambiguous["candidates"])
+    assert {
+        candidate["hgvs"].upper().split(":")[-1]
+        for candidate in ambiguous["candidates"]
+    } == {"C.3G>A", "C.4G>A"}
     assert all(
         candidate["url"].startswith("https://www.ncbi.nlm.nih.gov/research/litvar2/docsum?")
         for candidate in ambiguous["candidates"]
@@ -129,6 +194,17 @@ def test_bulk_build_and_lookup_preserves_source_pmid_order(tmp_path):
         "litvar-ambiguous-a",
         "litvar-ambiguous-b",
     ]
+    assert merged["status"] == "hit"
+    assert merged["litvar_id"] == "litvar@CA6988741#rs541208827##"
+    assert merged["merged_record_count"] == 2
+    assert merged["pmids_count"] == 7
+    assert merged["pmids"] == [
+        "41454338", "35222532", "36253962", "14966923", "17587212",
+    ]
+    assert {source["litvar_id"] for source in merged["source_records"]} == {
+        "litvar@rs541208827##",
+        "litvar@CA6988741#rs541208827##",
+    }
     assert mouse["status"] == "no_match"
 
 
@@ -137,6 +213,67 @@ def test_stream_parser_accepts_json_lines(tmp_path):
     assert [row["_id"] for row in litvar2_store.iter_bulk_records(bulk)] == [
         row["_id"] for row in _records()
     ]
+
+
+def test_v1_database_remains_readable_and_rebuilds_from_local_bulk(tmp_path, monkeypatch):
+    bulk = _write_bulk(tmp_path / "litvar2_variants.json.gz")
+    db = _write_v1_db(tmp_path / "litvar2.sqlite")
+    manifest = tmp_path / "litvar2_manifest.json"
+    source_last_modified = "Wed, 01 Jul 2026 00:00:00 GMT"
+    manifest.write_text(json.dumps({
+        "source_last_modified": source_last_modified,
+        "source_content_length": bulk.stat().st_size,
+        "source_sha256": hashlib.sha256(bulk.read_bytes()).hexdigest(),
+    }), encoding="utf-8")
+
+    assert litvar2_store.database_metadata(db)["schema_version"] == "1"
+    with litvar2_store.open_readonly(db) as conn:
+        assert litvar2_store.lookup_variant(conn, rsids=["rs123"])["status"] == "hit"
+
+    monkeypatch.setattr(litvar2_store, "_remote_metadata", lambda _url: {
+        "source_url": "https://example.test/litvar.json.gz",
+        "source_last_modified": source_last_modified,
+        "source_content_length": bulk.stat().st_size,
+    })
+    monkeypatch.setattr(
+        litvar2_store,
+        "_download",
+        lambda *_args, **_kwargs: pytest.fail("schema-only rebuild must not download"),
+    )
+    result = litvar2_store.update_database(
+        directory=tmp_path,
+        bulk_path=bulk,
+        db_path=db,
+        manifest_path=manifest,
+        source_url="https://example.test/litvar.json.gz",
+    )
+
+    assert result["action"] == "updated"
+    assert litvar2_store.database_metadata(db)["schema_version"] == "2"
+
+
+def test_merged_records_round_trip_through_postprocessing_and_browser_payload(tmp_path):
+    _bulk, db = _build_db(tmp_path)
+    assert litvar2_store.database_metadata(db)["schema_version"] == "2"
+    with litvar2_store.open_readonly(db) as conn:
+        result = litvar2_store.lookup_variant(conn, rsids=["rs541208827"])
+
+    annotated = annotate_litvar2._payload(result)
+    payload = _row_to_variant({
+        "CHROM": "chr13",
+        "POS": "51942482",
+        "REF": "C",
+        "ALT": "T",
+        **annotated,
+    })["litvar2"]
+    browser_payload = litvar2_on_demand._browser_payload(result)
+
+    assert payload["status"] == "hit"
+    assert payload["pmid_count"] == 7
+    assert payload["merged_record_count"] == 2
+    assert len(payload["source_records"]) == 2
+    assert browser_payload["merged_record_count"] == 2
+    assert len(browser_payload["source_records"]) == 2
 
 
 def test_legacy_ambiguous_cache_is_refreshed_for_candidate_details(tmp_path):
@@ -281,7 +418,7 @@ def test_postprocessing_round_trips_all_ambiguous_candidates(tmp_path, monkeypat
         writer.writerow({
             "CHROM": "chr3", "POS": "300", "REF": "G", "ALT": "A",
             "GENE": "GENE3", "TRANSCRIPT": "ENST3", "HGVS_C": "c.3G>A",
-            "HGVS_P": "", "CONSEQUENCE": "missense_variant", "RS_ID": "",
+            "HGVS_P": "", "CONSEQUENCE": "missense_variant", "RS_ID": "rs300",
             "DP_DV": "30", "GNOMAD_G_AF": "0.0001", "CLINVAR_SIG": "",
             "ACMG_CRITERIA": "",
         })
@@ -497,8 +634,10 @@ def test_frontend_places_litvar_below_acmg_with_required_links():
     assert "LITVAR2_REFRESH_ICON_SVG" in renderer
     assert "litvar2-refresh-btn" in renderer
     assert "litvar2-ambiguous-details" in renderer
-    assert "Ambiguous match (${candidates.length} records)" in renderer
+    assert "Ambiguous match (${candidates.length} variants)" in renderer
     assert "Ambiguous match（請按重新整理取得候選明細）" in renderer
+    assert "Merged from ${mergedCount} LitVar2 records" in renderer
+    assert "litvar2-merged-sources" in renderer
     assert "litvar2-candidate-link" in renderer
     assert "_litvar2PmidsHtml(candidate, url)" in renderer
     assert 'const externalUrl = url || LITVAR2_HOME_URL' in renderer
@@ -507,6 +646,15 @@ def test_frontend_places_litvar_below_acmg_with_required_links():
     assert 'let value = "NA (請重跑三級)"' in renderer
     assert 'data.status === "no_match"' in renderer
     assert 'value = "No reference"' in renderer
+
+
+def test_sidebar_navigation_jumps_without_smooth_scrolling():
+    sidebar = APP_JS[
+        APP_JS.index("// Sidebar nav:"):
+        APP_JS.index("function _setSidebarToggleAria")
+    ]
+    assert 'target.scrollIntoView({ block: "start" })' in sidebar
+    assert 'behavior: "smooth"' not in sidebar
 
 
 def test_manual_update_button_is_between_pgx_and_index_refresh():
