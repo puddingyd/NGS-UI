@@ -308,7 +308,11 @@ def _omim_associations(omim_row: dict | None) -> list[dict]:
             continue
         line_count = len([ln for ln in detail.splitlines() if ln.strip()])
         item = {
-            "id": f"omim:{mim}" if mim else f"omim-slot:{idx}",
+            # Disease1..5 are curator-owned rows.  A phenotype MIM is useful
+            # for evidence matching but is not a row identity: one OMIM gene
+            # record can intentionally contain multiple disease labels with
+            # the same phenotype MIM (for example OTX2 / 610125).
+            "id": f"omim-slot:{idx}",
             "source_kind": "omim",
             "display_name": name or detail.splitlines()[0].strip(),
             "phenotype_mim": mim,
@@ -327,34 +331,65 @@ def _omim_associations(omim_row: dict | None) -> list[dict]:
     return out
 
 
+def _merge_evidence(target: dict, source: dict) -> None:
+    """Add source provenance without changing the target disease record."""
+    target["sources"] = _clean_sources(
+        target.get("sources", []) + source.get("sources", [])
+    )
+    target["evidence"] = _clean_sources(
+        target.get("evidence", []) + source.get("evidence", [])
+    )
+    target["evidence_rank"] = max(
+        target.get("evidence_rank") or 0,
+        source.get("evidence_rank") or 0,
+    )
+    if not target.get("mondo_id") and source.get("mondo_id"):
+        target["mondo_id"] = source.get("mondo_id")
+
+
 def merged_associations(
     gene: str,
     omim_row: dict | None = None,
     *,
     refresh: bool = True,
 ) -> list[dict]:
-    """Return OMIM rich rows plus non-duplicate supplemental associations."""
+    """Return OMIM-first rows plus non-duplicate supplemental associations.
+
+    OMIM Disease1..5 slots are preserved verbatim and in workbook order.
+    Supplemental evidence may enrich an OMIM row only when its association
+    key maps to exactly one slot.  Ambiguous matches (such as two OMIM slots
+    sharing one phenotype MIM) remain a separate supplemental association so
+    no curator-owned OMIM row is overwritten or arbitrarily selected.
+    """
     if refresh:
         _ensure_loaded()
-    clusters: dict[str, dict] = {}
-    order: list[str] = []
+    omim_items = _omim_associations(omim_row)
+    omim_by_key: dict[str, list[dict]] = {}
+    for item in omim_items:
+        omim_by_key.setdefault(_association_key(item), []).append(item)
 
-    for item in _omim_associations(omim_row):
-        key = _association_key(item)
-        clusters[key] = item
-        order.append(key)
-
+    supplemental_clusters: dict[str, dict] = {}
+    supplemental_order: list[str] = []
     for item in lookup_cached(gene):
         key = _association_key(item)
-        existing = clusters.get(key)
+        existing = supplemental_clusters.get(key)
         if existing:
-            existing["sources"] = _clean_sources(existing.get("sources", []) + item.get("sources", []))
-            existing["evidence"] = _clean_sources(existing.get("evidence", []) + item.get("evidence", []))
-            existing["evidence_rank"] = max(existing.get("evidence_rank") or 0, item.get("evidence_rank") or 0)
-            if not existing.get("mondo_id") and item.get("mondo_id"):
-                existing["mondo_id"] = item.get("mondo_id")
+            _merge_evidence(existing, item)
             continue
-        clusters[key] = dict(item)
-        order.append(key)
+        supplemental_clusters[key] = dict(item)
+        supplemental_order.append(key)
 
-    return [clusters[key] for key in order]
+    supplemental_items: list[dict] = []
+    for key in supplemental_order:
+        supplemental = supplemental_clusters[key]
+        omim_matches = omim_by_key.get(key, [])
+        if len(omim_matches) == 1:
+            _merge_evidence(omim_matches[0], supplemental)
+            continue
+        if len(omim_matches) > 1:
+            supplemental["matching_omim_slots"] = [
+                item.get("omim_slot") for item in omim_matches
+            ]
+        supplemental_items.append(supplemental)
+
+    return omim_items + supplemental_items

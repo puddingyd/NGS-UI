@@ -5265,13 +5265,16 @@ function diseaseAssociationDetail(a) {
   return lines.join("\n");
 }
 
-function diseaseSourceBadges(a) {
+function diseaseSourceBadges(a, excludedLabels = []) {
   const labels = Array.isArray(a?.evidence) && a.evidence.length
     ? a.evidence
     : (Array.isArray(a?.sources) ? a.sources : []);
-  return labels.filter(Boolean).slice(0, 3).map(label =>
-    `<span class="disease-source-badge">${escapeHtml(label)}</span>`
-  ).join("");
+  const excluded = new Set(excludedLabels.map(label => String(label).toLowerCase()));
+  return labels.filter(Boolean)
+    .filter(label => !excluded.has(String(label).toLowerCase()))
+    .slice(0, 3)
+    .map(label => `<span class="disease-source-badge">${escapeHtml(label)}</span>`)
+    .join("");
 }
 
 function hasOmimDescriptionText(a, d) {
@@ -5308,8 +5311,8 @@ function renderDiseaseList(v, id, withCheckbox) {
         : "";
       const needsDescription = a.source_kind === "omim" && !hasOmimDescriptionText(a, d);
       const star = needsDescription ? `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>` : "";
-      const badges = a.source_kind === "omim" ? diseaseSourceBadges(a).replace('<span class="disease-source-badge">OMIM</span>', "") : diseaseSourceBadges(a);
       const isOmim = a.source_kind === "omim";
+      const badges = diseaseSourceBadges(a, isOmim ? ["OMIM"] : []);
       const isFirstSupplemental = !isOmim && !supplementalStarted;
       if (!isOmim) supplementalStarted = true;
       const extraClass = isOmim

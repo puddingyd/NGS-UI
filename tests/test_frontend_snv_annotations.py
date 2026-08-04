@@ -134,3 +134,13 @@ def test_predicted_suspect_tier_labels_without_trigger_badges():
     assert "ClinVar P/LP 0★ or CONF" not in APP_JS
     assert "badge-suspect" not in APP_JS
     assert "Extra-VEP rescue" not in APP_JS
+
+
+def test_omim_badge_is_excluded_before_supplemental_badge_limit():
+    start = APP_JS.index("function diseaseSourceBadges(")
+    end = APP_JS.index("function hasOmimDescriptionText", start)
+    helper = APP_JS[start:end]
+
+    assert "excludedLabels = []" in helper
+    assert helper.index(".filter(label => !excluded.has") < helper.index(".slice(0, 3)")
+    assert 'diseaseSourceBadges(a, isOmim ? ["OMIM"] : [])' in APP_JS
