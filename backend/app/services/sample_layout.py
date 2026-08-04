@@ -305,6 +305,18 @@ def snv_gene_index_path(sample_id: str, *, for_write: bool = False) -> Path:
     return state_file(sample_id, "snv_gene_index.sqlite", for_write=for_write)
 
 
+def litvar2_marker_path(sample_id: str, *, for_write: bool = False) -> Path:
+    return state_file(sample_id, "litvar2_annotation.json", for_write=for_write)
+
+
+def litvar2_on_demand_path(sample_id: str, *, for_write: bool = False) -> Path:
+    return state_file(sample_id, "litvar2_on_demand.sqlite", for_write=for_write)
+
+
+def clinvar_comparison_path(sample_id: str, *, for_write: bool = False) -> Path:
+    return state_file(sample_id, "clinvar_comparison.json", for_write=for_write)
+
+
 def cnv_tsv(sample_id: str) -> Path:
     legacy = state_file(sample_id, "cnv.annotated.tsv")
     if not uses_unified_layout(sample_id) and legacy.is_file():

@@ -1,0 +1,15 @@
+[Unit]
+Description=Update the local NGS-UI ClinVar comparison database
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=n102968
+WorkingDirectory=/home/n102968/NGS_UI/NGS-UI
+Environment=PYTHONPATH=/home/n102968/NGS_UI/NGS-UI/backend
+Environment=NGS_UI_HOME=/home/n102968/NGS_UI
+ExecStart=/usr/bin/env python3 /home/n102968/NGS_UI/NGS-UI/scripts/update_clinvar_latest_db.py
+TimeoutStartSec=infinity
+Nice=10
+IOSchedulingClass=idle

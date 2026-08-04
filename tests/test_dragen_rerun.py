@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -238,6 +239,54 @@ def test_staging_validation_requires_str_and_requested_pgx(tmp_path):
             require_pgx=True,
         )
 
+
+def test_v36_validation_checks_research_dbnsfp_branch(tmp_path):
+    required = {
+        "CHROM", "POS", "REF", "ALT", "GENE", "TRANSCRIPT",
+        "TRANSCRIPT_TYPE", "HGVS_C", "HGVS_P", "CONSEQUENCE", "IMPACT",
+        "HGNC_ID", "ACMG_CRITERIA", "ACMG_SCORE", "ACMG_CLASS", "ACMG_NOTES",
+        "STRAND_BIAS", "CLINGEN_VCEP_CLASS", "CLINGEN_VCEP_CRITERIA",
+        "CLINGEN_VCEP_PANEL", "REVEL", "MUTPRED2", "MUTPRED2_PRED", "VEST4",
+        "CADD_PHRED", "DBNSFP_VERSION", "CLINGEN_AGREEMENT", "PVS1_STRENGTH",
+        "PVS1_REASON",
+    }
+    fields = sorted(required)
+    fields.extend(f"DUMMY_{index}" for index in range(81 - len(fields)))
+    values = ["."] * len(fields)
+    values[fields.index("DBNSFP_VERSION")] = "5.3a"
+    path = tmp_path / "sample.snv_indel.acmg.tsv"
+    path.write_text(
+        "\t".join(fields) + "\n" + "\t".join(values) + "\n",
+        encoding="utf-8",
+    )
+
+    dragen_run._validate_acmg_tsv(
+        path, strict_v31=True, expect_academic_dbnsfp=True
+    )
+    with pytest.raises(RuntimeError, match="expected 4.9c"):
+        dragen_run._validate_acmg_tsv(
+            path, strict_v31=True, expect_academic_dbnsfp=False
+        )
+
+    sidecar = tmp_path / "sample.annotation_versions.json"
+    sidecar.write_text(
+        json.dumps({"databases": {"clinvar": {"release_date": "2026-05-10"}}}),
+        encoding="utf-8",
+    )
+    dragen_run._ensure_v36_annotation_versions(path)
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["databases"]["clinvar"]["release_date"] == "2026-07-20"
+
+
+def test_production_postprocessing_is_spliceai_only():
+    script = (
+        Path(__file__).resolve().parents[1] / "scripts/run_stopgaps.sh"
+    ).read_text(encoding="utf-8")
+    active = script[script.index("# 3. SpliceAI-only"):script.index("# 3b. GIAB")]
+    assert "annotate_spliceai.py" in active
+    assert "annotate_extra_vep.py" not in active
+    assert "--dbnsfp" not in active
+    assert '--academic_dbnsfp", "true"' in Path(dragen_run.__file__).read_text(encoding="utf-8")
 
 def test_rebase_staged_derived_paths_uses_future_live_paths(tmp_path):
     stage_post = tmp_path / "stage" / "08_postprocessing"

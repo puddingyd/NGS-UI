@@ -216,6 +216,29 @@ LITVAR2_MANIFEST_PATH = LITVAR2_DIR / "litvar2_manifest.json"
 LITVAR2_UPDATE_STATE_PATH = LITVAR2_DIR / "update_state.json"
 LITVAR2_UPDATE_LOG_PATH = LITVAR2_DIR / "update.log"
 
+# Latest public ClinVar short-variant snapshot used only by the NGS-UI
+# post-processing comparison layer.  The immutable Nextflow annotation stays
+# pinned to the clinical report release (2026-07-20); this database is refreshed
+# weekly and may update the classifications shown in the reviewer UI.
+CLINVAR_LATEST_DIR = Path(os.environ.get(
+    "NGS_UI_CLINVAR_LATEST_DIR",
+    BIOTOOLS_DIR / "clinvar_latest",
+))
+CLINVAR_LATEST_DB = Path(os.environ.get(
+    "NGS_UI_CLINVAR_LATEST_DB",
+    CLINVAR_LATEST_DIR / "clinvar_latest.sqlite",
+))
+CLINVAR_LATEST_VCF = Path(os.environ.get(
+    "NGS_UI_CLINVAR_LATEST_VCF",
+    CLINVAR_LATEST_DIR / "clinvar.vcf.gz",
+))
+CLINVAR_LATEST_URL = os.environ.get(
+    "NGS_UI_CLINVAR_LATEST_URL",
+    "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz",
+)
+CLINVAR_LATEST_MANIFEST_PATH = CLINVAR_LATEST_DIR / "clinvar_latest_manifest.json"
+CLINVAR_LATEST_LOCK_PATH = CLINVAR_LATEST_DIR / ".update.lock"
+
 # In-house allele frequency sites VCF (built from our own WGS cohort by
 # scripts/inhouse_af/publish_af.py). scripts/annotate_inhouse_af.py joins its
 # INHOUSE_AC/AN/AF into snv_indel.annotated.tsv for the SNV card. The backend

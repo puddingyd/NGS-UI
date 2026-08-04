@@ -14,6 +14,14 @@ from typing import Any
 
 _DATE_RE = re.compile(r"(?<!\d)(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)(?!\d)")
 _CLINVAR_KEYS = ("clinvar", "clin_var", "clinvar_version")
+V36_CLINVAR_RELEASE = "2026-07-20"
+_V36_SENTINEL_COLUMNS = {
+    "CLINGEN_VCEP_CLASS",
+    "MUTPRED2",
+    "VEST4",
+    "CADD_PHRED",
+    "DBNSFP_VERSION",
+}
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -126,5 +134,19 @@ def load_annotation_versions(
             # report exporters.  New consumers should prefer the nested value.
             "clinvar_date": release_date,
             "metadata_path": str(path),
+        }
+    # v3.6 fixes ClinVar to 2026-07-20 by contract.  Keep this header-based
+    # fallback for pipeline outputs created before the worker started writing
+    # the adjacent sidecar; older schemas must remain explicitly unknown.
+    try:
+        with Path(raw_tsv).open("r", encoding="utf-8") as handle:
+            header = set(handle.readline().rstrip("\r\n").split("\t"))
+    except OSError:
+        header = set()
+    if _V36_SENTINEL_COLUMNS <= header:
+        return {
+            "clinvar": {"release_date": V36_CLINVAR_RELEASE},
+            "clinvar_date": V36_CLINVAR_RELEASE,
+            "metadata_path": "v3.6-schema-contract",
         }
     return {}

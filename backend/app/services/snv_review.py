@@ -14,7 +14,7 @@ import re
 import time
 from pathlib import Path
 
-from .snv_overlay import OverlayReader, overlay_signature
+from .snv_overlay import OverlayReader, overlay_signature, row_key
 from .snv_rows import is_reportable_raw_row
 
 REVIEW_TSV_NAME = "snv_indel.review.tsv"
@@ -187,13 +187,20 @@ def _overlaps_bed(row: dict[str, str], bed: BedIndex | None) -> bool:
     return j < len(intervals) and intervals[j][0] < end
 
 
-def _keep_row(row: dict[str, str], bed: BedIndex | None, *, is_wes: bool) -> bool:
-    """Keep ClinVar P/LP rescue rows, then rare/unknown-AF BED rows."""
+def _passes_basic_review_filter(row: dict[str, str], *, is_wes: bool) -> bool:
+    """Apply invariant row eligibility before any clinical rescue rule."""
     if not is_reportable_raw_row(row):
         return False
     if _is_mito_chrom(row.get("CHROM") or ""):
         return False
     if is_wes and _row_depth(row) < WES_DP_HARD_FLOOR:
+        return False
+    return True
+
+
+def _keep_row(row: dict[str, str], bed: BedIndex | None, *, is_wes: bool) -> bool:
+    """Keep ClinVar P/LP rescue rows, then rare/unknown-AF BED rows."""
+    if not _passes_basic_review_filter(row, is_wes=is_wes):
         return False
     sig = (row.get("CLINVAR_SIG") or "").strip()
     if _PATHOGENIC_RE.search(sig):
@@ -283,6 +290,9 @@ def ensure_review_tsv(
     scanned = 0
     with raw_tsv.open("r", encoding="utf-8", newline="") as src, \
             OverlayReader(raw_tsv, overlay_path) as overlay:
+        clinvar_change_keys = overlay.keys_with_field_values(
+            "CLINVAR_CHANGE", {"UP_TO_PLP", "DOWN_FROM_PLP"}
+        )
         reader = csv.DictReader(src, delimiter="\t")
         fieldnames = list(reader.fieldnames or [])
         for field in overlay.fields:
@@ -297,7 +307,13 @@ def ensure_review_tsv(
             batch: list[dict[str, str]] = []
             for row in reader:
                 scanned += 1
-                if is_review_candidate(row, test_type=test_type_key, bed=candidate_bed):
+                clinically_changed = row_key(row) in clinvar_change_keys
+                keep = is_review_candidate(
+                    row, test_type=test_type_key, bed=candidate_bed
+                )
+                if clinically_changed and not keep:
+                    keep = _passes_basic_review_filter(row, is_wes=is_wes)
+                if keep:
                     batch.append(row)
                     kept += 1
                     if len(batch) >= 1000:

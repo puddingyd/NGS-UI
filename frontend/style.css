@@ -1224,8 +1224,16 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   overflow-wrap: anywhere;
 }
 .variant-head .variant-tag { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
-.variant-head .clinvar-upgrade-arrow { color: #c0392b; font-weight: 700; margin-right: 2px; cursor: help; }
-.clinvar-old { color: var(--muted); font-size: 11px; margin-left: 4px; cursor: help; }
+.clinvar-change {
+  display: inline-block;
+  margin-left: 3px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+}
+.clinvar-change.upgrade { color: #c0392b; }
+.clinvar-change.downgrade { color: #218739; }
 .variant-head .transcript-picker {
   position: relative;
   display: inline-block;
@@ -1400,7 +1408,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .litvar2-pmid-link:hover,
 .litvar2-others-link:hover { text-decoration: underline; }
-.litvar2-external-link {
+.litvar2-external-link,
+.clinvar-external-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1410,12 +1419,38 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   text-decoration: none;
   vertical-align: -2px;
 }
-.litvar2-external-link:hover { color: #0550ae; }
-.litvar2-external-link:focus-visible {
+.litvar2-external-link:hover,
+.clinvar-external-link:hover { color: #0550ae; }
+.litvar2-external-link:focus-visible,
+.clinvar-external-link:focus-visible {
   border-radius: 2px;
   outline: 2px solid #0969da;
   outline-offset: 1px;
 }
+.litvar2-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 0 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #57606a;
+  line-height: 1;
+  vertical-align: -2px;
+  cursor: pointer;
+}
+.litvar2-refresh-btn:hover { color: #0969da; }
+.litvar2-refresh-btn:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid #0969da;
+  outline-offset: 1px;
+}
+.litvar2-refresh-btn:disabled { color: #8c959f; cursor: progress; }
+.litvar2-refresh-btn.is-refreshing svg {
+  animation: litvar2-refresh-spin .8s linear infinite;
+}
+@keyframes litvar2-refresh-spin { to { transform: rotate(360deg); } }
 .litvar2-references { line-height: 1.45; }
 .info-hint {
   display: inline-flex;
@@ -2812,6 +2847,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   gap: 8px;
   margin: 14px 0 10px;
 }
+.acmg-source-summaries.has-erepo {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .acmg-source-card {
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -2937,6 +2975,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .observed-status { font-weight: 600; }
 @media (max-width: 780px) {
   .acmg-source-summaries,
+  .acmg-source-summaries.has-erepo,
   .acmg-criteria-list { grid-template-columns: 1fr; }
   .acmg-criterion { grid-template-columns: auto 48px 118px minmax(0, 1fr); }
 }

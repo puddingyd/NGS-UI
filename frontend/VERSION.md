@@ -6,6 +6,18 @@
 
 ## 版本紀錄
 
+### v8.0 — 2026-08-04
+
+- 新版三級 v3.6 的 ClinGen Evidence Repository（ERepo）會在 SNV/Indel 卡片的 ClinVar 與 ACMG 之間顯示「分類（推導分數）」；點擊可在 structured ACMG modal 比較 VCEP criteria、Apply 至 manual 判讀，並標示這是 ClinGen experts 的評估。
+- 三級分析選項補上 `Research-only`：勾選時 Nextflow 加入 `--academic_dbnsfp true` 使用 dbNSFP 5.3a，顯示 REVEL、MutPred2、VEST4、CADD；post-processing 只補 SpliceAI，不再重跑 dbNSFP。未勾選時維持 dbNSFP 4.9c 並略過 SpliceAI。
+- In-silico 卡片順序更新為 P-KNN、AlphaMissense、Pangolin、REVEL、SpliceAI、ESM1b、VARITY_R、BayesDel、CADD、DANN、MutPred2、VEST4、PhactBoost、PhyloP、GERP、SIFT、LOFTOOL；新工具依文獻 PP3/BP4 calibration threshold 套色並附註。
+- Nextflow ClinVar 基準固定為 2026-07-20；卡片標題固定顯示 `ClinVar (2026-07-20)`，內容也維持 baseline 分類，不再顯示 `ⓘ`。標題旁的外部連結圖示優先用 baseline Variation ID 開啟 NCBI ClinVar；baseline 沒有紀錄時 fallback 最新版 Variation ID，兩者都沒有就隱藏。每週三 04:00 更新的最新版只用來偵測箭頭；hover 箭頭才顯示最新版分類、review status 與日期。只有非 P/LP→P/LP 顯示紅色上箭頭、P/LP→非 P/LP 顯示綠色下箭頭；LP→P、LB→B、conflicting→VUS 不標。診斷與健檢 DOCX 的日期、分類及健檢候選集合仍固定使用 20260720 基準。
+
+### v7.9 — 2026-08-03
+
+- LitVar2 維持三級 filtered post-processing；有完成 marker 的個案在 gene search 時，會把尚未註解的 variants 批次查詢本地 SQLite，並依目前 LitVar2 DB 版本快取 hit 與 no-match，不需要網路也不逐張卡片查詢。
+- 所有 SNV/Indel variant 卡片的 LitVar2 標題旁新增重新整理圖示，可強制用最新本地資料庫重查單一 variant；舊個案也可只更新選定點位，其餘仍顯示 `NA (請重跑三級)`。
+
 ### v7.8 — 2026-08-02
 
 - 三級分析 modal 在「加入批次」左側新增「加入同目錄全部檢體」；選定一個 DRAGEN 或 NCKUH VCF 後，可將同一來源目錄的所有檢體依預設輸出 ID 一次加入批次，並自動排除重複 sample/path。

@@ -1,0 +1,10 @@
+[Unit]
+Description=Update the NGS-UI ClinVar comparison database every Wednesday
+
+[Timer]
+OnCalendar=Wed *-*-* 04:00:00 Asia/Taipei
+Persistent=true
+Unit=ngs-ui-clinvar-update.service
+
+[Install]
+WantedBy=timers.target

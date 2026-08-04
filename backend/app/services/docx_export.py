@@ -25,6 +25,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
 from . import (
+    clinvar_latest_store,
     cnv_sv_merge,
     hpo_ontology,
     panel_deadzone,
@@ -42,12 +43,26 @@ REPORT_FONT     = "MingLiU"
 TITLE_FONT_SIZE = Pt(13)
 BODY_FONT_SIZE  = Pt(11)
 
-# ClinVar release these reports reference. Hardcoded — bump when the
-# clinvar.vcf.gz used by annotate_clinvar.py is refreshed. Format
-# matches the template: ISO-like "YYYYMMDD" and natural "YYYY 年 MM 月
-# DD 日".
-CLINVAR_DATE      = "20260510"
-CLINVAR_DATE_HUMN = "2026 年 05 月 10 日"
+# ClinVar release these reports reference. This is intentionally pinned to the
+# v3.6 Nextflow baseline even when the UI has a newer weekly comparison.
+CLINVAR_DATE      = "20260720"
+CLINVAR_DATE_HUMN = "2026 年 07 月 20 日"
+
+
+def _report_clinvar_variants(variants: dict) -> dict:
+    """Use the fixed Nextflow ClinVar snapshot in exported reports.
+
+    Weekly post-processing values are reviewer-UI context only.  Copy just the
+    changed variant dictionaries so the sample loader's cache is never mutated.
+    """
+    return clinvar_latest_store.restore_pipeline_variants(variants)
+
+
+def _report_clinvar_sample(sample: dict) -> dict:
+    fixed = dict(sample)
+    fixed["variants"] = _report_clinvar_variants(sample.get("variants") or {})
+    fixed["clinvar_date"] = "2026-07-20"
+    return fixed
 
 
 # ── Lookup tables ─────────────────────────────────────────────────
@@ -3150,7 +3165,12 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     sample = sample_loader.load_sample(sample_id, include_aux=False)
     if sample is None:
         raise FileNotFoundError(f"sample not found: {sample_id}")
-    secondary = sample_loader.load_sample_secondary_snv(sample_id) or {}
+    sample = _report_clinvar_sample(sample)
+    secondary = sample_loader.load_sample_secondary_snv(
+        sample_id, clinvar_baseline=True
+    ) or {}
+    secondary = dict(secondary)
+    secondary["variants"] = _report_clinvar_variants(secondary.get("variants") or {})
     pgx_payload = sample_loader.load_sample_pgx(sample_id) or {}
 
     allowed_sections = set(_HEALTH_DISEASE_SECTIONS) | {"pgx"}
@@ -3252,6 +3272,7 @@ def build_diagnosis_docx(sample_id: str, *, gene_list_mode: str = "grouped") -> 
     sample = sample_loader.load_sample(sample_id, include_aux=True)
     if sample is None:
         raise FileNotFoundError(f"sample not found: {sample_id}")
+    sample = _report_clinvar_sample(sample)
 
     report = report_store.load(sample_id)
     meta   = sample.get("meta") or {}

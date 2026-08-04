@@ -876,8 +876,9 @@
       <div class="dragen-form">
         <div class="dragen-form-row dragen-vcf-row">
           <span id="dragen-index-meta" class="muted dragen-index-meta"></span>
-          <label class="filter-toggle dragen-extra-toggle" title="勾選 → 對候選點額外用 VEP 補 MetaRNN、可用時的 REVEL，以及有 score VCF 時的 SpliceAI">
+          <label class="filter-toggle dragen-extra-toggle" title="Research-only：Nextflow 使用 academic dbNSFP 5.3a（REVEL、MutPred2、VEST4、CADD），post-processing 另補 SpliceAI；可能需要額外學術／商業授權">
             <input id="dragen-extra-vep" type="checkbox" />
+            <span>Research-only</span>
           </label>
           <label class="filter-toggle dragen-extra-toggle" title="勾選 → 執行 pipeline PGx module；取消勾選會加 --run_pgx false">
             <input id="dragen-pgx" type="checkbox" checked />

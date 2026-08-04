@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.adapters.snv_tsv import _row_to_variant
-from app.services import litvar2_store
+from app.services import litvar2_on_demand, litvar2_store, snv_gene_index
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "annotate_litvar2.py"
@@ -194,7 +194,13 @@ def test_postprocessing_only_annotates_review_candidates(tmp_path, monkeypatch):
         writer.writerows(rows)
     monkeypatch.setattr(annotate_litvar2.snv_review, "load_candidate_bed", lambda: None)
 
-    stats = annotate_litvar2.annotate_tsv(tsv, db, test_type="WES")
+    marker = tmp_path / "sample.litvar2_annotation.json"
+    stats = annotate_litvar2.annotate_tsv(
+        tsv,
+        db,
+        test_type="WES",
+        marker_path=marker,
+    )
     with tsv.open(encoding="utf-8", newline="") as handle:
         annotated = list(csv.DictReader(handle, delimiter="\t"))
 
@@ -206,6 +212,135 @@ def test_postprocessing_only_annotates_review_candidates(tmp_path, monkeypatch):
     payload = _row_to_variant(annotated[0])["litvar2"]
     assert payload["pmids"] == ["9005", "9004", "9003", "9002", "9001"]
     assert payload["url"].startswith("https://www.ncbi.nlm.nih.gov/research/litvar2/")
+    marker_payload = json.loads(marker.read_text(encoding="utf-8"))
+    assert marker_payload["status"] == "complete"
+    assert marker_payload["scope"] == "review_candidates"
+    assert marker_payload["dataset_date"] == "2026-07-01"
+    assert marker_payload["candidate_variants"] == 1
+
+
+def test_on_demand_lookup_uses_marker_and_versioned_sample_cache(tmp_path, monkeypatch):
+    bulk, db = _build_db(tmp_path)
+    raw_tsv = tmp_path / "sample.snv_indel.acmg.tsv"
+    index_path = tmp_path / "sample.snv_gene_index.sqlite"
+    marker_path = tmp_path / "sample.litvar2_annotation.json"
+    cache_path = tmp_path / "sample.litvar2_on_demand.sqlite"
+    fields = ["CHROM", "POS", "REF", "ALT", "GENE", "HGNC_ID", "RS_ID", "HGVS_C", "HGVS_P"]
+    with raw_tsv.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
+        writer.writeheader()
+        writer.writerow({
+            "CHROM": "chr1", "POS": "100", "REF": "A", "ALT": "G",
+            "GENE": "GENE1", "HGNC_ID": "", "RS_ID": "rs123",
+            "HGVS_C": "NM_000001.1:c.1A>G", "HGVS_P": "NP_000001.1:p.Lys1Arg",
+        })
+    snv_gene_index.build_index(raw_tsv, index_path)
+    marker_path.write_text(json.dumps({
+        "schema_version": 1,
+        "status": "complete",
+        "scope": "review_candidates",
+        "dataset_date": "2026-07-01",
+    }), encoding="utf-8")
+
+    monkeypatch.setattr(litvar2_store, "LITVAR2_DB", db)
+    monkeypatch.setattr(litvar2_on_demand.sample_layout, "snv_raw_tsv", lambda _sid: raw_tsv)
+    monkeypatch.setattr(litvar2_on_demand.sample_layout, "review_tsv", lambda _sid: raw_tsv)
+    monkeypatch.setattr(
+        litvar2_on_demand.sample_layout,
+        "snv_gene_index_path",
+        lambda _sid: index_path,
+    )
+    monkeypatch.setattr(
+        litvar2_on_demand.sample_layout,
+        "litvar2_marker_path",
+        lambda _sid, for_write=False: marker_path,
+    )
+    monkeypatch.setattr(
+        litvar2_on_demand.sample_layout,
+        "litvar2_on_demand_path",
+        lambda _sid, for_write=False: cache_path,
+    )
+
+    first = litvar2_on_demand.lookup_variants(
+        "sample",
+        ["chr1-100-A-G"],
+        trigger="gene_search",
+    )
+    assert first["eligible"] is True
+    assert first["queried"] == 1
+    assert first["results"]["chr1-100-A-G"]["status"] == "hit"
+    assert first["results"]["chr1-100-A-G"]["dataset_date"] == "2026-07-01"
+    assert cache_path.is_file()
+
+    def fail_if_queried(*_args, **_kwargs):
+        raise AssertionError("current-version cache should avoid a second DB lookup")
+
+    real_lookup = litvar2_store.lookup_variant
+    monkeypatch.setattr(litvar2_store, "lookup_variant", fail_if_queried)
+    second = litvar2_on_demand.lookup_variants(
+        "sample",
+        ["chr1-100-A-G"],
+        trigger="gene_search",
+    )
+    assert second["cached"] == 1
+    variants = {"chr1-100-A-G": {"litvar2": {}}}
+    assert litvar2_on_demand.apply_cached(variants, "sample") == 1
+    assert variants["chr1-100-A-G"]["litvar2"]["pmid_count"] == 8
+
+    next_db = tmp_path / "litvar2-next.sqlite"
+    litvar2_store.build_database(
+        bulk,
+        next_db,
+        dataset_date="2026-08-01",
+        source_url="https://example.test/litvar.json.gz",
+    )
+    monkeypatch.setattr(litvar2_store, "LITVAR2_DB", next_db)
+    monkeypatch.setattr(litvar2_store, "lookup_variant", real_lookup)
+    assert litvar2_on_demand.apply_cached(variants, "sample") == 0
+    refreshed = litvar2_on_demand.lookup_variants(
+        "sample", ["chr1-100-A-G"], trigger="gene_search",
+    )
+    assert refreshed["cached"] == 0
+    assert refreshed["queried"] == 1
+    assert refreshed["results"]["chr1-100-A-G"]["dataset_date"] == "2026-08-01"
+
+
+def test_manual_on_demand_lookup_is_allowed_without_postprocessing_marker(tmp_path, monkeypatch):
+    _bulk, db = _build_db(tmp_path)
+    raw_tsv = tmp_path / "sample.tsv"
+    raw_tsv.write_text(
+        "CHROM\tPOS\tREF\tALT\tGENE\tHGNC_ID\tRS_ID\tHGVS_C\tHGVS_P\n"
+        "chr1\t100\tA\tG\tGENE1\t\trs123\tNM_000001.1:c.1A>G\tNP_000001.1:p.Lys1Arg\n",
+        encoding="utf-8",
+    )
+    index_path = snv_gene_index.build_index(raw_tsv, tmp_path / "index.sqlite")
+    missing_marker = tmp_path / "missing-marker.json"
+    cache_path = tmp_path / "cache.sqlite"
+    monkeypatch.setattr(litvar2_store, "LITVAR2_DB", db)
+    monkeypatch.setattr(litvar2_on_demand.sample_layout, "snv_raw_tsv", lambda _sid: raw_tsv)
+    monkeypatch.setattr(litvar2_on_demand.sample_layout, "review_tsv", lambda _sid: raw_tsv)
+    monkeypatch.setattr(litvar2_on_demand.sample_layout, "snv_gene_index_path", lambda _sid: index_path)
+    monkeypatch.setattr(
+        litvar2_on_demand.sample_layout,
+        "litvar2_marker_path",
+        lambda _sid, for_write=False: missing_marker,
+    )
+    monkeypatch.setattr(
+        litvar2_on_demand.sample_layout,
+        "litvar2_on_demand_path",
+        lambda _sid, for_write=False: cache_path,
+    )
+
+    automatic = litvar2_on_demand.lookup_variants(
+        "sample", ["chr1-100-A-G"], trigger="gene_search",
+    )
+    assert automatic["eligible"] is False
+    assert not cache_path.exists()
+    manual = litvar2_on_demand.lookup_variants(
+        "sample", ["chr1-100-A-G"], trigger="manual", force=True,
+    )
+    assert manual["results"]["chr1-100-A-G"]["status"] == "hit"
+    assert cache_path.is_file()
 
 
 def test_adapter_rejects_untrusted_litvar_url():
@@ -227,16 +362,18 @@ def test_frontend_places_litvar_below_acmg_with_required_links():
         APP_JS.index("function renderVariantCard"):
         APP_JS.index("// ---- helpers used by renderVariantCard")
     ]
-    assert card.index('class="k">ACMG') < card.index("${renderLitvar2(v)}")
+    assert card.index('class="k">ACMG') < card.index("${renderLitvar2(v, id)}")
     renderer = APP_JS[
-        APP_JS.index("function renderLitvar2"):
+        APP_JS.index("function _litvar2TitleHtml"):
         APP_JS.index("// ---------- Render: sample header")
     ]
     assert "https://pubmed.ncbi.nlm.nih.gov/" in renderer
     assert "and ${remaining} others" in renderer
     assert "litvar2-title-link" not in renderer
     assert "litvar2-external-link" in renderer
-    assert "LITVAR2_EXTERNAL_ICON_SVG" in renderer
+    assert "EXTERNAL_LINK_ICON_SVG" in renderer
+    assert "LITVAR2_REFRESH_ICON_SVG" in renderer
+    assert "litvar2-refresh-btn" in renderer
     assert 'title="在 LitVar2 開啟"' in renderer
     assert 'let value = "NA (請重跑三級)"' in renderer
     assert 'data.status === "no_match"' in renderer

@@ -51,6 +51,56 @@ def test_sparse_overlay_merges_annotations_and_allows_filtered_legacy_rows(tmp_p
     assert review_rows[0]["GENEBE_CLASSIFICATION"] == "Pathogenic"
 
 
+def test_weekly_clinvar_change_rescues_high_af_row_into_review(tmp_path, monkeypatch):
+    raw = tmp_path / "raw.tsv"
+    annotated = tmp_path / "annotated.tsv"
+    overlay_path = tmp_path / "snv_annotations.sqlite"
+    raw_row = dict(zip(
+        FIELDS,
+        ["chr1", "20", "G", "A", "GENE1", "T1", "c.1G>A", "", "intron_variant", "", "0.35", "30"],
+    ))
+    low_depth_row = dict(raw_row, POS="30", HGVS_C="c.2G>A", DP="10")
+    _write(raw, FIELDS, [raw_row, low_depth_row])
+    annotated_fields = FIELDS + [
+        "CLINVAR_BASE_SIG", "CLINVAR_LATEST_SIG",
+        "CLINVAR_LATEST_REVIEW_STATUS", "CLINVAR_LATEST_APPLIED",
+        "CLINVAR_CHANGE",
+    ]
+    enriched = dict(raw_row)
+    enriched.update({
+        "CLINVAR_BASE_SIG": "",
+        "CLINVAR_LATEST_SIG": "Pathogenic",
+        "CLINVAR_LATEST_REVIEW_STATUS": "reviewed_by_expert_panel",
+        "CLINVAR_LATEST_APPLIED": "1",
+        "CLINVAR_CHANGE": "UP_TO_PLP",
+    })
+    low_depth_enriched = dict(low_depth_row)
+    low_depth_enriched.update({
+        "CLINVAR_BASE_SIG": "",
+        "CLINVAR_LATEST_SIG": "Pathogenic",
+        "CLINVAR_LATEST_REVIEW_STATUS": "reviewed_by_expert_panel",
+        "CLINVAR_LATEST_APPLIED": "1",
+        "CLINVAR_CHANGE": "UP_TO_PLP",
+    })
+    _write(annotated, annotated_fields, [enriched, low_depth_enriched])
+    snv_overlay.build_overlay(raw, annotated, overlay_path)
+
+    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "missing.bed")
+    review = snv_review.ensure_review_tsv(
+        raw,
+        test_type="WES",
+        output_dir=tmp_path / "08_postprocessing",
+        overlay_path=overlay_path,
+    )
+    with review.open("r", encoding="utf-8", newline="") as handle:
+        review_rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert len(review_rows) == 1
+    assert review_rows[0]["CLINVAR_SIG"] == ""
+    assert review_rows[0]["CLINVAR_BASE_SIG"] == ""
+    assert review_rows[0]["CLINVAR_LATEST_SIG"] == "Pathogenic"
+    assert review_rows[0]["CLINVAR_CHANGE"] == "UP_TO_PLP"
+
+
 def test_gene_index_uses_explicit_postprocessing_path_and_skips_star(tmp_path):
     raw = tmp_path / "03_acmg" / "S1.snv_indel.acmg.tsv"
     raw.parent.mkdir()

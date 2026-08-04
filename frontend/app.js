@@ -89,7 +89,7 @@ const COPY_ICON_SVG =
 
 // Lucide `SquareArrowOutUpRight`, used when only the external-link glyph
 // (rather than the adjacent label) should open a resource.
-const LITVAR2_EXTERNAL_ICON_SVG =
+const EXTERNAL_LINK_ICON_SVG =
   '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" '
   + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
   + 'stroke-linejoin="round" aria-hidden="true">'
@@ -97,6 +97,20 @@ const LITVAR2_EXTERNAL_ICON_SVG =
   + '<path d="m21 3-9 9"/>'
   + '<path d="M15 3h6v6"/>'
   + '</svg>';
+
+// Lucide `RefreshCw`, used for an explicit lookup against the newest local
+// LitVar2 SQLite without re-running the whole tertiary workflow.
+const LITVAR2_REFRESH_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" '
+  + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+  + 'stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M21 12a9 9 0 0 0-15-6.7L3 8"/>'
+  + '<path d="M3 3v5h5"/>'
+  + '<path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/>'
+  + '<path d="M21 21v-5h-5"/>'
+  + '</svg>';
+
+const _litvar2PendingIds = new Set();
 
 // ---------- Backend fetch ------------------------------------------
 
@@ -255,6 +269,7 @@ async function _loadSample(LIS_ID) {
   if (!Array.isArray(reports.cnv_sv_merges)) reports.cnv_sv_merges = [];
   state.data       = data;
   state.snvSearchVariants = {};
+  _litvar2PendingIds.clear();
   state.reports    = reports;
   state.currentLIS = LIS_ID;
   const loadedTestType = currentSampleTestType();
@@ -502,7 +517,6 @@ const IN_SILICO_REFERENCES = {
   splicing:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10357475/", pmid: "37352859" },
   pangolin:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9022248/", pmid: "35449021" },
   pknn:      { url: "https://doi.org/10.1101/2025.09.24.678417", pmid: "" },
-  metarnn:   { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9548151/", pmid: "36209109" },
   dann:      { url: "https://pubmed.ncbi.nlm.nih.gov/25338716/", pmid: "25338716" },
   phactboost:{ url: "https://pubmed.ncbi.nlm.nih.gov/38934805/", pmid: "38934805" },
   loftool:   { url: "https://doi.org/10.1093/bioinformatics/btv602", pmid: "27563026" },
@@ -564,7 +578,29 @@ const IN_SILICO_CALIBRATIONS = {
       "PP3_Strong: ≥ 0.932", "PP3_Moderate: 0.773–0.931",
       "PP3_Supporting: 0.644–0.772", "Indeterminate: 0.291–0.643",
       "BP4_Supporting: 0.184–0.290", "BP4_Moderate: 0.017–0.183",
-      "BP4_Strong: ≤ 0.016",
+      "BP4_Strong: 0.004–0.016", "BP4_Very_Strong: ≤ 0.003",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  cadd: {
+    lines: [
+      "PP3_Moderate: ≥ 28.1", "PP3_Supporting: 25.3 to < 28.1",
+      "Indeterminate: > 22.7 to < 25.3", "BP4_Supporting: > 17.3 to 22.7",
+      "BP4_Moderate: > 0.15 to 17.3", "BP4_Strong: ≤ 0.15",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  mutpred2: {
+    lines: [
+      "PP3_Strong: ≥ 0.932", "PP3_Moderate: 0.829 to < 0.932",
+      "PP3_Supporting: 0.737 to < 0.829", "Indeterminate: > 0.391 to < 0.737",
+      "BP4_Supporting: > 0.197 to 0.391", "BP4_Moderate: > 0.010 to 0.197",
+      "BP4_Strong: ≤ 0.010",
+    ], reference: IN_SILICO_REFERENCES.pejaver,
+  },
+  vest4: {
+    lines: [
+      "PP3_Strong: ≥ 0.965", "PP3_Moderate: 0.861 to < 0.965",
+      "PP3_Supporting: 0.764 to < 0.861", "Indeterminate: > 0.449 to < 0.764",
+      "BP4_Supporting: > 0.302 to 0.449", "BP4_Moderate: ≤ 0.302",
     ], reference: IN_SILICO_REFERENCES.pejaver,
   },
   spliceai: {
@@ -572,12 +608,6 @@ const IN_SILICO_CALIBRATIONS = {
       "PP3: ≥ 0.20", "BP4: ≤ 0.10", "Indeterminate: > 0.10 and < 0.20",
       "須配合 variant context 與 ClinGen SVI splicing decision tree 使用",
     ], reference: IN_SILICO_REFERENCES.splicing,
-  },
-  metarnn: {
-    lines: [
-      "Model pathogenic class: ≥ 0.50", "Model benign class: < 0.50",
-      "尚無可靠的通用 PP3/BP4 strength calibration；顏色只表示模型分類",
-    ], reference: IN_SILICO_REFERENCES.metarnn,
   },
   dann: {
     lines: [
@@ -632,12 +662,13 @@ const IN_SILICO_TOOLS = [
   { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score" },
   { key: "revel",         label: "REVEL",         scoreField: "REVEL_score" },
   { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score" },
-  // -- everything below this line lives in More when all three above exist --
   { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
   { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
   { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred" },
-  { key: "metarnn",       label: "MetaRNN",       scoreField: "MetaRNN_score" },
+  { key: "cadd",          label: "CADD",          scoreField: "CADD_score" },
   { key: "dann",          label: "DANN",          scoreField: "DANN" },
+  { key: "mutpred2",      label: "MutPred2",      scoreField: "MutPred2_score",       predField: "MutPred2_pred" },
+  { key: "vest4",         label: "VEST4",         scoreField: "VEST4_score" },
   { key: "phactboost",    label: "PhactBoost",    scoreField: "PhactBoost" },
   { key: "phylop",        label: "PhyloP",        scoreField: "PhyloP" },
   { key: "gerp",          label: "GERP",          scoreField: "GERP" },
@@ -711,13 +742,34 @@ function _toolEvidence(v, tool) {
       if (x >= .291) return _evidence("sig-vus", "Indeterminate");
       if (x >= .184) return _evidence("sig-lb", "BP4_Supporting");
       if (x > .016) return _evidence("sig-b", "BP4_Moderate");
+      if (x > .003) return _evidence("sig-b", "BP4_Strong");
+      return _evidence("sig-b", "BP4_Very_Strong");
+    case "cadd":
+      if (x >= 28.1) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= 25.3) return _evidence("sig-lp", "PP3_Supporting");
+      if (x > 22.7) return _evidence("sig-vus", "Indeterminate");
+      if (x > 17.3) return _evidence("sig-lb", "BP4_Supporting");
+      if (x > .15) return _evidence("sig-b", "BP4_Moderate");
       return _evidence("sig-b", "BP4_Strong");
+    case "mutpred2":
+      if (x >= .932) return _evidence("sig-p", "PP3_Strong");
+      if (x >= .829) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= .737) return _evidence("sig-lp", "PP3_Supporting");
+      if (x > .391) return _evidence("sig-vus", "Indeterminate");
+      if (x > .197) return _evidence("sig-lb", "BP4_Supporting");
+      if (x > .010) return _evidence("sig-b", "BP4_Moderate");
+      return _evidence("sig-b", "BP4_Strong");
+    case "vest4":
+      if (x >= .965) return _evidence("sig-p", "PP3_Strong");
+      if (x >= .861) return _evidence("sig-lp", "PP3_Moderate");
+      if (x >= .764) return _evidence("sig-lp", "PP3_Supporting");
+      if (x > .449) return _evidence("sig-vus", "Indeterminate");
+      if (x > .302) return _evidence("sig-lb", "BP4_Supporting");
+      return _evidence("sig-b", "BP4_Moderate");
     case "spliceai":
       if (x >= .20) return _evidence("sig-lp", "PP3");
       if (x <= .10) return _evidence("sig-b", "BP4");
       return _evidence("sig-vus", "Indeterminate");
-    case "metarnn": return x >= .50
-      ? _evidence("sig-lp", "Model pathogenic") : _evidence("sig-lb", "Model benign");
     case "dann": return _evidence("", "No calibrated evidence");
     case "phactboost": return x >= .50
       ? _evidence("sig-lp", "Model pathogenic") : _evidence("sig-lb", "Model benign");
@@ -1478,15 +1530,45 @@ function _safeLitvar2Url(value) {
   }
 }
 
-function renderLitvar2(v) {
+function _normalizeClinvarVariationId(value) {
+  const variationId = String(value ?? "").trim();
+  if (!/^\d+$/.test(variationId)) return "";
+  return variationId.replace(/^0+(?=\d)/, "");
+}
+
+function _clinvarExternalLinkHtml(v) {
+  const hasBaselineField = Object.prototype.hasOwnProperty.call(
+    v || {}, "clinvar_variation_id_old",
+  );
+  const baselineId = _normalizeClinvarVariationId(
+    hasBaselineField ? v?.clinvar_variation_id_old : v?.clinvar_variation_id,
+  );
+  const latestId = _normalizeClinvarVariationId(v?.clinvar_latest_variation_id);
+  const variationId = baselineId || latestId;
+  if (!variationId) return "";
+  const title = baselineId ? "在 ClinVar 開啟" : "在最新版 ClinVar 開啟";
+  const url = `https://www.ncbi.nlm.nih.gov/clinvar/variation/${encodeURIComponent(variationId)}/`;
+  return `<a class="clinvar-external-link" href="${escapeAttr(url)}" target="_blank" rel="noopener" title="${title}" aria-label="${title}">${EXTERNAL_LINK_ICON_SVG}</a>`;
+}
+
+function _litvar2TitleHtml(v, id) {
   const data = v?.litvar2 || {};
   const url = _safeLitvar2Url(data.url);
   const date = String(data.dataset_date || "").trim();
   const titleText = `LitVar2${date ? ` (${date})` : ""}`;
   const externalLink = url
-    ? `<a class="litvar2-external-link" href="${escapeAttr(url)}" target="_blank" rel="noopener" title="在 LitVar2 開啟" aria-label="在 LitVar2 開啟">${LITVAR2_EXTERNAL_ICON_SVG}</a>`
+    ? `<a class="litvar2-external-link" href="${escapeAttr(url)}" target="_blank" rel="noopener" title="在 LitVar2 開啟" aria-label="在 LitVar2 開啟">${EXTERNAL_LINK_ICON_SVG}</a>`
     : "";
-  const title = `${escapeHtml(titleText)}${externalLink}`;
+  const pending = Boolean(id) && _litvar2PendingIds.has(String(id));
+  const refreshButton = id
+    ? `<button type="button" class="litvar2-refresh-btn${pending ? " is-refreshing" : ""}" data-id="${escapeAttr(id)}" title="以目前本地 LitVar2 資料庫重新查詢" aria-label="以目前本地 LitVar2 資料庫重新查詢"${pending ? " disabled" : ""}>${LITVAR2_REFRESH_ICON_SVG}</button>`
+    : "";
+  return `${escapeHtml(titleText)}${externalLink}${refreshButton}`;
+}
+
+function _litvar2ValueHtml(v, id) {
+  const data = v?.litvar2 || {};
+  const url = _safeLitvar2Url(data.url);
   const pmids = Array.from(new Set(
     (Array.isArray(data.pmids) ? data.pmids : [])
       .map(value => String(value || "").trim())
@@ -1508,7 +1590,15 @@ function renderLitvar2(v) {
   } else if (data.status === "ambiguous") {
     value = "Ambiguous match";
   }
-  return `<span class="k litvar2-key">${title}</span><span class="v litvar2-references">${value}</span>`;
+  if ((!data.status || data.status === "") && id && _litvar2PendingIds.has(String(id))) {
+    value = "查詢中…";
+  }
+  return value;
+}
+
+function renderLitvar2(v, id) {
+  const idAttr = id ? ` data-litvar2-id="${escapeAttr(id)}"` : "";
+  return `<span class="k litvar2-key"${idAttr}>${_litvar2TitleHtml(v, id)}</span><span class="v litvar2-references"${idAttr}>${_litvar2ValueHtml(v, id)}</span>`;
 }
 
 // ---------- Render: sample header / phenotype ----------------------
@@ -2737,6 +2827,9 @@ async function _geneSearchSnv(genesUpper, { filterGnomad = true } = {}) {
       state.snvSearchVariants = state.snvSearchVariants || {};
       Object.assign(state.snvSearchVariants, payload.variants);
     }
+    if (payload?.litvar2_lookup && state.data) {
+      state.data.litvar2_lookup = payload.litvar2_lookup;
+    }
   }
   const genes = new Set(genesUpper);
   const all = {
@@ -2770,6 +2863,94 @@ function _geneSearchCnvSv(genesUpper) {
 }
 
 let _geneSearchToken = 0;
+
+function _currentBackendSampleId() {
+  const row = (state.index || []).find(item => item.LIS_ID === state.currentLIS);
+  return state.data?.sample_id || row?.sample_id || state.currentLIS || "";
+}
+
+function _setLitvar2Result(variantId, payload) {
+  for (const variants of [state.data?.variants, state.snvSearchVariants]) {
+    if (variants?.[variantId]) variants[variantId].litvar2 = { ...payload };
+  }
+}
+
+function _refreshLitvar2Dom(variantId) {
+  const variant = currentSnvVariant(variantId);
+  if (!variant) return;
+  document.querySelectorAll(".litvar2-key[data-litvar2-id]").forEach(el => {
+    if (el.dataset.litvar2Id === variantId) {
+      el.innerHTML = _litvar2TitleHtml(variant, variantId);
+    }
+  });
+  document.querySelectorAll(".litvar2-references[data-litvar2-id]").forEach(el => {
+    if (el.dataset.litvar2Id === variantId) {
+      el.innerHTML = _litvar2ValueHtml(variant, variantId);
+    }
+  });
+}
+
+async function _lookupLitvar2Variants(
+  variantIds,
+  { trigger = "gene_search", force = false, silent = true, geneSearchToken = null } = {},
+) {
+  const sid = _currentBackendSampleId();
+  const ids = Array.from(new Set(
+    (variantIds || []).map(value => String(value || "").trim()).filter(Boolean),
+  ));
+  if (!sid || !ids.length) return;
+  ids.forEach(id => {
+    _litvar2PendingIds.add(id);
+    _refreshLitvar2Dom(id);
+  });
+  try {
+    for (let start = 0; start < ids.length; start += 500) {
+      const chunk = ids.slice(start, start + 500);
+      const payload = await apiPost(`/samples/${encodeURIComponent(sid)}/litvar2/lookup`, {
+        variant_ids: chunk,
+        trigger,
+        force,
+      });
+      if (_currentBackendSampleId() !== sid) return;
+      if (geneSearchToken != null && geneSearchToken !== _geneSearchToken) return;
+      if (payload?.status && state.data) state.data.litvar2_lookup = payload.status;
+      Object.entries(payload?.results || {}).forEach(([id, result]) => {
+        _setLitvar2Result(id, result);
+        _refreshLitvar2Dom(id);
+      });
+      if (!silent && payload?.missing?.length) {
+        throw new Error("找不到這個 variant 的三級 SNV index；請重跑三級分析");
+      }
+    }
+  } catch (error) {
+    if (!silent) alert(`LitVar2 查詢失敗：${error.message || error}`);
+    else console.warn("LitVar2 background lookup failed", error);
+  } finally {
+    if (_currentBackendSampleId() === sid) {
+      ids.forEach(id => {
+        _litvar2PendingIds.delete(id);
+        _refreshLitvar2Dom(id);
+      });
+    }
+  }
+}
+
+function _queueGeneSearchLitvar2(matches, token) {
+  if (!state.data?.litvar2_lookup?.automatic_enabled) return;
+  const ids = (matches || [])
+    .filter(([, variant]) => !String(variant?.litvar2?.status || "").trim())
+    .map(([id]) => id)
+    .filter(id => !_litvar2PendingIds.has(id));
+  if (ids.length) {
+    void _lookupLitvar2Variants(ids, {
+      trigger: "gene_search",
+      force: false,
+      silent: true,
+      geneSearchToken: token,
+    });
+  }
+}
+
 async function renderGeneSearchResults(kind, rawGenes) {
   const token = ++_geneSearchToken;
   const titleEl = document.getElementById("gene-search-title");
@@ -2819,6 +3000,7 @@ async function renderGeneSearchResults(kind, rawGenes) {
       cnvMatches.forEach(([id, v], i) =>
         host.appendChild(renderCnvSvCard(v, id, { index: i + 1 })));
     }
+    _queueGeneSearchLitvar2(snvMatches, token);
     return;
   }
   const label = kind === "snv" ? "SNV/Indel" : "CNV/SV";
@@ -2843,6 +3025,7 @@ async function renderGeneSearchResults(kind, rawGenes) {
     matches.forEach(([id, v], i) => {
       host.appendChild(renderVariantCard(v, id, "candidate", { index: i + 1, diseaseCheckbox: true }));
     });
+    _queueGeneSearchLitvar2(matches, token);
   } else {
     const matches = _geneSearchCnvSv(genesUpper);
     titleEl.textContent = `${geneLabel} 的 ${label} 變異（${matches.length}）`;
@@ -2943,6 +3126,21 @@ function setupGeneSearch() {
     if (inp && inp.style.display !== "none") {
       renderGeneSearchResults(inp.dataset.kind || "snv", inp.value);
     }
+  });
+}
+
+function setupLitvar2Lookup() {
+  document.addEventListener("click", ev => {
+    const btn = ev.target.closest(".litvar2-refresh-btn");
+    if (!btn || btn.disabled) return;
+    const variantId = String(btn.dataset.id || "").trim();
+    if (!variantId) return;
+    ev.preventDefault();
+    void _lookupLitvar2Variants([variantId], {
+      trigger: "manual",
+      force: true,
+      silent: false,
+    });
   });
 }
 
@@ -4097,12 +4295,42 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const acmgSource = v.effective_acmg_source
     || (getEdit(id, "ACMG_classification") ? "manual"
       : (v.genebe_acmg_class ? "GeneBe" : "in-house"));
+  const hasErepo = !!(
+    v.clingen_vcep_class || v.clingen_vcep_criteria || v.clingen_vcep_panel
+  );
+  const erepoDisplayClass = acmgDisplayClassification(
+    v.clingen_vcep_class, v.clingen_vcep_score,
+  );
   const editComment   = getEdit(id, "comment")             ?? "";
 
-  const clinvarDate = formatClinvarDate(state.data?.clinvar_date);
-  const clinvarHint = _annotationHint("ClinVar", clinvarDate
-    ? [`version date: ${clinvarDate}`]
-    : ["version date: 三級輸出未提供"]);
+  const latestClinvarDate = formatClinvarDate(state.data?.clinvar_latest_date);
+  const clinvarExternalLink = _clinvarExternalLinkHtml(v);
+  const clinvarChange = (() => {
+    const direction = String(v.clinvar_change || "").toUpperCase();
+    if (!direction) return "";
+    const isUp = direction === "UP_TO_PLP";
+    const isDown = direction === "DOWN_FROM_PLP";
+    if (!isUp && !isDown) return "";
+    const latestClassification = v.clinvar_latest_sig
+      ? formatClinvar(v.clinvar_latest_sig, v.clinvar_latest_sigconf, null)
+      : "no record";
+    const reviewStatusText = String(v.clinvar_latest_review_status || "")
+      .replace(/_/g, " ")
+      .replace(/,\s*/g, ", ")
+      .trim();
+    const latestStars = v.clinvar_latest_stars;
+    const reviewStatus = reviewStatusText
+      ? `${reviewStatusText}${latestStars !== null && latestStars !== undefined && latestStars !== "" ? ` (${latestStars}★)` : ""}`
+      : (latestStars !== null && latestStars !== undefined && latestStars !== ""
+        ? `${latestStars}★`
+        : "no record");
+    const title = [
+      `最新版分類：${latestClassification}`,
+      `Review status：${reviewStatus}`,
+      `最新版日期：${latestClinvarDate || "未提供"}`,
+    ].join("\n");
+    return `<span class="clinvar-change ${isUp ? "upgrade" : "downgrade"}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}">${isUp ? "↑" : "↓"}</span>`;
+  })();
   const scoreHint = _annotationHint("Score", [
     "Total score = Variant score + Phenotype score",
     "Variant score：ACMG score 轉換成 0–100",
@@ -4187,7 +4415,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     <div class="variant-head">
       ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
       ${_renderStatusRadio(id, curStatus, options, panelAttr)}
-      <span class="hgvs">${v.clinvar_upgrade ? `<span class="clinvar-upgrade-arrow" title="ClinVar 升級">${escapeHtml(v.clinvar_upgrade)}</span> ` : ""}${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
+      <span class="hgvs">${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v, id)}
@@ -4212,13 +4440,17 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         </div>
       </div>
       <div>
-        <span class="k">ClinVar${clinvarHint}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}${v.clinvar_upgrade && v.CLNSIG_old ? ` <span class="clinvar-old" title="原 ClinVar 分類">(was: ${escapeHtml(formatClinvar(v.CLNSIG_old, v.CLNSIGCONF_old, v.clinvar_stars_old))})</span>` : ""}</span>
+        <span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}</span>
+        ${hasErepo ? `<span class="k">ERepo</span>
+        <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 ACMG/AMP criteria；ERepo 為 ClinGen VCEP experts 評估">
+          <span class="acmg-summary-value ${classifySignificance(erepoDisplayClass) || ""}">${escapeHtml(erepoDisplayClass || "—")} (${escapeHtml(v.clingen_vcep_score == null ? "—" : v.clingen_vcep_score)})</span>
+        </button>` : ""}
         <span class="k">ACMG</span>
         <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 manual ACMG/AMP criteria">
           <span class="acmg-summary-value ${classifySignificance(editAcmgDisplayClass) || ""}">${escapeHtml(editAcmgDisplayClass || "—")} (${escapeHtml(editAcmgScore === "" ? "—" : editAcmgScore)})</span>
           <span class="acmg-summary-source">${escapeHtml(acmgSource)}</span>
         </button>
-        ${renderLitvar2(v)}
+        ${renderLitvar2(v, id)}
       </div>
       <div>
         ${(() => {
@@ -4406,13 +4638,16 @@ function renderAcmgSourceSummaries() {
   if (!host || !_acmgEditor) return;
   const items = [
     ["manual", "Manual"],
+    ...(_acmgEditor.sources.erepo ? [["erepo", "ERepo"]] : []),
     ["genebe", "GeneBe"],
     ["inhouse", "In-house"],
   ];
+  host.classList.toggle("has-erepo", !!_acmgEditor.sources.erepo);
   host.innerHTML = items.map(([key, label]) => {
     const source = _acmgEditor.sources[key] || {};
     const parsed = sourceCriteria(source, _acmgCatalog);
-    const canApply = Object.keys(parsed.criteria).length > 0 || !!source.classification;
+    const canApply = Object.keys(parsed.criteria).length > 0
+      || (key !== "erepo" && !!source.classification);
     const audit = key === "manual" && source.classification
       ? [
           source.reviewer_username ? `reviewer: ${source.reviewer_username}` : "",
@@ -4422,7 +4657,9 @@ function renderAcmgSourceSummaries() {
       : "";
     const applyNote = key === "manual" && source.classification
       ? "Apply 不會帶入 case/family-specific criteria"
-      : "";
+      : key === "erepo"
+        ? "ClinGen VCEP experts 評估；括號分數由 criteria 推導。僅供對照，Apply 後仍須儲存才成為 manual 判讀"
+        : "";
     const reusableLine = key === "manual" && source.classification
       ? `Global reusable: ${acmgDisplayClassification(source.reusable_classification, source.reusable_score, source.reusable_vus_subclass) || "—"} (${source.reusable_score ?? "—"}) · ${source.reusable_criteria_text || "無 criteria"}`
       : "";
@@ -4430,6 +4667,12 @@ function renderAcmgSourceSummaries() {
       source.classification, source.score, source.vus_subclass,
     );
     const significanceClass = classifySignificance(displayClass) || "";
+    const erepoAudit = key === "erepo"
+      ? [
+          source.panel ? `VCEP panel: ${source.panel}` : "",
+          source.agreement ? `與 pipeline ACMG: ${source.agreement}` : "",
+        ].filter(Boolean).join(" · ")
+      : "";
     return `<div class="acmg-source-card">
       <div class="acmg-source-card-head">
         <strong>${label}</strong>
@@ -4438,6 +4681,7 @@ function renderAcmgSourceSummaries() {
       <div class="acmg-source-result"><span class="${significanceClass}">${escapeHtml(displayClass || "—")}${source.score !== null && source.score !== undefined && source.score !== "" ? ` (${escapeHtml(source.score)})` : ""}</span></div>
       <div class="acmg-source-criteria">${escapeHtml(source.criteria_text || "無 criteria")}</div>
       ${audit ? `<div class="acmg-source-audit">${escapeHtml(audit)}</div>` : ""}
+      ${erepoAudit ? `<div class="acmg-source-audit">${escapeHtml(erepoAudit)}</div>` : ""}
       ${reusableLine ? `<div class="acmg-source-audit">${escapeHtml(reusableLine)}</div>` : ""}
       ${applyNote ? `<div class="acmg-source-audit">${escapeHtml(applyNote)}</div>` : ""}
       ${parsed.unknown.length ? `<div class="acmg-retired-warning">無法辨識：${escapeHtml(parsed.unknown.join(", "))}</div>` : ""}
@@ -4604,6 +4848,15 @@ async function openAcmgModal(id, trigger = null) {
     ) || {};
     const sources = {
       manual: detail.manual_current || variant.manual_acmg_current || {},
+      ...(variant.clingen_vcep_class || variant.clingen_vcep_criteria || variant.clingen_vcep_panel
+        ? { erepo: {
+            classification: variant.clingen_vcep_class || "",
+            score: variant.clingen_vcep_score,
+            criteria_text: variant.clingen_vcep_criteria || "",
+            panel: variant.clingen_vcep_panel || "",
+            agreement: variant.clingen_vcep_agreement || "",
+          } }
+        : {}),
       genebe: {
         classification: variant.genebe_acmg_class || "",
         score: variant.genebe_acmg_score,
@@ -4653,7 +4906,7 @@ function applyAcmgSource(key) {
   if (status) {
     status.textContent = parsed.unknown.length
       ? `已套用可辨識 criteria；略過：${parsed.unknown.join(", ")}`
-      : `已套用 ${key === "inhouse" ? "in-house" : key} criteria，尚未儲存。`;
+      : `已套用 ${key === "inhouse" ? "in-house" : key === "erepo" ? "ClinGen ERepo" : key} criteria，尚未儲存。`;
   }
 }
 
@@ -8916,9 +9169,8 @@ async function buildScreeningPDF() {
   for (const ln of methodLines) w.para(ln, { indent: 4 });
   w.gap(4);
 
-  // 檢測結果注釋 — ClinVar date is dynamic (state.data.clinvar_date),
-  // formatted via the same helper the clinical TXT uses; everything else
-  // is fixed for the screening report.
+  // 檢測結果注釋 — state.data.clinvar_date is the fixed Nextflow baseline;
+  // the weekly comparison date is reserved for the main-card arrow hover.
   const clinvarDate = ymdToCnDate(data.clinvar_date) || "—";
   w.heading("檢測結果注釋", 2);
   const noteLines = [
@@ -9184,6 +9436,7 @@ async function bootAfterAuth() {
   setupPatientListUpload();
   setupCaseList();
   setupGeneSearch();
+  setupLitvar2Lookup();
 
   // Probe /auth/me; show login modal if no session, otherwise boot the
   // sample index. /auth/me bypasses the global 401 handler because we
@@ -11173,8 +11426,9 @@ function _dragenStopgapProgressPercent(state) {
   const idx = Math.max(0, Math.min(total - 1, Number(state.post_processing_sample_index ?? state.stopgap_sample_index ?? 0)));
   const sub = {
     "post-processing": 0,
+    "post-processing:clinvar-latest": 0.04,
     "post-processing:genebe": 0.20,
-    "post-processing:extra-vep": 0.52,
+    "post-processing:spliceai": 0.52,
     "post-processing:giab-strata": 0.66,
     "post-processing:inhouse-af": 0.70,
     "post-processing:mane-refseq": 0.72,
@@ -11269,7 +11523,7 @@ async function _dragenStart() {
   if (!mode) { alert("請先選擇 sample"); return; }
   const body = {
     mode,
-    with_extra_vep: !!extra?.checked,
+    with_research_only: !!extra?.checked,
     with_pgx: pgx ? !!pgx.checked : true,
     samples,
   };

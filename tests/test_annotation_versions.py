@@ -61,6 +61,19 @@ def test_missing_or_invalid_metadata_does_not_invent_date(tmp_path):
     assert annotation_versions.load_annotation_versions(raw) == {}
 
 
+def test_v36_header_contract_supplies_fixed_clinvar_release(tmp_path):
+    raw = tmp_path / "S1.snv_indel.acmg.tsv"
+    raw.write_text(
+        "CHROM\tCLINGEN_VCEP_CLASS\tMUTPRED2\tVEST4\tCADD_PHRED\tDBNSFP_VERSION\n",
+        encoding="utf-8",
+    )
+
+    result = annotation_versions.load_annotation_versions(raw)
+
+    assert result["clinvar_date"] == "2026-07-20"
+    assert result["metadata_path"] == "v3.6-schema-contract"
+
+
 def test_lower_is_more_pathogenic_predictors_take_worst_transcript():
     # ESM1b and SIFT both use lower scores for greater predicted impact.
     assert _min_multi(".&0.08&0.001&0.32") == 0.001

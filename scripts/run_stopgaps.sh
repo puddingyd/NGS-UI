@@ -5,25 +5,27 @@
 # Runs every post-processing step on a disposable working TSV. The immutable
 # pipeline TSV remains under 03_acmg; only sparse/derived artifacts persist.
 #
-#   1. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
+#   1. annotate_clinvar_latest.py — compare fixed Nextflow ClinVar against the
+#                                  weekly local ClinVar snapshot for UI only
+#   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
 #                                  columns via local DB first, then query
 #                                  review-filtered DB misses through the live
 #                                  API when credentials/SIF are configured;
 #                                  pipeline's ACMG_* stay untouched
-#   2. annotate_extra_vep.py    — add MetaRNN + REVEL + SpliceAI columns
-#   3. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
-#   4. annotate_litvar2.py   — local bulk SQLite lookup for review candidates
-#   5. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
+#   3. annotate_spliceai.py     — add only SpliceAI (dbNSFP stays in Nextflow)
+#   4. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
+#   5. annotate_litvar2.py   — local bulk SQLite lookup for review candidates
+#   6. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
 #                              gCNV + Delly VCFs. Skipped if none supplied.
-#   6. build_snv_annotation_overlay.py — persist sparse field differences
-#   7. build_snv_review_tsv.py / build_snv_gene_index.py
+#   7. build_snv_annotation_overlay.py — persist sparse field differences
+#   8. build_snv_review_tsv.py / build_snv_gene_index.py
 #
 # (ClinVar annotation was a compatibility step before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
 #  pipeline now owns it; the legacy annotate_clinvar.py is left on
 #  disk for emergencies.)
 #
-# All steps are idempotent fill-or-augment. Step 4 produces fresh
+# All steps are idempotent fill-or-augment. Step 6 produces fresh
 # cnv.annotated.tsv / sv.annotated.tsv whenever CNV VCFs are
 # pointed to; pass --skip-cnv to bypass.
 #
@@ -34,7 +36,7 @@
 #       [--sample SID] [--seq-type WES|WGS]
 #
 # Env / flags:
-#   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 1
+#   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 2
 #                                         (default $HOME/NGS_UI/biotools/
 #                                         genebe/genebe_hg38.tsv.gz); builds
 #                                         genebe_hg38.sqlite lazily.
@@ -46,22 +48,21 @@
 #                                        saved as import-ready seven-column TSV.
 #   NGS_UI_CDS_CANDIDATE_BED           — optional, default
 #                                         $HOME/NGS_UI/biotools/cds_combined.bed
-#   --spliceai-snv / --spliceai-indel  — optional, default
+#   --spliceai-snv / --spliceai-indel  — required when Research-only is on; default
 #                                         $HOME/NGS_UI/biotools/spliceai/...
-#   NGS_UI_EXTRA_VEP_DBNSFP / --extra-vep-dbnsfp
-#                                      — dbNSFP VEP-ready BGZF used by Extra
-#                                        VEP; default
-#                                        $NGS_UI_HOME/biotools/dbnsfp/
-#                                        dbNSFP5.3.1a_grch38.gz
+#   NGS_UI_CLINVAR_LATEST_DB / --clinvar-latest-db
+#                                      — weekly ClinVar SQLite snapshot for UI
+#                                        comparison; missing DB is a safe no-op
 #   --candidate-bed / --skip-candidate-bed
-#                                      — restrict GeneBe/Extra VEP candidates
-#   --skip-spliceai / --skip-extra-vep — disable SpliceAI or all of step 2
+#                                      — restrict GeneBe/SpliceAI candidates
+#   --skip-spliceai / --skip-extra-vep — disable SpliceAI (legacy alias kept)
+#   --skip-clinvar-latest              — disable weekly ClinVar comparison
 #   NGS_UI_MANE_SUMMARY / --mane-summary
 #                                      — MANE summary for RefSeq mapping
 #   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
 #   NGS_UI_LITVAR2_DB / --litvar2-db   — local bulk LitVar2 SQLite
 #   --skip-litvar2                     — disable local literature annotation
-#   --skip-cnv                         — disable AnnotSV step 5 even
+#   --skip-cnv                         — disable AnnotSV step 6 even
 #                                         when --dragen-cnv-source is set
 # =========================================================
 set -euo pipefail
@@ -101,8 +102,8 @@ DRAGEN_VCF=""
 INHOUSE_CNV_VCF=""
 INHOUSE_SV_VCF=""
 SKIP_SPLICEAI=0
-SKIP_EXTRA_VEP=0
 SKIP_CANDIDATE_BED=0
+SKIP_CLINVAR_LATEST=0
 SKIP_CNV=0
 SKIP_GIAB=0
 SKIP_GENEBE=0
@@ -111,18 +112,18 @@ SKIP_INHOUSE_AF=0
 SKIP_LITVAR2=0
 SEQ_TYPE="${SEQ_TYPE:-WES}"
 NGS_HOME_DEFAULT="${NGS_UI_HOME:-$HOME/NGS_UI}"
-GENEBE_DB="${NGS_UI_GENEBE_DB:-$HOME/NGS_UI/biotools/genebe/genebe_hg38.tsv.gz}"
+GENEBE_DB="${NGS_UI_GENEBE_DB:-$NGS_HOME_DEFAULT/biotools/genebe/genebe_hg38.tsv.gz}"
 MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5.summary.txt.gz}"
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 INHOUSE_AF_DB="${NGS_UI_INHOUSE_AF_DB:-$NGS_HOME_DEFAULT/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
-EXTRA_VEP_DBNSFP="${NGS_UI_EXTRA_VEP_DBNSFP:-$NGS_HOME_DEFAULT/biotools/dbnsfp/dbNSFP5.3.1a_grch38.gz}"
 LITVAR2_DB="${NGS_UI_LITVAR2_DB:-$NGS_HOME_DEFAULT/biotools/litvar2/litvar2.sqlite}"
+CLINVAR_LATEST_DB="${NGS_UI_CLINVAR_LATEST_DB:-$NGS_HOME_DEFAULT/biotools/clinvar_latest/clinvar_latest.sqlite}"
 # Keep the established production SpliceAI paths. On n102968 these resolve to
 # /home/n102968/NGS_UI/biotools/spliceai/...; do not point runtime at a desktop
 # /Volumes mount.
-SPLICEAI_SNV="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
-SPLICEAI_INDEL="$HOME/NGS_UI/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
-CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$HOME/NGS_UI/biotools/cds_combined.bed}"
+SPLICEAI_SNV="$NGS_HOME_DEFAULT/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
+SPLICEAI_INDEL="$NGS_HOME_DEFAULT/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
+CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$NGS_HOME_DEFAULT/biotools/cds_combined.bed}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --tsv|--work-tsv)     TSV="$2"; shift 2;;
@@ -135,11 +136,12 @@ while [ $# -gt 0 ]; do
     --inhouse-sv-vcf)     INHOUSE_SV_VCF="$2"; shift 2;;
     --spliceai-snv)       SPLICEAI_SNV="$2"; shift 2;;
     --spliceai-indel)     SPLICEAI_INDEL="$2"; shift 2;;
-    --extra-vep-dbnsfp)   EXTRA_VEP_DBNSFP="$2"; shift 2;;
+    --clinvar-latest-db)  CLINVAR_LATEST_DB="$2"; shift 2;;
     --candidate-bed)      CANDIDATE_BED="$2"; shift 2;;
     --skip-candidate-bed) SKIP_CANDIDATE_BED=1; shift;;
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
-    --skip-extra-vep)     SKIP_EXTRA_VEP=1; shift;;
+    --skip-extra-vep)     SKIP_SPLICEAI=1; shift;;
+    --skip-clinvar-latest) SKIP_CLINVAR_LATEST=1; shift;;
     --skip-cnv)           SKIP_CNV=1; shift;;
     --genebe-db)          GENEBE_DB="$2"; shift 2;;
     --skip-genebe)        SKIP_GENEBE=1; shift;;
@@ -181,6 +183,8 @@ OVERLAY_PATH="$POST_DIR/$SID.snv_annotations.sqlite"
 REVIEW_PATH="$POST_DIR/$SID.snv_indel.review.tsv"
 REVIEW_MANIFEST_PATH="$POST_DIR/$SID.snv_indel.review.tsv.source.json"
 GENE_INDEX_PATH="$POST_DIR/$SID.snv_gene_index.sqlite"
+LITVAR2_MARKER_PATH="$POST_DIR/$SID.litvar2_annotation.json"
+CLINVAR_MARKER_PATH="$POST_DIR/$SID.clinvar_comparison.json"
 
 echo "================================================================"
 echo "  post-processing : $TSV"
@@ -193,10 +197,27 @@ elif [ -f "$CANDIDATE_BED" ]; then
   CANDIDATE_BED_ARGS=(--candidate-bed "$CANDIDATE_BED")
   echo "  candidate BED: $CANDIDATE_BED"
 else
-  echo "  candidate BED: not found at $CANDIDATE_BED (GeneBe/Extra VEP use AF-only candidates)"
+  echo "  candidate BED: not found at $CANDIDATE_BED (GeneBe/SpliceAI use AF-only candidates)"
 fi
 
-# 1. GeneBe ACMG second opinion. The local DB is always queried first across
+# 1. Compare the immutable v3.6 ClinVar annotation with the latest weekly
+#    local snapshot. This affects only the working TSV/UI overlay and never
+#    rewrites the 03_acmg source used by exported reports.
+if [ "$SKIP_CLINVAR_LATEST" -eq 0 ]; then
+  if [ -f "$CLINVAR_LATEST_DB" ]; then
+    echo
+    echo "[post-processing] annotate_clinvar_latest.py"
+    step_start "clinvar-latest"
+    "$SCRIPT_DIR/annotate_clinvar_latest.py" \
+      --tsv "$TSV" --db "$CLINVAR_LATEST_DB" \
+      --marker "$CLINVAR_MARKER_PATH" --baseline-release "2026-07-20"
+    step_done
+  else
+    echo "  - weekly ClinVar comparison skipped (DB not found: $CLINVAR_LATEST_DB)"
+  fi
+fi
+
+# 2. GeneBe ACMG second opinion. The local DB is always queried first across
 #    the complete TSV. Live API fallback is best-effort and only sees DB misses
 #    that meet the same WES/WGS filter as review.tsv.
 if [ "$SKIP_GENEBE" -eq 0 ]; then
@@ -215,25 +236,20 @@ if [ "$SKIP_GENEBE" -eq 0 ]; then
   step_done
 fi
 
-# 3. Extra VEP (MetaRNN + REVEL when available + optional SpliceAI). Skippable.
-if [ "$SKIP_EXTRA_VEP" -eq 0 ]; then
+# 3. SpliceAI-only post-processing. All dbNSFP predictors, including REVEL,
+#    MutPred2, VEST4, and CADD_phred, are produced by Nextflow v3.6.
+if [ "$SKIP_SPLICEAI" -eq 0 ]; then
   echo
-  echo "[post-processing] annotate_extra_vep.py"
-  step_start "extra-vep"
-  EXTRA_VEP_ARGS=(--tsv "$TSV" --dbnsfp "$EXTRA_VEP_DBNSFP")
-  echo "  + dbNSFP: $EXTRA_VEP_DBNSFP"
-  if [ "$SKIP_SPLICEAI" -eq 0 ] && [ -f "$SPLICEAI_SNV" ] && [ -f "$SPLICEAI_INDEL" ]; then
-    EXTRA_VEP_ARGS+=(--spliceai-snv "$SPLICEAI_SNV" --spliceai-indel "$SPLICEAI_INDEL")
-    echo "  + SpliceAI enabled ($SPLICEAI_SNV)"
-  else
-    if [ "$SKIP_SPLICEAI" -eq 1 ]; then
-      echo "  - SpliceAI skipped (--skip-spliceai)"
-    else
-      echo "  - SpliceAI VCFs not found at $SPLICEAI_SNV — dbNSFP predictors only"
-    fi
-  fi
-  "$SCRIPT_DIR/annotate_extra_vep.py" "${EXTRA_VEP_ARGS[@]}" "${CANDIDATE_BED_ARGS[@]}"
+  echo "[post-processing] annotate_spliceai.py"
+  step_start "spliceai"
+  "$SCRIPT_DIR/annotate_spliceai.py" \
+    --tsv "$TSV" \
+    --spliceai-snv "$SPLICEAI_SNV" \
+    --spliceai-indel "$SPLICEAI_INDEL" \
+    "${CANDIDATE_BED_ARGS[@]}"
   step_done
+else
+  echo "  - SpliceAI skipped (--skip-spliceai / Research-only unchecked)"
 fi
 
 # 3b. GIAB stratification labels (difficult-region badges). Runs on the
@@ -283,7 +299,8 @@ if [ "$SKIP_LITVAR2" -eq 0 ]; then
   echo "[post-processing] annotate_litvar2.py"
   step_start "litvar2"
   "$SCRIPT_DIR/annotate_litvar2.py" \
-    --tsv "$TSV" --db "$LITVAR2_DB" --test-type "$SEQ_TYPE"
+    --tsv "$TSV" --db "$LITVAR2_DB" --test-type "$SEQ_TYPE" \
+    --marker "$LITVAR2_MARKER_PATH"
   step_done
 fi
 

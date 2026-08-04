@@ -45,8 +45,10 @@ from ..config import SNV_CACHE_MAX, SNV_CACHE_MAX_RAW_MB
 from . import (
     annotation_versions,
     analyses_store,
+    clinvar_latest_store,
     gene_disease_store,
     hpo_ontology,
+    litvar2_on_demand,
     manual_acmg,
     omim_store,
     panel_deadzone,
@@ -209,6 +211,7 @@ def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> 
         list(_file_signature(sample_layout.state_file(sample_id, "sample_metadata.json"))),
         list(_file_signature(sample_layout.snv_raw_tsv(sample_id))),
         list(_file_signature(sample_layout.snv_overlay_path(sample_id))),
+        list(_file_signature(sample_layout.clinvar_comparison_path(sample_id))),
         list(_file_signature(sample_layout.snv_gene_index_path(sample_id))),
         list(_file_signature(sample_layout.review_tsv(sample_id))),
         list(_file_signature(sample_layout.mito_tsv(sample_id))),
@@ -1067,6 +1070,34 @@ def _build_secondary_snv_categories(variants: dict[str, dict]) -> dict[str, list
     return categories
 
 
+def _pipeline_clinvar_secondary_variants(
+    variants: dict[str, dict],
+) -> dict[str, dict]:
+    """Restore report-baseline ClinVar before health candidate selection."""
+    restored = clinvar_latest_store.restore_pipeline_variants(variants)
+    for variant in restored.values():
+        # A weekly upgrade may have assigned 1A. Once the 2026-07-20
+        # classification is restored, retain only independent 1B/1C evidence.
+        if str(variant.get("tier") or "").upper() != "1A" or _is_clinvar_plp(variant):
+            continue
+        if variant.get("loftee_hc"):
+            variant["tier"] = "1B"
+            continue
+        points = _to_num(
+            variant.get("effective_acmg_score")
+            if variant.get("effective_acmg_score") is not None
+            else variant.get("ACMG_score")
+        )
+        variant["tier"] = (
+            "1C"
+            if (
+                isinstance(points, (int, float)) and points >= 4
+            ) or variant.get("predicted_suspect_non_acmg")
+            else "2"
+        )
+    return restored
+
+
 def _enrich_snv_variants(
     variants: dict[str, dict],
     sample_id: str,
@@ -1121,6 +1152,7 @@ def _enrich_snv_variants(
             for f in ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5"):
                 v[f] = rec.get(f, "")
         v["disease_associations"] = gene_disease_store.merged_associations(gene, rec, refresh=False)
+    litvar2_on_demand.apply_cached(variants, sample_id)
     return pheno_by_gene
 
 
@@ -1923,8 +1955,17 @@ def _sample_snv_sidecar_context(sample_id: str, version: str | None = None):
     return sub, meta, sidecar_dir, _effective_test_type(meta, sample_id, default="WES")
 
 
-def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dict | None:
-    """Staged loader for secondary-finding SNV panel categories."""
+def load_sample_secondary_snv(
+    sample_id: str,
+    version: str | None = None,
+    *,
+    clinvar_baseline: bool = False,
+) -> dict | None:
+    """Staged loader for secondary-finding SNV panel categories.
+
+    ``clinvar_baseline`` is reserved for fixed-release DOCX export. The API/UI
+    default continues to classify candidates from the weekly comparison.
+    """
     started = time.perf_counter()
     ctx = _sample_snv_sidecar_context(sample_id, version)
     if ctx is None:
@@ -1979,6 +2020,8 @@ def load_sample_secondary_snv(sample_id: str, version: str | None = None) -> dic
         genome_build=meta.get("genome_build") or "hg38",
         meta=meta,
     )
+    if clinvar_baseline:
+        all_variants = _pipeline_clinvar_secondary_variants(all_variants)
     categories = _build_secondary_snv_categories(all_variants)
     wanted_ids = {vid for ids in categories.values() for vid in ids}
     variants = {vid: all_variants[vid] for vid in wanted_ids if vid in all_variants}
@@ -2220,6 +2263,13 @@ def load_sample(sample_id: str, version: str | None = None,
         for key, value in annotation_metadata.items()
         if key != "metadata_path"
     }
+    clinvar_comparison = _read_json_or(
+        sample_layout.clinvar_comparison_path(sample_id), {}
+    ) or {}
+    if clinvar_comparison.get("status") != "complete":
+        clinvar_comparison = {}
+    pipeline_clinvar_date = str(annotation_payload.get("clinvar_date") or "")
+    latest_clinvar_date = str(clinvar_comparison.get("latest_release") or "")
     payload = {
         "meta": {
             "LIS_ID":         meta.get("lis_id") or meta.get("sample_id") or sample_id,
@@ -2241,6 +2291,8 @@ def load_sample(sample_id: str, version: str | None = None,
         # Database release metadata comes from a compact pipeline sidecar;
         # never substitute today's date or a hard-coded report constant.
         "annotation_versions": annotation_payload,
+        "clinvar_comparison": clinvar_comparison,
+        "litvar2_lookup":     litvar2_on_demand.sample_status(sample_id),
         "patient_phenotype": _normalize_phenotype(hpo_list),
         "selected_panels":   panels_list,
         "vcf_path":          meta.get("vcf_path", ""),
@@ -2286,9 +2338,11 @@ def load_sample(sample_id: str, version: str | None = None,
         "active_analysis":   chosen_version,
         "analyses":          analyses_store.list_versions(sample_id),
     }
-    payload["clinvar_date"] = (
-        payload["annotation_versions"].get("clinvar_date", "")
-    )
+    payload["clinvar_pipeline_date"] = pipeline_clinvar_date
+    payload["clinvar_latest_date"] = latest_clinvar_date
+    # Every ordinary ClinVar label/report remains pinned to the Nextflow
+    # baseline. The weekly date is exposed separately for change-arrow hover.
+    payload["clinvar_date"] = pipeline_clinvar_date
     _log_perf(
         "sample.load",
         started,
@@ -2362,7 +2416,11 @@ def search_snv_by_genes(
         raw_variants=raw_variant_count,
         matches=len(matches),
     )
-    return {"variants": matches, "snv_tsv_error": old_format_error}
+    return {
+        "variants": matches,
+        "snv_tsv_error": old_format_error,
+        "litvar2_lookup": litvar2_on_demand.sample_status(sample_id),
+    }
 
 
 def warm_raw_snv_cache(sample_id: str, version: str | None = None) -> None:

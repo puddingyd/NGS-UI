@@ -62,6 +62,7 @@ TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
     "/home/pipeline/tertiary_code/nextflow_tertiary.config",
 ))
+PIPELINE_CLINVAR_RELEASE = "2026-07-20"
 
 PIPELINE_STAGE_DIRS = (
     "00_prepare",
@@ -81,6 +82,8 @@ MANAGED_POSTPROCESSING_NAMES = {
     "snv_indel.review.tsv",
     "snv_indel.review.tsv.source.json",
     "snv_gene_index.sqlite",
+    "litvar2_annotation.json",
+    "clinvar_comparison.json",
     "mito.annotated.tsv",
     "ploidy.vcf.gz",
     "ploidy_qc.txt",
@@ -1039,7 +1042,12 @@ def _write_samplesheet(
     return path
 
 
-def _validate_acmg_tsv(path: Path, *, strict_v31: bool) -> None:
+def _validate_acmg_tsv(
+    path: Path,
+    *,
+    strict_v31: bool,
+    expect_academic_dbnsfp: bool | None = None,
+) -> None:
     """Catch stale/partial tertiary outputs before copying them into UI."""
     try:
         header = path.open(encoding="utf-8").readline().rstrip("\n").split("\t")
@@ -1057,10 +1065,22 @@ def _validate_acmg_tsv(path: Path, *, strict_v31: bool) -> None:
             f"pipeline TSV missing required columns: {', '.join(missing)}"
         )
     is_v35_transcript_schema = "MANE_ALL" not in header
-    expected_cols = 65
-    schema_label = "v3.5 transcript schema" if is_v35_transcript_schema else "v3.1-v3.4 schema"
+    expected_cols = 81
+    schema_label = "v3.6 transcript schema" if is_v35_transcript_schema else "legacy MANE_ALL schema"
     if strict_v31 and is_v35_transcript_schema and "STRAND_BIAS" not in header:
-        raise RuntimeError("pipeline TSV v3.5 schema is missing STRAND_BIAS")
+        raise RuntimeError("pipeline TSV v3.6 schema is missing STRAND_BIAS")
+    v36_required = {
+        "CLINGEN_VCEP_CLASS", "CLINGEN_VCEP_CRITERIA", "CLINGEN_VCEP_PANEL",
+        "REVEL", "MUTPRED2", "MUTPRED2_PRED", "VEST4", "CADD_PHRED",
+        "DBNSFP_VERSION", "CLINGEN_AGREEMENT", "PVS1_STRENGTH", "PVS1_REASON",
+    }
+    if strict_v31:
+        missing_v36 = sorted(v36_required - set(header))
+        if missing_v36:
+            raise RuntimeError(
+                "pipeline TSV is not v3.6; missing columns: "
+                + ", ".join(missing_v36)
+            )
     if strict_v31 and len(header) < expected_cols:
         raise RuntimeError(
             f"pipeline TSV has {len(header)} columns; {schema_label} expects at least {expected_cols}"
@@ -1070,6 +1090,49 @@ def _validate_acmg_tsv(path: Path, *, strict_v31: bool) -> None:
             f"[validate] warning: pipeline TSV has {len(header)} columns "
             f"({schema_label}: {expected_cols})"
         )
+    if strict_v31 and expect_academic_dbnsfp is not None:
+        try:
+            with path.open(encoding="utf-8") as handle:
+                handle.readline()
+                first = handle.readline().rstrip("\n").split("\t")
+            if not first or first == [""]:
+                raise IndexError
+        except (OSError, IndexError) as exc:
+            raise RuntimeError(f"pipeline TSV has no data rows: {path}") from exc
+        version_index = header.index("DBNSFP_VERSION")
+        actual = first[version_index].strip() if version_index < len(first) else ""
+        expected = "5.3a" if expect_academic_dbnsfp else "4.9c"
+        if actual != expected:
+            raise RuntimeError(
+                f"pipeline DBNSFP_VERSION={actual or '(blank)'}; expected {expected} "
+                f"for research_only={expect_academic_dbnsfp}"
+            )
+
+
+def _ensure_v36_annotation_versions(path: Path) -> Path:
+    """Record the fixed ClinVar release for v3.6 Nextflow output."""
+    suffix = ".snv_indel.acmg.tsv"
+    source_name = path.name[:-len(suffix)] if path.name.endswith(suffix) else path.stem
+    sidecar = path.with_name(f"{source_name}.annotation_versions.json")
+    try:
+        existing = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        existing = {}
+    payload = existing if isinstance(existing, dict) else {}
+    payload["schema_version"] = payload.get("schema_version") or 1
+    payload["pipeline_schema"] = "v3.6"
+    databases = payload.setdefault("databases", {})
+    if not isinstance(databases, dict):
+        databases = payload["databases"] = {}
+    clinvar = databases.setdefault("clinvar", {})
+    if not isinstance(clinvar, dict):
+        clinvar = databases["clinvar"] = {}
+    clinvar["release_date"] = PIPELINE_CLINVAR_RELEASE
+    clinvar["source"] = "Nextflow v3.6 fixed release"
+    tmp = sidecar.with_suffix(sidecar.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, sidecar)
+    return sidecar
 
 
 def _sample_from_args(args: argparse.Namespace) -> dict:
@@ -1345,7 +1408,10 @@ def main() -> int:
     ap.add_argument("--source-sample", default="")
     ap.add_argument("--batch-json", default="")
     ap.add_argument("--mode",   default="dragen", choices=["dragen", "inhouse"])
-    ap.add_argument("--with-extra-vep", action="store_true")
+    ap.add_argument(
+        "--research-only", "--with-extra-vep",
+        dest="research_only", action="store_true",
+    )
     ap.add_argument("--without-pgx", action="store_true")
     # In-house only — explicit sibling VCF paths from the index.
     ap.add_argument("--cnv-vcf",  default="")
@@ -1631,6 +1697,8 @@ def main() -> int:
                     ]
                     if args.without_pgx:
                         nextflow_cmd += ["--run_pgx", "false"]
+                    if args.research_only:
+                        nextflow_cmd += ["--academic_dbnsfp", "true"]
                     nextflow_cmd.append("-resume")
                     if seeded_resume_session:
                         nextflow_cmd.append(seeded_resume_session)
@@ -1650,6 +1718,8 @@ def main() -> int:
                     ]
                     if args.without_pgx:
                         nextflow_cmd += ["--run_pgx", "false"]
+                    if args.research_only:
+                        nextflow_cmd += ["--academic_dbnsfp", "true"]
                     nextflow_cmd.append("-resume")
                     if seeded_resume_session:
                         nextflow_cmd.append(seeded_resume_session)
@@ -1711,7 +1781,14 @@ def main() -> int:
             existing = outputs.get("snv_indel.acmg.tsv")
             if existing is None:
                 raise RuntimeError(f"internal error: no pipeline TSV for {sid}")
-            _validate_acmg_tsv(existing, strict_v31=not legacy_staging)
+            _validate_acmg_tsv(
+                existing,
+                strict_v31=not legacy_staging,
+                expect_academic_dbnsfp=(args.research_only if not legacy_staging else None),
+            )
+            if not legacy_staging:
+                sidecar = _ensure_v36_annotation_versions(existing)
+                _log(f"[source] {sid}: ClinVar baseline metadata {sidecar}")
             raw_tsv_by_sid[sid] = existing
             final_raw_tsv = (
                 sample_layout.unified_sample_dir(sid)
@@ -1798,7 +1875,8 @@ def main() -> int:
                 pipeline_annotsv_available.setdefault(sid, set()).add(kind)
                 _log(f"[source] {sid}: use pipeline {kind.upper()} TSV directly ({annotsv_src})")
 
-        # 5. Post-processing chain (no ClinVar; pipeline already populates it).
+        # 5. Post-processing chain. ClinVar is compared against the weekly UI
+        # snapshot here; the fixed pipeline annotation remains immutable.
         _set_step(job_id, "post-processing")
         def track_post_processing(line: str) -> None:
             match = re.search(r"\[(post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+start", line)
@@ -1854,8 +1932,8 @@ def main() -> int:
                     stop_args += ["--inhouse-cnv-vcf", sample["cnv_vcf"]]
                 if sample["sv_vcf"]:
                     stop_args += ["--inhouse-sv-vcf",  sample["sv_vcf"]]
-            if not args.with_extra_vep:
-                stop_args.append("--skip-extra-vep")
+            if not args.research_only:
+                stop_args.append("--skip-spliceai")
             display_stop_args = [
                 "post-processing",
                 "--raw-tsv", str(raw_tsv),
@@ -1865,8 +1943,8 @@ def main() -> int:
             ]
             if "--skip-cnv" in stop_args:
                 display_stop_args.append("--skip-cnv")
-            if "--skip-extra-vep" in stop_args:
-                display_stop_args.append("--skip-extra-vep")
+            if "--skip-spliceai" in stop_args:
+                display_stop_args.append("--skip-spliceai")
             try:
                 _run(
                     stop_args,

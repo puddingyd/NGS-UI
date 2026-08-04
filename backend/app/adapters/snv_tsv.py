@@ -15,7 +15,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from ..services import panel_deadzone
+from ..services import manual_acmg, panel_deadzone
 
 
 class OldFormatError(ValueError):
@@ -250,6 +250,20 @@ def _effective_acmg_points(row: dict) -> float | int | None:
         row.get("ACMG_POINTS"),
     ))
     return points if isinstance(points, (int, float)) else None
+
+
+def _clingen_vcep_score(criteria_text: str) -> tuple[int | None, list[str]]:
+    """Derive reviewer-facing Tavtigian points from ERepo criteria.
+
+    ClinGen ERepo does not publish a score column in the v3.6 TSV contract.
+    Keep this explicitly derived from the criteria tokens; the VCEP's supplied
+    classification remains authoritative and may differ because a panel can
+    apply gene-specific specifications.
+    """
+    criteria, unknown = manual_acmg.parse_criteria_text(criteria_text)
+    if not criteria:
+        return None, unknown
+    return int(manual_acmg.calculate(criteria)["score"]), unknown
 
 
 def predicted_suspect_evidence(row: dict) -> dict[str, Any]:
@@ -733,7 +747,48 @@ def _row_to_variant(row: dict) -> dict:
     hgvs_full = ":".join(p for p in (gene, display_transcript,
                                       _strip_tx(display_hgvs_c),
                                       _strip_tx(hgvs_p)) if p)
+    latest_applied = _to_bool(row.get("CLINVAR_LATEST_APPLIED", ""))
+    has_separate_latest = "CLINVAR_LATEST_SIG" in row
+    if latest_applied and not has_separate_latest:
+        # Compatibility with the short-lived overlay format that replaced
+        # CLINVAR_* and retained the pipeline values in CLINVAR_BASE_*.
+        baseline_sig = _coalesce(row.get("CLINVAR_BASE_SIG"))
+        baseline_stars = _to_num(row.get("CLINVAR_BASE_STARS"))
+        baseline_dn = _coalesce(row.get("CLINVAR_BASE_DN"))
+        baseline_sigconf = _coalesce(row.get("CLINVAR_BASE_SIGCONF"))
+        baseline_variation_id = _coalesce(row.get("CLINVAR_BASE_VARIATION_ID"))
+        latest_sig = _coalesce(row.get("CLINVAR_SIG"))
+        latest_stars = _to_num(row.get("CLINVAR_STARS"))
+        latest_dn = _coalesce(row.get("CLINVAR_DN"))
+        latest_sigconf = _coalesce(
+            row.get("CLINVAR_CONF"), row.get("CLINVAR_SIGCONF")
+        )
+        latest_variation_id = _coalesce(row.get("CLINVAR_VARIATION_ID"))
+        tier_row = dict(row)
+        tier_row.update({
+            "CLINVAR_SIG": baseline_sig,
+            "CLINVAR_STARS": "" if baseline_stars is None else str(baseline_stars),
+            "CLINVAR_DN": baseline_dn,
+            "CLINVAR_SIGCONF": baseline_sigconf,
+            "CLINVAR_VARIATION_ID": baseline_variation_id,
+        })
+    else:
+        baseline_sig = _coalesce(row.get("CLINVAR_SIG"))
+        baseline_stars = _to_num(row.get("CLINVAR_STARS"))
+        baseline_dn = _coalesce(row.get("CLINVAR_DN"))
+        baseline_sigconf = _coalesce(
+            row.get("CLINVAR_CONF"), row.get("CLINVAR_SIGCONF")
+        )
+        baseline_variation_id = _coalesce(row.get("CLINVAR_VARIATION_ID"))
+        latest_sig = _coalesce(row.get("CLINVAR_LATEST_SIG"))
+        latest_stars = _to_num(row.get("CLINVAR_LATEST_STARS"))
+        latest_dn = _coalesce(row.get("CLINVAR_LATEST_DN"))
+        latest_sigconf = _coalesce(row.get("CLINVAR_LATEST_SIGCONF"))
+        latest_variation_id = _coalesce(row.get("CLINVAR_LATEST_VARIATION_ID"))
+        tier_row = row
     predicted_evidence = predicted_suspect_evidence(row)
+    vcep_criteria = _coalesce(row.get("CLINGEN_VCEP_CRITERIA"))
+    vcep_score, vcep_unknown = _clingen_vcep_score(vcep_criteria)
     variant = {
         "id": vid,
         "CHROM": chrom,
@@ -773,11 +828,25 @@ def _row_to_variant(row: dict) -> dict:
         "alt_depth": alt_depth,
         "low_alt_support": bool(alt_depth is not None and alt_depth < 10),
         "alt_af": vaf_value,
-        "CLNSIG": row.get("CLINVAR_SIG", ""),
-        "clinvar_stars": _to_num(row.get("CLINVAR_STARS")),
-        "clinvar_dn": row.get("CLINVAR_DN", ""),
-        "CLNSIGCONF": _coalesce(row.get("CLINVAR_CONF"),
-                                 row.get("CLINVAR_SIGCONF")),
+        "CLNSIG": baseline_sig,
+        "clinvar_stars": baseline_stars,
+        "clinvar_dn": baseline_dn,
+        "CLNSIGCONF": baseline_sigconf,
+        "CLNSIG_old": baseline_sig,
+        "CLNSIGCONF_old": baseline_sigconf,
+        "clinvar_stars_old": baseline_stars,
+        "clinvar_dn_old": baseline_dn,
+        "clinvar_variation_id_old": baseline_variation_id,
+        "clinvar_latest_sig": latest_sig,
+        "clinvar_latest_sigconf": latest_sigconf,
+        "clinvar_latest_stars": latest_stars,
+        "clinvar_latest_dn": latest_dn,
+        "clinvar_latest_variation_id": latest_variation_id,
+        "clinvar_latest_review_status": _coalesce(
+            row.get("CLINVAR_LATEST_REVIEW_STATUS")
+        ),
+        "clinvar_latest_applied": latest_applied,
+        "clinvar_change": (row.get("CLINVAR_CHANGE") or "").strip(),
         "AF": _to_num(row.get("GNOMAD_G_AF")),
         "AF_eas": _to_num(row.get("GNOMAD_G_EAS_AF")),
         "AF_exome": _to_num(row.get("GNOMAD_E_AF")),
@@ -808,11 +877,17 @@ def _row_to_variant(row: dict) -> dict:
         "VARITY_R":            _max_multi(row.get("VARITY_R")),
         "BayesDel":            _max_multi(row.get("BAYESDEL_NOAF")),
         "BayesDel_pred":       _first_str(row.get("BAYESDEL_NOAF_PRED")),
-        # SpliceAI + MetaRNN + REVEL come from annotate_extra_vep
-        # post-processing (new pipeline doesn't ship them).
+        # REVEL / MutPred2 / VEST4 / CADD come from the v3.6 Nextflow
+        # dbNSFP branch.  SpliceAI remains a research-only post-processing
+        # overlay.  Legacy MetaRNN is retained in the payload for old cases,
+        # but is no longer part of the reviewer display order.
         "SpliceAI_score":      _max_multi(row.get("SPLICEAI_MAX")),
         "MetaRNN_score":       _max_multi(row.get("METARNN")),
         "REVEL_score":         _max_multi(row.get("REVEL")),
+        "CADD_score":          _max_multi(row.get("CADD_PHRED")),
+        "MutPred2_score":      _max_multi(row.get("MUTPRED2")),
+        "MutPred2_pred":       _first_str(row.get("MUTPRED2_PRED")),
+        "VEST4_score":         _max_multi(row.get("VEST4")),
         # Others — under ▾ More on the card.
         "DANN":                _max_multi(row.get("DANN")),
         "PhactBoost":          _max_multi(row.get("PHACTBOOST")),
@@ -832,6 +907,17 @@ def _row_to_variant(row: dict) -> dict:
                                                  row.get("ACMG_POINTS"))),
         "ACMG_classification": _normalize_acmg_class(row.get("ACMG_CLASS", "")),
         "ACMG_notes":          (row.get("ACMG_NOTES") or "").strip(),
+        # ClinGen Evidence Repository VCEP expert assessment.  This is a
+        # comparison source only; it never enters the effective ACMG cascade
+        # unless a reviewer explicitly Applies and saves its criteria.
+        "clingen_vcep_class": _normalize_acmg_class(
+            _coalesce(row.get("CLINGEN_VCEP_CLASS"))
+        ),
+        "clingen_vcep_criteria": vcep_criteria.replace("|", ","),
+        "clingen_vcep_panel": _coalesce(row.get("CLINGEN_VCEP_PANEL")),
+        "clingen_vcep_agreement": _coalesce(row.get("CLINGEN_AGREEMENT")),
+        "clingen_vcep_score": vcep_score,
+        "clingen_vcep_unknown_criteria": vcep_unknown,
         # GeneBe — populated by annotate_acmg_genebe.py as a SECOND
         # opinion (does NOT overwrite the pipeline's ACMG columns).
         # All four blank when the variant isn't in GeneBe.
@@ -871,7 +957,7 @@ def _row_to_variant(row: dict) -> dict:
         "ClinVar_link": row.get("CLINVAR_LINK", ""),
         "litvar2": _litvar2_payload(row),
         "report_class": row.get("REPORT_CLASS", ""),
-        "tier": classify_tier(row),
+        "tier": classify_tier(tier_row),
         # Preserve the non-ACMG 1C triggers so a later manual ACMG overlay can
         # recalculate the tier without losing independent predictor evidence.
         "predicted_suspect_non_acmg": bool(

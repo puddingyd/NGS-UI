@@ -1,7 +1,8 @@
+import sqlite3
 import time
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from ..auth import current_user
@@ -10,6 +11,7 @@ from ..services import (
     analyses_store,
     clinical_presentation_store,
     docx_export,
+    litvar2_on_demand,
     patient_list_store,
     patient_store,
     report_store,
@@ -417,6 +419,26 @@ def search_sample_snv(sample_id: str, genes: str, version: str | None = None):
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")
     return payload
+
+
+@router.post("/samples/{sample_id}/litvar2/lookup")
+def lookup_sample_litvar2(sample_id: str, payload: dict = Body(...)):
+    """Batch lookup selected SNVs against the current local LitVar2 index."""
+    try:
+        return litvar2_on_demand.lookup_variants(
+            sample_id,
+            payload.get("variant_ids") or [],
+            trigger=str(payload.get("trigger") or "gene_search"),
+            force=bool(payload.get("force")),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except litvar2_on_demand.Litvar2LookupError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(500, f"LitVar2 本地查詢失敗：{exc}") from exc
 
 
 @router.put("/samples/{sample_id}/metadata")

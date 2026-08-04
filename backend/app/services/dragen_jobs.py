@@ -772,7 +772,7 @@ def start_job(
     source_sample_id: str = "",
     mode: str = "dragen",
     seq_type: str = "",
-    with_extra_vep: bool = False,
+    with_research_only: bool = False,
     with_pgx: bool = True,
     cnv_vcf: str = "",
     sv_vcf: str = "",
@@ -885,7 +885,9 @@ def start_job(
         "sample_count":   len(batch_samples),
         "samples":        batch_samples,
         "pipeline_type":  "dragen" if mode == "dragen" else "nckuh",
-        "with_extra_vep": with_extra_vep,
+        "with_research_only": with_research_only,
+        # Compatibility for older job-list frontends/state readers.
+        "with_extra_vep": with_research_only,
         "with_pgx":       with_pgx,
         "cnv_vcf":        cnv_vcf,
         "sv_vcf":         sv_vcf,
@@ -913,8 +915,8 @@ def start_job(
         "--batch-json", str(batch_path),
         "--mode",    mode,
     ]
-    if with_extra_vep:
-        cmd.append("--with-extra-vep")
+    if with_research_only:
+        cmd.append("--research-only")
     if not with_pgx:
         cmd.append("--without-pgx")
     if cnv_vcf:  cmd += ["--cnv-vcf",  cnv_vcf]

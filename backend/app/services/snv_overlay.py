@@ -186,6 +186,31 @@ class OverlayReader:
     def active(self) -> bool:
         return self.conn is not None
 
+    def keys_with_field_values(self, field: str, values: set[str]) -> set[str]:
+        """Return sparse-overlay row keys whose *field* has one of *values*.
+
+        This is intentionally an overlay scan rather than a raw-TSV lookup.
+        The overlay is small compared with a WGS source TSV and the method lets
+        callers discover exceptional rows before applying the normal raw-row
+        filters one record at a time.
+        """
+        if self.conn is None or not field or not values:
+            return set()
+        wanted = {str(value) for value in values}
+        matched: set[str] = set()
+        needle = f'%"{field}"%'
+        for key, raw_payload in self.conn.execute(
+            "SELECT row_key, payload_json FROM annotations WHERE payload_json LIKE ?",
+            (needle,),
+        ):
+            try:
+                payload = json.loads(raw_payload)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict) and str(payload.get(field) or "") in wanted:
+                matched.add(str(key))
+        return matched
+
     def apply(self, row: dict[str, str]) -> dict[str, str]:
         if self.conn is None:
             return row

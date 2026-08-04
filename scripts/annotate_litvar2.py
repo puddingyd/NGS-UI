@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import re
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +108,7 @@ def annotate_tsv(
     db_path: Path,
     *,
     test_type: str,
+    marker_path: Path | None = None,
 ) -> dict[str, int]:
     tsv = Path(tsv)
     groups, candidate_rows = _candidate_groups(tsv, test_type=test_type)
@@ -160,11 +163,32 @@ def annotate_tsv(
             except OSError:
                 pass
             raise
-    return {
+    stats = {
         "candidate_rows": candidate_rows,
         "candidate_variants": len(groups),
         **counts,
     }
+    if marker_path is not None:
+        metadata = litvar2_store.database_metadata(db_path)
+        marker = {
+            "schema_version": 1,
+            "status": "complete",
+            "scope": "review_candidates",
+            "dataset_date": str(metadata.get("dataset_date") or ""),
+            "source_sha256": str(metadata.get("source_sha256") or ""),
+            "record_count": int(metadata.get("record_count") or 0),
+            "annotated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            **stats,
+        }
+        marker_path = Path(marker_path)
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = marker_path.with_suffix(marker_path.suffix + ".tmp")
+        tmp.write_text(
+            json.dumps(marker, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(tmp, marker_path)
+    return stats
 
 
 def main() -> int:
@@ -172,6 +196,7 @@ def main() -> int:
     parser.add_argument("--tsv", required=True, type=Path)
     parser.add_argument("--db", type=Path, default=LITVAR2_DB)
     parser.add_argument("--test-type", choices=["WES", "WGS"], default="WES")
+    parser.add_argument("--marker", type=Path)
     args = parser.parse_args()
     if not args.db.is_file():
         print(f"[litvar2] local database not found, skipped: {args.db}")
@@ -181,6 +206,7 @@ def main() -> int:
             args.tsv,
             args.db,
             test_type=args.test_type,
+            marker_path=args.marker,
         )
     except Exception as exc:
         # Literature lookup is reviewer context, never a release gate.
