@@ -356,10 +356,10 @@ def merged_associations(
     """Return OMIM-first rows plus non-duplicate supplemental associations.
 
     OMIM Disease1..5 slots are preserved verbatim and in workbook order.
-    Supplemental evidence may enrich an OMIM row only when its association
-    key maps to exactly one slot.  Ambiguous matches (such as two OMIM slots
-    sharing one phenotype MIM) remain a separate supplemental association so
-    no curator-owned OMIM row is overwritten or arbitrarily selected.
+    Supplemental evidence enriches every OMIM row carrying the same
+    association key.  This intentionally fans phenotype-MIM evidence out to
+    multiple curator-owned slots (for example both OTX2 / 610125 labels)
+    without changing their OMIM names, details, order, or report slots.
     """
     if refresh:
         _ensure_loaded()
@@ -383,13 +383,10 @@ def merged_associations(
     for key in supplemental_order:
         supplemental = supplemental_clusters[key]
         omim_matches = omim_by_key.get(key, [])
-        if len(omim_matches) == 1:
-            _merge_evidence(omim_matches[0], supplemental)
+        if omim_matches:
+            for omim_match in omim_matches:
+                _merge_evidence(omim_match, supplemental)
             continue
-        if len(omim_matches) > 1:
-            supplemental["matching_omim_slots"] = [
-                item.get("omim_slot") for item in omim_matches
-            ]
         supplemental_items.append(supplemental)
 
     return omim_items + supplemental_items

@@ -93,7 +93,6 @@ def test_duplicate_phenotype_mim_preserves_every_omim_slot(monkeypatch):
         "omim-slot:1",
         "omim-slot:2",
         "omim-slot:3",
-        "mim:610125",
         "mim:202650",
     ]
     assert [item["display_name"] for item in associations[:3]] == [
@@ -106,16 +105,15 @@ def test_duplicate_phenotype_mim_preserves_every_omim_slot(monkeypatch):
     assert associations[1]["detail"] == omim_row["Disease2"]
     assert associations[2]["detail"] == omim_row["Disease3"]
 
-    # MIM 610125 is ambiguous across two curator-owned OMIM slots, so its
-    # evidence stays in one supplemental row instead of overwriting either.
-    assert associations[0]["evidence"] == ["OMIM"]
-    assert associations[1]["evidence"] == ["OMIM"]
-    assert associations[3]["matching_omim_slots"] == [1, 2]
-    assert associations[3]["evidence"] == [
+    # MIM 610125 applies to two curator-owned OMIM slots.  Evidence enriches
+    # both while their distinct OMIM labels/details remain authoritative.
+    assert associations[0]["evidence"] == [
+        "OMIM",
         "GenCC Definitive",
         "GenCC Strong",
         "GenCC Moderate",
     ]
+    assert associations[1]["evidence"] == associations[0]["evidence"]
 
     # MIM 613986 maps to one OMIM slot, so evidence enriches that row while
     # its OMIM label and detail remain authoritative.
@@ -124,6 +122,7 @@ def test_duplicate_phenotype_mim_preserves_every_omim_slot(monkeypatch):
         "GenCC Strong",
         "GenCC Moderate",
     ]
+    assert associations[3]["display_name"] == "agnathia-otocephaly complex"
 
 
 def test_supplemental_only_associations_still_group_by_relationship(monkeypatch):

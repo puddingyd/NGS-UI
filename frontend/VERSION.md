@@ -8,7 +8,7 @@
 
 ### v8.0 — 2026-08-04
 
-- SNV/Indel 疾病清單改以 OMIM `Disease1..5` slot 為權威列：即使多筆疾病共用同一 phenotype MIM，仍依 Excel 原順序完整保留名稱與說明，不再被 GenCC / ClinGen / MONDO 合併覆寫或重複成同一列。Supplemental evidence 只有唯一命中 OMIM slot 時才附加 badge；同時命中多個 slots 時改在下方補充區顯示一次。
+- SNV/Indel 疾病清單改以 OMIM `Disease1..5` slot 為權威列：即使多筆疾病共用同一 phenotype MIM，仍依 Excel 原順序完整保留名稱與說明，不再被 GenCC / ClinGen / MONDO 合併覆寫或重複成同一列。同一 MIM 的 supplemental evidence 會附加到所有匹配的 OMIM slots，且不再額外重複顯示該 supplemental disease；只有 OMIM 完全沒有的 association 才列在下方補充區。
 - LitVar2 外部連結圖示改為固定顯示：唯一命中時連到該 variant 結果頁，`No reference`、`NA` 等其他狀態連到 LitVar2 首頁。多筆命中改顯示可展開的 `Ambiguous match (N records)`，完整列出每筆 LitVar ID、rsID/gene/HGVS、PMID 數、前五篇 PubMed 與各自的 LitVar2 結果頁，不再只顯示無法追查的 ambiguous 文字。
 - LitVar2 重複 records 會依 ClinGen CA 或 rsID + gene + normalized HGVS 聚合成 logical variant，完整 PMID 聯集去重後只顯示一次，來源收在 `Merged from N LitVar2 records`；只有仍不同的候選才顯示 `Ambiguous match (N variants)`。既有 v1 SQLite 可繼續讀取，手動／每月更新會直接用本地 bulk 升級 v2。
 - 左側「基本資料／報告／分析」與子區導覽改為直接跳到目標高度，不再顯示快速滑過整頁的 smooth scrolling。
