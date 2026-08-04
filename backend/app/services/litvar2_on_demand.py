@@ -169,6 +169,22 @@ def _identifier_fingerprint(identifiers: dict[str, list[str]]) -> str:
 
 
 def _browser_payload(result: dict[str, object]) -> dict[str, object]:
+    candidates = []
+    for raw in result.get("candidates") or []:
+        if not isinstance(raw, dict):
+            continue
+        candidates.append({
+            "id": str(raw.get("litvar_id") or ""),
+            "rsid": str(raw.get("rsid") or ""),
+            "gene": str(raw.get("gene") or ""),
+            "hgvs": str(raw.get("hgvs") or ""),
+            "pmid_count": max(0, int(raw.get("pmids_count") or 0)),
+            "pmids": [
+                str(value) for value in (raw.get("pmids") or [])
+                if str(value).isdigit()
+            ][:5],
+            "url": str(raw.get("url") or ""),
+        })
     return {
         "id": str(result.get("litvar_id") or ""),
         "rsid": str(result.get("rsid") or ""),
@@ -181,6 +197,7 @@ def _browser_payload(result: dict[str, object]) -> dict[str, object]:
         "match_method": str(result.get("match_method") or ""),
         "status": str(result.get("status") or "no_match"),
         "url": str(result.get("url") or ""),
+        "candidates": candidates,
     }
 
 
@@ -234,6 +251,12 @@ def _cached_rows(
         except (TypeError, json.JSONDecodeError):
             continue
         if isinstance(payload, dict):
+            # Cache rows created before ambiguous candidates were exposed do
+            # not contain enough information for the new expandable UI.
+            # Treat only those legacy ambiguous rows as a miss; hit/no-match
+            # cache entries remain valid for the same DB fingerprint.
+            if payload.get("status") == "ambiguous" and not payload.get("candidates"):
+                continue
             out[str(variant_id)] = payload
     return out
 

@@ -110,6 +110,7 @@ const LITVAR2_REFRESH_ICON_SVG =
   + '<path d="M21 21v-5h-5"/>'
   + '</svg>';
 
+const LITVAR2_HOME_URL = "https://www.ncbi.nlm.nih.gov/research/litvar2/";
 const _litvar2PendingIds = new Set();
 
 // ---------- Backend fetch ------------------------------------------
@@ -1554,11 +1555,11 @@ function _clinvarExternalLinkHtml(v) {
 function _litvar2TitleHtml(v, id) {
   const data = v?.litvar2 || {};
   const url = _safeLitvar2Url(data.url);
+  const externalUrl = url || LITVAR2_HOME_URL;
+  const externalTitle = url ? "在 LitVar2 開啟此 variant" : "開啟 LitVar2 首頁";
   const date = String(data.dataset_date || "").trim();
   const titleText = `LitVar2${date ? ` (${date})` : ""}`;
-  const externalLink = url
-    ? `<a class="litvar2-external-link" href="${escapeAttr(url)}" target="_blank" rel="noopener" title="在 LitVar2 開啟" aria-label="在 LitVar2 開啟">${EXTERNAL_LINK_ICON_SVG}</a>`
-    : "";
+  const externalLink = `<a class="litvar2-external-link" href="${escapeAttr(externalUrl)}" target="_blank" rel="noopener" title="${externalTitle}" aria-label="${externalTitle}">${EXTERNAL_LINK_ICON_SVG}</a>`;
   const pending = Boolean(id) && _litvar2PendingIds.has(String(id));
   const refreshButton = id
     ? `<button type="button" class="litvar2-refresh-btn${pending ? " is-refreshing" : ""}" data-id="${escapeAttr(id)}" title="以目前本地 LitVar2 資料庫重新查詢" aria-label="以目前本地 LitVar2 資料庫重新查詢"${pending ? " disabled" : ""}>${LITVAR2_REFRESH_ICON_SVG}</button>`
@@ -1566,29 +1567,60 @@ function _litvar2TitleHtml(v, id) {
   return `${escapeHtml(titleText)}${externalLink}${refreshButton}`;
 }
 
-function _litvar2ValueHtml(v, id) {
-  const data = v?.litvar2 || {};
-  const url = _safeLitvar2Url(data.url);
+function _litvar2PmidsHtml(data, url) {
   const pmids = Array.from(new Set(
-    (Array.isArray(data.pmids) ? data.pmids : [])
+    (Array.isArray(data?.pmids) ? data.pmids : [])
       .map(value => String(value || "").trim())
       .filter(value => /^\d+$/.test(value))
   )).slice(0, 5);
-  const total = Math.max(0, Number.parseInt(data.pmid_count, 10) || 0);
+  const total = Math.max(0, Number.parseInt(data?.pmid_count, 10) || 0);
+  const links = pmids.map(pmid =>
+    `<a class="litvar2-pmid-link" href="https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(pmid)}/" target="_blank" rel="noopener">PMID:${escapeHtml(pmid)}</a>`
+  );
+  const remaining = Math.max(0, total - pmids.length);
+  if (remaining && url) {
+    links.push(`<a class="litvar2-others-link" href="${escapeAttr(url)}" target="_blank" rel="noopener">and ${remaining} others</a>`);
+  }
+  if (links.length) return links.join(", ");
+  return total ? `${total} PMID records` : "No PMID";
+}
+
+function _litvar2AmbiguousHtml(data) {
+  const candidates = Array.isArray(data?.candidates)
+    ? data.candidates.filter(candidate => candidate && typeof candidate === "object")
+    : [];
+  if (!candidates.length) return "Ambiguous match（請按重新整理取得候選明細）";
+  const rows = candidates.map((candidate, index) => {
+    const url = _safeLitvar2Url(candidate.url);
+    const externalUrl = url || LITVAR2_HOME_URL;
+    const recordLabel = String(candidate.id || "").trim()
+      ? `LitVar ID: ${candidate.id}`
+      : `Record ${index + 1}`;
+    const identifiers = [candidate.rsid, candidate.gene, candidate.hgvs]
+      .map(value => String(value || "").trim())
+      .filter(Boolean);
+    return `<div class="litvar2-candidate-record">
+      <a class="litvar2-candidate-link" href="${escapeAttr(externalUrl)}" target="_blank" rel="noopener" title="開啟這筆 LitVar2 record">${escapeHtml(recordLabel)}${EXTERNAL_LINK_ICON_SVG}</a>
+      ${identifiers.length ? `<div class="litvar2-candidate-identifiers">${identifiers.map(escapeHtml).join(" · ")}</div>` : ""}
+      <div class="litvar2-candidate-pmids">${_litvar2PmidsHtml(candidate, url)}</div>
+    </div>`;
+  }).join("");
+  return `<details class="litvar2-ambiguous-details">
+    <summary>Ambiguous match (${candidates.length} records)</summary>
+    <div class="litvar2-candidate-list">${rows}</div>
+  </details>`;
+}
+
+function _litvar2ValueHtml(v, id) {
+  const data = v?.litvar2 || {};
+  const url = _safeLitvar2Url(data.url);
   let value = "NA (請重跑三級)";
   if (data.status === "hit") {
-    const links = pmids.map(pmid =>
-      `<a class="litvar2-pmid-link" href="https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(pmid)}/" target="_blank" rel="noopener">PMID:${escapeHtml(pmid)}</a>`
-    );
-    const remaining = Math.max(0, total - pmids.length);
-    if (remaining && url) {
-      links.push(`<a class="litvar2-others-link" href="${escapeAttr(url)}" target="_blank" rel="noopener">and ${remaining} others</a>`);
-    }
-    value = links.length ? links.join(", ") : "No PMID";
+    value = _litvar2PmidsHtml(data, url);
   } else if (data.status === "no_match") {
     value = "No reference";
   } else if (data.status === "ambiguous") {
-    value = "Ambiguous match";
+    value = _litvar2AmbiguousHtml(data);
   }
   if ((!data.status || data.status === "") && id && _litvar2PendingIds.has(String(id))) {
     value = "查詢中…";
@@ -1598,7 +1630,7 @@ function _litvar2ValueHtml(v, id) {
 
 function renderLitvar2(v, id) {
   const idAttr = id ? ` data-litvar2-id="${escapeAttr(id)}"` : "";
-  return `<span class="k litvar2-key"${idAttr}>${_litvar2TitleHtml(v, id)}</span><span class="v litvar2-references"${idAttr}>${_litvar2ValueHtml(v, id)}</span>`;
+  return `<span class="k litvar2-key"${idAttr}>${_litvar2TitleHtml(v, id)}</span><div class="v litvar2-references"${idAttr}>${_litvar2ValueHtml(v, id)}</div>`;
 }
 
 // ---------- Render: sample header / phenotype ----------------------

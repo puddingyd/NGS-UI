@@ -1452,6 +1452,42 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 @keyframes litvar2-refresh-spin { to { transform: rotate(360deg); } }
 .litvar2-references { line-height: 1.45; }
+.litvar2-ambiguous-details > summary {
+  color: #9a6700;
+  cursor: pointer;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}
+.litvar2-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+  padding-left: 7px;
+  border-left: 2px solid #d4a72c;
+}
+.litvar2-candidate-record {
+  min-width: 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #d8dee4;
+}
+.litvar2-candidate-record:last-child { padding-bottom: 0; border-bottom: 0; }
+.litvar2-candidate-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #0969da;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  text-decoration: none;
+}
+.litvar2-candidate-link:hover { text-decoration: underline; }
+.litvar2-candidate-link svg { flex: 0 0 auto; }
+.litvar2-candidate-identifiers {
+  color: #57606a;
+  overflow-wrap: anywhere;
+}
+.litvar2-candidate-pmids { margin-top: 1px; overflow-wrap: anywhere; }
 .info-hint {
   display: inline-flex;
   align-items: center;

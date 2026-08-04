@@ -713,11 +713,43 @@ def _result_from_row(
         "status": "hit",
         "litvar_id": litvar_id,
         "rsid": str(row["rsid"] or ""),
+        "gene": str(row["primary_gene"] or ""),
+        "hgvs": str(row["preferred_hgvs"] or ""),
         "pmids_count": _to_int(row["pmids_count"]),
         "pmids": pmids,
         "dataset_date": dataset_date,
         "match_method": match_method,
         "url": f"https://www.ncbi.nlm.nih.gov/research/litvar2/docsum?{params}",
+    }
+
+
+def _ambiguous_result(
+    hits: dict[int, sqlite3.Row],
+    *,
+    dataset_date: str,
+    match_method: str,
+) -> dict[str, object]:
+    candidates = []
+    for _row_id, row in sorted(hits.items()):
+        query = (
+            str(row["rsid"] or "")
+            if match_method == "rsid"
+            else " ".join(filter(None, (
+                str(row["primary_gene"] or ""),
+                str(row["preferred_hgvs"] or ""),
+            )))
+        )
+        candidates.append(_result_from_row(
+            row,
+            dataset_date=dataset_date,
+            match_method=match_method,
+            query=query,
+        ))
+    return {
+        "status": "ambiguous",
+        "dataset_date": dataset_date,
+        "match_method": match_method,
+        "candidates": candidates,
     }
 
 
@@ -737,7 +769,7 @@ def lookup_variant(
     rsid_hits: dict[int, sqlite3.Row] = {}
     for rsid in normalized_rsids:
         rows = conn.execute(
-            "SELECT * FROM variants WHERE rsid = ? LIMIT 4",
+            "SELECT * FROM variants WHERE rsid = ? ORDER BY id",
             (rsid,),
         ).fetchall()
         rsid_hits.update(_rows_to_hits(rows))
@@ -749,11 +781,11 @@ def lookup_variant(
             query=normalized_rsids[0],
         )
     if len(rsid_hits) > 1:
-        return {
-            "status": "ambiguous",
-            "dataset_date": dataset_date,
-            "match_method": "rsid",
-        }
+        return _ambiguous_result(
+            rsid_hits,
+            dataset_date=dataset_date,
+            match_method="rsid",
+        )
 
     normalized_genes = list(dict.fromkeys(
         value for value in (normalize_gene(raw) for raw in genes) if value
@@ -767,7 +799,7 @@ def lookup_variant(
             rows = conn.execute(
                 "SELECT v.* FROM hgvs_aliases a "
                 "JOIN variants v ON v.id = a.variant_id "
-                "WHERE a.gene = ? AND a.hgvs = ? LIMIT 4",
+                "WHERE a.gene = ? AND a.hgvs = ? ORDER BY v.id",
                 (gene, hgvs),
             ).fetchall()
             hgvs_hits.update(_rows_to_hits(rows))
@@ -782,8 +814,14 @@ def lookup_variant(
             match_method="gene_hgvs",
             query=query,
         )
+    if len(hgvs_hits) > 1:
+        return _ambiguous_result(
+            hgvs_hits,
+            dataset_date=dataset_date,
+            match_method="gene_hgvs",
+        )
     return {
-        "status": "ambiguous" if len(hgvs_hits) > 1 else "no_match",
+        "status": "no_match",
         "dataset_date": dataset_date,
         "match_method": "gene_hgvs" if normalized_hgvs else "",
     }

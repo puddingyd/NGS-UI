@@ -35,6 +35,7 @@ OUT_FIELDS = (
     "LITVAR2_MATCH_METHOD",
     "LITVAR2_STATUS",
     "LITVAR2_URL",
+    "LITVAR2_CANDIDATES_JSON",
 )
 _RSID_RE = re.compile(r"(?i)\brs\d+\b")
 
@@ -100,6 +101,11 @@ def _payload(result: dict[str, object]) -> dict[str, str]:
         "LITVAR2_MATCH_METHOD": str(result.get("match_method") or ""),
         "LITVAR2_STATUS": str(result.get("status") or ""),
         "LITVAR2_URL": str(result.get("url") or ""),
+        "LITVAR2_CANDIDATES_JSON": json.dumps(
+            result.get("candidates") or [],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
     }
 
 

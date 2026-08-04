@@ -114,6 +114,21 @@ def test_bulk_build_and_lookup_preserves_source_pmid_order(tmp_path):
     assert fallback["status"] == "hit"
     assert fallback["match_method"] == "gene_hgvs"
     assert ambiguous["status"] == "ambiguous"
+    assert [candidate["litvar_id"] for candidate in ambiguous["candidates"]] == [
+        "litvar-ambiguous-a",
+        "litvar-ambiguous-b",
+    ]
+    assert all(candidate["gene"] == "GENE3" for candidate in ambiguous["candidates"])
+    assert all(candidate["hgvs"].upper().endswith("C.3G>A") for candidate in ambiguous["candidates"])
+    assert all(
+        candidate["url"].startswith("https://www.ncbi.nlm.nih.gov/research/litvar2/docsum?")
+        for candidate in ambiguous["candidates"]
+    )
+    browser_ambiguous = litvar2_on_demand._browser_payload(ambiguous)
+    assert [candidate["id"] for candidate in browser_ambiguous["candidates"]] == [
+        "litvar-ambiguous-a",
+        "litvar-ambiguous-b",
+    ]
     assert mouse["status"] == "no_match"
 
 
@@ -122,6 +137,39 @@ def test_stream_parser_accepts_json_lines(tmp_path):
     assert [row["_id"] for row in litvar2_store.iter_bulk_records(bulk)] == [
         row["_id"] for row in _records()
     ]
+
+
+def test_legacy_ambiguous_cache_is_refreshed_for_candidate_details(tmp_path):
+    cache = tmp_path / "litvar2_on_demand.sqlite"
+    db_fingerprint = "db-v1"
+    litvar2_on_demand._write_results(
+        cache,
+        [
+            (
+                "chr1-1-A-G",
+                db_fingerprint,
+                "identifiers-a",
+                {"status": "ambiguous", "dataset_date": "2026-07-01"},
+                "manual",
+            ),
+            (
+                "chr1-2-C-T",
+                db_fingerprint,
+                "identifiers-b",
+                {"status": "no_match", "dataset_date": "2026-07-01"},
+                "manual",
+            ),
+        ],
+    )
+
+    cached = litvar2_on_demand._cached_rows(
+        cache,
+        ["chr1-1-A-G", "chr1-2-C-T"],
+        db_fingerprint,
+    )
+
+    assert "chr1-1-A-G" not in cached
+    assert cached["chr1-2-C-T"]["status"] == "no_match"
 
 
 def test_failed_rebuild_preserves_live_bulk_and_database(tmp_path):
@@ -217,6 +265,41 @@ def test_postprocessing_only_annotates_review_candidates(tmp_path, monkeypatch):
     assert marker_payload["scope"] == "review_candidates"
     assert marker_payload["dataset_date"] == "2026-07-01"
     assert marker_payload["candidate_variants"] == 1
+
+
+def test_postprocessing_round_trips_all_ambiguous_candidates(tmp_path, monkeypatch):
+    _bulk, db = _build_db(tmp_path)
+    tsv = tmp_path / "ambiguous.tsv"
+    fields = [
+        "CHROM", "POS", "REF", "ALT", "GENE", "TRANSCRIPT", "HGVS_C",
+        "HGVS_P", "CONSEQUENCE", "RS_ID", "DP_DV", "GNOMAD_G_AF",
+        "CLINVAR_SIG", "ACMG_CRITERIA",
+    ]
+    with tsv.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
+        writer.writeheader()
+        writer.writerow({
+            "CHROM": "chr3", "POS": "300", "REF": "G", "ALT": "A",
+            "GENE": "GENE3", "TRANSCRIPT": "ENST3", "HGVS_C": "c.3G>A",
+            "HGVS_P": "", "CONSEQUENCE": "missense_variant", "RS_ID": "",
+            "DP_DV": "30", "GNOMAD_G_AF": "0.0001", "CLINVAR_SIG": "",
+            "ACMG_CRITERIA": "",
+        })
+    monkeypatch.setattr(annotate_litvar2.snv_review, "load_candidate_bed", lambda: None)
+
+    stats = annotate_litvar2.annotate_tsv(tsv, db, test_type="WES")
+    with tsv.open(encoding="utf-8", newline="") as handle:
+        row = next(csv.DictReader(handle, delimiter="\t"))
+
+    assert stats["ambiguous"] == 1
+    assert row["LITVAR2_STATUS"] == "ambiguous"
+    raw_candidates = json.loads(row["LITVAR2_CANDIDATES_JSON"])
+    assert len(raw_candidates) == 2
+    payload = _row_to_variant(row)["litvar2"]
+    assert [candidate["id"] for candidate in payload["candidates"]] == [
+        "litvar-ambiguous-a",
+        "litvar-ambiguous-b",
+    ]
 
 
 def test_on_demand_lookup_uses_marker_and_versioned_sample_cache(tmp_path, monkeypatch):
@@ -357,6 +440,45 @@ def test_adapter_rejects_untrusted_litvar_url():
     assert payload["pmids"] == ["123", "456"]
 
 
+def test_adapter_preserves_safe_ambiguous_candidates():
+    candidates = [
+        {
+            "litvar_id": "candidate-a",
+            "rsid": "rs300",
+            "gene": "GENE3",
+            "hgvs": "c.3G>A",
+            "pmids_count": 7,
+            "pmids": ["101", "102", "103", "104", "105"],
+            "url": "https://www.ncbi.nlm.nih.gov/research/litvar2/docsum?variant=candidate-a",
+        },
+        {
+            "litvar_id": "candidate-b",
+            "rsid": "",
+            "gene": "GENE3",
+            "hgvs": "c.3G>A",
+            "pmids_count": 1,
+            "pmids": ["201"],
+            "url": "https://www.ncbi.nlm.nih.gov/research/litvar2/docsum?variant=candidate-b",
+        },
+    ]
+    payload = _row_to_variant({
+        "CHROM": "chr3",
+        "POS": "3",
+        "REF": "G",
+        "ALT": "A",
+        "LITVAR2_STATUS": "ambiguous",
+        "LITVAR2_DATASET_DATE": "2026-08-01",
+        "LITVAR2_CANDIDATES_JSON": json.dumps(candidates),
+    })["litvar2"]
+    assert payload["status"] == "ambiguous"
+    assert [candidate["id"] for candidate in payload["candidates"]] == [
+        "candidate-a",
+        "candidate-b",
+    ]
+    assert payload["candidates"][0]["pmids"] == ["101", "102", "103", "104", "105"]
+    assert payload["candidates"][0]["pmid_count"] == 7
+
+
 def test_frontend_places_litvar_below_acmg_with_required_links():
     card = APP_JS[
         APP_JS.index("function renderVariantCard"):
@@ -374,7 +496,14 @@ def test_frontend_places_litvar_below_acmg_with_required_links():
     assert "EXTERNAL_LINK_ICON_SVG" in renderer
     assert "LITVAR2_REFRESH_ICON_SVG" in renderer
     assert "litvar2-refresh-btn" in renderer
-    assert 'title="在 LitVar2 開啟"' in renderer
+    assert "litvar2-ambiguous-details" in renderer
+    assert "Ambiguous match (${candidates.length} records)" in renderer
+    assert "Ambiguous match（請按重新整理取得候選明細）" in renderer
+    assert "litvar2-candidate-link" in renderer
+    assert "_litvar2PmidsHtml(candidate, url)" in renderer
+    assert 'const externalUrl = url || LITVAR2_HOME_URL' in renderer
+    assert '"在 LitVar2 開啟此 variant" : "開啟 LitVar2 首頁"' in renderer
+    assert 'LITVAR2_HOME_URL = "https://www.ncbi.nlm.nih.gov/research/litvar2/"' in APP_JS
     assert 'let value = "NA (請重跑三級)"' in renderer
     assert 'data.status === "no_match"' in renderer
     assert 'value = "No reference"' in renderer

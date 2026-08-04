@@ -607,6 +607,20 @@ def _strand_bias_payload(row: dict, ref: str, alt: str) -> dict[str, Any]:
 
 def _litvar2_payload(row: dict) -> dict:
     """Return a browser-safe literature payload from post-processing columns."""
+    def safe_url(value: object) -> str:
+        candidate_url = str(value or "").strip()
+        try:
+            parsed = urllib.parse.urlparse(candidate_url)
+            if (
+                parsed.scheme == "https"
+                and parsed.hostname == "www.ncbi.nlm.nih.gov"
+                and parsed.path == "/research/litvar2/docsum"
+            ):
+                return candidate_url
+        except ValueError:
+            pass
+        return ""
+
     pmids: list[str] = []
     for token in re.findall(r"\d+", str(row.get("LITVAR2_PMIDS_TOP5") or "")):
         if token not in pmids:
@@ -614,17 +628,37 @@ def _litvar2_payload(row: dict) -> dict:
         if len(pmids) == 5:
             break
     count = _to_num(row.get("LITVAR2_PMID_COUNT"))
-    url = str(row.get("LITVAR2_URL") or "").strip()
+    candidates = []
     try:
-        parsed = urllib.parse.urlparse(url)
-        if not (
-            parsed.scheme == "https"
-            and parsed.hostname == "www.ncbi.nlm.nih.gov"
-            and parsed.path == "/research/litvar2/docsum"
-        ):
-            url = ""
-    except ValueError:
-        url = ""
+        raw_candidates = json.loads(str(row.get("LITVAR2_CANDIDATES_JSON") or "[]"))
+    except (TypeError, json.JSONDecodeError):
+        raw_candidates = []
+    seen_candidates: set[str] = set()
+    for raw in raw_candidates if isinstance(raw_candidates, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        litvar_id = str(raw.get("litvar_id") or raw.get("id") or "").strip()
+        candidate_url = safe_url(raw.get("url"))
+        dedupe_key = litvar_id or candidate_url
+        if not dedupe_key or dedupe_key in seen_candidates:
+            continue
+        seen_candidates.add(dedupe_key)
+        candidate_pmids = []
+        for value in raw.get("pmids") or []:
+            token = str(value).strip()
+            if token.isdigit() and token not in candidate_pmids:
+                candidate_pmids.append(token)
+            if len(candidate_pmids) == 5:
+                break
+        candidates.append({
+            "id": litvar_id,
+            "rsid": str(raw.get("rsid") or "").strip(),
+            "gene": str(raw.get("gene") or "").strip(),
+            "hgvs": str(raw.get("hgvs") or "").strip(),
+            "pmid_count": max(0, int(_to_num(raw.get("pmids_count")) or 0)),
+            "pmids": candidate_pmids,
+            "url": candidate_url,
+        })
     return {
         "id": str(row.get("LITVAR2_ID") or "").strip(),
         "rsid": str(row.get("LITVAR2_RSID") or "").strip(),
@@ -633,7 +667,8 @@ def _litvar2_payload(row: dict) -> dict:
         "dataset_date": str(row.get("LITVAR2_DATASET_DATE") or "").strip(),
         "match_method": str(row.get("LITVAR2_MATCH_METHOD") or "").strip(),
         "status": str(row.get("LITVAR2_STATUS") or "").strip(),
-        "url": url,
+        "url": safe_url(row.get("LITVAR2_URL")),
+        "candidates": candidates,
     }
 
 
