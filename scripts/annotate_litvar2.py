@@ -70,7 +70,7 @@ def _candidate_groups(
     with tsv.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
-            if not snv_review.is_review_candidate(
+            if not snv_review.is_review_retained(
                 row,
                 test_type=test_type,
                 bed=bed,
@@ -185,6 +185,9 @@ def annotate_tsv(
         marker = {
             "schema_version": 1,
             "status": "complete",
+            # Keep the established marker value for on-demand cache
+            # compatibility; the underlying predicate is now the shared
+            # authoritative final-review retention rule.
             "scope": "review_candidates",
             "dataset_date": str(metadata.get("dataset_date") or ""),
             "source_sha256": str(metadata.get("source_sha256") or ""),

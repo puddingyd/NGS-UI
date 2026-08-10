@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v8.1 — 2026-08-10
+
+- 所有三級分析 case 的 compact SNV/Indel review TSV 新增固定 GRCh38 GPN-MSA pre-computed score；只以 tabix 查 final review SNVs，不改 `03_acmg` raw、不寫 sparse overlay，也不影響 tier、ACMG、filter、排序或報告。卡片將 GPN-MSA 放在 SpliceAI 後，低分代表較 deleterious，`≤ -7` 只作 contextual tail 提示，未校準成 PP3/BP4，且不產生 benign evidence。
+- SpliceAI、GeneBe live API fallback 與 LitVar2 改為共用 review TSV 的最終保留規則：primary/non-mito、WES DP ≥20、baseline ClinVar P/LP rescue、rare/unknown AF + candidate BED，以及 weekly ClinVar `UP_TO_PLP` / `DOWN_FROM_PLP` rescue。GeneBe 本機主 DB 仍照舊查完整 working TSV；SpliceAI 仍只在勾選 Research-only 時執行。
+- GPN-MSA reference 簡化為 `$NGS_UI_HOME/biotools/gpn_msa/scores.tsv.bgz` + `.tbi` 單一固定部署，不設 release/current 目錄或自動更新 timer；新三級 job 缺 score、index 或 tabix 會明確失敗，既有 case 則可在載入時依 review manifest 懶重建補分。
+
 ### v8.0 — 2026-08-04
 
 - SNV/Indel 疾病清單改以 OMIM `Disease1..5` slot 為權威列：即使多筆疾病共用同一 phenotype MIM，仍依 Excel 原順序完整保留名稱與說明，不再被 GenCC / ClinGen / MONDO 合併覆寫或重複成同一列。同一 MIM 的 supplemental evidence 會附加到所有匹配的 OMIM slots，且不再額外重複顯示該 supplemental disease；只有 OMIM 完全沒有的 association 才列在下方補充區。

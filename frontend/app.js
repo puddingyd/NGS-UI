@@ -516,6 +516,7 @@ const IN_SILICO_REFERENCES = {
   pejaver:   { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9748256/", pmid: "36413997" },
   bergquist: { url: "https://pubmed.ncbi.nlm.nih.gov/40084623/", pmid: "40084623" },
   splicing:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10357475/", pmid: "37352859" },
+  gpnmsa:    { url: "https://www.nature.com/articles/s41587-024-02511-w", pmid: "39747647" },
   pangolin:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9022248/", pmid: "35449021" },
   pknn:      { url: "https://doi.org/10.1101/2025.09.24.678417", pmid: "" },
   dann:      { url: "https://pubmed.ncbi.nlm.nih.gov/25338716/", pmid: "25338716" },
@@ -610,6 +611,14 @@ const IN_SILICO_CALIBRATIONS = {
       "須配合 variant context 與 ClinGen SVI splicing decision tree 使用",
     ], reference: IN_SILICO_REFERENCES.splicing,
   },
+  gpnmsa: {
+    lines: [
+      "分數是 ALT 相對 REF 的 log-likelihood ratio；越低代表模型預測越 deleterious",
+      "作者使用的 hard cutoff（情境提示）：≤ -7",
+      "連續／相對分數，尚未校準成 ACMG PP3/BP4；不產生 benign evidence",
+      "固定 GRCh38 pre-computed score，僅涵蓋 SNV",
+    ], reference: IN_SILICO_REFERENCES.gpnmsa,
+  },
   dann: {
     lines: [
       "分數越高表示模型預測越 deleterious",
@@ -663,6 +672,7 @@ const IN_SILICO_TOOLS = [
   { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score" },
   { key: "revel",         label: "REVEL",         scoreField: "REVEL_score" },
   { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score" },
+  { key: "gpnmsa",        label: "GPN-MSA",       scoreField: "GPN_MSA_score" },
   { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
   { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
   { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred" },
@@ -771,6 +781,9 @@ function _toolEvidence(v, tool) {
       if (x >= .20) return _evidence("sig-lp", "PP3");
       if (x <= .10) return _evidence("sig-b", "BP4");
       return _evidence("sig-vus", "Indeterminate");
+    case "gpnmsa": return x <= -7
+      ? _evidence("sig-lp", "Deleterious tail (context only)")
+      : _evidence("sig-vus", "Contextual score");
     case "dann": return _evidence("", "No calibrated evidence");
     case "phactboost": return x >= .50
       ? _evidence("sig-lp", "Model pathogenic") : _evidence("sig-lb", "Model benign");

@@ -18,7 +18,7 @@ SPEC.loader.exec_module(genebe)
 def _write_tsv(path: Path, rows: list[dict[str, str]]) -> None:
     fields = [
         "CHROM", "POS", "REF", "ALT", "CLINVAR_SIG",
-        "GNOMAD_G_AF", "DP", "ACMG_CLASS",
+        "GNOMAD_G_AF", "DP", "ACMG_CLASS", "CLINVAR_CHANGE",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
@@ -152,13 +152,18 @@ def test_api_candidates_share_review_rescue_and_wes_depth_rules(
             "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.001", "DP": "10",
             "ACMG_CLASS": "VUS",
         },
+        {
+            "CHROM": "chr1", "POS": "30", "REF": "G", "ALT": "A",
+            "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.5", "DP": "30",
+            "ACMG_CLASS": "VUS", "CLINVAR_CHANGE": "UP_TO_PLP",
+        },
     ])
-    unresolved = {"chr1:10:A:G", "chr1:20:C:T"}
+    unresolved = {"chr1:10:A:G", "chr1:20:C:T", "chr1:30:G:A"}
     monkeypatch.setattr(snv_review, "load_candidate_bed", lambda: None)
 
     assert genebe.collect_api_candidates(
         tsv, unresolved, test_type="WES",
-    ) == {"chr1:10:A:G"}
+    ) == {"chr1:10:A:G", "chr1:30:G:A"}
     assert genebe.collect_api_candidates(
         tsv, unresolved, test_type="WGS",
     ) == unresolved

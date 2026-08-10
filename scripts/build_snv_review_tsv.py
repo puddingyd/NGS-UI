@@ -38,6 +38,16 @@ def main() -> int:
     ap.add_argument("--manifest-path", type=Path, help="exact review manifest output path")
     ap.add_argument("--overlay", type=Path, help="sparse SNV annotation overlay SQLite")
     ap.add_argument(
+        "--gpn-msa-db",
+        type=Path,
+        help="fixed GRCh38 GPN-MSA scores.tsv.bgz (default: NGS_UI_GPN_MSA_DB)",
+    )
+    ap.add_argument(
+        "--require-gpn-msa",
+        action="store_true",
+        help="fail if the GPN-MSA BGZF, .tbi, or tabix executable is unavailable",
+    )
+    ap.add_argument(
         "--test-type",
         choices=["WES", "WGS"],
         help="Apply WES/WGS-specific review TSV filters. Defaults to sample_metadata.json, then WES.",
@@ -66,6 +76,8 @@ def main() -> int:
         output_path=output_path,
         manifest_path=manifest_path,
         overlay_path=args.overlay.resolve() if args.overlay else None,
+        gpn_msa_db=args.gpn_msa_db.resolve() if args.gpn_msa_db else None,
+        require_gpn_msa=args.require_gpn_msa,
     )
     print(f"[review-tsv] {raw_tsv} → {review_tsv}")
     return 0

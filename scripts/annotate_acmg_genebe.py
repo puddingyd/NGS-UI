@@ -761,7 +761,7 @@ def collect_api_candidates(
             if (
                 key in unresolved
                 and _is_concrete_api_variant(key)
-                and snv_review.is_review_candidate(row, test_type=test_type, bed=bed)
+                and snv_review.is_review_retained(row, test_type=test_type, bed=bed)
             ):
                 candidates.add(key)
     return candidates

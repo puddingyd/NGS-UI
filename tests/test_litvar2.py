@@ -404,6 +404,31 @@ def test_postprocessing_only_annotates_review_candidates(tmp_path, monkeypatch):
     assert marker_payload["candidate_variants"] == 1
 
 
+def test_litvar2_candidates_include_weekly_clinvar_review_rescue(tmp_path, monkeypatch):
+    tsv = tmp_path / "working.tsv"
+    fields = [
+        "CHROM", "POS", "REF", "ALT", "GENE", "HGVS_C", "RS_ID",
+        "GNOMAD_G_AF", "DP", "CLINVAR_SIG", "CLINVAR_CHANGE",
+    ]
+    rows = [
+        ["chr1", "10", "A", "G", "G1", "c.1A>G", "rs1", "0.2", "30", "", "UP_TO_PLP"],
+        ["chr1", "20", "C", "T", "G2", "c.2C>T", "rs2", "0.2", "10", "", "UP_TO_PLP"],
+    ]
+    with tsv.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(fields)
+        writer.writerows(rows)
+    monkeypatch.setattr(annotate_litvar2.snv_review, "load_candidate_bed", lambda: None)
+
+    groups, candidate_rows = annotate_litvar2._candidate_groups(
+        tsv,
+        test_type="WES",
+    )
+
+    assert candidate_rows == 1
+    assert set(groups) == {("1", "10", "A", "G")}
+
+
 def test_postprocessing_round_trips_all_ambiguous_candidates(tmp_path, monkeypatch):
     _bulk, db = _build_db(tmp_path)
     tsv = tmp_path / "ambiguous.tsv"

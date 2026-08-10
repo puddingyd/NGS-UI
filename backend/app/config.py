@@ -166,6 +166,14 @@ BIOTOOLS_DIR = Path(os.environ.get(
     NGS_UI_HOME / "biotools",
 ))
 
+# Fixed GRCh38 GPN-MSA pre-computed score table.  The upstream dataset is a
+# static, tabix-indexed five-column BGZF file (chrom/pos/ref/alt/score), so it
+# intentionally has one stable path rather than an update/release hierarchy.
+GPN_MSA_DB = Path(os.environ.get(
+    "NGS_UI_GPN_MSA_DB",
+    BIOTOOLS_DIR / "gpn_msa" / "scores.tsv.bgz",
+))
+
 # GIAB / GA4GH genome-stratification BEDs (homopolymers, tandem repeats,
 # segdups, low mappability, GC extremes, other difficult regions). Used by
 # scripts/annotate_giab_strata.py to flag variants in difficult regions and

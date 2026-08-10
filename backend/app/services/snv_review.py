@@ -14,6 +14,7 @@ import re
 import time
 from pathlib import Path
 
+from . import gpn_msa
 from .snv_overlay import OverlayReader, overlay_signature, row_key
 from .snv_rows import is_reportable_raw_row
 
@@ -24,6 +25,7 @@ DEFAULT_CANDIDATE_BED = Path.home() / "NGS_UI" / "biotools" / "cds_combined.bed"
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 _PATHOGENIC_RE = re.compile(r"(?:^|[/|,; ])(?:likely[_ ]?)?pathogenic(?:$|[/|,; ])", re.I)
+_CLINVAR_CHANGE_RESCUES = {"UP_TO_PLP", "DOWN_FROM_PLP"}
 
 
 def _fmt_size(path: Path) -> str:
@@ -209,7 +211,7 @@ def _keep_row(row: dict[str, str], bed: BedIndex | None, *, is_wes: bool) -> boo
     return (af is None or af < MAX_GNOMAD_G_AF) and _overlaps_bed(row, bed)
 
 
-def load_candidate_bed() -> BedIndex | None:
+def load_candidate_bed(path: Path | None = None) -> BedIndex | None:
     """Load the configured review candidate BED.
 
     GeneBe live-API fallback uses this same public helper so its network
@@ -217,7 +219,7 @@ def load_candidate_bed() -> BedIndex | None:
     A missing BED intentionally preserves the existing review behaviour:
     rare/unknown-AF rows are not BED-restricted.
     """
-    return _load_bed(_candidate_bed_path())
+    return _load_bed(Path(path) if path is not None else _candidate_bed_path())
 
 
 def is_review_candidate(
@@ -230,6 +232,32 @@ def is_review_candidate(
     return _keep_row(row, bed, is_wes=(test_type or "WES").upper() == "WES")
 
 
+def is_review_retained(
+    row: dict[str, str],
+    *,
+    test_type: str,
+    bed: BedIndex | None,
+    clinically_changed: bool | None = None,
+) -> bool:
+    """Return the authoritative final review-TSV retention decision.
+
+    SpliceAI, GeneBe live fallback, LitVar2, and review TSV materialisation all
+    call this function.  ``clinically_changed`` is only supplied while reading
+    the immutable raw TSV, where CLINVAR_CHANGE still lives in the overlay.
+    """
+    is_wes = (test_type or "WES").upper() == "WES"
+    if _keep_row(row, bed, is_wes=is_wes):
+        return True
+    if clinically_changed is None:
+        clinically_changed = (
+            str(row.get("CLINVAR_CHANGE") or "").strip().upper()
+            in _CLINVAR_CHANGE_RESCUES
+        )
+    return bool(clinically_changed) and _passes_basic_review_filter(
+        row, is_wes=is_wes
+    )
+
+
 def ensure_review_tsv(
     raw_tsv: Path,
     *,
@@ -239,6 +267,8 @@ def ensure_review_tsv(
     output_path: Path | None = None,
     manifest_path: Path | None = None,
     overlay_path: Path | None = None,
+    gpn_msa_db: Path | None = None,
+    require_gpn_msa: bool = False,
 ) -> Path:
     """Return an up-to-date compact review TSV derived from *raw_tsv*."""
     started = time.perf_counter()
@@ -258,6 +288,9 @@ def ensure_review_tsv(
         else review_tsv.with_suffix(review_tsv.suffix + ".source.json")
     )
     candidate_bed_path = _candidate_bed_path()
+    selected_gpn_msa_db = Path(gpn_msa_db or gpn_msa.GPN_MSA_DB)
+    if require_gpn_msa:
+        gpn_msa.validate_database(selected_gpn_msa_db)
     source = {
         "raw_mtime_ns": raw_tsv.stat().st_mtime_ns,
         "raw_size": raw_tsv.stat().st_size,
@@ -266,6 +299,7 @@ def ensure_review_tsv(
         "wes_dp_hard_floor": WES_DP_HARD_FLOOR if is_wes else None,
         "candidate_bed": _bed_signature(candidate_bed_path),
         "overlay": overlay_signature(raw_tsv, overlay_path),
+        "gpn_msa": gpn_msa.database_signature(selected_gpn_msa_db),
     }
     if review_tsv.is_file() and manifest.is_file():
         try:
@@ -308,11 +342,12 @@ def ensure_review_tsv(
             for row in reader:
                 scanned += 1
                 clinically_changed = row_key(row) in clinvar_change_keys
-                keep = is_review_candidate(
-                    row, test_type=test_type_key, bed=candidate_bed
+                keep = is_review_retained(
+                    row,
+                    test_type=test_type_key,
+                    bed=candidate_bed,
+                    clinically_changed=clinically_changed,
                 )
-                if clinically_changed and not keep:
-                    keep = _passes_basic_review_filter(row, is_wes=is_wes)
                 if keep:
                     batch.append(row)
                     kept += 1
@@ -321,7 +356,19 @@ def ensure_review_tsv(
                         batch.clear()
             if batch:
                 writer.writerows(overlay.apply_many(batch))
-    os.replace(tmp, review_tsv)
+    try:
+        gpn_stats = gpn_msa.annotate_review_tsv(
+            tmp,
+            selected_gpn_msa_db,
+            required=require_gpn_msa,
+        )
+        os.replace(tmp, review_tsv)
+    except Exception:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
     manifest_tmp.write_text(
         json.dumps(source, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -338,5 +385,6 @@ def ensure_review_tsv(
         keep_ids=len(keep_ids),
         bed_exists=bool(candidate_bed),
         test_type=test_type_key,
+        gpn_msa_annotated=gpn_stats["annotated_rows"],
     )
     return review_tsv

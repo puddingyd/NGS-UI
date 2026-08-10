@@ -8,7 +8,6 @@ derived column, ``SPLICEAI_MAX``.
 from __future__ import annotations
 
 import argparse
-import bisect
 import csv
 import gzip
 import os
@@ -17,6 +16,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "backend"))
+
+from app.services import snv_review  # noqa: E402
 
 DEFAULT_REF_DIR = "/home/pipeline/reference/hg38"
 DEFAULT_VEP_SIF = "/home/pipeline/nextflow_containers/vep_115.sif"
@@ -30,7 +34,6 @@ DEFAULT_SPLICEAI_INDEL = (
     "spliceai_scores.raw.indel.hg38.vcf.gz"
 )
 TSV_COL_SPLICEAI = "SPLICEAI_MAX"
-BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 
 def _open_vcf(path: Path):
@@ -46,77 +49,17 @@ def _normalize_chrom(chrom: str) -> str:
     return value.upper() if value.upper() in {"X", "Y"} else value
 
 
-def _row_max_af(row: dict[str, str], columns: list[str]) -> float:
-    maximum = 0.0
-    for column in columns:
-        raw = str(row.get(column) or "").strip()
-        if not raw or raw.upper() in {".", "NA", "N/A"}:
-            continue
-        try:
-            maximum = max(maximum, float(raw))
-        except ValueError:
-            pass
-    return maximum
-
-
-def load_bed(path: Path) -> BedIndex:
-    raw: dict[str, list[tuple[int, int]]] = {}
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip() or line.startswith(("#", "track", "browser")):
-                continue
-            columns = line.rstrip("\n").split("\t")
-            if len(columns) < 3:
-                continue
-            try:
-                start, end = int(columns[1]), int(columns[2])
-            except ValueError:
-                continue
-            if end > start:
-                raw.setdefault(_normalize_chrom(columns[0]), []).append((start, end))
-    result: BedIndex = {}
-    for chrom, intervals in raw.items():
-        intervals.sort()
-        merged: list[tuple[int, int]] = []
-        for start, end in intervals:
-            if not merged or start > merged[-1][1]:
-                merged.append((start, end))
-            else:
-                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        result[chrom] = ([start for start, _end in merged], merged)
-    return result
-
-
-def _overlaps_bed(bed: BedIndex | None, chrom: str, pos: str, ref: str) -> bool:
-    if bed is None:
-        return True
-    try:
-        start = int(pos) - 1
-    except ValueError:
-        return False
-    end = start + max(1, len(ref or ""))
-    indexed = bed.get(_normalize_chrom(chrom))
-    if not indexed:
-        return False
-    starts, intervals = indexed
-    index = bisect.bisect_right(starts, start) - 1
-    if index >= 0 and intervals[index][1] > start:
-        return True
-    index += 1
-    return index < len(intervals) and intervals[index][0] < end
-
-
 def tsv_to_sites(
     tsv_in: Path,
     vcf_out: Path,
     *,
-    max_af: float | None,
-    af_cols: list[str],
-    candidate_bed: BedIndex | None = None,
-) -> tuple[int, int, int]:
+    test_type: str,
+    candidate_bed: snv_review.BedIndex | None,
+) -> tuple[int, int]:
+    """Write only variants retained by the authoritative final review rule."""
     seen: set[tuple[str, str, str, str]] = set()
     rows: list[tuple[str, int, str, str]] = []
-    dropped_af = dropped_bed = 0
+    dropped_review = 0
     with tsv_in.open("r", encoding="utf-8", newline="") as source:
         for row in csv.DictReader(source, delimiter="\t"):
             chrom, pos, ref, alt = (
@@ -128,11 +71,12 @@ def tsv_to_sites(
             key = (chrom, pos, ref, alt)
             if key in seen:
                 continue
-            if max_af is not None and _row_max_af(row, af_cols) > max_af:
-                dropped_af += 1
-                continue
-            if not _overlaps_bed(candidate_bed, chrom, pos, ref):
-                dropped_bed += 1
+            if not snv_review.is_review_retained(
+                row,
+                test_type=test_type,
+                bed=candidate_bed,
+            ):
+                dropped_review += 1
                 continue
             try:
                 numeric_pos = int(pos)
@@ -146,7 +90,7 @@ def tsv_to_sites(
         destination.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
         for chrom, pos, ref, alt in rows:
             destination.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
-    return len(rows), dropped_af, dropped_bed
+    return len(rows), dropped_review
 
 
 def _parse_csq_format(vcf_path: Path) -> list[str]:
@@ -308,8 +252,7 @@ def main() -> int:
     parser.add_argument("--vep-cache")
     parser.add_argument("--ref-fasta")
     parser.add_argument("--fork", type=int, default=4)
-    parser.add_argument("--max-af", type=float, default=0.01)
-    parser.add_argument("--af-cols", default="GNOMAD_G_AF")
+    parser.add_argument("--test-type", choices=("WES", "WGS"), default="WES")
     parser.add_argument("--candidate-bed")
     parser.add_argument("--spliceai-snv", default=DEFAULT_SPLICEAI_SNV)
     parser.add_argument("--spliceai-indel", default=DEFAULT_SPLICEAI_INDEL)
@@ -339,7 +282,9 @@ def main() -> int:
         if not bed_path.is_file():
             print(f"ERROR: --candidate-bed not found: {bed_path}", file=sys.stderr)
             return 2
-        candidate_bed = load_bed(bed_path)
+        candidate_bed = snv_review.load_candidate_bed(bed_path)
+    else:
+        candidate_bed = snv_review.load_candidate_bed()
 
     if args.workdir:
         workdir = Path(args.workdir)
@@ -352,16 +297,14 @@ def main() -> int:
     try:
         sites = workdir / "sites.vcf"
         vep_vcf = workdir / "sites.vep.vcf.gz"
-        af_cols = [value.strip() for value in args.af_cols.split(",") if value.strip()]
-        count, dropped_af, dropped_bed = tsv_to_sites(
+        count, dropped_review = tsv_to_sites(
             in_tsv,
             sites,
-            max_af=args.max_af,
-            af_cols=af_cols,
+            test_type=args.test_type,
             candidate_bed=candidate_bed,
         )
         print(
-            f"[spliceai] {count} sites (AF filtered {dropped_af}; BED filtered {dropped_bed})",
+            f"[spliceai] {count} final-review sites (review filtered {dropped_review})",
             file=sys.stderr,
         )
         if count:

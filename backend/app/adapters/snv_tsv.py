@@ -952,6 +952,10 @@ def _row_to_variant(row: dict) -> dict:
         # overlay.  Legacy MetaRNN is retained in the payload for old cases,
         # but is no longer part of the reviewer display order.
         "SpliceAI_score":      _max_multi(row.get("SPLICEAI_MAX")),
+        # Fixed GRCh38 pre-computed GPN-MSA score. It is joined only while
+        # materialising the compact review TSV and is display-only: no tier,
+        # ACMG, filter, sorting, or report rule consumes it.
+        "GPN_MSA_score":       _to_num(row.get("GPN_MSA_SCORE")),
         "MetaRNN_score":       _max_multi(row.get("METARNN")),
         "REVEL_score":         _max_multi(row.get("REVEL")),
         "CADD_score":          _max_multi(row.get("CADD_PHRED")),

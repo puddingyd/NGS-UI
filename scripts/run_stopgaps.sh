@@ -18,7 +18,9 @@
 #   6. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
 #                              gCNV + Delly VCFs. Skipped if none supplied.
 #   7. build_snv_annotation_overlay.py — persist sparse field differences
-#   8. build_snv_review_tsv.py / build_snv_gene_index.py
+#   8. build_snv_review_tsv.py — materialise final review rows and join the
+#                                  fixed GRCh38 GPN-MSA score table
+#      build_snv_gene_index.py
 #
 # (ClinVar annotation was a compatibility step before the new pipeline shipped
 #  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
@@ -62,6 +64,9 @@
 #   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
 #   NGS_UI_LITVAR2_DB / --litvar2-db   — local bulk LitVar2 SQLite
 #   --skip-litvar2                     — disable local literature annotation
+#   NGS_UI_GPN_MSA_DB / --gpn-msa-db   — required fixed GRCh38 pre-computed
+#                                         scores.tsv.bgz (plus .tbi); applied
+#                                         only to the final review TSV
 #   --skip-cnv                         — disable AnnotSV step 6 even
 #                                         when --dragen-cnv-source is set
 # =========================================================
@@ -117,6 +122,7 @@ MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 INHOUSE_AF_DB="${NGS_UI_INHOUSE_AF_DB:-$NGS_HOME_DEFAULT/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
 LITVAR2_DB="${NGS_UI_LITVAR2_DB:-$NGS_HOME_DEFAULT/biotools/litvar2/litvar2.sqlite}"
+GPN_MSA_DB="${NGS_UI_GPN_MSA_DB:-$NGS_HOME_DEFAULT/biotools/gpn_msa/scores.tsv.bgz}"
 CLINVAR_LATEST_DB="${NGS_UI_CLINVAR_LATEST_DB:-$NGS_HOME_DEFAULT/biotools/clinvar_latest/clinvar_latest.sqlite}"
 # Keep the established production SpliceAI paths. On n102968 these resolve to
 # /home/n102968/NGS_UI/biotools/spliceai/...; do not point runtime at a desktop
@@ -153,6 +159,7 @@ while [ $# -gt 0 ]; do
     --skip-inhouse-af)    SKIP_INHOUSE_AF=1; shift;;
     --litvar2-db)         LITVAR2_DB="$2"; shift 2;;
     --skip-litvar2)       SKIP_LITVAR2=1; shift;;
+    --gpn-msa-db)         GPN_MSA_DB="$2"; shift 2;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -197,8 +204,27 @@ elif [ -f "$CANDIDATE_BED" ]; then
   CANDIDATE_BED_ARGS=(--candidate-bed "$CANDIDATE_BED")
   echo "  candidate BED: $CANDIDATE_BED"
 else
-  echo "  candidate BED: not found at $CANDIDATE_BED (GeneBe/SpliceAI use AF-only candidates)"
+  echo "  candidate BED: not found at $CANDIDATE_BED (final-review rule uses AF-only candidates)"
 fi
+
+# Every candidate-scoped annotator imports the same review predicate and BED
+# path.  Export the resolved CLI value so GeneBe API, SpliceAI, and LitVar2
+# cannot silently use different candidate regions.
+if [ "$SKIP_CANDIDATE_BED" -eq 1 ]; then
+  export NGS_UI_CDS_CANDIDATE_BED="$POST_DIR/.candidate-bed-disabled"
+else
+  export NGS_UI_CDS_CANDIDATE_BED="$CANDIDATE_BED"
+fi
+
+# GPN-MSA is part of every final review TSV (including non-Research cases).
+# Fail before the expensive annotator chain when the fixed deployment data is
+# incomplete; build_snv_review_tsv.py validates tabix itself as a final guard.
+[ -f "$GPN_MSA_DB" ] || { echo "ERROR: GPN-MSA DB not found: $GPN_MSA_DB" >&2; exit 2; }
+[ -f "$GPN_MSA_DB.tbi" ] || { echo "ERROR: GPN-MSA index not found: $GPN_MSA_DB.tbi" >&2; exit 2; }
+command -v "${TABIX_BIN:-tabix}" >/dev/null 2>&1 || {
+  echo "ERROR: tabix is required for GPN-MSA review annotation" >&2
+  exit 2
+}
 
 # 1. Compare the immutable v3.6 ClinVar annotation with the latest weekly
 #    local snapshot. This affects only the working TSV/UI overlay and never
@@ -244,6 +270,7 @@ if [ "$SKIP_SPLICEAI" -eq 0 ]; then
   step_start "spliceai"
   "$SCRIPT_DIR/annotate_spliceai.py" \
     --tsv "$TSV" \
+    --test-type "$SEQ_TYPE" \
     --spliceai-snv "$SPLICEAI_SNV" \
     --spliceai-indel "$SPLICEAI_INDEL" \
     "${CANDIDATE_BED_ARGS[@]}"
@@ -337,7 +364,8 @@ step_start "review-tsv" "sample-step"
 run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" \
   --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
   --output-path "$REVIEW_PATH" --manifest-path "$REVIEW_MANIFEST_PATH" \
-  --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE"
+  --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE" \
+  --gpn-msa-db "$GPN_MSA_DB" --require-gpn-msa
 step_done
 
 echo

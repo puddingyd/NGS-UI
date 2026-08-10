@@ -34,3 +34,39 @@ def test_spliceai_parser_and_merge_write_no_dbnsfp_fields(tmp_path):
         row = next(reader)
         assert reader.fieldnames == ["CHROM", "POS", "REF", "ALT", "SPLICEAI_MAX"]
     assert row["SPLICEAI_MAX"] == "0.7000"
+
+
+def test_spliceai_sites_use_final_review_predicate_including_clinvar_change(tmp_path):
+    tsv = tmp_path / "working.tsv"
+    fields = [
+        "CHROM", "POS", "REF", "ALT", "GNOMAD_G_AF", "DP",
+        "CLINVAR_SIG", "CLINVAR_CHANGE",
+    ]
+    rows = [
+        ["chr1", "10", "A", "G", "0.001", "30", "", ""],
+        ["chr1", "20", "C", "T", "0.2", "30", "", ""],
+        ["chr1", "30", "G", "A", "0.2", "30", "Pathogenic", ""],
+        ["chr1", "40", "T", "C", "0.2", "30", "", "UP_TO_PLP"],
+        ["chr1", "50", "A", "C", "0.001", "10", "", "UP_TO_PLP"],
+        ["chr1", "60", "A", "T", "0.01", "30", "", ""],
+    ]
+    with tsv.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(fields)
+        writer.writerows(rows)
+    sites = tmp_path / "sites.vcf"
+
+    count, dropped = spliceai.tsv_to_sites(
+        tsv,
+        sites,
+        test_type="WES",
+        candidate_bed=None,
+    )
+
+    assert count == 3
+    assert dropped == 3
+    records = [
+        line for line in sites.read_text(encoding="utf-8").splitlines()
+        if not line.startswith("#")
+    ]
+    assert [line.split("\t")[1] for line in records] == ["10", "30", "40"]
