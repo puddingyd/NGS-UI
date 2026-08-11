@@ -41,6 +41,7 @@ function applyDiagnosticAnalysisVisibility() {
   if (!isTitan) state.diagnosticAnalysisVisible = true;
   const visible = !isTitan || state.diagnosticAnalysisVisible;
 
+  document.body.classList.toggle("titan-sample-active", isTitan);
   document.body.classList.toggle(
     "titan-diagnostic-analysis-hidden",
     isTitan && !visible,

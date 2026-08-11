@@ -50,6 +50,7 @@ def test_titan_wgs_has_diagnostic_analysis_visibility_toggle():
     assert INDEX_HTML.count("diagnostic-analysis-sidebar-link") == 5
     assert "function applyDiagnosticAnalysisVisibility()" in APP_JS
     assert "function setupDiagnosticAnalysisToggle()" in APP_JS
+    assert 'document.body.classList.toggle("titan-sample-active", isTitan);' in APP_JS
     assert '"titan-diagnostic-analysis-hidden"' in APP_JS
     assert 'btn.textContent = visible ? "▾ 隱藏診斷分析" : "▸ 顯示診斷分析";' in APP_JS
 
@@ -74,6 +75,16 @@ def test_titan_wgs_has_diagnostic_analysis_visibility_toggle():
     # Health-screening content must not be hidden by the diagnostic-only rule.
     for selector in ("#sec-acmg-sf", "#sec-stroke", "#sec-carrier", "#sec-pharmcat"):
         assert f"body.titan-diagnostic-analysis-hidden {selector}" not in STYLE_CSS
+
+
+def test_titan_wgs_labels_report_and_analysis_secondary_findings_behavior():
+    assert "報告 <small class=\"titan-workflow-note\">自動帶入 ClinVar P/LP variant</small>" in INDEX_HTML
+    assert (
+        "分析 <small class=\"titan-workflow-note\">Clinvar P/LP (預設勾選) "
+        "+ Predicted suspect (勾選後進入報告)</small>"
+    ) in INDEX_HTML
+    assert ".titan-workflow-note {" in STYLE_CSS
+    assert "body.titan-sample-active .titan-workflow-note" in STYLE_CSS
 
 
 def test_titan_wgs_opens_all_secondary_findings_by_default():

@@ -11,6 +11,7 @@
 - GPN-MSA 改為所有三級 case 都嘗試、但不再作為完成 gate：缺 score DB、`.tbi`、tabix 或查詢失敗時保留可用的 review TSV，在 job log 顯示 warning，並於 review manifest 記錄明確 `complete`／`skipped_*`／`failed` 狀態，不會讓整個三級分析失敗。
 - 新增 `scripts/backfill_gpn_msa.py`，可指定完整 UI case ID、source sample ID（自動解析對應的 `-nckuh`／`-dragen` case）或以 `--all` 對舊 case 補 GPN-MSA；已有 review TSV 時只更新該衍生檔與 manifest，不修改或重掃完整 raw TSV。
 - 首頁流程圖的 SNV/Indel Prioritization 改為「可編輯的 Filter → Category」左右分區，Category 直向列出 1A / 1B / 1C / 2 - Other，縮減 tier 的橫向空間。
+- TITAN-WGS 個案的「報告」與「分析」標題旁新增 Secondary findings 小字說明，區分自動帶入的 ClinVar P/LP 與需勾選後才進報告的 Predicted suspect；WES/WGS 不顯示。
 
 ### v8.4 — 2026-08-11
 
