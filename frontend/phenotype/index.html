@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>輸入臨床表徵 (HPO / Panel)</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="../documents.css">
 </head>
 <body>
   <header class="topbar">
@@ -40,7 +41,10 @@
     </section>
 
     <section class="card" id="clinical-presentation-card">
-      <h3 class="section-title">Clinical presentation</h3>
+      <div class="documents-title-row">
+        <h3 class="section-title">Clinical presentation</h3>
+        <button id="btn-patient-documents" class="btn btn-secondary documents-trigger" type="button">Documents</button>
+      </div>
       <textarea id="clinical-presentation-text" rows="5" placeholder="輸入病患的 Clinical presentation"></textarea>
       <p class="hint-line">此欄位會依病歷號儲存；同一病歷號的不同檢體會共用同一份 Clinical presentation。</p>
       <div class="card-actions">
@@ -133,6 +137,7 @@
   </aside>
 
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+  <script src="../documents.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

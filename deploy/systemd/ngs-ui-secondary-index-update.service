@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh the NGS-UI secondary-analysis FASTQ index
+
+[Service]
+Type=oneshot
+User=n102968
+WorkingDirectory=/home/n102968/NGS_UI/NGS-UI
+Environment=PYTHONPATH=/home/n102968/NGS_UI/NGS-UI/backend
+Environment=NGS_UI_HOME=/home/n102968/NGS_UI
+ExecStart=/usr/bin/env python3 -m app.workers.secondary_index_update
+TimeoutStartSec=1h
+Nice=10
+IOSchedulingClass=idle

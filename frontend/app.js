@@ -9519,6 +9519,14 @@ async function bootAfterAuth() {
   setupCaseList();
   setupGeneSearch();
   setupLitvar2Lookup();
+  window.PatientDocuments?.init({
+    button: "#btn-patient-documents",
+    getContext: () => ({
+      mrn: state.data?.meta?.MRN || "",
+      sourceSampleId: state.data?.sample_id || state.currentLIS || "",
+    }),
+    onLogin: me => setLoggedInUser(me?.username || ""),
+  });
 
   // Probe /auth/me; show login modal if no session, otherwise boot the
   // sample index. /auth/me bypasses the global 401 handler because we

@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the NGS-UI secondary-analysis FASTQ index every day at 02:00
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Taipei
+Persistent=true
+Unit=ngs-ui-secondary-index-update.service
+
+[Install]
+WantedBy=timers.target

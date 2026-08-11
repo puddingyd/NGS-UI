@@ -25,6 +25,7 @@ NGS_UI/                    ← NGS_UI_HOME
 ├── tertiary_output/       ← 舊 UI sample root；只在舊個案遷移期間讀取
 ├── patient_phenotype/     ← {LIS_ID}_{MRN}_phenotype.txt（自動帶入 HPO）
 │                             + {MRN}_clinical_presentation.txt
+├── patient_documents/     ← MRN-level 病歷附件、SQLite catalog、軟刪除回收區
 ├── patient_list/          ← 上傳的「未完成報告清單」xlsx + 衍生 roster.json
 ├── phenotype_data/        ← git-tracked fixed/custom panels; large HPO refs live in NGS_UI_HOME
 │   └── gene_disease/       ← optional GenCC / ClinGen / MONDO raw + SQLite disease補充
@@ -118,6 +119,13 @@ scripts/install_tertiary_index_timer.sh
 systemctl list-timers ngs-ui-tertiary-index-update.timer
 ```
 
+二級分析的 WES / WGS FASTQ 索引同樣每天於台北時間 02:00 自動重掃；UI 人工更新、首次建立與 stale fallback 也保留：
+
+```bash
+scripts/install_secondary_index_timer.sh
+systemctl list-timers ngs-ui-secondary-index-update.timer
+```
+
 背景 worker（Exomiser / LIRICAL 重跑）另外跑：
 
 ```bash
@@ -142,6 +150,8 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_TERTIARY_NF_WORK_ROOT` | `$NGS_UI_HOME/nf_work` | 三級分析 Nextflow cache/work root；DRAGEN 與 NCKUH 分別共用 `contexts/shared-dragen/`、`contexts/shared-nckuh/` 的 launch/session lineage；新 lineage 的 work 預設在其 `work/`，若承接舊 session 則持續使用該 session 原 work root |
 | `NGS_UI_VCF_DIR` | `$NGS_UI_HOME/vcf` | per-sample VCF |
 | `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt`、`{MRN}_clinical_presentation.txt` |
+| `NGS_UI_PATIENT_DOCUMENTS_DIR` | `$NGS_UI_HOME/patient_documents` | 登入後從主畫面或 `/phenotype/` 管理的 MRN-level PDF/JPG/PNG/TIFF 病歷附件與 `documents.sqlite` |
+| `NGS_UI_PATIENT_DOCUMENTS_MIN_FREE_GB` | `10` | 病歷附件串流上傳時保留的最低磁碟空間；`0` 代表不保留，沒有額外 per-file 大小上限 |
 | `NGS_UI_PATIENT_LIST_DIR` | `$NGS_UI_HOME/patient_list` | 上傳清單 + roster.json |
 | `NGS_UI_PHENO_DATA_DIR` | `$NGS_UI_HOME/phenotype_data` | hp.obo / phenotype_to_genes 等大型 HPO reference |
 | `NGS_UI_GENE_DISEASE_DB` | `$NGS_UI_HOME/phenotype_data/gene_disease/gene_disease.sqlite` | optional GenCC / ClinGen / MONDO gene-disease SQLite index；缺檔時靜默停用 |
@@ -197,6 +207,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 若先用「上傳個案清單」匯入過「未完成報告清單」xlsx，MRN / 姓名 / Test type 會自動帶入（來自 `patient_list/roster.json`）。檔案選擇器可一次多選 xlsx，前端會依序上傳並只顯示當次各檔案的成功／失敗與解析統計；歷次紀錄預設收合，按小三角形後才載入。匯入器會掃描所有工作表，標題列可位於任一列／欄；至少需有 `檢體編號`，並同時支援 `檢驗名稱` 與 `檢驗項目` 欄名。三級分析輸出若使用 `{LIS_ID}-dragen` / `{LIS_ID}-nckuh` / `{LIS_ID}-inhouse` 這類 UI 後綴，會先保留後綴作為 sample ID，再回查未加後綴的 roster LIS_ID；
    - Test type 提供 `WES`、`WGS`、`TITAN-WGS`；LIS/sample ID 以兩位數年份加 `T` 開頭（例如 `25T...`、`26T...`、`27T...`）時會自動歸為 `TITAN-WGS`。其他來源若為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，仍預設為 `WGS`；`TITAN-WGS` 的分析門檻、dead zone 與報告方法文字皆沿用 WGS 規則。TITAN-WGS 載入時會預設隱藏診斷分析，可從基本資料下方的小三角切換；Secondary findings、PGx/PharmCAT、健檢報告及儲存仍顯示，而且報告區、分析區內的所有 Secondary findings 子區域都預設展開。WES/WGS 不顯示此切換且維持既有開合狀態；
    - Clinical presentation 可在檢體編號 / 病歷號下方輸入，會依病歷號 debounce 自動儲存為 `patient_phenotype/{MRN}_clinical_presentation.txt`，載入新個案與主畫面 Clinical presentation 會自動帶入；主畫面 reviewer 修改後也會同步寫回此檔，供 `/phenotype/` 後續載入。若沒有 MRN，才 fallback 使用 LIS_ID 暫存。
+   - 主畫面與 `/phenotype/` 的 Clinical presentation 標題右側都有 `Documents`。病歷附件固定依 MRN 共用，清單／預覽／上傳／重新命名／下載／刪除皆需登入；支援 PDF、JPG、PNG、TIF/TIFF，多頁 TIFF 會轉成縮小 PNG 逐頁預覽但下載仍保留原檔。modal 可在上傳前修改檔名，也可把系統截圖貼到貼圖區後以圖片儲存。檔案串流寫入 UUID 實體名稱，SQLite 保存顯示檔名、SHA-256、上傳者與操作 audit；同一 MRN 的相同內容會拒絕重複上傳，刪除先移到 `trash/`。metadata API 修改 MRN 時會連同 Documents、Clinical presentation 與 phenotype sidecar 自動搬移；新 MRN 已有資料或舊 MRN 仍被其他已登錄個案共用時回 409，不會靜默合併病人資料。
    - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
    - 登錄新個案的未登錄個案欄位可直接輸入 LIS ID、source sample、姓名或 MRN 搜尋，也可從下拉清單選擇；清單在前端快取一天，需要看到最新 pipeline output 時可按「更新清單」手動重抓。登錄完成會同步切換主畫面與上方個案搜尋框。登錄時不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；至少有一個 HPO term 時才會排入 Exomiser/LIRICAL，若 VCF 尚不存在，背景 job 開始前會自動建立或刷新。
    - HPO/panel 的 in-panel 狀態來自 `pheno_score.tsv` 動態補值，不再寫回大型 `snv_indel.annotated.tsv` 的 `IN_PANEL` 欄。
@@ -244,6 +255,8 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 
 SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越低越偏致病，多 transcript TSV 會取最低分作為 worst case。
 5. **匯出報告** — 「匯出診斷報告」下載 `GET /api/samples/{LIS}/report.docx`；DOCX 依序輸出第一類、第二類、固定建議文字，再集中列出各 variant 的參考資料。CNV/SV Disease 欄會優先覆蓋單基因預設疾病，也可為片段型 CNV/SV 指定發報告疾病；多基因或無 OMIM gene 的片段會把 Disease 直接接在第 1 點位置描述，不另列一點。未涵蓋 OMIM 疾病相關基因時不再列出一般基因清單。SNV/Indel 會帶 TSV 的 `RS_ID`，RS ID 欄會預留尾端空格；ClinVar 欄也預留尾端空格，避免 `conflicting classifications` 與 ACMG 欄黏在一起。SNV transcript header 若有 RefSeq 對到 Ensembl，會顯示 `GENE (ENST...; NM_...)`，沒有 RefSeq 則只顯示 Ensembl；SNV/Indel 與 Mito 核苷酸欄每行最多 13 字元且蛋白質括號另起一行。§五.4 grouped gene list 的 HPO/panel 區塊之間會留空行，且只列 expanded reportable disease-associated genes；WES/WGS DOCX 都不輸出 dead-zone exon 標註，dead-zone 僅保留在主畫面與 phenotype 工具查詢。旁邊的「輸出 PDF」會開啟列印視窗，輸出報告區的 causative / other / candidate 卡片摘要與本次檢測基因清單；PDF 與 DOCX 一樣會先詢問基因清單要按 HPO/panel 分組或全部合併去重，並在按下輸出時才呼叫 `/api/samples/{id}/report-gene-list` 載入基因清單。列印版會略過 comment、More、Secondary findings 與 CNV/SV overlap 明細。
+
+二級分析 FASTQ discovery index 由 `ngs-ui-secondary-index-update.timer` 每天台北時間 02:00 自動更新；人工「更新索引」、首次建立與 24 小時 stale fallback 保留，排程與 UI 共用 `secondary_analysis.refresh_index()`，並以跨程序 file lock 避免並行寫入。
 
 二級分析 modal 由右上角「二級分析」開啟，後端掃描 WES roots（NextSeq2000 與 Reanalysis）與 WGS Novaseq FASTQ，提供 WES/WGS 兩個 typeahead 搜尋框、更新索引、批次清單與「加入同批全部樣本」。WGS 下拉選單依主 sample 聚合顯示，每個 sample 註明 lane 數與 FASTQ 檔案數；只收 `*_S*_L00*_R[12]_001.fastq.gz`，不使用同資料夾內的 merged FASTQ。建立 samplesheet 時，後端會把每個 WGS sample 展開成每 lane 一列並寫入 `lane` 欄，交由 FASTP 分 lane QC、FQ2BAM 合併；WES 的掃描、顯示與 samplesheet 行為不變。按「建立 sample sheet」後會先在 `NGS_UI_SECONDARY_SAMPLESHEET_STAGING_ROOT/<batch_name>/samplesheet.csv` 寫出 CSV；DGM `/home/datalake_Raw/...` 會映射到 DGX2 `NGS_UI_SECONDARY_DGX_RAW_ROOT/...`（預設 `/datalake_Raw/datalake_Raw/...`），已經位於 `/datalake_Raw/...` 的路徑不重寫。產生的 tmux launch block 會由 DGX2 runner 建立 `OUT_DIR`，再把 staged samplesheet 複製到 `OUT_DIR/samplesheet.csv` 後啟動 Nextflow，避免 NGS-UI 建立的 output dir owner 造成權限問題。Nextflow 結束或失敗時會複製 `${LAUNCH_DIR}/.nextflow.log` 到 `${OUT_DIR}/nextflow.log`，並保留 tmux pane 不自動關閉，方便確認最後狀態。不論單一或多個主 sample，產生的指令都固定使用 `dgx_single` profile；WES 另加 `--run_gcnv true`，WES/WGS 都預設加入 `--run_manta`、`--run_expansionhunter`、`--run_automap`，讓二級分析直接產出三個模組的結果。Reanalysis FASTQ 也直接指向原始 `*.R1/R2.clean.fastq.gz`，不再複製或建立 symlink；只改 samplesheet 的 `sample` 欄。因 NGS-UI 跑在 DGM，不能直接清 DGX2；modal 的「顯示 DGX2 清理指令」會依 `NGS_UI_SECONDARY_DGX_WORK_ROOT`（預設 `/raid/DGM/work`）產生 guarded shell script，必須複製到 DGX2 terminal 執行。script 會先阻擋仍有 Nextflow process 的狀況、列出待刪項目並要求確認；「複製」會直接寫入剪貼簿，plain-HTTP intranet 自動使用隱藏文字框 fallback，不再跳出手動複製視窗。清理後既有批次不能再用 `-resume`。
 

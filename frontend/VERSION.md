@@ -6,6 +6,14 @@
 
 ## 版本紀錄
 
+### v8.3 — 2026-08-11
+
+- 主畫面與「輸入臨床表徵」頁的 Clinical presentation 右側新增 `Documents`：登入後可依 MRN 共用上傳、下載、修改檔名與刪除病歷附件，也可直接貼上剪貼簿截圖。支援 PDF、JPG、PNG、TIF/TIFF；圖片可在 modal 預覽，多頁 TIFF 可翻頁且保留原始下載檔。附件串流寫入獨立 `patient_documents/`，不設固定單檔上限但保留磁碟安全空間；MRN 修改時會連同附件與 phenotype sidecar 安全搬移，遇到既有或共用病人資料時不自動合併。
+
+### v8.2 — 2026-08-11
+
+- 二級分析的 WES / WGS FASTQ 索引改為每天台北時間 02:00 自動更新；人工更新按鈕、首次建立與索引過期時的 fallback 仍保留。
+
 ### v8.1 — 2026-08-10
 
 - 所有三級分析 case 的 compact SNV/Indel review TSV 新增固定 GRCh38 GPN-MSA pre-computed score；只以 tabix 查 final review SNVs，不改 `03_acmg` raw、不寫 sparse overlay，也不影響 tier、ACMG、filter、排序或報告。卡片將 GPN-MSA 放在 SpliceAI 後，低分代表較 deleterious，`≤ -7` 只作 contextual tail 提示，未校準成 PP3/BP4，且不產生 benign evidence。

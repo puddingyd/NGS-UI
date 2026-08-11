@@ -1228,6 +1228,13 @@ function showStatus(msg, type, opts = {}) {
 // Boot
 // ============================================================
 initClinicalPresentationAutosave();
+window.PatientDocuments?.init({
+  button: "#btn-patient-documents",
+  getContext: () => ({
+    mrn: document.getElementById("patient-mrn")?.value.trim() || "",
+    sourceSampleId: document.getElementById("patient-code")?.value.trim() || "",
+  }),
+});
 document.querySelector("main")?.addEventListener("input", (event) => {
   if (event.target.closest("#custom-panel-rows")) updatePreview();
 });

@@ -112,6 +112,22 @@ PHENOTYPE_DIR = Path(os.environ.get(
     NGS_UI_HOME / "patient_phenotype",
 ))
 
+# Original patient documents uploaded from the reviewer and phenotype tools.
+# Keep binary medical records separate from the small, parseable phenotype
+# sidecars so they can have their own backup, retention, and disk policy.
+PATIENT_DOCUMENTS_DIR = Path(os.environ.get(
+    "NGS_UI_PATIENT_DOCUMENTS_DIR",
+    NGS_UI_HOME / "patient_documents",
+))
+# A value of 0 disables the reserve. There is intentionally no per-file size
+# cap; uploads stream to disk and stop only before consuming this free-space
+# reserve (or when the filesystem/proxy rejects the request).
+PATIENT_DOCUMENTS_MIN_FREE_GB = _env_int(
+    "NGS_UI_PATIENT_DOCUMENTS_MIN_FREE_GB",
+    10,
+    minimum=0,
+)
+
 # Uploaded "未完成報告清單" xlsx files + the derived roster.json that
 # maps LIS_ID → {mrn, name, test_name, department}. The 載入新個案
 # modal reads the roster to auto-fill MRN / 姓名 / Test type.
@@ -410,6 +426,10 @@ SECONDARY_DGX_ENV_SCRIPT = os.environ.get(
     "NGS_UI_SECONDARY_DGX_ENV_SCRIPT",
     "/datalake_Intermediate/pipeline/pipeline_code/NGS2ndAnalysis_env.sh",
 )
+# Cached WES/WGS FASTQ discovery results. Production refreshes this
+# every day at 02:00 Asia/Taipei via
+# deploy/systemd/ngs-ui-secondary-index-update.timer; manual refresh,
+# cold-start creation, and stale-on-open fallback remain available.
 SECONDARY_FASTQ_INDEX_PATH = DATA_ROOT / "secondary_fastq_index.json"
 SECONDARY_FASTQ_INDEX_TTL_HOURS = int(os.environ.get(
     "NGS_UI_SECONDARY_FASTQ_INDEX_TTL_HOURS",

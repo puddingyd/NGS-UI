@@ -10,6 +10,7 @@ node_modules/
 tertiary_output/
 data/
 patient_list/
+patient_documents/
 biotools/
 phenotype_data/*
 !phenotype_data/

@@ -12,6 +12,7 @@ from ..services import (
     clinical_presentation_store,
     docx_export,
     litvar2_on_demand,
+    patient_documents,
     patient_list_store,
     patient_store,
     report_store,
@@ -442,7 +443,11 @@ def lookup_sample_litvar2(sample_id: str, payload: dict = Body(...)):
 
 
 @router.put("/samples/{sample_id}/metadata")
-def put_sample_metadata(sample_id: str, payload: dict):
+def put_sample_metadata(
+    sample_id: str,
+    payload: dict,
+    user: dict = Depends(current_user),
+):
     """Edit a small whitelist of sample_metadata.json fields from the UI.
 
     Only the operator-facing identifiers + sequencing/build live here.
@@ -463,12 +468,62 @@ def put_sample_metadata(sample_id: str, payload: dict):
             meta = {}
     if not isinstance(meta, dict):
         meta = {}
+    old_mrn = str(meta.get("mrn") or "").strip()
+    requested_mrn = None
+    if "mrn" in (payload or {}):
+        try:
+            requested_mrn = patient_documents.validate_mrn(
+                str((payload or {}).get("mrn") or "")
+            )
+        except patient_documents.InvalidDocument as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    mrn_migration = None
+    if requested_mrn and old_mrn and requested_mrn != old_mrn:
+        # A shared old MRN makes a silent one-sample reassignment unsafe: it
+        # could detach the other registered cases from their patient-level
+        # documents. Single-patient moves remain automatic.
+        if patient_documents.has_patient_data(old_mrn):
+            shared_by = []
+            for other_id in sample_layout.iter_sample_ids():
+                if other_id == sample_id:
+                    continue
+                other_path = sample_layout.state_file(other_id, "sample_metadata.json")
+                if not other_path.is_file():
+                    continue
+                try:
+                    other_meta = _json.loads(other_path.read_text(encoding="utf-8")) or {}
+                except (_json.JSONDecodeError, OSError):
+                    continue
+                if str(other_meta.get("mrn") or "").strip() == old_mrn:
+                    shared_by.append(other_id)
+            if shared_by:
+                raise HTTPException(
+                    409,
+                    "舊病歷號仍被其他個案使用，為避免混合病人資料，不能自動搬移："
+                    + ", ".join(sorted(shared_by)[:10]),
+                )
+        try:
+            mrn_migration = patient_documents.move_mrn(
+                old_mrn,
+                requested_mrn,
+                user=user,
+            )
+        except patient_documents.InvalidDocument as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except patient_documents.DocumentConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, f"病歷號資料搬移失敗：{exc}") from exc
     EDITABLE = {"name", "mrn", "lis_id", "sex", "test_type", "category",
                 "genome_build", "tags", "run_date",
                 "department", "physician", "sign_received_at"}
     for k, v in (payload or {}).items():
         if k in EDITABLE:
             meta[k] = (
+                requested_mrn
+                if k == "mrn"
+                else
                 test_types.normalize_test_type(
                     str(v or ""),
                     sample_id=str(meta.get("lis_id") or meta.get("sample_id") or sample_id),
@@ -477,7 +532,26 @@ def put_sample_metadata(sample_id: str, payload: dict):
                 else v
             )
     meta["metadata_updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    meta_path.write_text(_json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_meta = meta_path.with_name(meta_path.name + ".tmp")
+    try:
+        tmp_meta.write_text(
+            _json.dumps(meta, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp_meta.replace(meta_path)
+    except OSError as exc:
+        try:
+            tmp_meta.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if mrn_migration and (
+            mrn_migration.get("documents") or mrn_migration.get("sidecars")
+        ):
+            try:
+                patient_documents.move_mrn(requested_mrn, old_mrn, user=user)
+            except Exception:
+                pass
+        raise HTTPException(500, f"個案資料儲存失敗：{exc}") from exc
     sample_loader.update_case_table_row(sample_id)
     return meta
 

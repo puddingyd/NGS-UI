@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import fcntl
 import json
 import re
 import shlex
@@ -264,18 +265,28 @@ def save_index(idx: dict) -> None:
 
 
 def refresh_index() -> dict:
-    t0 = time.time()
-    wes = list_wes_fastqs()
-    wgs = list_wgs_fastqs()
-    idx = {
-        "schema_version": _FASTQ_INDEX_SCHEMA_VERSION,
-        "updated_at": _now(),
-        "scan_duration_sec": round(time.time() - t0, 2),
-        "wes": wes,
-        "wgs": wgs,
-    }
-    save_index(idx)
-    return idx
+    """Rescan WES/WGS FASTQs and atomically persist the shared index.
+
+    The daily systemd timer and the manual UI refresh can overlap. A
+    cross-process lock prevents both callers from writing the same
+    temporary file concurrently.
+    """
+    lock_path = SECONDARY_FASTQ_INDEX_PATH.with_suffix(".refresh.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        t0 = time.time()
+        wes = list_wes_fastqs()
+        wgs = list_wgs_fastqs()
+        idx = {
+            "schema_version": _FASTQ_INDEX_SCHEMA_VERSION,
+            "updated_at": _now(),
+            "scan_duration_sec": round(time.time() - t0, 2),
+            "wes": wes,
+            "wgs": wgs,
+        }
+        save_index(idx)
+        return idx
 
 
 def index_is_stale(idx: dict | None) -> bool:

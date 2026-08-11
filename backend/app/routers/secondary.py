@@ -37,6 +37,11 @@ def _meta(idx: dict | None) -> dict:
 
 @router.get("/fastqs")
 async def get_fastqs(background: BackgroundTasks):
+    """Return the cached FASTQ index maintained daily at 02:00.
+
+    Missing indexes are still created synchronously, and stale indexes
+    retain the existing background-refresh fallback.
+    """
     idx = secondary_analysis.load_index()
     if idx is None:
         idx = await asyncio.to_thread(secondary_analysis.refresh_index)

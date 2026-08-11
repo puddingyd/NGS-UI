@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>成大基醫部 NGS 分析平台</title>
   <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./documents.css" />
 </head>
 <body>
   <header class="topbar">
@@ -220,6 +221,7 @@
     <section id="clinical-card" class="card hidden">
       <div id="clinical-header" class="clinical-header">
         <span><span class="arrow"></span><span class="title">Clinical presentation</span></span>
+        <button id="btn-patient-documents" class="btn btn-ghost documents-trigger" type="button">Documents</button>
       </div>
       <div id="clinical-body" class="clinical-body">
         <textarea id="clinical-text" rows="5" placeholder="病患的 clinical presentation..."></textarea>
@@ -1045,6 +1047,7 @@
   <!-- jsPDF (used by exportScreeningReport — Chinese font fetched on demand) -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <!-- IGV.js (loaded lazily — see openIgvModal). -->
+  <script src="./documents.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

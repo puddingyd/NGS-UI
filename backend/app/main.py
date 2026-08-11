@@ -8,7 +8,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
-from .routers import acmg, analyses, auth, dragen, emr, igv, jobs, phenotype, phenotype_tool, samples, secondary
+from .routers import acmg, analyses, auth, documents, dragen, emr, igv, jobs, phenotype, phenotype_tool, samples, secondary
 from .services import (
     clinvar_mito,
     hpo_ontology,
@@ -102,6 +102,7 @@ app.include_router(acmg.router)
 app.include_router(analyses.router)
 app.include_router(phenotype.router)
 app.include_router(phenotype_tool.router)
+app.include_router(documents.router)
 app.include_router(jobs.router)
 app.include_router(emr.router)
 app.include_router(dragen.router)
