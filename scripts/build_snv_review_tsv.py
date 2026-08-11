@@ -80,6 +80,20 @@ def main() -> int:
         require_gpn_msa=args.require_gpn_msa,
     )
     print(f"[review-tsv] {raw_tsv} → {review_tsv}")
+    status_path = manifest_path or review_tsv.with_suffix(
+        review_tsv.suffix + ".source.json"
+    )
+    try:
+        status_payload = json.loads(status_path.read_text(encoding="utf-8"))
+        gpn_status = status_payload.get("gpn_msa_annotation") or {}
+    except (OSError, json.JSONDecodeError):
+        gpn_status = {}
+    print(
+        "[gpn-msa] "
+        f"status={gpn_status.get('status') or 'unknown'} "
+        f"annotated_rows={gpn_status.get('annotated_rows', 0)} "
+        f"manifest={status_path}"
+    )
     return 0
 
 

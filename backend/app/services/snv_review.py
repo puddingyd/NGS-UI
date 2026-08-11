@@ -46,6 +46,15 @@ def _log_perf(event: str, started: float, **fields) -> None:
     print(" ".join(parts), flush=True)
 
 
+def _write_manifest(path: Path, payload: dict[str, object]) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    os.replace(tmp, path)
+
+
 def _to_float(raw: str) -> float | None:
     value = (raw or "").strip()
     if not value or value in {".", "NA", "N/A"}:
@@ -269,6 +278,7 @@ def ensure_review_tsv(
     overlay_path: Path | None = None,
     gpn_msa_db: Path | None = None,
     require_gpn_msa: bool = False,
+    force_gpn_msa: bool = False,
 ) -> Path:
     """Return an up-to-date compact review TSV derived from *raw_tsv*."""
     started = time.perf_counter()
@@ -304,14 +314,48 @@ def ensure_review_tsv(
     if review_tsv.is_file() and manifest.is_file():
         try:
             current = json.loads(manifest.read_text(encoding="utf-8"))
-            if all(current.get(key) == value for key, value in source.items()):
+            non_gpn_matches = all(
+                current.get(key) == value
+                for key, value in source.items()
+                if key != "gpn_msa"
+            )
+            if non_gpn_matches:
+                gpn_status = current.get("gpn_msa_annotation")
+                has_terminal_status = (
+                    isinstance(gpn_status, dict)
+                    and bool(gpn_status.get("status"))
+                )
+                signature_matches = current.get("gpn_msa") == source["gpn_msa"]
+                if signature_matches and has_terminal_status and not force_gpn_msa:
+                    _log_perf(
+                        "snv_review.ensure",
+                        started,
+                        action="hit",
+                        raw_size=_fmt_size(raw_tsv),
+                        review_size=_fmt_size(review_tsv),
+                        keep_ids=len(keep_ids),
+                        gpn_msa_status=gpn_status.get("status"),
+                    )
+                    return review_tsv
+
+                gpn_stats = gpn_msa.annotate_review_tsv(
+                    review_tsv,
+                    selected_gpn_msa_db,
+                    required=require_gpn_msa,
+                )
+                _write_manifest(
+                    manifest,
+                    {**source, "gpn_msa_annotation": gpn_stats},
+                )
                 _log_perf(
                     "snv_review.ensure",
                     started,
-                    action="hit",
+                    action="gpn-refresh",
                     raw_size=_fmt_size(raw_tsv),
                     review_size=_fmt_size(review_tsv),
                     keep_ids=len(keep_ids),
+                    gpn_msa_status=gpn_stats["status"],
+                    gpn_msa_annotated=gpn_stats["annotated_rows"],
                 )
                 return review_tsv
         except (OSError, json.JSONDecodeError):
@@ -319,7 +363,6 @@ def ensure_review_tsv(
 
     candidate_bed = _load_bed(candidate_bed_path)
     tmp = review_tsv.with_suffix(review_tsv.suffix + ".tmp")
-    manifest_tmp = manifest.with_suffix(manifest.suffix + ".tmp")
     kept = 0
     scanned = 0
     with raw_tsv.open("r", encoding="utf-8", newline="") as src, \
@@ -369,11 +412,10 @@ def ensure_review_tsv(
         except OSError:
             pass
         raise
-    manifest_tmp.write_text(
-        json.dumps(source, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    _write_manifest(
+        manifest,
+        {**source, "gpn_msa_annotation": gpn_stats},
     )
-    os.replace(manifest_tmp, manifest)
     _log_perf(
         "snv_review.ensure",
         started,
@@ -385,6 +427,7 @@ def ensure_review_tsv(
         keep_ids=len(keep_ids),
         bed_exists=bool(candidate_bed),
         test_type=test_type_key,
+        gpn_msa_status=gpn_stats["status"],
         gpn_msa_annotated=gpn_stats["annotated_rows"],
     )
     return review_tsv

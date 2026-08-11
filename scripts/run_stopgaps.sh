@@ -64,9 +64,10 @@
 #   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
 #   NGS_UI_LITVAR2_DB / --litvar2-db   — local bulk LitVar2 SQLite
 #   --skip-litvar2                     — disable local literature annotation
-#   NGS_UI_GPN_MSA_DB / --gpn-msa-db   — required fixed GRCh38 pre-computed
-#                                         scores.tsv.bgz (plus .tbi); applied
-#                                         only to the final review TSV
+#   NGS_UI_GPN_MSA_DB / --gpn-msa-db   — fixed GRCh38 pre-computed
+#                                         scores.tsv.bgz (plus .tbi); every
+#                                         case attempts this final-review join,
+#                                         but unavailability is warning-only
 #   --skip-cnv                         — disable AnnotSV step 6 even
 #                                         when --dragen-cnv-source is set
 # =========================================================
@@ -216,15 +217,11 @@ else
   export NGS_UI_CDS_CANDIDATE_BED="$CANDIDATE_BED"
 fi
 
-# GPN-MSA is part of every final review TSV (including non-Research cases).
-# Fail before the expensive annotator chain when the fixed deployment data is
-# incomplete; build_snv_review_tsv.py validates tabix itself as a final guard.
-[ -f "$GPN_MSA_DB" ] || { echo "ERROR: GPN-MSA DB not found: $GPN_MSA_DB" >&2; exit 2; }
-[ -f "$GPN_MSA_DB.tbi" ] || { echo "ERROR: GPN-MSA index not found: $GPN_MSA_DB.tbi" >&2; exit 2; }
-command -v "${TABIX_BIN:-tabix}" >/dev/null 2>&1 || {
-  echo "ERROR: tabix is required for GPN-MSA review annotation" >&2
-  exit 2
-}
+# GPN-MSA is attempted for every final review TSV (including non-Research
+# cases). Missing deployment data or a query failure is recorded in the review
+# manifest and warned later by build_snv_review_tsv.py; it never gates the rest
+# of an otherwise valid tertiary analysis.
+echo "  GPN-MSA DB: $GPN_MSA_DB (best-effort)"
 
 # 1. Compare the immutable v3.6 ClinVar annotation with the latest weekly
 #    local snapshot. This affects only the working TSV/UI overlay and never
@@ -361,11 +358,11 @@ step_done
 echo
 echo "[sample] review TSV  build_snv_review_tsv.py"
 step_start "review-tsv" "sample-step"
-run_silent_step "review-tsv" "$SCRIPT_DIR/build_snv_review_tsv.py" \
+"$SCRIPT_DIR/build_snv_review_tsv.py" \
   --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
   --output-path "$REVIEW_PATH" --manifest-path "$REVIEW_MANIFEST_PATH" \
   --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE" \
-  --gpn-msa-db "$GPN_MSA_DB" --require-gpn-msa
+  --gpn-msa-db "$GPN_MSA_DB"
 step_done
 
 echo

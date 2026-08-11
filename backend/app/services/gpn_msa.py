@@ -12,6 +12,7 @@ import math
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -19,6 +20,11 @@ from ..config import GPN_MSA_DB
 
 SCORE_COLUMN = "GPN_MSA_SCORE"
 QUERY_BATCH_SIZE = 1000
+STATUS_COMPLETE = "complete"
+STATUS_MISSING_DB = "skipped_missing_db"
+STATUS_MISSING_INDEX = "skipped_missing_index"
+STATUS_MISSING_TABIX = "skipped_missing_tabix"
+STATUS_FAILED = "failed"
 _PRIMARY_CONTIGS = {str(value) for value in range(1, 23)} | {"X", "Y"}
 _BASES = {"A", "C", "G", "T"}
 
@@ -37,11 +43,18 @@ def _file_signature(path: Path) -> dict[str, object]:
 
 
 def database_signature(db_path: Path | None = None) -> dict[str, object]:
-    """Return the data/index identity recorded in review TSV manifests."""
+    """Return the data/index/tabix identity recorded in review manifests."""
     db = Path(db_path or GPN_MSA_DB)
+    requested_tabix = os.environ.get("TABIX_BIN") or "tabix"
+    resolved_tabix = shutil.which(requested_tabix)
     return {
         "database": _file_signature(db),
         "index": _file_signature(Path(f"{db}.tbi")),
+        "tabix": {
+            "requested": requested_tabix,
+            "path": resolved_tabix or "",
+            "exists": bool(resolved_tabix),
+        },
     }
 
 
@@ -58,6 +71,47 @@ def validate_database(db_path: Path | None = None) -> tuple[Path, str]:
     if not tabix:
         raise RuntimeError("tabix is required to query the GPN-MSA score table")
     return db, tabix
+
+
+def _status(
+    status: str,
+    message: str,
+    db: Path,
+    *,
+    rows: int = 0,
+    queryable_variants: int = 0,
+    annotated_variants: int = 0,
+    annotated_rows: int = 0,
+) -> dict[str, object]:
+    return {
+        "status": status,
+        "message": message,
+        "database": str(db),
+        "rows": rows,
+        "queryable_variants": queryable_variants,
+        "annotated_variants": annotated_variants,
+        "annotated_rows": annotated_rows,
+        "database_available": status not in {
+            STATUS_MISSING_DB,
+            STATUS_MISSING_INDEX,
+            STATUS_MISSING_TABIX,
+        },
+    }
+
+
+def _warn(message: str) -> None:
+    print(f"[gpn-msa] WARNING: {message}", file=sys.stderr, flush=True)
+
+
+def _unavailable_status(db: Path, exc: Exception) -> tuple[str, str]:
+    index = Path(f"{db}.tbi")
+    if not db.is_file():
+        return STATUS_MISSING_DB, f"GPN-MSA DB not found: {db}"
+    if not index.is_file():
+        return STATUS_MISSING_INDEX, f"GPN-MSA index not found: {index}"
+    if isinstance(exc, RuntimeError) and "tabix is required" in str(exc):
+        return STATUS_MISSING_TABIX, str(exc)
+    return STATUS_FAILED, f"GPN-MSA setup validation failed: {exc}"
 
 
 def _normalise_key(row: dict[str, str]) -> tuple[str, int, str, str] | None:
@@ -141,22 +195,23 @@ def annotate_review_tsv(
     db_path: Path | None = None,
     *,
     required: bool = False,
-) -> dict[str, int | bool]:
+) -> dict[str, object]:
     """Atomically add ``GPN_MSA_SCORE`` to a compact review TSV.
 
-    Missing deploy-time data is tolerated for lazy reads of historical cases;
-    production post-processing passes ``required=True`` so new cases cannot be
-    completed without the fixed score table and index.
+    Normal post-processing is best-effort: unavailable deployment data and
+    query/write failures return an explicit status without changing the input
+    TSV. ``required=True`` remains available for deployment diagnostics.
     """
     tsv = Path(tsv_path)
     db = Path(db_path or GPN_MSA_DB)
     try:
         db, tabix = validate_database(db)
-    except FileNotFoundError:
+    except (FileNotFoundError, RuntimeError, OSError) as exc:
         if required:
             raise
-        db = Path(db)
-        tabix = ""
+        status, message = _unavailable_status(db, exc)
+        _warn(message)
+        return _status(status, message, db)
 
     keys: set[tuple[str, int, str, str]] = set()
     with tsv.open("r", encoding="utf-8", newline="") as source:
@@ -168,17 +223,17 @@ def annotate_review_tsv(
             if key is not None:
                 keys.add(key)
 
-    scores = query_scores(db, keys, tabix_bin=tabix) if tabix else {}
-    with tsv.open("r", encoding="utf-8", newline="") as source:
-        reader = csv.DictReader(source, delimiter="\t")
-        fields = list(reader.fieldnames or [])
-        if SCORE_COLUMN not in fields:
-            fields.append(SCORE_COLUMN)
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f".{tsv.name}.", suffix=".tmp", dir=str(tsv.parent), text=True
-        )
-        rows = annotated = 0
-        try:
+    try:
+        scores = query_scores(db, keys, tabix_bin=tabix)
+        with tsv.open("r", encoding="utf-8", newline="") as source:
+            reader = csv.DictReader(source, delimiter="\t")
+            fields = list(reader.fieldnames or [])
+            if SCORE_COLUMN not in fields:
+                fields.append(SCORE_COLUMN)
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=f".{tsv.name}.", suffix=".tmp", dir=str(tsv.parent), text=True
+            )
+            rows = annotated = 0
             with os.fdopen(fd, "w", encoding="utf-8", newline="") as destination:
                 writer = csv.DictWriter(
                     destination,
@@ -195,16 +250,28 @@ def annotate_review_tsv(
                     annotated += bool(value)
                     writer.writerow(row)
             os.replace(tmp_name, tsv)
-        except Exception:
+    except Exception as exc:
+        if "tmp_name" in locals():
             try:
                 os.unlink(tmp_name)
             except OSError:
                 pass
+        if required:
             raise
-    return {
-        "rows": rows,
-        "queryable_variants": len(keys),
-        "annotated_variants": len(scores),
-        "annotated_rows": annotated,
-        "database_available": bool(tabix),
-    }
+        message = f"GPN-MSA annotation failed for {tsv}: {exc}"
+        _warn(message)
+        return _status(
+            STATUS_FAILED,
+            message,
+            db,
+            queryable_variants=len(keys),
+        )
+    return _status(
+        STATUS_COMPLETE,
+        "",
+        db,
+        rows=rows,
+        queryable_variants=len(keys),
+        annotated_variants=len(scores),
+        annotated_rows=annotated,
+    )

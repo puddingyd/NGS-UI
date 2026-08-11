@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v8.5 — 2026-08-11
+
+- GPN-MSA 改為所有三級 case 都嘗試、但不再作為完成 gate：缺 score DB、`.tbi`、tabix 或查詢失敗時保留可用的 review TSV，在 job log 顯示 warning，並於 review manifest 記錄明確 `complete`／`skipped_*`／`failed` 狀態，不會讓整個三級分析失敗。
+- 新增 `scripts/backfill_gpn_msa.py`，可指定 sample 或以 `--all` 對舊 case 補 GPN-MSA；已有 review TSV 時只更新該衍生檔與 manifest，不修改或重掃完整 raw TSV。
+
 ### v8.4 — 2026-08-11
 
 - 二級分析產生的 Nextflow 指令改依定序類型選擇 DGX2 profile：WES 使用 `-profile dgx`，WGS 維持 `-profile dgx_single`；其餘分析參數不變。
