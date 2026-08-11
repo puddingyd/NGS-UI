@@ -423,19 +423,52 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .analysis-flow-row-mito { grid-row: 3; }
 .analysis-flow-row-str { grid-row: 4; }
 .analysis-flow-row-pgx { grid-row: 5; }
+.analysis-flow-snv-priority-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) auto minmax(0, 1.55fr);
+  align-items: stretch;
+  gap: 7px;
+}
+.analysis-flow-review-filter,
+.analysis-flow-tier-strip {
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--card-bg);
+}
+.analysis-flow-review-filter {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.analysis-flow-review-filter-title {
+  font-weight: 600;
+}
+.analysis-flow-review-filter-detail {
+  margin-top: 4px;
+  color: #52525b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.analysis-flow-snv-priority-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+}
 .analysis-flow-tier-strip {
   display: grid;
-  grid-template-columns: 1.2fr 1.2fr 1.8fr 0.75fr;
   gap: 4px;
 }
 .analysis-flow-tier {
   min-width: 0;
-  padding: 4px 5px;
-  border-left: 1px solid var(--border);
+  padding: 5px 4px;
+  border-top: 1px solid var(--border);
   overflow-wrap: anywhere;
 }
 .analysis-flow-tier:first-child {
-  border-left: 0;
+  border-top: 0;
 }
 .analysis-flow-tier-detail {
   font-size: 12px;

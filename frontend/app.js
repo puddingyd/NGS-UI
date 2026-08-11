@@ -7551,12 +7551,19 @@ function renderAnalysisFlow(flow) {
       .map(row => row.detail)
       .filter(Boolean);
     const priority = name === "SNV / Indel"
-      ? `<div class="analysis-flow-tier-strip">
-           ${["1A", "1B", "1C", "Other"].map(tier => `
-             <div class="analysis-flow-tier">
-               <div class="analysis-flow-tier-title">${esc(snvTierTitles[tier])}</div>
-               ${analysisFlowValue(flow, name, tier) ? `<div class="analysis-flow-tier-detail">${esc(analysisFlowValue(flow, name, tier))}</div>` : ""}
-             </div>`).join("")}
+      ? `<div class="analysis-flow-snv-priority-flow">
+           <div class="analysis-flow-review-filter">
+             <div class="analysis-flow-review-filter-title">Review TSV filter</div>
+             <div class="analysis-flow-review-filter-detail">${esc(analysisFlowValue(flow, name, "review_filter"))}</div>
+           </div>
+           <div class="analysis-flow-snv-priority-arrow" aria-hidden="true">→</div>
+           <div class="analysis-flow-tier-strip">
+             ${["1A", "1B", "1C", "Other"].map(tier => `
+               <div class="analysis-flow-tier">
+                 <div class="analysis-flow-tier-title">${esc(snvTierTitles[tier])}</div>
+                 ${analysisFlowValue(flow, name, tier) ? `<div class="analysis-flow-tier-detail">${esc(analysisFlowValue(flow, name, tier))}</div>` : ""}
+               </div>`).join("")}
+           </div>
          </div>`
       : priorityItems.length > 1
         ? `<div class="analysis-flow-priority-strip analysis-flow-priority-count-${priorityItems.length}">
