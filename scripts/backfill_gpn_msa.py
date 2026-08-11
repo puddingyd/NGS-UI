@@ -44,6 +44,38 @@ def _deduplicate(values: list[str]) -> list[str]:
     return output
 
 
+def _resolve_requested_cases(sample_layout, requested: list[str]) -> tuple[list[str], list[str]]:
+    """Resolve exact UI case IDs or source sample IDs to UI-owned case IDs."""
+    available = sorted(set(sample_layout.iter_sample_ids()))
+    available_set = set(available)
+    by_source: dict[str, list[str]] = {}
+    for case_id in available:
+        source_id = sample_layout.source_sample_id(case_id)
+        by_source.setdefault(source_id, []).append(case_id)
+
+    resolved: list[str] = []
+    missing: list[str] = []
+    for value in requested:
+        if value in available_set:
+            matches = [value]
+        else:
+            matches = list(by_source.get(value) or [])
+            if not matches:
+                matches = [
+                    case_id for case_id in available
+                    if case_id.startswith(f"{value}-")
+                ]
+        if not matches:
+            missing.append(value)
+            continue
+        if matches != [value]:
+            print(
+                f"[backfill-gpn-msa] resolve {value} -> {', '.join(matches)}"
+            )
+        resolved.extend(matches)
+    return _deduplicate(resolved), missing
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("sample_ids", nargs="*", metavar="SAMPLE_ID")
@@ -84,14 +116,25 @@ def main() -> int:
     sys.path.insert(0, str(repo_root / "backend"))
     from app.services import gpn_msa, sample_layout, snv_review  # noqa: E402
 
-    sample_ids = sorted(sample_layout.iter_sample_ids()) if args.all else requested
+    if args.all:
+        sample_ids = sorted(sample_layout.iter_sample_ids())
+        missing_requests: list[str] = []
+    else:
+        sample_ids, missing_requests = _resolve_requested_cases(
+            sample_layout, requested
+        )
+        for value in missing_requests:
+            print(
+                f"[backfill-gpn-msa] ERROR: {value}: no matching UI case ID",
+                file=sys.stderr,
+            )
     if not sample_ids:
         print("[backfill-gpn-msa] no cases found", file=sys.stderr)
         return 1
 
     db = Path(gpn_msa.GPN_MSA_DB)
     counts: dict[str, int] = {}
-    errors = 0
+    errors = len(missing_requests)
 
     for sample_id in sample_ids:
         review = sample_layout.review_tsv(sample_id)

@@ -246,7 +246,7 @@ UI 流程：
 | `build_snv_annotation_overlay.py` | 比較 immutable 03 raw 與 post-processing working TSV，建立 `08_postprocessing/{LIS_ID}.snv_annotations.sqlite`；可接受 legacy enriched TSV 略過部分 raw rows |
 | `build_snv_review_tsv.py` / `services/gpn_msa.py` | 從 03 raw + optional `--overlay` 預建 08 review TSV；統一套 `is_review_retained()` 後，用 `NGS_UI_GPN_MSA_DB` + `.tbi` tabix join GRCh38 SNV 分數。正式 chain 一律 best-effort；缺資源或 query failure 記 manifest status + warning 而不中止，`--require-gpn-msa` 只保留給人工 strict 診斷 |
 | `download_gpn_msa_scores.sh` | 一次性下載官方 `songlab/gpn-msa-hg38-scores` 的 `scores.tsv.bgz` + `.tbi` 到固定 `NGS_UI_GPN_MSA_DB`，以 BRCA1 sentinel tabix query 驗證後切換；不做版本目錄、自動 timer 或定期更新。Dataset card 標示 MIT license；資料不進 git |
-| `backfill_gpn_msa.py` | 對舊 case 補 GPN-MSA；指定 sample ID 或 `--all`。已有 review TSV 時只原子補分並更新同一份 manifest，不掃／不改 raw；缺 review 才從 raw 建立。缺 DB/index/tabix/query 仍寫明確狀態且整批不中止 |
+| `backfill_gpn_msa.py` | 對舊 case 補 GPN-MSA；可指定完整 UI case ID、`pipeline_source.json` 的 source sample ID（自動展開所有 `-nckuh`/`-dragen` matches）或 `--all`。已有 review TSV 時只原子補分並更新同一份 manifest，不掃／不改 raw；缺 review 才從 raw 建立。缺 DB/index/tabix/query 仍寫明確狀態且整批不中止 |
 | `build_snv_gene_index.py` | 從 03 raw 預建 `--out 08_postprocessing/{LIS_ID}.snv_gene_index.sqlite`，保存 gene/variant id 與 raw byte offset |
 | `migrate_tertiary_output_layout.py` | 預設 dry-run；`--sample ID --apply` canary、`--all --apply` 批次、`--rollback --apply` marker-only rollback。舊資料不刪，marker 最後寫 |
 | `annotate_giab_strata.py` | 在暫存 working TSV 補 `GIAB_STRATA`，最後存入 sparse overlay；不寫回 03 raw。strata 由 `NGS_UI_GIAB_STRAT_DIR/strata_manifest.json` 定義 |

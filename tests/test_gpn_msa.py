@@ -268,13 +268,17 @@ def test_query_scores_matches_exact_alt_and_normalises_chr(monkeypatch, tmp_path
 
 def test_backfill_script_updates_existing_review_and_manifest(tmp_path):
     root = tmp_path / "tertiary"
-    post = root / "OLD-CASE" / "08_postprocessing"
+    post = root / "OLD-CASE-nckuh" / "08_postprocessing"
     post.mkdir(parents=True)
-    review = post / "OLD-CASE.snv_indel.review.tsv"
+    review = post / "OLD-CASE-nckuh.snv_indel.review.tsv"
     _write(review, [{
         "CHROM": "chr1", "POS": "10", "REF": "A", "ALT": "G",
         "GENE": "KEEP", "CLINVAR_SIG": "", "GNOMAD_G_AF": "", "DP": "30",
     }])
+    (post / "OLD-CASE-nckuh.pipeline_source.json").write_text(
+        json.dumps({"source_sample_id": "OLD-CASE"}),
+        encoding="utf-8",
+    )
     db = tmp_path / "scores.tsv.bgz"
     db.touch()
     Path(f"{db}.tbi").touch()
@@ -308,9 +312,10 @@ def test_backfill_script_updates_existing_review_and_manifest(tmp_path):
         rows = list(csv.DictReader(handle, delimiter="\t"))
     assert rows[0]["GPN_MSA_SCORE"] == "-8.25"
     manifest = json.loads(
-        (post / "OLD-CASE.snv_indel.review.tsv.source.json").read_text(
+        (post / "OLD-CASE-nckuh.snv_indel.review.tsv.source.json").read_text(
             encoding="utf-8"
         )
     )
     assert manifest["gpn_msa_annotation"]["status"] == "complete"
-    assert "OLD-CASE: status=complete" in proc.stdout
+    assert "resolve OLD-CASE -> OLD-CASE-nckuh" in proc.stdout
+    assert "OLD-CASE-nckuh: status=complete" in proc.stdout

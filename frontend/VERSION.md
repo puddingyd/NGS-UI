@@ -9,7 +9,7 @@
 ### v8.5 — 2026-08-11
 
 - GPN-MSA 改為所有三級 case 都嘗試、但不再作為完成 gate：缺 score DB、`.tbi`、tabix 或查詢失敗時保留可用的 review TSV，在 job log 顯示 warning，並於 review manifest 記錄明確 `complete`／`skipped_*`／`failed` 狀態，不會讓整個三級分析失敗。
-- 新增 `scripts/backfill_gpn_msa.py`，可指定 sample 或以 `--all` 對舊 case 補 GPN-MSA；已有 review TSV 時只更新該衍生檔與 manifest，不修改或重掃完整 raw TSV。
+- 新增 `scripts/backfill_gpn_msa.py`，可指定完整 UI case ID、source sample ID（自動解析對應的 `-nckuh`／`-dragen` case）或以 `--all` 對舊 case 補 GPN-MSA；已有 review TSV 時只更新該衍生檔與 manifest，不修改或重掃完整 raw TSV。
 
 ### v8.4 — 2026-08-11
 

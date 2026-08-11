@@ -269,7 +269,7 @@ dbNSFP 完全由 Nextflow v3.6 負責：預設 4.9c；勾 `Research-only` 時用
 舊 case 補 GPN-MSA（已有 review TSV 時不掃、不改 raw；`--all` 也會讓各 case 分別留下完成／略過／失敗狀態）：
 
 ```bash
-# 指定一個或多個 case
+# 指定一個或多個 UI case ID；也可直接給 source sample ID，會自動解析 -nckuh/-dragen case
 python scripts/backfill_gpn_msa.py SAMPLE_ID_1 SAMPLE_ID_2
 
 # 所有可解析的 case
