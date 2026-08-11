@@ -7537,7 +7537,7 @@ function renderAnalysisFlow(flow) {
     "1A": "1A — Reported",
     "1B": "1B — LOF variant",
     "1C": "1C — Predicted suspect",
-    "Other": "Other",
+    "Other": "2 - Other",
   };
 
   const lanes = laneDefs.map(([name, rowClass]) => {
@@ -7553,11 +7553,12 @@ function renderAnalysisFlow(flow) {
     const priority = name === "SNV / Indel"
       ? `<div class="analysis-flow-snv-priority-flow">
            <div class="analysis-flow-review-filter">
-             <div class="analysis-flow-review-filter-title">Review TSV filter</div>
+             <div class="analysis-flow-review-filter-title">Filter</div>
              <div class="analysis-flow-review-filter-detail">${esc(analysisFlowValue(flow, name, "review_filter"))}</div>
            </div>
            <div class="analysis-flow-snv-priority-arrow" aria-hidden="true">→</div>
            <div class="analysis-flow-tier-strip">
+             <div class="analysis-flow-tier-strip-title">Category</div>
              ${["1A", "1B", "1C", "Other"].map(tier => `
                <div class="analysis-flow-tier">
                  <div class="analysis-flow-tier-title">${esc(snvTierTitles[tier])}</div>

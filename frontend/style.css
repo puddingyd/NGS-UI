@@ -461,6 +461,11 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   display: grid;
   gap: 4px;
 }
+.analysis-flow-tier-strip-title {
+  padding-bottom: 2px;
+  font-weight: 600;
+  text-align: center;
+}
 .analysis-flow-tier {
   min-width: 0;
   padding: 5px 4px;
