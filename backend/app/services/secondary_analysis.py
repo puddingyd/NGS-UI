@@ -412,10 +412,9 @@ def _normalize_sample(payload: dict, seq_type: str) -> dict:
 
 def _launch_command(batch_name: str, seq_type: str) -> str:
     session = f"ngs2_{batch_name}"
-    # DGX2 launches now always use the single-runner profile, including
-    # samplesheets containing more than one primary sample.
-    profile = "dgx_single"
-    run_gcnv = " \\\n    --run_gcnv true" if seq_type == "WES" else ""
+    seq = (seq_type or "").strip().upper()
+    profile = "dgx" if seq == "WES" else "dgx_single"
+    run_gcnv = " \\\n    --run_gcnv true" if seq == "WES" else ""
     extended_analysis = (
         " \\\n    --run_manta"
         " \\\n    --run_expansionhunter"

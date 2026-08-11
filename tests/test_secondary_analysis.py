@@ -136,6 +136,8 @@ def test_wgs_launch_command_runs_extended_analysis_by_default():
 def test_wes_launch_command_runs_gcnv_and_extended_analysis_by_default():
     command = secondary._launch_command("260719_WES", "WES")
 
+    assert "-profile dgx \\" in command
+    assert "-profile dgx_single" not in command
     assert "--run_gcnv true" in command
     assert "--run_manta" in command
     assert "--run_expansionhunter" in command

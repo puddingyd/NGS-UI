@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v8.4 — 2026-08-11
+
+- 二級分析產生的 Nextflow 指令改依定序類型選擇 DGX2 profile：WES 使用 `-profile dgx`，WGS 維持 `-profile dgx_single`；其餘分析參數不變。
+
 ### v8.3 — 2026-08-11
 
 - 主畫面與「輸入臨床表徵」頁的 Clinical presentation 右側新增 `Documents`：登入後可依 MRN 共用上傳、下載、修改檔名與刪除病歷附件，也可直接貼上剪貼簿截圖。支援 PDF、JPG、PNG、TIF/TIFF；圖片可在 modal 預覽，多頁 TIFF 可翻頁且保留原始下載檔。附件串流寫入獨立 `patient_documents/`，不設固定單檔上限但保留磁碟安全空間；MRN 修改時會連同附件與 phenotype sidecar 安全搬移，遇到既有或共用病人資料時不自動合併。
