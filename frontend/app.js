@@ -7535,7 +7535,7 @@ function renderAnalysisFlow(flow) {
   ];
   const snvTierTitles = {
     "1A": "1A — Reported",
-    "1B": "1B — LOF variant",
+    "1B": "1B — Loss-of-function",
     "1C": "1C — Predicted suspect",
     "Other": "2 - Other",
   };

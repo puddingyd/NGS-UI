@@ -13,6 +13,7 @@ def test_snv_prioritization_splits_editable_filter_from_vertical_tiers():
     assert '<div class="analysis-flow-review-filter-title">Filter</div>' in APP_JS
     assert ">Review TSV filter</div>" not in APP_JS
     assert '<div class="analysis-flow-tier-strip-title">Category</div>' in APP_JS
+    assert '"1B": "1B — Loss-of-function"' in APP_JS
     assert '"Other": "2 - Other"' in APP_JS
     assert 'class="analysis-flow-snv-priority-arrow"' in APP_JS
     assert ".analysis-flow-snv-priority-flow" in STYLE_CSS
