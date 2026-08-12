@@ -28,6 +28,8 @@ def hpo_search(q: str = Query(""), limit: int = Query(20, ge=1, le=100)):
     # the picker can show "Seizure (84 genes)" without a second round-trip.
     for r in results:
         r["gene_count"] = phenotype_scorer.gene_count(r["hpo_id"])
+        for parent in r.get("parents", []):
+            parent["gene_count"] = phenotype_scorer.gene_count(parent["hpo_id"])
     return results
 
 

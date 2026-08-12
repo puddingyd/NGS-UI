@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v8.6 — 2026-08-12
+
+- 主畫面 Patient phenotype 與「載入新個案」的 HPO 搜尋改為比照「輸入臨床表徵」工具：支援名稱與 synonym 的拼字容錯，並在每個命中 term 下方顯示可直接選取的上一級 HPO term；滑鼠與鍵盤選取行為一致。
+
 ### v8.5 — 2026-08-11
 
 - GPN-MSA 改為所有三級 case 都嘗試、但不再作為完成 gate：缺 score DB、`.tbi`、tabix 或查詢失敗時保留可用的 review TSV，在 job log 顯示 warning，並於 review manifest 記錄明確 `complete`／`skipped_*`／`failed` 狀態，不會讓整個三級分析失敗。

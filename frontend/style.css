@@ -721,6 +721,18 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .combobox-option .opt-lis { font-family: ui-monospace, monospace; font-weight: 600; }
 .combobox-option .opt-name { color: var(--fg); }
 .combobox-option .opt-mrn { color: var(--muted); font-family: ui-monospace, monospace; }
+.combobox-option.hpo-parent-option {
+  background: #f6f8fa;
+  padding-left: 22px;
+}
+.combobox-option.hpo-parent-option:hover,
+.combobox-option.hpo-parent-option.active {
+  background: #eaeef2;
+}
+.hpo-parent-arrow {
+  color: var(--muted);
+  margin-right: 5px;
+}
 #new-case-lis-id-dropdown .combobox-option {
   grid-template-columns: minmax(140px, 0.95fr) minmax(230px, 1.35fr) minmax(240px, 1.7fr);
 }

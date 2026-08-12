@@ -2601,11 +2601,10 @@ function _pickPanelOption(opt) {
 
 function _pickNewCaseHpoOption(opt) {
   if (!opt?.dataset.ncHpoPick) return false;
-  const r = JSON.parse(opt.dataset.ncHpoPick);
-  const id = r.hpo_id || r.phenotype || "";
+  const id = opt.dataset.id || "";
   if (!id) return false;
   if (!newCaseEdit.hpo.some(h => h.phenotype === id)) {
-    newCaseEdit.hpo.push({phenotype: id, label: r.name || id, weight: 1});
+    newCaseEdit.hpo.push({phenotype: id, label: opt.dataset.name || id, weight: 1});
     _markNewCaseEdited();
   }
   document.getElementById("new-case-hpo-search").value = "";
@@ -2685,6 +2684,53 @@ function setupPanelSearchInput() {
   // No-op; see setupHpoSearchInput().
 }
 
+function _hpoSearchOptionHtml(term, { parent = false, newCase = false } = {}) {
+  const id = term?.hpo_id || term?.phenotype || "";
+  const name = term?.name || term?.label || id;
+  if (!id) return "";
+  const geneCount = Number(term?.gene_count || 0);
+  const geneLabel = geneCount > 0 ? `${geneCount} genes` : "";
+  const parentClass = parent ? " hpo-parent-option" : "";
+  const newCaseMarker = newCase ? ' data-nc-hpo-pick="1"' : "";
+  const parentArrow = parent ? '<span class="hpo-parent-arrow" aria-hidden="true">⤴</span>' : "";
+  return `
+    <li class="combobox-option hpo-combobox-option${parentClass}"
+        data-id="${escapeAttr(id)}" data-name="${escapeAttr(name)}"${newCaseMarker}>
+      <span class="opt-lis">${parentArrow}${escapeHtml(id)}</span>
+      <span class="opt-name">${escapeHtml(name)}</span>
+      <span class="opt-mrn">${escapeHtml(geneLabel)}</span>
+    </li>`;
+}
+
+function _renderHpoSearchResults(dropdown, list, { newCase = false } = {}) {
+  if (!dropdown) return false;
+  if (!Array.isArray(list) || !list.length) {
+    dropdown.innerHTML = '<li class="muted" style="padding:6px 10px">（無結果）</li>';
+    _comboClearActive(dropdown);
+    dropdown.classList.remove("hidden");
+    return false;
+  }
+  const seen = new Set();
+  const rows = [];
+  list.forEach(term => {
+    const id = term?.hpo_id || term?.phenotype || "";
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      rows.push(_hpoSearchOptionHtml(term, { newCase }));
+    }
+    (term?.parents || []).forEach(parent => {
+      const parentId = parent?.hpo_id || "";
+      if (!parentId || seen.has(parentId)) return;
+      seen.add(parentId);
+      rows.push(_hpoSearchOptionHtml(parent, { parent: true, newCase }));
+    });
+  });
+  dropdown.innerHTML = rows.join("");
+  _comboClearActive(dropdown);
+  dropdown.classList.remove("hidden");
+  return true;
+}
+
 async function _runHpoSearch(q) {
   const dropdown = document.getElementById("hpo-search-dropdown");
   if (!dropdown) return;
@@ -2695,25 +2741,7 @@ async function _runHpoSearch(q) {
     const resp = await fetch(url, { signal: _hpoSearchAbort.signal });
     if (!resp.ok) { _hpoClose(); return; }
     const list = await resp.json();
-    if (!Array.isArray(list) || !list.length) {
-      dropdown.innerHTML = '<li class="muted" style="padding:6px 10px">（無結果）</li>';
-    } else {
-      dropdown.innerHTML = list.map(t => {
-        // "12 genes" for an annotated HPO; nothing when 0 (the dim grey
-        // ones are HPOs without any gene annotation, e.g. parent terms).
-        const gc = Number.isFinite(Number(t.gene_count)) && t.gene_count > 0
-          ? `${t.gene_count} genes`
-          : "";
-        return `
-        <li class="combobox-option" data-id="${escapeAttr(t.hpo_id)}" data-name="${escapeAttr(t.name)}">
-          <span class="opt-lis">${escapeHtml(t.hpo_id)}</span>
-          <span class="opt-name">${escapeHtml(t.name)}</span>
-          <span class="opt-mrn">${escapeHtml(gc)}</span>
-        </li>`;
-      }).join("");
-    }
-    _comboClearActive(dropdown);
-    _hpoOpen();
+    _renderHpoSearchResults(dropdown, list);
   } catch (e) {
     if (e.name !== "AbortError") console.error("HPO search failed", e);
   }
@@ -10161,6 +10189,7 @@ document.addEventListener("change", ev => {
 // don't pick these up.
 let _ncHpoSearchTimer = null;
 let _ncPanelSearchTimer = null;
+let _ncHpoSearchSequence = 0;
 document.addEventListener("input", ev => {
   if (ev.target.id === "new-case-hpo-search") {
     clearTimeout(_ncHpoSearchTimer);
@@ -10177,21 +10206,14 @@ document.addEventListener("input", ev => {
 async function _ncRunHpoSearch(q) {
   const drop = document.getElementById("new-case-hpo-search-dropdown");
   if (!drop) return;
+  const sequence = ++_ncHpoSearchSequence;
   q = (q || "").trim();
   if (!q) { drop.classList.add("hidden"); drop.innerHTML = ""; return; }
   let rows = [];
-  try { rows = await apiFetch(`/hpo/search?q=${encodeURIComponent(q)}&limit=15`) || []; }
+  try { rows = await apiFetch(`/hpo/search?q=${encodeURIComponent(q)}&limit=20`) || []; }
   catch { rows = []; }
-  if (!rows.length) { drop.classList.add("hidden"); drop.innerHTML = ""; return; }
-  drop.innerHTML = rows.map(r =>
-    `<li class="combobox-option" data-nc-hpo-pick='${escapeAttr(JSON.stringify(r))}'>`
-    + `<span class="opt-lis">${escapeHtml(r.hpo_id || "")}</span>`
-    + `<span class="opt-name">${escapeHtml(r.name || "")}</span>`
-    + (r.gene_count ? `<span class="opt-mrn">${r.gene_count} genes</span>` : "")
-    + `</li>`
-  ).join("");
-  _comboClearActive(drop);
-  drop.classList.remove("hidden");
+  if (sequence !== _ncHpoSearchSequence) return;
+  _renderHpoSearchResults(drop, rows, { newCase: true });
 }
 async function _ncRunPanelSearch(q) {
   const drop = document.getElementById("new-case-panel-search-dropdown");
@@ -10235,6 +10257,8 @@ document.addEventListener("mousedown", ev => {
 document.addEventListener("focusin", ev => {
   if (ev.target.id === "new-case-lis-id-search") {
     _renderNewCaseLisDropdown(ev.target.value, { showAll: true });
+  } else if (ev.target.id === "new-case-hpo-search" && ev.target.value.trim()) {
+    _ncRunHpoSearch(ev.target.value);
   }
 });
 document.addEventListener("focusout", ev => {
