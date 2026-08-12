@@ -28,6 +28,7 @@ from . import (
     clinvar_latest_store,
     cnv_sv_merge,
     hpo_ontology,
+    omim_store,
     panel_deadzone,
     phenotype_scorer,
     ploidy,
@@ -819,13 +820,13 @@ def _picked_disease_for_snv(v: dict, edits: dict) -> str:
     """Return the reviewer-picked Disease cell, falling back to the first."""
     picked = edits.get("report_diseases") or {}
     if isinstance(picked, dict):
-        for idx in range(1, 6):
+        for idx, field in enumerate(omim_store.DISEASE_FIELDS, start=1):
             if picked.get(str(idx)) or picked.get(idx):
-                disease = (v.get(f"Disease{idx}") or "").strip()
+                disease = (v.get(field) or "").strip()
                 if disease and disease != "NA":
                     return disease
-    for idx in range(1, 6):
-        disease = (v.get(f"Disease{idx}") or "").strip()
+    for field in omim_store.DISEASE_FIELDS:
+        disease = (v.get(field) or "").strip()
         if disease and disease != "NA":
             return disease
     return (v.get("OMIM_disease") or "").strip()

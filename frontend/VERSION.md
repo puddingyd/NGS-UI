@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v8.7 — 2026-08-12
+
+- OMIM 疾病 curator slots 從 `Disease1..5` 擴充為 `Disease1..16`：SNV 卡片、GenCC／ClinGen／MONDO evidence 合併、reviewer 疾病勾選、個案清單摘要、TXT/PDF 與診斷 DOCX 全程支援第 6–16 欄；OMIM ID 優先、gene symbol fallback 的變異命中規則不變，舊五欄 workbook 與既有 report state 可繼續使用。
+- 只有 `Disease1..16` 全數為空時，才從多行 `OMIM_disease` 依序合成最多 16 個單行 fallback；只要已有任一 curator slot 就不自動補其餘空欄，避免 grouped rich description 與原始 disease 行錯位或重複。
+
 ### v8.6 — 2026-08-12
 
 - 主畫面 Patient phenotype 與「載入新個案」的 HPO 搜尋改為比照「輸入臨床表徵」工具：支援名稱與 synonym 的拼字容錯，並在每個命中 term 下方顯示可直接選取的上一級 HPO term；滑鼠與鍵盤選取行為一致。

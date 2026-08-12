@@ -4,6 +4,7 @@
 // ------------------------------------------------------------------
 
 const API_BASE = "/api";
+const OMIM_DISEASE_SLOT_COUNT = 16;
 
 // ---------- State ---------------------------------------------------
 
@@ -5367,7 +5368,7 @@ function renderDiseaseList(v, id, withCheckbox) {
         </details>`);
     }
   } else {
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= OMIM_DISEASE_SLOT_COUNT; i++) {
       const d = v[`Disease${i}`];
       if (!d || d === "NA") continue;
       const summary = (String(d).split("\n")[0] || "").slice(0, 120);
@@ -8569,12 +8570,13 @@ function formatVariantTable(rows) {
 function pickedDiseaseSlot(id, v) {
   const picked = (state.reports?.edits?.[id]?.report_diseases) || {};
   const idxs = Object.keys(picked).filter(k => picked[k]).map(Number)
-    .filter(n => Number.isFinite(n)).sort((a, b) => a - b);
+    .filter(n => Number.isInteger(n) && n >= 1 && n <= OMIM_DISEASE_SLOT_COUNT)
+    .sort((a, b) => a - b);
   for (const i of idxs) {
     const d = v[`Disease${i}`];
     if (d && d !== "NA") return { idx: i, text: d };
   }
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= OMIM_DISEASE_SLOT_COUNT; i++) {
     const d = v[`Disease${i}`];
     if (d && d !== "NA") return { idx: i, text: d };
   }

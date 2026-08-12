@@ -533,10 +533,10 @@ def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
         gene=variant.get("gene_symbol", ""),
     ) or {}
     out = []
-    for idx in range(1, 6):
+    for idx, field in enumerate(omim_store.DISEASE_FIELDS, start=1):
         if picked.get(str(idx)) or picked.get(idx):
             disease = omim_store.compact_disease_label(
-                rec.get(f"Disease{idx}") or ""
+                rec.get(field) or ""
             )
             if disease and disease not in out:
                 out.append(disease)
@@ -1149,7 +1149,7 @@ def _enrich_snv_variants(
             v["OMIM_id"]      = rec.get("OMIM_id", "")
             v["OMIM_disease"] = rec.get("OMIM_disease", "")
             v["Inheritance"]  = rec.get("Inheritance", "")
-            for f in ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5"):
+            for f in omim_store.DISEASE_FIELDS:
                 v[f] = rec.get(f, "")
         v["disease_associations"] = gene_disease_store.merged_associations(gene, rec, refresh=False)
     litvar2_on_demand.apply_cached(variants, sample_id)

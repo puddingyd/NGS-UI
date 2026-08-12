@@ -3,7 +3,7 @@
 OMIM.xlsx remains the source of curator-maintained rich text. This module
 loads an optional local TSV of supplemental GenCC / ClinGen / MONDO-aligned
 associations and merges them with the current OMIM row at runtime, so edits
-to OMIM Disease1..5 keep showing up without rebuilding this file.
+to OMIM Disease1..16 keep showing up without rebuilding this file.
 """
 from __future__ import annotations
 
@@ -13,9 +13,7 @@ import threading
 from pathlib import Path
 
 from ..config import GENE_DISEASE_DB, GENE_DISEASE_TSV
-from . import panel_deadzone
-
-_DISEASE_FIELDS = ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5")
+from . import omim_store, panel_deadzone
 _INHERITANCE_RE = re.compile(
     r"\((AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol)"
     r"(?:\s*[/,;]\s*(?:AD|AR|XLD|XLR|XL|YL|MT|Mi|DR|DD|Smu|Mu|Isol))*\)",
@@ -299,7 +297,7 @@ def _omim_associations(omim_row: dict | None) -> list[dict]:
     if not omim_row:
         return []
     out = []
-    for idx, field in enumerate(_DISEASE_FIELDS, start=1):
+    for idx, field in enumerate(omim_store.DISEASE_FIELDS, start=1):
         detail = str((omim_row or {}).get(field) or "").strip()
         if not detail or detail == "NA":
             continue
@@ -308,7 +306,7 @@ def _omim_associations(omim_row: dict | None) -> list[dict]:
             continue
         line_count = len([ln for ln in detail.splitlines() if ln.strip()])
         item = {
-            # Disease1..5 are curator-owned rows.  A phenotype MIM is useful
+            # Disease1..16 are curator-owned rows. A phenotype MIM is useful
             # for evidence matching but is not a row identity: one OMIM gene
             # record can intentionally contain multiple disease labels with
             # the same phenotype MIM (for example OTX2 / 610125).
@@ -355,7 +353,7 @@ def merged_associations(
 ) -> list[dict]:
     """Return OMIM-first rows plus non-duplicate supplemental associations.
 
-    OMIM Disease1..5 slots are preserved verbatim and in workbook order.
+    OMIM Disease1..16 slots are preserved verbatim and in workbook order.
     Supplemental evidence enriches every OMIM row carrying the same
     association key.  This intentionally fans phenotype-MIM evidence out to
     multiple curator-owned slots (for example both OTX2 / 610125 labels)

@@ -8,9 +8,9 @@ lookup_cached() inside its variant loop.
 
 Workbook layout (one row per OMIM phenotype-bearing gene):
     OMIM_id | gene_symbol | OMIM_disease | Inheritance |
-    Disease1 .. Disease5 | Done
+    Disease1 .. Disease16 | Done
 
-`Disease1..5` carry the curator-written rich text (~9% of rows have
+`Disease1..16` carry the curator-written rich text (~9% of rows have
 Disease1; rarer for the rest). For the ~28% of genes that only have
 `OMIM_disease` (multi-line, each line `<phenotype name> (<inh>)`),
 we synthesise Disease1..N from those lines so the variant card has
@@ -29,7 +29,10 @@ from typing import Optional
 
 from ..config import OMIM_XLSX
 
-_DISEASE_FIELDS = ("Disease1", "Disease2", "Disease3", "Disease4", "Disease5")
+DISEASE_SLOT_COUNT = 16
+DISEASE_FIELDS = tuple(
+    f"Disease{idx}" for idx in range(1, DISEASE_SLOT_COUNT + 1)
+)
 _OMIM_URL_RE = re.compile(r"/entry/(\d+)\b")
 _INHERITANCE_CODES = r"(?:AD|AR|XLD|XLR|XL|YL|MT|DD|IC)"
 _INHERITANCE_TAG_RE = re.compile(
@@ -46,19 +49,19 @@ _state: dict = {
 
 
 def _empty_row() -> dict:
-    return {
+    row = {
         "OMIM_id": "",
         "OMIM_disease": "",
         "Inheritance": "",
-        "Disease1": "", "Disease2": "", "Disease3": "",
-        "Disease4": "", "Disease5": "",
     }
+    row.update({field: "" for field in DISEASE_FIELDS})
+    return row
 
 
 def compact_disease_label(value: str) -> str:
     """Keep a disease label through its first inheritance tag.
 
-    Curated Disease1..5 cells may append a prose OMIM description after
+    Curated Disease1..16 cells may append a prose OMIM description after
     the label, e.g. ``Name (AD) Name is characterized by ...``. Match a
     known inheritance tag instead of the first closing parenthesis so a
     phenotype acronym inside the name is not accidentally truncated.
@@ -82,22 +85,22 @@ def _row_to_dict(headers: tuple, row: tuple) -> dict:
     out["OMIM_id"]      = get("OMIM_id")
     out["OMIM_disease"] = get("OMIM_disease")
     out["Inheritance"]  = get("Inheritance")
-    for f in _DISEASE_FIELDS:
+    for f in DISEASE_FIELDS:
         out[f] = get(f)
     return out
 
 
 def _synthesize_diseases(row: dict) -> None:
-    """When Disease1..5 are empty but OMIM_disease has lines, fill
+    """When Disease1..16 are empty but OMIM_disease has lines, fill
     Disease1..N with those lines so the UI renders summaries."""
-    if any(row[f] for f in _DISEASE_FIELDS):
+    if any(row[f] for f in DISEASE_FIELDS):
         return
     od = row.get("OMIM_disease") or ""
     if not od.strip():
         return
     lines = [ln.strip() for ln in od.splitlines() if ln.strip()]
-    for i, ln in enumerate(lines[:5]):
-        row[_DISEASE_FIELDS[i]] = ln
+    for field, line in zip(DISEASE_FIELDS, lines):
+        row[field] = line
 
 
 def _load(path: Path) -> tuple[dict, dict]:
@@ -209,7 +212,7 @@ def lookup_cached(*, omim_id: Optional[int] = None, gene: str = "") -> Optional[
 
 
 def lookup(*, omim_id: Optional[int] = None, gene: str = "") -> Optional[dict]:
-    """Return the joined OMIM record (OMIM_id + Disease1..5 + ...).
+    """Return the joined OMIM record (OMIM_id + Disease1..16 + ...).
 
     Prefers OMIM_id (precise; the xlsx is keyed there). Falls back to
     gene_symbol (first hit) when OMIM_id was missing or unmatched.

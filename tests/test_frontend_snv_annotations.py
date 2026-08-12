@@ -144,3 +144,18 @@ def test_omim_badge_is_excluded_before_supplemental_badge_limit():
     assert "excludedLabels = []" in helper
     assert helper.index(".filter(label => !excluded.has") < helper.index(".slice(0, 3)")
     assert 'diseaseSourceBadges(a, isOmim ? ["OMIM"] : [])' in APP_JS
+
+
+def test_omim_render_and_report_fallback_cover_all_16_slots():
+    assert "const OMIM_DISEASE_SLOT_COUNT = 16;" in APP_JS
+
+    render_start = APP_JS.index("function renderDiseaseList(")
+    render_end = APP_JS.index("// ---------- Render: sections", render_start)
+    render_helper = APP_JS[render_start:render_end]
+    assert "i <= OMIM_DISEASE_SLOT_COUNT" in render_helper
+
+    picked_start = APP_JS.index("function pickedDiseaseSlot(")
+    picked_end = APP_JS.index("function diseaseInfo(", picked_start)
+    picked_helper = APP_JS[picked_start:picked_end]
+    assert "n <= OMIM_DISEASE_SLOT_COUNT" in picked_helper
+    assert "i <= OMIM_DISEASE_SLOT_COUNT" in picked_helper
