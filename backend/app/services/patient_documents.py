@@ -17,9 +17,10 @@ import threading
 import unicodedata
 import uuid
 import warnings
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Iterator, Protocol
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -94,6 +95,33 @@ class DocumentStorageFull(DocumentError):
 
 class PreviewUnavailable(DocumentError):
     pass
+
+
+class _ZipStreamBuffer:
+    """Minimal unseekable sink used by zipfile for incremental output."""
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+        self._position = 0
+
+    def write(self, data: bytes) -> int:
+        self._buffer.extend(data)
+        self._position += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self._position
+
+    def flush(self) -> None:
+        return None
+
+    def seekable(self) -> bool:
+        return False
+
+    def drain(self) -> bytes:
+        data = bytes(self._buffer)
+        self._buffer.clear()
+        return data
 
 
 def _now() -> str:
@@ -498,6 +526,71 @@ def list_documents(mrn: str) -> list[dict]:
             (mrn,),
         ).fetchall()
     return [_public(row) for row in rows]
+
+
+def stream_archive(
+    mrn: str,
+    *,
+    user: dict | None = None,
+) -> tuple[Iterator[bytes], int]:
+    """Return a streaming ZIP of every active document for one MRN.
+
+    The ZIP is never staged as a second file on disk. Images and PDFs are
+    already compressed, so ZIP_STORED avoids wasting CPU while still giving
+    the reviewer one portable archive with the current display names.
+    """
+    mrn = validate_mrn(mrn)
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM documents
+               WHERE mrn=? AND deleted_at IS NULL
+               ORDER BY created_at ASC, rowid ASC""",
+            (mrn,),
+        ).fetchall()
+        if not rows:
+            raise DocumentNotFound("目前沒有文件可下載")
+        members: list[tuple[Path, str]] = []
+        for row in rows:
+            path = _stored_path(row)
+            if not path.is_file():
+                raise DocumentNotFound(f"文件內容不存在：{row['display_name']}")
+            members.append((path, row["display_name"]))
+            _event(conn, row["id"], "archive_download", user, {
+                "display_name": row["display_name"],
+                "mrn": mrn,
+            })
+
+    def _generate() -> Iterator[bytes]:
+        sink = _ZipStreamBuffer()
+        with zipfile.ZipFile(
+            sink,
+            mode="w",
+            compression=zipfile.ZIP_STORED,
+            allowZip64=True,
+            strict_timestamps=False,
+        ) as archive:
+            for path, display_name in members:
+                with path.open("rb") as source, archive.open(
+                    display_name,
+                    mode="w",
+                    force_zip64=True,
+                ) as target:
+                    while True:
+                        chunk = source.read(_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        target.write(chunk)
+                        output = sink.drain()
+                        if output:
+                            yield output
+                output = sink.drain()
+                if output:
+                    yield output
+        output = sink.drain()
+        if output:
+            yield output
+
+    return _generate(), len(members)
 
 
 def rename_document(

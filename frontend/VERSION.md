@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v8.8 — 2026-08-13
+
+- Documents modal 的上傳區新增檔案拖放操作，保留批次選檔與剪貼簿截圖；文件清單新增「下載全部 ZIP」，登入後依 MRN 將目前全部文件以顯示檔名即時串流打包，不在伺服器留下額外 ZIP。
+- 「載入新個案」的 MRN 欄旁新增直接開啟院內 HIS EMR 的 `EMR` 按鈕，會隨手動輸入或未登錄個案清單帶入的 MRN 更新；原有 `EMR 同步` 功能維持不變。
+
 ### v8.7 — 2026-08-12
 
 - OMIM 疾病 curator slots 從 `Disease1..5` 擴充為 `Disease1..16`：SNV 卡片、GenCC／ClinGen／MONDO evidence 合併、reviewer 疾病勾選、個案清單摘要、TXT/PDF 與診斷 DOCX 全程支援第 6–16 欄；OMIM ID 優先、gene symbol fallback 的變異命中規則不變，舊五欄 workbook 與既有 report state 可繼續使用。

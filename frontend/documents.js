@@ -106,8 +106,8 @@
                 <input id="pdoc-file-input" type="file" accept="${ACCEPT}" multiple hidden>
               </div>
               <div id="pdoc-paste-zone" class="pdoc-paste-zone" tabindex="0">
-                <strong>將截圖貼到這裡</strong>
-                <span>點一下後按 Ctrl+V / ⌘V；會以 PNG 儲存</span>
+                <strong>拖曳檔案或貼上截圖到這裡</strong>
+                <span>可拖入 PDF / JPG / PNG / TIFF，或點一下後按 Ctrl+V / ⌘V 貼圖</span>
               </div>
               <div id="pdoc-pending" class="pdoc-pending"></div>
               <div class="pdoc-upload-actions">
@@ -119,6 +119,7 @@
             <section class="pdoc-section pdoc-existing-section">
               <div class="pdoc-section-head">
                 <h3>已儲存文件</h3>
+                <a id="pdoc-download-all" class="btn btn-secondary" target="_blank" rel="noopener" hidden>下載全部 ZIP</a>
                 <button id="pdoc-refresh" type="button" class="btn btn-secondary">重新整理</button>
               </div>
               <div id="pdoc-list-status" class="pdoc-muted" aria-live="polite"></div>
@@ -293,6 +294,13 @@
 
   function renderList(rows) {
     const host = document.getElementById("pdoc-list");
+    const downloadAll = document.getElementById("pdoc-download-all");
+    if (downloadAll) {
+      downloadAll.hidden = !rows.length || !context;
+      downloadAll.href = context
+        ? `${API}/archive.zip?mrn=${encodeURIComponent(context.mrn)}`
+        : "";
+    }
     if (!rows.length) {
       host.innerHTML = `<div class="pdoc-empty">（尚無文件）</div>`;
       return;
@@ -474,6 +482,32 @@
 
     const pasteZone = document.getElementById("pdoc-paste-zone");
     pasteZone?.addEventListener("click", () => pasteZone.focus());
+    for (const eventName of ["dragenter", "dragover"]) {
+      pasteZone?.addEventListener(eventName, event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        pasteZone.classList.add("is-dragover");
+      });
+    }
+    pasteZone?.addEventListener("dragleave", event => {
+      event.preventDefault();
+      if (!pasteZone.contains(event.relatedTarget)) {
+        pasteZone.classList.remove("is-dragover");
+      }
+    });
+    pasteZone?.addEventListener("drop", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      pasteZone.classList.remove("is-dragover");
+      const files = event.dataTransfer?.files || [];
+      if (!files.length) {
+        setStatus("pdoc-upload-status", "沒有偵測到可上傳的檔案", true);
+        return;
+      }
+      addFiles(files);
+      setStatus("pdoc-upload-status", `已加入 ${files.length} 個拖曳檔案，請確認檔名後儲存`);
+    });
     pasteZone?.addEventListener("paste", event => {
       let images = Array.from(event.clipboardData?.files || []).filter(file => String(file.type || "").startsWith("image/"));
       if (!images.length) {

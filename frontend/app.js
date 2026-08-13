@@ -1866,7 +1866,7 @@ function renderSampleMeta() {
   // EMR link is hospital-internal; only build it when MRN is present.
   const emr = document.getElementById("m-emr-link");
   if (m.MRN) {
-    emr.href = `http://hisweb.hosp.ncku/Emrquery/autologin.aspx?chartno=${encodeURIComponent(m.MRN)}`;
+    emr.href = emrPatientUrl(m.MRN);
     emr.hidden = false;
   } else {
     emr.removeAttribute("href"); emr.hidden = true;
@@ -9777,6 +9777,24 @@ const newCaseEdit = {
 
 const NEW_CASE_WGS_VCF_SIZE_BYTES = 100 * 1024 * 1024;
 
+function emrPatientUrl(mrn) {
+  return `http://hisweb.hosp.ncku/Emrquery/autologin.aspx?chartno=${encodeURIComponent(String(mrn || "").trim())}`;
+}
+
+function _updateNewCaseEmrLink() {
+  const input = document.getElementById("new-case-mrn");
+  const link = document.getElementById("btn-new-case-emr-link");
+  if (!link) return;
+  const mrn = String(input?.value || "").trim();
+  if (mrn) {
+    link.href = emrPatientUrl(mrn);
+    link.hidden = false;
+  } else {
+    link.removeAttribute("href");
+    link.hidden = true;
+  }
+}
+
 function inferNewCaseTestType(entry) {
   if (!entry) return "";
   const sampleIds = [entry.lis_id, entry.source_sample_id].filter(Boolean);
@@ -9940,6 +9958,7 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   // bootAfterAuth so this is just a state read.
   const emrBtn = document.getElementById("btn-new-case-emr");
   if (emrBtn) emrBtn.hidden = !state.emrEnabled;
+  _updateNewCaseEmrLink();
 
   // Populate the Category dropdown from /api/options so this modal +
   // the sample-card Category select share one source of truth.
@@ -10021,6 +10040,7 @@ function _applyNewCaseLisSelection(lis_id) {
   const testSel   = document.querySelector('#new-case-form select[name="test_type"]');
   const fillMrn = (roster && roster.mrn) || (entry.phenotype && entry.phenotype.mrn) || "";
   if (mrnInput && !mrnInput.value && fillMrn) mrnInput.value = fillMrn;
+  _updateNewCaseEmrLink();
   if (nameInput && !nameInput.value && roster && roster.name) nameInput.value = roster.name;
   if (testSel) {
     const inferredType = inferNewCaseTestType(entry);
@@ -10193,7 +10213,9 @@ let _ncHpoSearchTimer = null;
 let _ncPanelSearchTimer = null;
 let _ncHpoSearchSequence = 0;
 document.addEventListener("input", ev => {
-  if (ev.target.id === "new-case-hpo-search") {
+  if (ev.target.id === "new-case-mrn") {
+    _updateNewCaseEmrLink();
+  } else if (ev.target.id === "new-case-hpo-search") {
     clearTimeout(_ncHpoSearchTimer);
     _ncHpoSearchTimer = setTimeout(() => _ncRunHpoSearch(ev.target.value), 200);
   } else if (ev.target.id === "new-case-panel-search") {

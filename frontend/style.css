@@ -1962,7 +1962,14 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   align-items: center;
 }
 .mrn-with-button > input { flex: 1; min-width: 0; }
-.mrn-with-button > button { flex: none; padding: 4px 8px; font-size: 12px; }
+.mrn-with-button > button,
+.mrn-with-button > a {
+  flex: none;
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  text-decoration: none;
+}
 
 .form-section { margin: 12px 0; padding: 12px; background: var(--chip-bg); border-radius: 6px; }
 .form-section-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; }

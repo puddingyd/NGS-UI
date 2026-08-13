@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from ..auth import current_user
 from ..services import patient_documents
@@ -53,6 +53,28 @@ async def upload_patient_document(
             display_name=display_name,
             source_sample_id=source_sample_id,
             user=user,
+        )
+    except Exception as exc:
+        _raise(exc)
+
+
+@router.get("/archive.zip")
+def download_patient_document_archive(
+    mrn: str = Query(...),
+    user: dict = Depends(current_user),
+):
+    try:
+        safe_mrn = patient_documents.validate_mrn(mrn)
+        content, count = patient_documents.stream_archive(safe_mrn, user=user)
+        return StreamingResponse(
+            content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_mrn}_documents.zip"',
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+                "X-Document-Count": str(count),
+            },
         )
     except Exception as exc:
         _raise(exc)

@@ -1,4 +1,6 @@
 .pdoc-overlay[hidden] { display: none !important; }
+.pdoc-card [hidden],
+.pdoc-preview-card [hidden] { display: none !important; }
 .pdoc-overlay {
   position: fixed;
   inset: 0;
@@ -74,6 +76,12 @@
   border-color: #0969da;
   box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
   background: #fff;
+}
+.pdoc-paste-zone.is-dragover {
+  border-color: #0969da;
+  background: #ddf4ff;
+  color: #0550ae;
+  box-shadow: 0 0 0 4px rgba(9, 105, 218, 0.18);
 }
 .pdoc-paste-zone strong { color: #24292f; font-size: 14px; }
 .pdoc-paste-zone span { font-size: 12px; }

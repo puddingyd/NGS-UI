@@ -21,6 +21,8 @@ def test_documents_frontend_supports_paste_rename_delete_and_tiff_preview():
     script = (ROOT / "frontend" / "documents.js").read_text(encoding="utf-8")
 
     assert 'addEventListener("paste"' in script
+    assert 'addEventListener("drop"' in script
+    assert 'dataTransfer?.files' in script
     assert "Screenshot_" in script
     assert ".tif,.tiff" in script
     assert 'data-pdoc-preview' in script
@@ -28,6 +30,7 @@ def test_documents_frontend_supports_paste_rename_delete_and_tiff_preview():
     assert 'method: "DELETE"' in script
     assert 'method: "POST"' in script
     assert 'credentials: "same-origin"' in script
+    assert "archive.zip?mrn=" in script
 
 
 def test_documents_api_requires_authentication_and_streams_downloads():
@@ -36,7 +39,20 @@ def test_documents_api_requires_authentication_and_streams_downloads():
 
     assert "dependencies=[Depends(current_user)]" in router
     assert "FileResponse(" in router
+    assert "StreamingResponse(" in router
+    assert '@router.get("/archive.zip")' in router
     assert "while True:" in service
     assert "await upload.read(_CHUNK_SIZE)" in service
     assert "PATIENT_DOCUMENTS_MIN_FREE_GB" in service
     assert "_PREVIEW_MAX_SIDE" in service
+    assert "def stream_archive(" in service
+
+
+def test_new_case_modal_has_direct_emr_link_next_to_mrn():
+    page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="btn-new-case-emr-link"' in page
+    assert 'id="new-case-mrn"' in page
+    assert "function _updateNewCaseEmrLink()" in script
+    assert "autologin.aspx?chartno=" in script

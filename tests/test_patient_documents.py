@@ -2,6 +2,7 @@ import asyncio
 import io
 import sqlite3
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -116,6 +117,39 @@ def test_tiff_preview_supports_multiple_pages(document_store):
     assert info["image_pages"] == 2
     with pytest.raises(store.InvalidDocument, match="頁碼"):
         store.render_preview(saved["id"], page=2)
+
+
+def test_download_all_streams_zip_with_display_names(document_store):
+    documents, _phenotype = document_store
+    first = _upload(
+        "scan.png",
+        _image_bytes(),
+        display_name="門診截圖.png",
+    )
+    second = _upload(
+        "record.pdf",
+        b"%PDF-1.4\narchive fixture\n%%EOF\n",
+        display_name="病歷摘要.pdf",
+    )
+
+    chunks, count = store.stream_archive(
+        "12345678",
+        user={"id": 8, "username": "downloader"},
+    )
+    body = b"".join(chunks)
+
+    assert count == 2
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        assert archive.namelist() == ["門診截圖.png", "病歷摘要.pdf"]
+        assert archive.read("門診截圖.png").startswith(b"\x89PNG")
+        assert archive.read("病歷摘要.pdf").startswith(b"%PDF-")
+
+    with sqlite3.connect(documents / "documents.sqlite") as conn:
+        archived_ids = [row[0] for row in conn.execute(
+            """SELECT document_id FROM document_events
+               WHERE action='archive_download' ORDER BY id"""
+        )]
+    assert archived_ids == [first["id"], second["id"]]
 
 
 def test_pdf_is_downloadable_but_not_previewable(document_store):
