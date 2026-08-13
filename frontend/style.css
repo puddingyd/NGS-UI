@@ -1966,7 +1966,10 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .mrn-with-button > a {
   flex: none;
   padding: 4px 8px;
+  font-family: inherit;
   font-size: 12px;
+  font-weight: 500;
+  line-height: normal;
   white-space: nowrap;
   text-decoration: none;
 }

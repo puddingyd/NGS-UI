@@ -51,8 +51,13 @@ def test_documents_api_requires_authentication_and_streams_downloads():
 def test_new_case_modal_has_direct_emr_link_next_to_mrn():
     page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    style = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
 
     assert 'id="btn-new-case-emr-link"' in page
     assert 'id="new-case-mrn"' in page
     assert "function _updateNewCaseEmrLink()" in script
     assert "autologin.aspx?chartno=" in script
+    mrn_button_style = style.split(".mrn-with-button > button,", 1)[1].split("}", 1)[0]
+    assert "font-family: inherit" in mrn_button_style
+    assert "font-weight: 500" in mrn_button_style
+    assert "line-height: normal" in mrn_button_style
