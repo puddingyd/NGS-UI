@@ -106,12 +106,24 @@ def test_predictor_display_order_primary_count_and_inline_layout_match_review_wo
     positions = [APP_JS.index(token, APP_JS.index("const IN_SILICO_TOOLS")) for token in ordered]
     assert positions == sorted(positions)
     assert "const IN_SILICO_PRIMARY_COUNT = 6;" in APP_JS
-    assert '<span class="in-silico-row">' in APP_JS
+    assert '<span class="in-silico-row" data-in-silico-tool=' in APP_JS
     assert '<div class="in-silico-column">' in APP_JS
     assert ".info-grid > .in-silico-column {" in STYLE_CSS
     assert "grid-template-columns: max-content minmax(0, 1fr);" in STYLE_CSS
     assert "align-items: baseline;" in STYLE_CSS
     assert ".in-silico-row { display: contents; }" in STYLE_CSS
+
+
+def test_predictor_visible_count_expands_to_litvar2_rendered_height():
+    assert 'data-in-silico-tool="${escapeAttr(tool.key)}"' in APP_JS
+    assert "function _fitInSilicoPredictors(card)" in APP_JS
+    assert 'card?.querySelector(".litvar2-references")' in APP_JS
+    assert "Math.min(IN_SILICO_PRIMARY_COUNT, rows.length)" in APP_JS
+    assert "Math.max(keyBottom, valueBottom) <= litvarBottom + 0.5" in APP_JS
+    assert 'class="more-extras in-silico-more hidden"' in APP_JS
+    assert 'class="in-silico-extras-start hidden"' in APP_JS
+    assert 'window.addEventListener("resize", () => _scheduleInSilicoPredictorFit());' in APP_JS
+    assert 'ev.target.matches?.(".litvar2-references details")' in APP_JS
 
 
 def test_clinvar_change_arrows_only_use_clinically_meaningful_boundary():

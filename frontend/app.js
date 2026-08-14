@@ -660,11 +660,10 @@ const IN_SILICO_CALIBRATIONS = {
   },
 };
 
-// In-silico predictors in display order. The first six tools with
-// actual values land on the primary row of the card; the 7th onwards
-// go under ▾ More. Empty cells are skipped entirely — `IN_SILICO_TOOLS`
-// is just the priority order, not a fixed slot list.
-// Ordering is reviewer-defined; remaining populated tools live under More.
+// In-silico predictors in display order. At least the first six populated
+// tools are always visible. When the ClinVar / ACMG / LitVar2 column is
+// taller, additional tools are promoted up to its rendered bottom edge;
+// the remainder stay under ▾ More. Empty cells are skipped entirely.
 const IN_SILICO_TOOLS = [
   { key: "pknn",          label: "P-KNN LLR",     scoreField: "PKNN_LLR",            extraField: "PKNN_evidence" },
   { key: "alphamissense", label: "AlphaMissense", scoreField: "AlphaMissense_score", predField: "AlphaMissense_pred" },
@@ -835,11 +834,76 @@ function _renderInSilicoCell(v, tool) {
   const valueTxt = has
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
-  return `<span class="in-silico-row">`
+  return `<span class="in-silico-row" data-in-silico-tool="${escapeAttr(tool.key)}">`
        + `<span class="k">${escapeHtml(tool.label)}${hint}</span>`
        + `<span class="v ${evidence.cls}">${valueTxt}</span>`
        + `</span>`;
 }
+
+const _pendingInSilicoFitCards = new Set();
+let _inSilicoFitFrame = 0;
+
+function _fitInSilicoPredictors(card) {
+  const column = card?.querySelector(".in-silico-column");
+  const litvar2 = card?.querySelector(".litvar2-references");
+  const more = column?.querySelector(":scope > .in-silico-more");
+  const marker = more?.querySelector(".in-silico-extras-start");
+  if (!column || !litvar2 || !more || !marker || !more.classList.contains("hidden")) return;
+
+  const rows = IN_SILICO_TOOLS
+    .map(tool => column.querySelector(`[data-in-silico-tool="${tool.key}"]`))
+    .filter(Boolean);
+  const minimum = Math.min(IN_SILICO_PRIMARY_COUNT, rows.length);
+  const placeRows = visibleCount => {
+    rows.forEach((row, index) => {
+      if (index < visibleCount) column.insertBefore(row, more);
+      else more.insertBefore(row, marker);
+    });
+  };
+
+  // Reset before measuring so a previous wider viewport or longer LitVar2
+  // result cannot keep stale promoted rows visible.
+  placeRows(minimum);
+  const litvarBottom = litvar2.getBoundingClientRect().bottom;
+  if (!litvarBottom) return; // The card is currently inside a collapsed block.
+
+  let visibleCount = minimum;
+  for (let index = minimum; index < rows.length; index += 1) {
+    const row = rows[index];
+    column.insertBefore(row, more);
+    const keyBottom = row.querySelector(".k")?.getBoundingClientRect().bottom || 0;
+    const valueBottom = row.querySelector(".v")?.getBoundingClientRect().bottom || 0;
+    if (Math.max(keyBottom, valueBottom) <= litvarBottom + 0.5) visibleCount += 1;
+    else break;
+  }
+  placeRows(visibleCount);
+}
+
+function _scheduleInSilicoPredictorFit(root = null) {
+  if (root?.matches?.(".variant-card")) {
+    _pendingInSilicoFitCards.add(root);
+  } else {
+    (root || document).querySelectorAll?.(".variant-card").forEach(card => {
+      _pendingInSilicoFitCards.add(card);
+    });
+  }
+  if (_inSilicoFitFrame) return;
+  _inSilicoFitFrame = requestAnimationFrame(() => {
+    _inSilicoFitFrame = 0;
+    const cards = Array.from(_pendingInSilicoFitCards);
+    _pendingInSilicoFitCards.clear();
+    cards.forEach(card => {
+      if (card.isConnected) _fitInSilicoPredictors(card);
+    });
+  });
+}
+
+window.addEventListener("resize", () => _scheduleInSilicoPredictorFit());
+document.addEventListener("toggle", ev => {
+  if (ev.target.matches?.(".litvar2-references details")) {
+    _scheduleInSilicoPredictorFit(ev.target.closest(".variant-card"));
+  }
+}, true);
 
 // LoGoFunc emits strings like "GOF (0.123)*", "LOF (0.456)", or "Neutral (...)".
 // A trailing star means probability > class-specific cutoff (deeper red);
@@ -2989,16 +3053,20 @@ function _setLitvar2Result(variantId, payload) {
 function _refreshLitvar2Dom(variantId) {
   const variant = currentSnvVariant(variantId);
   if (!variant) return;
+  const touchedCards = new Set();
   document.querySelectorAll(".litvar2-key[data-litvar2-id]").forEach(el => {
     if (el.dataset.litvar2Id === variantId) {
       el.innerHTML = _litvar2TitleHtml(variant, variantId);
+      if (el.closest(".variant-card")) touchedCards.add(el.closest(".variant-card"));
     }
   });
   document.querySelectorAll(".litvar2-references[data-litvar2-id]").forEach(el => {
     if (el.dataset.litvar2Id === variantId) {
       el.innerHTML = _litvar2ValueHtml(variant, variantId);
+      if (el.closest(".variant-card")) touchedCards.add(el.closest(".variant-card"));
     }
   });
+  touchedCards.forEach(card => _scheduleInSilicoPredictorFit(card));
 }
 
 async function _lookupLitvar2Variants(
@@ -4488,8 +4556,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
                   ], IN_SILICO_REFERENCES.pdivas) });
   }
   // The in-silico predictor row follows the reviewer-defined order in
-  // IN_SILICO_TOOLS; its first three populated values are shown directly and
-  // any remaining predictors are rendered under More.
+  // IN_SILICO_TOOLS. At least six populated values are shown directly; the
+  // rendered LitVar2 height may promote more before the remainder stay in More.
   if (v.loftee_hc || v.loftee_filter || v.loftee_flags) {
     const parts = [v.loftee_hc, v.loftee_filter, v.loftee_flags]
       .filter(Boolean).join(" / ");
@@ -4550,7 +4618,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           <span class="k">Phase</span><span class="v">${fmtPhase(v)}</span>
         </div>
       </div>
-      <div>
+      <div class="snv-annotation-column">
         <span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}</span>
         ${hasErepo ? `<span class="k">ERepo</span>
         <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 ACMG/AMP criteria；ERepo 為 ClinGen VCEP experts 評估">
@@ -4573,7 +4641,9 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           const secondary = populated.slice(IN_SILICO_PRIMARY_COUNT)
             .map(t => _renderInSilicoCell(v, t)).join("");
           const more = secondary + extrasHtml;
-          return primary + (more ? `<div class="more-extras hidden">${more}</div>` : "");
+          return primary + (more
+            ? `<div class="more-extras in-silico-more hidden">${secondary}<span class="in-silico-extras-start hidden"></span>${extrasHtml}</div>`
+            : "");
         })()}
       </div>
       <div>
@@ -4590,6 +4660,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       : ""}${renderManeAll(v)}</div>
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
+
+  _scheduleInSilicoPredictorFit(card);
 
   return card;
 }
@@ -5654,6 +5726,7 @@ function renderBlock(def, ids, openKey, countIds = ids) {
     header.classList.toggle("open", open);
     host.dataset.wasOpen = open ? "1" : "0";
     toggledBlocks.add(def.el);
+    if (open) _scheduleInSilicoPredictorFit(body);
   });
 }
 
@@ -7914,6 +7987,7 @@ function toggleVariantExtras(btn) {
   const willHide = !blocks[0].classList.contains("hidden");
   blocks.forEach(b => b.classList.toggle("hidden", willHide));
   btn.textContent = willHide ? "▾ More" : "▴ Less";
+  if (willHide) _scheduleInSilicoPredictorFit(card);
 }
 
 // Legacy panel-status radio inputs cannot normally be unchecked. Modern
