@@ -660,8 +660,8 @@ const IN_SILICO_CALIBRATIONS = {
   },
 };
 
-// In-silico predictors in display order. The first three tools with
-// actual values land on the primary row of the card; the 4th onwards
+// In-silico predictors in display order. The first six tools with
+// actual values land on the primary row of the card; the 7th onwards
 // go under ▾ More. Empty cells are skipped entirely — `IN_SILICO_TOOLS`
 // is just the priority order, not a fixed slot list.
 // Ordering is reviewer-defined; remaining populated tools live under More.
@@ -688,7 +688,7 @@ const IN_SILICO_TOOLS = [
   { key: "sift",          label: "SIFT",          scoreField: "SIFT_score",          predField: "SIFT_pred" },
   { key: "loftool",       label: "LOFTOOL",       scoreField: "LOFTOOL" },
 ];
-const IN_SILICO_PRIMARY_COUNT = 3;
+const IN_SILICO_PRIMARY_COUNT = 6;
 
 function _hasNum(x) {
   return x != null && x !== "" && Number.isFinite(Number(x));
@@ -835,8 +835,10 @@ function _renderInSilicoCell(v, tool) {
   const valueTxt = has
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
-  return `<span class="k">${escapeHtml(tool.label)}${hint}</span>`
-       + `<span class="v ${evidence.cls}">${valueTxt}</span>`;
+  return `<span class="in-silico-row">`
+       + `<span class="k">${escapeHtml(tool.label)}${hint}</span>`
+       + `<span class="v ${evidence.cls}">${valueTxt}</span>`
+       + `</span>`;
 }
 
 // LoGoFunc emits strings like "GOF (0.123)*", "LOF (0.456)", or "Neutral (...)".
@@ -4561,7 +4563,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         </button>
         ${renderLitvar2(v, id)}
       </div>
-      <div>
+      <div class="in-silico-column">
         ${(() => {
           // Only render tools that actually have a numeric value;
           // first N → primary, rest → More.

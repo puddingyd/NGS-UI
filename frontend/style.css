@@ -1461,6 +1461,14 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .info-grid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .info-grid .k { color: var(--muted); font-size: 11px; }
 .info-grid .v { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+.in-silico-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.in-silico-row .k { flex: none; }
 .litvar2-key { margin-top: 2px; }
 .litvar2-pmid-link,
 .litvar2-others-link {

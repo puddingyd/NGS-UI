@@ -94,7 +94,7 @@ def test_reviewer_requested_annotation_copy_is_streamlined():
     assert "Total score 可超過 100；手動修改 ACMG 不會即時重算排序 score" not in APP_JS
 
 
-def test_predictor_display_order_and_primary_count_match_review_workflow():
+def test_predictor_display_order_primary_count_and_inline_layout_match_review_workflow():
     ordered = [
         'key: "pknn"', 'key: "alphamissense"', 'key: "pangolin"',
         'key: "revel"', 'key: "spliceai"', 'key: "gpnmsa"', 'key: "esm1b"',
@@ -105,7 +105,11 @@ def test_predictor_display_order_and_primary_count_match_review_workflow():
     ]
     positions = [APP_JS.index(token, APP_JS.index("const IN_SILICO_TOOLS")) for token in ordered]
     assert positions == sorted(positions)
-    assert "const IN_SILICO_PRIMARY_COUNT = 3;" in APP_JS
+    assert "const IN_SILICO_PRIMARY_COUNT = 6;" in APP_JS
+    assert '<span class="in-silico-row">' in APP_JS
+    assert '<div class="in-silico-column">' in APP_JS
+    assert ".in-silico-row {" in STYLE_CSS
+    assert "align-items: baseline;" in STYLE_CSS
 
 
 def test_clinvar_change_arrows_only_use_clinically_meaningful_boundary():
