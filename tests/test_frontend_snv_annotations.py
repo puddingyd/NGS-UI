@@ -108,8 +108,10 @@ def test_predictor_display_order_primary_count_and_inline_layout_match_review_wo
     assert "const IN_SILICO_PRIMARY_COUNT = 6;" in APP_JS
     assert '<span class="in-silico-row">' in APP_JS
     assert '<div class="in-silico-column">' in APP_JS
-    assert ".in-silico-row {" in STYLE_CSS
+    assert ".info-grid > .in-silico-column {" in STYLE_CSS
+    assert "grid-template-columns: max-content minmax(0, 1fr);" in STYLE_CSS
     assert "align-items: baseline;" in STYLE_CSS
+    assert ".in-silico-row { display: contents; }" in STYLE_CSS
 
 
 def test_clinvar_change_arrows_only_use_clinically_meaningful_boundary():

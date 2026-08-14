@@ -1461,14 +1461,17 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .info-grid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .info-grid .k { color: var(--muted); font-size: 11px; }
 .info-grid .v { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
-.in-silico-row {
-  display: flex;
+.info-grid > .in-silico-column {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 4px;
+  row-gap: 2px;
   align-items: baseline;
-  gap: 4px;
-  min-width: 0;
-  white-space: nowrap;
 }
-.in-silico-row .k { flex: none; }
+.in-silico-row { display: contents; }
+.in-silico-column > .more-extras:not(.hidden) { display: contents; }
+.in-silico-column .k,
+.in-silico-column .v { white-space: nowrap; }
 .litvar2-key { margin-top: 2px; }
 .litvar2-pmid-link,
 .litvar2-others-link {
