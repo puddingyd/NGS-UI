@@ -6,7 +6,6 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadF
 from fastapi.responses import Response
 
 from ..auth import current_user
-from ..config import PHENOTYPE_DIR
 from ..services import (
     analyses_store,
     clinical_presentation_store,
@@ -14,6 +13,7 @@ from ..services import (
     litvar2_on_demand,
     patient_documents,
     patient_list_store,
+    patient_phenotype_store,
     patient_store,
     report_store,
     sample_layout,
@@ -196,6 +196,7 @@ def register_sample(
     sign_received_at: str = Form(""),
     hpo_json:         str = Form(""),
     panels_json:      str = Form(""),
+    phenotype_explicit: bool = Form(False),
 ):
     """Attach reviewer-side info to a pipeline-produced directory.
 
@@ -204,11 +205,10 @@ def register_sample(
     vcf_from_tsv.vcf.gz path; register records an existing VCF, and the
     background worker builds it when missing or stale.
 
-    Phenotype is auto-loaded from
-        NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt
-    when the file exists. If it doesn't, the sample registers with
-    empty hpo/panels and the response includes phenotype_loaded=false
-    so the UI can hint about it.
+    Phenotype is auto-loaded from the patient-level
+        NGS_UI/patient_phenotype/{mrn}_phenotype.txt
+    with legacy LIS-specific filenames as fallbacks. If no file exists,
+    registration can still use explicitly submitted chips or EMR fallback.
     """
     started = time.perf_counter()
     # Frontend-edited chips arrive as JSON strings; an empty string
@@ -236,17 +236,29 @@ def register_sample(
         lis_id,
         source_sample_id,
     )
-    pheno_path = PHENOTYPE_DIR / f"{lis_id}_{mrn}_phenotype.txt"
-    phenotype_text = ""
-    phenotype_loaded = False
     pheno_lis_candidates = patient_list_store.lookup_candidates(lis_id, roster_lis_id, source_sample_id)
-    for pheno_lis_id in patient_list_store.lookup_candidates(lis_id, roster_lis_id, source_sample_id):
-        candidate = PHENOTYPE_DIR / f"{pheno_lis_id}_{mrn}_phenotype.txt"
-        if candidate.is_file():
-            pheno_path = candidate
-            phenotype_text = candidate.read_text(encoding="utf-8")
-            phenotype_loaded = True
-            break
+    try:
+        phenotype_data = patient_phenotype_store.load(
+            mrn=mrn,
+            code=lis_id,
+            code_candidates=pheno_lis_candidates,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    phenotype_text = str(phenotype_data.get("content") or "")
+    phenotype_loaded = bool(phenotype_data)
+    pheno_path = str(phenotype_data.get("path") or "")
+
+    # The frontend normally sends its visible chips. Empty untouched chips,
+    # however, mean "no browser override" so a just-entered MRN can still
+    # recover the patient snapshot (or fall back to EMR). Explicitly cleared
+    # chips remain authoritative via phenotype_explicit=true.
+    if not phenotype_explicit and not (hpo_payload or panels_payload):
+        if phenotype_data:
+            hpo_payload = phenotype_data.get("hpo") or []
+            panels_payload = phenotype_data.get("panels") or []
+        else:
+            hpo_payload = panels_payload = None
     clinical_description = ""
     try:
         clinical_data = clinical_presentation_store.load(
@@ -319,7 +331,7 @@ def register_sample(
         "sample_id": lis_id,
         "meta": meta,
         "phenotype_loaded": phenotype_loaded,
-        "phenotype_path":   str(pheno_path),
+        "phenotype_path":   pheno_path,
         "job_id":           job_id,
     }
 

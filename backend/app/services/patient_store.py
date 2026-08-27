@@ -25,7 +25,15 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import analyses_store, emr_client, phenotype_io, sample_layout, test_types, vcf_writer
+from . import (
+    analyses_store,
+    emr_client,
+    patient_phenotype_store,
+    phenotype_io,
+    sample_layout,
+    test_types,
+    vcf_writer,
+)
 
 
 _LIS_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -191,6 +199,17 @@ def register(
         sample=lis_id,
         hpo=len(hpo or []),
         panels=len(panels or []),
+    )
+
+    # Persist the final resolved/edited set before creating sample-owned state.
+    # If the patient-level write fails, registration stops without leaving a
+    # half-registered specimen behind. Explicit empty input becomes a
+    # header-only marker.
+    patient_phenotype_store.save(
+        mrn=mrn,
+        code=lis_id,
+        hpo=hpo or [],
+        panels=panels or [],
     )
 
     # Sex / dob / genetic_counseling come from the consultation API.

@@ -7,8 +7,9 @@
 //   • save txt    → POST /api/phenotype-tool/save      (public)
 //   • load txt    ← GET  /api/phenotype-tool/load?...  (public)
 //   • clinical presentation sidecar uses /clinical-presentation/{save,load}
-// No login required — the tool runs on the hospital intranet; only
-// the analysis app gates behind auth. Output txt lands in
+// Phenotype editing is public on the hospital intranet. Documents and GC
+// counseling records still use the analysis app's authenticated APIs. Output
+// txt lands in
 // NGS_UI/patient_phenotype/ so 載入新個案 picks it up automatically.
 // ============================================================
 
@@ -23,6 +24,7 @@ let currentGeneMemberships = null;
 let currentGeneListContext = null;
 let currentGeneListView = "genes";
 let loadedClinicalPresentationSidecar = false;
+let loadedPhenotypeSidecar = false;
 let clinicalPresentationLastSaved = "";
 let clinicalPresentationLastSavedPath = "";
 let clinicalAutosaveTimer = null;
@@ -709,6 +711,10 @@ document.getElementById("gene-membership-query")?.addEventListener("keydown", (e
   }
 });
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !document.getElementById("gc-record-modal")?.hidden) {
+    closeGcRecordModal();
+    return;
+  }
   if (e.key === "Escape" && !document.getElementById("gene-list-drawer")?.hidden) {
     closeGeneListDrawer();
   }
@@ -898,11 +904,130 @@ function initClinicalPresentationAutosave() {
     }
   });
   document.getElementById("patient-mrn")?.addEventListener("input", () => {
+    updatePatientRecordActions();
     if (clinicalAutosaveDirty || (document.getElementById("clinical-presentation-text")?.value || "").trim()) {
       scheduleClinicalPresentationAutosave();
     }
   });
 }
+
+// ============================================================
+// Patient EMR / genetic-counseling actions
+// ============================================================
+
+function emrPatientUrl(mrn) {
+  return `http://hisweb.hosp.ncku/Emrquery/autologin.aspx?chartno=${encodeURIComponent(String(mrn || "").trim())}`;
+}
+
+function updatePatientRecordActions() {
+  const mrn = document.getElementById("patient-mrn")?.value.trim() || "";
+  const emr = document.getElementById("btn-emr-link");
+  const gc = document.getElementById("btn-gc-records");
+  if (emr) {
+    if (mrn) {
+      emr.href = emrPatientUrl(mrn);
+      emr.setAttribute("aria-disabled", "false");
+      emr.removeAttribute("tabindex");
+    } else {
+      emr.removeAttribute("href");
+      emr.setAttribute("aria-disabled", "true");
+      emr.setAttribute("tabindex", "-1");
+    }
+  }
+  if (gc) gc.disabled = !mrn;
+}
+
+let gcRequestSequence = 0;
+
+function closeGcRecordModal() {
+  gcRequestSequence += 1;
+  const modal = document.getElementById("gc-record-modal");
+  if (modal) modal.hidden = true;
+  const btn = document.getElementById("btn-gc-records");
+  if (btn) btn.textContent = "GC紀錄";
+  updatePatientRecordActions();
+}
+
+function renderGcRecord(record) {
+  const fields = [];
+  if (record.reason) {
+    fields.push(`<div class="gc-record-field"><div class="gc-record-label">Reason</div><div class="gc-record-text">${escapeText(record.reason)}</div></div>`);
+  }
+  if (record.diagnosis) {
+    fields.push(`<div class="gc-record-field"><div class="gc-record-label">Diagnosis</div><div class="gc-record-text">${escapeText(record.diagnosis)}</div></div>`);
+  }
+  fields.push(`<div class="gc-record-field"><div class="gc-record-label">Counseling record</div><div class="gc-record-text">${escapeText(record.record || "")}</div></div>`);
+  return `<article class="gc-record-card">`
+    + `<div class="gc-record-meta"><span>看診日期：${escapeText(record.date_of_consult || "—")}</span></div>`
+    + fields.join("")
+    + `</article>`;
+}
+
+async function openGcRecordModal() {
+  const mrn = document.getElementById("patient-mrn")?.value.trim() || "";
+  if (!mrn) {
+    showStatus("請先填病歷號。", "error");
+    return;
+  }
+  const modal = document.getElementById("gc-record-modal");
+  const patient = document.getElementById("gc-record-patient");
+  const status = document.getElementById("gc-record-status");
+  const list = document.getElementById("gc-record-list");
+  const btn = document.getElementById("btn-gc-records");
+  if (!modal || !status || !list) return;
+  const sequence = ++gcRequestSequence;
+  modal.hidden = false;
+  if (patient) patient.textContent = `病歷號：${mrn}`;
+  status.textContent = "查詢 EMR counseling 紀錄中…";
+  status.className = "gc-modal-status";
+  list.innerHTML = "";
+  const original = btn?.textContent || "GC紀錄";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "查詢中…";
+  }
+  try {
+    const resp = await fetch(`/api/emr/${encodeURIComponent(mrn)}/consultation`, {
+      credentials: "same-origin",
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (sequence !== gcRequestSequence) return;
+    if (resp.status === 401) {
+      status.textContent = "GC 紀錄需要先登入分析系統。";
+      status.className = "gc-modal-status status-error";
+      list.innerHTML = `<a class="btn btn-secondary" href="/" target="_blank" rel="noopener">開啟分析系統登入</a>`;
+      return;
+    }
+    if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+    const consultation = body.consultation || {};
+    if (consultation.error) throw new Error(consultation.error);
+    const records = Array.isArray(consultation.records) ? consultation.records : [];
+    if (!records.length) {
+      status.textContent = "EMR 沒有 GC counseling 紀錄。";
+      return;
+    }
+    status.textContent = `共 ${records.length} 筆紀錄；查詢時間 ${new Date().toLocaleString()}`;
+    list.innerHTML = records.map(renderGcRecord).join("");
+  } catch (error) {
+    if (sequence !== gcRequestSequence) return;
+    status.textContent = `GC 紀錄讀取失敗：${error.message || error}`;
+    status.className = "gc-modal-status status-error";
+  } finally {
+    if (sequence === gcRequestSequence && btn) {
+      btn.disabled = false;
+      btn.textContent = original;
+      updatePatientRecordActions();
+    }
+  }
+}
+
+document.getElementById("btn-gc-records")?.addEventListener("click", openGcRecordModal);
+document.querySelectorAll("[data-gc-close]").forEach((button) => {
+  button.addEventListener("click", closeGcRecordModal);
+});
+document.getElementById("gc-record-modal")?.addEventListener("click", (event) => {
+  if (event.target.id === "gc-record-modal") closeGcRecordModal();
+});
 
 // ============================================================
 // Load existing phenotype from the server (by LIS_ID then MRN)
@@ -921,6 +1046,7 @@ async function loadPatient() {
     if (code) params.set("code", code);
     if (mrn)  params.set("mrn", mrn);
     loadedClinicalPresentationSidecar = false;
+    loadedPhenotypeSidecar = false;
     clinicalPresentationLastSaved = "";
     clinicalPresentationLastSavedPath = "";
     clinicalAutosaveDirty = false;
@@ -990,7 +1116,9 @@ async function loadPatient() {
       while (document.querySelectorAll(".panel-row").length < 1) createPanelRow();
       if (body.code && !code) document.getElementById("patient-code").value = body.code;
       if (body.mrn  && !mrn)  document.getElementById("patient-mrn").value  = body.mrn;
+      updatePatientRecordActions();
       loadedPhenotype = true;
+      loadedPhenotypeSidecar = true;
       statusParts.push(`${termCount} 個 HPO term、${fixedCount} 個 fixed panel、${panelCount} 個自由 panel（${body.filename}）`);
     } else if (resp.status !== 404) {
       showStatus("phenotype.txt 讀取失敗。", "error");
@@ -1001,6 +1129,7 @@ async function loadPatient() {
     } else {
       showStatus(`已載入：${statusParts.join("；")}`, "success");
     }
+    updatePatientRecordActions();
     updatePreview();
   } catch (e) {
     showStatus("讀取失敗：" + (e.message || e), "error");
@@ -1134,7 +1263,7 @@ async function generateFile() {
   if (incomplete) { showStatus("有自訂 panel 列只填了名稱或基因其中一項，請補齊或移除該列。", "error"); return; }
 
   const baseLines = _collectHpoAndPanelLines();
-  if (baseLines.length === 0 && customPanels.length === 0 && selectedFixedPanels.size === 0 && !clinicalPresentation.trim() && !loadedClinicalPresentationSidecar) {
+  if (baseLines.length === 0 && customPanels.length === 0 && selectedFixedPanels.size === 0 && !clinicalPresentation.trim() && !loadedClinicalPresentationSidecar && !loadedPhenotypeSidecar) {
     showStatus("尚未選擇任何 HPO term、panel、自訂 panel，或輸入 Clinical presentation。", "error"); return;
   }
 
@@ -1174,7 +1303,7 @@ async function generateFile() {
 
     // 3) Build the phenotype.txt body and save it when phenotype content exists.
     let body = {};
-    if (baseLines.length || customLines.length) {
+    if (baseLines.length || customLines.length || loadedPhenotypeSidecar) {
       const all = ["phenotype\thpo_name\tweight", ...baseLines, ...customLines];
       generatedContent = all.join("\n") + "\n";
       const resp = await fetch("/api/phenotype-tool/save", {
@@ -1184,6 +1313,7 @@ async function generateFile() {
       });
       body = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(body.detail || `${resp.status} ${resp.statusText}`);
+      loadedPhenotypeSidecar = true;
     } else {
       generatedContent = "";
     }
@@ -1228,6 +1358,7 @@ function showStatus(msg, type, opts = {}) {
 // Boot
 // ============================================================
 initClinicalPresentationAutosave();
+updatePatientRecordActions();
 window.PatientDocuments?.init({
   button: "#btn-patient-documents",
   getContext: () => ({

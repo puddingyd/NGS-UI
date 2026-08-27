@@ -4103,7 +4103,9 @@ async function startAnalysis(opts = {}) {
       `<li><span class="mane-tx">${escapeHtml(x.gene)}</span> &nbsp; ${x.score.toFixed(2)}</li>`
     ).join("");
     top10El.classList.toggle("hidden", !(result.top10 && result.top10.length));
-    hint.textContent = `已重算 (${new Date().toLocaleTimeString()})`;
+    hint.textContent = result.patient_phenotype_synced
+      ? `已重算並同步病人 phenotype (${new Date().toLocaleTimeString()})`
+      : `已重算；此組合不影響病人 default phenotype (${new Date().toLocaleTimeString()})`;
     // Refresh so cards see the freshly written pheno_score.tsv right
     // away, before the slower Exomiser job finishes.
     await loadSample(state.currentLIS);
@@ -9849,6 +9851,7 @@ const newCaseEdit = {
   panels: [],
   emrPhenotype: null,   // raw EMR phenotype payload (read-only ref)
   source: "",           // 'reviewer-txt' / 'EMR' / 'edited' — for the source line
+  edited: false,
 };
 
 const NEW_CASE_WGS_VCF_SIZE_BYTES = 100 * 1024 * 1024;
@@ -9953,6 +9956,7 @@ function _clearNewCaseLisSelection() {
   newCaseEdit.hpo = [];
   newCaseEdit.panels = [];
   newCaseEdit.source = "";
+  newCaseEdit.edited = false;
   renderNewCasePhenoEditor();
 }
 
@@ -10026,6 +10030,7 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   newCaseEdit.panels = [];
   newCaseEdit.emrPhenotype = null;
   newCaseEdit.source = "";
+  newCaseEdit.edited = false;
   renderNewCasePhenoEditor();
   renderNewCaseEmrRef();
 
@@ -10129,7 +10134,7 @@ function _applyNewCaseLisSelection(lis_id) {
   const deptHint = document.getElementById("new-case-dept-hint");
   if (deptHint) deptHint.textContent = (roster && roster.department) ? `科別：${roster.department}` : "";
 
-  if (entry.phenotype && (entry.phenotype.hpo?.length || entry.phenotype.panels?.length)) {
+  if (entry.phenotype) {
     newCaseEdit.hpo = (entry.phenotype.hpo || []).map(h => ({...h}));
     newCaseEdit.panels = (entry.phenotype.panels || []).map(p => ({...p}));
     newCaseEdit.source = "Web phenotype input tool";
@@ -10138,6 +10143,7 @@ function _applyNewCaseLisSelection(lis_id) {
     newCaseEdit.panels = [];
     newCaseEdit.source = "未找到 Web phenotype input tool 紀錄";
   }
+  newCaseEdit.edited = false;
   renderNewCasePhenoEditor();
 }
 
@@ -10182,6 +10188,7 @@ document.getElementById("btn-new-case-emr")?.addEventListener("click", async () 
       if (!hasTxt) {
         newCaseEdit.hpo = pheno.hpo.map(h => ({...h}));
         newCaseEdit.source = "EMR phenotype API";
+        newCaseEdit.edited = true;
       }
     }
     newCaseEdit.emrPhenotype = pheno;
@@ -10252,6 +10259,7 @@ function renderNewCaseEmrRef() {
 // so the prefix doesn't accumulate "（已編輯）（已編輯）..." every
 // time the reviewer adds/removes a chip.
 function _markNewCaseEdited() {
+  newCaseEdit.edited = true;
   const tag = "（已編輯）";
   const src = newCaseEdit.source || "";
   if (src.includes(tag)) return;
@@ -10394,10 +10402,12 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
     return;
   }
   const fd = new FormData(form);
-  // Always send the modal-edited chips; backend uses them as the
-  // authoritative phenotype (overrides reviewer txt + EMR fallback).
+  // Send the visible chips plus whether the reviewer actually changed them.
+  // Untouched empty chips let the backend recover a just-entered MRN's
+  // patient snapshot; explicitly cleared chips remain authoritative.
   fd.set("hpo_json",    JSON.stringify(newCaseEdit.hpo || []));
   fd.set("panels_json", JSON.stringify(newCaseEdit.panels || []));
+  fd.set("phenotype_explicit", newCaseEdit.edited ? "true" : "false");
   showSampleLoading();
   try {
     const resp = await fetch(`${API_BASE}/samples`, {

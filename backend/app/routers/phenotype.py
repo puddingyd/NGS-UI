@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import current_user
-from ..services import hpo_ontology, phenotype_scorer, sample_layout, sample_loader
+from ..services import (
+    hpo_ontology,
+    patient_phenotype_store,
+    phenotype_scorer,
+    sample_layout,
+    sample_loader,
+)
 
 router = APIRouter(prefix="/api", tags=["phenotype"], dependencies=[Depends(current_user)])
 
@@ -65,6 +69,21 @@ def update_phenotype(sample_id: str, payload: dict):
     else:
         target_version = analyses_store.active_version(sample_id) or "default"
 
+    meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
+    if not meta_path.is_file():
+        raise HTTPException(404, f"registered sample not found: {sample_id}")
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        raise HTTPException(500, "sample metadata could not be read")
+    if not isinstance(meta, dict):
+        raise HTTPException(500, "sample metadata is malformed")
+    mrn = str(meta.get("mrn") or "").strip()
+    try:
+        patient_phenotype_store.check_token("MRN", mrn, required=True)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
     # 1. Persist hpo/panels into analyses/{version}/analysis.json.
     analyses_store.write_version(
         sample_id, target_version,
@@ -75,15 +94,6 @@ def update_phenotype(sample_id: str, payload: dict):
     # Update sample_metadata.json's active_analysis pointer + clean up
     # any legacy `hpo` / `selected_panels` left over from before the
     # migration so the loader can stop reading them on next load.
-    meta_path = sample_layout.state_file(sample_id, "sample_metadata.json")
-    meta = {}
-    if meta_path.exists():
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            meta = {}
-    if not isinstance(meta, dict):
-        meta = {}
     meta.pop("hpo", None)
     meta.pop("patient_phenotype", None)
     meta.pop("selected_panels", None)
@@ -91,7 +101,26 @@ def update_phenotype(sample_id: str, payload: dict):
     meta["phenotype_updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 2. Compute pheno_score (analyses_store.write_version already
+    # 2. Only the default analysis is the patient's reusable phenotype.
+    # Follow-up analysis versions are sample-owned experiments/combinations
+    # and must not overwrite the MRN-level snapshot used by future LIS IDs.
+    # Empty default input intentionally becomes a header-only file, preventing
+    # stale LIS-specific legacy files from resurfacing.
+    patient_snapshot = None
+    if target_version == "default":
+        try:
+            patient_snapshot = patient_phenotype_store.save(
+                mrn=mrn,
+                code=str(meta.get("lis_id") or sample_id),
+                hpo=hpo_in,
+                panels=panels_in,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, f"病人 phenotype 儲存失敗：{exc}") from exc
+
+    # 3. Compute pheno_score (analyses_store.write_version already
     # wrote pheno_score.tsv as a side effect; recompute here only to
     # produce response stats). SNV loads and gene search apply
     # in-panel state dynamically from pheno_score.tsv; do not rewrite
@@ -111,4 +140,6 @@ def update_phenotype(sample_id: str, payload: dict):
         "top_score":         max(scores.values(), default=0.0),
         "top10":             [{"gene": g, "score": round(s, 2)} for g, s in top10],
         "updated_at":        meta["phenotype_updated_at"],
+        "patient_phenotype": patient_snapshot,
+        "patient_phenotype_synced": patient_snapshot is not None,
     }

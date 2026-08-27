@@ -11,8 +11,9 @@ Rows where the second column has a name are HPO terms. Rows where the
 second column is empty (column 1 is anything that isn't an HP: id) are
 treated as panel names. Weight defaults to 1 when missing or unparseable.
 
-Filenames on disk land as <LIS_ID>_<MRN>_phenotype.txt inside the
-analysis version directory so the source-of-truth is auditable.
+Analysis-version audit copies may use <LIS_ID>_<MRN>_phenotype.txt. The
+patient-level reusable snapshot is separately managed as <MRN>_phenotype.txt
+by patient_phenotype_store.
 """
 from __future__ import annotations
 

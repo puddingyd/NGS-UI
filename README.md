@@ -23,8 +23,8 @@ NGS_UI/                    ← NGS_UI_HOME
 │   └── litvar2/           ← 官方 bulk JSON、slim SQLite、版本/更新狀態
 ├── vcf/                   ← per-sample VCF
 ├── tertiary_output/       ← 舊 UI sample root；只在舊個案遷移期間讀取
-├── patient_phenotype/     ← {LIS_ID}_{MRN}_phenotype.txt（自動帶入 HPO）
-│                             + {MRN}_clinical_presentation.txt
+├── patient_phenotype/     ← {MRN}_phenotype.txt（病人層級 HPO/panel 主檔）
+│                             + {MRN}_clinical_presentation.txt；舊 LIS 檔只讀 fallback
 ├── patient_documents/     ← MRN-level 病歷附件、SQLite catalog、軟刪除回收區
 ├── patient_list/          ← 上傳的「未完成報告清單」xlsx + 衍生 roster.json
 ├── phenotype_data/        ← git-tracked fixed/custom panels; large HPO refs live in NGS_UI_HOME
@@ -149,7 +149,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_SNV_CACHE_MAX_RAW_MB` | `100` | 只有小於此大小的完整 `03_acmg` raw TSV fallback 解析結果才可進 SNV cache；gene search 缺 index 時串流掃描，不會整份物件化 |
 | `NGS_UI_TERTIARY_NF_WORK_ROOT` | `$NGS_UI_HOME/nf_work` | 三級分析 Nextflow cache/work root；DRAGEN 與 NCKUH 分別共用 `contexts/shared-dragen/`、`contexts/shared-nckuh/` 的 launch/session lineage；新 lineage 的 work 預設在其 `work/`，若承接舊 session 則持續使用該 session 原 work root |
 | `NGS_UI_VCF_DIR` | `$NGS_UI_HOME/vcf` | per-sample VCF |
-| `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{LIS}_{MRN}_phenotype.txt`、`{MRN}_clinical_presentation.txt` |
+| `NGS_UI_PHENOTYPE_DIR` | `$NGS_UI_HOME/patient_phenotype` | `{MRN}_phenotype.txt`、`{MRN}_clinical_presentation.txt`；舊 `{LIS}_{MRN}` / `{LIS}` phenotype 檔只作 fallback |
 | `NGS_UI_PATIENT_DOCUMENTS_DIR` | `$NGS_UI_HOME/patient_documents` | 登入後從主畫面或 `/phenotype/` 管理的 MRN-level PDF/JPG/PNG/TIFF 病歷附件與 `documents.sqlite` |
 | `NGS_UI_PATIENT_DOCUMENTS_MIN_FREE_GB` | `10` | 病歷附件串流上傳時保留的最低磁碟空間；`0` 代表不保留，沒有額外 per-file 大小上限 |
 | `NGS_UI_PATIENT_LIST_DIR` | `$NGS_UI_HOME/patient_list` | 上傳清單 + roster.json |
@@ -208,11 +208,11 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - Test type 提供 `WES`、`WGS`、`TITAN-WGS`；LIS/sample ID 以兩位數年份加 `T` 開頭（例如 `25T...`、`26T...`、`27T...`）時會自動歸為 `TITAN-WGS`。其他來源若為 DRAGEN，或 in-house 來源 VCF 大於 100 MB，仍預設為 `WGS`；`TITAN-WGS` 的分析門檻、dead zone 與報告方法文字皆沿用 WGS 規則。TITAN-WGS 載入時會預設隱藏診斷分析，可從基本資料下方的小三角切換；Secondary findings、PGx/PharmCAT、健檢報告及儲存仍顯示，而且報告區、分析區內的所有 Secondary findings 子區域都預設展開。「報告」旁的小字標示會自動帶入 ClinVar P/LP，「分析」旁則標示 ClinVar P/LP 預設勾選、Predicted suspect 勾選後才進報告；這兩段說明只在 TITAN-WGS 顯示。WES/WGS 不顯示此切換或小字，並維持既有開合狀態；
    - Clinical presentation 可在檢體編號 / 病歷號下方輸入，會依病歷號 debounce 自動儲存為 `patient_phenotype/{MRN}_clinical_presentation.txt`，載入新個案與主畫面 Clinical presentation 會自動帶入；主畫面 reviewer 修改後也會同步寫回此檔，供 `/phenotype/` 後續載入。若沒有 MRN，才 fallback 使用 LIS_ID 暫存。
    - 主畫面與 `/phenotype/` 的 Clinical presentation 標題右側都有 `Documents`。病歷附件固定依 MRN 共用，清單／預覽／上傳／重新命名／下載／刪除皆需登入；支援 PDF、JPG、PNG、TIF/TIFF，多頁 TIFF 會轉成縮小 PNG 逐頁預覽但下載仍保留原檔。modal 可批次選檔、將檔案拖到上傳區、在上傳前修改檔名，也可把系統截圖貼到同一區域後以圖片儲存；「下載全部 ZIP」會串流打包該 MRN 目前的全部文件，不在伺服器留存另一份 ZIP。檔案串流寫入 UUID 實體名稱，SQLite 保存顯示檔名、SHA-256、上傳者與操作 audit；同一 MRN 的相同內容會拒絕重複上傳，刪除先移到 `trash/`。metadata API 修改 MRN 時會連同 Documents、Clinical presentation 與 phenotype sidecar 自動搬移；新 MRN 已有資料或舊 MRN 仍被其他已登錄個案共用時回 409，不會靜默合併病人資料。
-   - MRN 欄旁的 `EMR` 會依目前輸入或清單帶入的病歷號直接開啟院內 HIS EMR；原本的 `EMR 同步` 仍獨立保留，用來抓取 sex、看診紀錄與 EMR phenotype。
-   - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；主畫面 Patient phenotype 與載入新個案的 HPO 搜尋都比照 `/phenotype/` 工具，支援名稱／synonym 拼字容錯，並在命中 term 下顯示可直接選取的上一級 term；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案；若存在 `patient_phenotype/{LIS}_{MRN}_phenotype.txt` 會自動讀入；
+   - MRN 欄旁的 `EMR` 會依目前輸入或清單帶入的病歷號直接開啟院內 HIS EMR；原本的 `EMR 同步` 仍獨立保留，用來抓取 sex、看診紀錄與 EMR phenotype。獨立 `/phenotype/` 頁的「載入既有資料」右側也有同樣式 `EMR` 與 `GC紀錄`；後者需登入，按下後才從 APIM consultation API 抓取並在唯讀 modal 顯示 counseling records。
+   - HPO / gene panel 可在這裡選；gene panel 與主畫面同樣使用 `WES-I / WES-II / WGS / Other panel` tabs，預設展開 `Other panel`，固定 panel chip 與搜尋下拉都會顯示基因數量；主畫面 Patient phenotype 與載入新個案的 HPO 搜尋都比照 `/phenotype/` 工具，支援名稱／synonym 拼字容錯，並在命中 term 下顯示可直接選取的上一級 term；HPO / panel 下拉可用上下鍵選取並以 Enter 加入，避免 Enter 誤送出載入個案。病人層級主檔固定為 `patient_phenotype/{MRN}_phenotype.txt`；登錄新個案、`/phenotype/` 儲存，以及主畫面儲存 `default` 分析組合時會同步，換 LIS 仍可依同一 MRN 帶回。主畫面後續新增的其他分析組合只留在 sample-owned analysis version，不覆蓋病人主檔。舊 `{LIS}_{MRN}` / `{LIS}` 檔保留作 fallback，MRN-only 永遠優先；
    - 登錄新個案的未登錄個案欄位可直接輸入 LIS ID、source sample、姓名或 MRN 搜尋，也可從下拉清單選擇；清單在前端快取一天，需要看到最新 pipeline output 時可按「更新清單」手動重抓。登錄完成會同步切換主畫面與上方個案搜尋框。登錄時不再同步掃完整 TSV 產生 `vcf_from_tsv.vcf.gz`；至少有一個 HPO term 時才會排入 Exomiser/LIRICAL，若 VCF 尚不存在，背景 job 開始前會自動建立或刷新。
    - HPO/panel 的 in-panel 狀態來自 `pheno_score.tsv` 動態補值，不再寫回大型 `snv_indel.annotated.tsv` 的 `IN_PANEL` 欄。
-   - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` / `TITAN-WGS` 篩選並全文搜尋；表格會摘要目前 active analysis 的 HPO/panel、causative / other SNV、CNV、SV、Mito、疾病與 comment。表格內「刪除」會移除 prefixed 與 legacy metadata/case summary 及 `analyses/` 註冊/報告狀態，保留 00-07 pipeline output 與其他衍生檔；完成後該 sample 會回到「載入新個案」清單。
+   - 旁邊的「個案清單」可查看已載入個案、依 `WES` / `WGS` / `TITAN-WGS` 篩選並全文搜尋；表格會摘要目前 active analysis 的 HPO/panel、causative / other SNV、CNV、SV、Mito、疾病與 comment。表格內「刪除」會移除 prefixed 與 legacy metadata/case summary 及 `analyses/` 註冊/報告狀態，保留 00-07 pipeline output、其他衍生檔與 MRN-only phenotype 主檔；完成後該 sample 會回到「載入新個案」清單，重新登錄時依 MRN 恢復 HPO/panel。
    - 主畫面搜尋框與個案清單上方有可複選的 `WES` / `WGS` / `TITAN-WGS` 圓形 filter；每類旁邊的 `only` 可一次只保留該類、反選另外兩類。
 3. **看變異卡片** — 個案載入後先顯示 SNV/Indel（分段載入），CNV/SV、Mitochondria、STR 與 PGx 在背景載完後補上：
    - 平台剛開啟讀取索引、個案核心資料載入與新個案登錄期間都會顯示不可誤關閉的「資料載入中」遮罩，避免重複點擊。

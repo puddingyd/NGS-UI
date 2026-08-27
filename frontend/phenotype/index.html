@@ -32,12 +32,16 @@
           <label for="patient-mrn">病歷號</label>
           <input type="text" id="patient-mrn" placeholder="例：12345678">
         </div>
-        <div class="field-group field-group-btn">
+        <div class="field-group field-group-btn patient-action-group">
           <label>&nbsp;</label>
-          <button onclick="loadPatient()" class="btn btn-secondary" id="btn-load">載入既有資料</button>
+          <div class="patient-action-buttons">
+            <button onclick="loadPatient()" class="btn btn-secondary" id="btn-load" type="button">載入既有資料</button>
+            <a class="btn btn-secondary" id="btn-emr-link" target="_blank" rel="noopener" aria-disabled="true" tabindex="-1">EMR</a>
+            <button class="btn btn-secondary" id="btn-gc-records" type="button" disabled>GC紀錄</button>
+          </div>
         </div>
       </div>
-      <p class="hint-line">檢體編號與病歷號至少填一個（兩個都填則檔名同時以兩者命名）。</p>
+      <p class="hint-line">病歷號是 phenotype 與 Clinical presentation 的病人層級識別；沒有病歷號時才暫以檢體編號存檔。</p>
     </section>
 
     <section class="card" id="clinical-presentation-card">
@@ -135,6 +139,23 @@
     </div>
     <div id="gene-list-content" class="gene-list-content"></div>
   </aside>
+
+  <div id="gc-record-modal" class="gc-modal" hidden>
+    <section class="gc-modal-card" role="dialog" aria-modal="true" aria-labelledby="gc-record-title">
+      <header class="gc-modal-head">
+        <div>
+          <h2 id="gc-record-title">GC紀錄</h2>
+          <div id="gc-record-patient" class="gc-modal-muted"></div>
+        </div>
+        <button type="button" class="gc-modal-close" data-gc-close aria-label="關閉">&times;</button>
+      </header>
+      <div id="gc-record-status" class="gc-modal-status" aria-live="polite"></div>
+      <div id="gc-record-list" class="gc-record-list"></div>
+      <footer class="gc-modal-actions">
+        <button type="button" class="btn btn-secondary" data-gc-close>關閉</button>
+      </footer>
+    </section>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
   <script src="../documents.js"></script>

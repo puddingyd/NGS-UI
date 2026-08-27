@@ -1532,15 +1532,14 @@ def list_unregistered() -> list[dict]:
       * `roster` — {mrn, name, test_type, department} from the uploaded
         未完成報告清單 (patient_list_store). This is the preferred
         source for MRN + 姓名 + Test type in the modal.
-      * `phenotype` — parsed HPO/panels from
-        NGS_UI/patient_phenotype/{lis_id}_{mrn}_phenotype.txt, used for
-        the preview chip row. (Its filename-derived MRN is kept as a
-        fallback for samples not in the roster.)
+      * `phenotype` — parsed HPO/panels from the MRN-only patient snapshot,
+        with old LIS-specific filenames retained as fallbacks. Used for the
+        preview chip row; filename-derived MRN remains a last resort for
+        samples absent from the roster.
 
     Sorted by directory mtime descending (newest first).
     """
-    from ..config import PHENOTYPE_DIR
-    from . import dragen_jobs, patient_list_store, phenotype_io
+    from . import dragen_jobs, patient_list_store, patient_phenotype_store
     roster = patient_list_store.load_roster()
     active_tertiary_samples = dragen_jobs.active_sample_ids()
     out: list[dict] = []
@@ -1581,80 +1580,24 @@ def list_unregistered() -> list[dict]:
         roster_mrn = (roster_entry or {}).get("mrn") or ""
         pheno_lis_ids = patient_list_store.lookup_candidates(lis_id, roster_lis_id, source_sample_id)
 
-        # Resolve a matching phenotype file in the central phenotype dir.
-        # Lookup order:
-        #   1. {lis_id}_*_phenotype.txt, also trying the roster/source
-        #      LIS_ID when the UI directory carries a caller suffix.
-        #      If the roster gives an MRN, prefer exact {lis_id}_{mrn}.
-        #   2. {mrn}_phenotype.txt       — the standalone HPO tool's
-        #      MRN-only output (no LIS_ID).
-        # Either way we still parse the file for the HPO/panel preview.
-        # Lookup priority:
-        #   1. {candidate_lis_id}_{roster_mrn}_phenotype.txt
-        #   2. {candidate_lis_id}_phenotype.txt
-        #   3. {candidate_lis_id}_*_phenotype.txt
-        #   4. {roster_mrn}_phenotype.txt           — MRN-only file
+        # Resolve the reusable patient snapshot. MRN-only is authoritative;
+        # old LIS-specific filenames remain non-destructive fallbacks.
         pheno_payload = None
-        if PHENOTYPE_DIR.is_dir():
-            pf = None
-            if roster_mrn:
-                for pheno_lis_id in pheno_lis_ids:
-                    exact = PHENOTYPE_DIR / f"{pheno_lis_id}_{roster_mrn}_phenotype.txt"
-                    if exact.is_file():
-                        pf = exact
-                        break
-            if pf is None:
-                for pheno_lis_id in pheno_lis_ids:
-                    lis_only = PHENOTYPE_DIR / f"{pheno_lis_id}_phenotype.txt"
-                    if lis_only.is_file():
-                        pf = lis_only
-                        break
-            if pf is None:
-                for pheno_lis_id in pheno_lis_ids:
-                    lis_matches = sorted(PHENOTYPE_DIR.glob(f"{pheno_lis_id}_*_phenotype.txt"))
-                    if lis_matches:
-                        pf = lis_matches[0]
-                        break
-            if pf is None and roster_mrn:
-                mrn_only = PHENOTYPE_DIR / f"{roster_mrn}_phenotype.txt"
-                if mrn_only.is_file():
-                    pf = mrn_only
-            if pf is not None:
-                # Recover the MRN from the filename for the modal's
-                # fallback. {lis_id}_phenotype → no MRN; {lis_id}_{mrn}
-                # → the second segment; {mrn}_phenotype → the whole core.
-                stem = pf.stem
-                core = stem[:-len("_phenotype")] if stem.endswith("_phenotype") else stem
-                matched_pheno_lis = next(
-                    (pheno_lis_id for pheno_lis_id in pheno_lis_ids if core == pheno_lis_id),
-                    "",
-                )
-                matched_pheno_prefix = next(
-                    (
-                        pheno_lis_id
-                        for pheno_lis_id in pheno_lis_ids
-                        if core.startswith(pheno_lis_id + "_")
-                    ),
-                    "",
-                )
-                if matched_pheno_lis:
-                    file_mrn = ""
-                elif matched_pheno_prefix:
-                    file_mrn = core[len(matched_pheno_prefix) + 1:]
-                elif core == roster_mrn:
-                    file_mrn = roster_mrn
-                else:
-                    file_mrn = core.split("_")[-1] if "_" in core else core
-                try:
-                    hpo, panels = phenotype_io.parse(pf.read_text(encoding="utf-8"))
-                except OSError:
-                    hpo, panels = [], []
-                pheno_payload = {
-                    "path":   str(pf),
-                    "mrn":    file_mrn,
-                    "hpo":    hpo,
-                    "panels": panels,
-                }
+        try:
+            resolved_pheno = patient_phenotype_store.load(
+                mrn=roster_mrn,
+                code=lis_id,
+                code_candidates=pheno_lis_ids,
+            )
+        except ValueError:
+            resolved_pheno = {}
+        if resolved_pheno:
+            pheno_payload = {
+                "path": resolved_pheno.get("path") or "",
+                "mrn": resolved_pheno.get("mrn") or roster_mrn,
+                "hpo": resolved_pheno.get("hpo") or [],
+                "panels": resolved_pheno.get("panels") or [],
+            }
 
         try:
             mtime = pipeline_sub.stat().st_mtime

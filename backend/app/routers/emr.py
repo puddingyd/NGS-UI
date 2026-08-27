@@ -19,12 +19,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import current_user
-from ..services import emr_client, sample_layout
+from ..services import emr_client, patient_phenotype_store, sample_layout
 
 router = APIRouter(prefix="/api", tags=["emr"], dependencies=[Depends(current_user)])
 
@@ -43,6 +41,23 @@ def emr_enabled():
     """Public probe so the UI can hide EMR controls when client_id
     isn't configured. No data leaks here — just a boolean."""
     return {"enabled": emr_client.is_enabled()}
+
+
+@router.get("/emr/{mrn}/consultation")
+def emr_consultation(mrn: str):
+    """Fetch only the GC consultation records for a read-only modal."""
+    _require_enabled()
+    try:
+        safe_mrn = patient_phenotype_store.check_token(
+            "MRN", mrn, required=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "mrn": safe_mrn,
+        "consultation": emr_client.fetch_consultation(safe_mrn),
+        "fetched_at": _now(),
+    }
 
 
 @router.get("/emr/{mrn}")

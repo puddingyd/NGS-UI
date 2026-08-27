@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v9.0 — 2026-08-27
+
+- 主畫面 Patient phenotype 只有儲存 `default` 分析組合時，才會把目前 HPO、panel 與 weight 原子同步到病人層級的 `patient_phenotype/{MRN}_phenotype.txt`；後續新增的其他分析組合只寫入 sample-owned analysis version，不覆蓋病人主檔。載入新個案仍會保存最後採用的 default 快照。從個案清單移除 sample 時不刪此檔，因此相同 MRN 日後使用原檢體或新檢體重新登錄都能自動帶回。default 全部清空時會保留 header-only 明確空值，避免舊 LIS-specific phenotype 復活。
+- phenotype lookup 全面改為 MRN-only 主檔優先，舊 `{LIS}_{MRN}_phenotype.txt`／`{LIS}_phenotype.txt` 只作非破壞 fallback；`/phenotype/` 有 MRN 時也固定寫 MRN-only，同一病人的不同檢體共用 phenotype。
+- 「輸入臨床表徵」頁的「載入既有資料」右側新增同樣式 `EMR` 與 `GC紀錄`：EMR 直接開啟院內 HIS，GC紀錄經登入保護的 consultation API 即時抓取並以唯讀 modal 顯示看診日期、reason、diagnosis 與 counseling record。
+
 ### v8.9 — 2026-08-14
 
 - 主畫面 SNV/Indel 的 in-silico predictor 欄改為每個工具名稱與結果同行顯示，結果依最長工具名稱統一對齊；固定顯示至少六個工具，若 ClinVar／ACMG／LitVar2 欄較高，會以固定行距自動多顯示可容納的 predictor，超出 LitVar2 最後一行後才收進 More。既有字體、大小、顏色與結果底色不變。
