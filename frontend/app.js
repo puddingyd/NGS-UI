@@ -4654,12 +4654,15 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="k">AF_nckuh</span><span class="v">${fmtNum(v.inhouse_af, 5)}${
           (v.inhouse_af != null && v.inhouse_ac != null && v.inhouse_an != null)
             ? ` (${v.inhouse_ac}/${v.inhouse_an})` : ""}</span>
+        ${Number.isFinite(Number(v.TG_eas_af))
+          ? `<div class="more-extras hidden">
+              <span class="k">1000G EAS</span><span class="v">${fmtNum(v.TG_eas_af, 5)}</span>
+            </div>`
+          : ""}
       </div>
     </div>
     <button class="btn-more" type="button">▾ More</button>
-    <div class="more-extras hidden">${Number.isFinite(Number(v.TG_eas_af))
-      ? `<div><span class="k">1000G EAS</span><span class="v">${fmtNum(v.TG_eas_af, 5)}</span></div>`
-      : ""}${renderManeAll(v, id)}</div>
+    <div class="more-extras hidden">${renderManeAll(v, id)}</div>
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
 

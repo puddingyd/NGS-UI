@@ -165,6 +165,21 @@ def test_transcript_detail_rows_switch_the_persisted_display_selection():
     assert ".badge-best-consequence" in STYLE_CSS
 
 
+def test_1000g_eas_is_the_fourth_af_row_and_stays_under_more():
+    af_start = APP_JS.index('<span class="k">AF</span>')
+    af_end = APP_JS.index('<button class="btn-more"', af_start)
+    af_column = APP_JS[af_start:af_end]
+
+    assert af_column.index('AF</span>') < af_column.index('AF_eas</span>')
+    assert af_column.index('AF_eas</span>') < af_column.index('AF_nckuh</span>')
+    assert af_column.index('AF_nckuh</span>') < af_column.index('1000G EAS</span>')
+    assert 'Number.isFinite(Number(v.TG_eas_af))' in af_column
+    assert '<div class="more-extras hidden">' in af_column
+
+    after_more = APP_JS[af_end:APP_JS.index("${renderDiseaseList", af_end)]
+    assert "1000G EAS" not in after_more
+
+
 def test_omim_badge_is_excluded_before_supplemental_badge_limit():
     start = APP_JS.index("function diseaseSourceBadges(")
     end = APP_JS.index("function hasOmimDescriptionText", start)
