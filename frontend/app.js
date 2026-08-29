@@ -973,6 +973,20 @@ function fmtTxt(v) {
   return String(v);
 }
 
+function snvZygosityDisplay(v) {
+  if (v == null || v === "") return "—";
+  const raw = String(v).trim();
+  const normalized = raw.toLowerCase().replace(/[_-]/g, " ");
+  if (["heterozygous", "heterozygote", "het"].includes(normalized)) return "het";
+  if (["homozygous", "homozygote", "homo", "hom", "hom alt", "homozygous alt"].includes(normalized)) return "hom";
+  if (["hemizygous", "hemizygote", "hemi"].includes(normalized)) return "hemi";
+  return raw;
+}
+
+function snvZygosityClass(v) {
+  return ["hom", "hemi"].includes(snvZygosityDisplay(v).toLowerCase()) ? "sig-p" : "";
+}
+
 // "21,18 (0.46)" — AD with VAF in parens. Either half falls back to a dash
 // if the underlying field is missing, so a partially populated sample still
 // renders cleanly.
@@ -4613,7 +4627,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="k">LIRICAL</span><span class="v">${escapeHtml(fmtScoreRank(v.lirical_variant_score, v.rank_lirical_variant))}</span>
       </div>
       <div>
-        <span class="k">Zygosity</span><span class="v">${fmtTxt(v.zygosity)}</span>
+        <span class="k">Zygosity</span><span class="v ${snvZygosityClass(v.zygosity)}">${escapeHtml(snvZygosityDisplay(v.zygosity))}</span>
         <span class="k">Read support</span><span class="v ${(v.low_depth || v.low_alt_support) ? "sig-lp" : ""}" title="${escapeAttr(depthSupportHint(v))}">${escapeHtml(fmtDepthSupport(v))}</span>
         <span class="k">Consequence</span><span class="v">${_renderConsequenceCell(v.Consequence)}</span>
         <div class="more-extras hidden">
