@@ -1071,6 +1071,7 @@ def _transcript_option_from_variant(v: dict) -> dict:
         "exon": v.get("exon") or "",
         "intron": v.get("intron") or "",
         "hgnc_id": v.get("hgnc_id") or "",
+        "disease_associated": bool(v.get("disease_associated")),
     }
 
 
@@ -1101,6 +1102,7 @@ def _apply_transcript_option(v: dict, opt: dict) -> None:
         ("hgnc_id", "hgnc_id"),
     ):
         v[dst_key] = opt.get(src_key) or ""
+    v["disease_associated"] = bool(opt.get("disease_associated"))
     v["selected_transcript_key"] = opt.get("key") or ""
     v["default_transcript_key"] = opt.get("key") or ""
 

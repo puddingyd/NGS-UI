@@ -1217,6 +1217,7 @@ function _variantWithSelectedTranscript(v, id) {
     exon: opt.exon || v.exon,
     intron: opt.intron || v.intron,
     hgnc_id: opt.hgnc_id || v.hgnc_id,
+    disease_associated: opt.disease_associated ?? v.disease_associated,
     selected_transcript_key: opt.key || v.selected_transcript_key,
   };
 }
@@ -2250,7 +2251,7 @@ function _reportedOutOfDiseaseAssociatedSnvs() {
   for (const [id, rawStatus] of Object.entries(status)) {
     const vals = _statusValues(rawStatus).filter(v => v === "1" || v === "2" || v === "C");
     if (!vals.length) continue;
-    const v = variants[id];
+    const v = _variantWithSelectedTranscript(variants[id], id);
     if (!v || v.disease_associated) continue;
     rows.push({ id, gene: v.gene_symbol || "?", status: vals.join("/") });
   }
@@ -2268,7 +2269,7 @@ function renderDiseaseAssociatedReportWarning() {
     return;
   }
   const genes = Array.from(new Set(rows.map(r => r.gene))).join(", ");
-  el.innerHTML = `<strong>提醒：</strong>已標記的 SNV/Indel 有基因不在 disease-associated gene list，DOCX 的 §五.4 基因清單不會列出這些基因：${escapeHtml(genes)}`;
+  el.innerHTML = `<strong>提醒：</strong>已標記的 SNV/Indel 有基因不在疾病相關基因清單，因此 DOCX 的「本次檢測基因包括」不會列出：${escapeHtml(genes)}`;
 }
 
 // Known tag suggestions = tags pulled from the Tag column of every loaded

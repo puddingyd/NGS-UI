@@ -241,7 +241,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
    - 需要跨批次整併 API success cache 時執行 `python scripts/export_genebe_api_cache.py --out /path/genebe_api_rows.tsv`；輸出仍是相同 7 欄、全域 variant-key 去重及自然座標排序，另附 `.tsv.json` sidecar。正式主 DB 的 merge/publish 維持人工、原子部署流程。
    - SNV tier 只在點開時建立該 tier 的卡片 DOM，避免一次 render 全部卡片。
    - SNV/Indel 與 CNV/SV gene 搜尋支援多個基因，以 `,` 或 `、` 分隔；SNV 搜尋由 `/api/samples/{id}/snv-search` 查完整原始 TSV，不受 review TSV 限制。三級分析結尾會預建 `snv_gene_index.sqlite`（gene → raw TSV byte offsets），所以 WGS gene search 不需在載入個案時掃 1–2GB raw TSV；舊樣本若缺 index 才 fallback 到 raw TSV parse。modal 預設勾選 `gnomAD_G_AF < 0.01`，取消後才顯示全部搜尋結果。SNV adapter 會把同一 genomic variant 的多 transcript TSV rows 合併成一張卡，預設顯示 consequence 較嚴重者（同嚴重度時 MANE 優先）；卡片 HGVS 優先用 post-processing 補上的 RefSeq transcript，沒有 RefSeq 時才用 Ensembl。HGVS 旁的小三角可切換 transcript，選擇會寫入 reviewer edits，DOCX、PDF 卡片與個案清單摘要使用同一個 transcript。
-   - 展開 SNV/Indel 卡片的 `Transcripts` 表格後，也可直接點選任一 transcript 列切換顯示；目前使用的列會以藍底與「目前顯示」標記。表格列與 HGVS 旁的小三角共用 `selected_transcript_key`，因此重新載入與報告輸出都會保留選擇；`BEST_CONSEQUENCE` type 使用紫色 badge，與其他 transcript type 樣式一致。
+   - 展開 SNV/Indel 卡片的 `Transcripts` 表格後，也可直接點選任一 transcript 列切換顯示；目前使用的列會以藍底與「目前顯示」標記。表格列與 HGVS 旁的小三角共用 `selected_transcript_key`，因此重新載入與報告輸出都會保留選擇；每個 option 另保留自己的 `disease_associated`，報告區的疾病相關基因警示依選定 transcript 的 gene 判斷，不再沿用預設 transcript。`BEST_CONSEQUENCE` type 使用紫色 badge，與其他 transcript type 樣式一致。
    - SNV/Indel 卡片的 `1000G EAS` 位於最右側 AF 欄，固定排在 `AF`、`AF_eas`、`AF_nckuh` 後作為第四列；此列預設隱藏，按 `More` 才顯示，不在卡片下方另起一列。
    - Variant 狀態用 `1 / 2 / C / 0` 圓形按鈕；`C` 與 `0` 可並存，`1` 或 `2` 會反選其他狀態；再次點擊已選項目可清空狀態。同一個 variant 在分析區、報告區與搜尋 modal 的按鈕會同步上色。
    - Variant 卡片保留 OMIM `Disease1..16` 完整內容；「個案清單」中的疾病摘要才截到第一個可辨識的遺傳模式括號（例如 `(AD)`、`(AR)`）為止。

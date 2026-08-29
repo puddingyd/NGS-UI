@@ -1,6 +1,6 @@
 import csv
 
-from app.adapters.snv_tsv import _row_to_variant, load_snv_tsv
+from app.adapters.snv_tsv import _row_to_variant, load_snv_tsv, merge_snv_variant_row
 
 
 def _row(**updates):
@@ -59,3 +59,32 @@ def test_zero_depth_wgs_is_low_but_wes_is_filtered(tmp_path):
     assert wgs["chr1-100-A-G"]["low_depth"] is True
     wes, _ = load_snv_tsv(path, test_type="WES")
     assert wes == {}
+
+
+def test_each_transcript_option_keeps_its_own_disease_associated_scope():
+    variants = {}
+    gnpda2 = _row_to_variant(_row(
+        GENE="GNPDA2",
+        TRANSCRIPT="ENST00000609092",
+        TRANSCRIPT_TYPE="BEST_CONSEQUENCE",
+        HGVS_C="c.353G>C",
+        HGVS_P="p.Ter118SerextTer3",
+        CONSEQUENCE="stop_lost",
+    ))
+    guf1 = _row_to_variant(_row(
+        GENE="GUF1",
+        TRANSCRIPT="ENST00000281543",
+        TRANSCRIPT_TYPE="MANE_SELECT",
+        HGVS_C="c.514C>G",
+        HGVS_P="p.Gln172Glu",
+        CONSEQUENCE="missense_variant",
+    ))
+
+    merge_snv_variant_row(variants, gnpda2)
+    merged = merge_snv_variant_row(variants, guf1)
+    options = {option["gene_symbol"]: option for option in merged["transcript_options"]}
+
+    assert options["GNPDA2"]["disease_associated"] is False
+    assert options["GUF1"]["disease_associated"] is True
+    assert merged["gene_symbol"] == "GNPDA2"
+    assert merged["disease_associated"] is False

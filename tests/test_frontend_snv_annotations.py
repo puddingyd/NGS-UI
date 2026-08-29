@@ -163,6 +163,20 @@ def test_transcript_detail_rows_switch_the_persisted_display_selection():
     assert "點選列可切換顯示" in APP_JS
     assert ".mane-table .transcript-option-row.is-selected td" in STYLE_CSS
     assert ".badge-best-consequence" in STYLE_CSS
+    assert "disease_associated: opt.disease_associated ?? v.disease_associated" in APP_JS
+
+
+def test_disease_associated_warning_uses_selected_transcript_and_plain_label():
+    start = APP_JS.index("function _reportedOutOfDiseaseAssociatedSnvs()")
+    end = APP_JS.index("function renderDiseaseAssociatedReportWarning()", start)
+    helper = APP_JS[start:end]
+    warning_start = end
+    warning_end = APP_JS.index("// Known tag suggestions", warning_start)
+    warning = APP_JS[warning_start:warning_end]
+
+    assert "_variantWithSelectedTranscript(variants[id], id)" in helper
+    assert "本次檢測基因包括" in warning
+    assert "§五.4" not in warning
 
 
 def test_1000g_eas_is_the_fourth_af_row_and_stays_under_more():
