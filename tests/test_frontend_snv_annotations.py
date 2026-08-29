@@ -154,6 +154,17 @@ def test_predicted_suspect_tier_labels_without_trigger_badges():
     assert "Extra-VEP rescue" not in APP_JS
 
 
+def test_transcript_detail_rows_switch_the_persisted_display_selection():
+    assert "function renderManeAll(v, id)" in APP_JS
+    assert 'class="transcript-option-row${selected ? " is-selected" : ""}"' in APP_JS
+    assert 'data-transcript-key="${escapeAttr(key)}"' in APP_JS
+    assert 'setEdit(transcriptRow.dataset.id, "selected_transcript_key"' in APP_JS
+    assert '["Enter", " "].includes(ev.key)' in APP_JS
+    assert "點選列可切換顯示" in APP_JS
+    assert ".mane-table .transcript-option-row.is-selected td" in STYLE_CSS
+    assert ".badge-best-consequence" in STYLE_CSS
+
+
 def test_omim_badge_is_excluded_before_supplemental_badge_limit():
     start = APP_JS.index("function diseaseSourceBadges(")
     end = APP_JS.index("function hasOmimDescriptionText", start)

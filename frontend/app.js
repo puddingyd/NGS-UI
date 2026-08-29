@@ -4659,7 +4659,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     <button class="btn-more" type="button">▾ More</button>
     <div class="more-extras hidden">${Number.isFinite(Number(v.TG_eas_af))
       ? `<div><span class="k">1000G EAS</span><span class="v">${fmtNum(v.TG_eas_af, 5)}</span></div>`
-      : ""}${renderManeAll(v)}</div>
+      : ""}${renderManeAll(v, id)}</div>
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
 
@@ -5278,22 +5278,34 @@ function fmtPhase(v) {
 
 // Inline <details> block listing transcript annotations carried by the
 // grouped TSV rows (new pipeline) or legacy MANE_ALL payload.
-function renderManeAll(v) {
-  const rows = Array.isArray(v.transcript_options) && v.transcript_options.length
+function renderManeAll(v, id) {
+  const optionRows = Array.isArray(v.transcript_options) && v.transcript_options.length
     ? v.transcript_options
+    : [];
+  const rows = optionRows.length
+    ? optionRows
     : (Array.isArray(v.MANE_ALL) ? v.MANE_ALL : []);
   if (!rows.length) return "";
-  const cells = rows.map(r => `
-    <tr>
-      <td><span class="badge badge-${(r.transcript_type || "").toLowerCase().replace(/_/g, "-")}">${escapeHtml(r.transcript_type || "")}</span></td>
+  const selectedKey = String(_selectedTranscriptOption(v, id)?.key || "");
+  const cells = rows.map(r => {
+    const key = String(r?.key || "");
+    const selectable = !!(optionRows.length && id && key);
+    const selected = selectable && key === selectedKey;
+    const rowAttrs = selectable
+      ? ` class="transcript-option-row${selected ? " is-selected" : ""}" data-id="${escapeAttr(id)}" data-transcript-key="${escapeAttr(key)}" role="button" tabindex="0" aria-pressed="${selected ? "true" : "false"}" title="${selected ? "目前卡片與報告使用的 transcript" : "切換卡片與報告使用的 transcript"}"`
+      : "";
+    return `
+    <tr${rowAttrs}>
+      <td><span class="badge badge-${(r.transcript_type || "").toLowerCase().replace(/_/g, "-")}">${escapeHtml(r.transcript_type || "")}</span>${selected ? '<span class="transcript-current-label">目前顯示</span>' : ""}</td>
       <td class="mane-tx">${escapeHtml(_maneDisplayTranscript(r))}</td>
       <td>${escapeHtml(_maneDisplayHgvs(r, "HGVS_C") || _maneDisplayHgvs(r, "hgvs_c"))}</td>
       <td>${escapeHtml(_maneDisplayHgvs(r, "HGVS_P") || _maneDisplayHgvs(r, "hgvs_p"))}</td>
       <td>${escapeHtml(r.Consequence || r.consequence || "")}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
   return `
     <details class="mane-all">
-      <summary>Transcripts (${rows.length})</summary>
+      <summary>Transcripts (${rows.length})${optionRows.length > 1 ? '<span class="transcript-table-hint">點選列可切換顯示</span>' : ""}</summary>
       <table class="mane-table">
         <thead><tr><th>Type</th><th>Transcript</th><th>HGVS.c</th><th>HGVS.p</th><th>Consequence</th></tr></thead>
         <tbody>${cells}</tbody>
@@ -7873,6 +7885,7 @@ document.addEventListener("click", ev => {
   const acmgOpen = t.closest?.(".js-acmg-open");
   const observedOpen = t.closest?.(".js-observed-open");
   const applySource = t.closest?.(".acmg-apply-source");
+  const transcriptRow = t.closest?.(".transcript-option-row[data-transcript-key]");
   if (acmgOpen) {
     ev.preventDefault();
     openAcmgModal(acmgOpen.dataset.id, acmgOpen);
@@ -7881,6 +7894,13 @@ document.addEventListener("click", ev => {
     openObservedModal(observedOpen.dataset.id);
   } else if (applySource) {
     applyAcmgSource(applySource.dataset.acmgSource);
+  } else if (transcriptRow) {
+    ev.preventDefault();
+    if (transcriptRow.getAttribute("aria-pressed") !== "true") {
+      setEdit(transcriptRow.dataset.id, "selected_transcript_key", transcriptRow.dataset.transcriptKey);
+      renderAll();
+      updateSaveHint();
+    }
   } else if (t.matches(".js-acmg-save")) {
     saveAcmgEditor();
   } else if (t.matches(".js-btn-save")) {
@@ -7933,6 +7953,13 @@ document.addEventListener("click", ev => {
     const det = t.closest("details.disease-row");
     if (det) det.open = false;
   }
+});
+
+document.addEventListener("keydown", ev => {
+  const row = ev.target.closest?.(".transcript-option-row[data-transcript-key]");
+  if (!row || !["Enter", " "].includes(ev.key)) return;
+  ev.preventDefault();
+  row.click();
 });
 
 function copyToClipboard(btn) {

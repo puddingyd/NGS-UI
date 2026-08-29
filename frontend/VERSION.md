@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.1 — 2026-08-29
+
+- SNV/Indel 卡片展開 `Transcripts` 後，可直接點選任一列切換卡片顯示的 transcript；目前選用列會顯示藍底與「目前顯示」，並與 HGVS 旁的小三角、DOCX、PDF 及個案清單摘要共用同一筆自動儲存選擇。`BEST_CONSEQUENCE` transcript type 也補上紫色 badge 底色，與其他 type 樣式一致。
+
 ### v9.0 — 2026-08-27
 
 - 主畫面 Patient phenotype 只有儲存 `default` 分析組合時，才會把目前 HPO、panel 與 weight 原子同步到病人層級的 `patient_phenotype/{MRN}_phenotype.txt`；後續新增的其他分析組合只寫入 sample-owned analysis version，不覆蓋病人主檔。載入新個案仍會保存最後採用的 default 快照。從個案清單移除 sample 時不刪此檔，因此相同 MRN 日後使用原檢體或新檢體重新登錄都能自動帶回。default 全部清空時會保留 header-only 明確空值，避免舊 LIS-specific phenotype 復活。
