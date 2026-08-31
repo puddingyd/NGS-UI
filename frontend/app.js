@@ -12114,16 +12114,3 @@ document.addEventListener("DOMContentLoaded", () => {
   try { setupDragenButton(); } catch (_e) {}
   try { setupPipelineList(); } catch (_e) {}
 });
-
-// Temporary local-browser fixture for Comment textarea auto-grow QA.
-if (new URLSearchParams(window.location.search).get("__comment_autogrow_fixture") === "1") {
-  document.addEventListener("DOMContentLoaded", () => {
-    state.index = [];
-    state.reports = {
-      comment: Array.from({ length: 9 }, (_, i) => `既有 Comment 第 ${i + 1} 行：這是一段需要完整顯示、不應出現欄位內垂直捲軸的長文字。`).join("\n"),
-      tags: ["Negative"],
-    };
-    renderComment();
-    document.body.replaceChildren(document.getElementById("comment-card"));
-  });
-}
