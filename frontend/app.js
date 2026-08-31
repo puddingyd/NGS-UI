@@ -984,7 +984,7 @@ function snvZygosityDisplay(v) {
 }
 
 function snvZygosityClass(v) {
-  return ["hom", "hemi"].includes(snvZygosityDisplay(v).toLowerCase()) ? "sig-p" : "";
+  return ["hom", "hemi"].includes(snvZygosityDisplay(v).toLowerCase()) ? "sig-lp" : "";
 }
 
 // "21,18 (0.46)" — AD with VAF in parens. Either half falls back to a dash

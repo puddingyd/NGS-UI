@@ -11,7 +11,7 @@
 - SNV/Indel 卡片展開 `Transcripts` 後，可直接點選任一列切換卡片顯示的 transcript；目前選用列會顯示藍底與「目前顯示」，並與 HGVS 旁的小三角、DOCX、PDF 及個案清單摘要共用同一筆自動儲存選擇。`BEST_CONSEQUENCE` transcript type 也補上紫色 badge 底色，與其他 type 樣式一致。
 - `1000G EAS` 移回 SNV/Indel 卡片最右側 AF 欄，排在 `AF`、`AF_eas`、`AF_nckuh` 後作為第四列；維持按 `More` 才顯示，不再出現在 info grid 下方。
 - 修正切換 SNV transcript 後，疾病相關基因警示仍沿用原始 gene 的問題：警示現在依 reviewer 選定 transcript 的 gene 與其 disease-associated 狀態判斷。警示需要顯示時改用 DOCX「本次檢測基因包括」名稱，不再顯示內部段落編號 `§五.4`。
-- 主畫面 SNV/Indel 卡片的 zygosity 統一使用 `het`／`hom`／`hemi` 縮寫；`hom` 與 `hemi` 會套用和 Pathogenic 相同的紅底，並相容 TSV 輸出的 `homozygous`／`hemizygous` 長寫法。此提示只影響顯示，不改 tier、filter 或報告判讀。
+- 主畫面 SNV/Indel 卡片的 zygosity 統一使用 `het`／`hom`／`hemi` 縮寫；`hom` 與 `hemi` 會套用和 Likely pathogenic 相同的淺紅底，並相容 TSV 輸出的 `homozygous`／`hemizygous` 長寫法。此提示只影響顯示，不改 tier、filter 或報告判讀。
 
 ### v9.0 — 2026-08-27
 

@@ -194,7 +194,7 @@ def test_1000g_eas_is_the_fourth_af_row_and_stays_under_more():
     assert "1000G EAS" not in after_more
 
 
-def test_hom_and_hemi_zygosity_use_pathogenic_red_background():
+def test_hom_and_hemi_zygosity_use_likely_pathogenic_red_background():
     helper_start = APP_JS.index("function snvZygosityDisplay(v)")
     helper_end = APP_JS.index("// \"21,18 (0.46)\"", helper_start)
     helper = APP_JS[helper_start:helper_end]
@@ -204,7 +204,7 @@ def test_hom_and_hemi_zygosity_use_pathogenic_red_background():
     assert '"hemizygous"' in helper
     assert '"hemi"' in helper
     assert '["hom", "hemi"].includes' in helper
-    assert '? "sig-p" : ""' in helper
+    assert '? "sig-lp" : ""' in helper
     assert '${snvZygosityClass(v.zygosity)}' in APP_JS
     assert '${escapeHtml(snvZygosityDisplay(v.zygosity))}' in APP_JS
 
