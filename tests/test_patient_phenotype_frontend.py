@@ -77,3 +77,35 @@ def test_only_default_main_analysis_syncs_patient_snapshot():
     frontend = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     assert "result.patient_phenotype_synced" in frontend
     assert "此組合不影響病人 default phenotype" in frontend
+
+
+def test_main_comment_textarea_autogrows_like_clinical_presentation():
+    script = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    style = (ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
+
+    render_start = script.index("function renderCollapsibleCard(")
+    render_end = script.index("function renderClinicalDescription()", render_start)
+    render = script[render_start:render_end]
+    assert '["clinical-text", "counseling-text", "comment-text"].includes(taId)' in render
+
+    input_start = script.index('document.addEventListener("input", ev => {')
+    comment_start = script.index('t.matches("#comment-text")', input_start)
+    comment_end = script.index('t.matches(".variant-comment")', comment_start)
+    assert "autoGrow(t);" in script[comment_start:comment_end]
+
+    toggle_start = script.index("function toggleCollapsibleCard(header)")
+    toggle_end = script.index("function collapseCandidateSections()", toggle_start)
+    toggle = script[toggle_start:toggle_end]
+    assert '"#clinical-text, #counseling-text, #comment-text"' in toggle
+
+    auto_start = script.index("function autoGrow(ta)")
+    auto_end = script.index('document.addEventListener("input", ev => {', auto_start)
+    auto_grow = script[auto_start:auto_end]
+    assert "window.getComputedStyle(ta)" in auto_grow
+    assert "style.borderTopWidth" in auto_grow
+    assert "style.borderBottomWidth" in auto_grow
+    assert 'style.boxSizing === "border-box"' in auto_grow
+
+    textarea_style = style[style.index("#clinical-text,"):style.index("/* Auto-grow:")]
+    assert "#comment-text" in textarea_style
+    assert "overflow: hidden" in textarea_style

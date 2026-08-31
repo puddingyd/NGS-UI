@@ -2124,7 +2124,7 @@ function renderCollapsibleCard(cardId, headerId, bodyId, taId, value, defaultOpe
   // After the body becomes display:block, run autoGrow so the
   // textarea matches the loaded content. Doing this synchronously
   // while the body is still display:none would yield scrollHeight=0.
-  if (open && (taId === "clinical-text" || taId === "counseling-text")) {
+  if (open && ["clinical-text", "counseling-text", "comment-text"].includes(taId)) {
     requestAnimationFrame(() => autoGrow(ta));
   }
 }
@@ -8155,7 +8155,12 @@ document.addEventListener("change", ev => {
 function autoGrow(ta) {
   if (!ta) return;
   ta.style.height = "auto";
-  ta.style.height = ta.scrollHeight + "px";
+  const style = window.getComputedStyle(ta);
+  const borderHeight = (parseFloat(style.borderTopWidth) || 0)
+    + (parseFloat(style.borderBottomWidth) || 0);
+  const targetHeight = ta.scrollHeight
+    + (style.boxSizing === "border-box" ? borderHeight : 0);
+  ta.style.height = Math.ceil(targetHeight) + "px";
 }
 
 document.addEventListener("input", ev => {
@@ -8174,6 +8179,7 @@ document.addEventListener("input", ev => {
     state.reports.comment = t.value;
     state.dirty = true;
     updateSaveHint();
+    autoGrow(t);
   } else if (t.matches(".variant-comment")) {
     setEdit(t.dataset.id, "comment", t.value);
     _syncEditControls(t.dataset.id, "comment", t.value, t);
@@ -8230,11 +8236,11 @@ function toggleCollapsibleCard(header) {
   header.classList.toggle("open", open);
   body.classList.toggle("open", open);
   toggledBlocks.add(card.id);
-  // The clinical textarea auto-grows; resize it to fit existing
+  // The long-text textarea auto-grows; resize it to fit existing
   // content the moment the body becomes visible (scrollHeight is 0
   // while display:none).
   if (open) {
-    const ta = body.querySelector("#clinical-text, #counseling-text");
+    const ta = body.querySelector("#clinical-text, #counseling-text, #comment-text");
     if (ta) requestAnimationFrame(() => autoGrow(ta));
   }
 }
@@ -12108,3 +12114,16 @@ document.addEventListener("DOMContentLoaded", () => {
   try { setupDragenButton(); } catch (_e) {}
   try { setupPipelineList(); } catch (_e) {}
 });
+
+// Temporary local-browser fixture for Comment textarea auto-grow QA.
+if (new URLSearchParams(window.location.search).get("__comment_autogrow_fixture") === "1") {
+  document.addEventListener("DOMContentLoaded", () => {
+    state.index = [];
+    state.reports = {
+      comment: Array.from({ length: 9 }, (_, i) => `既有 Comment 第 ${i + 1} 行：這是一段需要完整顯示、不應出現欄位內垂直捲軸的長文字。`).join("\n"),
+      tags: ["Negative"],
+    };
+    renderComment();
+    document.body.replaceChildren(document.getElementById("comment-card"));
+  });
+}
