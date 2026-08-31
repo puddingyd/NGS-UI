@@ -74,6 +74,23 @@ def test_acmg_modal_has_three_apply_sources_and_all_criteria_editor():
     ).read_text(encoding="utf-8")
 
 
+def test_acmg_source_summaries_always_show_evidence_strength():
+    helper_start = APP.index("function formatAcmgCriteriaSummary(source, catalog)")
+    helper_end = APP.index("function calculateAcmgPreview", helper_start)
+    helper = APP[helper_start:helper_end]
+    summaries_start = APP.index("function renderAcmgSourceSummaries()")
+    summaries_end = APP.index("function renderAcmgCriteriaEditor()", summaries_start)
+    summaries = APP[summaries_start:summaries_end]
+
+    assert "parseAcmgCriteriaText" in helper
+    assert "strengthLabels" in helper
+    assert "`${code}_${label}`" in helper
+    assert '.replace(/[\\s-]+/g, "_")' in helper
+    assert "formatAcmgCriteriaSummary(source, _acmgCatalog)" in summaries
+    assert "reusable_criteria_text" in summaries
+    assert "formatAcmgCriteriaSummary({" in summaries
+
+
 def test_observed_is_a_separate_badge_and_modal():
     assert 'Observed (${Number(v.observed_count)})' in APP
     assert 'id="observed-modal"' in HTML

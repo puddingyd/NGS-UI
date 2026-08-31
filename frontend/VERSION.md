@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.2 — 2026-08-31
+
+- Manual ACMG/AMP modal 上方的 Manual、ERepo、GeneBe、In-house 來源摘要，所有可辨識 criteria 都會明確顯示 evidence strength，例如 `PM1_Moderate`、`PP3_Supporting`、`PVS1_Very_strong`；Manual 的 Global reusable 摘要也使用相同格式。這只調整畫面文字，不改原始 criteria 儲存格式、Apply 行為或 ACMG points 計算。
+
 ### v9.1 — 2026-08-29
 
 - SNV/Indel 卡片展開 `Transcripts` 後，可直接點選任一列切換卡片顯示的 transcript；目前選用列會顯示藍底與「目前顯示」，並與 HGVS 旁的小三角、DOCX、PDF 及個案清單摘要共用同一筆自動儲存選擇。`BEST_CONSEQUENCE` transcript type 也補上紫色 badge 底色，與其他 type 樣式一致。

@@ -4805,6 +4805,28 @@ function sourceCriteria(source, catalog) {
   return parseAcmgCriteriaText(source?.criteria_text || "", catalog);
 }
 
+function formatAcmgCriteriaSummary(source, catalog) {
+  const fromText = parseAcmgCriteriaText(source?.criteria_text || "", catalog);
+  const structured = source?.criteria;
+  const criteria = Object.keys(fromText.criteria).length
+    ? fromText.criteria
+    : (structured && typeof structured === "object" ? structured : {});
+  const strengthLabels = Object.fromEntries(
+    (catalog?.strengths || []).map(item => [item.value, item.label]),
+  );
+  const tokens = Object.entries(criteria)
+    .filter(([, evidence]) => evidence?.enabled)
+    .map(([code, evidence]) => {
+      const strength = String(evidence?.strength || "supporting");
+      const label = String(strengthLabels[strength] || strength)
+        .trim()
+        .replace(/[\s-]+/g, "_");
+      return `${code}_${label}`;
+    });
+  tokens.push(...fromText.unknown);
+  return tokens.join(",") || "無 criteria";
+}
+
 function calculateAcmgPreview(criteria) {
   const points = { supporting: 1, moderate: 2, strong: 4, very_strong: 8, stand_alone: 8 };
   let score = 0;
@@ -4864,7 +4886,7 @@ function renderAcmgSourceSummaries() {
         ? "ClinGen VCEP experts 評估；括號分數由 criteria 推導。僅供對照，Apply 後仍須儲存才成為 manual 判讀"
         : "";
     const reusableLine = key === "manual" && source.classification
-      ? `Global reusable: ${acmgDisplayClassification(source.reusable_classification, source.reusable_score, source.reusable_vus_subclass) || "—"} (${source.reusable_score ?? "—"}) · ${source.reusable_criteria_text || "無 criteria"}`
+      ? `Global reusable: ${acmgDisplayClassification(source.reusable_classification, source.reusable_score, source.reusable_vus_subclass) || "—"} (${source.reusable_score ?? "—"}) · ${formatAcmgCriteriaSummary({ criteria_text: source.reusable_criteria_text, criteria: source.reusable_criteria }, _acmgCatalog)}`
       : "";
     const displayClass = acmgDisplayClassification(
       source.classification, source.score, source.vus_subclass,
@@ -4882,7 +4904,7 @@ function renderAcmgSourceSummaries() {
         <button type="button" class="btn btn-ghost acmg-apply-source" data-acmg-source="${key}" ${canApply ? "" : "disabled"}>Apply</button>
       </div>
       <div class="acmg-source-result"><span class="${significanceClass}">${escapeHtml(displayClass || "—")}${source.score !== null && source.score !== undefined && source.score !== "" ? ` (${escapeHtml(source.score)})` : ""}</span></div>
-      <div class="acmg-source-criteria">${escapeHtml(source.criteria_text || "無 criteria")}</div>
+      <div class="acmg-source-criteria">${escapeHtml(formatAcmgCriteriaSummary(source, _acmgCatalog))}</div>
       ${audit ? `<div class="acmg-source-audit">${escapeHtml(audit)}</div>` : ""}
       ${erepoAudit ? `<div class="acmg-source-audit">${escapeHtml(erepoAudit)}</div>` : ""}
       ${reusableLine ? `<div class="acmg-source-audit">${escapeHtml(reusableLine)}</div>` : ""}
