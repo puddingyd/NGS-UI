@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import os
+import subprocess
 from pathlib import Path
 
 from backend.app.services import secondary_analysis as secondary
@@ -10,6 +12,11 @@ def _touch(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"")
     return path
+
+
+def _fake_command(path: Path, body: str) -> None:
+    path.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    path.chmod(0o755)
 
 
 def _lane_pair(folder: Path, sample: str, sample_number: int, lane: int) -> tuple[Path, Path]:
@@ -151,6 +158,18 @@ def test_multi_sample_launch_also_uses_dgx_single_profile():
     assert "-profile dgx \\" not in command
 
 
+def test_launch_command_uses_group_writable_umask_after_environment():
+    command = secondary._launch_command("260831_WGS", "WGS")
+
+    source_position = command.index("source ")
+    umask_position = command.index("umask 0002")
+    mkdir_position = command.index('mkdir -p "${OUT_DIR}"')
+
+    assert source_position < umask_position < mkdir_position
+    assert 'ORIGINAL_UMASK="$(umask)"' in command
+    assert 'umask "${ORIGINAL_UMASK}"\n    exec bash -i' in command
+
+
 def test_cleanup_secondary_nextflow_work_returns_guarded_dgx_command(monkeypatch):
     work_root = Path("/raid/DGM/work")
     monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", work_root)
@@ -162,4 +181,64 @@ def test_cleanup_secondary_nextflow_work_returns_guarded_dgx_command(monkeypatch
     assert "pgrep -af '[n]extflow'" in result["command"]
     assert 'find "${SECONDARY_WORK_ROOT}" -mindepth 1 -maxdepth 1 -print' in result["command"]
     assert 'read -r -p "確定刪除以上二級分析 Nextflow 暫存？[y/N] "' in result["command"]
-    assert '-exec rm -rf -- {} +' in result["command"]
+    assert 'if ! find "${SECONDARY_WORK_ROOT}"' in result["command"]
+    assert '-exec rm -rf -- {} +; then' in result["command"]
+    assert '-maxdepth 1 -print -quit)' in result["command"]
+    assert "部分檔案無法刪除" in result["command"]
+    assert "目錄仍有殘留項目" in result["command"]
+
+
+def test_cleanup_secondary_nextflow_work_reports_success_only_after_empty(
+    monkeypatch, tmp_path
+):
+    work_root = tmp_path / "work"
+    _touch(work_root / "batch" / "task" / ".command.out")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _fake_command(fake_bin / "pgrep", "exit 1")
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", work_root)
+    command = secondary.cleanup_nf_work_command()["command"]
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    completed = subprocess.run(
+        ["bash", "-c", command],
+        input="y\n",
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert list(work_root.iterdir()) == []
+    assert f"已清理：{work_root}" in completed.stdout
+
+
+def test_cleanup_secondary_nextflow_work_does_not_report_false_success(
+    monkeypatch, tmp_path
+):
+    work_root = tmp_path / "work"
+    leftover = _touch(work_root / "batch" / "task" / ".command.out")
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _fake_command(fake_bin / "pgrep", "exit 1")
+    _fake_command(fake_bin / "rm", "exit 1")
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", work_root)
+    command = secondary.cleanup_nf_work_command()["command"]
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    completed = subprocess.run(
+        ["bash", "-c", command],
+        input="y\n",
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert leftover.exists()
+    assert "部分檔案無法刪除" in completed.stdout
+    assert "已清理：" not in completed.stdout

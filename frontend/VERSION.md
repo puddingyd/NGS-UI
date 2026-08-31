@@ -8,6 +8,7 @@
 
 ### v9.2 — 2026-08-31
 
+- 二級分析產生的 DGX2 tmux 啟動腳本會在載入環境後設定 `umask 0002`，讓共用 `dgm_nckuh` 群組的新 Nextflow work 目錄保持可共同清理；DGX2 清理指令也會檢查刪除狀態與目錄殘留，只有確實清空才顯示「已清理」。
 - Manual ACMG/AMP modal 上方的 Manual、ERepo、GeneBe、In-house 來源摘要，所有可辨識 criteria 都會明確顯示 evidence strength，例如 `PM1_Moderate`、`PP3_Supporting`、`PVS1_Very_strong`；Manual 的 Global reusable 摘要也使用相同格式。這只調整畫面文字，不改原始 criteria 儲存格式、Apply 行為或 ACMG points 計算。
 - 主畫面 Comment textarea 改為與 Clinical presentation／Genetic counseling 相同的自動增高行為：載入既有內容、展開卡片及輸入文字時，都會依完整內容高度展開，不再在欄位內顯示垂直捲軸。
 

@@ -21,9 +21,12 @@ OUT_DIR="/datalake_Intermediate/pipeline/nextflow_output/${BATCH_NAME}"
 LAUNCH_DIR="/datalake_Intermediate/pipeline/nextflow_launch/${BATCH_NAME}"
 WORK_DIR="/raid/DGM/work/${BATCH_NAME}"
 
+umask 0002
 mkdir -p "${LAUNCH_DIR}" "${WORK_DIR}"
 nano ${OUT_DIR}/samplesheet.csv
 ```
+
+`/raid/DGM/work` 是 `dgm_nckuh` 共用的 scratch root，管理員應將它設定為 group `dgm_nckuh`、mode `2775`；配合執行時的 `umask 0002`，新建目錄會保留 group write 權限與 setgid group inheritance。
 
 Samplesheet format (`samplesheet.csv`):
 

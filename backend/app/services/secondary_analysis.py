@@ -430,6 +430,7 @@ LAUNCH_DIR="{SECONDARY_DGX_LAUNCH_ROOT}/${{BATCH_NAME}}"
 WORK_DIR="{SECONDARY_DGX_WORK_ROOT}/${{BATCH_NAME}}"
 STAGED_SAMPLESHEET="{staged_sheet}"
 NEXTFLOW_LOG="${{OUT_DIR}}/nextflow.log"
+ORIGINAL_UMASK="$(umask)"
 
 finish() {{
     status=$?
@@ -449,11 +450,13 @@ finish() {{
         echo "[NGS2] FAILED: exit status ${{status}}"
     fi
     echo "[NGS2] tmux pane kept open. Type 'exit' to close this shell."
+    umask "${{ORIGINAL_UMASK}}"
     exec bash -i
 }}
 trap finish EXIT
 
 source "{SECONDARY_DGX_ENV_SCRIPT}"
+umask 0002
 mkdir -p "${{OUT_DIR}}" "${{LAUNCH_DIR}}" "${{WORK_DIR}}"
 cp "${{STAGED_SAMPLESHEET}}" "${{OUT_DIR}}/samplesheet.csv"
 cd "${{LAUNCH_DIR}}"
@@ -495,7 +498,19 @@ find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -print
 read -r -p "確定刪除以上二級分析 Nextflow 暫存？[y/N] " answer
 case "${{answer}}" in
     y|Y|yes|YES)
-        find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} +
+        if ! find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} +; then
+            echo "錯誤：部分檔案無法刪除，請檢查上方訊息。"
+            echo "目前殘留項目："
+            find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 2 -print
+            exit 1
+        fi
+
+        if [ -n "$(find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+            echo "錯誤：清理指令完成，但目錄仍有殘留項目："
+            find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 2 -print
+            exit 1
+        fi
+
         echo "已清理：${{SECONDARY_WORK_ROOT}}"
         ;;
     *)
