@@ -1318,13 +1318,27 @@ def _section_methods(doc, test_type: str, *, health: bool = False) -> None:
                             "倒轉 (inversion) 或其他複雜性結構變異 "
                             "(complex structural variant)、組織特異性的鑲嵌 (tissue-specific mosaicism) "
                             "以及未包含在本次定序範圍之區域。")
+        next_note_number = 5
+        if is_wgs:
+            _add_paragraph(
+                doc,
+                f"  {next_note_number}. 本檢驗採用短讀長全基因體定序，仍有可能部分基因序列因定序覆蓋深度、"
+                "序列比對品質、基因體重複或高同源區域、變異類型等因素，而產生變異位點偵測疏漏。",
+            )
+            next_note_number += 1
+            _add_paragraph(
+                doc,
+                f"  {next_note_number}. 本檢驗方法並非長片段定序，某些藥物基因之變異組合無法完全決定相位 "
+                "(phasing) 及其單套體資訊 (haplotype)，因此可能存在不確定性。",
+            )
+            next_note_number += 1
         _add_paragraph(
             doc,
-            "  5. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異 "
+            f"  {next_note_number}. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異 "
             "(copy number variation) 分析結果；此項專一性分析僅用於 CYP2D6 藥物基因體學判讀，"
             "不代表本檢測已涵蓋其他基因之拷貝數變異。",
         )
-        next_note_number = 6
+        next_note_number += 1
     else:
         _add_paragraph(doc, "  4. 本檢測僅能檢測出基因內單一核苷酸變異 (single nucleotide variant) 、"
                             "小片段的缺失或插入 (small indel)及部分拷貝數變異 (copy number variant)，"
@@ -2980,65 +2994,19 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
             "疾病狀態、肝腎功能、併用藥物、生活習慣及其他基因因素影響。",
         )
     else:
-        genes = "、".join(dict.fromkeys(
-            gene
-            for group in drug_groups
-            for gene in group.get("genes", {})
-        ))
-        summary_rows = report_view["summary_rows"]
-        summary_drugs = list(dict.fromkeys(row["drug"] for row in summary_rows if row.get("drug")))
-        drug_text = "、".join(summary_drugs)
-        appendix_only_count = max(0, len(drug_groups) - len(summary_drugs))
-        summary_detail = ""
-        if summary_drugs:
-            summary_detail = (
-                f"；其中下方摘要表包含 {len(summary_drugs)} 項藥物：{drug_text}"
-                + (
-                    f"，其餘 {appendix_only_count} 項僅列於完整用藥建議"
-                    if appendix_only_count
-                    else ""
-                )
-            )
         _add_paragraph(
             doc,
-            f"  本次檢測發現 {len(drug_groups)} 項具臨床用藥參考價值的藥物結果"
-            f"{f'，涉及 {genes} 基因' if genes else ''}"
-            f"{summary_detail}。"
-            "此處列出用藥建議概覽與摘要，完整藥物建議詳見報告末端附錄。"
-            "若目前使用或未來考慮使用"
-            "相關藥物，建議由處方醫師參考下方結果或最新 FDA/CPIC 指引進行評估，"
+            "  此處列出基因型，完整藥物建議詳見報告末端附錄。若目前使用或未來考慮使用相關藥物，"
+            "建議由處方醫師參考下方結果或最新 FDA/CPIC 指引進行評估，"
             "或參考下述官方用藥說明處之連結。",
         )
-        _blank(doc)
-        _add_paragraph(doc, "  用藥建議概覽", bold=True)
-        for category in report_view["action_categories"]:
-            _add_paragraph(
-                doc,
-                f"    {category['action']}：{'、'.join(category['drugs'])}",
-            )
-        _add_paragraph(
-            doc,
-            "    其餘未列之藥物，未發現符合本報告回報規則之明確處方調整建議。",
-        )
-        _blank(doc)
-        _add_paragraph(doc, "  藥物建議摘要", bold=True)
-        _ascii_table(doc, columns=[
-            ("藥物", 24, "word-buffered"),
-            ("基因", 14, "buffered"),
-            ("建議處置", 18, "buffered"),
-            ("建議依據及等級", 27, "buffered"),
-        ], rows=[
-            [row["drug"], row["gene"], row["action"], row["source_level"]]
-            for row in summary_rows
-        ], indent="  ")
     _blank(doc)
-    _add_paragraph(doc, "  基因型與表現型", bold=True)
+    _add_paragraph(doc, "  基因型", bold=True)
     _ascii_table(doc, columns=[
         ("基因", 12),
-        ("基因型", 30, "genotype-buffered"),
-        ("表型", 42, "buffered"),
+        ("基因型", 72, "genotype-buffered"),
     ], rows=[
-        [row["gene"], row["genotype"], row["phenotype"]]
+        [row["gene"], row["genotype"]]
         for row in report_view["genotype_rows"]
     ], indent="  ")
     _render_health_pgx_resources(doc)

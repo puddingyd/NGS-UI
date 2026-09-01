@@ -3866,6 +3866,15 @@ function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
   clone.querySelectorAll(".manual-row").forEach(row => {
     if (row.querySelector(".manual-comment")) row.remove();
   });
+  // PMID entries are links on screen, but the print copy intentionally
+  // removes links. Freeze LitVar2 references as plain text first so the
+  // generic link cleanup does not leave only the separating commas.
+  clone.querySelectorAll(".litvar2-pmid-link, .litvar2-others-link").forEach(link => {
+    const text = document.createElement("span");
+    text.className = "litvar2-print-reference";
+    text.textContent = link.textContent || "";
+    link.replaceWith(text);
+  });
   clone.querySelectorAll("button, a").forEach(el => el.remove());
   clone.querySelectorAll("input, select, textarea").forEach(control => {
     if (control.matches('[type="checkbox"], [type="radio"]')) {
@@ -3966,6 +3975,8 @@ async function printReportCards() {
     .print-gene-section h3 { font-size: 13px; margin: 0 0 3px; }
     .print-gene-list p { margin: 0; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
     .print-field { display: inline-block; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .litvar2-references { white-space: normal; overflow-wrap: anywhere; }
+    .litvar2-print-reference { color: inherit; text-decoration: none; }
     .disease-row summary { line-height: 1.15; padding-top: 1px; padding-bottom: 1px; }
     details > summary { list-style: none; }
     details > summary::before { display: none !important; }

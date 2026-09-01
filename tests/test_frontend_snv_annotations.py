@@ -179,6 +179,21 @@ def test_disease_associated_warning_uses_selected_transcript_and_plain_label():
     assert "§五.4" not in warning
 
 
+def test_print_report_keeps_litvar2_reference_text_when_links_are_removed():
+    start = APP_JS.index("function _reportPrintBlock(")
+    end = APP_JS.index("function _printReportTimestamp", start)
+    print_block = APP_JS[start:end]
+
+    freeze = 'clone.querySelectorAll(".litvar2-pmid-link, .litvar2-others-link")'
+    remove_links = 'clone.querySelectorAll("button, a")'
+    assert freeze in print_block
+    assert 'text.className = "litvar2-print-reference"' in print_block
+    assert 'text.textContent = link.textContent || ""' in print_block
+    assert "link.replaceWith(text)" in print_block
+    assert print_block.index(freeze) < print_block.index(remove_links)
+    assert ".litvar2-references { white-space: normal; overflow-wrap: anywhere; }" in APP_JS
+
+
 def test_1000g_eas_is_the_fourth_af_row_and_stays_under_more():
     af_start = APP_JS.index('<span class="k">AF</span>')
     af_end = APP_JS.index('<button class="btn-more"', af_start)

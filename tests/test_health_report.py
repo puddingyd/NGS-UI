@@ -455,12 +455,15 @@ def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():
     docx_export._render_health_pgx_appendix(doc, "附錄一、完整用藥建議", groups)
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
-    assert all(heading in text for heading in (
-        "用藥建議概覽",
-        "藥物建議摘要",
-        "基因型與表現型",
-        "完整用藥建議",
-    ))
+    assert "基因型" in text
+    assert "完整用藥建議" in text
+    assert "用藥建議概覽" not in text
+    assert "藥物建議摘要" not in text
+    assert "基因型與表現型" not in text
+    assert "表型" not in next(
+        paragraph.text for paragraph in doc.paragraphs
+        if "基因        基因型" in paragraph.text
+    )
     assert "CYP2C19" in text and "Clopidogrel" in text
     assert "IFNL3" not in text
     assert "peginterferon" not in text.lower()
@@ -1191,7 +1194,7 @@ def test_health_header_and_acmg_caution_follow_current_template():
     assert "可採取醫療處置之遺傳性疾病" not in docx_export._HEALTH_ACMG_CAUTION
 
 
-def test_health_pgx_action_categories_remove_below_from_residual_drug_note():
+def test_health_pgx_main_body_matches_genotype_only_template():
     doc = Document()
     pgx = {
         "genes": {
@@ -1212,22 +1215,27 @@ def test_health_pgx_action_categories_remove_below_from_residual_drug_note():
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     paragraph_texts = [paragraph.text for paragraph in doc.paragraphs]
-    summary_index = next(
-        index for index, value in enumerate(paragraph_texts)
-        if value.startswith("  本次檢測發現")
+    intro_index = paragraph_texts.index(
+        "  此處列出基因型，完整藥物建議詳見報告末端附錄。若目前使用或未來考慮使用相關藥物，"
+        "建議由處方醫師參考下方結果或最新 FDA/CPIC 指引進行評估，"
+        "或參考下述官方用藥說明處之連結。"
     )
     assert "其餘未列於下方之藥物" not in text
-    assert "其餘未列之藥物" in text
+    assert "其餘未列之藥物" not in text
+    assert "本次檢測發現" not in text
+    assert "用藥建議概覽" not in text
+    assert "藥物建議摘要" not in text
+    assert "基因型與表現型" not in text
     assert "參考下方結果或最新 FDA/CPIC 指引進行評估" in text
     assert "或參考下述官方用藥說明處之連結" in text
-    assert paragraph_texts[summary_index + 1] == ""
-    assert text.index("用藥建議概覽") < text.index("藥物建議摘要")
+    assert paragraph_texts[intro_index + 1] == ""
+    assert paragraph_texts[intro_index + 2] == "  基因型"
     assert text.index("官方用藥資訊查詢") < text.index("四、檢測方法說明")
     assert "完整用藥建議" not in text
     assert groups
 
 
-def test_health_pgx_intro_lists_every_summary_drug_without_truncation():
+def test_health_pgx_intro_omits_dynamic_drug_summary_and_phenotype():
     doc = Document()
     pgx = {
         "genes": {
@@ -1257,13 +1265,13 @@ def test_health_pgx_intro_lists_every_summary_drug_without_truncation():
 
     intro = next(
         paragraph.text for paragraph in doc.paragraphs
-        if paragraph.text.startswith("  本次檢測發現")
+        if paragraph.text.startswith("  此處列出基因型")
     )
-    assert "下方摘要表包含 13 項藥物" in intro
-    assert "其餘 1 項僅列於完整用藥建議" in intro
-    assert "Drug-13" in intro
+    assert "本次檢測發現" not in intro
+    assert "下方摘要表" not in intro
+    assert "Drug-13" not in intro
     assert "Appendix-only-drug" not in intro
-    assert "及其他藥物之使用" not in intro
+    assert "表現型" not in intro
 
 
 def test_health_pgx_hla_positive_wins_over_other_negative_alleles():
@@ -1407,12 +1415,27 @@ def test_health_wgs_methods_include_scope_specific_cnv_notes():
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "3. 本次檢測平均定序深度 ≧ 27X" in text
     assert "無法檢測出拷貝數變異 (copy number variant)、轉位" in text
-    assert "5. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異" in text
+    assert "5. 本檢驗採用短讀長全基因體定序" in text
+    assert "6. 本檢驗方法並非長片段定序" in text
+    assert "相位 (phasing) 及其單套體資訊 (haplotype)" in text
+    assert "7. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異" in text
     assert "僅用於 CYP2D6 藥物基因體學判讀" in text
     assert "ACMG SF 或其他基因" not in text
     assert "不代表本檢測已涵蓋其他基因之拷貝數變異" in text
-    assert "6. 本實驗方法以次世代方法定序粒線體DNA基因序列" in text
-    assert "7. 本檢測報告僅供醫療專業人員參考" in text
+    assert "8. 本實驗方法以次世代方法定序粒線體DNA基因序列" in text
+    assert "9. 本檢測報告僅供醫療專業人員參考" in text
+
+
+def test_health_wes_methods_do_not_claim_wgs_specific_limitations():
+    doc = Document()
+
+    docx_export._section_methods(doc, "WES", health=True)
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "短讀長全基因體定序" not in text
+    assert "相位 (phasing)" not in text
+    assert "5. 藥物基因體學分析中，CYP2D6 基因型判定" in text
+    assert "6. 本檢測報告僅供醫療專業人員參考" in text
 
 
 def test_diagnosis_wgs_methods_keep_existing_depth_and_numbering():
