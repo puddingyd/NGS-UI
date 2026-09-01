@@ -1533,6 +1533,12 @@ _PGX_CPIC_LEVEL_A_GENES = (
     "UGT1A1", "VKORC1",
 )
 _PGX_CPIC_LEVEL_A_SET = set(_PGX_CPIC_LEVEL_A_GENES)
+_PGX_HLA_SCREEN_ALLELES = (
+    ("HLA-A", "*31:01"),
+    ("HLA-B", "*15:02"),
+    ("HLA-B", "*57:01"),
+    ("HLA-B", "*58:01"),
+)
 _PGX_FULL_RECOMMENDATION_COLUMNS = [
     ("藥物", 23, "word-buffered"),
     ("基因與表型", 18, "word-buffered"),
@@ -2454,6 +2460,74 @@ def _pgx_allele_function(details: dict) -> str:
     return "；".join(values)
 
 
+def _pgx_hla_called_genotype(pgx: dict, gene: str) -> str:
+    payload = (pgx.get("genes") or {}).get(gene) or {}
+    details = payload.get("details") or {}
+    allele_names = [
+        str(details.get(key) or "").strip()
+        for key in ("allele1_name", "allele2_name")
+        if str(details.get(key) or "").strip()
+    ]
+    if allele_names:
+        return "/".join(allele_names)
+    diplotype, _ = _pgx_gene_result(pgx, gene)
+    # Some legacy projections used the diplotype label to carry only the
+    # allele-specific screen statuses.  Those strings are evidence for the
+    # rows below, not an HLA genotype call.
+    if re.search(r"\b(?:positive|negative)\b", diplotype or "", flags=re.I):
+        return ""
+    return str(diplotype or "").strip()
+
+
+def _pgx_hla_explicit_status(pgx: dict, gene: str, allele: str) -> str:
+    payload = (pgx.get("genes") or {}).get(gene) or {}
+    details = payload.get("details") or {}
+    sources = [
+        *(details.get("phenotypes") or []),
+        details.get("label") or "",
+        payload.get("phenotype") or "",
+        payload.get("diplotype") or "",
+    ]
+    token = re.escape(allele.lstrip("*")).replace(":", r"\s*:\s*")
+    pattern = re.compile(
+        rf"(?<!\d){token}(?!\d)\s*(?:[:：=]\s*)?(positive|negative)\b",
+        flags=re.I,
+    )
+    for source in sources:
+        match = pattern.search(str(source or ""))
+        if match:
+            return match.group(1).title()
+    return ""
+
+
+def _pgx_hla_screening_rows(pgx: dict) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    genotype_by_gene = {
+        gene: _pgx_hla_called_genotype(pgx, gene)
+        for gene, _allele in _PGX_HLA_SCREEN_ALLELES
+    }
+    for gene, allele in _PGX_HLA_SCREEN_ALLELES:
+        status = _pgx_hla_explicit_status(pgx, gene, allele)
+        if not status:
+            genotype = genotype_by_gene.get(gene) or ""
+            normalized = genotype.strip().lower()
+            if normalized in {"", "-", "—", "unknown", "no result", "n/a", "na"}:
+                status = "No Result"
+            else:
+                token = re.escape(allele.lstrip("*")).replace(":", r"\s*:\s*")
+                status = (
+                    "Positive"
+                    if re.search(rf"(?<!\d){token}(?!\d)", genotype, flags=re.I)
+                    else "Negative"
+                )
+        rows.append({
+            "parent_gene": gene,
+            "gene": f"{gene}{allele}",
+            "genotype": status,
+        })
+    return rows
+
+
 def _pgx_genotype_rows(pgx: dict) -> list[list[str]]:
     rows: list[list[str]] = []
     for gene in _PGX_CPIC_LEVEL_A_GENES:
@@ -2857,6 +2931,7 @@ def build_pgx_report_view(pgx: dict) -> dict:
         {"gene": gene, "genotype": genotype, "phenotype": phenotype}
         for gene, genotype, phenotype in _pgx_genotype_rows(payload)
     ]
+    hla_screening_rows = _pgx_hla_screening_rows(payload)
     action_categories = [
         {"action": action, "drugs": drugs}
         for action, drugs in _pgx_action_categories(drug_groups)
@@ -2956,6 +3031,7 @@ def build_pgx_report_view(pgx: dict) -> dict:
         "action_categories": action_categories,
         "summary_rows": summary_rows,
         "genotype_rows": genotype_rows,
+        "hla_screening_rows": hla_screening_rows,
         "analysis_genes": analysis_genes,
         "analysis_action_categories": analysis_action_categories,
         "full_recommendations": full_recommendations,
@@ -3002,13 +3078,21 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
         )
     _blank(doc)
     _add_paragraph(doc, "  基因型", bold=True)
+    hla_by_parent: dict[str, list[dict]] = {}
+    for row in report_view.get("hla_screening_rows") or _pgx_hla_screening_rows(pgx or {}):
+        hla_by_parent.setdefault(row.get("parent_gene") or "", []).append(row)
+    genotype_table_rows: list[list[str]] = []
+    for row in report_view["genotype_rows"]:
+        gene = row["gene"]
+        genotype_table_rows.append([gene, row["genotype"]])
+        genotype_table_rows.extend([
+            [hla_row["gene"], hla_row["genotype"]]
+            for hla_row in hla_by_parent.get(gene, [])
+        ])
     _ascii_table(doc, columns=[
-        ("基因", 12),
-        ("基因型", 72, "genotype-buffered"),
-    ], rows=[
-        [row["gene"], row["genotype"]]
-        for row in report_view["genotype_rows"]
-    ], indent="  ")
+        ("基因", 16),
+        ("基因型", 68, "genotype-buffered"),
+    ], rows=genotype_table_rows, indent="  ")
     _render_health_pgx_resources(doc)
     return drug_groups
 

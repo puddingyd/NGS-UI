@@ -416,6 +416,113 @@ def test_pgx_genotype_rows_use_fixed_cpic_level_a_scope():
     assert any(row[0] == "ABCG2" and row[1:] == ["—", "No phenotype assigned"] for row in rows)
 
 
+def test_pgx_hla_screening_rows_follow_reportable_allele_order():
+    pgx = {
+        "genes": {
+            "HLA-A": {
+                "details": {
+                    "label": "A*11:01/A*02:06",
+                    "phenotypes": ["HLA-A*31:01 negative"],
+                },
+            },
+            "HLA-B": {
+                "details": {
+                    "label": "B*40:01/B*15:02",
+                    "phenotypes": [
+                        "HLA-B*15:02 positive",
+                        "HLA-B*57:01 negative",
+                        "HLA-B*58:01 negative",
+                    ],
+                },
+            },
+        },
+    }
+
+    assert docx_export._pgx_hla_screening_rows(pgx) == [
+        {"parent_gene": "HLA-A", "gene": "HLA-A*31:01", "genotype": "Negative"},
+        {"parent_gene": "HLA-B", "gene": "HLA-B*15:02", "genotype": "Positive"},
+        {"parent_gene": "HLA-B", "gene": "HLA-B*57:01", "genotype": "Negative"},
+        {"parent_gene": "HLA-B", "gene": "HLA-B*58:01", "genotype": "Negative"},
+    ]
+
+
+def test_pgx_hla_screening_rows_can_derive_status_from_called_genotype():
+    pgx = {
+        "genes": {
+            "HLA-A": {
+                "details": {
+                    "label": "",
+                    "allele1_name": "A*31:01",
+                    "allele2_name": "A*02:06",
+                },
+            },
+            "HLA-B": {
+                "details": {
+                    "label": "",
+                    "allele1_name": "B*40:01",
+                    "allele2_name": "B*15:02",
+                },
+            },
+        },
+    }
+
+    rows = docx_export._pgx_hla_screening_rows(pgx)
+
+    assert [row["genotype"] for row in rows] == [
+        "Positive",
+        "Positive",
+        "Negative",
+        "Negative",
+    ]
+
+
+def test_pgx_hla_screening_rows_do_not_treat_missing_calls_as_negative():
+    rows = docx_export._pgx_hla_screening_rows({"genes": {}})
+
+    assert {row["genotype"] for row in rows} == {"No Result"}
+
+
+def test_health_pgx_genotype_table_inserts_hla_screens_after_parent_gene():
+    doc = Document()
+    pgx = {
+        "genes": {
+            "HLA-A": {
+                "details": {
+                    "label": "A*11:01/A*02:06",
+                    "phenotypes": ["*31:01 negative"],
+                },
+            },
+            "HLA-B": {
+                "details": {
+                    "label": "B*40:01/B*15:02",
+                    "phenotypes": [
+                        "*15:02 positive",
+                        "*57:01 negative",
+                        "*58:01 negative",
+                    ],
+                },
+            },
+        },
+    }
+
+    docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    normalized_lines = [re.sub(r"\s+", " ", line.strip()) for line in text.splitlines()]
+    assert normalized_lines.index("HLA-A A*11:01/A*02:06") < normalized_lines.index(
+        "HLA-A*31:01 Negative"
+    )
+    assert normalized_lines.index("HLA-A*31:01 Negative") < normalized_lines.index(
+        "HLA-B B*40:01/B*15:02"
+    )
+    assert normalized_lines.index("HLA-B B*40:01/B*15:02") < normalized_lines.index(
+        "HLA-B*15:02 Positive"
+    )
+    assert normalized_lines.index("HLA-B*15:02 Positive") < normalized_lines.index(
+        "HLA-B*57:01 Negative"
+    ) < normalized_lines.index("HLA-B*58:01 Negative")
+
+
 def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():
     pgx = {
         "genes": {
@@ -460,10 +567,11 @@ def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():
     assert "用藥建議概覽" not in text
     assert "藥物建議摘要" not in text
     assert "基因型與表現型" not in text
-    assert "表型" not in next(
+    genotype_table = next(
         paragraph.text for paragraph in doc.paragraphs
-        if "基因        基因型" in paragraph.text
+        if re.search(r"基因\s+基因型", paragraph.text)
     )
+    assert "表型" not in genotype_table
     assert "CYP2C19" in text and "Clopidogrel" in text
     assert "IFNL3" not in text
     assert "peginterferon" not in text.lower()
