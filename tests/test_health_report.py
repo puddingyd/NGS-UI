@@ -589,12 +589,23 @@ def test_pgx_health_genotype_rows_use_consistent_allele_notation():
     assert by_test["HLA-B"] == {
         "test": "HLA-B", "allele1": "B*58:01", "allele2": "B*58:01",
     }
-    assert by_test["HLA-B*58:01"] == {
-        "test": "HLA-B*58:01", "allele1": "Positive", "allele2": "Positive",
+    assert by_test["  HLA-B*58:01"] == {
+        "test": "  HLA-B*58:01", "allele1": "Positive", "allele2": "Positive",
     }
-    assert by_test["HLA-B*15:02"] == {
-        "test": "HLA-B*15:02", "allele1": "Negative", "allele2": "Negative",
+    assert by_test["  HLA-B*15:02"] == {
+        "test": "  HLA-B*15:02", "allele1": "Negative", "allele2": "Negative",
     }
+    assert [
+        row["test"] for row in rows
+        if row["test"].strip() in {
+            "HLA-A*31:01", "HLA-B*15:02", "HLA-B*57:01", "HLA-B*58:01",
+        }
+    ] == [
+        "  HLA-A*31:01",
+        "  HLA-B*15:02",
+        "  HLA-B*57:01",
+        "  HLA-B*58:01",
+    ]
     assert by_test["CACNA1S"] == {
         "test": "CACNA1S", "allele1": "No Result", "allele2": "No Result",
     }
@@ -685,6 +696,22 @@ def test_health_pgx_genotype_table_inserts_hla_screens_after_parent_gene():
     assert normalized_lines.index("HLA-B*15:02 Negative Positive") < normalized_lines.index(
         "HLA-B*57:01 Negative Negative"
     ) < normalized_lines.index("HLA-B*58:01 Negative Negative")
+
+    raw_lines = text.splitlines()
+    parent_a = next(line for line in raw_lines if line.lstrip().startswith("HLA-A "))
+    parent_b = next(line for line in raw_lines if line.lstrip().startswith("HLA-B "))
+    for test_name, parent_line in (
+        ("HLA-A*31:01", parent_a),
+        ("HLA-B*15:02", parent_b),
+        ("HLA-B*57:01", parent_b),
+        ("HLA-B*58:01", parent_b),
+    ):
+        child_line = next(
+            line for line in raw_lines if line.lstrip().startswith(f"{test_name} ")
+        )
+        assert len(child_line) - len(child_line.lstrip()) == (
+            len(parent_line) - len(parent_line.lstrip()) + 2
+        )
 
 
 def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():

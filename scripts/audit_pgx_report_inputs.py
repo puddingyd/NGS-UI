@@ -478,7 +478,7 @@ def _hla_rows(
             **base_row,
             "row_kind": "hla_screen",
             "gene": f"{gene}{target}",
-            "test": f"{gene}{target}",
+            "test": f"  {gene}{target}",
             "source_rule": "JSON HLA typing/status",
             "allele1": allele1,
             "allele2": allele2,

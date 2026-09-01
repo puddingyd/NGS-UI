@@ -93,6 +93,10 @@ def test_audit_projects_json_alleles_and_mt_rnr1_tsv_fallback(tmp_path):
     )
     assert rows["HLA-B*58:01"]["allele1"] == "Positive"
     assert rows["HLA-B*58:01"]["allele2"] == "Positive"
+    for gene in (
+        "HLA-A*31:01", "HLA-B*15:02", "HLA-B*57:01", "HLA-B*58:01",
+    ):
+        assert rows[gene]["test"] == f"  {gene}"
     assert rows["MT-RNR1"]["source_rule"] == "TSV fallback"
     assert (rows["MT-RNR1"]["allele1"], rows["MT-RNR1"]["allele2"]) == (
         "Reference", "N/A",

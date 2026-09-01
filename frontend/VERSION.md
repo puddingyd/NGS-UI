@@ -12,7 +12,7 @@
 - 修正 SNV/Indel 卡片初次載入時 in-silico predictor 高度判斷偶爾過度展開：現在只以 LitVar2 實際可見內容（關閉的 details 只計 summary）決定可多顯示的列數，並在 LitVar2 尺寸穩定或改變後自動重新校正；保留至少六項直接顯示及按 More 展開其餘內容的行為。
 - 修正「輸出 PDF」的 LitVar2 PMID 顯示：列印副本移除外部連結前，會先把最多五筆 `PMID:...` 與 `and N others` 轉成可換行的純文字，不再因連結被刪除而只剩一串逗號；`Merged from N LitVar2 records` 摘要仍會保留。
 - 健檢 DOCX 依 TITAN v4 標註版調整 PGx 主文：移除用藥建議概覽、藥物建議摘要、表型欄與動態藥物數量文字，固定 21 genes 統一為「基因／檢測項目、Allele 1、Allele 2」三欄。一般 star allele／haplotype 與已分相 DPYD 各 allele 分欄；DPYD 多筆未定相 `sourceDiplotypes` 則跨兩個結果欄完整列出所有 named variants、het/hom 並明示「相位未定」，不再只取第一筆。CFTR Reference 不再重複長的 ivacaftor-response 功能名稱；ABCG2／VKORC1 以 rsID＋HGVS 搭配 transcript-oriented base 的 Reference／Variant 表示。MT-RNR1 與來源只有單一 allele 的 G6PD 不複製成兩份，第二欄顯示 `N/A`；完整用藥建議仍置於附錄。WGS 檢測方法另新增短讀長偵測限制與 phasing／haplotype 不確定性兩點，後續題號順延。
-- 健檢 DOCX 的 HLA 結果改為逐 allele 呈現：保留 HLA-A／HLA-B 的 Allele 1／Allele 2 分型，並分別加列 `HLA-A*31:01` 與 `HLA-B*15:02`、`HLA-B*57:01`、`HLA-B*58:01`，兩欄各自顯示 Positive／Negative，因此 homozygous risk allele 會顯示兩個 Positive；無可靠分型或明確狀態時顯示 `No Result`，不由 aggregate positive 推定兩個 copies。
+- 健檢 DOCX 的 HLA 結果改為逐 allele 呈現：保留 HLA-A／HLA-B 的 Allele 1／Allele 2 分型，並分別加列 `HLA-A*31:01` 與 `HLA-B*15:02`、`HLA-B*57:01`、`HLA-B*58:01`；四個篩檢子列的第一欄縮排兩格以呈現 HLA-A／HLA-B 展開階層。兩欄各自顯示 Positive／Negative，因此 homozygous risk allele 會顯示兩個 Positive；無可靠分型或明確狀態時顯示 `No Result`，不由 aggregate positive 推定兩個 copies。
 
 ### v9.2 — 2026-08-31
 

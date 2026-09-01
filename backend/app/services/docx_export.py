@@ -2745,7 +2745,7 @@ def _pgx_health_genotype_rows(pgx: dict) -> list[dict[str, str]]:
             allele2 = "N/A"
         rows.append({"test": test_label, "allele1": allele1, "allele2": allele2})
         rows.extend({
-            "test": hla_row["gene"],
+            "test": f"  {hla_row['gene']}",
             "allele1": hla_row["allele1"],
             "allele2": hla_row["allele2"],
         } for hla_row in hla_by_parent.get(gene, []))
