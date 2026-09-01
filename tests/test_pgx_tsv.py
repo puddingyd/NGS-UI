@@ -109,6 +109,77 @@ def test_load_pgx_omits_unrenderable_object_messages(tmp_path):
     assert result["genes"]["CYP2B6"]["details"]["messages"] == ["Readable gene message"]
 
 
+def test_load_pgx_preserves_all_source_diplotypes_and_variant_phase(tmp_path):
+    report = {
+        "genes": {
+            "DPYD": {
+                "phased": False,
+                "effectivelyPhased": False,
+                "sourceDiplotypes": [
+                    {
+                        "label": "c.1627A>G(*5)",
+                        "allele1": {"name": "c.1627A>G(*5)"},
+                        "allele2": None,
+                        "phenotypes": ["Indeterminate"],
+                    },
+                    {
+                        "label": "c.1896T>C",
+                        "allele1": {"name": "c.1896T>C"},
+                        "allele2": None,
+                        "phenotypes": ["Indeterminate"],
+                    },
+                ],
+                "variants": [
+                    {
+                        "dbSnpId": "rs1801159",
+                        "chromosome": "chr1",
+                        "position": 1,
+                        "call": "T/C",
+                        "referenceAllele": "T",
+                        "alleles": ["c.1627A>G(*5)"],
+                        "phased": False,
+                        "phaseSet": None,
+                    },
+                    {
+                        "dbSnpId": "rs17376848",
+                        "chromosome": "chr1",
+                        "position": 2,
+                        "call": "A/G",
+                        "referenceAllele": "A",
+                        "alleles": ["c.1896T>C"],
+                        "phased": False,
+                        "phaseSet": None,
+                    },
+                ],
+            },
+        },
+    }
+    json_path = tmp_path / "sample.pharmcat.report.json"
+    json_path.write_text(json.dumps(report), encoding="utf-8")
+
+    result = load_pgx(tmp_path / "missing.tsv", json_path)
+    details = result["genes"]["DPYD"]["details"]
+
+    assert [row["allele1_name"] for row in details["source_diplotypes"]] == [
+        "c.1627A>G(*5)", "c.1896T>C",
+    ]
+    assert details["effectively_phased"] is False
+    assert details["variants"] == [
+        {
+            "rsid": "rs1801159", "chr": "chr1", "pos": 1,
+            "call": "T/C", "alleles": "c.1627A>G(*5)",
+            "allele_names": ["c.1627A>G(*5)"], "reference": "T",
+            "phased": False, "phase_set": "",
+        },
+        {
+            "rsid": "rs17376848", "chr": "chr1", "pos": 2,
+            "call": "A/G", "alleles": "c.1896T>C",
+            "allele_names": ["c.1896T>C"], "reference": "A",
+            "phased": False, "phase_set": "",
+        },
+    ]
+
+
 def test_staged_pgx_loader_attaches_shared_report_view(tmp_path, monkeypatch):
     sample_dir = tmp_path / "S1"
     sample_dir.mkdir()

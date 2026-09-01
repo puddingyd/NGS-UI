@@ -481,7 +481,7 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
 
 def _ascii_table(doc,
                  columns: list[tuple],  # (header, width) or (header, width, mode)
-                 rows: list[list[str]],
+                 rows: list[list[str] | dict],
                  indent: str = "    ") -> None:
     """Render a ==== bounded table where each column has a fixed display
     width; over-long cells wrap per the column's `mode` ("char" default
@@ -500,21 +500,33 @@ def _ascii_table(doc,
     total  = sum(widths) + 2   # +1 pad on each side
     sep    = "=" * total
 
-    def row_lines(cells: list[str], header: bool = False) -> list[str]:
+    def row_lines(cells: list[str] | dict, header: bool = False) -> list[str]:
+        row_widths = widths
+        row_modes = modes
+        if isinstance(cells, dict):
+            row_widths = list(cells.get("widths") or [])
+            row_modes = list(cells.get("modes") or [])
+            cells = list(cells.get("cells") or [])
+            if (
+                len(cells) != len(row_widths)
+                or len(cells) != len(row_modes)
+                or sum(row_widths) != sum(widths)
+            ):
+                raise ValueError("ASCII table custom row geometry does not match header")
         # Headers don't wrap (kept short by design).
         if header:
-            parts = [_pad_right(str(c or ""), w) for c, w in zip(cells, widths)]
+            parts = [_pad_right(str(c or ""), w) for c, w in zip(cells, row_widths)]
             return [f"{indent} {''.join(parts)} "]
         wrapped = [
             _wrap_to_cols(str(c or ""), w, mode=m)
-            for c, w, m in zip(cells, widths, modes)
+            for c, w, m in zip(cells, row_widths, row_modes)
         ]
         n = max((len(w) for w in wrapped), default=1)
         lines = []
         for i in range(n):
             parts = [
                 _pad_right(cell_lines[i] if i < len(cell_lines) else "", w)
-                for cell_lines, w in zip(wrapped, widths)
+                for cell_lines, w in zip(wrapped, row_widths)
             ]
             lines.append(f"{indent} {''.join(parts)} ")
         return lines
@@ -1539,6 +1551,23 @@ _PGX_HLA_SCREEN_ALLELES = (
     ("HLA-B", "*57:01"),
     ("HLA-B", "*58:01"),
 )
+_PGX_HEALTH_MARKERS = {
+    "ABCG2": {
+        "label": "ABCG2 rs2231142 (c.421C>A)",
+        "reference": "C",
+        "variant": "A",
+        "base_map": {"G": "C", "T": "A", "C": "C", "A": "A"},
+    },
+    "VKORC1": {
+        "label": "VKORC1 rs9923231 (c.-1639G>A)",
+        "reference": "G",
+        "variant": "A",
+        "base_map": {"C": "G", "T": "A", "G": "G", "A": "A"},
+    },
+}
+_PGX_NO_RESULT_VALUES = {
+    "", "-", "—", "n/a", "na", "unknown", "no result", "not available",
+}
 _PGX_FULL_RECOMMENDATION_COLUMNS = [
     ("藥物", 23, "word-buffered"),
     ("基因與表型", 18, "word-buffered"),
@@ -2460,23 +2489,143 @@ def _pgx_allele_function(details: dict) -> str:
     return "；".join(values)
 
 
-def _pgx_hla_called_genotype(pgx: dict, gene: str) -> str:
+def _pgx_is_no_result(value: str) -> bool:
+    return str(value or "").strip().lower() in _PGX_NO_RESULT_VALUES
+
+
+def _pgx_normalize_health_allele(value: str) -> str:
+    text = str(value or "").strip()
+    if _pgx_is_no_result(text):
+        return "No Result"
+    if text.lower() == "reference":
+        return "Reference"
+    if text.lower() == "variant":
+        return "Variant"
+    text = re.sub(r"\breference\b", "Reference", text, flags=re.I)
+    text = re.sub(r"\bvariant\b", "Variant", text, flags=re.I)
+    if re.match(r"^[cmng]\.[^\s()]+\(", text, flags=re.I):
+        text = re.sub(r"\(", " (", text, count=1)
+    return text
+
+
+def _pgx_split_source_label(label: str) -> tuple[str, str]:
+    value = str(label or "").strip()
+    if "/" not in value:
+        return value, ""
+    allele1, allele2 = value.split("/", 1)
+    return allele1.strip(), allele2.strip()
+
+
+def _pgx_source_alleles(pgx: dict, gene: str) -> tuple[str, str]:
+    """Return the two source allele calls without inventing a diploid call."""
     payload = (pgx.get("genes") or {}).get(gene) or {}
     details = payload.get("details") or {}
-    allele_names = [
-        str(details.get(key) or "").strip()
-        for key in ("allele1_name", "allele2_name")
-        if str(details.get(key) or "").strip()
-    ]
-    if allele_names:
-        return "/".join(allele_names)
-    diplotype, _ = _pgx_gene_result(pgx, gene)
-    # Some legacy projections used the diplotype label to carry only the
-    # allele-specific screen statuses.  Those strings are evidence for the
-    # rows below, not an HLA genotype call.
-    if re.search(r"\b(?:positive|negative)\b", diplotype or "", flags=re.I):
+    label_allele1, label_allele2 = _pgx_split_source_label(details.get("label") or "")
+    detail_allele1 = str(details.get("allele1_name") or "").strip()
+    detail_allele2 = str(details.get("allele2_name") or "").strip()
+    if (
+        gene in {"HLA-A", "HLA-B"}
+        and not detail_allele1
+        and not detail_allele2
+        and re.search(r"\b(?:positive|negative)\b", details.get("label") or "", flags=re.I)
+    ):
+        # Some legacy labels contain aggregate screen statuses instead of HLA
+        # typing.  They can fill a screen row but must not be treated as two
+        # called HLA alleles.
+        label_allele1, label_allele2 = "", ""
+    if gene == "CFTR" and label_allele1 and label_allele2:
+        # PharmCAT's CFTR allele names describe ivacaftor response rather than
+        # the called allele.  Its source label carries the concise genotype
+        # (currently Reference/Reference) used by the health report.
+        allele1, allele2 = label_allele1, label_allele2
+    else:
+        allele1 = detail_allele1 if not _pgx_is_no_result(detail_allele1) else label_allele1
+        allele2 = detail_allele2 if not _pgx_is_no_result(detail_allele2) else label_allele2
+
+    # PharmCAT can leave MT-RNR1 unresolved while the dedicated PGx TSV has a
+    # validated mitochondrial result.  This is the only permitted TSV fallback.
+    if gene == "MT-RNR1" and _pgx_is_no_result(allele1) and _pgx_is_no_result(allele2):
+        tsv_diplotype = str(payload.get("diplotype") or "").strip()
+        if not _pgx_is_no_result(tsv_diplotype):
+            allele1, allele2 = tsv_diplotype, ""
+
+    return (
+        _pgx_normalize_health_allele(allele1),
+        _pgx_normalize_health_allele(allele2),
+    )
+
+
+def _pgx_variant_zygosity(variant: dict) -> str:
+    call = str(variant.get("call") or "").strip()
+    reference = str(variant.get("reference") or "").strip()
+    alleles = [value for value in re.split(r"[/|]", call) if value]
+    if not alleles:
         return ""
-    return str(diplotype or "").strip()
+    unique = set(alleles)
+    if len(unique) == 1:
+        return "ref" if reference and unique == {reference} else "hom"
+    if reference and reference in unique:
+        return "het"
+    return "non-reference"
+
+
+def _pgx_dpyd_unphased_variants(pgx: dict) -> list[str]:
+    """Return every DPYD named variant when PharmCAT emits separate sources.
+
+    Multiple source diplotypes in the current short-read output are separate,
+    unphased variant observations rather than two assigned chromosomal alleles.
+    Keeping them in one result spanning both allele columns prevents data loss
+    without inventing cis/trans phase.
+    """
+    payload = (pgx.get("genes") or {}).get("DPYD") or {}
+    details = payload.get("details") or {}
+    sources = details.get("source_diplotypes") or []
+    if len(sources) <= 1 or details.get("effectively_phased"):
+        return []
+
+    variants = details.get("variants") or []
+
+    def key(value: str) -> str:
+        return re.sub(r"\s+", "", str(value or "")).lower()
+
+    observed: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        for source_name in (source.get("allele1_name"), source.get("allele2_name")):
+            name = _pgx_normalize_health_allele(source_name)
+            name_key = key(name)
+            if _pgx_is_no_result(name) or name == "Reference" or name_key in seen:
+                continue
+            seen.add(name_key)
+            zygosity = ""
+            for variant in variants:
+                candidates = variant.get("allele_names") or []
+                if any(key(candidate) == key(name) for candidate in candidates):
+                    zygosity = _pgx_variant_zygosity(variant)
+                    break
+            observed.append(f"{name} ({zygosity})" if zygosity else name)
+    return observed
+
+
+def _pgx_hla_display_allele(gene: str, allele: str) -> str:
+    value = _pgx_normalize_health_allele(allele)
+    if value == "No Result":
+        return value
+    value = re.sub(r"^HLA-", "", value, flags=re.I)
+    prefix = gene.rsplit("-", 1)[-1]
+    if value.startswith("*"):
+        return f"{prefix}{value}"
+    return value
+
+
+def _pgx_hla_allele_matches(gene: str, allele: str, target: str) -> bool:
+    value = _pgx_hla_display_allele(gene, allele)
+    match = re.search(r"\*([0-9]+(?::[0-9A-Z]+)+)", value, flags=re.I)
+    if not match:
+        return False
+    called = match.group(1).upper()
+    expected = target.lstrip("*").upper()
+    return called == expected or called.startswith(f"{expected}:")
 
 
 def _pgx_hla_explicit_status(pgx: dict, gene: str, allele: str) -> str:
@@ -2502,29 +2651,104 @@ def _pgx_hla_explicit_status(pgx: dict, gene: str, allele: str) -> str:
 
 def _pgx_hla_screening_rows(pgx: dict) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    genotype_by_gene = {
-        gene: _pgx_hla_called_genotype(pgx, gene)
+    alleles_by_gene = {
+        gene: _pgx_source_alleles(pgx, gene)
         for gene, _allele in _PGX_HLA_SCREEN_ALLELES
     }
     for gene, allele in _PGX_HLA_SCREEN_ALLELES:
-        status = _pgx_hla_explicit_status(pgx, gene, allele)
-        if not status:
-            genotype = genotype_by_gene.get(gene) or ""
-            normalized = genotype.strip().lower()
-            if normalized in {"", "-", "—", "unknown", "no result", "n/a", "na"}:
-                status = "No Result"
-            else:
-                token = re.escape(allele.lstrip("*")).replace(":", r"\s*:\s*")
-                status = (
-                    "Positive"
-                    if re.search(rf"(?<!\d){token}(?!\d)", genotype, flags=re.I)
-                    else "Negative"
-                )
+        called_alleles = alleles_by_gene.get(gene) or ("No Result", "No Result")
+        statuses = [
+            "" if _pgx_is_no_result(called) else (
+                "Positive" if _pgx_hla_allele_matches(gene, called, allele) else "Negative"
+            )
+            for called in called_alleles
+        ]
+        explicit_status = _pgx_hla_explicit_status(pgx, gene, allele)
+        missing_indexes = [index for index, status in enumerate(statuses) if not status]
+        if explicit_status == "Negative":
+            for index in missing_indexes:
+                statuses[index] = "Negative"
+        elif explicit_status == "Positive" and missing_indexes:
+            # An aggregate positive proves at least one copy, but cannot prove
+            # two copies when the full HLA typing is absent.
+            if "Positive" not in statuses:
+                statuses[missing_indexes[0]] = "Positive"
+        statuses = [status or "No Result" for status in statuses]
         rows.append({
             "parent_gene": gene,
             "gene": f"{gene}{allele}",
-            "genotype": status,
+            "allele1": statuses[0],
+            "allele2": statuses[1],
+            "genotype": "/".join(statuses),
         })
+    return rows
+
+
+def _pgx_marker_allele(gene: str, allele: str) -> str:
+    value = _pgx_normalize_health_allele(allele)
+    if value == "No Result":
+        return value
+    marker = _PGX_HEALTH_MARKERS[gene]
+    normalized = value.lower()
+    explicit_status = (
+        "Reference" if "reference" in normalized
+        else "Variant" if "variant" in normalized
+        else ""
+    )
+    base_match = re.search(r"\(([ACGT])\)", value, flags=re.I)
+    if not base_match:
+        bases = re.findall(r"(?<![A-Z])([ACGT])(?![A-Z])", value, flags=re.I)
+        base_match_value = bases[-1] if bases else ""
+    else:
+        base_match_value = base_match.group(1)
+    transcript_base = marker["base_map"].get(base_match_value.upper(), "")
+    if not explicit_status and transcript_base:
+        if transcript_base == marker["reference"]:
+            explicit_status = "Reference"
+        elif transcript_base == marker["variant"]:
+            explicit_status = "Variant"
+    if transcript_base and explicit_status:
+        return f"{transcript_base} ({explicit_status})"
+    return explicit_status or transcript_base or value
+
+
+def _pgx_health_genotype_rows(pgx: dict) -> list[dict[str, str]]:
+    """Health-report-only allele projection; UI genotype/phenotype stays intact."""
+    hla_by_parent: dict[str, list[dict[str, str]]] = {}
+    for row in _pgx_hla_screening_rows(pgx):
+        hla_by_parent.setdefault(row["parent_gene"], []).append(row)
+
+    rows: list[dict[str, str]] = []
+    for gene in _PGX_CPIC_LEVEL_A_GENES:
+        if gene == "DPYD":
+            unphased_variants = _pgx_dpyd_unphased_variants(pgx)
+            if unphased_variants:
+                rows.append({
+                    "test": "DPYD（相位未定）",
+                    "allele1": "",
+                    "allele2": "",
+                    "result_span": "檢出變異：" + "；".join(unphased_variants),
+                })
+                continue
+        allele1, allele2 = _pgx_source_alleles(pgx, gene)
+        test_label = gene
+        if gene in _PGX_HEALTH_MARKERS:
+            test_label = _PGX_HEALTH_MARKERS[gene]["label"]
+            allele1 = _pgx_marker_allele(gene, allele1)
+            allele2 = _pgx_marker_allele(gene, allele2)
+        elif gene in {"HLA-A", "HLA-B"}:
+            allele1 = _pgx_hla_display_allele(gene, allele1)
+            allele2 = _pgx_hla_display_allele(gene, allele2)
+        elif gene == "MT-RNR1":
+            allele2 = "N/A"
+        elif gene == "G6PD" and allele1 != "No Result" and allele2 == "No Result":
+            allele2 = "N/A"
+        rows.append({"test": test_label, "allele1": allele1, "allele2": allele2})
+        rows.extend({
+            "test": hla_row["gene"],
+            "allele1": hla_row["allele1"],
+            "allele2": hla_row["allele2"],
+        } for hla_row in hla_by_parent.get(gene, []))
     return rows
 
 
@@ -2932,6 +3156,7 @@ def build_pgx_report_view(pgx: dict) -> dict:
         for gene, genotype, phenotype in _pgx_genotype_rows(payload)
     ]
     hla_screening_rows = _pgx_hla_screening_rows(payload)
+    health_genotype_rows = _pgx_health_genotype_rows(payload)
     action_categories = [
         {"action": action, "drugs": drugs}
         for action, drugs in _pgx_action_categories(drug_groups)
@@ -3032,6 +3257,7 @@ def build_pgx_report_view(pgx: dict) -> dict:
         "summary_rows": summary_rows,
         "genotype_rows": genotype_rows,
         "hla_screening_rows": hla_screening_rows,
+        "health_genotype_rows": health_genotype_rows,
         "analysis_genes": analysis_genes,
         "analysis_action_categories": analysis_action_categories,
         "full_recommendations": full_recommendations,
@@ -3078,21 +3304,21 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
         )
     _blank(doc)
     _add_paragraph(doc, "  基因型", bold=True)
-    hla_by_parent: dict[str, list[dict]] = {}
-    for row in report_view.get("hla_screening_rows") or _pgx_hla_screening_rows(pgx or {}):
-        hla_by_parent.setdefault(row.get("parent_gene") or "", []).append(row)
-    genotype_table_rows: list[list[str]] = []
-    for row in report_view["genotype_rows"]:
-        gene = row["gene"]
-        genotype_table_rows.append([gene, row["genotype"]])
-        genotype_table_rows.extend([
-            [hla_row["gene"], hla_row["genotype"]]
-            for hla_row in hla_by_parent.get(gene, [])
-        ])
+    health_rows = report_view.get("health_genotype_rows") or _pgx_health_genotype_rows(pgx or {})
     _ascii_table(doc, columns=[
-        ("基因", 16),
-        ("基因型", 68, "genotype-buffered"),
-    ], rows=genotype_table_rows, indent="  ")
+        ("基因／檢測項目", 38, "buffered"),
+        ("Allele 1", 23, "buffered"),
+        ("Allele 2", 23, "buffered"),
+    ], rows=[
+        {
+            "cells": [row["test"], row["result_span"]],
+            "widths": [38, 46],
+            "modes": ["buffered", "word-buffered"],
+        }
+        if row.get("result_span")
+        else [row["test"], row["allele1"], row["allele2"]]
+        for row in health_rows
+    ], indent="  ")
     _render_health_pgx_resources(doc)
     return drug_groups
 

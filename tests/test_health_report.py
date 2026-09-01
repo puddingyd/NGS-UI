@@ -439,10 +439,26 @@ def test_pgx_hla_screening_rows_follow_reportable_allele_order():
     }
 
     assert docx_export._pgx_hla_screening_rows(pgx) == [
-        {"parent_gene": "HLA-A", "gene": "HLA-A*31:01", "genotype": "Negative"},
-        {"parent_gene": "HLA-B", "gene": "HLA-B*15:02", "genotype": "Positive"},
-        {"parent_gene": "HLA-B", "gene": "HLA-B*57:01", "genotype": "Negative"},
-        {"parent_gene": "HLA-B", "gene": "HLA-B*58:01", "genotype": "Negative"},
+        {
+            "parent_gene": "HLA-A", "gene": "HLA-A*31:01",
+            "allele1": "Negative", "allele2": "Negative",
+            "genotype": "Negative/Negative",
+        },
+        {
+            "parent_gene": "HLA-B", "gene": "HLA-B*15:02",
+            "allele1": "Negative", "allele2": "Positive",
+            "genotype": "Negative/Positive",
+        },
+        {
+            "parent_gene": "HLA-B", "gene": "HLA-B*57:01",
+            "allele1": "Negative", "allele2": "Negative",
+            "genotype": "Negative/Negative",
+        },
+        {
+            "parent_gene": "HLA-B", "gene": "HLA-B*58:01",
+            "allele1": "Negative", "allele2": "Negative",
+            "genotype": "Negative/Negative",
+        },
     ]
 
 
@@ -468,18 +484,166 @@ def test_pgx_hla_screening_rows_can_derive_status_from_called_genotype():
 
     rows = docx_export._pgx_hla_screening_rows(pgx)
 
-    assert [row["genotype"] for row in rows] == [
-        "Positive",
-        "Positive",
-        "Negative",
-        "Negative",
+    assert [(row["allele1"], row["allele2"]) for row in rows] == [
+        ("Positive", "Negative"),
+        ("Negative", "Positive"),
+        ("Negative", "Negative"),
+        ("Negative", "Negative"),
     ]
 
 
 def test_pgx_hla_screening_rows_do_not_treat_missing_calls_as_negative():
     rows = docx_export._pgx_hla_screening_rows({"genes": {}})
 
-    assert {row["genotype"] for row in rows} == {"No Result"}
+    assert {
+        (row["allele1"], row["allele2"])
+        for row in rows
+    } == {("No Result", "No Result")}
+
+
+def test_pgx_hla_aggregate_positive_does_not_invent_two_positive_copies():
+    pgx = {
+        "genes": {
+            "HLA-B": {
+                "details": {
+                    "label": "*15:02 negative；*57:01 negative；*58:01 positive",
+                    "phenotypes": [
+                        "*15:02 negative；*57:01 negative；*58:01 positive",
+                    ],
+                },
+            },
+        },
+    }
+
+    rows = {
+        row["gene"]: (row["allele1"], row["allele2"])
+        for row in docx_export._pgx_hla_screening_rows(pgx)
+    }
+
+    assert rows["HLA-B*15:02"] == ("Negative", "Negative")
+    assert rows["HLA-B*58:01"] == ("Positive", "No Result")
+
+
+def test_pgx_health_genotype_rows_use_consistent_allele_notation():
+    pgx = {
+        "genes": {
+            "ABCG2": {"details": {
+                "allele1_name": "rs2231142 reference (G)",
+                "allele2_name": "rs2231142 variant (T)",
+            }},
+            "CYP2D6": {"details": {
+                "allele1_name": "*36+*10",
+                "allele2_name": "*36+*10",
+            }},
+            "CFTR": {"details": {
+                "label": "Reference/Reference",
+                "allele1_name": "ivacaftor non-responsive CFTR sequence",
+                "allele2_name": "ivacaftor non-responsive CFTR sequence",
+            }},
+            "DPYD": {"details": {
+                "allele1_name": "c.85T>C(*9A)",
+                "allele2_name": "reference",
+            }},
+            "G6PD": {"details": {"label": "B (reference)"}},
+            "HLA-B": {"details": {
+                "allele1_name": "B*58:01",
+                "allele2_name": "B*58:01",
+            }},
+            "MT-RNR1": {"details": {"label": "reference"}},
+            "VKORC1": {"details": {
+                "allele1_name": "rs9923231 reference (C)",
+                "allele2_name": "rs9923231 variant (T)",
+            }},
+        },
+    }
+
+    rows = docx_export._pgx_health_genotype_rows(pgx)
+    by_test = {row["test"]: row for row in rows}
+
+    assert len(rows) == 25
+    assert by_test["ABCG2 rs2231142 (c.421C>A)"] == {
+        "test": "ABCG2 rs2231142 (c.421C>A)",
+        "allele1": "C (Reference)",
+        "allele2": "A (Variant)",
+    }
+    assert by_test["CYP2D6"] == {
+        "test": "CYP2D6", "allele1": "*36+*10", "allele2": "*36+*10",
+    }
+    assert by_test["CFTR"] == {
+        "test": "CFTR", "allele1": "Reference", "allele2": "Reference",
+    }
+    assert by_test["DPYD"] == {
+        "test": "DPYD", "allele1": "c.85T>C (*9A)", "allele2": "Reference",
+    }
+    assert by_test["G6PD"] == {
+        "test": "G6PD", "allele1": "B (Reference)", "allele2": "N/A",
+    }
+    assert by_test["MT-RNR1"] == {
+        "test": "MT-RNR1", "allele1": "Reference", "allele2": "N/A",
+    }
+    assert by_test["VKORC1 rs9923231 (c.-1639G>A)"] == {
+        "test": "VKORC1 rs9923231 (c.-1639G>A)",
+        "allele1": "G (Reference)",
+        "allele2": "A (Variant)",
+    }
+    assert by_test["HLA-B"] == {
+        "test": "HLA-B", "allele1": "B*58:01", "allele2": "B*58:01",
+    }
+    assert by_test["HLA-B*58:01"] == {
+        "test": "HLA-B*58:01", "allele1": "Positive", "allele2": "Positive",
+    }
+    assert by_test["HLA-B*15:02"] == {
+        "test": "HLA-B*15:02", "allele1": "Negative", "allele2": "Negative",
+    }
+    assert by_test["CACNA1S"] == {
+        "test": "CACNA1S", "allele1": "No Result", "allele2": "No Result",
+    }
+
+
+def test_pgx_health_dpyd_multiple_unphased_sources_span_both_allele_columns():
+    pgx = {
+        "genes": {
+            "DPYD": {
+                "details": {
+                    "effectively_phased": False,
+                    "source_diplotypes": [
+                        {"allele1_name": "c.1627A>G(*5)", "allele2_name": ""},
+                        {"allele1_name": "c.1896T>C", "allele2_name": ""},
+                    ],
+                    "variants": [
+                        {
+                            "call": "T/C", "reference": "T",
+                            "allele_names": ["c.1627A>G(*5)"],
+                            "phased": False, "phase_set": "",
+                        },
+                        {
+                            "call": "A/G", "reference": "A",
+                            "allele_names": ["c.1896T>C"],
+                            "phased": False, "phase_set": "",
+                        },
+                    ],
+                },
+            },
+        },
+    }
+
+    rows = docx_export._pgx_health_genotype_rows(pgx)
+    dpyd = next(row for row in rows if row["test"].startswith("DPYD"))
+
+    assert dpyd == {
+        "test": "DPYD（相位未定）",
+        "allele1": "",
+        "allele2": "",
+        "result_span": "檢出變異：c.1627A>G (*5) (het)；c.1896T>C (het)",
+    }
+
+    doc = Document()
+    docx_export._render_health_pgx_section(doc, "藥物基因體學", pgx)
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    normalized = re.sub(r"\s+", " ", text)
+    assert "DPYD（相位未定）" in normalized
+    assert "檢出變異：c.1627A>G (*5) (het)；c.1896T>C (het)" in normalized
+    assert "DPYD（相位未定） No Result" not in normalized
 
 
 def test_health_pgx_genotype_table_inserts_hla_screens_after_parent_gene():
@@ -509,18 +673,18 @@ def test_health_pgx_genotype_table_inserts_hla_screens_after_parent_gene():
 
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     normalized_lines = [re.sub(r"\s+", " ", line.strip()) for line in text.splitlines()]
-    assert normalized_lines.index("HLA-A A*11:01/A*02:06") < normalized_lines.index(
-        "HLA-A*31:01 Negative"
+    assert normalized_lines.index("HLA-A A*11:01 A*02:06") < normalized_lines.index(
+        "HLA-A*31:01 Negative Negative"
     )
-    assert normalized_lines.index("HLA-A*31:01 Negative") < normalized_lines.index(
-        "HLA-B B*40:01/B*15:02"
+    assert normalized_lines.index("HLA-A*31:01 Negative Negative") < normalized_lines.index(
+        "HLA-B B*40:01 B*15:02"
     )
-    assert normalized_lines.index("HLA-B B*40:01/B*15:02") < normalized_lines.index(
-        "HLA-B*15:02 Positive"
+    assert normalized_lines.index("HLA-B B*40:01 B*15:02") < normalized_lines.index(
+        "HLA-B*15:02 Negative Positive"
     )
-    assert normalized_lines.index("HLA-B*15:02 Positive") < normalized_lines.index(
-        "HLA-B*57:01 Negative"
-    ) < normalized_lines.index("HLA-B*58:01 Negative")
+    assert normalized_lines.index("HLA-B*15:02 Negative Positive") < normalized_lines.index(
+        "HLA-B*57:01 Negative Negative"
+    ) < normalized_lines.index("HLA-B*58:01 Negative Negative")
 
 
 def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():
@@ -569,7 +733,7 @@ def test_health_pgx_excludes_ifnl3_from_all_sections_and_gene_list():
     assert "基因型與表現型" not in text
     genotype_table = next(
         paragraph.text for paragraph in doc.paragraphs
-        if re.search(r"基因\s+基因型", paragraph.text)
+        if "基因／檢測項目" in paragraph.text and "Allele 1" in paragraph.text
     )
     assert "表型" not in genotype_table
     assert "CYP2C19" in text and "Clopidogrel" in text

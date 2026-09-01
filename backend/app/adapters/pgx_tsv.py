@@ -158,9 +158,29 @@ def _compact_report_json(path: Path) -> dict:
 
     genes = {}
     for gene, payload in (data.get("genes") or {}).items():
-        source = (payload.get("sourceDiplotypes") or [{}])[0] or {}
+        raw_sources = [
+            value for value in payload.get("sourceDiplotypes") or []
+            if isinstance(value, dict)
+        ]
+        source = (raw_sources or [{}])[0] or {}
         allele1 = source.get("allele1") or {}
         allele2 = source.get("allele2") or {}
+        source_diplotypes = []
+        for value in raw_sources:
+            source_allele1 = value.get("allele1") or {}
+            source_allele2 = value.get("allele2") or {}
+            source_diplotypes.append({
+                "label": _clean(value.get("label")),
+                "phenotypes": [
+                    _clean(phenotype)
+                    for phenotype in value.get("phenotypes") or []
+                    if _clean(phenotype)
+                ],
+                "allele1_name": _clean(source_allele1.get("name")),
+                "allele2_name": _clean(source_allele2.get("name")),
+                "combination": bool(value.get("combination")),
+                "inferred": bool(value.get("inferred")),
+            })
         variants = []
         for variant in payload.get("variants") or []:
             call = _clean(variant.get("call"))
@@ -173,6 +193,14 @@ def _compact_report_json(path: Path) -> dict:
                 "pos": variant.get("position"),
                 "call": call,
                 "alleles": ", ".join(variant.get("alleles") or []),
+                "allele_names": [
+                    _clean(value)
+                    for value in variant.get("alleles") or []
+                    if _clean(value)
+                ],
+                "reference": ref,
+                "phased": bool(variant.get("phased")),
+                "phase_set": _clean(variant.get("phaseSet")),
             })
         genes[gene] = {
             "label": _clean(source.get("label")),
@@ -185,6 +213,9 @@ def _compact_report_json(path: Path) -> dict:
             "allele1_function": _clean(allele1.get("function")),
             "allele2_name": _clean(allele2.get("name")),
             "allele2_function": _clean(allele2.get("function")),
+            "source_diplotypes": source_diplotypes,
+            "phased": bool(payload.get("phased")),
+            "effectively_phased": bool(payload.get("effectivelyPhased")),
             "uncalled": payload.get("uncalledHaplotypes") or [],
             "messages": [
                 text
