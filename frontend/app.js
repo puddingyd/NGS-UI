@@ -842,6 +842,44 @@ function _renderInSilicoCell(v, tool) {
 
 const _pendingInSilicoFitCards = new Set();
 let _inSilicoFitFrame = 0;
+const _observedInSilicoLitvar2 = new WeakSet();
+let _inSilicoLitvar2ResizeObserver = null;
+
+function _litvar2RenderedBottom(litvar2) {
+  const box = litvar2.getBoundingClientRect();
+  let bottom = box.top;
+  for (const child of litvar2.children) {
+    // A closed <details> may retain a box influenced by its hidden records
+    // during initial layout. Only its visible summary should determine how
+    // many predictor rows may be promoted above More.
+    const visible = child.matches("details:not([open])")
+      ? child.querySelector(":scope > summary") || child
+      : child;
+    const rect = visible.getBoundingClientRect();
+    if (rect.width || rect.height) bottom = Math.max(bottom, rect.bottom);
+  }
+  return bottom > box.top ? bottom : box.bottom;
+}
+
+function _observeInSilicoLitvar2(card) {
+  const litvar2 = card?.querySelector(".litvar2-references");
+  if (!litvar2 || typeof ResizeObserver !== "function") return;
+  if (!_inSilicoLitvar2ResizeObserver) {
+    _inSilicoLitvar2ResizeObserver = new ResizeObserver(entries => {
+      entries.forEach(entry => {
+        const targetCard = entry.target.closest(".variant-card");
+        if (!targetCard?.isConnected) {
+          _inSilicoLitvar2ResizeObserver?.unobserve(entry.target);
+          return;
+        }
+        _scheduleInSilicoPredictorFit(targetCard);
+      });
+    });
+  }
+  if (_observedInSilicoLitvar2.has(litvar2)) return;
+  _observedInSilicoLitvar2.add(litvar2);
+  _inSilicoLitvar2ResizeObserver.observe(litvar2);
+}
 
 function _fitInSilicoPredictors(card) {
   const column = card?.querySelector(".in-silico-column");
@@ -864,7 +902,7 @@ function _fitInSilicoPredictors(card) {
   // Reset before measuring so a previous wider viewport or longer LitVar2
   // result cannot keep stale promoted rows visible.
   placeRows(minimum);
-  const litvarBottom = litvar2.getBoundingClientRect().bottom;
+  const litvarBottom = _litvar2RenderedBottom(litvar2);
   if (!litvarBottom) return; // The card is currently inside a collapsed block.
 
   let visibleCount = minimum;
@@ -4692,6 +4730,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     ${renderDiseaseList(v, id, !!opts.diseaseCheckbox)}
   `;
 
+  _observeInSilicoLitvar2(card);
   _scheduleInSilicoPredictorFit(card);
 
   return card;

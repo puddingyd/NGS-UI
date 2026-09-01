@@ -119,7 +119,15 @@ def test_predictor_visible_count_expands_to_litvar2_rendered_height():
     assert "function _fitInSilicoPredictors(card)" in APP_JS
     assert 'card?.querySelector(".litvar2-references")' in APP_JS
     assert "Math.min(IN_SILICO_PRIMARY_COUNT, rows.length)" in APP_JS
+    assert "function _litvar2RenderedBottom(litvar2)" in APP_JS
+    assert 'child.matches("details:not([open])")' in APP_JS
+    assert 'child.querySelector(":scope > summary") || child' in APP_JS
+    assert "const litvarBottom = _litvar2RenderedBottom(litvar2);" in APP_JS
     assert "Math.max(keyBottom, valueBottom) <= litvarBottom + 0.5" in APP_JS
+    assert "function _observeInSilicoLitvar2(card)" in APP_JS
+    assert 'new ResizeObserver(entries =>' in APP_JS
+    assert "_scheduleInSilicoPredictorFit(targetCard)" in APP_JS
+    assert "_observeInSilicoLitvar2(card);" in APP_JS
     assert 'class="more-extras in-silico-more hidden"' in APP_JS
     assert 'class="in-silico-extras-start hidden"' in APP_JS
     assert 'window.addEventListener("resize", () => _scheduleInSilicoPredictorFit());' in APP_JS

@@ -8,6 +8,7 @@
 
 ### v9.3 — 2026-09-01
 
+- 修正 SNV/Indel 卡片初次載入時 in-silico predictor 高度判斷偶爾過度展開：現在只以 LitVar2 實際可見內容（關閉的 details 只計 summary）決定可多顯示的列數，並在 LitVar2 尺寸穩定或改變後自動重新校正；保留至少六項直接顯示及按 More 展開其餘內容的行為。
 - 修正「輸出 PDF」的 LitVar2 PMID 顯示：列印副本移除外部連結前，會先把最多五筆 `PMID:...` 與 `and N others` 轉成可換行的純文字，不再因連結被刪除而只剩一串逗號；`Merged from N LitVar2 records` 摘要仍會保留。
 - 健檢 DOCX 依 TITAN v4 標註版調整 PGx 主文：移除用藥建議概覽、藥物建議摘要、表型欄與動態藥物數量文字，只保留固定 21 genes 的基因型及官方用藥資訊；完整用藥建議仍置於附錄。WGS 檢測方法另新增短讀長偵測限制與 phasing／haplotype 不確定性兩點，後續題號順延。
 - 健檢 DOCX 的 HLA 結果改為參考既有 TITAN 表格：保留 HLA-A／HLA-B 分型，並分別加列 `HLA-A*31:01` 與 `HLA-B*15:02`、`HLA-B*57:01`、`HLA-B*58:01` 的 Positive／Negative 篩檢結果；無可靠分型或明確狀態時顯示 `No Result`。
