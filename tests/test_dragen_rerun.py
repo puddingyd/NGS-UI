@@ -196,6 +196,51 @@ def test_nextflow_cache_lock_is_separate_per_mode(tmp_path, monkeypatch):
     dragen_run._release_nextflow_cache_lock(again)
 
 
+def test_nextflow_batch_progress_uses_known_sample_count_while_total_grows():
+    tokens = ("SNV_ANNOTATE:VEP_ANNOTATE",)
+
+    first = dragen_run._parse_nextflow_progress_line(
+        "[aa/000001] SNV_ANNOTATE:VEP_ANNOTATE (1) | 1 of 1",
+        tokens,
+        expected_total=40,
+    )
+    halfway = dragen_run._parse_nextflow_progress_line(
+        "[bb/000002] SNV_ANNOTATE:VEP_ANNOTATE (20) | 20 of 20",
+        tokens,
+        expected_total=40,
+    )
+    finished = dragen_run._parse_nextflow_progress_line(
+        "[cc/000003] SNV_ANNOTATE:VEP_ANNOTATE (40) | 40 of 40 ✔",
+        tokens,
+        expected_total=40,
+    )
+
+    assert first is not None
+    assert first["event"] == "start"
+    assert first["progress_total"] == 40
+    assert first["fraction"] == pytest.approx(1 / 40)
+    assert halfway is not None
+    assert halfway["event"] == "start"
+    assert halfway["fraction"] == pytest.approx(0.5)
+    assert finished is not None
+    assert finished["event"] == "done"
+    assert finished["fraction"] == 1.0
+
+
+def test_nextflow_complete_marker_finishes_optional_shorter_process():
+    parsed = dragen_run._parse_nextflow_progress_line(
+        "\x1b[32m[dd/000004] PGX_ANNOTATE:PGX_PARSE (38) | 38 of 38 ✔\x1b[0m",
+        ("PGX_ANNOTATE:PGX_PARSE",),
+        expected_total=40,
+    )
+
+    assert parsed is not None
+    assert parsed["event"] == "done"
+    assert parsed["fraction"] == 1.0
+    assert parsed["reported_total"] == 38
+    assert parsed["progress_total"] == 40
+
+
 def test_start_job_rejects_active_sample_before_spawning(tmp_path, monkeypatch):
     vcf = tmp_path / "S1.hard-filtered.vcf.gz"
     vcf.touch()

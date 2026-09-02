@@ -1359,6 +1359,65 @@ def _elapsed_minutes_label(elapsed: float | None) -> str:
     return f"elapsed={elapsed / 60:.1f}m"
 
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def _parse_nextflow_progress_line(
+    line: str,
+    tokens: tuple[str, ...],
+    *,
+    expected_total: int,
+) -> dict[str, object] | None:
+    """Parse one Nextflow process status line for batch progress.
+
+    Nextflow may initially print ``1 of 1`` and then grow the denominator as
+    more channel items arrive.  Treating that first line as 100% makes a
+    long-running per-sample process such as VEP consume its whole weight at
+    once and leaves the UI progress bar apparently frozen.  Use the known
+    batch size as the denominator while the process is active, and only
+    consider the process terminal when Nextflow marks it complete (or when
+    the reported total has reached the whole batch).
+    """
+    norm = " ".join(_ANSI_ESCAPE_RE.sub("", line).strip().split())
+    token = next((candidate for candidate in tokens if candidate in norm), "")
+    if not token:
+        return None
+
+    count_match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", norm)
+    done = int(count_match.group(1)) if count_match else 0
+    reported_total = int(count_match.group(2)) if count_match else 0
+    progress_total = max(1, expected_total, reported_total)
+    visibly_complete = "✔" in norm or "✓" in norm
+
+    if "[-" in norm:
+        event = "queued"
+    elif visibly_complete or (
+        reported_total >= max(1, expected_total)
+        and done >= reported_total
+    ):
+        event = "done"
+    else:
+        event = "start"
+
+    if event == "done":
+        fraction = 1.0
+    elif count_match:
+        fraction = max(0.0, min(1.0, done / progress_total))
+    else:
+        fraction = 0.0
+
+    return {
+        "norm": norm,
+        "process": token,
+        "event": event,
+        "done": done,
+        "reported_total": reported_total,
+        "progress_total": progress_total,
+        "fraction": fraction,
+        "has_count": bool(count_match),
+    }
+
+
 def _run(
     cmd: list[str],
     *,
@@ -1580,25 +1639,25 @@ def main() -> int:
                     nonlocal nextflow_progress_rank
                     if "[" not in line or "]" not in line:
                         return
-                    norm = " ".join(line.strip().split())
-                    count_match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", norm)
-                    done = int(count_match.group(1)) if count_match else 0
-                    total = int(count_match.group(2)) if count_match else 0
                     for slug, tokens, weight in nextflow_stages:
-                        token = next((t for t in tokens if t in norm), "")
-                        if not token:
+                        parsed = _parse_nextflow_progress_line(
+                            line,
+                            tokens,
+                            expected_total=len(pending_samples),
+                        )
+                        if parsed is None:
                             continue
-                        if count_match and done >= total:
-                            event = "done"
-                        elif "[-" in norm:
-                            event = "queued"
-                        else:
-                            event = "start"
-                        key = (slug, event, done, total)
+                        process = str(parsed["process"])
+                        event = str(parsed["event"])
+                        done = int(parsed["done"])
+                        reported_total = int(parsed["reported_total"])
+                        progress_total = int(parsed["progress_total"])
+                        fraction = float(parsed["fraction"])
+                        has_count = bool(parsed["has_count"])
+                        key = (slug, event, done, reported_total)
                         if key in nextflow_seen_events:
                             return
                         nextflow_seen_events.add(key)
-                        process = token
                         if event == "start":
                             nextflow_running.setdefault(slug, time.monotonic())
                         elapsed = None
@@ -1612,7 +1671,7 @@ def main() -> int:
                             event,
                             elapsed=elapsed,
                             done=done or None,
-                            total=total or None,
+                            total=reported_total or None,
                         )
                         suffix = ""
                         elapsed_label = _elapsed_minutes_label(elapsed)
@@ -1621,7 +1680,6 @@ def main() -> int:
                         if event == "queued":
                             return
                         stage_idx = nextflow_stage_index.get(slug, 0)
-                        fraction = (done / total) if total else (1.0 if event == "done" else 0.0)
                         nextflow_stage_fraction[slug] = max(
                             nextflow_stage_fraction.get(slug, 0.0),
                             max(0.0, min(1.0, fraction)),
@@ -1634,7 +1692,7 @@ def main() -> int:
                             weighted_done
                             / nextflow_total_weight
                         ) * (nextflow_progress_end - nextflow_progress_start)
-                        if stage_idx > nextflow_progress_rank or event == "done" or count_match:
+                        if stage_idx > nextflow_progress_rank or event == "done" or has_count:
                             nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
                             _update(
                                 job_id,
@@ -1644,7 +1702,8 @@ def main() -> int:
                                     "process": process,
                                     "event": event,
                                     "done": done,
-                                    "total": total,
+                                    "total": progress_total,
+                                    "reported_total": reported_total,
                                 },
                             )
                         return suffix

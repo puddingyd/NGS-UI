@@ -11713,7 +11713,7 @@ function _dragenSetJob(state) {
   const cancelBtn = document.getElementById("dragen-job-cancel-btn");
   if (panel && state) {
     panel.hidden = false;
-    if (stepEl)  stepEl.textContent  = state.step || "";
+    if (stepEl)  stepEl.textContent  = _dragenJobStepLabel(state);
     if (stateEl) stateEl.textContent = state.error
       ? `failed — ${state.error}`
       : state.state;
@@ -11734,6 +11734,20 @@ function _dragenSetJob(state) {
     if (logEl)   logEl.scrollTop     = logEl.scrollHeight;
     _dragenRenderBatch();
   }
+}
+
+function _dragenJobStepLabel(state) {
+  const step = String(state?.step || "");
+  if (step !== "nextflow" && !step.startsWith("nextflow:")) return step;
+  const current = state?.nextflow_current;
+  if (!current?.step) return step;
+  const processLabel = String(current.step).replaceAll("-", " ");
+  const done = Number(current.done);
+  const total = Number(current.total);
+  const count = Number.isFinite(done) && Number.isFinite(total) && total > 0
+    ? ` ${done}/${total}`
+    : "";
+  return `nextflow · ${processLabel}${count}`;
 }
 
 function _dragenProgressPercent(state) {

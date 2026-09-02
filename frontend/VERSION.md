@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.4 — 2026-09-02
+
+- 修正大量 case 執行三級分析時 VEP 進度長時間停在約 32%：Nextflow 在 batch channel 尚未收齊時可能先輸出動態 `1 of 1`、`2 of 2`，現在改以本批 sample 數作為進度分母，並以完成記號／完整批次判斷 process 結束，讓 VEP 權重隨完成 case 數逐步增加；modal 同時顯示目前 process 與 `完成數/總數`。
+
 ### v9.3 — 2026-09-01
 
 - 新增唯讀 `scripts/audit_pgx_report_inputs.py`，可在正式機批次掃描指定 prefix 的 `07_pgx` PharmCAT JSON／PGx TSV，核對固定 21-gene 健檢表格、HLA risk allele copy 狀態與 MT-RNR1 TSV fallback，並輸出實際 allele 組合、No Result、所有 source diplotypes 及未定相 non-reference variant calls；不修改任何樣本輸出。
