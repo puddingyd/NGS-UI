@@ -1515,9 +1515,9 @@ def test_health_pgx_main_body_matches_genotype_only_template():
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     paragraph_texts = [paragraph.text for paragraph in doc.paragraphs]
     intro_index = paragraph_texts.index(
-        "  此處列出基因型，完整藥物建議詳見報告末端附錄。若目前使用或未來考慮使用相關藥物，"
-        "建議由處方醫師參考下方結果或最新 FDA/CPIC 指引進行評估，"
-        "或參考下述官方用藥說明處之連結。"
+        "  此處列出基因型，若目前使用或未來考慮使用相關藥物，"
+        "建議由處方醫師參考下方結果及最新 FDA/CPIC 指引，"
+        "或參考下述官方用藥說明處之連結進行評估。"
     )
     assert "其餘未列於下方之藥物" not in text
     assert "其餘未列之藥物" not in text
@@ -1525,8 +1525,9 @@ def test_health_pgx_main_body_matches_genotype_only_template():
     assert "用藥建議概覽" not in text
     assert "藥物建議摘要" not in text
     assert "基因型與表現型" not in text
-    assert "參考下方結果或最新 FDA/CPIC 指引進行評估" in text
-    assert "或參考下述官方用藥說明處之連結" in text
+    assert "參考下方結果及最新 FDA/CPIC 指引" in text
+    assert "或參考下述官方用藥說明處之連結進行評估" in text
+    assert "完整藥物建議詳見報告末端附錄" not in text
     assert paragraph_texts[intro_index + 1] == ""
     assert paragraph_texts[intro_index + 2] == "  基因型"
     assert text.index("官方用藥資訊查詢") < text.index("四、檢測方法說明")

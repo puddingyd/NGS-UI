@@ -3298,9 +3298,9 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
     else:
         _add_paragraph(
             doc,
-            "  此處列出基因型，完整藥物建議詳見報告末端附錄。若目前使用或未來考慮使用相關藥物，"
-            "建議由處方醫師參考下方結果或最新 FDA/CPIC 指引進行評估，"
-            "或參考下述官方用藥說明處之連結。",
+            "  此處列出基因型，若目前使用或未來考慮使用相關藥物，"
+            "建議由處方醫師參考下方結果及最新 FDA/CPIC 指引，"
+            "或參考下述官方用藥說明處之連結進行評估。",
         )
     _blank(doc)
     _add_paragraph(doc, "  基因型", bold=True)
