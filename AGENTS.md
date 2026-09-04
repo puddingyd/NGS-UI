@@ -58,6 +58,7 @@
 | LitVar2 官方 bulk JSON + slim SQLite（只供 reviewer 文獻脈絡，不影響 tier/ACMG/report） | `NGS_UI_HOME/biotools/litvar2/{litvar2_variants.json.gz,litvar2.sqlite}` | `NGS_UI_LITVAR2_DIR`、`NGS_UI_LITVAR2_BULK_PATH`、`NGS_UI_LITVAR2_DB`、`NGS_UI_LITVAR2_BULK_URL` |
 | 每週最新版 ClinVar UI 比對庫 | `NGS_UI_HOME/biotools/clinvar_latest/{clinvar.vcf.gz,clinvar_latest.sqlite}` | `NGS_UI_CLINVAR_LATEST_DIR`、`NGS_UI_CLINVAR_LATEST_DB`、`NGS_UI_CLINVAR_LATEST_VCF`、`NGS_UI_CLINVAR_LATEST_URL`；每週三 04:00 timer 原子更新，只影響 UI overlay |
 | Research-only SpliceAI reference | `NGS_UI_HOME/biotools/spliceai/spliceai_scores.raw.{snv,indel}.hg38.vcf.gz` | 兩檔與各自 `.tbi` 都必須存在；可由 `run_stopgaps.sh --spliceai-snv/--spliceai-indel` 覆寫 |
+| Research-only AutoMap image | `/home/datalake_Intermediate/pipeline/nextflow_containers/automap_1.3.sif`（舊 `/home/pipeline/nextflow_containers/automap_1.3.sif` fallback） | `NGS_UI_AUTOMAP_SIF`；只在 in-house 缺既有 AutoMap 且三級勾 Research-only 時使用 |
 | 固定 GPN-MSA GRCh38 pre-computed score（所有 case） | `NGS_UI_HOME/biotools/gpn_msa/scores.tsv.bgz` + `.tbi` | `NGS_UI_GPN_MSA_DB`；只 join compact final review TSV 的 SNV，不進 raw/overlay/gene search，不設 release hierarchy 或 timer；每個 case 都嘗試，缺檔／index／tabix 或查詢失敗只 warning 並在 review manifest 留狀態，不阻擋三級完成 |
 | 本院 AF sites VCF（院內 WGS cohort；核基因組用 `INHOUSE_AC/AN/AF`，chrM 另以 carrier frequency 定義並帶 `INHOUSE_NHOM/HET_MT`；缺檔＝本院 AF 靜默關閉） | `NGS_UI_HOME/biotools/inhouse_af/inhouse_af.hg38.vcf.gz` | `NGS_UI_INHOUSE_AF_DB` |
 | Exomiser/LIRICAL CLI | `NGS_UI_HOME/biotools/` | `NGS_UI_BIOTOOLS_DIR` |
@@ -104,7 +105,9 @@
   {LIS_ID}.sample_metadata.json / {LIS_ID}.case_summary.json
   {LIS_ID}.mito.annotated.tsv      只有確實補到 MITOMAP 時才保留的小型衍生檔
   {LIS_ID}.ploidy.vcf.gz / {LIS_ID}.ploidy_qc.txt
-  {LIS_ID}.qc_summary.json / {LIS_ID}.roh_summary.json / {LIS_ID}.vcf_from_tsv.vcf.gz
+  {LIS_ID}.qc_summary.json / {LIS_ID}.vcf_from_tsv.vcf.gz
+  {LIS_ID}.roh_regions.tsv / {LIS_ID}.roh_summary.json
+  {LIS_ID}.roh.source.{automap.tsv,automap.pdf,bcftools.txt,dragen.bed,dragen_metrics.csv}
   analyses/{ver}/{LIS_ID}.analysis.json, {LIS_ID}.pheno_score.tsv, prefixed results/analysis_files
 ```
 layout v3 的 sample-owned 檔案一律用 `{LIS_ID}.<name>`；resolver 固定 prefixed exact name 優先，再 fallback 舊 unprefixed exact name，不可用 broad wildcard。舊 layout v2 `layout.json` 及未加前綴檔仍可讀寫；完整重跑會非破壞性複製 v2 state，最後才寫 prefixed v3 marker，不刪舊檔。新樣本只有 marker 存在且沒有 metadata 時才列為未登錄，避免 post-processing 未完成就被載入。
@@ -129,6 +132,7 @@ HPO reference、fixed/custom panel 與既有 `pheno_score.tsv` 讀入時都會�
   → SNV working TSV（暫存；SpliceAI、GeneBe API、LitVar2 共用 final-review predicate）→ sparse overlay + LitVar2 marker → final review TSV 嘗試以 tabix join GPN-MSA SNV score（失敗只記 warning/status）+ prefixed index → 刪 working TSV
   → 08_postprocessing/{LIS_ID}.layout.json 最後寫入，啟用 UI 讀取
   → Mito 只有 MITOMAP 確實補值時才留 08_postprocessing/{LIS_ID}.mito.annotated.tsv
+  → ROH 只寫 08：in-house 優先二級 AutoMap；缺 AutoMap 時 Research-only 補跑，否則/失敗用 BCFtools；DRAGEN 永遠用原生 ROH
   → (HPO/panel: 載入新個案、/phenotype/ 與主畫面 default 組合共用 patient_phenotype/{MRN}_phenotype.txt；主畫面其他 analysis version 不覆蓋主檔；舊 LIS 檔只作 fallback)
   → (Clinical presentation: /phenotype/ 工具依 MRN 產生 patient_phenotype/{MRN}_clinical_presentation.txt；主畫面 reviewer 修改後會同步寫回)
   → (Documents: 主畫面與 /phenotype/ 登入後依 MRN 共用 patient_documents/files/{MRN}/{UUID}；SQLite 管理顯示檔名、hash 與 audit，刪除移入 trash)
@@ -193,7 +197,7 @@ UI 流程：
 - **首頁歡迎 / 分析流程 / 版本紀錄**：未載入個案時，搜尋卡片下方顯示 `#welcome-card`。前端把 `frontend/VERSION.md` 依 `## 版本紀錄` 拆成歡迎與版本兩段，並在中間讀取 `frontend/ANALYSIS_FLOW.md`，呈現固定橫向的輸入/QC → 五條二級分析 → 三級分析 → Prioritization → 判讀 → 報告流程。SNV/Indel 的 Prioritization 在同一欄內分成 `review_filter` 左區、箭頭與右側 `Category`；Category 直向列出 `1A / 1B / 1C / 2 - Other`，各段說明文字由 `ANALYSIS_FLOW.md` 的 `|` 後內容提供。`ANALYSIS_FLOW.md` 的 `##` section 名稱與 `|` 前 key 是版面 schema，不可任意更名；一般文字維護只改 `|` 後內容。Phenotype & clinical context 只跨 Prioritization 與判讀欄。流程檔缺失或格式不完整時會隱藏流程區，不影響原本首頁；載入任一 sample 後整張首頁卡片自動隱藏。之後若有影響判讀流程、報告輸出、資料載入或主要工具入口的更新，要評估是否同步更新 `frontend/VERSION.md` 與 `frontend/ANALYSIS_FLOW.md`。
 - **Test type / 個案篩選**：Test type 為 `WES`、`WGS`、`TITAN-WGS`。LIS/sample ID 符合 `^\d{2}T`（例如 `25T...`、`26T...`）時由 `services/test_types.py` 強制歸類 `TITAN-WGS`，既有 metadata/roster 即使仍寫 WGS 也會在讀取時正規化；其 SNV 門檻、dead zone 與報告方法內容沿用 WGS。主搜尋與個案清單三類 filter 皆預設勾選，每類旁有 `only`，按下後只保留該類。TITAN-WGS 每次新切入個案時預設隱藏診斷分析，基本資料下方提供「顯示／隱藏診斷分析」切換；隱藏 Genetic counseling、Clinical presentation、Patient phenotype、Dead zone、診斷 DOCX/PDF、Causative/Other/Candidate、SNV/CNV-SV/Mito/STR/ROH、診斷專用 filters 與對應 sidebar link，但保留 Secondary findings、PGx/PharmCAT、健檢報告與儲存。TITAN 的報告區與分析區 Secondary findings umbrella、ACMG SF、中風、Carrier、PGx/PharmCAT 全部預設展開；TITAN 的「報告」標題旁顯示自動帶入 ClinVar P/LP，「分析」標題旁顯示 ClinVar P/LP 預設勾選及 Predicted suspect 勾選後才進報告的提示。WES/WGS 維持既有預設（ACMG 與 analysis PGx 展開，其餘收合），且不顯示這兩段小字。重新載入同一個案時保留診斷分析顯示狀態；WES/WGS 不顯示切換且一律完整顯示。此功能只控制 DOM 顯示，不停止 staged API 載入。
 - **登入 modal**：「申請帳號：PYTHONPATH=backend python -m app create-user」那段提示字用 `.login-hint`/`.login-hint-code`（白底白字，反白才看得到）。
-- **分析卡片**（`#card-snv`、`#card-cnv-sv`、`#card-mito`、`#card-str`）各有 tier-tab bar + tier panels；「分析」主標題字級與「報告」相同。`renderTierTabBar`/`renderCnvSvTabBar`/`renderMitoTabBar`/`renderStrTabBar`；tab-click dispatch 統一處理四組（用 `data-tier` 判斷）。tier-panel 顏色：SNV 紅/黃系、CNV 藍 `#bfdbfe`、SV 紫 `#ddd6fe`、Mito teal `#99f6e4`、STR amber `#fde68a`。卡片要包在 `.block-body` 裡才有 inset 效果（`.tier-panel > .block-body { padding-top: 8px }`）。ROH 卡片仍是「（無資料）」placeholder。
+- **分析卡片**（`#card-snv`、`#card-cnv-sv`、`#card-mito`、`#card-str`）各有 tier-tab bar + tier panels；「分析」主標題字級與「報告」相同。`renderTierTabBar`/`renderCnvSvTabBar`/`renderMitoTabBar`/`renderStrTabBar`；tab-click dispatch 統一處理四組（用 `data-tier` 判斷）。tier-panel 顏色：SNV 紅/黃系、CNV 藍 `#bfdbfe`、SV 紫 `#ddd6fe`、Mito teal `#99f6e4`、STR amber `#fde68a`。卡片要包在 `.block-body` 裡才有 inset 效果（`.tier-panel > .block-body { padding-top: 8px }`）。ROH 使用獨立 staged `/api/samples/{id}/roh`，顯示來源/provenance、預設統計、GRCh38 染色體 overview、區段表與 default/1/3/10 Mb/all filters；AutoMap PDF 由登入保護 endpoint 下載。SNV `In ROH` 由 `services/roh.py` 以 normalized 0-based half-open intervals 動態 join；AutoMap 預設 ≥1 Mb、BCFtools ≥1 Mb＋markers ≥25＋Q ≥20、DRAGEN ≥3 Mb。
 - **Staged loading**：`GET /samples/{id}` 只回核心（meta + reports + review TSV 的 SNV + analyses + has_phenotype，`aux_pending: true`，CNV/SV/Mito/STR/PGx 是空 dict）。前端 `loadSample` render 完後背景分別打 `GET /samples/{id}/secondary-snv`、`/cnv`、`/sv`、`/mito`、`/str` 和 `/pgx`，CNV 載完會先顯示，SV/STR/PGx 可繼續在背景載入；回來後 merge 進 `state.data` + re-render 對應卡片/區塊。`state._auxLoadToken` 防 race（切樣本後晚到的回應丟掉）。等待時對應 CNV/SV、Mito、STR、PGx 顯示「載入中…」、tab/count「…」。SNV tier 只 render active tab，切 tab 時才建立該 tier 卡片 DOM。
 - **主畫面長文字自動增高**：Genetic counseling、Clinical presentation、Comment 三個 collapsible textarea 共用 `autoGrow()`；`renderCollapsibleCard()` 載入已展開內容、`toggleCollapsibleCard()` 從收合切為展開，以及各自 `input` event 都必須在欄位可見時依 `scrollHeight` 重設高度。三者維持 `overflow:hidden`；Comment 仍與 Tag picker 左右並排，不可退回 textarea 內部垂直捲動。
 - 載入或重新載入個案時會重設 sample-scoped UI state：SNV/CNV/Mito/STR active tab 回預設、主畫面 gene search input 與 gene search modal 舊結果清空。

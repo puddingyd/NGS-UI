@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.5 — 2026-09-03
+
+- 新增 ROH post-processing 與分析卡片，且不改寫 Nextflow `00`–`07`：in-house 優先沿用二級 AutoMap；缺 AutoMap 時，勾選 Research-only 才以 HaplotypeCaller VCF 補跑 AutoMap，未勾選則使用 BCFtools roh；補跑失敗會記錄 warning 並退回 BCFtools。DRAGEN 永遠使用同 sample 的原生 `roh.bed`／`roh_metrics.csv`，不跑 AutoMap。
+- 三種 ROH 格式會正規化為 `08_postprocessing/{LIS_ID}.roh_regions.tsv` 與可追溯的 `roh_summary.json`，並保留來源檔；畫面提供來源、建議門檻、常染色體總長、染色體概覽、區段表格與 1/3/10 Mb/全部篩選，AutoMap PDF 可直接開啟。SNV/Indel 的 `In ROH` badge 改由正規化區段動態 join；AutoMap 使用原生 ≥1 Mb、BCFtools 使用 ≥1 Mb＋markers ≥25＋quality ≥20、DRAGEN 使用 large ROH ≥3 Mb。
+
 ### v9.4 — 2026-09-02
 
 - 修正大量 case 執行三級分析時 VEP 進度長時間停在約 32%：Nextflow 在 batch channel 尚未收齊時可能先輸出動態 `1 of 1`、`2 of 2`，現在改以本批 sample 數作為進度分母，並以完成記號／完整批次判斷 process 結束，讓 VEP 權重隨完成 case 數逐步增加；modal 同時顯示目前 process 與 `完成數/總數`。

@@ -2496,6 +2496,71 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   color: var(--muted);
   font-size: 13px;
 }
+.roh-source-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 11px;
+  vertical-align: middle;
+}
+.roh-source-badge:empty { display: none; }
+.roh-content { padding: 0 14px 16px; }
+.roh-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.roh-stat {
+  padding: 9px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f9fafb;
+}
+.roh-stat-label { display: block; color: var(--muted); font-size: 11px; }
+.roh-stat-value { display: block; margin-top: 2px; font-weight: 700; font-size: 15px; }
+.roh-provenance, .roh-warning, .roh-table-note {
+  margin: 7px 0;
+  font-size: 12px;
+  color: #4b5563;
+}
+.roh-warning {
+  padding: 7px 9px;
+  border-left: 3px solid #d97706;
+  background: #fffbeb;
+  color: #92400e;
+}
+.roh-toolbar { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 10px 0; }
+.roh-filter-btn {
+  padding: 4px 9px;
+  border: 1px solid #9ca3af;
+  border-radius: 999px;
+  background: #fff;
+  color: #374151;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.roh-filter-btn.active { background: #4338ca; border-color: #4338ca; color: #fff; }
+.roh-pdf-link { margin-left: auto; font-size: 12px; }
+.roh-ideogram {
+  padding: 9px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+}
+.roh-chrom-row { display: grid; grid-template-columns: 32px 1fr; gap: 7px; align-items: center; min-height: 14px; }
+.roh-chrom-label { text-align: right; font-size: 10px; color: #6b7280; }
+.roh-chrom-track { position: relative; height: 8px; border-radius: 4px; background: #e5e7eb; overflow: hidden; }
+.roh-segment { position: absolute; top: 0; bottom: 0; min-width: 1px; background: #7c3aed; opacity: .82; }
+.roh-table-wrap { margin-top: 10px; max-height: 360px; overflow: auto; border: 1px solid #d1d5db; border-radius: 6px; }
+.roh-table { width: 100%; border-collapse: collapse; background: #fff; font-size: 12px; }
+.roh-table th, .roh-table td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; white-space: nowrap; }
+.roh-table th { position: sticky; top: 0; z-index: 1; background: #f3f4f6; }
+.roh-table td:nth-child(3), .roh-table td:nth-child(4) { text-align: right; }
 .tier-tab-bar {
   display: flex;
   flex-wrap: wrap;

@@ -56,7 +56,7 @@ from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
-from ..services import dragen_jobs, mitomap_mito, sample_layout
+from ..services import dragen_jobs, mitomap_mito, roh, sample_layout
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -89,7 +89,28 @@ MANAGED_POSTPROCESSING_NAMES = {
     "ploidy_qc.txt",
     "cnv.annotated.tsv",
     "sv.annotated.tsv",
-}
+} | roh.MANAGED_NAMES
+
+
+def _run_automap_for_roh(
+    hc_vcf: Path,
+    source_sample_id: str,
+    *,
+    post_dir: Path,
+    job_id: str,
+) -> tuple[Path | None, Path | None]:
+    """Run AutoMap in disposable staged 08 work; return its exact outputs."""
+    work_dir = post_dir / f".roh-automap-{job_id}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    runner = REPO_ROOT / "scripts" / "run_automap_roh.sh"
+    _run(
+        ["bash", str(runner), str(hc_vcf), str(work_dir), source_sample_id],
+        label=f"AutoMap ROH {source_sample_id}",
+        display_cmd=["AutoMap", str(hc_vcf), source_sample_id],
+    )
+    tsv = work_dir / f"{source_sample_id}.HomRegions.tsv"
+    pdf = work_dir / f"{source_sample_id}.HomRegions.pdf"
+    return (tsv if tsv.is_file() else None, pdf if pdf.is_file() else None)
 
 
 def _strip_sid_suffix(sid: str) -> str:
@@ -1879,6 +1900,36 @@ def main() -> int:
             if ploidy_qc_copy is not None:
                 ploidy_qc_src, ploidy_qc_dst = ploidy_qc_copy
                 _log(f"[copy] {sid}: future-use ploidy QC {ploidy_qc_src} → {ploidy_qc_dst}")
+            automap_work = post_dir / f".roh-automap-{job_id}"
+            try:
+                roh_summary = roh.prepare_roh_outputs(
+                    mode=mode,
+                    source_vcf=source_vcf,
+                    source_sample_id=source_sid,
+                    sample_id=sid,
+                    post_dir=post_dir,
+                    research_only=bool(args.research_only),
+                    automap_runner=(
+                        lambda hc_vcf, automap_sid: _run_automap_for_roh(
+                            hc_vcf,
+                            automap_sid,
+                            post_dir=post_dir,
+                            job_id=job_id,
+                        )
+                        if mode == "inhouse" and args.research_only
+                        else None
+                    ),
+                )
+            finally:
+                shutil.rmtree(automap_work, ignore_errors=True)
+            _log(
+                f"[roh] {sid}: source={roh_summary.get('source')} "
+                f"regions={roh_summary.get('region_count_default')}/"
+                f"{roh_summary.get('region_count_all')} "
+                f"reason={roh_summary.get('selection_reason')}"
+            )
+            for warning in roh_summary.get("warnings") or []:
+                _log(f"[roh] {sid}: warning: {warning}")
             mito_src = outputs.get("mito.tsv")
             if mito_src is None:
                 _log(

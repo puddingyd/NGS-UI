@@ -19,6 +19,7 @@ const state = {
 };
 const SAMPLE_TEST_TYPES = ["WES", "WGS", "TITAN-WGS"];
 const sampleTestFilters = new Set(SAMPLE_TEST_TYPES);
+let activeRohFilter = "default";
 
 function normalizeSampleTestType(value = "", sampleId = "") {
   if (/^\d{2}T/i.test(String(sampleId || "").trim())) return "TITAN-WGS";
@@ -224,6 +225,7 @@ function resetSampleScopedUiState() {
   activeCnvSvTab = null;
   activeMitoTab = null;
   activeStrTab = null;
+  activeRohFilter = "default";
   document.querySelectorAll(".gene-search-input").forEach(inp => {
     inp.value = "";
   });
@@ -301,6 +303,7 @@ async function _loadSample(LIS_ID) {
     state.mitoPending  = true;
     state.strPending = true;
     state.pgxPending = true;
+    state.rohPending = true;
     state.secondaryPending = true;
     apiFetch(`/samples/${encodeURIComponent(sid)}/secondary-snv`)
       .then(aux => {
@@ -391,12 +394,26 @@ async function _loadSample(LIS_ID) {
         try { renderPharmcatBlock("sec-pharmcat"); } catch (_e) {}
         try { renderPharmcatBlock("cat-pharmcat-c"); } catch (_e) {}
       });
+    apiFetch(`/samples/${encodeURIComponent(sid)}/roh`)
+      .then(aux => {
+        if (token !== state._auxLoadToken || !state.data) return;
+        if (aux) Object.assign(state.data, aux);
+        state.rohPending = false;
+        try { renderRohCard(); } catch (_e) {}
+      })
+      .catch(() => {
+        if (token !== state._auxLoadToken) return;
+        state.rohPending = false;
+        if (state.data) state.data.roh_pending = false;
+        try { renderRohCard(); } catch (_e) {}
+      });
   } else {
     state.cnvPending = false;
     state.svPending = false;
     state.mitoPending  = false;
     state.strPending = false;
     state.pgxPending = false;
+    state.rohPending = false;
   }
 }
 
@@ -7598,6 +7615,115 @@ function renderPharmcatGeneDetails(g, analysisRow = {}) {
           </details>`;
 }
 
+const ROH_GRCH38_CHROM_LENGTHS = {
+  chr1: 248956422, chr2: 242193529, chr3: 198295559, chr4: 190214555,
+  chr5: 181538259, chr6: 170805979, chr7: 159345973, chr8: 145138636,
+  chr9: 138394717, chr10: 133797422, chr11: 135086622, chr12: 133275309,
+  chr13: 114364328, chr14: 107043718, chr15: 101991189, chr16: 90338345,
+  chr17: 83257441, chr18: 80373285, chr19: 58617616, chr20: 64444167,
+  chr21: 46709983, chr22: 50818468, chrX: 156040895, chrY: 57227415,
+};
+
+function _rohFilteredRegions(regions) {
+  if (activeRohFilter === "all") return regions;
+  if (activeRohFilter === "1mb") return regions.filter(r => Number(r.length_bp || 0) >= 1e6);
+  if (activeRohFilter === "3mb") return regions.filter(r => Number(r.length_bp || 0) >= 3e6);
+  if (activeRohFilter === "10mb") return regions.filter(r => Number(r.length_bp || 0) >= 10e6);
+  return regions.filter(r => !!r.passes_default_filter);
+}
+
+function _rohEvidence(row, source) {
+  const value = (v, suffix = "") => v == null || v === "" ? "" : `${v}${suffix}`;
+  if (source === "automap") {
+    return [value(row.n_markers, " variants"), value(row.homozygosity_pct, "% hom")].filter(Boolean).join(" · ") || "—";
+  }
+  if (source === "bcftools") {
+    return [value(row.n_markers, " markers"), value(row.quality, " Q")].filter(Boolean).join(" · ") || "—";
+  }
+  return [value(row.n_hom, " hom"), value(row.n_het, " het"), value(row.score, " score")].filter(Boolean).join(" · ") || "—";
+}
+
+function renderRohCard() {
+  const host = document.getElementById("roh-content");
+  const badge = document.getElementById("roh-source-badge");
+  if (!host || !badge || !state.data) return;
+  if (state.rohPending || state.data.roh_pending) {
+    badge.textContent = "載入中";
+    host.innerHTML = '<div class="analysis-card-empty">ROH 資料載入中…</div>';
+    return;
+  }
+  const summary = state.data.roh_summary || {};
+  const regions = Array.isArray(state.data.roh_regions) ? state.data.roh_regions : [];
+  badge.textContent = summary.source_label || "";
+  if (!summary.source || summary.source === "missing" || summary.status === "source_missing") {
+    const warning = (summary.warnings || []).join("；") || summary.selection_reason || "找不到可用的 ROH 輸出";
+    host.innerHTML = `<div class="roh-warning">${escapeHtml(warning)}</div>`;
+    return;
+  }
+
+  const shown = _rohFilteredRegions(regions);
+  const source = summary.source || "";
+  const defaultDesc = summary.default_filter?.description || "來源預設門檻";
+  const toolVersion = summary.source_details?.tool_version || summary.source_label || "";
+  const warnings = (summary.warnings || []).map(w => `<div class="roh-warning">${escapeHtml(w)}</div>`).join("");
+  const metrics = summary.source_details?.metrics || {};
+  const snvPercentEntry = Object.entries(metrics).find(([key]) => /percent.*snv.*large.*roh/i.test(key));
+  const pdfLink = summary.source_artifacts?.automap_pdf
+    ? `<a class="roh-pdf-link" href="${API_BASE}/samples/${encodeURIComponent(state.data.sample_id || state.currentLIS)}/roh/source-pdf" target="_blank" rel="noopener">開啟 AutoMap PDF ↗</a>`
+    : "";
+  const filterButtons = [
+    ["default", "建議門檻"], ["1mb", "≥1 Mb"], ["3mb", "≥3 Mb"], ["10mb", "≥10 Mb"], ["all", "全部"],
+  ].map(([key, label]) => `<button type="button" class="roh-filter-btn${activeRohFilter === key ? " active" : ""}" data-roh-filter="${key}">${label}</button>`).join("");
+
+  const byChrom = new Map();
+  shown.forEach(row => {
+    const chrom = String(row.chrom || "");
+    if (!byChrom.has(chrom)) byChrom.set(chrom, []);
+    byChrom.get(chrom).push(row);
+  });
+  const ideogram = Object.entries(ROH_GRCH38_CHROM_LENGTHS).map(([chrom, chromLength]) => {
+    const segments = (byChrom.get(chrom) || []).map(row => {
+      const left = Math.max(0, Math.min(100, Number(row.start0 || 0) / chromLength * 100));
+      const width = Math.max(.08, Math.min(100 - left, Number(row.length_bp || 0) / chromLength * 100));
+      const title = `${chrom}:${Number(row.display_start || 0).toLocaleString()}-${Number(row.display_end || 0).toLocaleString()} (${Number(row.length_mb || 0).toFixed(2)} Mb)`;
+      return `<span class="roh-segment" style="left:${left}%;width:${width}%" title="${escapeHtml(title)}"></span>`;
+    }).join("");
+    return `<div class="roh-chrom-row"><span class="roh-chrom-label">${chrom.replace("chr", "")}</span><span class="roh-chrom-track">${segments}</span></div>`;
+  }).join("");
+  const tableRows = shown.slice(0, 200).map(row => `<tr>
+    <td>${escapeHtml(row.chrom || "")}</td>
+    <td>${Number(row.display_start || 0).toLocaleString()}–${Number(row.display_end || 0).toLocaleString()}</td>
+    <td>${Number(row.length_mb || 0).toFixed(3)}</td>
+    <td>${escapeHtml(_rohEvidence(row, source))}</td>
+  </tr>`).join("");
+  const tableNote = shown.length > 200
+    ? `<div class="roh-table-note">表格僅顯示前 200 / ${shown.length} 段；染色體圖仍顯示全部。</div>` : "";
+
+  host.innerHTML = `
+    <div class="roh-summary-grid">
+      <div class="roh-stat"><span class="roh-stat-label">建議門檻區段</span><span class="roh-stat-value">${summary.region_count_default ?? 0}</span></div>
+      <div class="roh-stat"><span class="roh-stat-label">常染色體總長</span><span class="roh-stat-value">${Number(summary.autosomal_total_mb_default || 0).toFixed(3)} Mb</span></div>
+      <div class="roh-stat"><span class="roh-stat-label">目前顯示</span><span class="roh-stat-value">${shown.length} / ${regions.length}</span></div>
+      ${snvPercentEntry ? `<div class="roh-stat"><span class="roh-stat-label">DRAGEN large ROH SNVs</span><span class="roh-stat-value">${Number(snvPercentEntry[1]).toFixed(3)}%</span></div>` : ""}
+    </div>
+    <div class="roh-provenance">${escapeHtml(summary.selection_reason || "")} · ${escapeHtml(toolVersion)} · GRCh38；內部座標為 0-based half-open，畫面為 1-based inclusive。建議門檻：${escapeHtml(defaultDesc)}。</div>
+    ${warnings}
+    <div class="roh-toolbar">${filterButtons}${pdfLink}</div>
+    <div class="roh-ideogram" aria-label="ROH chromosome overview">${ideogram}</div>
+    ${tableNote}
+    <div class="roh-table-wrap"><table class="roh-table">
+      <thead><tr><th>Chr</th><th>位置（1-based）</th><th>Mb</th><th>來源證據</th></tr></thead>
+      <tbody>${tableRows || '<tr><td colspan="4" class="muted">此篩選條件下無 ROH</td></tr>'}</tbody>
+    </table></div>`;
+}
+
+document.addEventListener("click", ev => {
+  const button = ev.target.closest?.(".roh-filter-btn");
+  if (!button) return;
+  activeRohFilter = button.dataset.rohFilter || "default";
+  renderRohCard();
+});
+
 function renderAll() {
   if (!state.data) return;
   updateWelcomeVisibility();
@@ -7607,6 +7733,7 @@ function renderAll() {
   renderPhenotype();
   renderVersionPicker();
   renderDeadZoneCard();
+  renderRohCard();
   renderComment();
   renderReportSections();
   renderCandidateSections();

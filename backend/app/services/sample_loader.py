@@ -54,6 +54,7 @@ from . import (
     panel_deadzone,
     phenotype_scorer,
     ploidy,
+    roh,
     sample_layout,
     snv_gene_index,
     snv_overlay,
@@ -1153,7 +1154,13 @@ def _enrich_snv_variants(
                 v[f] = rec.get(f, "")
         v["disease_associations"] = gene_disease_store.merged_associations(gene, rec, refresh=False)
     litvar2_on_demand.apply_cached(variants, sample_id)
+    roh.annotate_variants(variants, sample_id)
     return pheno_by_gene
+
+
+def load_sample_roh(sample_id: str, version: str | None = None) -> dict | None:
+    """Staged loader for normalized ROH regions and provenance summary."""
+    return roh.load_sample_roh(sample_id)
 
 
 def _legacy_manual_snapshot(edit: dict) -> dict | None:
@@ -1955,6 +1962,7 @@ def load_sample_secondary_snv(
     all_variants = {
         variant_id: dict(variant) for variant_id, variant in all_variants.items()
     }
+    roh.annotate_variants(all_variants, sample_id)
     tiers = {tier: list(ids) for tier, ids in tiers.items()}
     _apply_effective_acmg(
         all_variants,
@@ -2131,6 +2139,7 @@ def load_sample(sample_id: str, version: str | None = None,
         genome_build=meta.get("genome_build") or "hg38",
         meta=meta,
     )
+    roh.annotate_variants(variants, sample_id)
     review_variants_for_secondary = variants
 
     # CNV / SV: load only when the AnnotSV outputs are present beside
@@ -2183,7 +2192,7 @@ def load_sample(sample_id: str, version: str | None = None,
         mito_variants, mito_categories = {}, {t: [] for t in MITO_TIERS}
 
     qc = _read_json_or(sample_layout.state_file(sample_id, "qc_summary.json"), {}) or {}
-    roh = _read_json_or(sample_layout.state_file(sample_id, "roh_summary.json"), {}) or {}
+    roh_summary = _read_json_or(sample_layout.state_file(sample_id, "roh_summary.json"), {}) or {}
     ploidy_result = ploidy.load_sample_ploidy(sample_id)
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
     dead_zone_entries = []
@@ -2240,7 +2249,9 @@ def load_sample(sample_id: str, version: str | None = None,
         "selected_panels":   panels_list,
         "vcf_path":          meta.get("vcf_path", ""),
         "qc_summary":        qc,
-        "roh_summary":       roh,
+        "roh_summary":       roh_summary,
+        "roh_regions":       [],
+        "roh_pending":       not include_aux,
         "ploidy":            ploidy_result,
         "dead_zone": {
             "threshold": panel_deadzone.dead_zone_threshold(_test_type),

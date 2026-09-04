@@ -3,7 +3,7 @@ import time
 from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from ..auth import current_user
 from ..services import (
@@ -399,6 +399,30 @@ def get_sample_pgx(sample_id: str, version: str | None = None):
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")
     return payload
+
+
+@router.get("/samples/{sample_id}/roh")
+def get_sample_roh(sample_id: str, version: str | None = None):
+    """Normalized ROH regions + source provenance for staged loading."""
+    payload = sample_loader.load_sample_roh(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
+@router.get("/samples/{sample_id}/roh/source-pdf")
+def get_sample_roh_pdf(sample_id: str):
+    """Download the preserved AutoMap PDF when that source supplied one."""
+    if not sample_layout.state_dir(sample_id).is_dir():
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    path = sample_layout.state_file(sample_id, "roh.source.automap.pdf")
+    if not path.is_file():
+        raise HTTPException(404, "AutoMap PDF not available")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=f"{sample_id}.HomRegions.pdf",
+    )
 
 
 @router.get("/samples/{sample_id}/secondary-snv")
