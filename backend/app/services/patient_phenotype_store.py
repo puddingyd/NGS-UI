@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 
 from ..config import PHENOTYPE_DIR
-from . import phenotype_io
+from . import phenotype_io, phenotype_scorer
 
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
@@ -186,6 +186,7 @@ def load(
     except OSError:
         return {}
     hpo, panels = phenotype_io.parse(content)
+    panels = phenotype_scorer.normalize_panel_entries(panels)
     return {
         "filename": path.name,
         "path": str(path),

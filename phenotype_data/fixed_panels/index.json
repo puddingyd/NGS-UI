@@ -113,8 +113,8 @@
           "category": "腫瘤醫學",
           "panels": [
             {
-              "name": "遺傳癌症",
-              "key": "WES-I__腫瘤醫學__遺傳癌症",
+              "name": "遺傳癌症 v2.0",
+              "key": "WES-I__腫瘤醫學__遺傳癌症 v2.0",
               "gene_count": 209
             }
           ]

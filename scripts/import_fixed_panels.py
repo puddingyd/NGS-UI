@@ -110,6 +110,12 @@ def _is_gene_symbol(cell: str) -> bool:
 _PANEL_NAME_CORRECTIONS = {
     # Typo in the source spreadsheet. Keep UI labels reviewer-friendly.
     "Syndromic hearing losss": "Syndromic hearing loss",
+    # Versioned clinical name requested by the oncology team.
+    "遺傳癌症": "遺傳癌症 v2.0",
+}
+
+_PANEL_FULL_KEY_CORRECTIONS = {
+    "WES-I__腫瘤醫學__遺傳癌症": "WES-I__腫瘤醫學__遺傳癌症 v2.0",
 }
 
 
@@ -166,9 +172,9 @@ def _read_wes_xlsx(path: Path, series_key: str) -> list[dict]:
             # Remove the known specialty / tier prefix only. Splitting
             # on the final `-` corrupts names like "Non-syndromic".
             display = _panel_display_name(label) or label
-            # Keep the historical key stable because analyses persist
-            # it in sample metadata. The corrected display name is a
-            # separate UI concern.
+            # Keys normally remain stable because analyses persist them in
+            # sample metadata. Explicit versioned renames are applied below
+            # with a compatibility alias retained by phenotype_scorer.
             key_name = label.split("-")[-1].strip() or label
             panel_cols.append((col_idx, display, key_name))
         if not panel_cols:
@@ -201,6 +207,7 @@ def _read_wes_xlsx(path: Path, series_key: str) -> list[dict]:
             if not genes:
                 continue
             key = f"{series_key}__{category}__{_slug(key_name)}"
+            key = _PANEL_FULL_KEY_CORRECTIONS.get(key, key)
             out.append({
                 "series":   series_key,
                 "category": category,

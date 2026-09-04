@@ -1,0 +1,77 @@
+panel_name	source	output_name
+ACMG_SF_v3.3		ACMG_SF_v3.3
+ARVC_panelapp	PanelApp	ARVC
+BBS_panel		BBS_panel
+Brugada		Brugada
+CMT		CMT
+CPVT		CPVT
+Cytopenias_and_congenital_anaemias		Cytopenias_and_congenital_anaemias
+DCM_panelapp	PanelApp	DCM
+EDS		EDS
+Fanconi_anemia_panel		Fanconi_anemia_panel
+GSD		GSD
+HCM_panelapp	PanelApp	HCM
+HHT		HHT
+HIE		HIE
+IBD_panelapp	PanelApp	IBD
+Kawasaki_disease_malacards	MalaCards	Kawasaki_disease
+Marfan_panel		Marfan_panel
+Monosomy_7_syndrome_panel		Monosomy_7_syndrome_panel
+NCL_panel		NCL_panel
+Neuronal_ceroid_lipofuscinosis		Neuronal_ceroid_lipofuscinosis
+OI_panelapp	PanelApp	OI
+PAH_panelapp	PanelApp	PAH
+RASopathy_panel		RASopathy_panel
+Rett		Rett
+SCID_panel		SCID_panel
+anemia_hereditary_panel		anemia_hereditary_panel
+arrhythmias		arrhythmias
+bleeding_disorder		bleeding_disorder
+brain_channelopathy_panelapp	PanelApp	brain_channelopathy
+cafe_au_lait_spot		cafe_au_lait_spot
+cardiomyopathy_syndromic		cardiomyopathy_syndromic
+carrier_mackenzie_1300+		carrier_mackenzie_1300+
+cholestasis_panelapp	PanelApp	cholestasis
+ciliopathy_panelapp	PanelApp	ciliopathy
+congenital_immunodeficiency_panel		congenital_immunodeficiency_panel
+connective_tissue_disorder		connective_tissue_disorder
+cornelia_de_lange_panel		cornelia_de_lange_panel
+cytopenia_anemia_panelapp	PanelApp	cytopenia_anemia
+diabetes		diabetes
+epilepsy_iem_panelapp	PanelApp	epilepsy_iem
+epilepsy_panelapp	PanelApp	epilepsy
+febrile_encephalopathy		febrile_encephalopathy
+growth_panel		growth_panel
+hearing_loss		hearing_loss
+hearing_loss_panelapp	PanelApp	hearing_loss
+heart_disease		heart_disease
+hereditary_cancer		hereditary_cancer
+hereditary_neuropathy_panel		hereditary_neuropathy_panel
+hyperinsulinism_panelapp	PanelApp	hyperinsulinism
+hypoglycemia		hypoglycemia
+hypogonadotropic_hypogonadism_panelapp	PanelApp	hypogonadotropic_hypogonadism
+immunodeficiency_IBD		immunodeficiency_IBD
+inborn_error		inborn_error
+inborn_error_panel		inborn_error_panel
+leukodystrophy_panelapp	PanelApp	leukodystrophy
+lipid_fh		lipid_fh
+mendelian_susceptibility_to_mycobacteria_panel		mendelian_susceptibility_to_mycobacteria_panel
+monogenic_diabetes		monogenic_diabetes
+movement_disorder_panelapp	PanelApp	movement_disorder
+mtor_pathway		mtor_pathway
+myasthenia_panelapp	PanelApp	myasthenia
+myopathy_congenital		myopathy_congenital
+neonatal_diabetes_panelapp	PanelApp	neonatal_diabetes
+neutropenia_panel		neutropenia_panel
+overgrowth		overgrowth
+overgrowth 2		overgrowth 2
+pheochromocytoma		pheochromocytoma
+proactive		proactive
+renal_disease_panel		renal_disease_panel
+retina_disease		retina_disease
+skeletal_dysplasia_ajhg2023	AJHG 2023	skeletal_dysplasia
+skeletal_dysplasia_panelapp	PanelApp	skeletal_dysplasia
+thrombophilia		thrombophilia
+tma_panel		tma_panel
+val55		val55
+young_stroke		young_stroke

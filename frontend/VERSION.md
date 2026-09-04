@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.6 — 2026-09-04
+
+- 固定 panel `WES-I__腫瘤醫學__遺傳癌症` 更新為 `WES-I__腫瘤醫學__遺傳癌症 v2.0`，舊病例保存的原名稱仍可解析到相同 gene list。
+- PDF 與診斷報告 DOCX 的 grouped gene list 改用報告名稱：固定 panel 省略 WES-I／WES-II／WGS 與科別前綴；custom panel 由 `phenotype_data/custom_panels/panel_metadata.tsv` 的 `output_name` 控制。對照表同時集中記錄 panel 名稱與來源，新建 custom panel 時會自動新增一列。
+
 ### v9.5 — 2026-09-03
 
 - 新增 ROH post-processing 與分析卡片，且不改寫 Nextflow `00`–`07`：in-house 優先沿用二級 AutoMap；缺 AutoMap 時，勾選 Research-only 才以 HaplotypeCaller VCF 補跑 AutoMap，未勾選則使用 BCFtools roh；補跑失敗會記錄 warning 並退回 BCFtools。DRAGEN 永遠使用同 sample 的原生 `roh.bed`／`roh_metrics.csv`，不跑 AutoMap。

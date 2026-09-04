@@ -1388,10 +1388,9 @@ def _hpo_label_for(hid: str) -> str:
 
 
 def _genes_for_term_or_panel(key: str) -> list[str]:
-    """phenotype_scorer._HPO_TO_GENES is the union of HPO→gene map and
-    every panel's gene set (HPO ids + panel names live in the same dict)."""
+    """Return reportable genes, including compatibility panel aliases."""
     genes = []
-    for raw in phenotype_scorer._HPO_TO_GENES.get(key, set()):
+    for raw in phenotype_scorer.genes_for_key(key).get("genes", []):
         gene, _hid = panel_deadzone.canonical_gene_symbol(raw)
         if panel_deadzone.is_disease_associated_gene(gene):
             genes.append(gene)
@@ -1430,7 +1429,7 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         pname = entry.get("name") if isinstance(entry, dict) else str(entry)
         if not pname: continue
         genes = _genes_for_term_or_panel(pname)
-        sections.append((pname, genes))
+        sections.append((phenotype_scorer.panel_output_name(pname), genes))
 
     if not sections:
         _add_paragraph(doc, "    （未設定 HPO / panel — 無檢測基因清單）")

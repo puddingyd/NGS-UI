@@ -48,7 +48,7 @@
 | GenCC / ClinGen / MONDO raw downloads | `NGS_UI_HOME/phenotype_data/gene_disease/raw/` | `NGS_UI_GENE_DISEASE_RAW_DIR` |
 | 固定 WES-I / WES-II / WGS gene panels | `REPO_ROOT/phenotype_data/gene_panels/` | `NGS_UI_GENE_PANELS_DIR` |
 | 固定 panel UI index | `REPO_ROOT/phenotype_data/fixed_panels/` | `NGS_UI_FIXED_PANELS_DIR` |
-| custom gene panels | `REPO_ROOT/phenotype_data/custom_panels/` | `NGS_UI_CUSTOM_GENE_PANELS_DIR` |
+| custom gene panels + 名稱／來源／輸出名稱對照表 | `REPO_ROOT/phenotype_data/custom_panels/`（`panel_metadata.tsv`） | `NGS_UI_CUSTOM_GENE_PANELS_DIR` |
 | expanded reportable gene list / HGNC alias / dead-zone tables | `REPO_ROOT/ngs_panel_deadzone/` | `NGS_UI_PANEL_DEADZONE_DIR` |
 | OMIM.xlsx | `NGS_UI_HOME/OMIM/OMIM.xlsx` | `NGS_UI_OMIM_XLSX` |
 | GIAB stratification BED + `strata_manifest.json` | `NGS_UI_HOME/biotools/giab_stratification/` | `NGS_UI_GIAB_STRAT_DIR` |
@@ -114,7 +114,7 @@ layout v3 的 sample-owned 檔案一律用 `{LIS_ID}.<name>`；resolver 固定 p
 
 SNV post-processing 允許執行期間建立隱藏 working TSV，既有 in-place annotator 跑完後比較 03 raw 產生 sparse overlay，worker 的 `finally` 一定刪除 working TSV；不得在 08 永久留下第二份 `snv_indel.annotated.tsv`。`REF/ALT=*` 與非 primary contig 在 review/index/search/VCF consumer 端排除，不改寫 raw。
 
-固定 WES-I / WES-II / WGS panel 檔與 custom panels 現在保留在 repo 的 `phenotype_data/gene_panels/`、`phenotype_data/fixed_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git pull 更新。WGS 固定套組包含血液科 Lymphoid Neoplasm Panel 與 Myeloid Neoplasm Panel；來源 CSV 的 SNV/indel、CNV、STR、Mitochondria 欄位已合併成單一 gene list，不在 phenotype panel 層分 variant type。
+固定 WES-I / WES-II / WGS panel 檔與 custom panels 現在保留在 repo 的 `phenotype_data/gene_panels/`、`phenotype_data/fixed_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git pull 更新。固定 `WES-I__腫瘤醫學__遺傳癌症 v2.0` 的名稱可包含空格，舊 `WES-I__腫瘤醫學__遺傳癌症` 只作 persisted analysis lookup alias。固定 panel 的 PDF／診斷 DOCX 標題取 `fixed_panels/index.json` 短名稱，不輸出 series／科別；custom panel 的 `panel_name`、`source`、`output_name` 集中在 `custom_panels/panel_metadata.tsv`，報告使用 `output_name`，新建 custom panel 時自動 append 一列。WGS 固定套組包含血液科 Lymphoid Neoplasm Panel 與 Myeloid Neoplasm Panel；來源 CSV 的 SNV/indel、CNV、STR、Mitochondria 欄位已合併成單一 gene list，不在 phenotype panel 層分 variant type。
 HPO reference、fixed/custom panel 與既有 `pheno_score.tsv` 讀入時都會先 canonicalize；fixed/custom panel 與 phenotype score 使用 `panel_deadzone.canonical_panel_gene_symbol()`（優先 `ngs_panel_deadzone/panel/panel_gene_aliases.tsv`，再 fallback VEP/HGNC map），SNV/CNV/SV/Mito adapter 端也 canonicalize variant gene 後才做 `pheno_score` / `in_panel` join，避免 VEP 舊 symbol 或 panel alias 漏算。`panel_gene_aliases.tsv` 由 `scripts/build_hgnc_panel_aliases.py` 從 HGNC 官方 `reference/hgnc/hgnc_complete_set.txt`、`reference/hgnc/withdrawn.txt` 與 `reference/hgnc/manual_panel_aliases.tsv` 重建；衝突項輸出到 `docs/ops/hgnc_alias_conflicts.tsv`，custom panel 轉換後仍非 current HGNC 的項目列在 `docs/ops/custom_panel_hgnc_review_20260613.tsv`。
 
 ---

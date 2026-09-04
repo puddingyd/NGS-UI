@@ -20,6 +20,7 @@ A reload happens on demand via reload_db() (no auto-watch).
 from __future__ import annotations
 
 import csv
+import json
 import re
 import threading
 from functools import lru_cache
@@ -27,12 +28,24 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
-from ..config import CUSTOM_GENE_PANELS_DIR, GENE_PANELS_DIR, PHENO_DATA_DIR
+from ..config import (
+    CUSTOM_GENE_PANELS_DIR,
+    FIXED_PANELS_DIR,
+    GENE_PANELS_DIR,
+    PHENO_DATA_DIR,
+)
 from . import panel_deadzone
 
 PHENO_TO_GENES_PATH = PHENO_DATA_DIR / "phenotype_to_genes.txt"
 PANELS_DIR = GENE_PANELS_DIR
 CUSTOM_PANELS_DIR = CUSTOM_GENE_PANELS_DIR
+CUSTOM_PANEL_METADATA_PATH = CUSTOM_PANELS_DIR / "panel_metadata.tsv"
+
+# Keep phenotype files saved before the fixed-panel rename usable. Aliases are
+# lookup-only: they do not reappear in panel pickers or gene memberships.
+_PANEL_ALIASES = {
+    "WES-I__腫瘤醫學__遺傳癌症": "WES-I__腫瘤醫學__遺傳癌症 v2.0",
+}
 
 
 # hpo_id (or panel_name) → set[gene_symbol]
@@ -41,6 +54,8 @@ _HPO_TO_GENES: dict[str, set[str]] = defaultdict(set)
 _PANEL_TO_GENES: dict[str, set[str]] = {}
 # panel_name → small metadata parsed from comment headers in *.txt panel files
 _PANEL_META: dict[str, dict[str, str]] = {}
+# fixed panel key → report/PDF display name from fixed_panels/index.json
+_FIXED_PANEL_OUTPUT_NAMES: dict[str, str] = {}
 # canonical_gene → {"hpo": set[hpo_id], "panel": set[panel_name]}
 _GENE_TO_KEYS: dict[str, dict[str, set[str]]] = {}
 _LOADED = False
@@ -126,6 +141,80 @@ def _load_panels_from_dir(panel_dir: Path) -> tuple[dict[str, set[str]], dict[st
     return out, meta
 
 
+def _load_custom_panel_metadata(
+    path: Path = CUSTOM_PANEL_METADATA_PATH,
+) -> dict[str, dict[str, str]]:
+    """Load the reviewer-editable custom-panel naming table.
+
+    The three columns are ``panel_name``, ``source`` and ``output_name``.
+    Unknown panel rows are harmless, which makes it safe to prepare a row
+    before adding its corresponding gene-list file.
+    """
+    if not path.is_file():
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle, delimiter="\t"):
+                name = str(row.get("panel_name") or "").strip()
+                if not name or name.startswith("#"):
+                    continue
+                out[name] = {
+                    "source": " ".join(str(row.get("source") or "").split()),
+                    "output_name": str(row.get("output_name") or "").strip(),
+                }
+    except (OSError, csv.Error):
+        return {}
+    return out
+
+
+def _load_fixed_panel_output_names(
+    path: Path | None = None,
+) -> dict[str, str]:
+    """Return fixed-panel keys mapped to their short UI/report labels."""
+    index_path = path or (FIXED_PANELS_DIR / "index.json")
+    if not index_path.is_file():
+        return {}
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out: dict[str, str] = {}
+    for series in payload.get("series") or []:
+        for group in series.get("groups") or []:
+            for panel in group.get("panels") or []:
+                key = str(panel.get("key") or "").strip()
+                name = str(panel.get("name") or "").strip()
+                if key and name:
+                    out[key] = name
+    return out
+
+
+def _resolve_panel_name(name: str) -> str:
+    clean = (name or "").strip()
+    return _PANEL_ALIASES.get(clean, clean)
+
+
+def canonical_panel_name(name: str) -> str:
+    """Canonical persisted key, including compatibility aliases."""
+    return _resolve_panel_name(name)
+
+
+def normalize_panel_entries(entries: Iterable = ()) -> list:
+    """Copy panel entries while upgrading any legacy fixed-panel keys."""
+    normalized: list = []
+    for entry in entries or []:
+        if isinstance(entry, dict):
+            row = dict(entry)
+            row["name"] = _resolve_panel_name(str(row.get("name") or ""))
+            normalized.append(row)
+        elif isinstance(entry, str):
+            normalized.append(_resolve_panel_name(entry))
+        else:
+            normalized.append(entry)
+    return normalized
+
+
 def _load_panels(panel_dirs: Iterable[Path] = (PANELS_DIR, CUSTOM_PANELS_DIR)) -> dict[str, set[str]]:
     out: dict[str, set[str]] = {}
     meta: dict[str, dict[str, str]] = {}
@@ -136,6 +225,11 @@ def _load_panels(panel_dirs: Iterable[Path] = (PANELS_DIR, CUSTOM_PANELS_DIR)) -
         meta.update(panel_meta)
     _PANEL_META.clear()
     _PANEL_META.update(meta)
+    for name, panel_meta in _load_custom_panel_metadata().items():
+        if name in out:
+            _PANEL_META.setdefault(name, {}).update(panel_meta)
+    _FIXED_PANEL_OUTPUT_NAMES.clear()
+    _FIXED_PANEL_OUTPUT_NAMES.update(_load_fixed_panel_output_names())
     return out
 
 
@@ -230,11 +324,53 @@ def register_custom_panel(name: str, genes: Iterable[str], source: str = "") -> 
     header = f"#source: {safe_source}\n" if safe_source else "#source:\n"
     out.write_text(header + "\n".join(ordered) + "\n", encoding="utf-8")
 
+    metadata_exists = CUSTOM_PANEL_METADATA_PATH.is_file()
+    metadata_empty = not metadata_exists or CUSTOM_PANEL_METADATA_PATH.stat().st_size == 0
+    metadata_needs_newline = (
+        metadata_exists
+        and not metadata_empty
+        and CUSTOM_PANEL_METADATA_PATH.read_bytes()[-1:] not in {b"\n", b"\r"}
+    )
+    with CUSTOM_PANEL_METADATA_PATH.open("a", encoding="utf-8", newline="") as handle:
+        if metadata_needs_newline:
+            handle.write("\n")
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        if metadata_empty:
+            writer.writerow(("panel_name", "source", "output_name"))
+        writer.writerow((clean, safe_source, clean))
+
     gene_set = set(ordered)
     _PANEL_TO_GENES[clean] = gene_set
     _HPO_TO_GENES[clean] |= gene_set
-    _PANEL_META[clean] = {"source": safe_source} if safe_source else {"source": ""}
-    return {"name": clean, "n_genes": len(gene_set), "source": safe_source}
+    _PANEL_META[clean] = {"source": safe_source, "output_name": clean}
+    return {
+        "name": clean,
+        "n_genes": len(gene_set),
+        "source": safe_source,
+        "output_name": clean,
+    }
+
+
+def panel_output_name(name: str) -> str:
+    """Name used in PDF/DOCX gene-list headings.
+
+    Custom panels use ``panel_metadata.tsv``. Fixed panels use the short name
+    from ``fixed_panels/index.json`` so test series and specialty prefixes do
+    not leak into reports. Unknown names remain unchanged.
+    """
+    if not _LOADED:
+        load()
+    raw = (name or "").strip()
+    resolved = _resolve_panel_name(raw)
+    configured = str((_PANEL_META.get(resolved) or {}).get("output_name") or "").strip()
+    if configured:
+        return configured
+    if resolved in _FIXED_PANEL_OUTPUT_NAMES:
+        return _FIXED_PANEL_OUTPUT_NAMES[resolved]
+    parts = resolved.split("__")
+    if len(parts) >= 3 and parts[0] in {"WES-I", "WES-II", "WGS"}:
+        return "__".join(parts[2:])
+    return resolved or raw
 
 
 def list_panels() -> list[dict]:
@@ -245,6 +381,7 @@ def list_panels() -> list[dict]:
             "name": name,
             "gene_count": len(genes),
             "source": (_PANEL_META.get(name) or {}).get("source", ""),
+            "output_name": panel_output_name(name),
         }
         for name, genes in sorted(_PANEL_TO_GENES.items())
     ]
@@ -253,21 +390,23 @@ def list_panels() -> list[dict]:
 def genes_for_key(key: str, kind: str = "") -> dict:
     """Return canonical gene symbols for an HPO term or panel key."""
     clean_key = (key or "").strip()
+    resolved_key = _resolve_panel_name(clean_key)
     clean_kind = (kind or "").strip().lower()
     if not clean_key:
         return {"kind": clean_kind, "key": "", "gene_count": 0, "genes": []}
 
-    if clean_kind == "panel" or (not clean_kind and clean_key in _PANEL_TO_GENES):
+    if clean_kind == "panel" or (not clean_kind and resolved_key in _PANEL_TO_GENES):
         if not _LOADED:
             load()
-        genes = sorted(_PANEL_TO_GENES.get(clean_key, ()))
-        meta = _PANEL_META.get(clean_key) or {}
+        genes = sorted(_PANEL_TO_GENES.get(resolved_key, ()))
+        meta = _PANEL_META.get(resolved_key) or {}
         return {
             "kind": "panel",
             "key": clean_key,
             "gene_count": len(genes),
             "genes": genes,
             "source": meta.get("source", ""),
+            "output_name": panel_output_name(resolved_key),
         }
 
     if _LOADED:
@@ -303,6 +442,7 @@ def memberships_for_gene(gene: str, *, limit_hpo: int = 200, limit_panels: int =
                 "name": name,
                 "gene_count": len(_PANEL_TO_GENES.get(name, ())),
                 "source": (_PANEL_META.get(name) or {}).get("source", ""),
+                "output_name": panel_output_name(name),
             }
             for name in panel_names[:limit_panels]
         ],
@@ -314,7 +454,7 @@ def gene_count(hpo_id: str) -> int:
     """Number of distinct genes annotated to this HPO term (or panel name)."""
     if not _LOADED:
         load()
-    return len(_HPO_TO_GENES.get(hpo_id, ()))
+    return len(_HPO_TO_GENES.get(_resolve_panel_name(hpo_id), ()))
 
 
 def compute_pheno_match(
@@ -356,8 +496,9 @@ def compute_pheno_match(
             name, w = entry.strip(), 1.0
         else:
             name, w = entry[0], float(entry[1])
-        if name and name in _PANEL_TO_GENES:
-            pairs.append((name, w))
+        resolved_name = _resolve_panel_name(name)
+        if resolved_name and resolved_name in _PANEL_TO_GENES:
+            pairs.append((resolved_name, w))
 
     total_weight = sum(w for _, w in pairs)
     accum: dict[str, float] = defaultdict(float)

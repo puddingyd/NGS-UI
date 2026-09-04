@@ -507,7 +507,10 @@ def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
         name = entry.get("name") if isinstance(entry, dict) else str(entry)
         if not name:
             continue
-        sections.append({"name": name, "genes": genes_for(name, kind="panel")})
+        sections.append({
+            "name": phenotype_scorer.panel_output_name(name),
+            "genes": genes_for(name, kind="panel"),
+        })
 
     merged: set[str] = set()
     for section in sections:
@@ -1715,6 +1718,7 @@ def _load_pheno_context(sample_id: str, version: str | None):
     else:
         hpo_list    = meta.get("hpo") or meta.get("patient_phenotype") or []
         panels_list = meta.get("selected_panels") or []
+    panels_list = phenotype_scorer.normalize_panel_entries(panels_list)
     return sub, sidecar_dir, hpo_list, panels_list, _read_pheno_by_gene(sample_id, sidecar_dir)
 
 
@@ -2081,6 +2085,7 @@ def load_sample(sample_id: str, version: str | None = None,
     else:
         hpo_list      = meta.get("hpo") or meta.get("patient_phenotype") or []
         panels_list   = meta.get("selected_panels") or []
+    panels_list = phenotype_scorer.normalize_panel_entries(panels_list)
 
     pheno_path = _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
 
