@@ -1,6 +1,0 @@
-#source:
-PARN
-SUZ12
-POLA1
-RAPSN
-OARS1
