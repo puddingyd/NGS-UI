@@ -1,6 +1,30 @@
+import ast
+from pathlib import Path
+
 from docx import Document
 
 from app.services import docx_export, phenotype_scorer, sample_loader
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_load_sample_uses_module_level_phenotype_scorer_import():
+    """A late local import makes earlier panel normalization raise F823."""
+    tree = ast.parse(
+        (ROOT / "backend/app/services/sample_loader.py").read_text(encoding="utf-8"),
+    )
+    load_sample = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "load_sample"
+    )
+    local_imports = [
+        alias.name
+        for node in ast.walk(load_sample)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    ]
+    assert "phenotype_scorer" not in local_imports
 
 
 def test_fixed_panel_report_name_is_short_and_old_key_is_compatible():

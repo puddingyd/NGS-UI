@@ -2102,7 +2102,6 @@ def load_sample(sample_id: str, version: str | None = None,
     )
     if needs_backfill:
         try:
-            from . import phenotype_scorer
             scores = phenotype_scorer.compute_pheno_score(hpo_list, panels_list)
             if scores:
                 phenotype_scorer.write_pheno_table(
@@ -2163,7 +2162,6 @@ def load_sample(sample_id: str, version: str | None = None,
         # here from the active analysis version's HPO/panels so the
         # numerator on each gene matches what compute_pheno_score
         # multiplied by 100 to write pheno_score.tsv.
-        from . import phenotype_scorer
         pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(
             hpo_list, panels_list
         )
