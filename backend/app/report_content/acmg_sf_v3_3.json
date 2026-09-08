@@ -1,0 +1,373 @@
+{
+  "version": "ACMG SF v3.3",
+  "updated": "2026-09-08",
+  "title": "ACMG SF 相關疾病與健康照護簡介",
+  "introduction": "本節介紹 ACMG SF v3.3 所列 84 個基因相關的疾病，協助您了解疾病可能的表現、病程，以及可採取的追蹤與治療。內容依疾病群組整理，個人的檢測結果請參閱報告前文。帶有致病變異不代表每個人都會出現相同症狀，發病年齡與嚴重程度也可能不同；實際照護應結合變異種類、個人狀況與家族史評估。",
+  "inheritance_guide": [
+    "體染色體顯性遺傳：一份基因帶有致病變異，即可能增加相關疾病風險。若父母一方帶有一份致病變異，每次懷孕通常各有二分之一機會傳給子女；這是傳遞變異的機率，並非子女一定發病的機率。",
+    "體染色體隱性遺傳：通常需父母各傳來一份受影響的基因才會發病。若夫妻均為同一疾病的帶因者，每次懷孕各有四分之一機會生下受影響的孩子。只有一份受影響時通常為帶因者，仍須依疾病與家族狀況判讀。",
+    "X 染色體連鎖遺傳：致病變異位於 X 染色體。男性與女性的表現可能不同，女性也可能發病，不能一律視為沒有症狀的帶因者。家族傳遞機率需依帶有變異者及子女的性染色體組成評估。"
+  ],
+  "reading_note": "索引中的編號對應後方疾病短文，電子版可點選疾病名稱跳轉。同一基因若與多種疾病相關，可能出現在不同項目；所列遺傳模式以本節介紹的疾病為範圍。治療內容為一般照護方向，是否適用仍須由專科評估。",
+  "categories": [
+    {"id": "lipid", "title": "血脂相關疾病"},
+    {"id": "tumor", "title": "遺傳性腫瘤"},
+    {"id": "cardiovascular", "title": "心血管疾病"},
+    {"id": "metabolic_endocrine", "title": "代謝與內分泌疾病"},
+    {"id": "anesthesia", "title": "麻醉用藥風險"},
+    {"id": "other", "title": "視網膜與類澱粉沉積疾病"}
+  ],
+  "sources": {
+    "acmg": {"title": "ACMG SF v3.3 list for reporting of secondary findings", "publisher": "ACMG／Genetics in Medicine, 2025", "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12318660/"},
+    "clingen": {"title": "ACMG Secondary Findings Resource", "publisher": "ClinGen", "url": "https://search.clinicalgenome.org/kb/genes/acmgsf"},
+    "actionability": {"title": "Implementing Evidence-Based Assertions of Clinical Actionability in the Context of Secondary Findings", "publisher": "ClinGen／Genetics in Medicine, 2024", "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11298308/"},
+    "fh": {"title": "Familial Hypercholesterolemia", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK174884/"},
+    "brca": {"title": "BRCA1- and BRCA2-Associated Hereditary Breast and Ovarian Cancer", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1247/"},
+    "palb2": {"title": "PALB2 Cancer Risks and Management PDQ", "publisher": "美國國家癌症研究所 NCI", "url": "https://www.cancer.gov/publications/pdq/information-summaries/genetics/palb2-hp-pdq"},
+    "lynch": {"title": "Lynch Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1211/"},
+    "apc": {"title": "APC-Associated Polyposis Conditions", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1345/"},
+    "mutyh": {"title": "MUTYH Polyposis", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK107219/"},
+    "jps": {"title": "Juvenile Polyposis Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1469/"},
+    "pjs": {"title": "Peutz-Jeghers Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1266/"},
+    "men1": {"title": "Multiple Endocrine Neoplasia Type 1", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1538/"},
+    "men2": {"title": "Multiple Endocrine Neoplasia Type 2", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1257/"},
+    "pgl": {"title": "Hereditary Paraganglioma-Pheochromocytoma Syndromes", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1548/"},
+    "pten": {"title": "PTEN Hamartoma Tumor Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1488/"},
+    "lfs": {"title": "Li-Fraumeni Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1311/"},
+    "vhl": {"title": "Von Hippel-Lindau Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1463/"},
+    "nf2": {"title": "NF2-Related Schwannomatosis", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1201/"},
+    "tsc": {"title": "Tuberous Sclerosis Complex", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1220/"},
+    "rb1": {"title": "Retinoblastoma", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1452/"},
+    "wt1": {"title": "WT1 Disorder", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK556455/"},
+    "hcm": {"title": "Nonsyndromic Hypertrophic Cardiomyopathy Overview", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1768/"},
+    "dcm": {"title": "Dilated Cardiomyopathy Overview", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1309/"},
+    "lmna": {"title": "LMNA-Related Dilated Cardiomyopathy", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1674/"},
+    "acm": {"title": "Arrhythmogenic Right Ventricular Cardiomyopathy Overview", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1131/"},
+    "lqts": {"title": "Long QT Syndrome Overview", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1129/"},
+    "brugada": {"title": "Brugada Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1517/"},
+    "cpvt": {"title": "Catecholaminergic Polymorphic Ventricular Tachycardia", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1289/"},
+    "hta": {"title": "Heritable Thoracic Aortic Disease Overview", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1120/"},
+    "marfan": {"title": "FBN1-Related Marfan Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1335/"},
+    "lds": {"title": "Loeys-Dietz Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1133/"},
+    "veds": {"title": "Vascular Ehlers-Danlos Syndrome", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1494/"},
+    "hht": {"title": "Hereditary Hemorrhagic Telangiectasia", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1351/"},
+    "ald": {"title": "X-Linked Adrenoleukodystrophy", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1315/"},
+    "wilson": {"title": "Wilson Disease", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1512/"},
+    "btd": {"title": "Biotinidase Deficiency", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1322/"},
+    "ctx": {"title": "Cerebrotendinous Xanthomatosis", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1409/"},
+    "pompe": {"title": "Pompe Disease", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1261/"},
+    "fabry": {"title": "Fabry Disease", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1292/"},
+    "hfe": {"title": "HFE-Related Hemochromatosis", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1440/"},
+    "mody": {"title": "Maturity-Onset Diabetes of the Young Overview", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK500456/"},
+    "otc": {"title": "Ornithine Transcarbamylase Deficiency", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK154378/"},
+    "mh": {"title": "Nonsyndromic Malignant Hyperthermia Susceptibility", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1146/"},
+    "rpe65": {"title": "Autosomal Recessive RPE65-Related Retinal Degeneration", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK549574/"},
+    "attr": {"title": "Hereditary Transthyretin Amyloidosis", "publisher": "GeneReviews", "url": "https://www.ncbi.nlm.nih.gov/books/NBK1194/"}
+  },
+  "conditions": [
+    {
+      "id": "fh", "category": "lipid", "title": "家族性高膽固醇血症", "english": "Familial hypercholesterolemia",
+      "genes": ["APOB", "LDLR", "PCSK9"], "inheritance": "體染色體顯性遺傳；LDLR 具半顯性特徵",
+      "clinical_course": "身體清除低密度脂蛋白膽固醇（俗稱壞膽固醇）的能力下降，使膽固醇從年輕時就偏高。早期常沒有不舒服，但長期累積會加速血管硬化，提高較早發生冠心病或心肌梗塞的風險；部分人有肌腱或皮膚黃色脂肪沉積。",
+      "management": "可透過血脂檢查及心血管風險評估持續追蹤。飲食調整、規律活動與不吸菸有幫助，許多人仍需降膽固醇藥物，例如 statin，必要時合併其他治療。及早降低膽固醇可減少長期心血管風險。",
+      "notes": "LDLR 只有一份基因受影響即可發病；兩份都受影響時，膽固醇通常更高、病程更早且較嚴重，這就是半顯性的意思。APOB、PCSK9 的不同變異也可能產生不同作用，需依實際變異判讀。",
+      "references": ["fh", "acmg"]
+    },
+    {
+      "id": "breast", "category": "tumor", "title": "遺傳性乳癌與相關癌症風險", "english": "Hereditary breast and related cancer predisposition",
+      "genes": ["BRCA1", "BRCA2", "PALB2"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "這些基因參與 DNA 修復，特定致病變異會增加乳癌風險，部分人較年輕發病或先後出現不同部位的癌症。BRCA1、BRCA2 也與卵巢癌相關；男性也可能受影響，尤其 BRCA2 與男性乳癌、攝護腺癌有關。PALB2 以乳癌風險最突出，也與胰臟癌及卵巢癌風險增加有關。",
+      "management": "依基因、年齡與家族史安排乳房磁振造影、乳房攝影等追蹤，並評估是否需要其他器官篩檢。部分人可討論降低風險的手術；卵巢癌風險管理需依基因及生育規劃個別決定。若已罹癌，基因結果也可能協助選擇適合的治療。",
+      "notes": "三個基因的癌症種類與風險幅度不完全相同，不能直接套用同一套手術或篩檢建議。",
+      "references": ["brca", "palb2"]
+    },
+    {
+      "id": "lynch", "category": "tumor", "title": "Lynch 症候群", "english": "Lynch syndrome",
+      "genes": ["MLH1", "MSH2", "MSH6", "PMS2"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "細胞修復 DNA 錯誤的能力受到影響，主要增加大腸癌及子宮內膜癌風險，也可能涉及卵巢、胃與泌尿道等器官。息肉未必很多，仍可能在較年輕時罹癌；一生中也可能先後出現不同癌症。各基因的發病年齡與風險不同。",
+      "management": "定期大腸鏡檢查與移除息肉是重要的風險管理方式。女性需留意不正常陰道出血，並依生育計畫討論婦科照護及降低風險的手術。其他篩檢與是否使用 aspirin，需依個人風險及出血風險評估。",
+      "notes": "MSH6、PMS2 的部分癌症風險與發病年齡常與 MLH1、MSH2 不同，追蹤起始時間應依基因及家族史安排。",
+      "references": ["lynch"]
+    },
+    {
+      "id": "apc", "category": "tumor", "title": "家族性腺瘤性息肉症", "english": "Familial adenomatous polyposis",
+      "genes": ["APC"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "大腸可能長出大量腺瘤性息肉，典型型常從青少年開始；較輕型的息肉較少、發病較晚。早期可能沒有症狀，也可能出現血便或貧血。若未適當處理，典型型日後發展為大腸癌的風險很高，胃、十二指腸及部分其他器官也可能有相關病變。",
+      "management": "需規律接受大腸鏡及上消化道檢查，視情況移除息肉。當息肉多到難以安全追蹤、出現高風險變化或癌症時，會評估手術。術後仍須追蹤剩餘腸道及其他相關器官。",
+      "notes": "手術時機依息肉數量、病理變化、年齡及生活需求決定，並非所有 APC 變異都代表同樣嚴重的息肉症。",
+      "references": ["apc"]
+    },
+    {
+      "id": "mutyh", "category": "tumor", "title": "MUTYH 相關息肉症", "english": "MUTYH-associated polyposis",
+      "genes": ["MUTYH"], "inheritance": "體染色體隱性遺傳",
+      "clinical_course": "兩份 MUTYH 基因都受影響時，較容易出現大腸腺瘤及大腸癌，通常在成年後被發現。息肉數量差異很大，少數人息肉不多也可能罹癌，十二指腸也可能長息肉。",
+      "management": "依腸道狀況安排大腸鏡、上消化道檢查與息肉切除。若息肉無法以內視鏡妥善控制或出現癌症，可能需要手術。家族評估可協助辨識需要提早追蹤的人。",
+      "notes": "只有一份 MUTYH 致病變異通常不符合本症的雙套基因致病型態；其大腸篩檢應結合家族史。若有兩個變異，仍需確認是否分別位於父母傳來的兩份基因上。",
+      "references": ["mutyh"]
+    },
+    {
+      "id": "jps", "category": "tumor", "title": "幼年型息肉症候群", "english": "Juvenile polyposis syndrome",
+      "genes": ["BMPR1A", "SMAD4"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "胃腸道會出現特定型態的息肉，可能造成血便、貧血、腹痛或腸阻塞，長期也增加胃腸道癌症風險。「幼年型」指息肉的組織型態，並不表示只有兒童才會發生。",
+      "management": "以大腸鏡、胃鏡追蹤及移除息肉，並處理貧血；息肉過多、反覆出血或有癌症疑慮時，會評估手術。追蹤間隔依息肉負擔及症狀調整。",
+      "notes": "SMAD4 也可能合併遺傳性出血性毛細血管擴張症，需要評估鼻出血及肺、腦等處的異常血管連接；另見同名血管疾病短文。",
+      "references": ["jps", "hht"]
+    },
+    {
+      "id": "pjs", "category": "tumor", "title": "Peutz-Jeghers 症候群", "english": "Peutz-Jeghers syndrome",
+      "genes": ["STK11"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "常見嘴唇、口腔或手指色素斑，以及胃腸道息肉。兒童或青少年可能因腹痛、出血或腸套疊就醫；隨年齡增加，胃腸道、胰臟、乳房及部分婦科癌症的風險也會上升。皮膚色素斑可能隨年齡變淡。",
+      "management": "安排胃、大腸與小腸追蹤，及早移除較大息肉，可減少腸套疊及急診手術的機會。成年後再依風險安排胰臟、乳房及婦科等監測；若有持續或劇烈腹痛，需及時評估腸道併發症。",
+      "notes": "息肉相關問題與癌症風險需分別管理，切除息肉後仍須持續其他器官的追蹤。",
+      "references": ["pjs"]
+    },
+    {
+      "id": "men1", "category": "tumor", "title": "多發性內分泌腫瘤第一型", "english": "Multiple endocrine neoplasia type 1",
+      "genes": ["MEN1"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "較容易在副甲狀腺、腦下垂體及胰臟或十二指腸的內分泌細胞出現腫瘤。部分腫瘤會分泌過多荷爾蒙，造成高血鈣、腎結石、胃潰瘍或低血糖；部分早期沒有症狀。病變可從青少年至成年陸續出現，並可能同時涉及多個器官。",
+      "management": "透過血液荷爾蒙、血鈣及適當影像定期追蹤。治療依腫瘤位置、大小、生長速度及荷爾蒙分泌情形決定，可能使用藥物或手術。某一處腫瘤治療後，其他內分泌器官仍需持續監測。",
+      "notes": "有些腫瘤為良性，但荷爾蒙過量本身也可能造成健康問題。",
+      "references": ["men1"]
+    },
+    {
+      "id": "men2", "category": "tumor", "title": "多發性內分泌腫瘤第二型與甲狀腺髓質癌", "english": "Multiple endocrine neoplasia type 2 and medullary thyroid carcinoma",
+      "genes": ["RET"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "特定 RET 致病變異會增加甲狀腺髓質癌風險，部分型別也容易出現嗜鉻細胞瘤或副甲狀腺功能亢進。腫瘤可能在沒有明顯症狀前形成；某些變異可在幼兒期就造成較具侵襲性的疾病。",
+      "management": "依 RET 的實際變異安排血液檢查、甲狀腺及腎上腺評估，並討論預防性甲狀腺切除的適當時機。手術或懷孕前須留意嗜鉻細胞瘤，以降低嚴重血壓波動的風險。已發生腫瘤者依病程接受手術或其他治療。",
+      "notes": "RET 不同變異的風險及手術時機差異很大，不能只依基因名稱決定處置。",
+      "references": ["men2"]
+    },
+    {
+      "id": "pgl", "category": "tumor", "title": "遺傳性副神經節瘤與嗜鉻細胞瘤", "english": "Hereditary paraganglioma-pheochromocytoma syndromes",
+      "genes": ["SDHB", "SDHC", "SDHD", "SDHAF2", "MAX", "TMEM127"], "inheritance": "體染色體顯性遺傳；部分基因受親代來源影響",
+      "clinical_course": "腫瘤可長在腎上腺或頭頸、胸腹部等處。分泌荷爾蒙者可能造成陣發性頭痛、心悸、流汗與高血壓；不分泌者可能無症狀，或因壓迫造成局部不適。可在不同年齡出現，也可能有多顆腫瘤或日後復發。",
+      "management": "依基因及病史安排血液或尿液荷爾蒙檢查與影像追蹤。治療可能包括手術；會分泌荷爾蒙的腫瘤通常需先控制血壓，轉移性疾病則另評估藥物或放射性治療。",
+      "notes": "SDHB 相關腫瘤較需注意轉移風險；SDHD、SDHAF2 的發病情形常受變異來自父親或母親影響。MAX、TMEM127 常與腎上腺腫瘤相關，追蹤仍須個別安排。",
+      "references": ["pgl"]
+    },
+    {
+      "id": "pten", "category": "tumor", "title": "PTEN 錯構瘤腫瘤症候群", "english": "PTEN hamartoma tumor syndrome",
+      "genes": ["PTEN"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "可能有頭圍較大、皮膚或口腔小突起、腸道息肉等表現，部分人也有發展或學習方面的差異。錯構瘤是原本組織排列與生長異常形成的病灶，未必是癌症；但本症確實增加乳房、甲狀腺、子宮內膜、腎臟及大腸等癌症風險。",
+      "management": "依年齡與性別安排甲狀腺、乳房、腎臟與腸道等檢查，異常陰道出血需及早評估。皮膚、息肉與發展問題可分別處理；癌症風險管理可能包含更密集的監測或個別討論降低風險的手術。",
+      "notes": "表現差異很大，沒有明顯外觀特徵也可能需要依基因結果進一步評估。",
+      "references": ["pten"]
+    },
+    {
+      "id": "lfs", "category": "tumor", "title": "Li-Fraumeni 症候群", "english": "Li-Fraumeni syndrome",
+      "genes": ["TP53"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "與多種癌症風險增加有關，包括乳癌、骨或軟組織肉瘤、腦瘤及腎上腺皮質癌等。可從兒童期開始發病，部分人一生中會出現不只一種癌症；不同變異與家族的風險並不完全相同。",
+      "management": "由熟悉遺傳性腫瘤的團隊規劃持續監測，可能包含全身及腦部磁振造影、乳房與其他適當檢查。需要癌症治療時，會一併衡量放射線造成後續腫瘤的風險與當前治療效益，選擇適合的方法。",
+      "notes": "血液中的 TP53 變異有時僅存在於部分血球細胞；是否屬可遺傳的變異，需結合病史並視情況使用其他檢體確認。",
+      "references": ["lfs"]
+    },
+    {
+      "id": "vhl", "category": "tumor", "title": "Von Hippel-Lindau 症候群", "english": "Von Hippel-Lindau syndrome",
+      "genes": ["VHL"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "可能在視網膜、腦或脊髓形成血管母細胞瘤，也可能出現腎臟癌、胰臟病變或嗜鉻細胞瘤。病灶常在不同年齡陸續出現；早期可能沒有症狀，長大後可影響視力、神經功能或血壓。即使是良性病灶，也可能因位置而造成問題。",
+      "management": "定期眼底檢查、神經系統及腹部影像、血壓與相關荷爾蒙追蹤，有助提早發現病灶。治療依位置、大小與生長情形決定，包括局部治療、手術或符合條件時的標靶藥物，並盡量保留器官功能。",
+      "notes": "不同器官的處置時機不同，部分小病灶可先追蹤，不需一發現就全部手術。",
+      "references": ["vhl"]
+    },
+    {
+      "id": "nf2", "category": "tumor", "title": "NF2 相關神經鞘瘤病", "english": "NF2-related schwannomatosis",
+      "genes": ["NF2"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "容易出現神經鞘瘤，尤其與聽覺及平衡有關的前庭神經，也可能有腦膜瘤或脊髓腫瘤。常在青少年至成年早期出現耳鳴、聽力下降或平衡不穩；部分人兒童期先有眼睛、皮膚或神經症狀。多數腫瘤為良性，但生長或壓迫仍可能影響功能。",
+      "management": "安排聽力、眼科、神經學及磁振造影追蹤。依腫瘤生長、症狀及保留聽力的需求，選擇觀察、手術或適合的藥物，並提供聽力與復健支持。",
+      "notes": "部分人屬嵌合型，意指只有部分細胞帶有變異，症狀與傳給子女的機率需另外評估。",
+      "references": ["nf2"]
+    },
+    {
+      "id": "tsc", "category": "tumor", "title": "結節性硬化症", "english": "Tuberous sclerosis complex",
+      "genes": ["TSC1", "TSC2"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "可在皮膚、腦、腎臟、心臟與肺等處形成病灶，常見皮膚色素較淡、癲癇、學習或行為差異及腎臟血管肌肉脂肪瘤。表現從很輕到明顯不等，有些從嬰幼兒期出現，有些成年才被發現；腎臟及肺部問題可能隨年齡變化。",
+      "management": "依器官安排腦部與腎臟影像、腎功能及肺部等追蹤，並及早處理癲癇和發展需求。部分腫瘤或肺部病變可使用 mTOR 抑制劑，其他情況可能需要手術或局部治療。",
+      "notes": "TSC2 平均可有較明顯的表現，但無法只依基因名稱準確預測個人病程；多數病灶也不等於癌症。",
+      "references": ["tsc"]
+    },
+    {
+      "id": "rb1", "category": "tumor", "title": "遺傳性視網膜母細胞瘤", "english": "Heritable retinoblastoma",
+      "genes": ["RB1"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "視網膜母細胞瘤主要發生於幼兒，可能出現瞳孔白色反光、斜視或視力問題。遺傳型較可能涉及雙眼或多個病灶。曾罹患遺傳型的人，成年後也需注意部分其他腫瘤的風險，因此照護不只限於兒童時期的眼睛。",
+      "management": "有家族風險的嬰幼兒需由眼科及早安排檢查；已發生腫瘤時，依大小與位置選擇局部治療、化學治療或手術，以兼顧生命、眼球與視力。成年後持續進行風險衛教與適當追蹤。",
+      "notes": "對成人而言，確認家族傳遞風險與協助子女及早接受眼科評估，也是重要的健康意義。",
+      "references": ["rb1"]
+    },
+    {
+      "id": "wt1", "category": "tumor", "title": "WT1 相關腎臟疾病與威爾姆氏腫瘤風險", "english": "WT1 disorder and Wilms tumor predisposition",
+      "genes": ["WT1"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "特定 WT1 變異與兒童腎臟腫瘤、蛋白尿及腎功能逐漸下降有關，部分人也有性腺發育或生育功能方面的問題。腫瘤風險主要集中在兒童期，腎臟與內分泌問題則可能延續至成年；表現取決於實際變異。",
+      "management": "依年齡與變異安排腎臟超音波、尿液及腎功能檢查，有需要時由內分泌及泌尿專科共同評估。腎病與腫瘤各依專科原則治療，腫瘤手術會在合適情況下考慮保留腎功能。",
+      "notes": "成人的評估重點包括腎功能、性腺功能及家族風險，不應直接套用兒童腫瘤監測的全部時程。",
+      "references": ["wt1"]
+    },
+    {
+      "id": "hcm", "category": "cardiovascular", "title": "肥厚型心肌病及相關心肌增厚疾病", "english": "Hypertrophic cardiomyopathy and related disorders",
+      "genes": ["MYH7", "MYBPC3", "TNNI3", "TPM1", "MYL3", "ACTC1", "PRKAG2", "MYL2"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "心臟肌肉異常增厚，可能影響心臟放鬆與血液流出。有人長期沒有症狀，有人會胸悶、喘、心悸或昏倒；少部分人可能發生危險的心律不整。可在兒童期或成年後出現，嚴重程度與發病年齡在同一家族內也可能不同。",
+      "management": "以心電圖、心臟超音波及必要時的磁振造影追蹤。治療可包括減輕症狀的藥物；部分有血流阻塞者可評估特定藥物或減少心肌阻塞的處置。高風險者可能需要植入去顫器，運動種類與強度則依個人狀況共同討論。",
+      "notes": "PRKAG2 相關疾病的心肌增厚與肝醣堆積有關，較需注意心臟電訊號傳導異常；其病因與其他典型肥厚型心肌病基因不同。MYH7 也可能與其他型態的心肌病有關。",
+      "references": ["hcm", "acmg"]
+    },
+    {
+      "id": "dcm", "category": "cardiovascular", "title": "擴張型心肌病", "english": "Dilated cardiomyopathy",
+      "genes": ["TNNT2", "LMNA", "FLNC", "TTN", "BAG3", "DES", "RBM20", "TNNC1", "PLN"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "心臟腔室擴大、收縮力量下降，可能逐漸造成活動時喘、疲倦、腳腫或心律不整。早期可能完全沒有症狀，也有人先出現心臟傳導異常或昏倒，再發現心肌功能變差；病程可以緩慢，也可能在感染、懷孕等負荷增加時惡化。",
+      "management": "以心電圖、心臟影像及必要時的長時間心律記錄追蹤。心臟衰竭藥物可減輕症狀並改善病程；依傳導問題與心律不整風險，可能使用節律器或植入去顫器。少數嚴重患者需評估機械循環支持或心臟移植。",
+      "notes": "LMNA 的心律或傳導異常可早於心臟擴大；DES 有時也影響骨骼肌。TTN 的判讀須考慮變異種類與所在位置，不能將所有 TTN 變異視為同樣的風險。不同心肌病群組的基因與表現可能重疊。",
+      "references": ["dcm", "lmna", "acmg"]
+    },
+    {
+      "id": "acm", "category": "cardiovascular", "title": "致心律不整型心肌病", "english": "Arrhythmogenic cardiomyopathy",
+      "genes": ["PKP2", "DSP", "DSC2", "TMEM43", "DSG2"], "inheritance": "體染色體顯性遺傳（本表所列主要疾病關聯）",
+      "clinical_course": "心肌結構逐漸改變，可能影響右心室、左心室或兩側，增加危險心律不整與心臟衰竭的風險。早期影像可能尚無明顯變化，卻已出現心悸、運動時不適或昏倒；有些人多年後才有症狀。高強度耐力運動可能增加發病或惡化的機會。",
+      "management": "定期追蹤心電圖、長時間心律記錄與心臟影像，並依個人風險調整運動。治療包括控制心律不整或心臟衰竭的藥物，部分人需心導管電燒或植入去顫器。即使沒有症狀，家族成員仍可能需要評估。",
+      "notes": "DSP 相關疾病可主要影響左心室，並出現類似心肌炎的胸痛；因此不能只以右心室是否異常來判斷。部分基因另有較少見的隱性疾病關聯，需依實際變異另行說明。",
+      "references": ["acm", "acmg"]
+    },
+    {
+      "id": "lqts", "category": "cardiovascular", "title": "長 QT 症候群", "english": "Long QT syndrome",
+      "genes": ["KCNQ1", "KCNH2", "SCN5A", "CALM1", "CALM2", "CALM3"], "inheritance": "體染色體顯性遺傳（本表所列主要疾病關聯）",
+      "clinical_course": "心臟每次跳動後的電訊號恢復時間較長，可能引起突然昏倒、看似癲癇的發作，或危險的心律不整。有人一生沒有症狀，有人從兒童期就發病；症狀可能與運動、驚嚇、睡眠、特定藥物或電解質失衡有關。單次心電圖正常也不能排除所有遺傳風險。",
+      "management": "由心臟科評估心電圖與個人風險，常使用乙型阻斷劑等藥物，並注意避免會延長 QT 的藥物及矯正電解質異常。少數高風險或治療後仍發作者，可能評估植入去顫器或其他專門處置。",
+      "notes": "不同基因的常見誘發情境與治療反應不同；CALM1、CALM2、CALM3 相關疾病有些在幼年就較嚴重。KCNQ1 等基因也有特殊的雙份變異疾病型態，需另評估聽力及遺傳模式。",
+      "references": ["lqts", "acmg"]
+    },
+    {
+      "id": "brugada", "category": "cardiovascular", "title": "布魯蓋達症候群", "english": "Brugada syndrome",
+      "genes": ["SCN5A"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "心臟電訊號調控異常，可增加嚴重心室心律不整的風險，心臟結構則可能正常。多在成年後被發現，部分人會在休息、睡眠或發燒時昏倒；也有人始終沒有症狀。心電圖特徵可能時有時無，風險需結合病史與檢查判斷。",
+      "management": "發燒時及早退燒並依醫囑處理，使用新藥前確認是否可能誘發心律問題。曾有危險心律不整或其他高風險特徵者，可能需要植入去顫器；部分反覆發作者可評估藥物或心導管電燒。",
+      "notes": "SCN5A 也與長 QT 症候群及心臟傳導疾病有關；必須依具體變異與臨床檢查區分，不能只看到基因名稱就推定疾病。",
+      "references": ["brugada"]
+    },
+    {
+      "id": "cpvt", "category": "cardiovascular", "title": "運動或情緒誘發的心室心律不整", "english": "Catecholaminergic polymorphic ventricular tachycardia (CPVT)",
+      "genes": ["RYR2", "CASQ2", "TRDN"], "inheritance": "RYR2：體染色體顯性；CASQ2、TRDN：體染色體隱性（ACMG SF 列表範圍）",
+      "clinical_course": "在運動或強烈情緒使心跳加快時，可能發生危險的心室心律不整，造成心悸、昏倒或心跳停止。常從兒童或青少年期出現，也可能成年才發病；休息時的心電圖與心臟結構檢查通常可以正常，因此運動相關病史很重要。",
+      "management": "由心臟科安排適合的心律及運動評估，常以乙型阻斷劑治療，必要時加用其他抗心律不整藥物或專門處置。運動強度與競技活動需個別調整，並規劃家人可理解的緊急應變方式。",
+      "notes": "RYR2 通常一份致病變異即可增加風險；CASQ2、TRDN 主要是兩份變異相關疾病。少數僅有一份 CASQ2 變異者也可能出現表現，須專科評估；TRDN 相關表現可與長 QT 症候群重疊。",
+      "references": ["cpvt", "acmg"]
+    },
+    {
+      "id": "hta", "category": "cardiovascular", "title": "遺傳性主動脈疾病", "english": "Heritable thoracic aortic disease",
+      "genes": ["FBN1", "TGFBR1", "TGFBR2", "SMAD3", "ACTA2", "MYH11"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "主動脈或其他動脈可能逐漸擴張，增加血管壁撕裂（剝離）或破裂的風險。擴張初期常沒有症狀，有些人也有眼睛、骨骼或關節特徵。疾病可跨不同年齡出現；即使外觀沒有特殊之處，也可能存在血管風險。",
+      "management": "定期以心臟超音波或其他血管影像追蹤，控制血壓並依情況使用減輕血管負荷的藥物。手術時機需考慮基因、血管大小、生長速度與家族史。運動及懷孕前應討論風險；突然劇烈胸背痛需立即就醫。",
+      "notes": "FBN1 常與馬凡氏症及眼睛、骨骼表現相關；TGFBR1、TGFBR2、SMAD3 可涉及多處動脈，SMAD3 也可能伴隨較早的關節退化；ACTA2、MYH11 相關患者可能沒有明顯外觀特徵。",
+      "references": ["hta", "marfan", "lds"]
+    },
+    {
+      "id": "veds", "category": "cardiovascular", "title": "血管型 Ehlers-Danlos 症候群", "english": "Vascular Ehlers-Danlos syndrome",
+      "genes": ["COL3A1"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "血管及部分器官組織較脆弱，可能有容易瘀青、皮膚較薄等特徵，也可能在沒有明顯預兆時發生動脈剝離、破裂或腸道破裂。表現差異很大，有些人在青少年或成年後才首次發生事件；懷孕與生產也可能增加相關風險。",
+      "management": "由熟悉本症的團隊規劃血壓控制、適合的非侵入性血管追蹤及緊急就醫資訊。運動與手術需衡量組織脆弱的風險，避免碰撞與不必要的侵入性檢查；必要處置及懷孕照護則應事先安排專科合作。",
+      "notes": "不能直接套用一般主動脈瘤的所有處置門檻。突然不明原因的劇烈胸、腹或背痛，應讓急診團隊知道此疾病風險。",
+      "references": ["veds"]
+    },
+    {
+      "id": "hht", "category": "cardiovascular", "title": "遺傳性出血性微血管擴張症", "english": "Hereditary hemorrhagic telangiectasia",
+      "genes": ["ACVRL1", "ENG", "SMAD4"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "可能反覆流鼻血、皮膚或口腔出現紅色小血管，並因出血造成缺鐵或貧血。肺、腦或肝臟也可能出現動脈與靜脈不正常相通的血管，部分病灶初期沒有症狀，卻可能造成出血、腦部栓塞或心臟負擔；表現常隨年齡逐漸明顯。",
+      "management": "依專科建議檢查貧血並篩查重要器官的血管病灶。鼻出血可由局部照護、藥物或處置控制；缺鐵者補充鐵，合適的肺部血管病灶可接受栓塞治療，其他器官則依病灶風險安排追蹤或治療。",
+      "notes": "SMAD4 可同時涉及幼年型息肉症，需合併腸胃道風險管理。ACVRL1 與 ENG 的器官表現雖有傾向差異，仍不能僅依基因省略必要的初次評估。",
+      "references": ["hht", "jps"]
+    },
+    {
+      "id": "ald", "category": "metabolic_endocrine", "title": "X 連鎖腎上腺腦白質失養症", "english": "X-linked adrenoleukodystrophy",
+      "genes": ["ABCD1"], "inheritance": "X 連鎖遺傳",
+      "clinical_course": "特定脂肪酸代謝異常可能影響腎上腺、腦部或脊髓。男性可出現腎上腺功能不足、兒童或成人期的腦部病變，或成年後逐漸加重的下肢僵硬與行走困難；女性也可能在成年後出現脊髓相關症狀。各種表現不一定同時發生，也無法只靠基因變異預測病程。",
+      "management": "男性需依年齡安排腦部磁振造影及腎上腺功能追蹤，及早辨識尚未造成明顯症狀的變化。腎上腺功能不足可補充荷爾蒙；早期、符合條件的腦部病變可評估造血幹細胞移植。行動、排尿及疼痛問題則提供復健與症狀治療。",
+      "notes": "移植主要針對特定階段的腦部病變，不能視為所有神經症狀或腎上腺問題的共同療法。女性也需依症狀接受評估。",
+      "references": ["ald"]
+    },
+    {
+      "id": "wilson", "category": "metabolic_endocrine", "title": "威爾森氏症", "english": "Wilson disease",
+      "genes": ["ATP7B"], "inheritance": "體染色體隱性遺傳",
+      "clinical_course": "身體排出銅的能力受影響，使銅在肝臟、腦部等器官累積。可從兒童到成年出現肝功能異常、黃疸、手抖、說話或動作困難，也可能有情緒及行為改變。早期可能沒有明顯症狀，未治療時則可能逐漸造成器官損傷，少數會急速發生嚴重肝病。",
+      "management": "由專科結合銅代謝、肝臟及眼科等檢查確認。治療通常需長期使用促進排銅或減少銅吸收的藥物，並定期監測療效與副作用；飲食調整是輔助措施。嚴重肝衰竭或特定晚期肝病可能需要肝臟移植。",
+      "notes": "越早治療越有機會避免不可逆的傷害；症狀改善後也不宜自行停藥。",
+      "references": ["wilson"]
+    },
+    {
+      "id": "btd", "category": "metabolic_endocrine", "title": "生物素酶缺乏症", "english": "Biotinidase deficiency",
+      "genes": ["BTD"], "inheritance": "體染色體隱性遺傳",
+      "clinical_course": "身體無法有效回收利用生物素，可能影響多種代謝反應。未治療時可出現癲癇、肌肉無力、皮膚疹、掉髮、發展問題及聽力或視力受損。嚴重型常在嬰幼兒期出現，部分較輕者可能較晚發病，或在感染等身體壓力下才有症狀。",
+      "management": "以酵素活性等檢查確認疾病程度，並依醫囑持續口服生物素。及早開始治療通常可有效預防症狀；已出現的皮膚或代謝問題可能改善，但部分聽力、視力或神經損傷不一定能完全恢復。",
+      "notes": "嚴重缺乏與部分缺乏的表現不同，不能僅依是否有 BTD 變異判斷嚴重程度；治療與追蹤應結合酵素檢查。",
+      "references": ["btd"]
+    },
+    {
+      "id": "ctx", "category": "metabolic_endocrine", "title": "腦腱黃瘤症", "english": "Cerebrotendinous xanthomatosis",
+      "genes": ["CYP27A1"], "inheritance": "體染色體隱性遺傳",
+      "clinical_course": "膽酸製造異常，使特定脂質在組織累積。可能先有嬰幼兒期腹瀉、兒童或青少年白內障，之後出現肌腱腫塊；成年後可能逐漸有走路不穩、僵硬、思考或情緒改變。早期症狀可能相隔多年，血液膽固醇也不一定偏高。",
+      "management": "經生化與基因檢查確認後，可使用特定膽酸藥物（chenodeoxycholic acid）改善代謝異常，並安排神經、眼科及其他必要追蹤。白內障、行動或認知問題可另提供手術、復健及支持照護。",
+      "notes": "在明顯神經傷害前開始治療，通常較有機會避免惡化；已有的長期神經損傷可能無法完全恢復。",
+      "references": ["ctx"]
+    },
+    {
+      "id": "pompe", "category": "metabolic_endocrine", "title": "龐貝氏症", "english": "Pompe disease",
+      "genes": ["GAA"], "inheritance": "體染色體隱性遺傳",
+      "clinical_course": "分解肝醣的酵素功能不足，使肝醣在肌肉細胞內累積。嬰兒型可有明顯心肌增厚、餵食困難及全身無力；較晚發病者多以肩臀附近肌肉無力、上下樓困難或呼吸肌變弱為主，可能從兒童期到成年後逐漸出現。",
+      "management": "以酵素與相關檢查確認後，依疾病型態及狀況評估酵素替代治療，並持續追蹤肌力、呼吸與心臟功能。復健、營養及必要時的呼吸支持也是照護重點，治療反應需長期觀察。",
+      "notes": "晚發型可能先有呼吸肌問題，四肢無力卻不明顯。部分變異僅影響實驗室酵素測值，因此須綜合判讀，不能單靠一項測值確診。",
+      "references": ["pompe"]
+    },
+    {
+      "id": "fabry", "category": "metabolic_endocrine", "title": "法布瑞氏症", "english": "Fabry disease",
+      "genes": ["GLA"], "inheritance": "X 連鎖遺傳",
+      "clinical_course": "特定脂質無法正常分解，可能逐漸影響腎臟、心臟及神經系統。典型表現包括手腳灼痛、較少流汗、怕熱及皮膚小紅點；部分人直到成年後才以心肌增厚、腎功能下降或腦中風被發現。男性與女性都可能有症狀，嚴重度與發病年齡差異很大。",
+      "management": "持續追蹤腎功能、心臟與神經血管狀況。依器官受影響情形及變異種類，可評估酵素替代治療，或適用特定變異的藥物，並處理疼痛、血壓、心律及腎臟問題。及早評估有助在明顯器官損傷前規劃照護。",
+      "notes": "女性即使酵素活性在一般範圍，也不能因此排除疾病；部分晚發型主要影響心臟，未必有兒童期的典型症狀。",
+      "references": ["fabry"]
+    },
+    {
+      "id": "hfe", "category": "metabolic_endocrine", "title": "HFE 相關血色素沉著症", "english": "HFE-related hemochromatosis",
+      "genes": ["HFE"], "inheritance": "體染色體隱性遺傳；是否出現鐵過量及器官病變因人而異",
+      "clinical_course": "身體吸收過多鐵，可能在成年後逐漸累積於肝臟、關節、胰臟或心臟。部分人只有鐵相關指數偏高，部分人可出現疲倦、關節痛、肝病或糖尿病；即使具有相關基因型，也不一定會發生明顯器官病變。",
+      "management": "先以血液鐵指標與必要的肝臟評估確認是否有鐵過量。符合條件者可藉定期放血降低體內鐵量，並追蹤器官狀況；如已有肝硬化，仍需持續肝癌監測。是否治療與治療頻率取決於實際鐵負荷。",
+      "notes": "ACMG SF v3.3 對此項目的回報範圍限定為 p.Cys282Tyr（C282Y）同型合子，不能將其他所有 HFE 變異一概套用相同風險與處置。",
+      "references": ["hfe", "acmg"]
+    },
+    {
+      "id": "mody", "category": "metabolic_endocrine", "title": "HNF1A 相關單基因糖尿病", "english": "HNF1A-related maturity-onset diabetes of the young (MODY)",
+      "genes": ["HNF1A"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "胰臟分泌胰島素的能力逐漸下降，可在青少年或成年早期出現血糖升高，也有人較晚才發病。患者不一定肥胖，家族中可能連續幾代有人罹患糖尿病；若長期血糖控制不佳，仍可能影響眼睛、腎臟、神經與血管。",
+      "management": "追蹤血糖與糖化血色素，並配合飲食、活動及一般糖尿病併發症篩檢。部分患者對磺醯脲類降血糖藥物較敏感，治療選擇可能與其他型態糖尿病不同；也有人隨病程需要胰島素。",
+      "notes": "調整藥物需由醫師評估，並注意低血糖，不能只依基因結果自行停用胰島素或更換治療。",
+      "references": ["mody"]
+    },
+    {
+      "id": "otc", "category": "metabolic_endocrine", "title": "鳥胺酸轉胺甲醯酶缺乏症", "english": "Ornithine transcarbamylase deficiency",
+      "genes": ["OTC"], "inheritance": "X 連鎖遺傳",
+      "clinical_course": "身體將蛋白質代謝產生的氨轉為尿素的能力不足，血氨過高可能造成嘔吐、頭痛、嗜睡、混亂甚至昏迷。嚴重型可在新生兒期發病，男性與女性也都可能到成年才首次發作；感染、長時間禁食、手術或產後等情況可能誘發危機。",
+      "management": "由代謝專科與營養師安排適量蛋白質、足夠熱量及需要的排氨藥物，並制定生病或手術時的緊急計畫。急性高血氨需迅速住院治療，部分人需要透析；特定嚴重情況可評估肝臟移植。",
+      "notes": "平時沒有症狀不代表不會出現急性危機；也不宜自行完全停止蛋白質攝取，以免營養不足反而增加身體分解組織的負擔。",
+      "references": ["otc"]
+    },
+    {
+      "id": "mh", "category": "anesthesia", "title": "惡性高熱易感性", "english": "Malignant hyperthermia susceptibility",
+      "genes": ["RYR1", "CACNA1S"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "平時可能沒有不適，但接觸特定吸入性麻醉藥或肌肉鬆弛劑 succinylcholine 時，可能發生肌肉代謝急速增加，造成肌肉僵硬、心跳加快、體溫升高及器官損傷。這是需要立即處理的麻醉急症，過去曾安全接受麻醉，也不能完全排除未來發作。",
+      "management": "手術或麻醉前主動告知麻醉團隊相關基因及家族史，事先安排不會誘發惡性高熱的麻醉方式與設備準備。急性發作時需停止誘發藥物，立即給予 dantrolene 及降溫等支持治療。",
+      "notes": "特定 RYR1 變異也可與肌肉疾病或運動、熱相關問題有關，須依變異及症狀另評估；不是所有 RYR1 或 CACNA1S 變異都代表惡性高熱易感性。",
+      "references": ["mh"]
+    },
+    {
+      "id": "rpe65", "category": "other", "title": "RPE65 相關遺傳性視網膜退化", "english": "Autosomal recessive RPE65-related retinal degeneration",
+      "genes": ["RPE65"], "inheritance": "體染色體隱性遺傳（ACMG SF 列表範圍）",
+      "clinical_course": "視網膜利用光線的能力受影響，常在幼年出現暗處看不清楚、眼球不自主轉動或視力不佳。部分人較晚才出現症狀，視野與視力可能隨時間逐漸下降；嚴重程度與進展速度因人而異。",
+      "management": "由視網膜專科評估視力、視野及視網膜結構，提供低視能輔具與生活、學習支持。對兩份致病變異且仍有足夠可存活視網膜細胞的適合患者，可評估基因治療，以改善特定視覺功能。",
+      "notes": "是否適用基因治療取決於完整基因結果與眼部條件，並非所有患者都適用，也不代表能恢復全部視力。",
+      "references": ["rpe65", "acmg"]
+    },
+    {
+      "id": "attr", "category": "other", "title": "遺傳性轉甲狀腺素蛋白類澱粉沉積症", "english": "Hereditary transthyretin amyloidosis",
+      "genes": ["TTR"], "inheritance": "體染色體顯性遺傳",
+      "clinical_course": "轉甲狀腺素蛋白形成異常沉積，可能逐漸傷害周邊神經、自律神經及心臟。常在成年後出現腳麻、疼痛、無力、站起來頭暈、腹瀉或便祕，也可能以心肌增厚、喘或心律不整為主。不同變異與家族的發病年齡及主要受影響器官可不同。",
+      "management": "依神經與心臟狀況定期評估，符合條件者可使用穩定此蛋白或減少其生成的藥物，以延緩疾病進展，並處理疼痛、血壓、營養及心臟問題。及早辨識器官受影響情形，有助選擇適合的治療時機。",
+      "notes": "藥物選擇取決於主要受影響器官與疾病階段。具有致病變異但尚無症狀者，重點是規劃追蹤，不能直接視為已有類澱粉沉積造成的器官疾病。",
+      "references": ["attr"]
+    }
+  ]
+}

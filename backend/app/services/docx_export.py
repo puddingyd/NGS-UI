@@ -25,6 +25,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 
 from . import (
+    acmg_sf_education,
     clinvar_latest_store,
     cnv_sv_merge,
     hpo_ontology,
@@ -3516,7 +3517,8 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     _section_methods(doc, test_type, health=True)
     _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
 
-    if referenced or pgx_drug_groups:
+    include_acmg_education = "acmg_sf" in requested_set
+    if referenced or include_acmg_education or pgx_drug_groups:
         _start_health_appendix(doc)
     if referenced:
         _render_health_variant_reference_appendix(
@@ -3525,8 +3527,14 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             referenced,
             report,
         )
-    if pgx_drug_groups:
+    if include_acmg_education:
         if referenced:
+            doc.add_page_break()
+        acmg_sf_education.render_acmg_sf_education(doc, font_name=REPORT_FONT)
+    if pgx_drug_groups:
+        if include_acmg_education:
+            doc.add_page_break()
+        elif referenced:
             _blank(doc)
         _render_health_pgx_appendix(
             doc,
