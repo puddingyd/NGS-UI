@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from docx import Document
 from app.services import docx_export
-from app.services.acmg_sf_education import render_acmg_sf_education
+from app.services.acmg_sf_education import load_catalogue, render_acmg_sf_education
 
 
 def main() -> None:
@@ -23,7 +23,7 @@ def main() -> None:
     docx_export._add_paragraph(doc, "附錄", bold=True, align="center")
     docx_export._blank(doc)
     render_acmg_sf_education(doc, font_name=docx_export.REPORT_FONT)
-    doc.core_properties.title = "ACMG SF 相關疾病與健康照護簡介"
+    doc.core_properties.title = load_catalogue()["title"]
     doc.core_properties.author = ""
     doc.core_properties.last_modified_by = ""
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -16,7 +16,7 @@ def test_catalogue_covers_the_report_panel_and_cites_every_disease():
                    if line.strip() and not line.startswith("#")}
     conditions = catalogue["conditions"]
     genes = {gene for condition in conditions for gene in condition["genes"]}
-    assert len(conditions) == 38
+    assert len(conditions) == 36
     assert len(genes) == 84
     assert genes == panel_genes
     assert genes == {gene for group in docx_export._ACMG_SF_GROUPS for gene in group["genes"]}
@@ -26,13 +26,15 @@ def test_catalogue_covers_the_report_panel_and_cites_every_disease():
     for condition in conditions:
         assert re.fullmatch(r"[a-z][a-z0-9_]*", condition["id"])
         assert condition["genes"] and len(set(condition["genes"])) == len(condition["genes"])
-        for field in ("title", "english", "inheritance", "clinical_course", "management", "notes"):
+        for field in ("title", "english", "inheritance", "index_inheritance", "clinical_course", "management"):
             assert condition[field].strip()
         assert condition["references"]
         for key in condition["references"]:
             source = catalogue["sources"][key]
             assert source["title"] and source["publisher"]
             assert source["url"].startswith("https://")
+    assert len(catalogue["source_order"]) == len(set(catalogue["source_order"])) == 45
+    assert set(catalogue["source_order"]) == set(catalogue["sources"])
 
 
 def test_education_index_has_working_links_and_no_patient_result_labels():
@@ -46,7 +48,7 @@ def test_education_index_has_working_links_and_no_patient_result_labels():
     assert doc.styles["Normal"].element.xml == normal_xml
     catalogue = acmg_sf_education.load_catalogue()
     assert len(doc.tables) == len(catalogue["categories"])
-    assert sum(len(table.rows) - 1 for table in doc.tables) == 38
+    assert sum(len(table.rows) - 1 for table in doc.tables) == 36
     assert len(doc.element.xpath(".//w:tblHeader")) == 6
     for table in doc.tables:
         assert [cell.text for cell in table.rows[0].cells] == ["編號", "相關疾病", "基因", "遺傳模式"]
@@ -63,9 +65,59 @@ def test_education_index_has_working_links_and_no_patient_result_labels():
     for disease in catalogue["conditions"]:
         assert disease["clinical_course"] in text
         assert disease["management"] in text
-    assert "p.Cys282Tyr" in text
-    assert "少數僅有一份 CASQ2" in text
-    assert "半顯性" in text
+
+
+def test_reviewed_index_and_anchored_comments_are_applied():
+    doc = Document()
+    acmg_sf_education.render_acmg_sf_education(doc)
+    catalogue = acmg_sf_education.load_catalogue()
+    by_id = {c["id"]: c for c in catalogue["conditions"]}
+    paragraphs = [p.text for p in doc.paragraphs]
+    text = "\n".join(doc.element.xpath(".//w:t/text()"))
+    assert paragraphs[0] == "ACMG疾病風險基因與相關疾病簡介"
+    assert paragraphs[paragraphs.index("疾病索引") + 1] == catalogue["reading_note"]
+    for removed in ("如何閱讀遺傳模式", "內容更新：", "疾病短文", "資料來源：",
+                    "文中編號對應", "息肉", "半顯性", "p.Cys282Tyr", "少數僅有一份 CASQ2"):
+        assert removed not in text
+    assert paragraphs.count("其他疾病") == 2
+    assert "ACMG SF 疾病簡介參考資料" in paragraphs
+    for title in ("疾病介紹", "ACMG SF 疾病簡介參考資料"):
+        assert next(p for p in doc.paragraphs if p.text == title).paragraph_format.page_break_before
+    assert not doc.element.xpath(".//w:br[@w:type='page']")
+    assert {c["id"] for c in catalogue["conditions"] if c["notes"]} == {"fh", "pgl"}
+    assert sum(p.startswith("補充說明：") for p in paragraphs) == 2
+    assert "瘜肉相關問題與癌症風險需分別考慮" in by_id["pjs"]["management"]
+    assert not by_id["pjs"]["notes"]
+
+    merged = by_id["polyposis"]
+    assert set(merged["genes"]) == {"APC", "MUTYH", "BMPR1A", "SMAD4"}
+    assert not {"apc", "mutyh", "jps"} & set(by_id)
+    for title in ("家族性腺瘤性瘜肉症", "MUTYH 相關瘜肉症", "幼年型瘜肉症候群"):
+        assert title in merged["clinical_course"]
+    assert "APC、BMPR1A、SMAD4：體染色體顯性遺傳" in merged["inheritance"]
+    assert "MUTYH：體染色體隱性遺傳" in merged["inheritance"]
+    assert "出現深褐色的小斑點" in by_id["pjs"]["clinical_course"]
+    assert "女性也可能在成年後出現雙腿僵硬、走路困難，或難以控制排尿、排便等症狀" in by_id["ald"]["clinical_course"]
+    assert by_id["fh"]["index_inheritance"] == "體染色體顯性、體染色體隱性"
+    assert by_id["pgl"]["index_inheritance"] == "體染色體顯性"
+    for cid in ("ald", "fabry", "otc"):
+        assert by_id[cid]["index_inheritance"] == by_id[cid]["inheritance"] == "X 染色體性聯遺傳"
+
+    index_rows = [row for table in doc.tables for row in table.rows[1:]]
+    for number, (condition, row) in enumerate(zip(catalogue["conditions"], index_rows), 1):
+        assert row.cells[0].text == f"{number:02}"
+        assert "".join(row.cells[1]._tc.xpath(".//w:t/text()")) == condition["title"]
+        assert row.cells[2].text == "、".join(condition["genes"])
+        assert row.cells[3].text == condition["index_inheritance"]
+        # Chinese and English share one heading and one 12-point bold run.
+        heading = next(p for p in doc.paragraphs
+                       if p._p.xpath("./w:bookmarkStart/@w:name") == [f"acmgsf_{condition['id']}"])
+        assert heading.text == f"{number:02}　{condition['title']} {condition['english']}"
+        assert all(run.font.size.pt == 12 and run.bold for run in heading.runs)
+        assert not heading._p.xpath(".//w:br")
+        assert condition["english"] not in paragraphs
+    # Finished exports contain neither unresolved comments nor revision markup.
+    assert not doc.element.xpath(".//w:ins|.//w:del|.//w:rPrChange|.//w:pPrChange|.//w:commentRangeStart")
 
 
 @pytest.mark.parametrize("sections,with_finding", [
@@ -104,7 +156,8 @@ def test_health_export_selects_and_orders_education(monkeypatch, tmp_path, secti
     assert (title in text) == ("acmg_sf" in sections)
     if "acmg_sf" in sections:
         assert len(doc.tables) == 6
-        assert "38 個疾病群組" in text
+        assert "此處列出清單中之84個基因" in text
+        assert "36　遺傳性轉甲狀腺素蛋白類澱粉沉積症" in text
         if with_finding:
             assert text.index("變異位點參考資料") < text.index(title)
         else:

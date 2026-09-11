@@ -16,7 +16,6 @@ from docx.shared import Pt
 
 
 CONTENT_PATH = Path(__file__).resolve().parents[1] / "report_content" / "acmg_sf_v3_3.json"
-COMMON_SOURCES = ("acmg", "clingen", "actionability")
 
 
 def load_catalogue() -> dict:
@@ -81,16 +80,6 @@ def _link(paragraph, text: str, font: str, *, size: float = 10,
     paragraph._p.append(link)
 
 
-def _index_inheritance(condition: dict) -> str:
-    if condition["id"] == "cpvt":
-        return "RYR2：顯性\nCASQ2、TRDN：隱性\n（詳見短文）"
-    if condition["id"] == "fh":
-        return "體染色體顯性\nLDLR：半顯性（詳見短文）"
-    if condition["id"] == "pgl":
-        return "體染色體顯性\n部分受親代來源影響"
-    return condition["inheritance"].split("（")[0].split("；")[0].replace("遺傳", "")
-
-
 def _index_table(doc, entries: list[tuple[int, dict]], font: str) -> None:
     table = doc.add_table(rows=1, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -102,7 +91,7 @@ def _index_table(doc, entries: list[tuple[int, dict]], font: str) -> None:
         column.width = width
     props = table._tbl.tblPr
     margins = OxmlElement("w:tblCellMar")
-    for edge, value in (("top", 65), ("bottom", 65), ("left", 90), ("right", 90)):
+    for edge, value in (("top", 45), ("bottom", 45), ("left", 90), ("right", 90)):
         element = OxmlElement(f"w:{edge}")
         element.set(qn("w:w"), str(value))
         element.set(qn("w:type"), "dxa")
@@ -120,7 +109,7 @@ def _index_table(doc, entries: list[tuple[int, dict]], font: str) -> None:
     table.rows[0]._tr.get_or_add_trPr().append(header)
     rows = [(None, ["編號", "相關疾病", "基因", "遺傳模式"])]
     rows += [(condition, [f"{number:02}", condition["title"],
-                          "、".join(condition["genes"]), _index_inheritance(condition)])
+                          "、".join(condition["genes"]), condition["index_inheritance"]])
              for number, condition in entries]
     for index, (condition, values) in enumerate(rows):
         row = table.rows[0] if index == 0 else table.add_row()
@@ -132,8 +121,9 @@ def _index_table(doc, entries: list[tuple[int, dict]], font: str) -> None:
             fmt = p.paragraph_format
             fmt.space_before = Pt(0)
             fmt.space_after = Pt(0)
-            fmt.line_spacing = Pt(14)
-            fmt.keep_with_next = False
+            fmt.line_spacing = Pt(13)
+            # Keep a category heading/header with its first record on a page.
+            fmt.keep_with_next = index == 0
             if condition and col == 1:
                 _link(p, value, font, anchor=f"acmgsf_{condition['id']}")
             else:
@@ -145,60 +135,53 @@ def _index_table(doc, entries: list[tuple[int, dict]], font: str) -> None:
 
 
 def render_acmg_sf_education(doc, *, font_name: str = "MingLiU") -> None:
-    """Append the complete index, 38 disease summaries and their sources."""
+    """Append the complete index, disease introductions and bibliography."""
     catalogue = load_catalogue()
     conditions = list(enumerate(catalogue["conditions"], 1))
-    source_keys = list(COMMON_SOURCES)
-    for _, condition in conditions:
-        for key in condition["references"]:
-            if key not in source_keys:
-                source_keys.append(key)
+    # Bibliography numbering is independent of disease numbering, so merging
+    # diseases does not renumber the reference list approved by the reviewer.
+    source_keys = catalogue["source_order"]
     source_numbers = {key: index for index, key in enumerate(source_keys, 1)}
     existing_ids = doc.element.xpath(".//w:bookmarkStart/@w:id")
     bookmark_id = max((int(value) for value in existing_ids), default=0) + 1
 
     _paragraph(doc, catalogue["title"], font_name, size=13, bold=True, heading=0, after=7)
-    _paragraph(doc, f"{catalogue['version']}｜84 個基因・38 個疾病群組｜內容更新：{catalogue['updated']}",
-               font_name, size=10, after=7, keep_next=True)
     _paragraph(doc, catalogue["introduction"], font_name, after=7)
-    _paragraph(doc, "基因範圍依 ACMG SF v3.3；照護內容綜合 ClinGen 與各疾病專業資料整理。資料來源見本節末尾 [1–3]。",
-               font_name, size=10, after=9)
-    _paragraph(doc, "如何閱讀遺傳模式", font_name, bold=True, heading=1)
-    for text in catalogue["inheritance_guide"]:
-        _paragraph(doc, text, font_name)
-    _paragraph(doc, catalogue["reading_note"], font_name, size=10, before=3, after=9)
     _paragraph(doc, "疾病索引", font_name, size=12, bold=True, heading=1)
+    _paragraph(doc, catalogue["reading_note"], font_name, size=10, before=3, after=9, keep_next=True)
     for category in catalogue["categories"]:
         entries = [(number, item) for number, item in conditions if item["category"] == category["id"]]
-        _paragraph(doc, category["title"], font_name, bold=True, heading=2, before=9, after=5)
+        _paragraph(doc, category["title"], font_name, bold=True, heading=2, before=6, after=4)
         _index_table(doc, entries, font_name)
 
-    doc.add_page_break()
-    _paragraph(doc, "疾病短文", font_name, size=13, bold=True, heading=1, after=7)
+    # Break on the heading itself: a separate break paragraph can overflow a
+    # full index page and create an otherwise empty page in Word/LibreOffice.
+    introduction = _paragraph(doc, "疾病介紹", font_name, size=13, bold=True, heading=1, after=7)
+    introduction.paragraph_format.page_break_before = True
     for category in catalogue["categories"]:
         _paragraph(doc, category["title"], font_name, size=12, bold=True, heading=2, before=9, after=7)
         for number, condition in conditions:
             if condition["category"] != category["id"]:
                 continue
-            heading = _paragraph(doc, f"{number:02}　{condition['title']}", font_name,
+            heading = _paragraph(doc, f"{number:02}　{condition['title']} {condition['english']}", font_name,
                                  size=12, bold=True, heading=3, before=9, after=3)
             _bookmark(heading, f"acmgsf_{condition['id']}", bookmark_id)
             bookmark_id += 1
-            _paragraph(doc, condition["english"], font_name, size=10, after=4, keep_next=True)
-            _paragraph(doc, "、".join(condition["genes"]), font_name, label="相關基因：", keep_next=True)
-            _paragraph(doc, condition["inheritance"], font_name, label="遺傳模式：", keep_next=True)
-            _paragraph(doc, condition["clinical_course"], font_name, label="可能表現與病程：", keep_next=True)
-            _paragraph(doc, condition["management"], font_name, label="追蹤與治療：", keep_next=True)
-            _paragraph(doc, condition["notes"], font_name, label="補充說明：", keep_next=True)
-            sources = _paragraph(doc, "資料來源：", font_name, size=9, after=9)
-            for index, key in enumerate(condition["references"]):
-                if index:
-                    _font(sources.add_run("、"), font_name, 9)
-                _link(sources, f"[{source_numbers[key]}]", font_name, size=9, anchor=f"acmgsf_source_{key}")
+            fields = [("相關基因：", "、".join(condition["genes"])),
+                      ("遺傳模式：", condition["inheritance"]),
+                      ("可能表現與病程：", condition["clinical_course"]),
+                      ("追蹤與治療：", condition["management"])]
+            if condition["notes"]:
+                fields.append(("補充說明：", condition["notes"]))
+            for index, (label, text) in enumerate(fields):
+                last = index == len(fields) - 1
+                _paragraph(doc, text, font_name, label=label,
+                           keep_next=not last, after=12 if last else 4)
 
-    doc.add_page_break()
-    _paragraph(doc, "ACMG SF 疾病簡介參考資料", font_name, size=13, bold=True, heading=1, after=7)
-    _paragraph(doc, f"查閱日期：{catalogue['updated']}。文中編號對應下列來源，電子版可點選文章名稱開啟原文。",
+    bibliography = _paragraph(doc, "ACMG SF 疾病簡介參考資料", font_name,
+                              size=13, bold=True, heading=1, after=7)
+    bibliography.paragraph_format.page_break_before = True
+    _paragraph(doc, f"查閱日期：{catalogue['sources_accessed']}。電子版可點選文章名稱開啟原文。",
                font_name, size=10, after=9)
     for key in source_keys:
         source = catalogue["sources"][key]
