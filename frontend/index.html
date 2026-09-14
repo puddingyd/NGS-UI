@@ -43,8 +43,9 @@
         <details class="sidebar-group sidebar-subgroup" open>
           <summary>Secondary findings</summary>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-acmg-sf-c">ACMG SF</button>
+          <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-hereditary-cancer-c">遺傳癌症 v2.0</button>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-stroke-c">中風相關基因</button>
-          <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-carrier-c">Carrier</button>
+          <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-carrier-c">Carrier screening</button>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-pharmcat-c">Pharmacogenomics</button>
         </details>
       </details>
@@ -341,7 +342,7 @@
       <div id="sec-other"      class="report-block" data-kind="report"   data-status="2"></div>
       <div id="sec-candidate"  class="report-block" data-kind="report"   data-status="C"></div>
       <!-- Secondary findings group: collapsible umbrella around the
-           panel-style report sections (ACMG SF, Stroke, Carrier,
+           panel-style report sections (ACMG SF, hereditary cancer, Stroke, Carrier,
            Pharmacogenomics). Plain text header + triangle toggle — no card
            styling so it doesn't compete visually with the
            primary report sections above. -->
@@ -351,6 +352,7 @@
         </button>
         <div class="secondary-findings-body open">
           <div id="sec-acmg-sf"    class="report-block" data-kind="panel"    data-category="acmg_sf"></div>
+          <div id="sec-hereditary-cancer" class="report-block" data-kind="panel" data-category="hereditary_cancer"></div>
           <div id="sec-stroke"     class="report-block" data-kind="panel"    data-category="stroke"></div>
           <div id="sec-carrier"    class="report-block" data-kind="panel"    data-category="carrier"></div>
           <div id="sec-pharmcat"   class="report-block" data-kind="pharmcat"></div>
@@ -457,6 +459,7 @@
         </div>
       </div>
       <div id="cat-acmg-sf-c"  class="cat-block" data-category="acmg_sf"></div>
+      <div id="cat-hereditary-cancer-c" class="cat-block" data-category="hereditary_cancer"></div>
       <div id="cat-stroke-c" class="cat-block" data-category="stroke"></div>
       <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
       <div id="cat-pharmcat-c" class="cat-block" data-category="pharmcat"></div>

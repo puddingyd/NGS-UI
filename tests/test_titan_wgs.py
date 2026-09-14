@@ -73,7 +73,7 @@ def test_titan_wgs_has_diagnostic_analysis_visibility_toggle():
         assert f"body.titan-diagnostic-analysis-hidden {selector}" in STYLE_CSS
 
     # Health-screening content must not be hidden by the diagnostic-only rule.
-    for selector in ("#sec-acmg-sf", "#sec-stroke", "#sec-carrier", "#sec-pharmcat"):
+    for selector in ("#sec-acmg-sf", "#sec-hereditary-cancer", "#sec-stroke", "#sec-carrier", "#sec-pharmcat"):
         assert f"body.titan-diagnostic-analysis-hidden {selector}" not in STYLE_CSS
 
 

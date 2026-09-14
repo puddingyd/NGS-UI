@@ -148,8 +148,8 @@ def test_reviewed_index_and_anchored_comments_are_applied():
 
 @pytest.mark.parametrize("sections", [None] + [
     list(selected)
-    for count in range(1, 5)
-    for selected in combinations(("acmg_sf", "stroke", "carrier", "pgx"), count)
+    for count in range(1, 6)
+    for selected in combinations(("acmg_sf", "hereditary_cancer", "stroke", "carrier", "pgx"), count)
 ])
 @pytest.mark.parametrize("with_finding", [False, True])
 def test_health_export_selects_and_orders_education(monkeypatch, tmp_path, sections, with_finding):
@@ -161,7 +161,8 @@ def test_health_export_selects_and_orders_education(monkeypatch, tmp_path, secti
         key: {"id": key, "gene_symbol": gene, "HGVS_C": f"c.{index}01A>G",
               "ACMG_classification": "Pathogenic", "Zygosity": "Heterozygous"}
         for index, (key, gene) in enumerate(
-            (("acmg_sf", "LDLR"), ("stroke", "NOTCH3"), ("carrier", "CFTR")), start=1)
+            (("acmg_sf", "LDLR"), ("hereditary_cancer", "CHEK2"),
+             ("stroke", "NOTCH3"), ("carrier", "CFTR")), start=1)
     }
     variants = fixture_variants if with_finding else {}
     categories = {key: [key] if with_finding else [] for key in fixture_variants}
@@ -198,6 +199,7 @@ def test_health_export_selects_and_orders_education(monkeypatch, tmp_path, secti
     assert (title in text) == ("acmg_sf" in selected)
     assert (docx_export._HEALTH_ACMG_CAUTION in text) == ("acmg_sf" in selected)
     assert (docx_export._HEALTH_ACMG_GENE_LIST_TITLE in text) == ("acmg_sf" in selected)
+    assert ("遺傳癌症 v2.0:" in text) == ("hereditary_cancer" in selected)
     for marker in ("藥物基因體學", "官方用藥資訊查詢", "完整用藥建議",
                    "CYP2C19", "CYP2D6", "某些藥物基因", "Clopidogrel"):
         assert (marker in text) == ("pgx" in selected), marker

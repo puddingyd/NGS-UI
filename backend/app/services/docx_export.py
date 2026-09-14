@@ -1523,7 +1523,7 @@ _HEALTH_PGX_RESOURCES = (
 )
 
 _HEALTH_RISK_SECTION_TITLE = "第一類：與疾病風險相關之致病性或疑似致病性變異位點"
-_HEALTH_DISEASE_SECTIONS = ("acmg_sf", "stroke", "carrier")
+_HEALTH_DISEASE_SECTIONS = tuple(sample_loader.SECONDARY_SNV_PANELS)
 _HEALTH_SECTION_ORDER = [
     ("acmg_sf", _HEALTH_RISK_SECTION_TITLE),
     ("pgx", "藥物基因體學"),
@@ -3339,13 +3339,10 @@ def _render_health_pgx_appendix(doc, title: str, drug_groups: list[dict]) -> Non
 
 def _health_panel_gene_sections(requested_set: set[str]) -> list[tuple[str, list[str]]]:
     out: list[tuple[str, list[str]]] = []
-    panel_keys = {
-        "acmg_sf": "ACMG_SF_v3.3",
-        "stroke": "WGS__神經科__Stroke",
-        "carrier": "carrier_mackenzie_1300+",
-    }
+    panel_keys = sample_loader.SECONDARY_SNV_PANELS
     titles = {
         "acmg_sf": _HEALTH_ACMG_GENE_LIST_TITLE,
+        "hereditary_cancer": "遺傳癌症 v2.0",
         "stroke": "中風相關基因",
         "carrier": "帶因者篩查",
     }
@@ -3367,6 +3364,7 @@ def _health_test_bundle_name(requested_set: set[str]) -> str:
         label
         for key, label in (
             ("acmg_sf", "ACMG疾病風險基因"),
+            ("hereditary_cancer", "遺傳癌症 v2.0 基因"),
             ("stroke", "中風相關基因"),
             ("carrier", "帶因者基因"),
             ("pgx", "藥物基因體學基因"),

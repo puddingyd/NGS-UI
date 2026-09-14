@@ -3810,6 +3810,7 @@ async function exportDiagnosticDocx() {
 function _pickHealthReportSections() {
   const options = [
     { key: "acmg_sf", title: "ACMG 疾病風險基因（ACMG SF）", checked: true },
+    { key: "hereditary_cancer", title: "遺傳癌症 v2.0", checked: false },
     { key: "stroke", title: "中風相關基因", checked: false },
     { key: "carrier", title: "帶因者篩查", checked: false },
     { key: "pgx", title: "藥物基因體學（PGx）", checked: true },
@@ -5587,6 +5588,7 @@ function renderDiseaseList(v, id, withCheckbox) {
 
 const SECONDARY_PANEL_DEFS = [
   { key: "acmg_sf",            title: "ACMG SF" },
+  { key: "hereditary_cancer",  title: "遺傳癌症 v2.0" },
   { key: "stroke",             title: "中風相關基因" },
   { key: "carrier",            title: "Carrier screening" },
 ];

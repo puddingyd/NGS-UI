@@ -197,6 +197,22 @@ def test_health_non_acmg_pure_ar_single_heterozygous_is_carrier():
     ) == ([], ["carrier-variant"])
 
 
+def test_health_cancer_panel_deduplicates_shared_findings_and_respects_dismissal():
+    variants = {
+        "shared": {"CLNSIG": "Pathogenic"},
+        "cancer-only": {"CLNSIG": "Pathogenic"},
+    }
+    categories = {"acmg_sf": ["shared"], "hereditary_cancer": ["shared", "cancer-only"]}
+    selected = {"acmg_sf", "hereditary_cancer"}
+    assert docx_export._health_combined_selected_ids(selected, {}, categories, variants) == ["shared", "cancer-only"]
+    assert docx_export._health_combined_selected_ids({"acmg_sf"}, {}, categories, variants) == ["shared"]
+    report = {"secondary_findings": {
+        "acmg_sf": {"selected": ["shared"]},
+        "hereditary_cancer": {"dismissed": ["shared"]},
+    }}
+    assert docx_export._health_combined_selected_ids(selected, report, categories, variants) == ["cancer-only"]
+
+
 def test_health_karyotype_prefers_ploidy_sidecar(tmp_path, monkeypatch):
     sample_dir = tmp_path / "S1"
     sample_dir.mkdir()
@@ -1460,6 +1476,7 @@ def test_health_bundle_name_follows_selected_sections():
     )
     assert docx_export._health_test_bundle_name({"pgx"}) == "藥物基因體學基因篩檢"
     assert docx_export._health_test_bundle_name({"acmg_sf"}) == "ACMG疾病風險基因篩檢"
+    assert docx_export._health_test_bundle_name({"hereditary_cancer"}) == "遺傳癌症 v2.0 基因篩檢"
     assert docx_export._health_test_bundle_name({"stroke", "carrier"}) == (
         "中風相關基因及帶因者基因篩檢"
     )
