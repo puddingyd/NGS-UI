@@ -83,8 +83,12 @@ def test_reviewed_index_and_anchored_comments_are_applied():
     assert "參考資料" in paragraphs
     assert "ACMG SF 疾病簡介參考資料" not in text
     assert "查閱日期：" not in text
-    for title in ("疾病介紹", "參考資料"):
-        assert next(p for p in doc.paragraphs if p.text == title).paragraph_format.page_break_before
+    assert next(p for p in doc.paragraphs if p.text == "疾病介紹").paragraph_format.page_break_before
+    bibliography = next(p for p in doc.paragraphs if p.text == "參考資料")
+    assert not bibliography.paragraph_format.page_break_before
+    assert not bibliography.paragraph_format.keep_with_next
+    assert bibliography.paragraph_format.space_after.pt == 0
+    assert not bibliography._p.xpath("./w:pPr/w:outlineLvl")
     assert not doc.element.xpath(".//w:br[@w:type='page']")
     assert {c["id"] for c in catalogue["conditions"] if c["notes"]} == {"fh"}
     assert sum(p.startswith("補充說明：") for p in paragraphs) == 1
@@ -104,6 +108,8 @@ def test_reviewed_index_and_anchored_comments_are_applied():
     assert "皮膚色素較淡" not in by_id["tsc"]["clinical_course"]
     assert "視網膜感受光線的功能受影響" in by_id["rpe65"]["clinical_course"]
     assert "利用光線" not in by_id["rpe65"]["clinical_course"]
+    assert by_id["nf2"]["title"] == "神經纖維瘤症候群第二型"
+    assert by_id["nf2"]["english"] == "NF2-related schwannomatosis"
     assert by_id["fh"]["index_inheritance"] == "體染色體顯性、體染色體隱性"
     assert by_id["pgl"]["index_inheritance"] == "體染色體顯性"
     for cid in ("ald", "fabry", "otc"):
@@ -132,7 +138,9 @@ def test_reviewed_index_and_anchored_comments_are_applied():
             assert spacer.paragraph_format.line_spacing.pt == 15
             assert spacer.paragraph_format.keep_with_next
         else:
-            assert paragraphs[last_index + 1] == "參考資料"
+            assert paragraphs[last_index + 1] == ""
+            assert doc.paragraphs[last_index + 1].paragraph_format.line_spacing.pt == 15
+            assert paragraphs[last_index + 2] == "參考資料"
     # Finished exports contain neither unresolved comments nor revision markup.
     assert not doc.element.xpath(".//w:ins|.//w:del|.//w:rPrChange|.//w:pPrChange|.//w:commentRangeStart")
 

@@ -182,9 +182,10 @@ def render_acmg_sf_education(doc, *, font_name: str = "MingLiU") -> None:
                 # Keep it with the following heading, not the preceding block.
                 _paragraph(doc, "", font_name, after=0, keep_next=True)
 
-    bibliography = _paragraph(doc, "參考資料", font_name,
-                              size=13, bold=True, heading=1, after=7)
-    bibliography.paragraph_format.page_break_before = True
+    # The reviewed paragraph marks leave one blank line before references;
+    # the reference title no longer forces a new page or uses an outline level.
+    _paragraph(doc, "", font_name, size=13, bold=True, after=0)
+    _paragraph(doc, "參考資料", font_name, size=13, bold=True, after=0)
     for key in source_keys:
         source = catalogue["sources"][key]
         p = _paragraph(doc, f"[{source_numbers[key]}] ", font_name, size=10, after=2, keep_next=True)

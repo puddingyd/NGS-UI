@@ -163,7 +163,7 @@
       "references": ["vhl"]
     },
     {
-      "id": "nf2", "category": "tumor", "title": "NF2 相關神經鞘瘤病", "english": "NF2-related schwannomatosis",
+      "id": "nf2", "category": "tumor", "title": "神經纖維瘤症候群第二型", "english": "NF2-related schwannomatosis",
       "genes": ["NF2"], "inheritance": "體染色體顯性遺傳",
       "index_inheritance": "體染色體顯性",
       "clinical_course": "容易在神經鞘出現腫瘤，尤其與聽覺及平衡有關的前庭神經，也可能有腦膜瘤或脊髓腫瘤。可能出現耳鳴、聽力下降或平衡問題。腫瘤可能為良性，但腫瘤生長或壓迫仍可能影響功能。",
