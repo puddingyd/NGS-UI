@@ -80,24 +80,30 @@ def test_reviewed_index_and_anchored_comments_are_applied():
                     "文中編號對應", "息肉", "半顯性", "p.Cys282Tyr", "少數僅有一份 CASQ2"):
         assert removed not in text
     assert paragraphs.count("其他疾病") == 2
-    assert "ACMG SF 疾病簡介參考資料" in paragraphs
-    for title in ("疾病介紹", "ACMG SF 疾病簡介參考資料"):
+    assert "參考資料" in paragraphs
+    assert "ACMG SF 疾病簡介參考資料" not in text
+    assert "查閱日期：" not in text
+    for title in ("疾病介紹", "參考資料"):
         assert next(p for p in doc.paragraphs if p.text == title).paragraph_format.page_break_before
     assert not doc.element.xpath(".//w:br[@w:type='page']")
-    assert {c["id"] for c in catalogue["conditions"] if c["notes"]} == {"fh", "pgl"}
-    assert sum(p.startswith("補充說明：") for p in paragraphs) == 2
+    assert {c["id"] for c in catalogue["conditions"] if c["notes"]} == {"fh"}
+    assert sum(p.startswith("補充說明：") for p in paragraphs) == 1
     assert "瘜肉相關問題與癌症風險需分別考慮" in by_id["pjs"]["management"]
     assert not by_id["pjs"]["notes"]
 
     merged = by_id["polyposis"]
     assert set(merged["genes"]) == {"APC", "MUTYH", "BMPR1A", "SMAD4"}
     assert not {"apc", "mutyh", "jps"} & set(by_id)
-    for title in ("家族性腺瘤性瘜肉症", "MUTYH 相關瘜肉症", "幼年型瘜肉症候群"):
-        assert title in merged["clinical_course"]
     assert "APC、BMPR1A、SMAD4：體染色體顯性遺傳" in merged["inheritance"]
     assert "MUTYH：體染色體隱性遺傳" in merged["inheritance"]
     assert "出現深褐色的小斑點" in by_id["pjs"]["clinical_course"]
     assert "女性也可能在成年後出現雙腿僵硬、走路困難，或難以控制排尿、排便等症狀" in by_id["ald"]["clinical_course"]
+    assert "腫瘤或其他異常變化" in by_id["tsc"]["clinical_course"]
+    assert "比周圍膚色淺的斑塊" in by_id["tsc"]["clinical_course"]
+    assert "病灶" not in by_id["tsc"]["clinical_course"]
+    assert "皮膚色素較淡" not in by_id["tsc"]["clinical_course"]
+    assert "視網膜感受光線的功能受影響" in by_id["rpe65"]["clinical_course"]
+    assert "利用光線" not in by_id["rpe65"]["clinical_course"]
     assert by_id["fh"]["index_inheritance"] == "體染色體顯性、體染色體隱性"
     assert by_id["pgl"]["index_inheritance"] == "體染色體顯性"
     for cid in ("ald", "fabry", "otc"):
@@ -116,6 +122,17 @@ def test_reviewed_index_and_anchored_comments_are_applied():
         assert all(run.font.size.pt == 12 and run.bold for run in heading.runs)
         assert not heading._p.xpath(".//w:br")
         assert condition["english"] not in paragraphs
+        # A blank line follows each complete disease, including category changes.
+        last_label = "補充說明：" if condition["notes"] else "追蹤與治療："
+        last_value = condition["notes"] or condition["management"]
+        last_index = paragraphs.index(last_label + last_value)
+        if number < len(catalogue["conditions"]):
+            spacer = doc.paragraphs[last_index + 1]
+            assert not spacer.text
+            assert spacer.paragraph_format.line_spacing.pt == 15
+            assert spacer.paragraph_format.keep_with_next
+        else:
+            assert paragraphs[last_index + 1] == "參考資料"
     # Finished exports contain neither unresolved comments nor revision markup.
     assert not doc.element.xpath(".//w:ins|.//w:del|.//w:rPrChange|.//w:pPrChange|.//w:commentRangeStart")
 
@@ -163,7 +180,7 @@ def test_health_export_selects_and_orders_education(monkeypatch, tmp_path, secti
         else:
             assert "變異位點參考資料" not in text
         if "pgx" in sections:
-            assert text.index(title) < text.index("ACMG SF 疾病簡介參考資料") < text.index("完整用藥建議")
+            assert text.index(title) < text.index("\n參考資料\n") < text.index("完整用藥建議")
             assert "Use an alternative antiplatelet agent." in text
     if "pgx" in sections and with_finding and "acmg_sf" not in sections:
         assert text.index("變異位點參考資料") < text.index("完整用藥建議")

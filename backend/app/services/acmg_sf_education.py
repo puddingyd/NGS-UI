@@ -164,7 +164,7 @@ def render_acmg_sf_education(doc, *, font_name: str = "MingLiU") -> None:
             if condition["category"] != category["id"]:
                 continue
             heading = _paragraph(doc, f"{number:02}　{condition['title']} {condition['english']}", font_name,
-                                 size=12, bold=True, heading=3, before=9, after=3)
+                                 size=12, bold=True, heading=3, after=3)
             _bookmark(heading, f"acmgsf_{condition['id']}", bookmark_id)
             bookmark_id += 1
             fields = [("相關基因：", "、".join(condition["genes"])),
@@ -176,13 +176,15 @@ def render_acmg_sf_education(doc, *, font_name: str = "MingLiU") -> None:
             for index, (label, text) in enumerate(fields):
                 last = index == len(fields) - 1
                 _paragraph(doc, text, font_name, label=label,
-                           keep_next=not last, after=12 if last else 4)
+                           keep_next=not last, after=0 if last else 4)
+            if number != len(conditions):
+                # The reviewer requested an actual empty line between diseases.
+                # Keep it with the following heading, not the preceding block.
+                _paragraph(doc, "", font_name, after=0, keep_next=True)
 
-    bibliography = _paragraph(doc, "ACMG SF 疾病簡介參考資料", font_name,
+    bibliography = _paragraph(doc, "參考資料", font_name,
                               size=13, bold=True, heading=1, after=7)
     bibliography.paragraph_format.page_break_before = True
-    _paragraph(doc, f"查閱日期：{catalogue['sources_accessed']}。電子版可點選文章名稱開啟原文。",
-               font_name, size=10, after=9)
     for key in source_keys:
         source = catalogue["sources"][key]
         p = _paragraph(doc, f"[{source_numbers[key]}] ", font_name, size=10, after=2, keep_next=True)
