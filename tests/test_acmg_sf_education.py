@@ -89,6 +89,7 @@ def test_reviewed_index_and_anchored_comments_are_applied():
     assert not bibliography.paragraph_format.page_break_before
     assert not bibliography.paragraph_format.keep_with_next
     assert bibliography.paragraph_format.space_after.pt == 0
+    assert all(run.font.size.pt == 11 and run.bold for run in bibliography.runs)
     assert not bibliography._p.xpath("./w:pPr/w:outlineLvl")
     assert not doc.element.xpath(".//w:br[@w:type='page']")
     assert {c["id"] for c in catalogue["conditions"] if c["notes"]} == {"fh"}
@@ -139,9 +140,17 @@ def test_reviewed_index_and_anchored_comments_are_applied():
             assert spacer.paragraph_format.line_spacing.pt == 15
             assert spacer.paragraph_format.keep_with_next
         else:
-            assert paragraphs[last_index + 1] == ""
-            assert doc.paragraphs[last_index + 1].paragraph_format.line_spacing.pt == 15
-            assert paragraphs[last_index + 2] == "參考資料"
+            for offset in (1, 2):
+                assert paragraphs[last_index + offset] == ""
+                assert doc.paragraphs[last_index + offset].paragraph_format.line_spacing.pt == 15
+            assert paragraphs[last_index + 3] == "參考資料"
+    for key in catalogue["source_order"]:
+        reference = next(p for p in doc.paragraphs
+                         if p._p.xpath("./w:bookmarkStart/@w:name") == [f"acmgsf_source_{key}"])
+        # Include the title's hyperlink run, which is outside paragraph.runs.
+        assert set(reference._p.xpath(".//w:rPr/w:sz/@w:val")) == {"18"}
+        url = next(p for p in doc.paragraphs if p.text == catalogue["sources"][key]["url"])
+        assert all(run.font.size.pt == 8 for run in url.runs)
     # Finished exports contain neither unresolved comments nor revision markup.
     assert not doc.element.xpath(".//w:ins|.//w:del|.//w:rPrChange|.//w:pPrChange|.//w:commentRangeStart")
 

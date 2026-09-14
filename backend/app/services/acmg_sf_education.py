@@ -182,15 +182,16 @@ def render_acmg_sf_education(doc, *, font_name: str = "MingLiU") -> None:
                 # Keep it with the following heading, not the preceding block.
                 _paragraph(doc, "", font_name, after=0, keep_next=True)
 
-    # The reviewed paragraph marks leave one blank line before references;
-    # the reference title no longer forces a new page or uses an outline level.
-    _paragraph(doc, "", font_name, size=13, bold=True, after=0)
-    _paragraph(doc, "參考資料", font_name, size=13, bold=True, after=0)
+    # Separate the smaller bibliography from the disease text by two blank
+    # lines, while allowing it to continue on the same page.
+    for _ in range(2):
+        _paragraph(doc, "", font_name, after=0)
+    _paragraph(doc, "參考資料", font_name, size=11, bold=True, after=0)
     for key in source_keys:
         source = catalogue["sources"][key]
-        p = _paragraph(doc, f"[{source_numbers[key]}] ", font_name, size=10, after=2, keep_next=True)
+        p = _paragraph(doc, f"[{source_numbers[key]}] ", font_name, size=9, after=2, keep_next=True)
         _bookmark(p, f"acmgsf_source_{key}", bookmark_id)
         bookmark_id += 1
-        _link(p, source["title"], font_name, url=source["url"])
-        _font(p.add_run(f". {source['publisher']}."), font_name, 10)
-        _paragraph(doc, source["url"], font_name, size=9, after=7)
+        _link(p, source["title"], font_name, size=9, url=source["url"])
+        _font(p.add_run(f". {source['publisher']}."), font_name, 9)
+        _paragraph(doc, source["url"], font_name, size=8, after=7)
