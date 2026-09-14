@@ -10,6 +10,9 @@
   let previewUrl = "";
   let previewDocument = null;
   let previewPage = 0;
+  let previewDocuments = [];
+  let previewRequest = 0;
+  let previewController = null;
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -138,7 +141,11 @@
             </div>
             <button type="button" class="pdoc-icon-btn" data-pdoc-preview-close aria-label="關閉">&times;</button>
           </div>
-          <div id="pdoc-preview-body" class="pdoc-preview-body"><span class="pdoc-muted">載入中…</span></div>
+          <div class="pdoc-preview-stage">
+            <button type="button" class="pdoc-file-nav" data-pdoc-file-prev aria-label="上一個檔案" title="上一個檔案（←）">&#10094;</button>
+            <div id="pdoc-preview-body" class="pdoc-preview-body" aria-live="polite"><span class="pdoc-muted">載入中…</span></div>
+            <button type="button" class="pdoc-file-nav" data-pdoc-file-next aria-label="下一個檔案" title="下一個檔案（→）">&#10095;</button>
+          </div>
           <div id="pdoc-preview-controls" class="pdoc-preview-controls" hidden>
             <button type="button" class="btn btn-secondary" data-pdoc-preview-prev>上一頁</button>
             <button type="button" class="btn btn-secondary" data-pdoc-preview-next>下一頁</button>
@@ -293,6 +300,7 @@
   }
 
   function renderList(rows) {
+    previewDocuments = rows.filter(row => row.previewable);
     const host = document.getElementById("pdoc-list");
     const downloadAll = document.getElementById("pdoc-download-all");
     if (downloadAll) {
@@ -333,12 +341,15 @@
 
   async function loadList() {
     if (!context) return;
+    const currentContext = context;
     setStatus("pdoc-list-status", "載入中…");
     try {
       const rows = await jsonRequest(`${API}?mrn=${encodeURIComponent(context.mrn)}`);
+      if (context !== currentContext) return;
       renderList(Array.isArray(rows) ? rows : []);
       setStatus("pdoc-list-status", "");
     } catch (error) {
+      if (context !== currentContext) return;
       setStatus("pdoc-list-status", `載入失敗：${error.message || error}`, true);
     }
   }
@@ -393,14 +404,23 @@
 
   async function loadPreviewPage(page) {
     if (!previewDocument) return;
+    const pages = Number(previewDocument.image_pages || 1);
+    if (!Number.isInteger(page) || page < 0 || page >= pages) return;
+    const request = ++previewRequest;
+    previewController?.abort();
+    previewController = new AbortController();
+    const currentDocument = previewDocument;
+    previewPage = page;
+    renderPreviewControls();
     const body = document.getElementById("pdoc-preview-body");
     body.innerHTML = `<span class="pdoc-muted">載入中…</span>`;
     releasePreviewUrl();
     try {
       const response = await fetch(
-        `${API}/${encodeURIComponent(previewDocument.id)}/preview?page=${page}`,
-        { credentials: "same-origin" },
+        `${API}/${encodeURIComponent(currentDocument.id)}/preview?page=${page}`,
+        { credentials: "same-origin", signal: previewController.signal },
       );
+      if (request !== previewRequest) return;
       if (response.status === 401) {
         closePreview();
         showLogin();
@@ -410,11 +430,12 @@
         const error = await response.json().catch(() => ({}));
         throw new Error(error.detail || `預覽失敗 (${response.status})`);
       }
-      previewUrl = URL.createObjectURL(await response.blob());
-      previewPage = page;
-      body.innerHTML = `<img src="${esc(previewUrl)}" alt="${esc(previewDocument.display_name)}">`;
-      renderPreviewControls();
+      const blob = await response.blob();
+      if (request !== previewRequest) return;
+      previewUrl = URL.createObjectURL(blob);
+      body.innerHTML = `<img src="${esc(previewUrl)}" alt="${esc(currentDocument.display_name)}">`;
     } catch (error) {
+      if (request !== previewRequest || error.name === "AbortError") return;
       body.innerHTML = `<div class="pdoc-error">${esc(error.message || error)}</div>`;
     }
   }
@@ -423,24 +444,52 @@
     const pages = Number(previewDocument?.image_pages || 1);
     const controls = document.getElementById("pdoc-preview-controls");
     const label = document.getElementById("pdoc-preview-page-label");
+    const index = previewDocuments.findIndex(row => row.id === previewDocument?.id);
     controls.hidden = pages <= 1;
-    label.textContent = pages > 1 ? `第 ${previewPage + 1} / ${pages} 頁` : "";
+    label.textContent = [
+      index >= 0 ? `檔案 ${index + 1} / ${previewDocuments.length}` : "",
+      pages > 1 ? `第 ${previewPage + 1} / ${pages} 頁` : "",
+    ].filter(Boolean).join(" · ");
+    document.querySelector("[data-pdoc-file-prev]").disabled = index <= 0;
+    document.querySelector("[data-pdoc-file-next]").disabled = index < 0 || index >= previewDocuments.length - 1;
     controls.querySelector("[data-pdoc-preview-prev]").disabled = previewPage <= 0;
     controls.querySelector("[data-pdoc-preview-next]").disabled = previewPage >= pages - 1;
   }
 
   function openPreview(rowElement) {
-    previewDocument = JSON.parse(rowElement.dataset.document || "{}");
+    showPreviewDocument(JSON.parse(rowElement.dataset.document || "{}"));
+    document.querySelector("[data-pdoc-preview-close]")?.focus();
+  }
+
+  function showPreviewDocument(documentInfo) {
+    previewDocument = documentInfo;
     previewPage = 0;
     document.getElementById("pdoc-preview-title").textContent = previewDocument.display_name || "圖片預覽";
     document.getElementById("patient-document-preview").hidden = false;
     loadPreviewPage(0);
   }
 
+  function movePreviewDocument(offset) {
+    if (!previewDocument) return;
+    const index = previewDocuments.findIndex(row => row.id === previewDocument.id);
+    if (index < 0 || !previewDocuments[index + offset]) return;
+    showPreviewDocument(previewDocuments[index + offset]);
+  }
+
   function closePreview() {
+    previewRequest += 1;
+    previewController?.abort();
+    previewController = null;
+    const previousId = previewDocument?.id;
     releasePreviewUrl();
     previewDocument = null;
     document.getElementById("patient-document-preview").hidden = true;
+    document.getElementById("pdoc-preview-body").innerHTML = "";
+    if (previousId) {
+      const row = Array.from(document.querySelectorAll(".pdoc-row"))
+        .find(item => item.dataset.documentId === previousId);
+      row?.querySelector("[data-pdoc-preview]")?.focus();
+    }
   }
 
   async function login(event) {
@@ -539,6 +588,8 @@
     });
     document.querySelector("[data-pdoc-preview-prev]")?.addEventListener("click", () => loadPreviewPage(previewPage - 1));
     document.querySelector("[data-pdoc-preview-next]")?.addEventListener("click", () => loadPreviewPage(previewPage + 1));
+    document.querySelector("[data-pdoc-file-prev]")?.addEventListener("click", () => movePreviewDocument(-1));
+    document.querySelector("[data-pdoc-file-next]")?.addEventListener("click", () => movePreviewDocument(1));
     document.getElementById("patient-documents-modal")?.addEventListener("click", event => {
       if (event.target.id === "patient-documents-modal") close();
     });
@@ -546,6 +597,14 @@
       if (event.target.id === "patient-document-preview") closePreview();
     });
     document.addEventListener("keydown", event => {
+      if (!document.getElementById("patient-document-preview")?.hidden
+          && ["ArrowLeft", "ArrowRight"].includes(event.key)
+          && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+          && !event.target.closest("input, textarea, select, [contenteditable]")) {
+        event.preventDefault();
+        movePreviewDocument(event.key === "ArrowLeft" ? -1 : 1);
+        return;
+      }
       if (event.key !== "Escape") return;
       if (!document.getElementById("patient-document-preview")?.hidden) closePreview();
       else if (!document.getElementById("patient-documents-modal")?.hidden) close();
@@ -566,6 +625,7 @@
       mrn,
       sourceSampleId: String(raw?.sourceSampleId || "").trim(),
     };
+    renderList([]);
     document.getElementById("pdoc-patient").textContent = `MRN：${mrn}`;
     document.getElementById("patient-documents-modal").hidden = false;
     setStatus("pdoc-upload-status", "");
@@ -577,6 +637,7 @@
     closePreview();
     clearPending();
     context = null;
+    previewDocuments = [];
     const modal = document.getElementById("patient-documents-modal");
     if (modal) modal.hidden = true;
   }

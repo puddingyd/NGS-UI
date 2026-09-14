@@ -1703,9 +1703,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   color: #4a3801;
 }
 
-/* ClinVar / ACMG classification colour chips — applied to the ClinVar
-   value span and the ACMG_classification input via classifySignificance().
-   Pathogenic = red, Likely pathogenic = orange, VUS = yellow,
+/* ClinVar / ACMG classification colour chips.
+   Pathogenic = red, Likely pathogenic = light red, VUS = yellow,
    Likely benign = light green, Benign = dark green. Anything else
    (Conflicting, blank, free-text) is left uncolored. */
 .sig-p   { background: #ef9a9a; }
@@ -1720,6 +1719,15 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .sig-lb  { background: #dcedc8; }
 .sig-b   { background: #a5d6a7; }
+.clinvar-value { line-height: 1.5; }
+.clinvar-assertion, .clinvar-stars { white-space: nowrap; }
+.clinvar-token {
+  padding: 0 2px;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.clinvar-separator { color: #57606a; }
 .info-grid .v.sig-p,
 .info-grid .v.sig-lp,
 .info-grid .v.sig-vus,

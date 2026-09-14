@@ -434,22 +434,26 @@ async function loadSample(LIS_ID, opts = {}) {
 // ---------- Formatting helpers --------------------------------------
 
 const CLINVAR_ABBREV = {
-  "Pathogenic": "P",
-  "Likely_pathogenic": "LP",
-  "Pathogenic/Likely_pathogenic": "P/LP",
-  "Uncertain_significance": "VUS",
-  "Benign": "B",
-  "Likely_benign": "LB",
-  "Benign/Likely_benign": "B/LB",
-  "Conflicting_classifications_of_pathogenicity": "Conflict",
+  "pathogenic": "P", "p": "P",
+  "likely pathogenic": "LP", "lp": "LP",
+  "uncertain significance": "VUS", "vus": "VUS",
+  "variant of uncertain significance": "VUS",
+  "benign": "B", "b": "B",
+  "likely benign": "LB", "lb": "LB",
+  "conflicting classifications of pathogenicity": "Conflict",
+  "conflicting interpretations of pathogenicity": "Conflict",
 };
 
 function _formatClinvarPart(part) {
-  const text = String(part || "").trim().replace(/^_/, "");
+  const text = String(part || "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
   if (!text) return "";
-  const m = text.match(/^(.+?)\((\d+)\)$/);
-  if (!m) return CLINVAR_ABBREV[text] || text;
-  return (CLINVAR_ABBREV[m[1]] || m[1]) + "(" + m[2] + ")";
+  const m = text.match(/^(.*?)\s*\(\s*(\d+)\s*\)$/);
+  const classification = (m ? m[1] : text).trim();
+  const label = classification.split("/").map(value => {
+    const name = value.trim();
+    return CLINVAR_ABBREV[name.toLowerCase()] || name;
+  }).join("/");
+  return label + (m ? `(${m[2]})` : "");
 }
 
 function _formatClinvarParts(text) {
@@ -460,22 +464,45 @@ function _formatClinvarParts(text) {
     .join("|");
 }
 
+function _clinvarDisplayValue(sig, conf) {
+  const sigStr = String(sig ?? "").trim();
+  if (!sigStr || /^(\.|NA|N\/A)$/i.test(sigStr)) return "";
+  const confStr = String(conf ?? "").trim();
+  if (/^conflicting[ _]/i.test(sigStr) && confStr && !/^(\.|NA|N\/A)$/i.test(confStr)) {
+    return confStr;
+  }
+  return sigStr;
+}
+
 function formatClinvar(sig, conf, stars) {
-  // Treat pipeline placeholders ('.', 'NA', '') as "no ClinVar data"
-  // — otherwise the cell renders as `.(0★)` instead of `—`.
-  const sigStr = (sig == null ? "" : String(sig)).trim();
-  if (!sigStr || sigStr === "." || sigStr.toUpperCase() === "NA" || sigStr.toUpperCase() === "N/A") {
-    return "—";
-  }
+  const value = _clinvarDisplayValue(sig, conf);
+  if (!value) return "—";
   const starTxt = (stars != null && stars !== "") ? `(${stars}★)` : "";
-  if (sigStr.startsWith("Conflicting") && conf) {
-    return (_formatClinvarParts(conf) || (CLINVAR_ABBREV[sigStr] || sigStr)) + starTxt;
-  }
-  if (/[,&|]/.test(sigStr)) {
-    const out = _formatClinvarParts(sigStr);
-    if (out) return out + starTxt;
-  }
-  return (CLINVAR_ABBREV[sigStr] || sigStr) + starTxt;
+  return (_formatClinvarParts(value) || "—") + starTxt;
+}
+
+function renderClinvarValue(sig, conf, stars) {
+  const value = _clinvarDisplayValue(sig, conf);
+  if (!value) return "—";
+  // Color each assertion under its own label: the order and counts never
+  // determine a gradient or an overall variant classification.
+  const parts = _formatClinvarParts(value).split("|").filter(Boolean);
+  const html = parts.map(part => {
+    const match = part.match(/^(.*?)(\(\d+\))?$/);
+    const labels = match[1].split("/");
+    const count = match[2] || "";
+    const tokens = labels.map((label, index) => {
+      const cls = classifySignificance(label) || "";
+      const text = label + (index === labels.length - 1 ? count : "");
+      return `<span class="clinvar-token ${cls}">${escapeHtml(text)}</span>`;
+    }).join('<span class="clinvar-separator">/</span>');
+    return `<span class="clinvar-assertion">${tokens}</span>`;
+  }).join('<span class="clinvar-separator">|</span><wbr>');
+  const fullText = [sig, value !== String(sig ?? "").trim() ? value : ""]
+    .filter(Boolean).join("：").replace(/_/g, " ");
+  const starTxt = stars != null && stars !== "" ? `(${stars}★)` : "";
+  const title = `${fullText}${starTxt ? ` ${starTxt}` : ""}`;
+  return `<span class="clinvar-value" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}">${html}<span class="clinvar-stars">${escapeHtml(starTxt)}</span></span>`;
 }
 
 // Map any ClinVar / ACMG classification string (canonical, abbreviated,
@@ -4703,7 +4730,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         </div>
       </div>
       <div class="snv-annotation-column">
-        <span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span><span class="v ${classifySignificance(v.CLNSIG) || ""}">${escapeHtml(formatClinvar(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars))}</span>
+        <span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span><span class="v">${renderClinvarValue(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars)}</span>
         ${hasErepo ? `<span class="k">ERepo</span>
         <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 ACMG/AMP criteria；ERepo 為 ClinGen VCEP experts 評估">
           <span class="acmg-summary-value ${classifySignificance(erepoDisplayClass) || ""}">${escapeHtml(erepoDisplayClass || "—")} (${escapeHtml(v.clingen_vcep_score == null ? "—" : v.clingen_vcep_score)})</span>
@@ -6698,14 +6725,7 @@ function _renderMitoDetailBox(v, id) {
       ${v.impact ? `<span><strong>Impact:</strong> ${escapeHtml(v.impact)}</span>` : ""}
       ${v.biotype ? `<span><strong>Biotype:</strong> ${escapeHtml(v.biotype)}</span>` : ""}
       ${v.aa_change ? `<span><strong>Protein change:</strong> ${escapeHtml(v.aa_change)}</span>` : ""}
-      ${(() => {
-        const sig = (v.CLNSIG || "").trim();
-        if (!sig) return `<span><strong>ClinVar:</strong> —</span>`;
-        const cls = classifySignificance(sig) || "";
-        const stars = v.clinvar_stars != null && v.clinvar_stars !== "" && Number(v.clinvar_stars) > 0
-          ? ` ${"★".repeat(Number(v.clinvar_stars))}` : "";
-        return `<span><strong>ClinVar:</strong> <span class="acmg-class ${cls}">${escapeHtml(sig.replace(/_/g," "))}${escapeHtml(stars)}</span></span>`;
-      })()}
+      <span><strong>ClinVar:</strong> ${renderClinvarValue(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars)}</span>
       ${v.TLOD != null ? `<span data-tip="${escapeAttr(_MITO_TLOD_TITLE)}"><strong>TLOD:</strong> ${tlod} <span class="muted" style="cursor:help">ⓘ</span></span>` : ""}
     </div>
     <div class="cnv-sv-detail-row mito-af-row">

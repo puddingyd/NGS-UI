@@ -10,6 +10,8 @@
 - 帳號：SQLite (`data/users.db`) + bcrypt
 - 部署：內網 `192.168.84.91:8765`，systemd unit `ngs-ui`
 
+Clinical presentation 的 Documents 圖片預覽可用左右按鈕或鍵盤 ←／→，依清單順序連續查看圖片（略過 PDF）；上方顯示檔案序號，多頁 TIFF 另保留頁內翻頁。ClinVar 卡片以 `P(22)|VUS(1)(1★)` 形式保留縮寫、筆數與星等：P／LP 紅系、VUS 黃、B／LB 綠系分段上色，混合判讀各自保留顏色，完整名稱可在滑鼠停留時查看。共用 SNV/Indel 與 Mito 卡片皆適用；此顯示調整不改變 variant 分類、tier 或 DOCX 資料。
+
 > 開發者 / 接手者請另看 `CLAUDE.md`（架構、資料流、各模組細節、踩雷紀錄）與 `docs/`。
 
 ---

@@ -185,6 +185,31 @@
 .pdoc-login button { justify-self: end; }
 .pdoc-preview-overlay { z-index: 1300; }
 .pdoc-preview-card { width: min(1100px, 97vw); }
+.pdoc-preview-card .pdoc-head > div { min-width: 0; }
+#pdoc-preview-title { overflow-wrap: anywhere; }
+.pdoc-preview-stage {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  align-items: stretch;
+  background: #202124;
+}
+.pdoc-file-nav {
+  position: sticky;
+  top: 90px;
+  align-self: center;
+  min-height: 72px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 28px;
+  cursor: pointer;
+}
+.pdoc-file-nav:hover:not(:disabled) { background: #3c4043; }
+.pdoc-file-nav:focus-visible { outline: 2px solid #8ab4f8; outline-offset: -3px; }
+.pdoc-file-nav:disabled { opacity: 0.25; cursor: default; }
 .pdoc-preview-body {
   display: flex;
   align-items: center;
@@ -223,6 +248,7 @@
 .documents-title-row .section-title { margin: 0; }
 
 @media (max-width: 720px) {
+  .pdoc-preview-stage { grid-template-columns: 36px minmax(0, 1fr) 36px; }
   .pdoc-overlay { padding: 8px; }
   .pdoc-card { max-height: 96vh; }
   .pdoc-pending-row { grid-template-columns: 48px minmax(0, 1fr); }
