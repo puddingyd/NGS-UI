@@ -1316,7 +1316,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
 
 # ── §四 方法、§五 注釋 ───────────────────────────────────────────
 
-def _section_methods(doc, test_type: str, *, health: bool = False) -> None:
+def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: bool = True) -> None:
     is_wgs = test_types.is_wgs_type(test_type)
     seq    = "Illumina NovaSeq X Plus" if is_wgs else "Illumina NextSeq 2000"
     depth  = "27X" if is_wgs and health else ("30X" if is_wgs else "50X")
@@ -1339,19 +1339,21 @@ def _section_methods(doc, test_type: str, *, health: bool = False) -> None:
                 "序列比對品質、基因體重複或高同源區域、變異類型等因素，而產生變異位點偵測疏漏。",
             )
             next_note_number += 1
+            if include_pgx:
+                _add_paragraph(
+                    doc,
+                    f"  {next_note_number}. 本檢驗方法並非長片段定序，某些藥物基因之變異組合無法完全決定相位 "
+                    "(phasing) 及其單套體資訊 (haplotype)，因此可能存在不確定性。",
+                )
+                next_note_number += 1
+        if include_pgx:
             _add_paragraph(
                 doc,
-                f"  {next_note_number}. 本檢驗方法並非長片段定序，某些藥物基因之變異組合無法完全決定相位 "
-                "(phasing) 及其單套體資訊 (haplotype)，因此可能存在不確定性。",
+                f"  {next_note_number}. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異 "
+                "(copy number variation) 分析結果；此項專一性分析僅用於 CYP2D6 藥物基因體學判讀，"
+                "不代表本檢測已涵蓋其他基因之拷貝數變異。",
             )
             next_note_number += 1
-        _add_paragraph(
-            doc,
-            f"  {next_note_number}. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異 "
-            "(copy number variation) 分析結果；此項專一性分析僅用於 CYP2D6 藥物基因體學判讀，"
-            "不代表本檢測已涵蓋其他基因之拷貝數變異。",
-        )
-        next_note_number += 1
     else:
         _add_paragraph(doc, "  4. 本檢測僅能檢測出基因內單一核苷酸變異 (single nucleotide variant) 、"
                             "小片段的缺失或插入 (small indel)及部分拷貝數變異 (copy number variant)，"
@@ -3441,26 +3443,32 @@ def _start_health_appendix(doc) -> None:
 
 
 def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) -> bytes:
+    allowed_sections = set(_HEALTH_DISEASE_SECTIONS) | {"pgx"}
+    # Omitted options retain the API defaults; an explicitly empty selection
+    # must never silently add ACMG SF or PGx back to the report.
+    requested_set = {
+        str(section).strip()
+        for section in (["acmg_sf", "pgx"] if sections is None else sections)
+        if str(section).strip()
+    }
+    if not requested_set:
+        raise ValueError("請至少選擇一個報告項目。")
+    if requested_set - allowed_sections:
+        raise ValueError("包含不支援的健檢報告項目。")
+    include_disease_findings = bool(requested_set.intersection(_HEALTH_DISEASE_SECTIONS))
+    include_acmg_education = "acmg_sf" in requested_set
+    include_pgx = "pgx" in requested_set
+
     sample = sample_loader.load_sample(sample_id, include_aux=False)
     if sample is None:
         raise FileNotFoundError(f"sample not found: {sample_id}")
     sample = _report_clinvar_sample(sample)
-    secondary = sample_loader.load_sample_secondary_snv(
+    secondary = (sample_loader.load_sample_secondary_snv(
         sample_id, clinvar_baseline=True
-    ) or {}
+    ) or {}) if include_disease_findings else {}
     secondary = dict(secondary)
     secondary["variants"] = _report_clinvar_variants(secondary.get("variants") or {})
-    pgx_payload = sample_loader.load_sample_pgx(sample_id) or {}
-
-    allowed_sections = set(_HEALTH_DISEASE_SECTIONS) | {"pgx"}
-    requested = [
-        str(s).strip()
-        for s in (sections or [])
-        if str(s).strip() in allowed_sections
-    ]
-    if not requested:
-        requested = ["acmg_sf", "pgx"]
-    requested_set = set(requested)
+    pgx_payload = (sample_loader.load_sample_pgx(sample_id) or {}) if include_pgx else {}
     report = report_store.load(sample_id)
     variants = secondary.get("variants") or {}
     categories = secondary.get("categories") or {}
@@ -3484,7 +3492,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
 
     referenced: list[dict] = []
     pgx_drug_groups: list[dict] = []
-    if any(key in requested_set for key in _HEALTH_DISEASE_SECTIONS):
+    if include_disease_findings:
         ids = _health_combined_selected_ids(
             requested_set,
             report,
@@ -3504,20 +3512,19 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             variants,
             report,
             sex_karyotype=_health_sex_karyotype(sample_id, meta),
-            show_acmg_caution="acmg_sf" in requested_set,
+            show_acmg_caution=include_acmg_education,
         )
 
-    if "pgx" in requested_set:
+    if include_pgx:
         pgx_drug_groups = _render_health_pgx_section(
             doc,
             dict(_HEALTH_SECTION_ORDER)["pgx"],
             pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {},
         )
 
-    _section_methods(doc, test_type, health=True)
+    _section_methods(doc, test_type, health=True, include_pgx=include_pgx)
     _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
 
-    include_acmg_education = "acmg_sf" in requested_set
     if referenced or include_acmg_education or pgx_drug_groups:
         _start_health_appendix(doc)
     if referenced:
@@ -3531,7 +3538,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
         if referenced:
             doc.add_page_break()
         acmg_sf_education.render_acmg_sf_education(doc, font_name=REPORT_FONT)
-    if pgx_drug_groups:
+    if include_pgx and pgx_drug_groups:
         if include_acmg_education:
             doc.add_page_break()
         elif referenced:

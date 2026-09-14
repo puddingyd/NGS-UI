@@ -1,4 +1,5 @@
 import io
+from itertools import combinations
 from pathlib import Path
 import re
 
@@ -145,41 +146,68 @@ def test_reviewed_index_and_anchored_comments_are_applied():
     assert not doc.element.xpath(".//w:ins|.//w:del|.//w:rPrChange|.//w:pPrChange|.//w:commentRangeStart")
 
 
-@pytest.mark.parametrize("sections,with_finding", [
-    (["acmg_sf"], False),
-    (["acmg_sf", "pgx"], False),
-    (["acmg_sf", "pgx"], True),
-    (["pgx"], False),
-    (["stroke", "pgx"], True),
-    (["carrier"], False),
+@pytest.mark.parametrize("sections", [None] + [
+    list(selected)
+    for count in range(1, 5)
+    for selected in combinations(("acmg_sf", "stroke", "carrier", "pgx"), count)
 ])
+@pytest.mark.parametrize("with_finding", [False, True])
 def test_health_export_selects_and_orders_education(monkeypatch, tmp_path, sections, with_finding):
     from app.services import sample_layout
 
-    variant = {"id": "test-variant", "gene_symbol": "LDLR", "HGVS_C": "c.1A>G",
-               "ACMG_classification": "Pathogenic", "Zygosity": "Heterozygous"}
-    variants = {variant["id"]: variant} if with_finding else {}
-    categories = {key: list(variants) for key in docx_export._HEALTH_DISEASE_SECTIONS}
+    selected = set(sections if sections is not None else ["acmg_sf", "pgx"])
+    disease_selected = selected.intersection(docx_export._HEALTH_DISEASE_SECTIONS)
+    fixture_variants = {
+        key: {"id": key, "gene_symbol": gene, "HGVS_C": f"c.{index}01A>G",
+              "ACMG_classification": "Pathogenic", "Zygosity": "Heterozygous"}
+        for index, (key, gene) in enumerate(
+            (("acmg_sf", "LDLR"), ("stroke", "NOTCH3"), ("carrier", "CFTR")), start=1)
+    }
+    variants = fixture_variants if with_finding else {}
+    categories = {key: [key] if with_finding else [] for key in fixture_variants}
+    loaded = []
+
+    def load_secondary(*args, **kwargs):
+        loaded.append("disease")
+        return {"variants": variants, "categories": categories}
+
     monkeypatch.setattr(docx_export.sample_loader, "load_sample", lambda *args, **kwargs: {"meta": {"Test": "WGS"}})
-    monkeypatch.setattr(docx_export.sample_loader, "load_sample_secondary_snv",
-                        lambda *args, **kwargs: {"variants": variants, "categories": categories})
-    monkeypatch.setattr(docx_export.sample_loader, "load_sample_pgx", lambda *args: {})
+    monkeypatch.setattr(docx_export.sample_loader, "load_sample_secondary_snv", load_secondary)
     monkeypatch.setattr(docx_export.report_store, "load", lambda *args: {
-        "edits": {}, "secondary_findings": {key: {"selected": list(variants)} for key in categories},
+        "edits": {}, "secondary_findings": {key: {"selected": ids} for key, ids in categories.items()},
     })
     monkeypatch.setattr(sample_layout, "state_dir", lambda *args: tmp_path)
     monkeypatch.setattr(docx_export.phenotype_scorer, "genes_for_key", lambda *args, **kwargs: {"genes": ["LDLR"]})
     groups = [{"drug": "Clopidogrel", "genes": {"CYP2C19": {"phenotype": "Poor Metabolizer"}},
                "recommendations": [{"source": "CPIC", "level": "Strong", "recommendation": "Use an alternative antiplatelet agent."}]}]
-    # Only the already-tested PGx presenter is substituted; appendix assembly,
-    # variant references, education and full recommendation rendering are real.
-    monkeypatch.setattr(docx_export, "_render_health_pgx_section", lambda *args: groups)
+    def load_pgx(*args):
+        loaded.append("pgx")
+        return {"pgx": {"report_view": {"drug_groups": groups, "health_genotype_rows": [
+            {"test": "CYP2C19", "allele1": "*2", "allele2": "*2"},
+        ]}}}
+
+    # Render the actual main text, methods, lists, references and appendices,
+    # with populated PGx data even when its checkbox is not selected.
+    monkeypatch.setattr(docx_export.sample_loader, "load_sample_pgx", load_pgx)
     payload = docx_export.build_health_docx("education-test", sections=sections)
     doc = Document(io.BytesIO(payload))
     text = "\n".join(doc.element.xpath(".//w:t/text()"))
     title = acmg_sf_education.load_catalogue()["title"]
-    assert (title in text) == ("acmg_sf" in sections)
-    if "acmg_sf" in sections:
+    assert ("disease" in loaded) == bool(disease_selected)
+    assert ("pgx" in loaded) == ("pgx" in selected)
+    assert (title in text) == ("acmg_sf" in selected)
+    assert (docx_export._HEALTH_ACMG_CAUTION in text) == ("acmg_sf" in selected)
+    assert (docx_export._HEALTH_ACMG_GENE_LIST_TITLE in text) == ("acmg_sf" in selected)
+    for marker in ("藥物基因體學", "官方用藥資訊查詢", "完整用藥建議",
+                   "CYP2C19", "CYP2D6", "某些藥物基因", "Clopidogrel"):
+        assert (marker in text) == ("pgx" in selected), marker
+    external_urls = {rel.target_ref for rel in doc.part.rels.values() if rel.is_external}
+    for _label, url in docx_export._HEALTH_PGX_RESOURCES:
+        assert (url in external_urls) == ("pgx" in selected)
+    for key, variant in fixture_variants.items():
+        assert (variant["HGVS_C"] in text) == (with_finding and key in selected)
+    assert ("變異位點參考資料" in text) == (with_finding and bool(disease_selected))
+    if "acmg_sf" in selected:
         assert len(doc.tables) == 6
         assert "此處列出清單中之84個基因" in text
         assert "36　遺傳性轉甲狀腺素蛋白類澱粉沉積症" in text
@@ -187,10 +215,34 @@ def test_health_export_selects_and_orders_education(monkeypatch, tmp_path, secti
             assert text.index("變異位點參考資料") < text.index(title)
         else:
             assert "變異位點參考資料" not in text
-        if "pgx" in sections:
+        if "pgx" in selected:
             assert text.index(title) < text.index("\n參考資料\n") < text.index("完整用藥建議")
             assert "Use an alternative antiplatelet agent." in text
-    if "pgx" in sections and with_finding and "acmg_sf" not in sections:
+    if "pgx" in selected and disease_selected and with_finding and "acmg_sf" not in selected:
         assert text.index("變異位點參考資料") < text.index("完整用藥建議")
-    if not with_finding and "acmg_sf" not in sections and "pgx" not in sections:
+    if not with_finding and "acmg_sf" not in selected and "pgx" not in selected:
         assert "附錄" not in text
+
+
+@pytest.mark.parametrize("sections", [[], [""], ["unknown"], ["pgx", "unknown"]])
+def test_health_export_rejects_empty_or_unsupported_selection(monkeypatch, sections):
+    def unexpected_load(*args, **kwargs):
+        pytest.fail("Invalid selections must be rejected before loading patient data")
+
+    monkeypatch.setattr(docx_export.sample_loader, "load_sample", unexpected_load)
+    with pytest.raises(ValueError):
+        docx_export.build_health_docx("selection-test", sections=sections)
+
+
+@pytest.mark.parametrize("test_type", ["WES", "WGS", "TITAN-WGS"])
+def test_health_methods_without_pgx_keep_continuous_numbering(test_type):
+    doc = Document()
+    docx_export._section_methods(doc, test_type, health=True, include_pgx=False)
+    paragraphs = [p.text for p in doc.paragraphs]
+    text = "\n".join(paragraphs)
+    assert "藥物基因" not in text
+    assert "CYP2D6" not in text
+    numbers = [int(match.group(1)) for p in paragraphs if (match := re.match(r"\s+(\d+)\.", p))]
+    assert numbers == list(range(1, len(numbers) + 1))
+    assert "無法檢測出拷貝數變異" in text
+    assert ("短讀長全基因體定序" in text) == (test_type != "WES")

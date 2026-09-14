@@ -3809,10 +3809,10 @@ async function exportDiagnosticDocx() {
 
 function _pickHealthReportSections() {
   const options = [
-    { key: "acmg_sf", title: "ACMG 疾病風險基因", checked: true },
+    { key: "acmg_sf", title: "ACMG 疾病風險基因（ACMG SF）", checked: true },
     { key: "stroke", title: "中風相關基因", checked: false },
     { key: "carrier", title: "帶因者篩查", checked: false },
-    { key: "pgx", title: "藥物基因體學", checked: true },
+    { key: "pgx", title: "藥物基因體學（PGx）", checked: true },
   ];
   return new Promise((resolve) => {
     const wrap = document.createElement("div");
@@ -3820,7 +3820,7 @@ function _pickHealthReportSections() {
     wrap.innerHTML = `
       <div class="modal-card health-report-card">
         <h2>匯出健檢報告</h2>
-        <p class="health-report-hint">選擇這次要放入報告的項目。</p>
+        <p class="health-report-hint">選擇這次要放入報告的項目；未勾選的項目不會輸出至主文或附錄。</p>
         <div class="health-report-options">
           ${options.map(opt => `
             <label class="health-report-option">

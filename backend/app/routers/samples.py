@@ -83,6 +83,8 @@ def get_health_report_docx(sample_id: str, sections: str = "acmg_sf,pgx"):
         blob = docx_export.build_health_docx(sample_id, sections=selected)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
     from datetime import datetime, timezone
     from ..config import REPORT_OUTPUT_DIR
