@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.14 — 2026-09-15
+
+- WES 二級分析指令新增 DGX2 QC summary：分析完成後從 BAM 計算 Total reads、Mapping rate、On target rate、Mean depth 與 Uniformity，依設定門檻輸出八欄 `report_summary.csv`，並列出 Duplicated rate。
+- 執行前檢查 DGX2 的 QC 腳本與工具；分別顯示樣本 PASS／FAIL 和計算 ERROR。支援已完成批次獨立補算與未變更樣本快取。WGS 保留原流程。
+
 ### v9.13 — 2026-09-14
 
 - Clinical presentation 的 Documents 圖片預覽新增左右按鈕與鍵盤 ←／→，可依清單順序切換上一個／下一個可預覽檔案，並顯示檔案序號；多頁 TIFF 保留獨立的上一頁／下一頁。

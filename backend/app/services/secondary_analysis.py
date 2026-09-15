@@ -422,6 +422,29 @@ def _launch_command(batch_name: str, seq_type: str) -> str:
     )
     script_path = f"/tmp/{session}.sh"
     staged_sheet = SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch_name / "samplesheet.csv"
+    qc_preflight = ""
+    qc_run = ""
+    completion = "Nextflow finished successfully."
+    if seq == "WES":
+        qc_preflight = '''NGS2_STAGE="QC preflight"
+QC_SCRIPT="${PIPELINE_CODE}/scripts/secondary_qc_report.py"
+QC_CONFIG="${LAUNCH_DIR}/secondary_qc.config.flat"
+if [ ! -r "${QC_SCRIPT}" ]; then
+    echo "[NGS2] Missing QC script: ${QC_SCRIPT}. Upload scripts/secondary_qc_report.py before running WES." >&2
+    exit 2
+fi
+mkdir -p "${OUT_DIR}/pipeline_info"
+nextflow -log "${LAUNCH_DIR}/secondary_qc.config.log" -c "${PIPELINE_CONFIG}" config "${PIPELINE_CODE}" -profile dgx -flat > "${QC_CONFIG}.tmp"
+mv -f "${QC_CONFIG}.tmp" "${QC_CONFIG}"
+python3 "${QC_SCRIPT}" --out-dir "${OUT_DIR}" --samplesheet "${OUT_DIR}/samplesheet.csv" --nextflow-config "${QC_CONFIG}" --check-only
+
+'''
+        qc_run = '''
+NGS2_STAGE="QC report"
+python3 "${QC_SCRIPT}" --out-dir "${OUT_DIR}" --samplesheet "${OUT_DIR}/samplesheet.csv" --nextflow-config "${QC_CONFIG}" 2>&1 | tee "${OUT_DIR}/pipeline_info/report_summary.log"
+echo "[NGS2] QC report: ${OUT_DIR}/pipeline_info/report_summary.csv (review each sample's PASS/FAIL)"
+'''
+        completion = "Nextflow and QC report completed. Check the CSV for sample QC results."
     return f"""cat > "{script_path}" <<'NGS2_EOF'
 set -euo pipefail
 BATCH_NAME="{batch_name}"
@@ -431,23 +454,25 @@ WORK_DIR="{SECONDARY_DGX_WORK_ROOT}/${{BATCH_NAME}}"
 STAGED_SAMPLESHEET="{staged_sheet}"
 NEXTFLOW_LOG="${{OUT_DIR}}/nextflow.log"
 ORIGINAL_UMASK="$(umask)"
+NGS2_STAGE="setup"
+NEXTFLOW_STARTED=0
 
 finish() {{
     status=$?
     set +e
     trap - EXIT
-    if [ -f "${{LAUNCH_DIR}}/.nextflow.log" ]; then
+    if [ "${{NEXTFLOW_STARTED}}" -eq 1 ] && [ -f "${{LAUNCH_DIR}}/.nextflow.log" ]; then
         cp -f "${{LAUNCH_DIR}}/.nextflow.log" "${{NEXTFLOW_LOG}}"
         echo
         echo "[NGS2] Nextflow log copied to: ${{NEXTFLOW_LOG}}"
     else
         echo
-        echo "[NGS2] Nextflow log not found at: ${{LAUNCH_DIR}}/.nextflow.log"
+        echo "[NGS2] No Nextflow run log to copy for this launch."
     fi
     if [ "${{status}}" -eq 0 ]; then
-        echo "[NGS2] DONE: Nextflow finished successfully."
+        echo "[NGS2] DONE: {completion}"
     else
-        echo "[NGS2] FAILED: exit status ${{status}}"
+        echo "[NGS2] FAILED: ${{NGS2_STAGE}}; exit status ${{status}}"
     fi
     echo "[NGS2] tmux pane kept open. Type 'exit' to close this shell."
     umask "${{ORIGINAL_UMASK}}"
@@ -461,13 +486,15 @@ mkdir -p "${{OUT_DIR}}" "${{LAUNCH_DIR}}" "${{WORK_DIR}}"
 cp "${{STAGED_SAMPLESHEET}}" "${{OUT_DIR}}/samplesheet.csv"
 cd "${{LAUNCH_DIR}}"
 
+{qc_preflight}NGS2_STAGE="Nextflow"
+NEXTFLOW_STARTED=1
 nextflow -c "${{PIPELINE_CONFIG}}" run "${{PIPELINE_CODE}}/main.nf" \\
     -profile {profile} \\
     --input_csv "${{OUT_DIR}}/samplesheet.csv" \\
     --seq_type {seq_type}{run_gcnv} \\
     --out_dir "${{OUT_DIR}}"{extended_analysis} \\
     -w "${{WORK_DIR}}" \\
-    -resume
+    -resume{qc_run}
 NGS2_EOF
 tmux new-session -d -s "{session}" "bash {script_path}"
 tmux attach -t "{session}"
@@ -577,6 +604,7 @@ def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "")
         "dgx_output_dir": dgx_output_dir,
         "dgx_staged_samplesheet_path": str(SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch / "samplesheet.csv"),
         "tmux_session": f"ngs2_{batch}",
+        "qc_report_path": f"{dgx_output_dir}/pipeline_info/report_summary.csv" if seq == "WES" else None,
         "command": _launch_command(batch, seq),
         "warnings": [],
     }

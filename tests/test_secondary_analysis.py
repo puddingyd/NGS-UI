@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from backend.app.services import secondary_analysis as secondary
 
 
@@ -122,6 +124,7 @@ def test_wes_samplesheet_remains_single_row(monkeypatch, tmp_path):
     assert result["sample_count"] == 1
     assert result["samplesheet_row_count"] == 1
     assert list(rows[0]) == ["sample", "fastq_1", "fastq_2", "sex"]
+    assert result["qc_report_path"].endswith("/260611_WES/pipeline_info/report_summary.csv")
 
 
 def test_wgs_launch_command_runs_extended_analysis_by_default():
@@ -138,6 +141,7 @@ def test_wgs_launch_command_runs_extended_analysis_by_default():
         "    -resume"
     ) in command
     assert "--run_gcnv" not in command
+    assert "secondary_qc_report.py" not in command
 
 
 def test_wes_launch_command_runs_gcnv_and_extended_analysis_by_default():
@@ -168,6 +172,79 @@ def test_launch_command_uses_group_writable_umask_after_environment():
     assert source_position < umask_position < mkdir_position
     assert 'ORIGINAL_UMASK="$(umask)"' in command
     assert 'umask "${ORIGINAL_UMASK}"\n    exec bash -i' in command
+
+
+@pytest.mark.parametrize("failure,expected,stage", [
+    ("", ["config", "preflight", "nextflow", "qc"], None),
+    ("missing_script", [], "QC preflight"),
+    ("config", ["config"], "QC preflight"),
+    ("preflight", ["config", "preflight"], "QC preflight"),
+    ("nextflow", ["config", "preflight", "nextflow"], "Nextflow"),
+    ("qc", ["config", "preflight", "nextflow", "qc"], "QC report"),
+])
+def test_generated_wes_runner_stage_order_and_errors(monkeypatch, tmp_path, failure, expected, stage):
+    """Execute the actual generated Bash, replacing only external programs."""
+    batch = "BATCH_WES"
+    for constant, folder in [
+        ("SECONDARY_DGX_OUTPUT_ROOT", "output"),
+        ("SECONDARY_DGX_LAUNCH_ROOT", "launch"),
+        ("SECONDARY_DGX_WORK_ROOT", "work"),
+        ("SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT", "staging"),
+    ]:
+        monkeypatch.setattr(secondary, constant, tmp_path / folder)
+    _touch(tmp_path / "staging" / batch / "samplesheet.csv")
+    code_dir = tmp_path / "pipeline code"
+    qc_script = _touch(code_dir / "scripts/secondary_qc_report.py")
+    if failure == "missing_script":
+        qc_script.unlink()
+    env_script = tmp_path / "env.sh"
+    env_script.write_text(f'export PIPELINE_CODE="{code_dir}"\nexport PIPELINE_CONFIG="{code_dir}/nextflow_main.config"\n')
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_ENV_SCRIPT", env_script)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    events = tmp_path / "events"
+    _fake_command(bin_dir / "nextflow", '''
+kind=nextflow
+for arg in "$@"; do
+    if [ "$arg" = config ]; then kind=config; fi
+done
+echo "$kind" >> "$EVENTS"
+if [ "$kind" = nextflow ]; then echo run-log > .nextflow.log; fi
+if [ "$kind" = "$FAIL_STAGE" ]; then exit 7; fi
+echo "params.wes_targets = '/ref/targets.bed'"
+''')
+    _fake_command(bin_dir / "python3", '''
+kind=qc
+for arg in "$@"; do
+    if [ "$arg" = --check-only ]; then kind=preflight; fi
+done
+echo "$kind" >> "$EVENTS"
+if [ "$kind" = "$FAIL_STAGE" ]; then exit 9; fi
+echo "QC: FAIL=1 ERROR=0"
+''')
+    # The production trap deliberately keeps tmux open. End that final shell in the test.
+    _fake_command(bin_dir / "bash", "exit 0")
+    launch_dir = tmp_path / "launch" / batch
+    launch_dir.mkdir(parents=True)
+    (launch_dir / ".nextflow.log").write_text("stale-log")
+    generated = secondary._launch_command(batch, "WES")
+    runner = generated.split("<<'NGS2_EOF'\n", 1)[1].split("\nNGS2_EOF", 1)[0]
+    result = subprocess.run(["/bin/bash", "-c", runner], capture_output=True, text=True,
+                            env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                                 "EVENTS": str(events), "FAIL_STAGE": failure}, timeout=20)
+    assert result.returncode == 0  # Only the test's final interactive-shell replacement.
+    assert (events.read_text().splitlines() if events.exists() else []) == expected
+    if stage:
+        assert f"FAILED: {stage};" in result.stdout
+        assert "[NGS2] DONE:" not in result.stdout
+    else:
+        assert "[NGS2] DONE: Nextflow and QC report completed." in result.stdout
+        assert "QC: FAIL=1 ERROR=0" in result.stdout
+    copied_log = tmp_path / "output" / batch / "nextflow.log"
+    if "nextflow" in expected:
+        assert copied_log.read_text().strip() == "run-log"
+    else:
+        assert not copied_log.exists()  # Preflight failures must not copy an older run's log.
 
 
 def test_cleanup_secondary_nextflow_work_returns_guarded_dgx_command(monkeypatch):

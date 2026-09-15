@@ -62,6 +62,12 @@ On success, the script prints environment info and a usage example. It also auto
 
 ## Step 3 — Run the Pipeline
 
+### NGS-UI generated WES commands (v9.14+)
+
+The UI-generated WES block now checks the QC runtime before Nextflow and runs a BAM-based summary after successful analysis. Deploy `scripts/secondary_qc_report.py` to `${PIPELINE_CODE}/scripts/secondary_qc_report.py` on DGX2 first. The batch report is `<OUT_DIR>/pipeline_info/report_summary.csv`; `DONE` means report generation completed, so review each sample's PASS/FAIL. Calculation errors are reported separately as ERROR.
+
+See [WES QC deployment, metric definitions and backfill commands](SECONDARY_QC_REPORT.md). The manual Nextflow-only examples below do not include this post-run step. WGS does not use these WES target thresholds.
+
 ```bash
 # Always run from the work directory
 cd "${LAUNCH_DIR}"

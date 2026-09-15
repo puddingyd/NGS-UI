@@ -11229,6 +11229,7 @@ function _secondaryRenderResult(result) {
   const meta = document.getElementById("secondary-result-meta");
   const command = document.getElementById("secondary-command");
   const attach = document.getElementById("secondary-help-attach");
+  const qc = document.getElementById("secondary-result-qc");
   if (!panel || !result) return;
   panel.hidden = false;
   if (meta) {
@@ -11236,6 +11237,12 @@ function _secondaryRenderResult(result) {
     meta.textContent = `${result.samplesheet_path || ""} → ${result.dgx_output_dir || ""}${warn}`;
   }
   if (command) command.textContent = result.command || "";
+  if (qc) {
+    qc.hidden = !result.qc_report_path;
+    qc.textContent = result.qc_report_path
+      ? `WES 分析完成後，DGX2 會接著計算 QC，產生 ${result.qc_report_path}。請查看各樣本的 PASS／FAIL；ERROR 表示計算未完成。`
+      : "";
+  }
   if (attach) attach.textContent = `tmux attach -t ${result.tmux_session || ""}`;
 }
 
