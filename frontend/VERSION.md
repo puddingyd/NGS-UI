@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.15 — 2026-09-15
+
+- WES QC 的 Mean depth／Uniformity 一起改用舊深度計數規則：MQ/BQ ≥0、R1/R2 重疊各計一次、排除 duplicate，使用目前 hg38 target BED 並完整納入 0X bases。
+- CSV 保持原八欄及欄名，只保留這一組深度結果。更新 DGX2 腳本後，舊方法快取自動失效；已完成批次可直接補算 QC。
+
 ### v9.14 — 2026-09-15
 
 - WES 二級分析指令新增 DGX2 QC summary：分析完成後從 BAM 計算 Total reads、Mapping rate、On target rate、Mean depth 與 Uniformity，依設定門檻輸出八欄 `report_summary.csv`，並列出 Duplicated rate。

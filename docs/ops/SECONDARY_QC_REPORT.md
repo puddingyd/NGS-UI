@@ -12,6 +12,12 @@ UI 仍只產生指令，需由使用者複製到 DGX2 執行；UI server 不讀 
 
 這是接在 Nextflow 後面的獨立步驟，不需修改 DGX2 的 `main.nf` 或 modules。直接執行舊版 Nextflow 指令不會自動產生本報表；請使用更新後 UI 重新產生的完整指令，或以下補算方式。
 
+### 深度規則更新（腳本 v1.1.0／UI v9.15）
+
+依使用者指定，Mean depth 和 Uniformity 共用舊深度計數規則：MQ/BQ ≥0、配對重疊各算一次、排除 duplicate，並使用目前 pipeline 的 hg38 target BED、完整納入 0X bases。CSV 保持原本八欄及欄名；只計算這一組深度，不額外保存 MQ/BQ ≥20 或扣除配對重疊後的參考值。
+
+已部署 v1.0.0 者，只需將新版 `secondary_qc_report.py` 覆蓋到 DGX2 同一位置，再執行原本的 QC 補算指令。方法版本與腳本 hash 會使舊快取自動失效；重新計算後直接更新原本的 CSV、details JSON 和 sample QC JSON，不另存舊深度值。這次規則更新不需重新跑 Nextflow，也不需改已由 v9.14 產生的執行指令。
+
 ## 一次性部署
 
 ### 1. 將腳本放到 DGX2
@@ -86,9 +92,9 @@ Total reads 為整數；四個比率為兩位小數並附 `%`；Mean depth 為�
 
 Mean depth／Uniformity 共用同一份逐鹼基深度：
 
-- MQ ≥20、BQ ≥20。
-- 排除 unmapped、secondary、supplementary、QC-failed、duplicate（排除 flags `3844`）。
-- 使用 `samtools depth -s`，成對 reads 的重疊部分依 Samtools 規則只計一次。
+- MQ ≥0、BQ ≥0。
+- 沿用舊 `samtools depth` 的預設排除規則：unmapped、secondary、QC-failed、duplicate（排除 flags `1796`）；supplementary 保留於深度計算。Total／Mapping／On target 的 read 計數仍各自使用前述 primary-only 定義。
+- 不使用 `samtools depth -s`，R1、R2 在重疊位置各貢獻一次深度。
 - 不將 deletion／reference skip 當成覆蓋鹼基，不設定最大深度截斷。
 - 完全沒有 alignment 的區間或染色體仍計入 target 分母，深度為 0。
 - Uniformity 用精確整數計算 cutoff：`ceil(depth_sum / (5 × target_bases))`；所有 PASS/FAIL 使用未四捨五入數值。
@@ -142,4 +148,4 @@ QC_BASH
 python3 -m pytest -q tests/test_secondary_qc_report.py tests/test_secondary_analysis.py
 ```
 
-含已知答案的合成 BAM（需本機有 Samtools）及實際執行所生成 Bash 的 stub 測試，驗證各種 flags、BQ/MQ、paired overlap、CIGAR D/N、BED union／0X、精確門檻、快取失效、部分 ERROR，以及 preflight → Nextflow → QC 的成功／失敗順序。本機測試不能取代首次 DGX 真實批次的部署驗證。
+含已知答案的合成 BAM（需本機有 Samtools）及實際執行所生成 Bash 的 stub 測試，驗證各種 flags、MQ0/BQ0 納入深度、配對重疊各計一次、CIGAR D/N、BED union／0X、精確門檻、舊方法快取失效、八欄輸出、部分 ERROR，以及 preflight → Nextflow → QC 的成功／失敗順序。本機測試不能取代首次 DGX 真實批次的部署驗證。

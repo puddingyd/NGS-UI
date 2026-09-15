@@ -28,17 +28,22 @@ from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 FIELDS = ["Sample ID", "Total reads", "Duplicated rate", "Mapping rate",
           "On target rate", "Mean depth", "Uniformity", "QC"]
 PRIMARY_EXCLUDE = 0x100 | 0x800
-DEPTH_EXCLUDE = PRIMARY_EXCLUDE | 0x4 | 0x200 | 0x400
+# Depth follows the legacy Samtools defaults, including supplementary alignments.
+# Total/mapped/on-target read counts retain their separate primary-only definition.
+DEPTH_EXCLUDE = 0x4 | 0x100 | 0x200 | 0x400
+DEPTH_MIN_MQ = 0
+DEPTH_MIN_BQ = 0
 METHOD = {
     "version": VERSION, "seq_type": "WES", "read_unit": "read end (R1/R2 counted separately)",
     "primary_exclude_flags": PRIMARY_EXCLUDE, "target_denominator": "mapped primary reads",
     "target_overlap": "at least one M/= /X reference base; each read counted once",
-    "depth_exclude_flags": DEPTH_EXCLUDE, "min_mapping_quality": 20, "min_base_quality": 20,
-    "overlap_removal": "samtools depth -s", "zero_depth_targets": "included",
+    "depth_exclude_flags": DEPTH_EXCLUDE,
+    "min_mapping_quality": DEPTH_MIN_MQ, "min_base_quality": DEPTH_MIN_BQ,
+    "overlap_removal": "none; both read ends contribute", "zero_depth_targets": "included",
     "uniformity": "bases with DP >= ceil(unrounded mean / 5) / all target bases",
     "thresholds": {"total_reads": 30000000, "mapping_rate": 0.95,
                    "on_target_rate": 0.40, "mean_depth": 50, "uniformity": 0.90},
@@ -376,8 +381,8 @@ def analyze_sample(sample, out_dir, targets, merged_bed, tool, threads, method_s
     with tool.stream(["view", "-@", threads, "-F", PRIMARY_EXCLUDE | 0x4,
                       "-M", "-L", merged_bed, bam]) as lines:
         on_target = count_target_reads(lines, targets)
-    with tool.stream(["depth", "-b", merged_bed, "-q", 20, "-Q", 20,
-                      "-G", DEPTH_EXCLUDE, "-s", bam]) as lines:
+    with tool.stream(["depth", "-b", merged_bed, "-q", DEPTH_MIN_BQ, "-Q", DEPTH_MIN_MQ,
+                      "-G", DEPTH_EXCLUDE, bam]) as lines:
         hist = depth_histogram(lines, targets)
     result = summarize(sample, total, mapped, on_target, duplication_fraction(dup), hist, targets.length)
     if any(file_signature(p) != signature[k] for k, p in (("bam", bam), ("index", index), ("duplicates", dup))):

@@ -151,8 +151,8 @@ def bam_batch(tmp_path):
     read("secondary", 256)
     read("supplementary", 2048)
     read("qcfail", 512)
-    read("lowmq", mq=19)
-    read("lowbq", quality="4")  # Phred 19.
+    read("lowmq", mq=0)
+    read("lowbq", quality="!")  # Phred 0; both zero-quality cases must contribute depth.
     read("off", pos=71)
     read("deletion_only", pos=6, cigar="5M15D5M")
     read("skip_only", pos=6, cigar="5M15N5M")
@@ -171,25 +171,61 @@ def bam_batch(tmp_path):
     return out, bed, args
 
 
-def test_real_bam_counts_quality_filters_overlap_and_partial_failure(bam_batch):
+def test_real_bam_legacy_depth_counts_both_mates_zero_quality_and_supplementary(bam_batch):
     out, _, args = bam_batch
     assert qc.main(args + ["--check-only"]) == 0
     assert not (out / "pipeline_info/report_summary.csv").exists()
     assert qc.main(args) == 2
     with (out / "pipeline_info/report_summary.csv").open() as handle:
         reader = csv.DictReader(handle)
-        assert reader.fieldnames == qc.FIELDS
+        assert reader.fieldnames == ["Sample ID", "Total reads", "Duplicated rate", "Mapping rate",
+                                    "On target rate", "Mean depth", "Uniformity", "QC"]
         rows = list(reader)
     assert rows == [
         {"Sample ID": "S1", "Total reads": "13", "Duplicated rate": "30.00%", "Mapping rate": "92.31%",
-         "On target rate": "75.00%", "Mean depth": "1.80", "Uniformity": "80.00%", "QC": "FAIL"},
+         "On target rate": "75.00%", "Mean depth": "3.20", "Uniformity": "80.00%", "QC": "FAIL"},
         dict(zip(qc.FIELDS, ["MISSING", "NA", "NA", "NA", "NA", "NA", "NA", "ERROR"])),
     ]
     cached = json.loads((out / "S1/03_alignment_qc/S1.report_qc.json").read_text())
-    assert cached["counts"]["depth_sum"] == 45  # Normal 10 + pair union 15 + multi 15 + =/X 5.
+    # Normal 10 + both mates 20 + supplementary 10 + MQ0 10 + BQ0 10 + multi 15 + =/X 5.
+    # Duplicate, secondary, QC-failed, and D/N-only target crossings contribute no depth.
+    assert cached["counts"]["depth_sum"] == 80
     assert cached["counts"]["target_bases"] == 25
     assert cached["counts"]["zero_depth_bases"] == 5  # Entire chr2 target is uncovered.
     assert json.loads((out / "pipeline_info/report_summary.details.json").read_text())["state"] == "ERROR"
+
+
+def test_old_depth_method_cache_is_replaced_without_extra_reference_metrics(bam_batch, capsys):
+    out, _, args = bam_batch
+    (out / "samplesheet.csv").write_text("sample\nS1\n")
+    assert qc.main(args) == 0
+    cache = out / "S1/03_alignment_qc/S1.report_qc.json"
+    old = json.loads(cache.read_text())
+    old_method = {**old["method"], "version": "1.0.0", "depth_exclude_flags": 3844,
+                  "min_mapping_quality": 20, "min_base_quality": 20,
+                  "overlap_removal": "samtools depth -s"}
+    # Keep the current script hash to verify that the method itself invalidates the cache.
+    old["signature"]["method"]["method"] = old_method
+    old["method"] = old_method
+    old["row"]["Mean depth"] = "1.80"
+    old["row"]["Uniformity"] = "99.99%"
+    old["counts"]["depth_sum"] = 45
+    old["unrounded"]["mean_depth"] = 1.8
+    cache.write_text(json.dumps(old))
+    capsys.readouterr()
+
+    assert qc.main(args) == 0
+    assert "(cached)" not in capsys.readouterr().out
+    updated = json.loads(cache.read_text())
+    assert updated["row"]["Mean depth"] == "3.20"
+    assert updated["row"]["Uniformity"] == "80.00%"
+    assert updated["counts"]["depth_sum"] == 80
+    assert updated["unrounded"] == {"mean_depth": 3.2, "uniformity": 0.8}
+    assert set(updated) == {"row", "failed_checks", "counts", "unrounded",
+                            "signature", "computed_at", "method"}
+    assert updated["method"]["min_mapping_quality"] == 0
+    assert updated["method"]["min_base_quality"] == 0
+    assert updated["method"]["depth_exclude_flags"] == 1796
 
 
 def test_cache_reuse_invalidation_force_and_fail_exit_success(bam_batch, capsys):
@@ -240,7 +276,7 @@ def test_container_runtime_and_resolved_config_run_same_calculation(bam_batch, m
     (out / "samplesheet.csv").write_text("sample\nS1\n")
     assert qc.main(args[:4] + ["--nextflow-config", str(config)]) == 0
     detail = json.loads((out / "pipeline_info/report_summary.details.json").read_text())
-    assert detail["samples"][0]["counts"]["depth_sum"] == 45
+    assert detail["samples"][0]["counts"]["depth_sum"] == 80
     invoked = [json.loads(line) for line in calls.read_text().splitlines()]
     assert all(call[:2] == ["exec", "--cleanenv"] for call in invoked)
     assert all(f"{out}:{out}" in call and str(sif) in call for call in invoked)
