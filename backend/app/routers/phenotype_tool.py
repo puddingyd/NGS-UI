@@ -21,6 +21,7 @@ from ..services import (
     clinical_presentation_store,
     hpo_ontology,
     panel_deadzone,
+    patient_list_store,
     patient_phenotype_store,
     phenotype_scorer,
 )
@@ -169,6 +170,20 @@ def create_custom_panel(payload: dict):
         msg = str(e)
         # "已存在" → 409 Conflict; everything else is a bad request.
         raise HTTPException(409 if "已存在" in msg else 400, msg)
+
+
+@router.post("/patient-link")
+def save_patient_link(payload: dict):
+    """Persist the pair explicitly submitted with the tool's Save button."""
+    try:
+        return patient_list_store.link_patient(
+            mrn=(payload or {}).get("mrn", ""),
+            code=(payload or {}).get("code", ""),
+        )
+    except patient_list_store.PatientLinkConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/save")

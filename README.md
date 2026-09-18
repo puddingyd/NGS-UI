@@ -342,6 +342,8 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 
 ### 臨床表徵工具 `/phenotype/`
 
+同時填寫病歷號與檢體編號後按「儲存」，會建立與上傳個案清單共用的編號對應；只有兩個編號、尚未輸入表徵時也能儲存連結。「載入新個案」選取該檢體後即可自動帶入病歷號與既有 HPO/panel，開啟視窗時會檢查對應資料是否更新，不受一天的清單快取影響。完整 `8BB1` 檢體前綴及 `-dragen`／`-nckuh`／`-inhouse` 後綴均會正規化。既有姓名、科別等資料保留；檢體已連到不同病歷號時會提示衝突。Clinical presentation 自動儲存不會建立編號對應，需按「儲存」。
+
 獨立頁面（內網信任、無需登入）：搜尋 HPO term、套用 / 自訂 gene panel、把結果存成 token 之後在「載入新個案」帶入。Token 限 `[A-Za-z0-9_-]{1,32}`，內容 ≤64KB，panel ≤5000 個基因；自訂 panel 的基因 symbol 不會被轉大寫（`C7orf50` 保持原樣），但會先套用安全 alias 轉成 HGNC-current symbol。
 
 「載入既有資料」會先清空目前頁面的 HPO terms、fixed panel chips、free panel rows 與舊預覽，再依新查詢結果填回；既有 phenotype 載入後會立即顯示預覽，之後新增、移除或修改 HPO/panel 也會即時重繪，不必先儲存。若下一位病人查無 phenotype，頁面與預覽會維持空白，不會沿用上一位病人的 HPO/panel。

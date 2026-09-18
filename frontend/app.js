@@ -10113,6 +10113,7 @@ const UNREGISTERED_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const _unregisteredCache = {
   loadedAt: 0,
   list: null,
+  rosterRevision: null,
 };
 
 // Editable HPO/panel state for the load-new-case modal. Mirrors
@@ -10269,13 +10270,16 @@ function _unregisteredCacheFresh() {
 }
 
 async function _loadUnregisteredSamples({ force = false } = {}) {
-  if (!force && _unregisteredCacheFresh()) {
+  // A clinician may have linked a specimen in another tab or on another PC.
+  const { revision } = await apiFetch("/patient_list/revision") || {};
+  if (!force && _unregisteredCacheFresh() && revision === _unregisteredCache.rosterRevision) {
     _setUnregisteredList(_unregisteredCache.list);
     return _unregisteredList;
   }
   const list = await apiFetch("/samples/unregistered") || [];
   _unregisteredCache.loadedAt = Date.now();
   _unregisteredCache.list = list;
+  _unregisteredCache.rosterRevision = revision;
   _setUnregisteredList(list);
   return _unregisteredList;
 }

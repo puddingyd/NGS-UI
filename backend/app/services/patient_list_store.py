@@ -21,8 +21,11 @@ roster entry).
 """
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import re
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -54,6 +57,74 @@ def _roster_path() -> Path:
 
 def _uploads_path() -> Path:
     return PATIENT_LIST_DIR / _UPLOADS_NAME
+
+
+@contextmanager
+def _roster_write_lock():
+    """Serialize read/modify/write across uploads and phenotype-tool saves."""
+    PATIENT_LIST_DIR.mkdir(parents=True, exist_ok=True)
+    with (PATIENT_LIST_DIR / ".roster.lock").open("a") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _write_roster(roster: dict[str, dict]) -> None:
+    """Publish a complete JSON snapshot while holding _roster_write_lock."""
+    temporary = PATIENT_LIST_DIR / ".roster.json.tmp"
+    try:
+        temporary.write_text(json.dumps(roster, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporary, _roster_path())
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def roster_revision() -> str:
+    """Cheap cache validator; no patient identifiers are exposed."""
+    try:
+        stat = _roster_path().stat()
+    except FileNotFoundError:
+        return ""
+    return f"{stat.st_mtime_ns}:{stat.st_size}"
+
+
+class PatientLinkConflict(ValueError):
+    """A specimen already belongs to a different MRN."""
+
+
+def link_patient(*, code: str, mrn: str) -> dict:
+    """Add a validated specimen/MRN pair without replacing roster demographics."""
+    from .patient_phenotype_store import check_token
+
+    code = check_token("LIS_ID", code, required=True)
+    mrn = check_token("MRN", mrn, required=True)
+    lis_id = check_token(
+        "LIS_ID", strip_ui_alias_suffix(_lis_id_from_specimen(code)), required=True,
+    )
+    with _roster_write_lock():
+        roster = load_roster()
+        # Check exact caller aliases too: their lookup precedes the base LIS ID.
+        keys = [key for key in roster if strip_ui_alias_suffix(_lis_id_from_specimen(key)) == lis_id]
+        for key in keys:
+            existing_mrn = _strip(roster[key].get("mrn"))
+            if existing_mrn and existing_mrn != mrn:
+                raise PatientLinkConflict("此檢體編號已連結其他病歷號，請確認檢體編號與病歷號。")
+        if lis_id not in keys:
+            keys.append(lis_id)
+        now = _now_iso()
+        for key in keys:
+            previous = roster.get(key) or {}
+            roster[key] = {
+                **previous,
+                "lis_id": key,
+                "mrn": mrn,
+                "created_at": previous.get("created_at") or now,
+                "updated_at": now,
+            }
+        _write_roster(roster)
+    return {"lis_id": lis_id, "mrn": mrn}
 
 
 def list_uploads() -> list[dict]:
@@ -316,59 +387,57 @@ def ingest_xlsx(content: bytes, original_filename: str) -> dict:
         )
 
     # 3. Merge into roster.json (additive — never drop existing keys).
-    roster = load_roster()
-    added = updated = 0
-    now = _now_iso()
-    for rec in parsed:
-        lid = rec["lis_id"]
-        prev = roster.get(lid)
-        entry = {
-            "lis_id":           lid,
-            "specimen":         rec["specimen"],
-            "mrn":              rec["mrn"],
-            "name":             rec["name"],
-            "test_name":        rec["test_name"],
-            "test_type":        rec["test_type"],
-            "department":       rec["department"],
-            "physician":        rec["physician"],
-            "sign_received_at": rec["sign_received_at"],
-            "updated_at":       now,
+    with _roster_write_lock():
+        roster = load_roster()
+        added = updated = 0
+        now = _now_iso()
+        for rec in parsed:
+            lid = rec["lis_id"]
+            prev = roster.get(lid)
+            entry = {
+                "lis_id":           lid,
+                "specimen":         rec["specimen"],
+                "mrn":              rec["mrn"] or (prev or {}).get("mrn", ""),
+                "name":             rec["name"],
+                "test_name":        rec["test_name"],
+                "test_type":        rec["test_type"],
+                "department":       rec["department"],
+                "physician":        rec["physician"],
+                "sign_received_at": rec["sign_received_at"],
+                "updated_at":       now,
+            }
+            if prev is None:
+                entry["created_at"] = now
+                roster[lid] = entry
+                added += 1
+            else:
+                # Keep the original created_at; bump updated_at; overwrite
+                # the data fields with the freshest values.
+                entry["created_at"] = prev.get("created_at") or now
+                # Only count as "updated" if something actually changed.
+                changed = any(
+                    prev.get(k) != entry.get(k)
+                    for k in ("specimen", "mrn", "name", "test_name", "test_type",
+                              "department", "physician", "sign_received_at")
+                )
+                roster[lid] = entry
+                if changed:
+                    updated += 1
+
+        _write_roster(roster)
+
+        # Append to the upload-history log so reviewers can audit which xlsx
+        # was ingested when and what each batch contributed.
+        upload_record = {
+            "uploaded_at":       now,
+            "original_filename": original_filename or "",
+            "archive_name":      archive.name,
+            "parsed":            len(parsed),
+            "added":             added,
+            "updated":           updated,
+            "total_after":       len(roster),
         }
-        if prev is None:
-            entry["created_at"] = now
-            roster[lid] = entry
-            added += 1
-        else:
-            # Keep the original created_at; bump updated_at; overwrite
-            # the data fields with the freshest values.
-            entry["created_at"] = prev.get("created_at") or now
-            # Only count as "updated" if something actually changed.
-            changed = any(
-                prev.get(k) != entry.get(k)
-                for k in ("specimen", "mrn", "name", "test_name", "test_type",
-                          "department", "physician", "sign_received_at")
-            )
-            roster[lid] = entry
-            if changed:
-                updated += 1
-
-    _roster_path().write_text(
-        json.dumps(roster, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-    # Append to the upload-history log so reviewers can audit which xlsx
-    # was ingested when and what each batch contributed.
-    upload_record = {
-        "uploaded_at":       now,
-        "original_filename": original_filename or "",
-        "archive_name":      archive.name,
-        "parsed":            len(parsed),
-        "added":             added,
-        "updated":           updated,
-        "total_after":       len(roster),
-    }
-    _append_upload(upload_record)
+        _append_upload(upload_record)
 
     return {
         "added":        added,

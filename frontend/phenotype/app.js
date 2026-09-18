@@ -842,11 +842,11 @@ function _clinicalPresentationFields() {
   };
 }
 
-async function saveClinicalPresentationSidecar() {
+async function saveClinicalPresentationSidecar({ force = false } = {}) {
   const { code, mrn, content } = _clinicalPresentationFields();
   if (!code && !mrn) throw new Error("請先填 病歷號 或 檢體編號");
   if (!content.trim() && !loadedClinicalPresentationSidecar) return {};
-  if (content === clinicalPresentationLastSaved && loadedClinicalPresentationSidecar) {
+  if (!force && content === clinicalPresentationLastSaved && loadedClinicalPresentationSidecar) {
     return clinicalPresentationLastSavedPath ? { path: clinicalPresentationLastSavedPath, skipped: true } : {};
   }
 
@@ -1263,7 +1263,7 @@ async function generateFile() {
   if (incomplete) { showStatus("有自訂 panel 列只填了名稱或基因其中一項，請補齊或移除該列。", "error"); return; }
 
   const baseLines = _collectHpoAndPanelLines();
-  if (baseLines.length === 0 && customPanels.length === 0 && selectedFixedPanels.size === 0 && !clinicalPresentation.trim() && !loadedClinicalPresentationSidecar && !loadedPhenotypeSidecar) {
+  if (baseLines.length === 0 && customPanels.length === 0 && selectedFixedPanels.size === 0 && !clinicalPresentation.trim() && !loadedClinicalPresentationSidecar && !loadedPhenotypeSidecar && !(mrn && code)) {
     showStatus("尚未選擇任何 HPO term、panel、自訂 panel，或輸入 Clinical presentation。", "error"); return;
   }
 
@@ -1296,7 +1296,7 @@ async function generateFile() {
     //    also writes back to the same file when it is edited there.
     let clinicalBody = {};
     if (clinicalPresentation.trim() || loadedClinicalPresentationSidecar) {
-      clinicalBody = await saveClinicalPresentationSidecar();
+      clinicalBody = await saveClinicalPresentationSidecar({ force: true });
       clinicalAutosaveDirty = false;
       clearTimeout(clinicalAutosaveTimer);
     }
@@ -1318,6 +1318,18 @@ async function generateFile() {
       generatedContent = "";
     }
 
+    // Only the explicit Save button links identities; typing/autosave does not.
+    let patientLink = null;
+    if (mrn && code) {
+      const resp = await fetch("/api/phenotype-tool/patient-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mrn, code }),
+      });
+      patientLink = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(`檢體與病歷號連結未儲存：${patientLink.detail || resp.statusText}`);
+    }
+
     // The file on disk keeps the full tab-separated format with
     // weights (parsed by phenotype_io.parse); the on-screen preview
     // strips weights + tabs so reviewers see a clean human-readable
@@ -1329,7 +1341,8 @@ async function generateFile() {
     const savedTargets = [];
     if (body.path) savedTargets.push(body.path);
     if (clinicalBody.path) savedTargets.push(clinicalBody.path);
-    const savedMessage = ["已存到伺服器：", ...savedTargets].join("\n") + cpNote;
+    const savedMessage = (savedTargets.length ? ["已存到伺服器：", ...savedTargets].join("\n") + cpNote : "")
+      + (patientLink ? `\n已連結檢體 ${patientLink.lis_id} 與病歷號 ${patientLink.mrn}，載入新個案時會自動帶入。` : "");
     showStatus(savedMessage, "success", { clinical: true });
   } catch (e) {
     showStatus(e.message || String(e), "error", { clinical: true });

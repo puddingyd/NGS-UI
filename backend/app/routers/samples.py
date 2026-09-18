@@ -175,6 +175,12 @@ def get_patient_list_uploads():
     return patient_list_store.list_uploads()
 
 
+@router.get("/patient_list/revision")
+def get_patient_list_revision():
+    """Invalidate cached new-case identifiers after uploads or manual links."""
+    return {"revision": patient_list_store.roster_revision()}
+
+
 @router.get("/patient_list/options")
 def get_patient_list_options():
     """Distinct 科別 / 開單醫師 values from the roster — fills the
