@@ -17,6 +17,7 @@ from .services import (
     omim_store,
     phenotype_scorer,
     users,
+    unregistered_samples,
 )
 
 app = FastAPI(title="NGS-UI", version="0.1.0")
@@ -81,6 +82,7 @@ def _start_cache_warm() -> None:
     # a minute to parse on the deployment host. Loaders are thread-safe
     # and still fall back to synchronous loading if a request arrives
     # before this best-effort warm-up finishes.
+    unregistered_samples.start_refresh()
     thread = threading.Thread(
         target=_warm_caches,
         name="startup-cache-warm",

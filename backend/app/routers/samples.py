@@ -2,7 +2,7 @@ import sqlite3
 import time
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from ..auth import current_user
@@ -19,6 +19,7 @@ from ..services import (
     sample_layout,
     sample_loader,
     test_types,
+    unregistered_samples,
 )
 
 router = APIRouter(prefix="/api", tags=["samples"], dependencies=[Depends(current_user)])
@@ -116,13 +117,25 @@ def list_case_summaries():
 
 
 @router.get("/samples/unregistered")
-def list_unregistered_samples():
+def list_unregistered_samples(refresh: bool = False):
     """Pipeline-dropped directories not yet attached to reviewer info.
 
     The 載入新個案 modal calls this to populate the LIS_ID dropdown so
     reviewers don't have to retype an ID that already lives on disk.
     """
-    return sample_loader.list_unregistered()
+    return unregistered_samples.listing(force=refresh)
+
+
+@router.get("/samples/unregistered/{sample_id}")
+def get_unregistered_sample(sample_id: str, mrn: str = Query("")):
+    try:
+        return unregistered_samples.detail(sample_id, mrn=mrn)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.delete("/samples/{sample_id}")
@@ -306,6 +319,8 @@ def register_sample(
         raise HTTPException(409, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     # Exomiser/LIRICAL require at least one HPO term. Panels alone still

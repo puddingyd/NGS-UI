@@ -9875,6 +9875,7 @@ async function bootAfterAuth() {
   } finally {
     hideSampleLoading();
   }
+  _fetchUnregisteredSamples().catch(() => {});
   // Probe whether the EMR client_id is configured server-side. The
   // 🔄 EMR sync button stays hidden when disabled so the UI doesn't
   // dangle a button that would only ever 503.
@@ -10104,16 +10105,13 @@ document.addEventListener("click", ev => {
   }
 });
 
-// In-memory map: LIS_ID → entry from /samples/unregistered. Used by
-// the dropdown change handler so we don't have to re-fetch the
-// preview each time the reviewer scrubs the list.
+// Lightweight in-memory list; the server persists the shared index.
+// Phenotype and VCF details are fetched only for the selected sample.
 let _unregisteredById = {};
 let _unregisteredList = [];
-const UNREGISTERED_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const _unregisteredCache = {
   loadedAt: 0,
   list: null,
-  rosterRevision: null,
 };
 
 // Editable HPO/panel state for the load-new-case modal. Mirrors
@@ -10125,7 +10123,11 @@ const newCaseEdit = {
   emrPhenotype: null,   // raw EMR phenotype payload (read-only ref)
   source: "",           // 'reviewer-txt' / 'EMR' / 'edited' — for the source line
   edited: false,
+  detailLoading: false,
+  detailError: "",
+  autoFilled: {},
 };
+let _newCaseDetailId = 0;
 
 const NEW_CASE_WGS_VCF_SIZE_BYTES = 100 * 1024 * 1024;
 
@@ -10224,6 +10226,9 @@ function _renderNewCaseLisDropdown(query = "", { showAll = false } = {}) {
 }
 
 function _clearNewCaseLisSelection() {
+  _newCaseDetailId += 1;
+  newCaseEdit.detailLoading = false;
+  newCaseEdit.detailError = "";
   resetNewCaseSync();
   const hidden = document.getElementById("new-case-lis-id");
   if (hidden) hidden.value = "";
@@ -10265,28 +10270,80 @@ function _setUnregisteredList(list) {
   _unregisteredList.forEach(r => { if (r?.lis_id) _unregisteredById[r.lis_id] = r; });
 }
 
-function _unregisteredCacheFresh() {
-  return Array.isArray(_unregisteredCache.list)
-    && (Date.now() - Number(_unregisteredCache.loadedAt || 0)) < UNREGISTERED_CACHE_TTL_MS;
+function _hasUnregisteredCache() {
+  return Array.isArray(_unregisteredCache.list);
+}
+
+let _unregisteredRequest = null;
+let _unregisteredFetchId = 0;
+let _unregisteredPollTimer = null;
+
+function _setUnregisteredStatus(message) {
+  const status = document.getElementById("new-case-list-status");
+  if (status) status.textContent = message;
+}
+
+function _fetchUnregisteredSamples({ force = false } = {}) {
+  if (_unregisteredRequest && !force) return _unregisteredRequest;
+  const requestId = ++_unregisteredFetchId;
+  clearTimeout(_unregisteredPollTimer);
+  const request = (async () => {
+    try {
+      const response = await apiFetch(force ? "/samples/unregistered?refresh=true" : "/samples/unregistered");
+      if (!response) throw new Error("未登錄清單無回應");
+      if (requestId !== _unregisteredFetchId) return _unregisteredList;
+      const items = Array.isArray(response) ? response : response.items || [];
+      // On a cold server, keep an existing browser list until the scan finishes.
+      if (Array.isArray(response) || response.updated_at || !Array.isArray(_unregisteredCache.list)) {
+        _unregisteredCache.loadedAt = Date.now();
+        _unregisteredCache.list = items;
+        _setUnregisteredList(items);
+      }
+      _updateNewCaseLisPlaceholder();
+      if (response.refreshing && !response.updated_at && !_unregisteredList.length) {
+        const input = document.getElementById("new-case-lis-id-search");
+        if (input) input.placeholder = "未登錄個案清單載入中…";
+      }
+      const drop = document.getElementById("new-case-lis-id-dropdown");
+      if (drop && !drop.classList.contains("hidden")) {
+        const selected = document.getElementById("new-case-lis-id")?.value;
+        const query = selected ? "" : document.getElementById("new-case-lis-id-search")?.value || "";
+        _renderNewCaseLisDropdown(query, { showAll: !query });
+      }
+      _setUnregisteredStatus(response.error || (response.refreshing ? "清單背景更新中…" : ""));
+      if (response.refreshing) {
+        _unregisteredPollTimer = setTimeout(() => { _fetchUnregisteredSamples().catch(() => {}); }, 1500);
+      }
+      return _unregisteredList;
+    } catch (e) {
+      if (requestId === _unregisteredFetchId) {
+        _setUnregisteredStatus("清單更新失敗，可按「更新清單」重試。" + (Array.isArray(_unregisteredCache.list) ? "目前顯示上次清單。" : ""));
+      }
+      throw e;
+    } finally {
+      if (requestId === _unregisteredFetchId) _unregisteredRequest = null;
+    }
+  })();
+  _unregisteredRequest = request;
+  return request;
 }
 
 async function _loadUnregisteredSamples({ force = false } = {}) {
-  // A clinician may have linked a specimen in another tab or on another PC.
-  const { revision } = await apiFetch("/patient_list/revision") || {};
-  if (!force && _unregisteredCacheFresh() && revision === _unregisteredCache.rosterRevision) {
+  if (!force && Array.isArray(_unregisteredCache.list)) {
     _setUnregisteredList(_unregisteredCache.list);
+    _updateNewCaseLisPlaceholder();
+    _fetchUnregisteredSamples().catch(() => {});
     return _unregisteredList;
   }
-  const list = await apiFetch("/samples/unregistered") || [];
-  _unregisteredCache.loadedAt = Date.now();
-  _unregisteredCache.list = list;
-  _unregisteredCache.rosterRevision = revision;
-  _setUnregisteredList(list);
-  return _unregisteredList;
+  return _fetchUnregisteredSamples({ force });
 }
 
 function _removeUnregisteredFromCache(lis_id) {
   if (!lis_id || !Array.isArray(_unregisteredCache.list)) return;
+  // A list response started before registration must not re-add the removed row.
+  _unregisteredFetchId += 1;
+  _unregisteredRequest = null;
+  clearTimeout(_unregisteredPollTimer);
   _unregisteredCache.list = _unregisteredCache.list.filter(r => r?.lis_id !== lis_id);
   _setUnregisteredList(_unregisteredCache.list);
 }
@@ -10300,6 +10357,10 @@ function _updateNewCaseLisPlaceholder() {
 }
 
 document.getElementById("btn-new-case")?.addEventListener("click", async () => {
+  _newCaseDetailId += 1;
+  newCaseEdit.detailLoading = false;
+  newCaseEdit.detailError = "";
+  newCaseEdit.autoFilled = {};
   resetNewCaseSync();
   const form = document.getElementById("new-case-form");
   form?.reset();
@@ -10328,15 +10389,13 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
       opts.map(o => `<option value="${escapeAttr(o)}">${escapeHtml(o)}</option>`).join("");
   }
 
-  // Populate the LIS_ID typeahead from a one-day front-end cache. The
-  // manual refresh button below can force a rescan when a just-finished
-  // pipeline output should appear immediately.
+  // Show the last lightweight list immediately, then revalidate in the background.
   const lisInput = document.getElementById("new-case-lis-id-search");
   const lisHidden = document.getElementById("new-case-lis-id");
   if (lisInput) {
     lisInput.value = "";
     lisInput.title = "";
-    lisInput.placeholder = _unregisteredCacheFresh()
+    lisInput.placeholder = _hasUnregisteredCache()
       ? "輸入 LIS ID / sample / 姓名 / MRN 搜尋"
       : "未登錄個案清單載入中…";
   }
@@ -10365,6 +10424,7 @@ document.getElementById("btn-refresh-unregistered")?.addEventListener("click", a
   if (input) input.placeholder = "未登錄個案清單更新中…";
   try {
     await _loadUnregisteredSamples({ force: true });
+    _clearNewCaseLisSelection();
     if (hidden) hidden.value = "";
     if (input) {
       input.value = "";
@@ -10382,15 +10442,14 @@ document.getElementById("btn-refresh-unregistered")?.addEventListener("click", a
   }
 });
 
-// Picking a sample preloads phenotype from the reviewer txt + auto-
-// fills the MRN that was embedded in the phenotype filename.
-function _applyNewCaseLisSelection(lis_id) {
-  resetNewCaseSync();
-  const entry = _unregisteredById[lis_id];
-  if (!entry) {
-    _clearNewCaseLisSelection();
-    return;
+function _fillNewCaseAutoField(input, key, value) {
+  if (input && (!input.value || input.value === newCaseEdit.autoFilled[key])) {
+    input.value = value || "";
+    newCaseEdit.autoFilled[key] = input.value;
   }
+}
+
+function _fillNewCaseSummary(entry, { fillTestType = true, fillMrn = true, fillName = true } = {}) {
   // Auto-fill MRN / 姓名 / Test type from the uploaded clinic-list
   // roster when this LIS_ID is on it. Fall back to the MRN parsed out
   // of the phenotype.txt filename for samples not yet on any list.
@@ -10398,11 +10457,11 @@ function _applyNewCaseLisSelection(lis_id) {
   const mrnInput  = document.getElementById("new-case-mrn");
   const nameInput = document.getElementById("new-case-name");
   const testSel   = document.querySelector('#new-case-form select[name="test_type"]');
-  const fillMrn = (roster && roster.mrn) || (entry.phenotype && entry.phenotype.mrn) || "";
-  if (mrnInput && !mrnInput.value && fillMrn) mrnInput.value = fillMrn;
+  const rosterMrn = (roster && roster.mrn) || (entry.phenotype && entry.phenotype.mrn) || "";
+  if (fillMrn) _fillNewCaseAutoField(mrnInput, "mrn", rosterMrn);
   _updateNewCaseEmrLink();
-  if (nameInput && !nameInput.value && roster && roster.name) nameInput.value = roster.name;
-  if (testSel) {
+  if (fillName) _fillNewCaseAutoField(nameInput, "name", roster?.name || "");
+  if (testSel && fillTestType) {
     const inferredType = inferNewCaseTestType(entry);
     if (inferredType) testSel.value = inferredType;
     else if (roster && roster.test_type) testSel.value = roster.test_type;
@@ -10413,17 +10472,59 @@ function _applyNewCaseLisSelection(lis_id) {
   const deptHint = document.getElementById("new-case-dept-hint");
   if (deptHint) deptHint.textContent = (roster && roster.department) ? `科別：${roster.department}` : "";
 
-  if (entry.phenotype) {
-    newCaseEdit.hpo = (entry.phenotype.hpo || []).map(h => ({...h}));
-    newCaseEdit.panels = (entry.phenotype.panels || []).map(p => ({...p}));
-    newCaseEdit.source = "Web phenotype input tool";
-  } else {
-    newCaseEdit.hpo = [];
-    newCaseEdit.panels = [];
-    newCaseEdit.source = "未找到 Web phenotype input tool 紀錄";
-  }
+}
+
+// One fresh detail request per selection; no phenotype work in the list API.
+async function _applyNewCaseLisSelection(lis_id) {
+  resetNewCaseSync();
+  const entry = _unregisteredById[lis_id];
+  if (!entry) { _clearNewCaseLisSelection(); return; }
+  const requestId = ++_newCaseDetailId;
+  newCaseEdit.detailLoading = true;
+  newCaseEdit.detailError = "";
+  document.getElementById("new-case-error")?.classList.add("hidden");
+  newCaseEdit.hpo = [];
+  newCaseEdit.panels = [];
+  newCaseEdit.source = "個案表徵載入中…";
   newCaseEdit.edited = false;
+  _fillNewCaseSummary(entry);
   renderNewCasePhenoEditor();
+  const mrnInput = document.getElementById("new-case-mrn");
+  const nameInput = document.getElementById("new-case-name");
+  const initialName = nameInput?.value;
+  const initialMrn = mrnInput?.value || "";
+  const manualMrn = initialMrn && initialMrn !== newCaseEdit.autoFilled.mrn ? initialMrn : "";
+  const testSel = document.querySelector('#new-case-form select[name="test_type"]');
+  const initialTest = testSel?.value;
+  try {
+    const query = manualMrn ? `?mrn=${encodeURIComponent(manualMrn)}` : "";
+    const detail = await apiFetch(`/samples/unregistered/${encodeURIComponent(lis_id)}${query}`);
+    if (requestId !== _newCaseDetailId || document.getElementById("new-case-lis-id")?.value !== lis_id
+        || document.getElementById("new-case-modal")?.classList.contains("hidden")) return;
+    if (!detail) { _removeUnregisteredFromCache(lis_id); throw new Error("此個案已登錄、尚未完成或已移除，請更新清單。"); }
+    const sameMrn = (mrnInput?.value || "") === initialMrn;
+    _fillNewCaseSummary(detail, {
+      fillMrn: sameMrn, fillName: nameInput?.value === initialName,
+      fillTestType: testSel?.value === initialTest,
+    });
+    if (!newCaseEdit.edited && sameMrn) {
+      newCaseEdit.hpo = (detail.phenotype?.hpo || []).map(h => ({...h}));
+      newCaseEdit.panels = (detail.phenotype?.panels || []).map(p => ({...p}));
+      newCaseEdit.source = detail.phenotype ? "Web phenotype input tool" : "未找到 Web phenotype input tool 紀錄";
+    } else if (!sameMrn && !newCaseEdit.edited) {
+      newCaseEdit.source = "病歷號已變更，可按 EMR 同步載入表徵";
+    }
+    renderNewCasePhenoEditor();
+  } catch (e) {
+    if (requestId !== _newCaseDetailId) return;
+    newCaseEdit.detailError = String(e.message || e);
+    newCaseEdit.source = "個案資料讀取失敗，請重新選取個案。";
+    renderNewCasePhenoEditor();
+    const error = document.getElementById("new-case-error");
+    if (error) { error.textContent = newCaseEdit.detailError; error.classList.remove("hidden"); }
+  } finally {
+    if (requestId === _newCaseDetailId) newCaseEdit.detailLoading = false;
+  }
 }
 
 // EMR sync button on the modal: refresh saved patient phenotype by MRN
@@ -10449,6 +10550,11 @@ async function syncNewCaseEmr() {
   const mrnInput = document.getElementById("new-case-mrn");
   const sexInput = document.querySelector('#new-case-form select[name="sex"]');
   const errEl = document.getElementById("new-case-error");
+  if (newCaseEdit.detailLoading) {
+    errEl.textContent = "個案資料載入中，請稍候再同步。";
+    errEl.classList.remove("hidden");
+    return;
+  }
   const mrn = (mrnInput?.value || "").trim();
   if (!mrn) {
     errEl.textContent = "請先填 MRN 才能 EMR 同步";
@@ -10628,7 +10734,7 @@ document.addEventListener("input", ev => {
     clearTimeout(_ncPanelSearchTimer);
     _ncPanelSearchTimer = setTimeout(() => _ncRunPanelSearch(ev.target.value), 200);
   } else if (ev.target.id === "new-case-lis-id-search") {
-    resetNewCaseSync();
+    _clearNewCaseLisSelection();
     const hidden = document.getElementById("new-case-lis-id");
     if (hidden) hidden.value = "";
     _renderNewCaseLisDropdown(ev.target.value, { showAll: false });
@@ -10727,6 +10833,11 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
     errEl.classList.remove("hidden");
     document.getElementById("new-case-lis-id-search")?.focus();
     _renderNewCaseLisDropdown(document.getElementById("new-case-lis-id-search")?.value || "", { showAll: true });
+    return;
+  }
+  if (newCaseEdit.detailLoading || newCaseEdit.detailError) {
+    errEl.textContent = newCaseEdit.detailLoading ? "個案資料載入中，請稍候再載入個案。" : "個案資料讀取失敗，請重新選取個案。";
+    errEl.classList.remove("hidden");
     return;
   }
   const fd = new FormData(form);

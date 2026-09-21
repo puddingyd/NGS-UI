@@ -110,6 +110,8 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     from . import sample_loader
     sample_loader.invalidate_sample_cache(ui_dir)
     sample_loader.remove_case_table_row(lis_id)
+    from . import unregistered_samples
+    unregistered_samples.refresh_samples([lis_id])
     return {
         "sample_id": lis_id,
         "deleted": deleted,
@@ -163,6 +165,10 @@ def register(
         raise ValueError(f"test_type must be one of {sorted(_TEST_TYPES)}")
     if genome_build not in _GENOME_BUILDS:
         raise ValueError(f"genome_build must be one of {sorted(_GENOME_BUILDS)}")
+
+    from . import dragen_jobs, unregistered_samples
+    if lis_id in dragen_jobs.active_sample_ids():
+        raise RuntimeError("此個案正在三級分析，請完成後再載入。")
 
     sample_dir = sample_layout.state_dir(lis_id)
     raw_tsv = sample_layout.snv_raw_tsv(lis_id)
@@ -279,6 +285,7 @@ def register(
         encoding="utf-8",
     )
     _log_perf("patient_store.register.metadata", meta_started, sample=lis_id)
+    unregistered_samples.refresh_samples([lis_id])
 
     # Default analysis.json + audit copy of the parsed phenotype.txt.
     # write_version side-effects pheno_score.tsv into the version dir,

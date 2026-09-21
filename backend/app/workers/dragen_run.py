@@ -2114,6 +2114,8 @@ def main() -> int:
 
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)
+        from ..services import unregistered_samples
+        unregistered_samples.refresh_samples(sample_ids)
         _log(f"[tertiary_run] DONE. samples={','.join(sample_ids)}")
         return 0
 
