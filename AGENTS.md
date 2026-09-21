@@ -301,6 +301,7 @@ CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一
 
 ## 8. 輸入臨床表徵工具（`/phenotype/`）
 
+- 「載入新個案」的 EMR 同步會同時依目前 MRN 重新查 `/phenotype-tool/load` 與 `/phenotype-tool/clinical-presentation/load`（不傳 LIS，避免帶入其他病歷號），與 EMR 各自處理失敗。病人已儲存的 HPO/panel 優先於 EMR，包含 header-only 空白快照；同步後作為明確選取內容送出，Clinical presentation 顯示唯讀預覽，登錄仍由後端帶入該 MRN 最新 sidecar。只有查無病人 phenotype 時才使用 EMR HPO；讀取失敗不視為查無。切 MRN／檢體、關閉或重開 modal 後忽略舊同步回應；同步中不允許送出登錄。
 - 手動「儲存」同時填 MRN 與檢體編號時，另以 `POST /api/phenotype-tool/patient-link` 將對應存入共用 `patient_list/roster.json`，也允許只填兩個編號建立連結；Clinical presentation debounce 不建立連結。檢體編號去掉 `8BB1` 前綴及 caller 後綴後存為 LIS_ID；保留清單的姓名／科別等欄位，既有對應不同 MRN 回 409。新個案 modal 開啟時以登入保護的 `/api/patient_list/revision` 檢查 roster 版本，更新後自動重抓快取，即可帶入 MRN 與病人層級 HPO/panel。roster 的手動連結與 xlsx 匯入共用 file lock + atomic replace；xlsx 空白 MRN 不清除既有連結。
 - 頁面底部 phenotype 預覽直接反映目前表單狀態：載入既有病人後立即顯示，HPO、fixed/free/custom panel 新增、移除或修改時即時重繪；開始載入另一病例時先清掉舊預覽，查無 phenotype 時保持隱藏，不需等「儲存」才更新。
 

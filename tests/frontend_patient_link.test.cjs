@@ -124,6 +124,7 @@ test('Selecting the linked specimen fills MRN and restores the patient phenotype
       },
     },
     _updateNewCaseEmrLink: () => {},
+    resetNewCaseSync: () => {},
     renderNewCasePhenoEditor: () => {},
     newCaseEdit: {},
   });

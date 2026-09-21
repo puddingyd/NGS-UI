@@ -500,7 +500,7 @@
           <span class="mrn-with-button">
             <input name="mrn" id="new-case-mrn" required />
             <a id="btn-new-case-emr-link" class="btn btn-link" target="_blank" rel="noopener" hidden title="在院內 EMR 開啟此病歷號">EMR</a>
-            <button type="button" id="btn-new-case-emr" class="btn btn-link" hidden title="從 EMR 抓取 sex / 看診紀錄 / phenotype">EMR 同步</button>
+            <button type="button" id="btn-new-case-emr" class="btn btn-link" hidden title="依病歷號同步 EMR 與臨床表徵頁面已儲存的內容">EMR 同步</button>
           </span>
         </label>
         <label>性別
@@ -580,6 +580,11 @@
       <div class="form-section">
         <div class="form-section-title">EMR 上的 phenotype</div>
         <div id="new-case-emr-pheno" class="muted" style="font-size:12px">尚未從 EMR 抓取。</div>
+      </div>
+      <div id="new-case-clinical-preview-section" class="form-section" hidden>
+        <div class="form-section-title">Clinical presentation（臨床表徵頁面）</div>
+        <textarea id="new-case-clinical-preview" class="emr-ref-text" readonly rows="5" aria-label="已儲存的 Clinical presentation"></textarea>
+        <div class="muted" style="font-size:11px">載入個案時會帶入此病歷號最新儲存的內容。</div>
       </div>
       <div id="new-case-error" class="error hidden"></div>
       <div class="modal-actions">

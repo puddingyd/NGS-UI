@@ -10224,6 +10224,7 @@ function _renderNewCaseLisDropdown(query = "", { showAll = false } = {}) {
 }
 
 function _clearNewCaseLisSelection() {
+  resetNewCaseSync();
   const hidden = document.getElementById("new-case-lis-id");
   if (hidden) hidden.value = "";
   newCaseEdit.hpo = [];
@@ -10299,6 +10300,7 @@ function _updateNewCaseLisPlaceholder() {
 }
 
 document.getElementById("btn-new-case")?.addEventListener("click", async () => {
+  resetNewCaseSync();
   const form = document.getElementById("new-case-form");
   form?.reset();
   document.getElementById("new-case-error")?.classList.add("hidden");
@@ -10383,6 +10385,7 @@ document.getElementById("btn-refresh-unregistered")?.addEventListener("click", a
 // Picking a sample preloads phenotype from the reviewer txt + auto-
 // fills the MRN that was embedded in the phenotype filename.
 function _applyNewCaseLisSelection(lis_id) {
+  resetNewCaseSync();
   const entry = _unregisteredById[lis_id];
   if (!entry) {
     _clearNewCaseLisSelection();
@@ -10423,61 +10426,103 @@ function _applyNewCaseLisSelection(lis_id) {
   renderNewCasePhenoEditor();
 }
 
-// EMR sync button on the modal: pull name / sex / dob / phenotype
-// from the EMR APIs and merge into the form. Sex overwrites whatever
-// the reviewer picked (per spec). HPO chips get REPLACED with the EMR
-// list (so the EMR-reference column below shows what's available;
-// reviewer can then edit).
-document.getElementById("btn-new-case-emr")?.addEventListener("click", async () => {
-  const mrnInput  = document.getElementById("new-case-mrn");
-  const nameInput = document.getElementById("new-case-name");
-  const sexInput  = document.querySelector('#new-case-form select[name="sex"]');
-  const errEl     = document.getElementById("new-case-error");
+// EMR sync button on the modal: refresh saved patient phenotype by MRN
+// independently of EMR. Saved HPO/panels (including an empty snapshot) win.
+let _newCaseEmrRequestId = 0;
+
+function resetNewCaseSync() {
+  _newCaseEmrRequestId += 1;
+  newCaseEdit.emrPhenotype = null;
+  renderNewCaseEmrRef();
+  const section = document.getElementById("new-case-clinical-preview-section");
+  const preview = document.getElementById("new-case-clinical-preview");
+  if (section) section.hidden = true;
+  if (preview) preview.value = "";
+  const btn = document.getElementById("btn-new-case-emr");
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = "EMR 同步";
+  }
+}
+
+async function syncNewCaseEmr() {
+  const mrnInput = document.getElementById("new-case-mrn");
+  const sexInput = document.querySelector('#new-case-form select[name="sex"]');
+  const errEl = document.getElementById("new-case-error");
   const mrn = (mrnInput?.value || "").trim();
   if (!mrn) {
     errEl.textContent = "請先填 MRN 才能 EMR 同步";
     errEl.classList.remove("hidden");
     return;
   }
+  resetNewCaseSync();
+  const requestId = _newCaseEmrRequestId;
+  const lisId = document.getElementById("new-case-lis-id")?.value || "";
   errEl.classList.add("hidden");
   const btn = document.getElementById("btn-new-case-emr");
-  const orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = "同步中…";
   try {
-    const data = await apiFetch(`/emr/${encodeURIComponent(mrn)}`);
-    if (!data) throw new Error("EMR 無回應");
-    const consult = data.consultation || {};
-    const pheno   = data.phenotype    || {};
-    if (consult.sex && sexInput)            sexInput.value = consult.sex;
-    if (consult.records?.[0] && nameInput && !nameInput.value) {
-      // The consultation API doesn't carry the patient's name; nothing
-      // to fill from there. Left as-is for the reviewer to type.
-    }
-    if (pheno.hpo && pheno.hpo.length) {
-      // txt phenotype is authoritative: if the reviewer-curated txt
-      // had any HPO/panel chips, EMR sync only refreshes the read-only
-      // reference row below. Reviewer can manually copy into the
-      // editable chips. EMR populates the editable chips only when txt
-      // was missing.
-      const hasTxt = (newCaseEdit.source || "").startsWith("Web phenotype input tool");
-      if (!hasTxt) {
-        newCaseEdit.hpo = pheno.hpo.map(h => ({...h}));
-        newCaseEdit.source = "EMR phenotype API";
+    const encodedMrn = encodeURIComponent(mrn);
+    const [savedResult, clinicalResult, emrResult] = await Promise.allSettled([
+      apiFetch(`/phenotype-tool/load?mrn=${encodedMrn}`),
+      apiFetch(`/phenotype-tool/clinical-presentation/load?mrn=${encodedMrn}`),
+      apiFetch(`/emr/${encodedMrn}`),
+    ]);
+    // A late response must never populate a different patient or reopened form.
+    if (requestId !== _newCaseEmrRequestId
+        || mrn !== (mrnInput?.value || "").trim()
+        || lisId !== (document.getElementById("new-case-lis-id")?.value || "")
+        || document.getElementById("new-case-modal")?.classList.contains("hidden")) return;
+
+    const warnings = [];
+    const emr = emrResult.status === "fulfilled" ? emrResult.value : null;
+    const pheno = emr?.phenotype || {};
+    if (emr?.consultation?.sex && sexInput) sexInput.value = emr.consultation.sex;
+    newCaseEdit.emrPhenotype = emr ? pheno : null;
+    if (!emr) warnings.push("EMR 同步失敗；已儲存的臨床表徵仍可載入。");
+
+    if (savedResult.status === "fulfilled") {
+      const saved = savedResult.value;
+      if (saved) {
+        newCaseEdit.hpo = (saved.hpo || []).map(h => ({...h}));
+        newCaseEdit.panels = (saved.panels || []).map(p => ({...p}));
+        newCaseEdit.source = `Web phenotype input tool（病歷號 ${mrn}）`;
+        newCaseEdit.edited = true;
+      } else if (emr) {
+        newCaseEdit.hpo = (pheno.hpo || []).map(h => ({...h}));
+        newCaseEdit.panels = [];
+        newCaseEdit.source = pheno.hpo?.length ? "EMR phenotype API" : "未找到此病歷號的臨床表徵紀錄";
         newCaseEdit.edited = true;
       }
+    } else {
+      warnings.push("已儲存的 HPO／panel 讀取失敗，保留目前內容，請重試同步。");
     }
-    newCaseEdit.emrPhenotype = pheno;
+
+    if (clinicalResult.status === "fulfilled") {
+      const clinical = clinicalResult.value;
+      const section = document.getElementById("new-case-clinical-preview-section");
+      const preview = document.getElementById("new-case-clinical-preview");
+      if (preview) preview.value = clinical?.content || "";
+      if (section) section.hidden = !clinical;
+    } else {
+      warnings.push("Clinical presentation 讀取失敗，請重試同步。");
+    }
     renderNewCasePhenoEditor();
     renderNewCaseEmrRef();
-  } catch (e) {
-    errEl.textContent = "EMR 同步失敗：" + (e.message || e);
-    errEl.classList.remove("hidden");
+    if (warnings.length) {
+      errEl.textContent = warnings.join("\n");
+      errEl.classList.remove("hidden");
+    }
   } finally {
-    btn.disabled = false;
-    btn.textContent = orig;
+    if (requestId === _newCaseEmrRequestId) {
+      btn.disabled = false;
+      btn.textContent = "EMR 同步";
+    }
   }
-});
+}
+
+document.getElementById("btn-new-case-emr")?.addEventListener("click", syncNewCaseEmr);
 
 function renderNewCasePhenoEditor() {
   const hpoUl   = document.getElementById("new-case-hpo-chips");
@@ -10574,6 +10619,7 @@ let _ncPanelSearchTimer = null;
 let _ncHpoSearchSequence = 0;
 document.addEventListener("input", ev => {
   if (ev.target.id === "new-case-mrn") {
+    resetNewCaseSync();
     _updateNewCaseEmrLink();
   } else if (ev.target.id === "new-case-hpo-search") {
     clearTimeout(_ncHpoSearchTimer);
@@ -10582,6 +10628,7 @@ document.addEventListener("input", ev => {
     clearTimeout(_ncPanelSearchTimer);
     _ncPanelSearchTimer = setTimeout(() => _ncRunPanelSearch(ev.target.value), 200);
   } else if (ev.target.id === "new-case-lis-id-search") {
+    resetNewCaseSync();
     const hidden = document.getElementById("new-case-lis-id");
     if (hidden) hidden.value = "";
     _renderNewCaseLisDropdown(ev.target.value, { showAll: false });
@@ -10664,6 +10711,11 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
   const errEl = document.getElementById("new-case-error");
   errEl.classList.add("hidden");
   errEl.textContent = "";
+  if (document.getElementById("btn-new-case-emr")?.disabled) {
+    errEl.textContent = "臨床表徵同步中，請稍候再載入個案。";
+    errEl.classList.remove("hidden");
+    return;
+  }
   const lisHidden = document.getElementById("new-case-lis-id");
   if (!lisHidden?.value) {
     const typed = (document.getElementById("new-case-lis-id-search")?.value || "").trim().toLowerCase();
