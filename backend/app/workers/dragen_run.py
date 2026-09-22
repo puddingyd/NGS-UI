@@ -1846,6 +1846,9 @@ def main() -> int:
                     ]
                     nextflow_run_label = "2b/4 nextflow v3.x"
 
+                previous_nextflow_log_signature = (
+                    dragen_jobs.nextflow_log_signature(nf_launch)
+                )
                 try:
                     _run(
                         nextflow_run_cmd,
@@ -1854,8 +1857,27 @@ def main() -> int:
                         cwd=nf_launch,
                     )
                 finally:
-                    _release_nextflow_cache_lock(nextflow_cache_lock)
-                    nextflow_cache_lock = None
+                    try:
+                        snapshot = dragen_jobs.snapshot_nextflow_log(
+                            job_id,
+                            nf_launch,
+                            previous_nextflow_log_signature,
+                        )
+                        if snapshot is not None:
+                            _log(f"[nextflow] saved run log: {snapshot}")
+                        else:
+                            _log(
+                                "[nextflow] warning: .nextflow.log was not "
+                                "available for this run"
+                            )
+                    except OSError as exc:
+                        _log(
+                            "[nextflow] warning: failed to save .nextflow.log: "
+                            f"{exc}"
+                        )
+                    finally:
+                        _release_nextflow_cache_lock(nextflow_cache_lock)
+                        nextflow_cache_lock = None
 
                 for sample in pending_samples:
                     sid = sample["sample_id"]

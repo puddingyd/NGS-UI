@@ -3,6 +3,7 @@
 State lives under TERTIARY_JOBS_DIR/{job_id}/:
     state.json     job metadata + current step (atomically rewritten)
     log.txt        combined stdout/stderr from the chain
+    .nextflow.log  immutable snapshot of this job's Nextflow run log
     pid            spawned worker PID (for `is_running` check)
 
 Jobs are spawned via subprocess.Popen with start_new_session=True and
@@ -324,6 +325,10 @@ def _pid_path(job_id: str) -> Path:
     return _job_dir(job_id) / "pid"
 
 
+def _nextflow_log_path(job_id: str) -> Path:
+    return _job_dir(job_id) / ".nextflow.log"
+
+
 def load_state(job_id: str) -> dict | None:
     p = _state_path(job_id)
     if not p.is_file():
@@ -430,6 +435,55 @@ def tail_log(job_id: str, n: int = 50) -> str:
         return "\n".join(lines[-n:])
     except OSError:
         return ""
+
+
+def read_log(job_id: str) -> str:
+    """Return the complete worker-owned log for explicit log viewing."""
+    p = _log_path(job_id)
+    if not p.is_file():
+        return ""
+    try:
+        return p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def nextflow_log_signature(launch_dir: Path) -> tuple[int, int, int, int] | None:
+    """Return a cheap identity/version signature for the shared launch log."""
+    source = Path(launch_dir) / ".nextflow.log"
+    try:
+        stat = source.stat()
+    except OSError:
+        return None
+    return (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
+
+def snapshot_nextflow_log(
+    job_id: str,
+    launch_dir: Path,
+    previous_signature: tuple[int, int, int, int] | None,
+) -> Path | None:
+    """Atomically preserve the current shared launch log for one job.
+
+    The DRAGEN and NCKUH modes each reuse a shared Nextflow launch directory,
+    so its live ``.nextflow.log`` belongs to the current lock holder only and
+    will be rotated by a later run.  The worker calls this before releasing
+    that mode's cache lock.
+    """
+    source = Path(launch_dir) / ".nextflow.log"
+    current_signature = nextflow_log_signature(launch_dir)
+    if current_signature is None or current_signature == previous_signature:
+        return None
+    target = _nextflow_log_path(job_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f"{target.name}.tmp")
+    try:
+        shutil.copyfile(source, temporary)
+        temporary.replace(target)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+    return target
 
 
 def list_jobs(limit: int = 50) -> list[dict]:
@@ -575,6 +629,15 @@ def _latest_job_for_sample(sample_id: str) -> dict | None:
     return jobs[0] if jobs else None
 
 
+def _downloadable_nextflow_log(job: dict) -> Path | None:
+    """Resolve only this job's preserved, complete Nextflow log snapshot."""
+    job_id = str(job.get("job_id") or "")
+    if not job_id:
+        return None
+    snapshot = _nextflow_log_path(job_id)
+    return snapshot if snapshot.is_file() else None
+
+
 def _job_mtime(job: dict) -> float:
     for key in ("finished_at", "started_at", "created_at"):
         raw = job.get(key)
@@ -648,13 +711,16 @@ def list_pipeline_outputs() -> list[dict]:
             "job_id":        job_id,
             "job_state":     (job or {}).get("state", ""),
             "log_available": bool(job_id and _log_path(job_id).is_file()),
+            "nextflow_log_available": bool(
+                job and _downloadable_nextflow_log(job)
+            ),
         })
     out.sort(key=lambda row: row["mtime"], reverse=True)
     return out
 
 
-def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
-    """Return the most recent NGS-UI job log associated with a sample."""
+def get_pipeline_output_log(sample_id: str) -> dict:
+    """Return the complete most recent NGS-UI job log for a sample."""
     _validate_sample_id(sample_id)
     job = _latest_job_for_sample(sample_id)
     if not job:
@@ -667,8 +733,29 @@ def get_pipeline_output_log(sample_id: str, n: int = 400) -> dict:
         "sample_id": sample_id,
         "job_id": job_id,
         "job_state": job.get("state", ""),
-        "log": tail_log(job_id, n=max(1, min(n, 2000))),
+        "log": read_log(job_id),
     }
+
+
+def get_pipeline_nextflow_log(sample_id: str) -> tuple[Path, str]:
+    """Return the latest job's preserved Nextflow log and download name."""
+    _validate_sample_id(sample_id)
+    job = _latest_job_for_sample(sample_id)
+    if not job:
+        raise FileNotFoundError(f"tertiary job not found: {sample_id}")
+    path = _downloadable_nextflow_log(job)
+    if path is None:
+        raise FileNotFoundError(
+            "完整 Nextflow log 尚未保存；執行中的 job 請等 Nextflow "
+            f"結束，改版前的舊 job 不提供 shared log fallback：{sample_id}"
+        )
+    job_id = str(job.get("job_id") or "")
+    filename = (
+        f"{sample_id}.{job_id}.nextflow.log"
+        if job_id
+        else f"{sample_id}.nextflow.log"
+    )
+    return path, filename
 
 
 def delete_pipeline_output(sample_id: str) -> dict:

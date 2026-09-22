@@ -11,6 +11,7 @@
   POST /api/dragen/litvar2/update
   GET  /api/dragen/outputs         list pipeline output sample directories
   GET  /api/dragen/outputs/{sid}/log
+  GET  /api/dragen/outputs/{sid}/nextflow-log
   DELETE /api/dragen/outputs/{sid}
 """
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
+from fastapi.responses import FileResponse
 
 from ..auth import current_user
 from ..services import dragen_jobs, litvar2_jobs
@@ -212,6 +214,21 @@ def get_pipeline_outputs():
 def get_pipeline_output_log(sample_id: str):
     try:
         return dragen_jobs.get_pipeline_output_log(sample_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.get("/outputs/{sample_id}/nextflow-log")
+def download_pipeline_nextflow_log(sample_id: str):
+    try:
+        path, filename = dragen_jobs.get_pipeline_nextflow_log(sample_id)
+        return FileResponse(
+            path,
+            media_type="text/plain; charset=utf-8",
+            filename=filename,
+        )
     except ValueError as e:
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:

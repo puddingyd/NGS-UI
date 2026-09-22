@@ -4077,6 +4077,12 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   white-space: pre;
   margin: 0;
 }
+.pipeline-log-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
 #dragen-job-log {
   max-height: 342px;
 }

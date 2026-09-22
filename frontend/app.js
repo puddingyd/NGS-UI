@@ -12399,8 +12399,13 @@ function _drawPipelineListRows() {
         <td>${escapeHtml(row.sample_id || "")}${source}</td>
         <td>${escapeHtml(ready + state)}</td>
         <td>${escapeHtml(_dragenFmtMtime(row.mtime) || "—")}</td>
-        <td><button type="button" class="btn btn-ghost pipeline-log-view"
-          data-sample-id="${escapeAttr(row.sample_id || "")}">查看 Log</button></td>
+        <td><div class="pipeline-log-actions">
+          <button type="button" class="btn btn-ghost pipeline-log-view"
+            data-sample-id="${escapeAttr(row.sample_id || "")}">查看 Log</button>
+          <button type="button" class="btn btn-ghost pipeline-nextflow-log-download"
+            data-sample-id="${escapeAttr(row.sample_id || "")}"
+            title="下載這次三級分析保存的完整 .nextflow.log">下載 .nextflow.log</button>
+        </div></td>
         <td><button type="button" class="btn btn-danger pipeline-output-delete"
           data-sample-id="${escapeAttr(row.sample_id || "")}"
           data-pipeline-sample-id="${escapeAttr(row.pipeline_sample_id || row.source_sample_id || row.sample_id || "")}">刪除</button></td>
@@ -12433,6 +12438,48 @@ function _fmtBytes(bytes) {
     idx += 1;
   }
   return `${v.toFixed(v >= 10 ? 1 : 2)} ${units[idx]}`;
+}
+
+async function _downloadPipelineNextflowLog(sampleId, button, status) {
+  const originalText = button?.textContent || "下載 .nextflow.log";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "下載中…";
+  }
+  if (status) status.textContent = `準備 ${sampleId} 的 Nextflow log…`;
+  try {
+    const response = await fetch(
+      `${API_BASE}/dragen/outputs/${encodeURIComponent(sampleId)}/nextflow-log`,
+      { credentials: "same-origin" },
+    );
+    if (response.status === 401) {
+      showLoginModal();
+      throw new Error("尚未登入");
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `${response.status} ${response.statusText}`);
+    }
+    const disposition = response.headers.get("content-disposition") || "";
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = filenameMatch?.[1] || `${sampleId}.nextflow.log`;
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    if (status) status.textContent = `已下載 ${filename}`;
+  } catch (error) {
+    if (status) status.textContent = `下載失敗：${error.message || error}`;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
 }
 
 async function _cleanupNextflowWork() {
@@ -12472,9 +12519,14 @@ function setupPipelineList() {
   document.getElementById("pipeline-clean-nf-work")?.addEventListener("click", _cleanupNextflowWork);
   host.addEventListener("click", async ev => {
     const logBtn = ev.target.closest?.(".pipeline-log-view");
+    const nextflowLogBtn = ev.target.closest?.(".pipeline-nextflow-log-download");
     const delBtn = ev.target.closest?.(".pipeline-output-delete");
-    const sid = (logBtn || delBtn)?.dataset.sampleId || "";
+    const sid = (logBtn || nextflowLogBtn || delBtn)?.dataset.sampleId || "";
     if (!sid) return;
+    if (nextflowLogBtn) {
+      await _downloadPipelineNextflowLog(sid, nextflowLogBtn, status);
+      return;
+    }
     if (logBtn) {
       const title = document.getElementById("pipeline-list-log-title");
       const log = document.getElementById("pipeline-list-log");
@@ -12484,6 +12536,7 @@ function setupPipelineList() {
       try {
         const data = await apiFetch(`/dragen/outputs/${encodeURIComponent(sid)}/log`);
         if (log) log.textContent = data?.log || "（沒有可用的 NGS-UI 三級分析 Log）";
+        if (log) log.scrollTop = 0;
       } catch (e) {
         if (log) log.textContent = `讀取失敗：${e.message || e}`;
       }
