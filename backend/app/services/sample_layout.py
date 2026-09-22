@@ -318,6 +318,19 @@ def clinvar_comparison_path(sample_id: str, *, for_write: bool = False) -> Path:
 
 
 def cnv_tsv(sample_id: str) -> Path:
+    # Only completed DRAGEN rescue generations activate the merged review TSV.
+    # In-house and older cases continue to use the immutable 06 source.
+    if uses_unified_layout(sample_id):
+        review = state_file(sample_id, "cnv.review.tsv")
+        marker = state_file(sample_id, "cnv_rescue.json")
+        if review.is_file() and marker.is_file():
+            try:
+                data = json.loads(marker.read_text(encoding="utf-8"))
+                if (isinstance(data, dict) and data.get("status") == "complete" and data.get("pipeline") == "dragen"
+                        and data.get("sample_id") == sample_id):
+                    return review
+            except (OSError, ValueError):
+                pass
     legacy = state_file(sample_id, "cnv.annotated.tsv")
     if not uses_unified_layout(sample_id) and legacy.is_file():
         return legacy

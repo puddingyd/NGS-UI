@@ -94,6 +94,9 @@
 06_cnv_sv/{source}.{cnv,sv}.annotated.tsv  CNV/SV source，UI 直接讀
 07_pgx/{source}.pgx.tsv / PharmCAT JSON    PGx source，UI 直接讀
 08_postprocessing/
+  {LIS_ID}.cnv.review.tsv      DRAGEN 原有 CNV 註解＋A/B rescue；完成 manifest 存在時優先讀取
+  {LIS_ID}.cnv.rescued.annotated.tsv  只含新增 rescue 的 AnnotSV full/split rows
+  {LIS_ID}.cnv_rescue.json     規則版本、來源 SHA256、原始／整合座標與 FILTER/QUAL、支持 SV、計數
   {LIS_ID}.layout.json        layout v3 activation marker；最後原子寫入
   {LIS_ID}.pipeline_source.json  source_path/source_sample_id/source_vcf_path/annotated_at
   {LIS_ID}.snv_annotations.sqlite  ClinVar latest/GeneBe/GIAB/院內 AF/MANE/SpliceAI/LitVar2 sparse overlay
@@ -114,6 +117,8 @@
 layout v3 的 sample-owned 檔案一律用 `{LIS_ID}.<name>`；resolver 固定 prefixed exact name 優先，再 fallback 舊 unprefixed exact name，不可用 broad wildcard。舊 layout v2 `layout.json` 及未加前綴檔仍可讀寫；完整重跑會非破壞性複製 v2 state，最後才寫 prefixed v3 marker，不刪舊檔。新樣本只有 marker 存在且沒有 metadata 時才列為未登錄，避免 post-processing 未完成就被載入。
 
 SNV post-processing 允許執行期間建立隱藏 working TSV，既有 in-place annotator 跑完後比較 03 raw 產生 sparse overlay，worker 的 `finally` 一定刪除 working TSV；不得在 08 永久留下第二份 `snv_indel.annotated.tsv`。`REF/ALT=*` 與非 primary contig 在 review/index/search/VCF consumer 端排除，不改寫 raw。
+
+**DRAGEN CNV rescue（2026-09-22）**：worker 在 `run_stopgaps.sh` 後、layout marker 前獨立跑 `scripts/rescue_dragen_cnv.py`，不受 `--skip-cnv` 影響，in-house 不執行。只讀同一 DRAGEN anchor 旁的 `{source}.cnv.vcf.gz` 與 `{source}.cnv_sv.vcf.gz`，要求兩份 header 都是同一個 source sample，不另讀 raw SV。以 `OrigCnvPos/OrigCnvEnd`（未變動端用 POS/END）精確回查原始 CNV；只接受原始 FILTER 為 `cnvLength`／`cnvQual`／兩者，原本 PASS 沿用 06，其他 filter 不救。A：整合 `PASS + SVCLAIM=DJ + MatchSv`。B：整合仍只有 length/quality filter、DJ，且至少一筆明確斷點連結的 `SVCLAIM=J` SV 同染色體同 DEL/DUP、FILTER PASS、若有 FT 也必須 PASS、兩者 GT 有 alt 且可判定的基因型不衝突，整合後 `(POS,END]` 雙向重疊均 ≥50%；不累加不同 SV 的重疊。只有保留／排除，不新增候選區、不改 ACMG 或自動勾報告。只對新增事件補 AnnotSV，合併 06 基準成 prefixed `cnv.review.tsv`；保留基準 AnnotSV_ID、新事件固定 `CNVRESCUE-{chrom}-{original_pos}-{original_end}-{type}`，去除與基準同座標同類型的重複事件。`NGS_UI_CNV_RESCUE` JSON 欄供 adapter／卡片顯示來源證據，視覺合併 parent 必須彙整所有 segment 的 rescue 證據。新增檔名加入 worker managed promotion／rollback，重跑零結果或缺檔會清舊 rescue；缺輸入記 warning＋skipped manifest，輸入格式／sample 不符或 AnnotSV 遺漏 full row 則整批不發布。AnnotSV 優先 `ANNOTSV_BIN`／本機安裝，否則使用 `NGS_UI_ANNOTSV_SIF` 或既有 `annotsv_3.5.10.sif`；reference 可由 `ANNOTSV_ANNOTATIONS` 指到 `share/AnnotSV`。原始 00–07 不改寫。
 
 固定 WES-I / WES-II / WGS panel 檔與 custom panels 現在保留在 repo 的 `phenotype_data/gene_panels/`、`phenotype_data/fixed_panels/` 與 `phenotype_data/custom_panels/`，會跟著 git pull 更新。固定 `WES-I__腫瘤醫學__遺傳癌症 v2.0` 的名稱可包含空格，舊 `WES-I__腫瘤醫學__遺傳癌症` 只作 persisted analysis lookup alias。固定 panel 的 PDF／診斷 DOCX 標題取 `fixed_panels/index.json` 短名稱，不輸出 series／科別；custom panel 的 `panel_name`、`source`、`output_name` 集中在 `custom_panels/panel_metadata.tsv`，報告使用 `output_name`，新建 custom panel 時自動 append 一列。WGS 固定套組包含血液科 Lymphoid Neoplasm Panel 與 Myeloid Neoplasm Panel；來源 CSV 的 SNV/indel、CNV、STR、Mitochondria 欄位已合併成單一 gene list，不在 phenotype panel 層分 variant type。
 HPO reference、fixed/custom panel 與既有 `pheno_score.tsv` 讀入時都會先 canonicalize；fixed/custom panel 與 phenotype score 使用 `panel_deadzone.canonical_panel_gene_symbol()`（優先 `ngs_panel_deadzone/panel/panel_gene_aliases.tsv`，再 fallback VEP/HGNC map），SNV/CNV/SV/Mito adapter 端也 canonicalize variant gene 後才做 `pheno_score` / `in_panel` join，避免 VEP 舊 symbol 或 panel alias 漏算。`panel_gene_aliases.tsv` 由 `scripts/build_hgnc_panel_aliases.py` 從 HGNC 官方 `reference/hgnc/hgnc_complete_set.txt`、`reference/hgnc/withdrawn.txt` 與 `reference/hgnc/manual_panel_aliases.tsv` 重建；衝突項輸出到 `docs/ops/hgnc_alias_conflicts.tsv`，custom panel 轉換後仍非 current HGNC 的項目列在 `docs/ops/custom_panel_hgnc_review_20260613.tsv`。

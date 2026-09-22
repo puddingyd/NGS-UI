@@ -65,6 +65,11 @@ def build_parent(merge: dict, variants: dict[str, dict]) -> dict | None:
         "cnv_sv_sort_score": best_combined if best_combined != -999 else parent.get("cnv_sv_sort_score"),
         "merged_segment_ids": list(member_ids),
         "is_merged_parent": True,
+        "cnv_rescue_events": [
+            evidence for segment in segments
+            for evidence in (segment.get("cnv_rescue_events") or
+                             ([segment["cnv_rescue"]] if segment.get("cnv_rescue") else []))
+        ],
     })
     return parent
 

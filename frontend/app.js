@@ -6067,6 +6067,7 @@ function _cnvSvBuildParent(merge) {
     cnv_sv_sort_score: Number.isFinite(bestCombined) ? bestCombined : rep.cnv_sv_sort_score,
     genes_total: genes.length, merged_segment_ids: segments.map(v => v.id),
     is_merged_parent: true,
+    cnv_rescue_events: segments.flatMap(seg => seg.cnv_rescue_events || (seg.cnv_rescue ? [seg.cnv_rescue] : [])),
   };
 }
 
@@ -6884,6 +6885,21 @@ function _renderCnvSvHeader(v, id, opts) {
   </div>`;
 }
 
+function _renderCnvRescueEvidence(v) {
+  const events = v.cnv_rescue_events || (v.cnv_rescue ? [v.cnv_rescue] : []);
+  if (!events.length) return "";
+  const locus = r => `${r.chrom}:${r.pos}-${r.end}`;
+  return `<details class="cnv-sv-reasoning cnv-rescue-evidence">
+    <summary>SV-supported rescue${v.is_merged_parent ? ` · ${events.length} 個片段` : ""}</summary>
+    ${events.map(e => `<div class="cnv-rescue-event">
+      <div><strong>Rule ${escapeHtml(e.rule)}:</strong> ${e.rule === "A" ? "DRAGEN 完整配對" : "斷點連結、同類型且雙向重疊 ≥50%"}</div>
+      <div>原始 CNV（VCF POS–END）：${escapeHtml(locus(e.original))} · Filter: ${escapeHtml(e.original.filter)} · Qual: ${escapeHtml(e.original.qual)}</div>
+      <div>整合後（VCF POS–END）：${escapeHtml(locus(e.integrated))}</div>
+      ${e.sv_support.map(s => `<div>支持 SV：${escapeHtml(s.original_sv_id || s.id)}${s.chrom ? ` · ${escapeHtml(locus(s))}` : ""}${s.cnv_overlap != null ? ` · 重疊 CNV ${(100 * s.cnv_overlap).toFixed(2)}% / SV ${(100 * s.sv_overlap).toFixed(2)}%` : ""}</div>`).join("")}
+    </div>`).join("")}
+  </details>`;
+}
+
 function _renderCnvSvDetailBox(v, id) {
   const cn = (v.copy_number != null) ? ` · CN ${v.copy_number}` : "";
   const filter = v.filter && v.filter !== "." ? v.filter : "PASS";
@@ -6936,6 +6952,7 @@ function _renderCnvSvDetailBox(v, id) {
       <span><strong>Qual:</strong> ${qual}</span>
     </div>
     ${reasoning}
+    ${_renderCnvRescueEvidence(v)}
   </div>`;
 }
 
@@ -12061,6 +12078,7 @@ function _dragenSetJob(state) {
 
 function _dragenJobStepLabel(state) {
   const step = String(state?.step || "");
+  if (step === "post-processing:cnv-rescue") return "DRAGEN CNV rescue";
   if (step !== "nextflow" && !step.startsWith("nextflow:")) return step;
   const current = state?.nextflow_current;
   if (!current?.step) return step;
@@ -12130,6 +12148,7 @@ function _dragenStopgapProgressPercent(state) {
     "sample-step:snv-overlay": 0.82,
     "sample-step:review-tsv": 0.86,
     "sample-step:gene-index": 0.92,
+    "post-processing:cnv-rescue": 0.96,
   };
   const within = sub[state.step] ?? 0;
   return _clampPct(82 + ((idx + within) / total) * 17);

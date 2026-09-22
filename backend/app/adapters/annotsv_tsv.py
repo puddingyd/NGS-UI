@@ -23,6 +23,7 @@ provided it is `trigger_gene` and gets ⭐ in the UI.
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -185,6 +186,10 @@ def _full_row_to_variant(
     gt = proband_dict.get("GT", "")
     cn = _to_int(proband_dict.get("CN"))
 
+    rescue = None
+    if source == "cnv" and full_row.get("NGS_UI_CNV_RESCUE"):
+        rescue = json.loads(full_row["NGS_UI_CNV_RESCUE"])
+
     return {
         "id":                annotsv_id,
         "source":            source,                          # "cnv" | "sv"
@@ -232,6 +237,7 @@ def _full_row_to_variant(
         "GT":                gt,
         "zygosity":          _zygosity_from_gt(gt),
         "copy_number":       cn,
+        "cnv_rescue":        rescue,
         # Filled in classify():
         "in_panel":          False,
         "trigger_gene":      "",
@@ -290,7 +296,7 @@ def _assign_sort_scores(variants: dict[str, dict]) -> None:
 _FULL_COLS = (
     "AnnotSV_ID", "Annotation_mode", "SV_chrom", "SV_start", "SV_end",
     "SV_length", "SV_type", "CytoBand", "Gene_count", "Gene_name",
-    "FORMAT", "QUAL", "FILTER",
+    "FORMAT", "QUAL", "FILTER", "NGS_UI_CNV_RESCUE",
     "ACMG_class", "AnnotSV_ranking_score", "AnnotSV_ranking_criteria",
     "P_loss_phen", "P_loss_source", "P_loss_coord",
     "P_gain_phen", "P_gain_source", "P_gain_coord",

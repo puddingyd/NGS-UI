@@ -56,7 +56,7 @@ from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
-from ..services import dragen_jobs, mitomap_mito, roh, sample_layout
+from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -89,7 +89,7 @@ MANAGED_POSTPROCESSING_NAMES = {
     "ploidy_qc.txt",
     "cnv.annotated.tsv",
     "sv.annotated.tsv",
-} | roh.MANAGED_NAMES
+} | roh.MANAGED_NAMES | dragen_cnv_rescue.MANAGED_NAMES
 
 
 def _run_automap_for_roh(
@@ -927,6 +927,17 @@ def _rebase_staged_derived_paths(
         )
         os.replace(tmp, manifest)
 
+    rescue_manifest = stage_post_dir / f"{sample_id}.{dragen_cnv_rescue.MANIFEST_NAME}"
+    if rescue_manifest.is_file():
+        payload = json.loads(rescue_manifest.read_text(encoding="utf-8"))
+        baseline = payload.get("inputs", {}).get("base_tsv")
+        if baseline:
+            relative = Path(baseline["path"]).relative_to(stage_post_dir.parent.resolve())
+            baseline["path"] = str((final_post_dir.parent / relative).absolute())
+            tmp = rescue_manifest.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            os.replace(tmp, rescue_manifest)
+
 
 def _path_exists(path: Path) -> bool:
     return path.exists() or path.is_symlink()
@@ -1480,6 +1491,20 @@ def _run(
         raise RuntimeError(f"{label} failed (exit {proc.returncode})")
 
 
+def _run_cnv_rescue_for_sample(*, mode: str, sample: dict, base_tsv: Path,
+                               post_dir: Path, scripts: Path, on_line=None) -> None:
+    if mode != "dragen":
+        return
+    # Independent of --skip-cnv: 06 has already discarded non-PASS CNVs.
+    _run(
+        [sys.executable, str(scripts / "rescue_dragen_cnv.py"),
+         "--dragen-vcf", sample["vcf_path"], "--base-tsv", str(base_tsv),
+         "--post-dir", str(post_dir), "--sample", sample["sample_id"],
+         "--source-sample", sample["source_sample_id"]],
+        label=f"DRAGEN CNV rescue {sample['sample_id']}", on_line=on_line,
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--job-id", required=True)
@@ -1845,6 +1870,7 @@ def main() -> int:
         # 4. Prepare job-private 08_postprocessing beside staged 00-07.
         _set_step(job_id, "prepare-postprocessing")
         pipeline_annotsv_available: dict[str, set[str]] = {}
+        pipeline_cnv_by_sid: dict[str, Path] = {}
         raw_tsv_by_sid: dict[str, Path] = {}
         staged_sample_dir_by_sid: dict[str, Path] = {}
         final_raw_tsv_by_sid: dict[str, Path] = {}
@@ -1983,6 +2009,8 @@ def main() -> int:
                     )
                     continue
                 pipeline_annotsv_available.setdefault(sid, set()).add(kind)
+                if kind == "cnv":
+                    pipeline_cnv_by_sid[sid] = annotsv_src
                 _log(f"[source] {sid}: use pipeline {kind.upper()} TSV directly ({annotsv_src})")
 
         # 5. Post-processing chain. ClinVar is compared against the weekly UI
@@ -2061,6 +2089,10 @@ def main() -> int:
                     label=f"post-processing {sid}",
                     on_line=track_post_processing,
                     display_cmd=display_stop_args,
+                )
+                _run_cnv_rescue_for_sample(
+                    mode=mode, sample=sample, base_tsv=pipeline_cnv_by_sid[sid],
+                    post_dir=post_dir, scripts=scripts, on_line=track_post_processing,
                 )
                 _rebase_staged_derived_paths(
                     sample_id=sid,

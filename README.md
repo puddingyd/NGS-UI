@@ -14,6 +14,10 @@ Clinical presentation 的 Documents 圖片預覽可用左右按鈕或鍵盤 ←�
 
 > 開發者 / 接手者請另看 `CLAUDE.md`（架構、資料流、各模組細節、踩雷紀錄）與 `docs/`。
 
+DRAGEN 三級 post-processing 會救回原始 CNV 只有 `cnvLength`／`cnvQual`、且有 SV 支持的事件：A 為整合檔 `PASS + DJ + MatchSv`；B 為明確斷點連結、同染色體同 DEL/DUP、支持 SV 通過 FILTER／樣本 FT、GT 有 alt 且無明確基因型衝突，整合後區間的雙向重疊均 ≥50%。不放寬其他原始 filter，不新增人工候選流程，也不因 rescue 改變 ACMG。原本 PASS 沿用；只對新增 CNV 補 AnnotSV，原始 FILTER／QUAL、座標與支持 SV ID 可在卡片展開查看。in-house 不受影響。
+
+新步驟由 worker 自動執行（不受原 AnnotSV 的 `--skip-cnv` 影響），讀取同目錄同 sample 的 `.cnv.vcf.gz` 與 `.cnv_sv.vcf.gz`，不另讀原始 SV。需要 AnnotSV：可設定 `ANNOTSV_BIN`；否則使用 `NGS_UI_ANNOTSV_SIF` 指定 image，預設先找 `/home/datalake_Intermediate/pipeline/nextflow_containers/annotsv_3.5.10.sif`，再找舊 `/home/pipeline/nextflow_containers/`。`ANNOTSV_ANNOTATIONS` 指向 reference 的 `share/AnnotSV`；未設定時先找 `/home/pipeline/reference/hg38/tertiary/annotsv_annotations/share/AnnotSV`，再找 `NGS_UI_HOME/biotools/AnnotSV/share/AnnotSV`。缺少輸入檔會留下 warning／skipped 記錄並沿用原本結果；有可救回事件卻無法完成註解時，job 失敗且不發布不完整結果。舊個案需重新執行三級分析才產生 rescue（既有 Nextflow 步驟可沿用 resume cache）。
+
 ---
 
 ## 1. 目錄佈局
@@ -45,6 +49,8 @@ NGS_UI/                    ← NGS_UI_HOME
     ├── 04_mito/, 05_str/, 06_cnv_sv/, 07_pgx/ ← UI 直接讀，不再複製
     └── 08_postprocessing/
         ├── {LIS_ID}.layout.json, {LIS_ID}.pipeline_source.json
+        ├── {LIS_ID}.cnv.review.tsv, {LIS_ID}.cnv.rescued.annotated.tsv ← DRAGEN CNV 基準＋rescue／僅 rescue
+        ├── {LIS_ID}.cnv_rescue.json ← 規則、來源 checksum 與逐事件證據；完成時才啟用 review TSV
         ├── {LIS_ID}.snv_annotations.sqlite   ← post-processing 稀疏欄位 overlay
         ├── {LIS_ID}.snv_indel.review.tsv, {LIS_ID}.snv_gene_index.sqlite
         ├── {LIS_ID}.litvar2_annotation.json  ← filtered LitVar2 完成 marker / DB 版本

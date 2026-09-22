@@ -34,7 +34,7 @@ uses them to place content in the fixed horizontal layout.
 - secondary | CNV / SV calling
 - secondary_tools | gCNV (WES) · CNVkit (WGS) · Delly or DRAGEN
 - tertiary | AnnotSV
-- tertiary_tools | Gene content · ACMG class · region evidence
+- tertiary_tools | Gene content · ACMG class · region evidence · DRAGEN CNV rescue
 - prioritization | Clinical
 - prioritization | Pathogenic
 - context | Panel-gene overlap · pheno_score

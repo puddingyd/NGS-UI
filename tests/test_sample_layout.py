@@ -48,6 +48,30 @@ def test_pipeline_aux_files_are_read_directly(tmp_path, monkeypatch):
     assert sample_layout.pgx_tsv("S2") == pgx
 
 
+def test_cnv_review_requires_matching_completed_dragen_manifest(tmp_path, monkeypatch):
+    new, _, _ = _roots(tmp_path, monkeypatch)
+    sample = new / "S2"
+    raw = sample / "03_acmg" / "S2.snv_indel.acmg.tsv"
+    source = sample / "06_cnv_sv" / "S2.cnv.annotated.tsv"
+    for path in (raw, source):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    sample_layout.write_layout_marker("S2", source_id="S2", raw_tsv=raw)
+    post = sample / "08_postprocessing"
+    review = post / "S2.cnv.review.tsv"
+    review.touch()
+    manifest = post / "S2.cnv_rescue.json"
+    good = {"status": "complete", "pipeline": "dragen", "sample_id": "S2"}
+    for payload in [None, [], {**good, "status": "skipped"},
+                    {**good, "sample_id": "OTHER"}, {**good, "pipeline": "inhouse"}]:
+        manifest.write_text(json.dumps(payload))
+        assert sample_layout.cnv_tsv("S2") == source
+    manifest.write_text(json.dumps(good))
+    assert sample_layout.cnv_tsv("S2") == review
+    manifest.unlink()
+    assert sample_layout.cnv_tsv("S2") == source
+
+
 def test_v2_unprefixed_state_remains_readable_and_writable(tmp_path, monkeypatch):
     new, _old_ui, _old_pipeline = _roots(tmp_path, monkeypatch)
     post = new / "S3" / "08_postprocessing"
