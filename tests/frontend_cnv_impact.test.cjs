@@ -97,15 +97,16 @@ test('merged parent uses actual segments, preserves clinical scope and member pr
 test('toolbar remains usable with zero visible results; hide unknown only when absent', () => {
   const c = fixture();
   c.state.data.cnv_variants.a = variant('a');
-  let box = c._cnvSvImpactToolbar('CNV-1A', ['a'], []);
-  assert.match(box.innerHTML, /顯示 0／1/);
+  let box = c._cnvSvImpactToolbar('CNV-1A', ['a']);
+  assert.match(box.innerHTML, /Only UTR \/ intronic <span>\(1 \/ 1\)<\/span>/);
+  assert.doesNotMatch(box.innerHTML, /<legend|<button|顯示的影響類型|臨床優先排序|近似位點/);
   assert.doesNotMatch(box.innerHTML, /data-impact="unknown"/);
-  box.click({ target: { dataset: { action: 'all' } } });
+  box.change({ target: { dataset: { impact: 'noncoding' }, checked: true } });
   assert.equal(c._cnvSvPassesImpact(variant('a'), 'CNV-1A'), true);
-  box.click({ target: { dataset: { action: 'reset' } } });
+  box.change({ target: { dataset: { impact: 'noncoding' }, checked: false } });
   assert.equal(c._cnvSvPassesImpact(variant('a'), 'CNV-1A'), false);
   c.state.data.cnv_variants.u = variant('u', 'unknown');
-  box = c._cnvSvImpactToolbar('CNV-1A', ['a', 'u'], ['u']);
+  box = c._cnvSvImpactToolbar('CNV-1A', ['a', 'u']);
   assert.match(box.innerHTML, /data-impact="unknown" checked/);
   box.change({ target: { dataset: { impact: 'unknown' }, checked: false } });
   assert.equal(c._cnvSvPassesImpact(variant('u', 'unknown'), 'CNV-1A'), false);
@@ -123,6 +124,10 @@ test('protected near-duplicates remain visible and card evidence is escaped', ()
   const v = variant('x', 'unknown', { impact_clinical: { category: 'unknown', reasons: [{ gene: '<script>', impact: '不足' }] } });
   assert.match(c._renderCnvSvImpactReason(v, 'CNV-1A'), /&lt;script&gt;/);
   assert.equal(c._renderCnvSvImpactReason(v, undefined), '');
+  v.impact_clinical = { category: 'functional', hpo_score: 42.9,
+    reasons: [{ gene: 'SLC25A24', impact: '編碼外顯子' }] };
+  assert.match(c._renderCnvSvImpactReason(v, 'CNV-1A'),
+    /Exonic \/ splicing · 臨床相關基因：SLC25A24 \(coding exon\) · HPO match 42\.9 \/ 100/);
 });
 
 
@@ -139,9 +144,9 @@ test('actual four-panel rendering includes filters even when all events are hidd
   assert.match(c.bar.innerHTML, /0 \/ 1/);
   for (const tier of ['CNV-1A', 'SV-2A']) {
     const panel = c.panels[tier];
-    assert.match(panel.children[0].innerHTML, /顯示 0／1/);
-    assert.match(panel.children[1].innerHTML, /顯示全部/);
-    panel.children[0].click({ target: { dataset: { action: 'all' } } });
+    assert.match(panel.children[0].innerHTML, /\(1 \/ 1\)/);
+    assert.match(panel.children[1].innerHTML, /可勾選其他影響類型/);
+    panel.children[0].change({ target: { dataset: { impact: 'noncoding' }, checked: true } });
     const body = panel.children.at(-1);
     assert.equal(body.children.length, 1);
     assert.match(body.children[0].variantId, /-n$/);

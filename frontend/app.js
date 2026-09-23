@@ -6110,7 +6110,7 @@ function _cnvSvVirtualParents() {
 
 // Display filters apply to every caller/test type; eligibility and reports are unchanged.
 const CNV_SV_IMPACT_LABELS = {
-  functional: "外顯子／剪接影響", noncoding: "僅 UTR／內含子", unknown: "位置註解不足",
+  functional: "Exonic / splicing", noncoding: "Only UTR / intronic", unknown: "Insufficient annotation",
 };
 let cnvSvImpactSample = null;
 let cnvSvImpactFilters = {};
@@ -6173,14 +6173,10 @@ function _cnvSvCompareImpact(a, b, tier) {
     || String(a).localeCompare(String(b));
 }
 
-function _cnvSvImpactToolbar(tier, allIds, visibleIds) {
+function _cnvSvImpactToolbar(tier, allIds) {
   const filter = _cnvSvImpactFilter(tier);
   const counts = { functional: 0, noncoding: 0, unknown: 0 };
   allIds.forEach(id => counts[_cnvSvImpact(_cnvSvVariantById(id), tier).category]++);
-  const protectedCount = visibleIds.filter(id => {
-    const v = _cnvSvVariantById(id);
-    return !filter[_cnvSvImpact(v, tier).category] && _cnvSvImpactProtected(v, tier);
-  }).length;
   const box = document.createElement("div");
   box.className = "cnv-sv-impact-toolbar";
   const hints = {
@@ -6188,25 +6184,15 @@ function _cnvSvImpactToolbar(tier, allIds, visibleIds) {
     noncoding: "明確只有 UTR 或內含子受影響，沒有編碼外顯子或近剪接位置影響。",
     unknown: "位置或斷點註解不足，無法可靠歸類；這不代表 ACMG 的 VUS 分類。",
   };
-  box.innerHTML = `<fieldset><legend>顯示的影響類型</legend>
+  box.innerHTML = `<fieldset aria-label="CNV/SV impact filters">
     ${Object.entries(CNV_SV_IMPACT_LABELS).filter(([key]) => key !== "unknown" || counts.unknown > 0)
       .map(([key, label]) => `<label title="${hints[key]}"><input type="checkbox" data-impact="${key}" ${filter[key] ? "checked" : ""}>
-        ${label} <span>(${counts[key]})</span></label>`).join("")}
-    </fieldset><div class="cnv-sv-impact-actions">
-    <button type="button" data-action="all">顯示全部</button>
-    <button type="button" data-action="reset">恢復預設</button>
-    <span>顯示 ${visibleIds.length}／${allIds.length} 個事件 · 臨床優先排序</span></div>
-    <div class="cnv-sv-impact-note">${tier.endsWith("A") ? "P／LP 或" : ""}已標記 1／2／C 的事件保持顯示${protectedCount ? `（${protectedCount} 筆不受目前篩選影響）` : ""}；近似位點另行折疊。</div>`;
+        ${label} <span>(${counts[key]} / ${allIds.length})</span></label>`).join("")}
+    </fieldset>`;
   box.addEventListener("change", event => {
     const key = event.target.dataset.impact;
     if (!(key in CNV_SV_IMPACT_LABELS)) return;
     filter[key] = event.target.checked;
-    renderCnvSvTabBar();
-  });
-  box.addEventListener("click", event => {
-    const action = event.target.dataset.action;
-    if (!["all", "reset"].includes(action)) return;
-    Object.assign(filter, { functional: true, unknown: true, noncoding: action === "all" });
     renderCnvSvTabBar();
   });
   return box;
@@ -6216,10 +6202,20 @@ function _renderCnvSvImpactReason(v, tier) {
   if (!CNV_SV_TIER_ORDER.includes(tier)) return "";
   const summary = _cnvSvImpact(v, tier);
   const clinical = tier.endsWith("A");
-  const reasons = (summary.reasons || []).map(r => `${r.gene}：${r.impact}`).join("；");
-  return `<div class="cnv-sv-impact-reason"><strong>${escapeHtml(CNV_SV_IMPACT_LABELS[summary.category])}</strong>
-    ${clinical ? " · 臨床相關基因" : " · 事件涉及基因"}${reasons ? ` · ${escapeHtml(reasons)}` : ""}
-    ${summary.hpo_score > 0 ? ` · HPO ${Number(summary.hpo_score).toFixed(1)}` : ""}</div>`;
+  const impactNames = {
+    "編碼外顯子": "coding exon",
+    "完整基因": "whole gene",
+    "剪接位置（距離 ≤2 bp）": "splice site, ≤2 bp",
+    "純內含子": "intronic",
+    "僅 UTR／非編碼轉錄本": "UTR / noncoding transcript",
+    "斷點影響待釐清": "unresolved breakpoint impact",
+    "位置註解不足": "insufficient annotation",
+  };
+  const reasons = (summary.reasons || []).map(r =>
+    `${r.gene} (${impactNames[r.impact] || r.impact})`).join("; ");
+  return `<div class="cnv-sv-impact-reason">${escapeHtml(CNV_SV_IMPACT_LABELS[summary.category])}${reasons
+    ? ` · ${clinical ? "臨床相關基因" : "事件涉及基因"}：${escapeHtml(reasons)}` : ""}${summary.hpo_score > 0
+    ? ` · HPO match ${Number(summary.hpo_score).toFixed(1)} / 100` : ""}</div>`;
 }
 
 function _cnvSvIdsForTier(tier, applyFilter = true) {
@@ -6398,13 +6394,13 @@ function renderCnvSvTabBar() {
       panel.appendChild(wrap);
       return;
     }
-    if (allIds.length) panel.appendChild(_cnvSvImpactToolbar(tier, allIds, ids));
+    if (allIds.length) panel.appendChild(_cnvSvImpactToolbar(tier, allIds));
     if (!ids.length) {
       const empty = document.createElement("div");
       empty.className = "block-body";
       empty.innerHTML = (isClinical && !state.data?.has_phenotype)
         ? `<div class="analysis-card-empty">請先設定 phenotype（HPO / panel），才會有 Clinical 結果。</div>`
-        : `<div class="analysis-card-empty">${allIds.length ? "目前選項沒有符合的事件，可勾選其他類型或顯示全部。" : "（無資料）"}</div>`;
+        : `<div class="analysis-card-empty">${allIds.length ? "目前選項沒有符合的事件，可勾選其他影響類型。" : "（無資料）"}</div>`;
       panel.appendChild(empty);
       return;
     }
