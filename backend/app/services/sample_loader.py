@@ -1734,16 +1734,17 @@ def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | Non
     sub, _sd, hpo_list, panels_list, pheno_by_gene = ctx
     from . import phenotype_scorer
     pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(hpo_list, panels_list)
+    hpo_only = phenotype_scorer.compute_pheno_score(hpo_list, [])
     cnv_path = sample_layout.cnv_tsv(sample_id)
     sv_path  = sample_layout.sv_tsv(sample_id)
     cnv_variants, cnv_categories = (
         load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
         if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
     )
     sv_variants, sv_categories = (
         load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
     _log_perf(
@@ -1771,10 +1772,11 @@ def load_sample_cnv(sample_id: str, version: str | None = None) -> dict | None:
     sub, _sd, hpo_list, panels_list, pheno_by_gene = ctx
     from . import phenotype_scorer
     pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(hpo_list, panels_list)
+    hpo_only = phenotype_scorer.compute_pheno_score(hpo_list, [])
     cnv_path = sample_layout.cnv_tsv(sample_id)
     cnv_variants, cnv_categories = (
         load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
         if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
     )
     _log_perf(
@@ -1797,10 +1799,11 @@ def load_sample_sv(sample_id: str, version: str | None = None) -> dict | None:
     sub, _sd, hpo_list, panels_list, pheno_by_gene = ctx
     from . import phenotype_scorer
     pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(hpo_list, panels_list)
+    hpo_only = phenotype_scorer.compute_pheno_score(hpo_list, [])
     sv_path = sample_layout.sv_tsv(sample_id)
     sv_variants, sv_categories = (
         load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
     _log_perf(
@@ -2166,11 +2169,12 @@ def load_sample(sample_id: str, version: str | None = None,
         pheno_matched, pheno_total = phenotype_scorer.compute_pheno_match(
             hpo_list, panels_list
         )
+        hpo_only = phenotype_scorer.compute_pheno_score(hpo_list, [])
         cnv_variants, cnv_categories = (
             load_annotsv_tsv(
                 cnv_path, source="cnv",
                 pheno_by_gene=pheno_by_gene,
-                pheno_matched=pheno_matched, pheno_total=pheno_total,
+                pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only,
             )
             if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
         )
@@ -2178,7 +2182,7 @@ def load_sample(sample_id: str, version: str | None = None,
             load_annotsv_tsv(
                 sv_path, source="sv",
                 pheno_by_gene=pheno_by_gene,
-                pheno_matched=pheno_matched, pheno_total=pheno_total,
+                pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only,
             )
             if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
         )

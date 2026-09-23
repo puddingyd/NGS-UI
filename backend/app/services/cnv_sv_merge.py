@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from .cnv_sv_impact import merge_summaries
 
 MERGE_GAP_THRESHOLD = 250_000
 
@@ -65,6 +66,9 @@ def build_parent(merge: dict, variants: dict[str, dict]) -> dict | None:
         "cnv_sv_sort_score": best_combined if best_combined != -999 else parent.get("cnv_sv_sort_score"),
         "merged_segment_ids": list(member_ids),
         "is_merged_parent": True,
+        "impact_all": merge_summaries([v["impact_all"] for v in segments if "impact_all" in v]),
+        "impact_clinical": merge_summaries([v["impact_clinical"] for v in segments
+                                           if v.get("in_panel") and "impact_clinical" in v]),
         "cnv_rescue_events": [
             evidence for segment in segments
             for evidence in (segment.get("cnv_rescue_events") or

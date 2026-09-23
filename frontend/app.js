@@ -4349,6 +4349,7 @@ function setStatus(id, val) {
       updateInPanelCount();
     }
   }
+  if (kind === "cnv" || kind === "sv") renderCnvSvTabBar();
   _syncStatusRadios(id, "", val);
   updateSaveHint();
 }
@@ -6067,6 +6068,9 @@ function _cnvSvBuildParent(merge) {
     cnv_sv_sort_score: Number.isFinite(bestCombined) ? bestCombined : rep.cnv_sv_sort_score,
     genes_total: genes.length, merged_segment_ids: segments.map(v => v.id),
     is_merged_parent: true,
+    impact_all: _cnvSvMergeImpacts(segments.map(s => s.impact_all || { category: "unknown" })),
+    impact_clinical: _cnvSvMergeImpacts(segments.filter(s => s.in_panel)
+      .map(s => s.impact_clinical || { category: "unknown" })),
     cnv_rescue_events: segments.flatMap(seg => seg.cnv_rescue_events || (seg.cnv_rescue ? [seg.cnv_rescue] : [])),
   };
 }
@@ -6104,7 +6108,121 @@ function _cnvSvVirtualParents() {
   return _cnvSvMergeView().parents;
 }
 
-function _cnvSvIdsForTier(tier) {
+// Display filters apply to every caller/test type; eligibility and reports are unchanged.
+const CNV_SV_IMPACT_LABELS = {
+  functional: "外顯子／剪接影響", noncoding: "僅 UTR／內含子", unknown: "位置註解不足",
+};
+let cnvSvImpactSample = null;
+let cnvSvImpactFilters = {};
+
+function _cnvSvImpactFilter(tier) {
+  const sample = state.data?.sample_id || state.currentLIS || "";
+  if (sample !== cnvSvImpactSample) {
+    cnvSvImpactSample = sample;
+    cnvSvImpactFilters = {};
+  }
+  return cnvSvImpactFilters[tier] ||= { functional: true, noncoding: false, unknown: true };
+}
+
+function _cnvSvMergeImpacts(summaries) {
+  const items = summaries.filter(Boolean);
+  const category = ["functional", "unknown", "noncoding"].find(c => items.some(s => s.category === c)) || "unknown";
+  const chosen = items.filter(s => s.category === category);
+  return { category, reasons: chosen.flatMap(s => s.reasons || []).slice(0, 3),
+    hpo_score: Math.max(0, ...chosen.map(s => Number(s.hpo_score) || 0)),
+    mechanism: Math.max(0, ...chosen.map(s => Number(s.mechanism) || 0)) };
+}
+
+function _cnvSvImpact(v, tier) {
+  const clinical = tier === "CNV-1A" || tier === "SV-2A";
+  const key = clinical ? "impact_clinical" : "impact_all";
+  return v?.[key] || { category: "unknown", reasons: [], hpo_score: null, mechanism: 0 };
+}
+
+function _cnvSvReviewMembers(v) {
+  return [v, ...(v?.merged_segment_ids || []).map(_cnvSvBaseVariantById)].filter(Boolean);
+}
+
+function _cnvSvHasPlp(v) {
+  // Keep both original P/LP evidence and a new reviewer P/LP override visible.
+  return _cnvSvReviewMembers(v).some(s => [4, 5].includes(Number(s.acmg_class))
+    || [4, 5].includes(_cnvSvAcmgClassValue(s.id, s)));
+}
+
+function _cnvSvImpactProtected(v, tier) {
+  const clinical = !tier || tier.endsWith("A");
+  return (clinical && _cnvSvHasPlp(v)) || _cnvSvReviewMembers(v).some(s =>
+    _statusValues(state.reports?.status?.[s.id]).some(x => ["1", "2", "C"].includes(x)));
+}
+
+function _cnvSvPassesImpact(v, tier) {
+  return _cnvSvImpactProtected(v, tier) || !!_cnvSvImpactFilter(tier)[_cnvSvImpact(v, tier).category];
+}
+
+function _cnvSvCompareImpact(a, b, tier) {
+  const av = _cnvSvVariantById(a), bv = _cnvSvVariantById(b);
+  const ai = _cnvSvImpact(av, tier), bi = _cnvSvImpact(bv, tier);
+  const order = { functional: 0, unknown: 1, noncoding: 2 };
+  const rank = v => v?.ranking_score == null ? -Infinity : Number(v.ranking_score);
+  const ar = rank(av), br = rank(bv);
+  return Number(_cnvSvHasPlp(bv)) - Number(_cnvSvHasPlp(av))
+    || order[ai.category] - order[bi.category]
+    || (Number(bi.hpo_score) || 0) - (Number(ai.hpo_score) || 0)
+    || (bi.mechanism || 0) - (ai.mechanism || 0)
+    || (ar === br ? 0 : br - ar)
+    || String(a).localeCompare(String(b));
+}
+
+function _cnvSvImpactToolbar(tier, allIds, visibleIds) {
+  const filter = _cnvSvImpactFilter(tier);
+  const counts = { functional: 0, noncoding: 0, unknown: 0 };
+  allIds.forEach(id => counts[_cnvSvImpact(_cnvSvVariantById(id), tier).category]++);
+  const protectedCount = visibleIds.filter(id => {
+    const v = _cnvSvVariantById(id);
+    return !filter[_cnvSvImpact(v, tier).category] && _cnvSvImpactProtected(v, tier);
+  }).length;
+  const box = document.createElement("div");
+  box.className = "cnv-sv-impact-toolbar";
+  const hints = {
+    functional: "編碼外顯子、完整基因或剪接位置受到影響；UTR 另列於下一類。",
+    noncoding: "明確只有 UTR 或內含子受影響，沒有編碼外顯子或近剪接位置影響。",
+    unknown: "位置或斷點註解不足，無法可靠歸類；這不代表 ACMG 的 VUS 分類。",
+  };
+  box.innerHTML = `<fieldset><legend>顯示的影響類型</legend>
+    ${Object.entries(CNV_SV_IMPACT_LABELS).filter(([key]) => key !== "unknown" || counts.unknown > 0)
+      .map(([key, label]) => `<label title="${hints[key]}"><input type="checkbox" data-impact="${key}" ${filter[key] ? "checked" : ""}>
+        ${label} <span>(${counts[key]})</span></label>`).join("")}
+    </fieldset><div class="cnv-sv-impact-actions">
+    <button type="button" data-action="all">顯示全部</button>
+    <button type="button" data-action="reset">恢復預設</button>
+    <span>顯示 ${visibleIds.length}／${allIds.length} 個事件 · 臨床優先排序</span></div>
+    <div class="cnv-sv-impact-note">${tier.endsWith("A") ? "P／LP 或" : ""}已標記 1／2／C 的事件保持顯示${protectedCount ? `（${protectedCount} 筆不受目前篩選影響）` : ""}；近似位點另行折疊。</div>`;
+  box.addEventListener("change", event => {
+    const key = event.target.dataset.impact;
+    if (!(key in CNV_SV_IMPACT_LABELS)) return;
+    filter[key] = event.target.checked;
+    renderCnvSvTabBar();
+  });
+  box.addEventListener("click", event => {
+    const action = event.target.dataset.action;
+    if (!["all", "reset"].includes(action)) return;
+    Object.assign(filter, { functional: true, unknown: true, noncoding: action === "all" });
+    renderCnvSvTabBar();
+  });
+  return box;
+}
+
+function _renderCnvSvImpactReason(v, tier) {
+  if (!CNV_SV_TIER_ORDER.includes(tier)) return "";
+  const summary = _cnvSvImpact(v, tier);
+  const clinical = tier.endsWith("A");
+  const reasons = (summary.reasons || []).map(r => `${r.gene}：${r.impact}`).join("；");
+  return `<div class="cnv-sv-impact-reason"><strong>${escapeHtml(CNV_SV_IMPACT_LABELS[summary.category])}</strong>
+    ${clinical ? " · 臨床相關基因" : " · 事件涉及基因"}${reasons ? ` · ${escapeHtml(reasons)}` : ""}
+    ${summary.hpo_score > 0 ? ` · HPO ${Number(summary.hpo_score).toFixed(1)}` : ""}</div>`;
+}
+
+function _cnvSvIdsForTier(tier, applyFilter = true) {
   const cats = tier.startsWith("CNV-")
     ? state.data?.cnv_categories
     : state.data?.sv_categories;
@@ -6114,7 +6232,7 @@ function _cnvSvIdsForTier(tier) {
   _effectiveCnvSvMerges().forEach(merge => {
     const tierMembers = (merge.member_ids || []).filter(id => ids.includes(id));
     if (!tierMembers.length) return;
-    const parent = _cnvSvBuildParent(merge);
+    const parent = _cnvSvVirtualParents()[merge.id];
     if (!parent) return;
     tierMembers.forEach(id => suppressed.add(id));
     const anchor = tierMembers.reduce((best, id) => ids.indexOf(id) < ids.indexOf(best) ? id : best);
@@ -6125,10 +6243,8 @@ function _cnvSvIdsForTier(tier) {
     if (replacements.has(id)) out.push(replacements.get(id));
     if (!suppressed.has(id)) out.push(id);
   });
-  return out.sort((a, b) => {
-    const diff = _annotSvSortScore(_cnvSvVariantById(b)) - _annotSvSortScore(_cnvSvVariantById(a));
-    return diff || String(a).localeCompare(String(b));
-  });
+  return out.filter(id => !applyFilter || _cnvSvPassesImpact(_cnvSvVariantById(id), tier))
+    .sort((a, b) => _cnvSvCompareImpact(a, b, tier));
 }
 
 // ---------- CNV/SV near-duplicate clustering ----------------------
@@ -6164,7 +6280,7 @@ function _cnvSvReciprocalOverlap(a, b) {
   return ov / Math.max(sa[1] - sa[0], sb[1] - sb[0]);
 }
 
-function _cnvSvClusterIds(ids) {
+function _cnvSvClusterIds(ids, tier) {
   // {reps: [repId, ...], members: {repId: [otherIds]}} preserving input
   // order so the first id of each cluster (= highest ranking_score
   // because tiers are pre-sorted) becomes the representative.
@@ -6179,6 +6295,7 @@ function _cnvSvClusterIds(ids) {
       if (!rv) continue;
       if ((rv.CHROM || "") !== (v.CHROM || "")) continue;
       if ((rv.sv_type || "") !== (v.sv_type || "")) continue;
+      if (_cnvSvImpactProtected(v, tier) || _cnvSvImpactProtected(rv, tier)) continue;
       if (_cnvSvReciprocalOverlap(rv, v) >= CNV_SV_CLUSTER_OVERLAP_THRESHOLD) {
         foundRep = repId;
         break;
@@ -6254,10 +6371,11 @@ function renderCnvSvTabBar() {
   bar.innerHTML = CNV_SV_TIER_ORDER.map(t => {
     const active = t === activeCnvSvTab ? " active" : "";
     const ids = _cnvSvIdsForTier(t);
+    const total = _cnvSvIdsForTier(t, false).length;
     const loading = t.startsWith("CNV-") ? !!state.cnvPending : !!state.svPending;
     return `<button type="button" class="tier-tab ${CNV_SV_TIER_CLASS[t]}${active}" data-tier="${t}">
               <span class="tier-tab-title">${escapeHtml(CNV_SV_TITLES[t])}</span>
-              <span class="tier-tab-count">${loading ? "…" : "Total " + ids.length}</span>
+              <span class="tier-tab-count">${loading ? "…" : ids.length + " / " + total}</span>
             </button>`;
   }).join("");
 
@@ -6269,6 +6387,7 @@ function renderCnvSvTabBar() {
     const panel = document.querySelector(`#cnv-sv-tab-panels .tier-panel[data-tier="${tier}"]`);
     if (!panel) return;
     const ids = _cnvSvIdsForTier(tier);
+    const allIds = _cnvSvIdsForTier(tier, false);
     const loading = tier.startsWith("CNV-") ? !!state.cnvPending : !!state.svPending;
     const isClinical = tier.endsWith("-1A") || tier.endsWith("-2A");
     panel.innerHTML = "";
@@ -6279,18 +6398,19 @@ function renderCnvSvTabBar() {
       panel.appendChild(wrap);
       return;
     }
+    if (allIds.length) panel.appendChild(_cnvSvImpactToolbar(tier, allIds, ids));
     if (!ids.length) {
       const empty = document.createElement("div");
       empty.className = "block-body";
       empty.innerHTML = (isClinical && !state.data?.has_phenotype)
         ? `<div class="analysis-card-empty">請先設定 phenotype（HPO / panel），才會有 Clinical 結果。</div>`
-        : `<div class="analysis-card-empty">（無資料）</div>`;
+        : `<div class="analysis-card-empty">${allIds.length ? "目前選項沒有符合的事件，可勾選其他類型或顯示全部。" : "（無資料）"}</div>`;
       panel.appendChild(empty);
       return;
     }
     const body = document.createElement("div");
     body.className = "block-body open";
-    const { reps, members } = _cnvSvClusterIds(ids);
+    const { reps, members } = _cnvSvClusterIds(ids, tier);
     reps.forEach((repId, i) => {
       const v = _cnvSvVariantById(repId);
       if (!v) return;
@@ -7150,6 +7270,7 @@ function renderCnvSvCard(v, id, opts = {}) {
   card.dataset.id = id;
   card.innerHTML = `
     ${_renderCnvSvHeader(v, id, opts)}
+    ${_renderCnvSvImpactReason(v, opts.tier)}
     ${_renderCnvSvDetailBox(v, id)}
     ${_renderCnvSvGeneTable(v, id)}
     ${_renderCnvSvOverlap(v)}
@@ -7187,6 +7308,8 @@ document.addEventListener("change", ev => {
     t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
     const next = SV_ACMG_SIG_CLASS[Number(t.value)];
     if (next) t.classList.add(next);
+    renderCnvSvTabBar();
+    renderReportSections();
     updateSaveHint();
   } else if (t.matches(".mito-acmg-select")) {
     setEdit(id, "ACMG_classification_mito", t.value);

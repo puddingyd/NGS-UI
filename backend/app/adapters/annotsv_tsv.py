@@ -27,7 +27,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from ..services import gene_disease_store, panel_deadzone
+from ..services import gene_disease_store, panel_deadzone, cnv_sv_impact
 
 # Tier names mirror the frontend's CNV_SV_TIER_ORDER.
 CNV_TIERS = ["CNV-1A", "CNV-1B"]
@@ -150,6 +150,10 @@ def _split_row_to_gene(
         "frameshift":       (row.get("Frameshift") or "").strip(),
         "overlap_cds_pct":  _to_float(row.get("Overlapped_CDS_percent")),
         "overlap_cds_len":  _to_int(row.get("Overlapped_CDS_length")),
+        "splice_distance": _to_float(row.get("Dist_nearest_SS")),
+        "splice_type":     (row.get("Nearest_SS_type") or "").strip(),
+        "hi":              _to_int(row.get("HI")),
+        "ts":              _to_int(row.get("TS")),
         "omim_id":          (row.get("OMIM_ID") or "").strip(),
         "omim_phenotype":   (row.get("OMIM_phenotype") or "").strip(),
         "omim_inheritance": (row.get("OMIM_inheritance") or "").strip(),
@@ -311,6 +315,7 @@ _SPLIT_COLS = (
     "Tx", "Tx_version", "Location", "Location2",
     "Exon_count", "Frameshift",
     "Overlapped_CDS_percent", "Overlapped_CDS_length",
+    "Dist_nearest_SS", "Nearest_SS_type", "HI", "TS",
     "OMIM_ID", "OMIM_phenotype", "OMIM_inheritance",
     "LOEUF_bin", "GnomAD_pLI", "ExAC_pLI",
 )
@@ -356,6 +361,7 @@ def load_annotsv_tsv(
     pheno_by_gene: dict[str, float] | None = None,
     pheno_matched: dict[str, float] | None = None,
     pheno_total: float = 0.0,
+    hpo_by_gene: dict[str, float] | None = None,
 ) -> tuple[dict[str, dict], dict[str, list[str]]]:
     """Read AnnotSV output → ({annotsv_id: variant}, {tier: [ids]}).
 
@@ -397,6 +403,7 @@ def load_annotsv_tsv(
             if not aid:
                 continue
             if mode == "full":
+                pending_genes = variants.get(aid, {}).get("genes", [])
                 variants[aid] = _full_row_to_variant(
                     row,
                     sample_col_idx=sample_idx,
@@ -404,6 +411,7 @@ def load_annotsv_tsv(
                     raw_full_values=raw,
                     source=source,
                 )
+                variants[aid]["genes"] = pending_genes
             elif mode == "split":
                 # Split rows ride alongside the full row; if we haven't
                 # seen the full one yet (file not strictly ordered),
@@ -411,6 +419,8 @@ def load_annotsv_tsv(
                 gene_rec = _split_row_to_gene(
                     row, pheno_by_gene, pheno_matched, pheno_total
                 )
+                gene_rec["hpo_score"] = (hpo_by_gene.get(gene_rec["gene"], 0.0)
+                                          if hpo_by_gene is not None else None)
                 if aid in variants:
                     variants[aid]["genes"].append(gene_rec)
                 else:
@@ -442,6 +452,7 @@ def load_annotsv_tsv(
         v["max_pheno_score"] = max_score
         for tier in _classify(v, source):
             categories[tier].append(aid)
+        cnv_sv_impact.attach(v)
         # Trim the gene array. Without this, a 1518-gene SV carries
         # 600 KB of per-gene records all the way to the browser.
         visible, ov_full, ov_compact, total = _trim_genes(v["genes"])

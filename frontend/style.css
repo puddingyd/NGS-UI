@@ -2797,6 +2797,16 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .cnv-sv-detail-row + .cnv-sv-detail-row { margin-top: 6px; }
 .cnv-sv-detail-box strong { color: #111827; font-weight: 600; }
+
+.cnv-sv-impact-toolbar { margin: 10px 12px; padding: 10px 12px; background: #f8fafc; border: 1px solid #dbe3e9; border-radius: 6px; }
+.cnv-sv-impact-toolbar fieldset { display: flex; flex-wrap: wrap; gap: 8px 18px; border: 0; margin: 0 0 8px; padding: 0; }
+.cnv-sv-impact-toolbar legend { font-weight: 600; margin-bottom: 6px; }
+.cnv-sv-impact-toolbar label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.cnv-sv-impact-toolbar input { accent-color: #41646b; }
+.cnv-sv-impact-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cnv-sv-impact-actions button { padding: 3px 8px; background: white; border: 1px solid #b9c7ce; border-radius: 4px; cursor: pointer; }
+.cnv-sv-impact-note { color: #52616b; font-size: 12px; margin-top: 6px; }
+.cnv-sv-impact-reason { margin: 4px 0 8px; color: #365660; font-size: 13px; overflow-wrap: anywhere; }
 .cnv-sv-reasoning { margin-top: 6px; font-size: 12px; color: #374151; }
 .cnv-sv-reasoning summary {
   cursor: pointer; user-select: none;
