@@ -360,7 +360,10 @@ def _apply_page_margins(doc) -> None:
 # everything else as 1.
 
 def _ea_width(c: str) -> int:
-    return 2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+    # MingLiU renders the em dash as a full-width glyph even though Unicode
+    # classifies it as East-Asian Ambiguous.  Counting it as one column leaves
+    # one visible extra blank before the next ASCII-table cell.
+    return 2 if c == "—" or unicodedata.east_asian_width(c) in ("W", "F") else 1
 
 
 def _str_width(s: str) -> int:
@@ -588,11 +591,9 @@ def _section_panel_set(doc) -> None:
     _blank(doc)
 
 
-def _summary_line(name: str, hpo_labels: list[str]) -> str:
-    """『在非特定 (term, term, ...) 檢驗套組中未找到已知致病性位點。』"""
-    if hpo_labels:
-        return f"    在{name} ({', '.join(hpo_labels)}) 檢驗套組中未找到已知致病性位點。"
-    return f"    在{name}檢驗套組中未找到已知致病性位點。"
+def _summary_line() -> str:
+    """Fixed first-category negative statement for diagnostic reports."""
+    return "    未找到與臨床症狀相關基因之已知致病性變異位點。"
 
 
 def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
@@ -649,31 +650,47 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     man1 = _manual_for(report, "1")
     man2 = _manual_for(report, "2")
 
+    def _render_bucket(items: list[tuple[str, dict]], tier: str) -> None:
+        """Keep same-gene SNVs in one heading/table/narrative block."""
+        snv_groups: dict[str, list[tuple[dict, dict]]] = {}
+        other_items: list[tuple[str, dict]] = []
+        for kind, variant in items:
+            if kind != "snv":
+                other_items.append((kind, variant))
+                continue
+            variant_edits = edits.get(variant.get("id", ""), {})
+            gene = _snv_tx_field(variant, variant_edits, "gene_symbol").strip()
+            # Do not merge unrelated records whose gene is unavailable.
+            key = gene or f"__missing__:{variant.get('id', id(variant))}"
+            snv_groups.setdefault(key, []).append((variant, variant_edits))
+
+        for rows in snv_groups.values():
+            _snv_gene_block(doc, rows, tier=tier)
+            _blank(doc)
+        for kind, variant in other_items:
+            _render_variant(
+                doc,
+                kind,
+                variant,
+                tier=tier,
+                edits=edits.get(variant.get("id", ""), {}),
+                is_wgs=is_wgs,
+            )
+
     # — 第一類
     _add_paragraph(doc, "    第一類：與臨床症狀相關基因之已知致病性變異位點")
     if bucket1 or man1:
-        for kind, v in bucket1:
-            _render_variant(doc, kind, v, tier="1",
-                            edits=edits.get(v.get("id", ""), {}),
-                            is_wgs=is_wgs)
+        _render_bucket(bucket1, "1")
         for m in man1:
             _render_manual_variant(doc, m)
     else:
-        # Empty bucket — match the template's wording. We mirror past
-        # reports that surface the HPO labels in the empty notice.
-        hpo_labels = [r.get("label", "") or r.get("phenotype", "")
-                      for r in (sample.get("patient_phenotype") or [])]
-        hpo_labels = [x for x in hpo_labels if x][:8]
-        _add_paragraph(doc, _summary_line("非特定", hpo_labels))
+        _add_paragraph(doc, _summary_line())
     _blank(doc)
 
     # — 第二類
     _add_paragraph(doc, "    第二類：其他變異位點")
     if bucket2 or man2:
-        for kind, v in bucket2:
-            _render_variant(doc, kind, v, tier="2",
-                            edits=edits.get(v.get("id", ""), {}),
-                            is_wgs=is_wgs)
+        _render_bucket(bucket2, "2")
         for m in man2:
             _render_manual_variant(doc, m)
     else:
@@ -958,22 +975,76 @@ def _snv_transcript_label(v: dict, edits: dict) -> str:
 
 
 def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
-    gene = _snv_tx_field(v, edits, "gene_symbol") or "?"
-    tx   = _snv_transcript_label(v, edits)
-    _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
-    rs    = v.get("rs_id") or v.get("RS_ID") or ""
-    struc = _structure_label({
-        **v,
-        "exon": _snv_tx_field(v, edits, "exon"),
-        "intron": _snv_tx_field(v, edits, "intron"),
-    })
-    hgvs_c = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
-    hgvs_p = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
-    nuc    = hgvs_c + (f"({hgvs_p})" if hgvs_p else "")
-    # 基因型 column stays in English per spec (Heterozygous / Homozygous)
-    zyg    = _zygosity_long(v.get("zygosity", ""))
-    clnsig = _clinvar_label(v)
-    acmg   = _acmg_label(v, edits)
+    _snv_gene_block(doc, [(v, edits)], tier=tier)
+
+
+def _patho_sentence_for_classes(acmg_classes: Iterable[str]) -> str:
+    labels = list(dict.fromkeys(
+        str(label or "").strip()
+        for label in acmg_classes
+        if str(label or "").strip()
+    ))
+    if len(labels) <= 1:
+        return _patho_sentence(labels[0] if labels else "")
+
+    normalized = {
+        label.lower().replace("_", " ")
+        for label in labels
+    }
+    combined = _health_pathogenicities_zh(labels)
+    if normalized.issubset({"pathogenic", "likely pathogenic"}):
+        return "此為致病性及疑似致病性之變異位點，與臨床症狀相關。"
+    return (
+        f"此組變異位點的ACMG判讀分別為{combined}，其臨床意義須由醫師"
+        "配合其他相關資料進行最佳綜合判斷。"
+    )
+
+
+def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
+    """Render one diagnostic block containing every selected SNV in a gene."""
+    first_v, first_edits = rows[0]
+    gene = _snv_tx_field(first_v, first_edits, "gene_symbol") or "?"
+    tx_labels = list(dict.fromkeys(
+        _snv_transcript_label(variant, variant_edits)
+        for variant, variant_edits in rows
+        if _snv_transcript_label(variant, variant_edits)
+    ))
+    heading = f"    {gene}"
+    if tx_labels:
+        heading += f" ({' / '.join(tx_labels)})"
+    _add_paragraph(doc, heading, bold=True)
+
+    table_rows: list[list[str]] = []
+    acmg_labels: list[str] = []
+    disease_lines: list[str] = []
+    for variant, variant_edits in rows:
+        row_gene = _snv_tx_field(variant, variant_edits, "gene_symbol") or gene
+        struc = _structure_label({
+            **variant,
+            "exon": _snv_tx_field(variant, variant_edits, "exon"),
+            "intron": _snv_tx_field(variant, variant_edits, "intron"),
+        })
+        hgvs_c = _strip_hgvs_prefix(
+            _snv_tx_field(variant, variant_edits, "HGVS_C", "hgvs_c")
+        )
+        hgvs_p = _strip_hgvs_prefix(
+            _snv_tx_field(variant, variant_edits, "HGVS_P", "hgvs_p")
+        )
+        acmg = _acmg_label(variant, variant_edits)
+        acmg_labels.append(acmg)
+        disease_line = _omim_block_for_snv(variant, variant_edits)
+        if disease_line not in disease_lines:
+            disease_lines.append(disease_line)
+        table_rows.append([
+            tier,
+            row_gene,
+            variant.get("rs_id") or variant.get("RS_ID") or "",
+            struc,
+            hgvs_c + (f"({hgvs_p})" if hgvs_p else ""),
+            _zygosity_long(variant.get("zygosity", "")),
+            _clinvar_label(variant),
+            acmg,
+        ])
 
     _ascii_table(doc, columns=[
         ("類別",          5),
@@ -984,10 +1055,15 @@ def _snv_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
         ("基因型",       13),
         ("ClinVar",      16, "token-buffered"),
         ("ACMG&AMP指引", 12, "token"),
-    ], rows=[[tier, gene, rs, struc, nuc, zyg, clnsig, acmg]])
+    ], rows=table_rows)
 
-    _add_paragraph(doc, f"    1. {_omim_block_for_snv(v, edits)}")
-    _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
+    for index, disease_line in enumerate(disease_lines, start=1):
+        _add_paragraph(doc, f"    {index}. {disease_line}")
+    _add_paragraph(
+        doc,
+        f"    {len(disease_lines) + 1}. {_patho_sentence_for_classes(acmg_labels)}",
+    )
+
 
 def _snv_reference_text(v: dict, edits: dict, *, acmg_zh: bool = False) -> str:
     gene = _snv_tx_field(v, edits, "gene_symbol") or "?"
