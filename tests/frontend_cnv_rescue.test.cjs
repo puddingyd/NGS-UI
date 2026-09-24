@@ -39,8 +39,25 @@ test('unrescued events render nothing; merged parents show every rescued member'
   assert.equal((html.match(/cnv-rescue-event"/g) || []).length, 2);
 });
 
+test('integrated PASS and B show only final evidence, without fabricated Rule A or PASS', () => {
+  const modern = { policy_version: 2, rule: 'PASS', svclaim: 'D',
+    integrated: { chrom: 'chr1', pos: 1000, end: 8000, filter: 'PASS', qual: '50' }, sv_support: [] };
+  let html = render({ cnv_rescue: modern });
+  assert.match(html, /DRAGEN PASS/);
+  assert.match(html, /Depth support/);
+  assert.doesNotMatch(html, /原始 CNV|Rule A|Rule PASS|junction/);
+  html = render({ cnv_rescue: { ...modern, svclaim: 'DJ', sv_support: [{ original_sv_id: 'matched' }] } });
+  assert.match(html, /Depth \+ junction support/);
+  assert.match(html, /matched/);
+  html = render({ cnv_rescue: { ...modern, rule: 'B', svclaim: 'DJ',
+    integrated: { ...modern.integrated, filter: 'cnvLength;cnvQual', qual: '5' }, sv_support: evidence.sv_support } });
+  assert.match(html, /Rule B/);
+  assert.match(html, /cnvLength;cnvQual/);
+  assert.doesNotMatch(html, /DRAGEN PASS|原始 CNV/);
+});
+
 test('rescue progress follows gene indexing for each sample in a batch', () => {
-  assert.equal(context._dragenJobStepLabel({ step: 'post-processing:cnv-rescue' }), 'DRAGEN CNV rescue');
+  assert.equal(context._dragenJobStepLabel({ step: 'post-processing:cnv-rescue' }), 'DRAGEN CNV 整合註解');
   for (const index of [0, 1]) {
     const state = { state: 'running', post_processing_sample_count: 2, post_processing_sample_index: index };
     const before = context._dragenProgressPercent({ ...state, step: 'sample-step:gene-index' });

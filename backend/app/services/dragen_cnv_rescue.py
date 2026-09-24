@@ -1,4 +1,4 @@
-"""DRAGEN-only CNV rescue from original CNV + integrated CNV/SV VCFs.
+"""DRAGEN CNV review from integrated CNV/SV PASS calls plus Rule B.
 
 No calling, ACMG override, or modification of the 00-07 pipeline artifacts.
 Coordinates used by the matching rule are VCF (POS, END], i.e. END-POS bp.
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-POLICY_VERSION = 1
+POLICY_VERSION = 2
 ALLOWED_FILTERS = frozenset({"cnvLength", "cnvQual"})
 REVIEW_NAME = "cnv.review.tsv"
 RESCUED_NAME = "cnv.rescued.annotated.tsv"
@@ -126,11 +126,10 @@ def _supported(cnv: Record, sv: Record) -> tuple[float, float] | None:
     return overlap / (end - start), overlap / (right - left)
 
 
-def select_rescues(original: list[Record], integrated: list[Record]) -> tuple[list[dict], dict]:
-    originals = defaultdict(list)
-    for record in original:
-        if record.fields[4] in ("<DEL>", "<DUP>"):
-            originals[record.key].append(record)
+def select_integrated_cnvs(integrated: list[Record],
+                           identity_ids: dict | None = None) -> tuple[list[dict], dict]:
+    """Select using the integrated file alone; legacy IDs never affect eligibility."""
+    identity_ids = identity_ids or {}
     links = defaultdict(list)
     for record in integrated:
         if record.info.get("SVCLAIM") != "J" or record.kind not in ("DEL", "DUP"):
@@ -143,52 +142,43 @@ def select_rescues(original: list[Record], integrated: list[Record]) -> tuple[li
     for cnv in integrated:
         if cnv.info.get("SVTYPE") != "CNV" or cnv.fields[4] not in ("<DEL>", "<DUP>"):
             continue
+        if cnv.info.get("SVCLAIM") not in ("D", "DJ"):
+            raise ValueError(f"Missing or unsupported SVCLAIM for CNV: {cnv.id}")
         if cnv.key[0] not in {str(n) for n in range(1, 23)} | {"X", "Y"}:
             counts["non_primary_contig"] += 1
             continue
         key = (cnv.key[0], int(cnv.info.get("OrigCnvPos", cnv.fields[1])),
                int(cnv.info.get("OrigCnvEnd", cnv.info["END"])), cnv.kind)
-        matches = originals[key]
-        if len(matches) != 1:
-            counts["unmatched_or_ambiguous_original"] += 1
-            continue
-        raw = matches[0]
-        filters = set(raw.fields[6].split(";"))
-        if raw.fields[6] == "PASS":
-            counts["original_pass"] += 1
-            continue
-        if not filters or not filters <= ALLOWED_FILTERS:
-            counts["other_original_filter"] += 1
-            continue
         rule, support = "", []
-        if cnv.info.get("SVCLAIM") == "DJ":
-            if cnv.fields[6] == "PASS" and cnv.info.get("MatchSv") not in (None, "", "."):
-                rule = "A"
+        if cnv.fields[6] == "PASS":
+            rule = "PASS"
+            if cnv.info.get("MatchSv") not in (None, "", "."):
                 support = [{"original_sv_id": cnv.info["MatchSv"]}]
-            elif set(cnv.fields[6].split(";")) <= ALLOWED_FILTERS:
-                for sv, forward in links[cnv.id]:
-                    reference = cnv.info.get(forward, "")
-                    if not reference or reference == ".":
-                        continue
-                    overlap = _supported(cnv, sv)
-                    if overlap is not None:
-                        support.append({**sv.evidence(), "link": forward,
-                                        "original_sv_id": reference.removesuffix(".end"),
-                                        "cnv_overlap": overlap[0], "sv_overlap": overlap[1]})
-                if support:
-                    rule = "B"
+        elif (cnv.info.get("SVCLAIM") == "DJ"
+              and set(cnv.fields[6].split(";")) <= ALLOWED_FILTERS):
+            for sv, forward in links[cnv.id]:
+                reference = cnv.info.get(forward, "")
+                if not reference or reference == ".":
+                    continue
+                overlap = _supported(cnv, sv)
+                if overlap is not None:
+                    support.append({**sv.evidence(), "link": forward,
+                                    "original_sv_id": reference.removesuffix(".end"),
+                                    "cnv_overlap": overlap[0], "sv_overlap": overlap[1]})
+            if support:
+                rule = "B"
         if not rule:
             counts["no_qualifying_sv_support"] += 1
             continue
         if key in seen:
-            raise ValueError(f"Multiple rescued records for original CNV: {raw.id}")
+            raise ValueError(f"Multiple integrated records for CNV identity: {key}")
         seen.add(key)
-        stable_id = f"CNVRESCUE-{key[0]}-{key[1]}-{key[2]}-{key[3]}"
+        stable_id = identity_ids.get(key) or f"CNVRESCUE-{key[0]}-{key[1]}-{key[2]}-{key[3]}"
         evidence = {"policy_version": POLICY_VERSION, "rule": rule,
-                    "original": raw.evidence(), "integrated": cnv.evidence(),
+                    "svclaim": cnv.info["SVCLAIM"], "integrated": cnv.evidence(),
                     "sv_support": support}
         selected.append({"id": stable_id, "record": cnv, "evidence": evidence})
-        counts[f"rescued_{rule}"] += 1
+        counts["integrated_pass" if rule == "PASS" else "rescued_B"] += 1
     return selected, dict(counts)
 
 
@@ -220,13 +210,34 @@ def _write_tsv(path: Path, headers: list[str], rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-def merge_annotations(base: Path, annotated: Path, selected: list[dict],
-                      rescued_out: Path, review_out: Path) -> dict:
-    """Validate every rescue has a full annotation; preserve existing IDs/state."""
-    base_header, base_rows = _read_tsv(base)
+def legacy_identity_ids(base: Path | None) -> dict:
+    """Read only the old event identities, never reuse annotation or filter values."""
+    if base is None or not base.is_file():
+        return {}
+    ids = {}
+    with base.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            if row.get("Annotation_mode") != "full":
+                continue
+            key = (_chrom(row["SV_chrom"]), int(row["SV_start"]),
+                   int(row["SV_end"]), row["SV_type"])
+            if key in ids:
+                raise ValueError(f"Ambiguous legacy CNV identity: {key}")
+            ids[key] = row["AnnotSV_ID"]
+    return ids
+
+
+def validate_annotations(annotated: Path, selected: list[dict],
+                         review_out: Path, source_sample: str) -> dict:
+    """Publish exclusively fresh annotations, with one full row per selected event."""
     new_header, new_rows = _read_tsv(annotated)
+    if ("FORMAT" not in new_header or new_header.index("FORMAT") + 1 >= len(new_header)
+            or new_header[new_header.index("FORMAT") + 1] != source_sample):
+        raise ValueError("AnnotSV sample column does not match source sample")
     by_id = {item["id"]: item for item in selected}
-    full_seen, grouped = set(), defaultdict(list)
+    if len(by_id) != len(selected):
+        raise ValueError("Duplicate stable CNV IDs")
+    full_seen = set()
     for row in new_rows:
         rescue_id = row.get("ID", "")
         if rescue_id not in by_id:
@@ -236,38 +247,22 @@ def merge_annotations(base: Path, annotated: Path, selected: list[dict],
             if rescue_id in full_seen:
                 raise ValueError(f"Duplicate full annotation for {rescue_id}")
             full_seen.add(rescue_id)
+            record = by_id[rescue_id]["record"]
+            key = (_chrom(row["SV_chrom"]), int(row["SV_start"]),
+                   int(row["SV_end"]), row["SV_type"])
+            if key != record.key or row.get("FILTER") != record.fields[6]:
+                raise ValueError(f"AnnotSV changed integrated CNV coordinates/type/FILTER: {rescue_id}")
             row[EVIDENCE_COLUMN] = json.dumps(by_id[rescue_id]["evidence"], separators=(",", ":"))
         else:
             row[EVIDENCE_COLUMN] = ""
-        grouped[rescue_id].append(row)
     if full_seen != set(by_id):
-        raise ValueError(f"AnnotSV omitted {len(set(by_id) - full_seen)} rescued CNVs")
+        raise ValueError(f"AnnotSV omitted {len(set(by_id) - full_seen)} selected CNVs")
 
-    # Compare the actual AnnotSV coordinates, not a guessed VCF/BED conversion.
-    def key(row):
-        return (_chrom(row["SV_chrom"]), int(row["SV_start"]), int(row["SV_end"]), row["SV_type"])
-    base_keys = {key(row) for row in base_rows if row["Annotation_mode"] == "full"}
-    new_kept, duplicate_ids = [], []
-    for rescue_id, rows in grouped.items():
-        full = next(row for row in rows if row["Annotation_mode"] == "full")
-        if key(full) in base_keys:
-            duplicate_ids.append(rescue_id)
-            continue
-        base_keys.add(key(full))
-        new_kept.extend(rows)
-
-    # FORMAT must stay immediately beside the actual sample column for the adapter.
-    if "FORMAT" in base_header and "FORMAT" in new_header:
-        base_sample = base_header[base_header.index("FORMAT") + 1]
-        new_sample = new_header[new_header.index("FORMAT") + 1]
-        if base_sample != new_sample:
-            raise ValueError("AnnotSV sample columns differ between baseline and rescue")
-    headers = base_header + [h for h in new_header if h not in base_header]
+    headers = list(new_header)
     if EVIDENCE_COLUMN not in headers:
         headers.append(EVIDENCE_COLUMN)
-    _write_tsv(rescued_out, headers, new_kept)
-    _write_tsv(review_out, headers, base_rows + new_kept)
-    return {"added_events": len(grouped) - len(duplicate_ids), "already_annotated": duplicate_ids}
+    _write_tsv(review_out, headers, new_rows)
+    return {"annotated_events": len(full_seen)}
 
 
 def annotsv_command(vcf: Path, output: Path, ngs_home: Path) -> list[str]:
@@ -304,7 +299,7 @@ def annotsv_command(vcf: Path, output: Path, ngs_home: Path) -> list[str]:
                       "-annotationMode", "both", "-SVminSize", "1", "-includeCI", "0"]
 
 
-def build_rescue(*, raw_cnv: Path, joint_cnv: Path, base_tsv: Path,
+def build_rescue(*, joint_cnv: Path, base_tsv: Path | None = None,
                  post_dir: Path, sample_id: str, source_sample: str,
                  annotate: Callable[[Path, Path], None]) -> dict:
     """Called inside the worker's private staging tree; marker/promotion is external."""
@@ -315,26 +310,27 @@ def build_rescue(*, raw_cnv: Path, joint_cnv: Path, base_tsv: Path,
         path.unlink(missing_ok=True)
     manifest = {"policy_version": POLICY_VERSION, "sample_id": sample_id,
                 "source_sample_id": source_sample, "pipeline": "dragen",
-                "allowed_original_filters": sorted(ALLOWED_FILTERS),
+                "allowed_rule_b_filters": sorted(ALLOWED_FILTERS),
+                "annotation_source": "integrated_cnv_only",
                 "reciprocal_overlap": 0.5, "coordinate_basis": "integrated VCF (POS,END]",
                 "status": "skipped", "records": []}
-    missing = [str(p) for p in (raw_cnv, joint_cnv) if not p.is_file()]
+    missing = [str(joint_cnv)] if not joint_cnv.is_file() else []
     if missing:
         manifest["reason"] = "missing_input"
         manifest["missing"] = missing
     else:
-        _, raw_records = read_vcf(raw_cnv, source_sample)
         headers, joint_records = read_vcf(joint_cnv, source_sample)
-        selected, counts = select_rescues(raw_records, joint_records)
+        selected, counts = select_integrated_cnvs(joint_records, legacy_identity_ids(base_tsv))
         manifest.update(status="complete", counts=counts,
-                        inputs={"cnv": _signature(raw_cnv), "cnv_sv": _signature(joint_cnv),
-                                "base_tsv": _signature(base_tsv)},
+                        inputs={"cnv_sv": _signature(joint_cnv)},
                         records=[{"id": item["id"], **item["evidence"]} for item in selected],
-                        added_events=0)
+                        annotated_events=0)
+        if base_tsv is not None and base_tsv.is_file():
+            manifest["inputs"]["base_tsv"] = {**_signature(base_tsv), "purpose": "legacy_ids_only"}
         if selected:
             with tempfile.TemporaryDirectory(prefix=".cnv-rescue-", dir=post_dir) as tmp:
                 work = Path(tmp)
-                vcf, annotation = work / "rescued.vcf", work / "annotated.tsv"
+                vcf, annotation = work / "integrated_cnv.vcf", work / "annotated.tsv"
                 with vcf.open("w", encoding="utf-8") as handle:
                     handle.write("\n".join(headers) + "\n")
                     for item in selected:
@@ -346,11 +342,12 @@ def build_rescue(*, raw_cnv: Path, joint_cnv: Path, base_tsv: Path,
                         fields[7] = ";".join(f"{k}={v}" if v else k for k, v in info.items())
                         handle.write("\t".join(fields) + "\n")
                 annotate(vcf, annotation)
-                merged = merge_annotations(base_tsv, annotation, selected,
-                                           work / RESCUED_NAME, work / REVIEW_NAME)
-                manifest.update(merged)
-                for name in (RESCUED_NAME, REVIEW_NAME):
-                    os.replace(work / name, outputs[name])
+                manifest.update(validate_annotations(annotation, selected, work / REVIEW_NAME, source_sample))
+                os.replace(work / REVIEW_NAME, outputs[REVIEW_NAME])
+        else:
+            # An authoritative empty review must not fall back to old 06 events.
+            _write_tsv(outputs[REVIEW_NAME], ["AnnotSV_ID", "SV_chrom", "SV_start", "SV_end",
+                       "SV_type", "Annotation_mode", "FORMAT", source_sample, EVIDENCE_COLUMN], [])
     pending = outputs[MANIFEST_NAME].with_suffix(".json.tmp")
     pending.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(pending, outputs[MANIFEST_NAME])

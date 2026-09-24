@@ -318,7 +318,8 @@ def clinvar_comparison_path(sample_id: str, *, for_write: bool = False) -> Path:
 
 
 def cnv_tsv(sample_id: str) -> Path:
-    # Only completed DRAGEN rescue generations activate the merged review TSV.
+    # Completed DRAGEN generations activate the review TSV (v1 appended rescue,
+    # v2 entirely reannotated integrated CNVs, including an authoritative empty set).
     # In-house and older cases continue to use the immutable 06 source.
     if uses_unified_layout(sample_id):
         review = state_file(sample_id, "cnv.review.tsv")

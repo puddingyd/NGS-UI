@@ -66,26 +66,27 @@ def fake_annotate(vcf, output):
     write_tsv(output, rows)
 
 
-@pytest.mark.parametrize("filt", ["cnvLength", "cnvQual", "cnvLength;cnvQual"])
-def test_a_requires_original_length_quality_filters_and_preserves_evidence(filt):
-    raw = record(1000, 8540, filt=filt, qual="19")
+@pytest.mark.parametrize("claim", ["D", "DJ"])
+def test_pass_needs_no_original_record_or_quality_gate(claim):
     cnv = record(1399, 8938, filt="PASS", qual="150", SVCLAIM="DJ", MatchSv="sv-full",
                  OrigCnvPos="1000", OrigCnvEnd="8540")
-    selected, counts = rescue.select_rescues([raw], [cnv])
-    assert counts == {"rescued_A": 1}
+    cnv.info["SVCLAIM"] = claim
+    selected, counts = rescue.select_integrated_cnvs([cnv])
+    assert counts == {"integrated_pass": 1}
     e = selected[0]["evidence"]
-    assert e["original"]["qual"] == "19"
-    assert e["original"]["filter"] == filt
+    assert "original" not in e
+    assert e["rule"] == "PASS"
     assert e["integrated"]["qual"] == "150"
-    assert e["original"]["pos"] == 1000 and e["integrated"]["pos"] == 1399
+    assert e["integrated"]["pos"] == 1399
     assert e["sv_support"] == [{"original_sv_id": "sv-full"}]
 
 
-@pytest.mark.parametrize("filt", ["PASS", ".", "cnvLength;dinucQual", "cnvQual;highCN",
+@pytest.mark.parametrize("filt", [".", "cnvLength;dinucQual", "cnvQual;highCN",
                                    "cnvBinSupportRatio", "cnvCopyRatio"])
-def test_integrated_pass_cannot_rescue_other_original_filters(filt):
-    cnv = record(filt="PASS", SVCLAIM="DJ", MatchSv="sv-full")
-    assert not rescue.select_rescues([record(filt=filt)], [cnv])[0]
+def test_nonpass_integrated_other_filters_are_not_rescued(filt):
+    _, cnv, sv = paired()
+    cnv.fields[6] = filt
+    assert not rescue.select_integrated_cnvs([cnv, sv])[0]
 
 
 def test_known_low_quality_geometry_uses_integrated_end_and_has_no_qual_floor():
@@ -95,12 +96,12 @@ def test_known_low_quality_geometry_uses_integrated_end_and_has_no_qual_floor():
                  RIGHT_BND="original-sv.end", OrigCnvEnd="8071")
     sv = record(4344, 7748, identifier="sv", svtype="DEL", filt="PASS", SVCLAIM="J",
                 END_RIGHT_BND_OF="cnv")
-    selected, _ = rescue.select_rescues([raw], [cnv, sv])
+    selected, _ = rescue.select_integrated_cnvs([cnv, sv])
     evidence = selected[0]["evidence"]
     assert evidence["rule"] == "B"
     assert evidence["sv_support"][0]["cnv_overlap"] == pytest.approx(3404 / 6748)
     assert evidence["sv_support"][0]["sv_overlap"] == 1
-    assert evidence["original"]["end"] == 8071
+    assert "original" not in evidence
     assert rescue._supported(raw, sv) is None  # original coordinates would be <50%
 
 
@@ -133,12 +134,12 @@ def test_b_rejects_insufficient_or_conflicting_support(mutation):
         sv.fields[1], sv.info["END"] = "1", "16000"
     elif mutation == "adjacent":
         sv.fields[1], sv.info["END"] = "8000", "12000"
-    assert not rescue.select_rescues([raw], [cnv, sv])[0]
+    assert not rescue.select_integrated_cnvs([cnv, sv])[0]
 
 
 def test_b_includes_exact_50_percent_and_phased_genotypes():
     raw, cnv, sv = paired(gt="1|0")
-    assert rescue.select_rescues([raw], [cnv, sv])[0][0]["evidence"]["rule"] == "B"
+    assert rescue.select_integrated_cnvs([cnv, sv])[0][0]["evidence"]["rule"] == "B"
 
 
 def test_b_dup_partial_missing_genotype_and_haploid_are_supported():
@@ -146,11 +147,11 @@ def test_b_dup_partial_missing_genotype_and_haploid_are_supported():
     for r in (raw, cnv, sv):
         r.fields[4] = "<DUP>"
     cnv.fields[9] = "./1:3:30,10:20,10"
-    assert rescue.select_rescues([raw], [cnv, sv])[0]
+    assert rescue.select_integrated_cnvs([cnv, sv])[0]
     for r in (raw, cnv, sv):
         r.fields[0] = "chrX"
         r.fields[9] = "1:0:0,10:0,10"
-    assert rescue.select_rescues([raw], [cnv, sv])[0]
+    assert rescue.select_integrated_cnvs([cnv, sv])[0]
 
 
 def test_multimatch_is_not_union_of_unrelated_sv_intervals():
@@ -158,15 +159,16 @@ def test_multimatch_is_not_union_of_unrelated_sv_intervals():
     other = record(1000, 2500, identifier="other", filt="PASS", svtype="DEL", SVCLAIM="J",
                    LEFT_BND_OF="cnv")
     cnv.info["LEFT_BND"] = "other-original"
-    assert not rescue.select_rescues([raw], [cnv, sv, other])[0]
+    assert not rescue.select_integrated_cnvs([cnv, sv, other])[0]
 
 
-def test_ambiguous_original_and_nonprimary_contig_are_rejected():
+def test_duplicate_identity_and_nonprimary_contig_are_rejected():
     raw, cnv, sv = paired()
-    assert rescue.select_rescues([raw, raw], [cnv, sv])[1]["unmatched_or_ambiguous_original"] == 1
+    with pytest.raises(ValueError, match="Multiple integrated"):
+        rescue.select_integrated_cnvs([cnv, cnv, sv])
     for r in (raw, cnv, sv):
         r.fields[0] = "chr1_alt"
-    assert rescue.select_rescues([raw], [cnv, sv])[1]["non_primary_contig"] == 1
+    assert rescue.select_integrated_cnvs([cnv, sv])[1]["non_primary_contig"] == 1
 
 
 def test_vcf_requires_exact_single_sample(tmp_path):
@@ -182,24 +184,23 @@ def test_vcf_requires_exact_single_sample(tmp_path):
 
 def setup_build(tmp_path):
     raw, cnv, sv = paired()
-    orig, joint, base = tmp_path / "raw.vcf.gz", tmp_path / "joint.vcf.gz", tmp_path / "base.tsv"
-    write_vcf(orig, [raw])
+    joint, base = tmp_path / "joint.vcf.gz", tmp_path / "base.tsv"
     write_vcf(joint, [cnv, sv])
     write_tsv(base, [baseline_row()])
-    return dict(raw_cnv=orig, joint_cnv=joint, base_tsv=base, post_dir=tmp_path / "08",
+    return dict(joint_cnv=joint, base_tsv=base, post_dir=tmp_path / "08",
                 sample_id="LIS", source_sample="SRC", annotate=fake_annotate)
 
 
 def test_annotation_merge_loaders_and_rerun_preserve_sources_and_stable_ids(tmp_path, monkeypatch):
     args = setup_build(tmp_path)
-    before = {key: args[key].read_bytes() for key in ("raw_cnv", "joint_cnv", "base_tsv")}
+    before = {key: args[key].read_bytes() for key in ("joint_cnv", "base_tsv")}
     manifest = rescue.build_rescue(**args)
-    assert manifest["added_events"] == 1
+    assert manifest["annotated_events"] == 1
     stable_id = manifest["records"][0]["id"]
     review = args["post_dir"] / "LIS.cnv.review.tsv"
     _, rows = rescue._read_tsv(review)
-    assert [r["AnnotSV_ID"] for r in rows] == ["existing-id", stable_id, stable_id]
-    assert rows[1]["FILTER"] == "cnvLength"  # no fabricated PASS
+    assert [r["AnnotSV_ID"] for r in rows] == [stable_id, stable_id]
+    assert rows[0]["FILTER"] == "cnvLength"  # no fabricated PASS
     from app.adapters import annotsv_tsv
     monkeypatch.setattr(annotsv_tsv.gene_disease_store, "ensure_loaded", lambda: None)
     monkeypatch.setattr(annotsv_tsv.gene_disease_store, "merged_associations", lambda *a, **kw: [])
@@ -224,10 +225,13 @@ def test_no_rescues_or_missing_input_removes_old_generation(tmp_path, missing):
     if missing:
         args["joint_cnv"].unlink()
     else:
-        write_vcf(args["raw_cnv"], [record(filt="PASS")])
+        write_vcf(args["joint_cnv"], [])
     result = rescue.build_rescue(**args)
     assert result["status"] == ("skipped" if missing else "complete")
-    assert not (args["post_dir"] / "LIS.cnv.review.tsv").exists()
+    review = args["post_dir"] / "LIS.cnv.review.tsv"
+    assert review.exists() is not missing
+    if not missing:
+        assert rescue._read_tsv(review)[1] == []
     assert not (args["post_dir"] / "LIS.cnv.rescued.annotated.tsv").exists()
 
 
@@ -260,9 +264,64 @@ def test_duplicate_event_keeps_baseline_id_and_does_not_duplicate_gene_rows(tmp_
     write_tsv(args["base_tsv"], [row])
     result = rescue.build_rescue(**args)
     _, rows = rescue._read_tsv(args["post_dir"] / "LIS.cnv.review.tsv")
-    assert result["added_events"] == 0
-    assert len(result["already_annotated"]) == 1
-    assert [r["AnnotSV_ID"] for r in rows] == ["existing-id"]
+    assert result["annotated_events"] == 1
+    assert [r["AnnotSV_ID"] for r in rows] == ["existing-id", "existing-id"]
+    assert rows[0]["FILTER"] == "cnvLength"  # not the old PASS annotation
+
+
+def test_build_without_original_vcf_or_legacy_annotation(tmp_path):
+    args = setup_build(tmp_path)
+    args["base_tsv"].unlink()
+    args.pop("base_tsv")
+    write_vcf(args["joint_cnv"], [record(filt="PASS", SVCLAIM="D")])
+    result = rescue.build_rescue(**args)
+    assert result["counts"] == {"integrated_pass": 1}
+    assert set(result["inputs"]) == {"cnv_sv"}
+    assert not (args["post_dir"] / "LIS.cnv.rescued.annotated.tsv").exists()
+
+
+def test_all_three_segments_use_refined_boundaries_and_fresh_annotations(tmp_path):
+    from app.services.cnv_sv_merge import automatic_merges
+    args = setup_build(tmp_path)
+    # Synthetic version of the reported three-segment problem: raw outer
+    # boundaries 10000/13000, refined boundaries 10855/13486.
+    rows = [
+        record(1000, 10855, identifier="left", filt="PASS", SVCLAIM="DJ", OrigCnvEnd="10000"),
+        record(10855, 13486, identifier="middle", filt="PASS", SVCLAIM="DJ",
+               MatchSv="full-match", OrigCnvPos="10000", OrigCnvEnd="13000", gt="1/1"),
+        record(13486, 30000, identifier="right", filt="PASS", SVCLAIM="DJ", OrigCnvPos="13000"),
+    ]
+    write_vcf(args["joint_cnv"], rows)
+    write_tsv(args["base_tsv"], [
+        {**baseline_row(), "AnnotSV_ID": "left-old", "SV_start": "1000", "SV_end": "10000", "ACMG_class": "5"},
+        {**baseline_row(), "AnnotSV_ID": "right-old", "SV_start": "13000", "SV_end": "30000", "ACMG_class": "1"},
+    ])
+    result = rescue.build_rescue(**args)
+    _, annotated = rescue._read_tsv(args["post_dir"] / "LIS.cnv.review.tsv")
+    full = [r for r in annotated if r["Annotation_mode"] == "full"]
+    assert result["annotated_events"] == 3
+    assert [r["AnnotSV_ID"] for r in full] == ["left-old", "CNVRESCUE-1-10000-13000-DEL", "right-old"]
+    assert [(int(r["SV_start"]), int(r["SV_end"])) for r in full] == [(1000,10855),(10855,13486),(13486,30000)]
+    assert {r["ACMG_class"] for r in full} == {"3"}  # freshly computed, no baseline reuse
+    variants = {r["AnnotSV_ID"]: {"id":r["AnnotSV_ID"], "CHROM":r["SV_chrom"],
+                "POS":int(r["SV_start"]), "END":int(r["SV_end"]), "sv_type":r["SV_type"]} for r in full}
+    groups = automatic_merges(variants, "cnv")
+    assert len(groups) == 1 and len(groups[0]["member_ids"]) == 3
+    assert groups[0]["id"] == "MERGED-CNV-1-1000-30000-DEL"
+
+
+@pytest.mark.parametrize("claim", [None, "J", "unexpected"])
+def test_inconsistent_cnv_claim_is_not_silently_accepted(claim):
+    r = record(filt="PASS")
+    if claim is not None:
+        r.info["SVCLAIM"] = claim
+    with pytest.raises(ValueError, match="SVCLAIM"):
+        rescue.select_integrated_cnvs([r])
+
+
+def test_standalone_sv_pass_never_enters_cnv_review():
+    r = record(filt="PASS", svtype="DEL", SVCLAIM="J")
+    assert rescue.select_integrated_cnvs([r])[0] == []
 
 
 def test_worker_dispatch_is_dragen_only_and_passes_source_sample(tmp_path, monkeypatch):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Annotate DRAGEN-rescued CNVs inside a job's private 08 staging directory."""
+"""Annotate all integrated DRAGEN CNV PASS + Rule B calls in private 08 staging."""
 from __future__ import annotations
 
 import argparse
@@ -15,7 +15,7 @@ from app.services.dragen_cnv_rescue import annotsv_command, build_rescue
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dragen-vcf", type=Path, required=True)
-    parser.add_argument("--base-tsv", type=Path, required=True)
+    parser.add_argument("--base-tsv", type=Path, help="Optional legacy ID mapping only; annotations are not reused")
     parser.add_argument("--post-dir", type=Path, required=True)
     parser.add_argument("--sample", required=True)
     parser.add_argument("--source-sample", required=True)
@@ -30,7 +30,6 @@ def main() -> None:
 
     print("[post-processing-step] cnv-rescue start", flush=True)
     result = build_rescue(
-        raw_cnv=args.dragen_vcf.with_name(prefix + ".cnv.vcf.gz"),
         joint_cnv=args.dragen_vcf.with_name(prefix + ".cnv_sv.vcf.gz"),
         base_tsv=args.base_tsv, post_dir=args.post_dir,
         sample_id=args.sample, source_sample=args.source_sample, annotate=annotate,
@@ -39,11 +38,8 @@ def main() -> None:
         print("[cnv-rescue] WARNING: skipped; missing input: " + ", ".join(result["missing"]), flush=True)
     else:
         counts = result["counts"]
-        print(f"[cnv-rescue] A={counts.get('rescued_A', 0)} B={counts.get('rescued_B', 0)} "
-              f"added={result['added_events']}", flush=True)
-        if counts.get("unmatched_or_ambiguous_original"):
-            print(f"[cnv-rescue] WARNING: {counts['unmatched_or_ambiguous_original']} "
-                  "integrated CNVs could not be uniquely mapped to the original CNV", flush=True)
+        print(f"[cnv-rescue] integrated_PASS={counts.get('integrated_pass', 0)} B={counts.get('rescued_B', 0)} "
+              f"annotated={result['annotated_events']}", flush=True)
     print("[post-processing-step] cnv-rescue done", flush=True)
 
 

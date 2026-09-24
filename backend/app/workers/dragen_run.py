@@ -1495,13 +1495,14 @@ def _run_cnv_rescue_for_sample(*, mode: str, sample: dict, base_tsv: Path,
                                post_dir: Path, scripts: Path, on_line=None) -> None:
     if mode != "dragen":
         return
-    # Independent of --skip-cnv: 06 has already discarded non-PASS CNVs.
+    # Independent of --skip-cnv: reannotate integrated PASS + Rule B CNVs.
+    # The 06 TSV supplies legacy IDs only, never annotations or eligibility.
     _run(
         [sys.executable, str(scripts / "rescue_dragen_cnv.py"),
          "--dragen-vcf", sample["vcf_path"], "--base-tsv", str(base_tsv),
          "--post-dir", str(post_dir), "--sample", sample["sample_id"],
          "--source-sample", sample["source_sample_id"]],
-        label=f"DRAGEN CNV rescue {sample['sample_id']}", on_line=on_line,
+        label=f"DRAGEN integrated CNV annotation {sample['sample_id']}", on_line=on_line,
     )
 
 

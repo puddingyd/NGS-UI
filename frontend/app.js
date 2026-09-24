@@ -7018,14 +7018,15 @@ function _renderCnvSvHeader(v, id, opts) {
 function _renderCnvRescueEvidence(v) {
   const events = v.cnv_rescue_events || (v.cnv_rescue ? [v.cnv_rescue] : []);
   if (!events.length) return "";
-  const locus = r => `${r.chrom}:${r.pos}-${r.end}`;
+  const locus = r => r ? `${r.chrom}:${r.pos}-${r.end}` : "—";
+  const integratedReview = events.some(e => e.policy_version >= 2);
   return `<details class="cnv-sv-reasoning cnv-rescue-evidence">
-    <summary>SV-supported rescue${v.is_merged_parent ? ` · ${events.length} 個片段` : ""}</summary>
+    <summary>${integratedReview ? "DRAGEN CNV evidence" : "SV-supported rescue"}${v.is_merged_parent ? ` · ${events.length} 個片段` : ""}</summary>
     ${events.map(e => `<div class="cnv-rescue-event">
-      <div><strong>Rule ${escapeHtml(e.rule)}:</strong> ${e.rule === "A" ? "DRAGEN 完整配對" : "斷點連結、同類型且雙向重疊 ≥50%"}</div>
-      <div>原始 CNV（VCF POS–END）：${escapeHtml(locus(e.original))} · Filter: ${escapeHtml(e.original.filter)} · Qual: ${escapeHtml(e.original.qual)}</div>
-      <div>整合後（VCF POS–END）：${escapeHtml(locus(e.integrated))}</div>
-      ${e.sv_support.map(s => `<div>支持 SV：${escapeHtml(s.original_sv_id || s.id)}${s.chrom ? ` · ${escapeHtml(locus(s))}` : ""}${s.cnv_overlap != null ? ` · 重疊 CNV ${(100 * s.cnv_overlap).toFixed(2)}% / SV ${(100 * s.sv_overlap).toFixed(2)}%` : ""}</div>`).join("")}
+      <div>${e.rule === "PASS" ? `<strong>DRAGEN PASS</strong> · ${e.svclaim === "DJ" ? "Depth + junction support" : "Depth support"}` : `<strong>Rule ${escapeHtml(e.rule)}:</strong> ${e.rule === "A" ? "DRAGEN 完整配對" : "斷點連結、同類型且雙向重疊 ≥50%"}`}</div>
+      ${e.policy_version >= 2 || !e.original ? "" : `<div>原始 CNV（VCF POS–END）：${escapeHtml(locus(e.original))} · Filter: ${escapeHtml(e.original.filter)} · Qual: ${escapeHtml(e.original.qual)}</div>`}
+      <div>整合後（VCF POS–END）：${escapeHtml(locus(e.integrated))}${e.policy_version >= 2 ? ` · Filter: ${escapeHtml(e.integrated.filter)} · Qual: ${escapeHtml(e.integrated.qual)}` : ""}</div>
+      ${(e.sv_support || []).map(s => `<div>支持 SV：${escapeHtml(s.original_sv_id || s.id)}${s.chrom ? ` · ${escapeHtml(locus(s))}` : ""}${s.cnv_overlap != null ? ` · 重疊 CNV ${(100 * s.cnv_overlap).toFixed(2)}% / SV ${(100 * s.sv_overlap).toFixed(2)}%` : ""}</div>`).join("")}
     </div>`).join("")}
   </details>`;
 }
@@ -12211,7 +12212,7 @@ function _dragenSetJob(state) {
 
 function _dragenJobStepLabel(state) {
   const step = String(state?.step || "");
-  if (step === "post-processing:cnv-rescue") return "DRAGEN CNV rescue";
+  if (step === "post-processing:cnv-rescue") return "DRAGEN CNV 整合註解";
   if (step !== "nextflow" && !step.startsWith("nextflow:")) return step;
   const current = state?.nextflow_current;
   if (!current?.step) return step;
