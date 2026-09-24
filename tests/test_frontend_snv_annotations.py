@@ -232,6 +232,16 @@ def test_hom_and_hemi_zygosity_use_likely_pathogenic_red_background():
     assert '${escapeHtml(snvZygosityDisplay(v.zygosity))}' in APP_JS
 
 
+def test_haploid_het_has_prominent_manual_review_badge():
+    start = APP_JS.index("function renderVariantBadges(v, id)")
+    end = APP_JS.index("// ---- Structured ACMG editor", start)
+    badges = APP_JS[start:end]
+
+    assert "v.haploid_het" in badges
+    assert "badge-haploid-het" in badges
+    assert "體細胞嵌合" in badges
+
+
 def test_omim_badge_is_excluded_before_supplemental_badge_limit():
     start = APP_JS.index("function diseaseSourceBadges(")
     end = APP_JS.index("function hasOmimDescriptionText", start)

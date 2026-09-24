@@ -19,5 +19,12 @@ def is_primary_contig(raw: str) -> bool:
 def is_reportable_raw_row(row: dict[str, str]) -> bool:
     """Match the old in-place filter without mutating the pipeline TSV."""
     alt = str(row.get("ALT") or "").strip()
-    return bool(alt and alt != "*" and is_primary_contig(row.get("CHROM") or ""))
-
+    callers = str(row.get("CALLERS") or "").strip().upper()
+    zygosity = str(row.get("ZYGOSITY") or "").strip().lower()
+    return bool(
+        alt
+        and alt != "*"
+        and callers != "NONE"
+        and zygosity not in {"ref", "reference"}
+        and is_primary_contig(row.get("CHROM") or "")
+    )

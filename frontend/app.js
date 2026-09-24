@@ -4813,6 +4813,11 @@ function renderVariantBadges(v, id) {
               :                          "badge-callers";
     chips.push(`<span class="badge ${cls}" title="Variant callers">${escapeHtml(v.callers)}</span>`);
   }
+  if (v.haploid_het) {
+    const callers = String(v.haploid_het_callers || "").replace(/,/g, "+");
+    const label = callers ? `Haploid het · ${callers}` : "Haploid het";
+    chips.push(`<span class="badge badge-haploid-het" title="男性 chrX 非 PAR 原始 heterozygous call；可能是比對假象、體細胞嵌合或 47,XXY，請核對 VAF、位置與 IGV">⚠ ${escapeHtml(label)}</span>`);
+  }
   if (v.in_panel)     chips.push(`<span class="badge badge-panel"     title="Gene is in the requested panel">In panel</span>`);
   if (v.in_roh)       chips.push(`<span class="badge badge-roh"       title="Variant falls inside an ROH region">In ROH</span>`);
   if (v.in_blacklist) chips.push(`<span class="badge badge-blacklist" title="Variant or gene flagged on the QC blacklist">⚠ Blacklist</span>`);

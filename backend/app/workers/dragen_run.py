@@ -1096,22 +1096,30 @@ def _validate_acmg_tsv(
         raise RuntimeError(
             f"pipeline TSV missing required columns: {', '.join(missing)}"
         )
-    is_v35_transcript_schema = "MANE_ALL" not in header
-    expected_cols = 81
-    schema_label = "v3.6 transcript schema" if is_v35_transcript_schema else "legacy MANE_ALL schema"
-    if strict_v31 and is_v35_transcript_schema and "STRAND_BIAS" not in header:
-        raise RuntimeError("pipeline TSV v3.6 schema is missing STRAND_BIAS")
-    v36_required = {
+    is_current_transcript_schema = "MANE_ALL" not in header
+    expected_cols = 82
+    schema_label = (
+        "v3.8 transcript schema"
+        if is_current_transcript_schema
+        else "legacy MANE_ALL schema"
+    )
+    if strict_v31 and is_current_transcript_schema and "STRAND_BIAS" not in header:
+        raise RuntimeError("pipeline TSV v3.8 schema is missing STRAND_BIAS")
+    current_required = {
         "CLINGEN_VCEP_CLASS", "CLINGEN_VCEP_CRITERIA", "CLINGEN_VCEP_PANEL",
         "REVEL", "MUTPRED2", "MUTPRED2_PRED", "VEST4", "CADD_PHRED",
         "DBNSFP_VERSION", "CLINGEN_AGREEMENT", "PVS1_STRENGTH", "PVS1_REASON",
+        "HAPLOID_HET",
     }
     if strict_v31:
-        missing_v36 = sorted(v36_required - set(header))
-        if missing_v36:
+        missing_current = sorted(current_required - set(header))
+        if missing_current:
             raise RuntimeError(
-                "pipeline TSV is not v3.6; missing columns: "
-                + ", ".join(missing_v36)
+                "pipeline TSV is not v3.8; missing columns: "
+                + ", ".join(missing_current)
+                + "; a pre-v3.8 Nextflow -resume cache may have been reused. "
+                + "After deploying the updated tertiary scripts, clean the "
+                + "tertiary Nextflow cache once and rerun this sample."
             )
     if strict_v31 and len(header) < expected_cols:
         raise RuntimeError(
@@ -1141,8 +1149,8 @@ def _validate_acmg_tsv(
             )
 
 
-def _ensure_v36_annotation_versions(path: Path) -> Path:
-    """Record the fixed ClinVar release for v3.6 Nextflow output."""
+def _ensure_pipeline_annotation_versions(path: Path) -> Path:
+    """Record the fixed ClinVar release for current Nextflow output."""
     suffix = ".snv_indel.acmg.tsv"
     source_name = path.name[:-len(suffix)] if path.name.endswith(suffix) else path.stem
     sidecar = path.with_name(f"{source_name}.annotation_versions.json")
@@ -1152,7 +1160,7 @@ def _ensure_v36_annotation_versions(path: Path) -> Path:
         existing = {}
     payload = existing if isinstance(existing, dict) else {}
     payload["schema_version"] = payload.get("schema_version") or 1
-    payload["pipeline_schema"] = "v3.6"
+    payload["pipeline_schema"] = "v3.8"
     databases = payload.setdefault("databases", {})
     if not isinstance(databases, dict):
         databases = payload["databases"] = {}
@@ -1160,7 +1168,7 @@ def _ensure_v36_annotation_versions(path: Path) -> Path:
     if not isinstance(clinvar, dict):
         clinvar = databases["clinvar"] = {}
     clinvar["release_date"] = PIPELINE_CLINVAR_RELEASE
-    clinvar["source"] = "Nextflow v3.6 fixed release"
+    clinvar["source"] = "Nextflow v3.8 fixed release"
     tmp = sidecar.with_suffix(sidecar.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, sidecar)
@@ -1916,7 +1924,7 @@ def main() -> int:
                 expect_academic_dbnsfp=(args.research_only if not legacy_staging else None),
             )
             if not legacy_staging:
-                sidecar = _ensure_v36_annotation_versions(existing)
+                sidecar = _ensure_pipeline_annotation_versions(existing)
                 _log(f"[source] {sid}: ClinVar baseline metadata {sidecar}")
             raw_tsv_by_sid[sid] = existing
             final_raw_tsv = (

@@ -6,6 +6,18 @@
 
 ## 版本紀錄
 
+### v9.27 — 2026-09-24
+
+- 配合最新版三級 v3.8 DRAGEN compound 修正：phase 未知、PS 不同或非錨定鹼基衝突的重疊變異由 pipeline 原樣保留成兩筆，GUI 不會再自行合成或依重疊座標折疊；同 phase set、合法錨定重疊及同鹼基 SNV→indel 套用順序均直接採 pipeline 最終座標／allele。
+- DRAGEN 多等位拆分後若仍殘留 `ZYGOSITY=ref`（樣本 GT `0/0`）假列，會和 `CALLERS=NONE` 一樣在共用 raw-row eligibility 排除，不進入卡片、搜尋、衍生 VCF、review TSV 或 gene index。欄位仍為 82 欄，無需變更既有個案格式。
+
+### v9.26 — 2026-09-24
+
+- 三級 SNV/Indel 改接 v3.8 的 82 欄輸出，發布前會要求新增的 `HAPLOID_HET` 欄；所有欄位仍依名稱解析，不受 `ACMG_CLASS` 從第 77 欄移到第 78 欄影響。
+- 男性 chrX 非 PAR 原始 heterozygous call 會顯示紅色 `Haploid het` 人工複核標記，附上 DV／HC 來源；請核對 VAF、位置與 IGV。`CALLERS=NONE` 的非變異紀錄不會進入卡片、搜尋、VCF 或衍生 review TSV。
+- 新 pipeline 已正確保留 AD 缺值、依實際 ALT caller 決定 ZYGOSITY，且 DRAGEN 只合併 PASS、女性 chrX 雙套 `1/1` 顯示 homozygous；GUI 直接採用這些欄名與值，不再做位置式或性染色體推測。
+- v3.8 腳本部署後若共享 `-resume` lineage 仍回傳舊 81 欄結果，job 會明確指出是 stale cache；請從三級分析清單清理一次 Nextflow 暫存再重跑。二級 ensemble 已重跑而使輸入改變時，Nextflow 通常會自行重算。
+
 ### v9.25 — 2026-09-24
 
 - DRAGEN CNV 改由整合檔選取 PASS 與符合 Rule B 的事件，全部依整合後座標重新 AnnotSV，統一產生 CNV review；不再讀取原始 CNV VCF 或混用舊基因註解。

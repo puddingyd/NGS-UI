@@ -293,10 +293,10 @@ def test_v36_validation_checks_research_dbnsfp_branch(tmp_path):
         "STRAND_BIAS", "CLINGEN_VCEP_CLASS", "CLINGEN_VCEP_CRITERIA",
         "CLINGEN_VCEP_PANEL", "REVEL", "MUTPRED2", "MUTPRED2_PRED", "VEST4",
         "CADD_PHRED", "DBNSFP_VERSION", "CLINGEN_AGREEMENT", "PVS1_STRENGTH",
-        "PVS1_REASON",
+        "PVS1_REASON", "HAPLOID_HET",
     }
     fields = sorted(required)
-    fields.extend(f"DUMMY_{index}" for index in range(81 - len(fields)))
+    fields.extend(f"DUMMY_{index}" for index in range(82 - len(fields)))
     values = ["."] * len(fields)
     values[fields.index("DBNSFP_VERSION")] = "5.3a"
     path = tmp_path / "sample.snv_indel.acmg.tsv"
@@ -318,9 +318,34 @@ def test_v36_validation_checks_research_dbnsfp_branch(tmp_path):
         json.dumps({"databases": {"clinvar": {"release_date": "2026-05-10"}}}),
         encoding="utf-8",
     )
-    dragen_run._ensure_v36_annotation_versions(path)
+    dragen_run._ensure_pipeline_annotation_versions(path)
     payload = json.loads(sidecar.read_text(encoding="utf-8"))
     assert payload["databases"]["clinvar"]["release_date"] == "2026-07-20"
+    assert payload["pipeline_schema"] == "v3.8"
+
+
+def test_v38_validation_requires_haploid_het_column(tmp_path):
+    fields = [
+        "CHROM", "POS", "REF", "ALT", "GENE", "TRANSCRIPT",
+        "TRANSCRIPT_TYPE", "HGVS_C", "HGVS_P", "CONSEQUENCE", "IMPACT",
+        "HGNC_ID", "ACMG_CRITERIA", "ACMG_SCORE", "ACMG_CLASS", "ACMG_NOTES",
+        "STRAND_BIAS", "CLINGEN_VCEP_CLASS", "CLINGEN_VCEP_CRITERIA",
+        "CLINGEN_VCEP_PANEL", "REVEL", "MUTPRED2", "MUTPRED2_PRED", "VEST4",
+        "CADD_PHRED", "DBNSFP_VERSION", "CLINGEN_AGREEMENT", "PVS1_STRENGTH",
+        "PVS1_REASON",
+    ]
+    fields.extend(f"DUMMY_{index}" for index in range(82 - len(fields)))
+    path = tmp_path / "sample.snv_indel.acmg.tsv"
+    path.write_text(
+        "\t".join(fields) + "\n" + "\t".join(["."] * len(fields)) + "\n",
+        encoding="utf-8",
+    )
+
+    # Existing v3.6/81-column cases remain readable. Only a newly produced
+    # strict staging generation must satisfy the v3.8 publication contract.
+    dragen_run._validate_acmg_tsv(path, strict_v31=False)
+    with pytest.raises(RuntimeError, match="HAPLOID_HET.*resume cache"):
+        dragen_run._validate_acmg_tsv(path, strict_v31=True)
 
 
 def test_production_postprocessing_is_spliceai_only():

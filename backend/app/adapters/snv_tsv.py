@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ..services import manual_acmg, panel_deadzone
+from ..services.snv_rows import is_reportable_raw_row
 
 
 class OldFormatError(ValueError):
@@ -881,6 +882,11 @@ def _row_to_variant(row: dict) -> dict:
         "zygosity": row.get("ZYGOSITY", ""),
         "GT_DV": row.get("GT_DV", ""),
         "GT_HC": row.get("GT_HC", ""),
+        # v3.7+: a male non-PAR chrX call that was originally heterozygous
+        # is retained as ALT instead of being lost by ploidy correction. It
+        # remains reportable, but must be conspicuously flagged for review.
+        "haploid_het_callers": _coalesce(row.get("HAPLOID_HET")),
+        "haploid_het": bool(_coalesce(row.get("HAPLOID_HET"))),
         "exon":   _clean_vep_rank(row.get("EXON", "")),
         "intron": _clean_vep_rank(row.get("INTRON", "")),
         # Old pipeline emits single AD/VAF; new pipeline splits per caller
@@ -1185,6 +1191,8 @@ def load_snv_tsv(tsv_path: Path,
                 "為舊格式，請以新版 pipeline 重跑此樣本。"
             )
         for row in reader:
+            if not is_reportable_raw_row(row):
+                continue
             if _is_mito_chrom(row.get("CHROM") or ""):
                 continue
             canonical_gene, _ = panel_deadzone.canonical_gene_symbol(
