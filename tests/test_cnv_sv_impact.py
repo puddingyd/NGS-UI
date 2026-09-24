@@ -104,6 +104,38 @@ def test_backend_parent_preserves_segment_scope():
     assert parent["impact_all"]["category"] == "functional"
 
 
+def _merge_variant(variant_id, start, end, sv_type="DEL", chrom="7"):
+    return {"id": variant_id, "CHROM": chrom, "POS": start, "END": end, "sv_type": sv_type}
+
+
+def test_automatic_merge_accepts_small_chr7_boundary_overlap():
+    from app.services.cnv_sv_merge import automatic_merges
+    variants = {
+        "a": _merge_variant("a", 73_303_743, 74_416_985),
+        "b": _merge_variant("b", 74_416_499, 74_727_986),
+    }
+    merges = automatic_merges(variants, "cnv")
+    assert len(merges) == 1
+    assert merges[0]["member_ids"] == ["a", "b"]
+
+
+@pytest.mark.parametrize("first,second,expected", [
+    ((100, 100_100), (90_100, 190_100), True),       # 10 kb and 10%
+    ((100, 100_100), (90_099, 190_100), False),      # more than 10 kb
+    ((100, 50_100), (44_100, 94_100), False),        # 6 kb exceeds 10%
+    ((100, 100_100), (10_100, 90_100), False),       # contained segment
+    ((100, 200), (250_200, 250_300), True),          # 250 kb gap remains allowed
+    ((100, 200), (250_201, 250_301), False),         # gap over 250 kb
+])
+def test_automatic_merge_distance_boundaries(first, second, expected):
+    from app.services.cnv_sv_merge import automatic_merges
+    variants = {
+        "a": _merge_variant("a", *first),
+        "b": _merge_variant("b", *second),
+    }
+    assert bool(automatic_merges(variants, "cnv")) is expected
+
+
 @pytest.mark.parametrize("loader_name", ["load_sample_cnv", "load_sample_sv", "load_sample_cnv_sv"])
 def test_staged_loaders_pass_hpo_only_scores_without_panel_inflation(tmp_path, monkeypatch, loader_name):
     from app.services import sample_loader, phenotype_scorer, sample_layout

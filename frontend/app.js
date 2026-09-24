@@ -6260,6 +6260,8 @@ function _cnvSvIdsForTier(tier, applyFilter = true) {
 
 const CNV_SV_CLUSTER_OVERLAP_THRESHOLD = 0.8;
 const CNV_SV_MERGE_GAP_THRESHOLD = 250000;
+const CNV_SV_MERGE_OVERLAP_BP_THRESHOLD = 10000;
+const CNV_SV_MERGE_OVERLAP_RATIO_THRESHOLD = 0.10;
 
 function _cnvSvSpan(v) {
   const s = Number(v?.POS);
@@ -6315,6 +6317,19 @@ function _cnvSvCompatibleSegments(a, b) {
   return String(a.sv_type || "").toUpperCase() === String(b.sv_type || "").toUpperCase();
 }
 
+function _cnvSvMergeDistanceCompatible(a, b) {
+  const spanA = _cnvSvSpan(a);
+  const spanB = _cnvSvSpan(b);
+  if (!spanA || !spanB) return false;
+  const gap = spanB[0] - spanA[1];
+  if (gap >= 0) return gap <= CNV_SV_MERGE_GAP_THRESHOLD;
+  const overlap = -gap;
+  const shorterSpan = Math.min(spanA[1] - spanA[0], spanB[1] - spanB[0]);
+  return spanB[1] > spanA[1]
+    && overlap <= CNV_SV_MERGE_OVERLAP_BP_THRESHOLD
+    && overlap <= shorterSpan * CNV_SV_MERGE_OVERLAP_RATIO_THRESHOLD;
+}
+
 function _cnvSvAdjacentMergeGroups(ids) {
   const sorted = ids.map(_cnvSvBaseVariantById).filter(Boolean)
     .sort((a, b) => String(a.source).localeCompare(String(b.source))
@@ -6325,8 +6340,7 @@ function _cnvSvAdjacentMergeGroups(ids) {
   let current = [];
   sorted.forEach(v => {
     const prev = current[current.length - 1];
-    const gap = prev ? Number(v.POS) - Number(prev.END) : Infinity;
-    if (prev && _cnvSvCompatibleSegments(prev, v) && gap >= 0 && gap <= CNV_SV_MERGE_GAP_THRESHOLD) {
+    if (prev && _cnvSvCompatibleSegments(prev, v) && _cnvSvMergeDistanceCompatible(prev, v)) {
       current.push(v);
     } else {
       if (current.length >= 2) groups.push(current);

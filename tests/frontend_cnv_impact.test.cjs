@@ -94,6 +94,30 @@ test('merged parent uses actual segments, preserves clinical scope and member pr
   assert.equal(c._cnvSvIdsForTier('CNV-1A').length, 1);
 });
 
+test('adjacent merge accepts the small chr7 boundary overlap', () => {
+  const c = fixture(), variants = c.state.data.cnv_variants;
+  variants.a = variant('a', 'functional', { POS: 73303743, END: 74416985 });
+  variants.b = variant('b', 'functional', { POS: 74416499, END: 74727986 });
+  const groups = c._cnvSvAdjacentMergeGroups(['a', 'b']);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(Array.from(groups[0], v => v.id), ['a', 'b']);
+});
+
+test('adjacent merge protects 10 kb and 10% overlap boundaries', () => {
+  const c = fixture(), variants = c.state.data.cnv_variants;
+  const grouped = (first, second) => {
+    variants.a = variant('a', 'functional', { POS: first[0], END: first[1] });
+    variants.b = variant('b', 'functional', { POS: second[0], END: second[1] });
+    return c._cnvSvAdjacentMergeGroups(['a', 'b']).length === 1;
+  };
+  assert.equal(grouped([100, 100100], [90100, 190100]), true);
+  assert.equal(grouped([100, 100100], [90099, 190100]), false);
+  assert.equal(grouped([100, 50100], [44100, 94100]), false);
+  assert.equal(grouped([100, 100100], [10100, 90100]), false);
+  assert.equal(grouped([100, 200], [250200, 250300]), true);
+  assert.equal(grouped([100, 200], [250201, 250301]), false);
+});
+
 test('toolbar remains usable with zero visible results; hide unknown only when absent', () => {
   const c = fixture();
   c.state.data.cnv_variants.a = variant('a');

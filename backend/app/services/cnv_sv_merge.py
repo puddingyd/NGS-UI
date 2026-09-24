@@ -5,6 +5,8 @@ from copy import deepcopy
 from .cnv_sv_impact import merge_summaries
 
 MERGE_GAP_THRESHOLD = 250_000
+MERGE_OVERLAP_BP_THRESHOLD = 10_000
+MERGE_OVERLAP_RATIO_THRESHOLD = 0.10
 
 
 def _merge_id(source: str, chrom: str, start: int, end: int, sv_type: str) -> str:
@@ -86,8 +88,28 @@ def _compatible(a: dict, b: dict) -> bool:
     return str(a.get("sv_type") or "").upper() in ("DEL", "DUP")
 
 
+def _merge_distance_compatible(a: dict, b: dict) -> bool:
+    """Allow a nearby gap or a small boundary overlap between ordered segments."""
+    a_start = int(a.get("POS") or 0)
+    a_end = int(a.get("END") or 0)
+    b_start = int(b.get("POS") or 0)
+    b_end = int(b.get("END") or 0)
+    if a_end <= a_start or b_end <= b_start:
+        return False
+    gap = b_start - a_end
+    if gap >= 0:
+        return gap <= MERGE_GAP_THRESHOLD
+    overlap = -gap
+    shorter_span = min(a_end - a_start, b_end - b_start)
+    return (
+        b_end > a_end
+        and overlap <= MERGE_OVERLAP_BP_THRESHOLD
+        and overlap <= shorter_span * MERGE_OVERLAP_RATIO_THRESHOLD
+    )
+
+
 def automatic_merges(variants: dict[str, dict], source: str) -> list[dict]:
-    """Group same-type adjacent DEL/DUP segments using a 250 kb max gap."""
+    """Group compatible DEL/DUP segments separated by a small gap or overlap."""
     sorted_vars = sorted(
         variants.values(),
         key=lambda v: (
@@ -100,11 +122,8 @@ def automatic_merges(variants: dict[str, dict], source: str) -> list[dict]:
     current: list[dict] = []
     for variant in sorted_vars:
         previous = current[-1] if current else None
-        gap = (
-            int(variant.get("POS") or 0) - int(previous.get("END") or 0)
-            if previous else MERGE_GAP_THRESHOLD + 1
-        )
-        if previous and _compatible(previous, variant) and 0 <= gap <= MERGE_GAP_THRESHOLD:
+        if (previous and _compatible(previous, variant)
+                and _merge_distance_compatible(previous, variant)):
             current.append(variant)
         else:
             if len(current) >= 2:
