@@ -288,7 +288,11 @@ def rebuild_an_track(old_track, new_beds, out_path, bgzip_bin, sort_tmp,
     finally:
         if not keep_work:
             shutil.rmtree(work, ignore_errors=True)
-    if shutil.which("tabix") and out_path.endswith(".gz"):
+    # Only index when the output is really BGZF. bgzip_bin falls back to plain
+    # gzip when bgzip is absent (and --selftest passes "gzip"), and tabix would
+    # then just warn "not BGZF" — noise that looks like a failure.
+    if (out_path.endswith(".gz") and os.path.basename(bgzip_bin) == "bgzip"
+            and shutil.which("tabix")):
         subprocess.run(["tabix", "-f", "-p", "bed", out_path], check=False)
 
 
