@@ -20,7 +20,7 @@ set -euo pipefail
 
 # ---- 預設值（依目前環境；用旗標或環境變數覆寫）--------------------------
 REPO="${REPO:-$HOME/NGS_UI/NGS-UI}"
-BRANCH="${BRANCH:-claude/pensive-johnson-d68tmi}"
+BRANCH="${BRANCH:-claude/plan-ngs-ui-RQW8J}"
 DGX="${DGX:-n102968@dgx2}"
 DEST="${DEST:-~/dgx_stage/inhouse_af}"     # DGX 上的目的資料夾（注意是 flat，不含 scripts/）
 VIA="${VIA:-}"                             # 若設了：走「共享 datalake 中繼」而非 ssh/scp
