@@ -2869,21 +2869,67 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   vertical-align: top;
   overflow-wrap: anywhere;
 }
-.cnv-gene-disease-list .disease-row {
-  margin: 0 0 3px;
+.cnv-gene-disease-list {
+  border-top: 1px solid rgba(71, 85, 105, 0.14);
+  border-bottom: 1px solid rgba(71, 85, 105, 0.14);
 }
-.cnv-gene-disease-list .disease-row:last-child { margin-bottom: 0; }
+.cnv-gene-disease-list .disease-row {
+  margin: 0;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.1);
+}
+.cnv-gene-disease-list .disease-row:last-of-type { border-bottom: 0; }
 .cnv-gene-disease-list .disease-row summary {
-  padding: 2px 4px;
+  padding: 4px 2px;
   font-size: 11px;
+  line-height: 1.35;
+  border-radius: 0;
+  background: transparent;
+}
+.cnv-gene-disease-list .disease-row summary:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+.cnv-gene-disease-list .disease-row summary::before {
+  color: #64748b;
+  font-size: 9px;
 }
 .cnv-gene-disease-list .disease-detail {
+  margin: 0 0 4px 18px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.68);
+  border-left: 2px solid #94a3b8;
+  color: #334155;
   font-size: 11px;
 }
 .cnv-gene-disease-list .cnv-report-disease-pick,
 .cnv-overlap-disease-option .cnv-report-disease-pick {
   flex: 0 0 auto;
   margin: 1px 4px 0 0;
+  accent-color: #41646b;
+}
+.cnv-disease-collapsible:not(.expanded) > .cnv-disease-extra {
+  display: none;
+}
+.cnv-disease-list-toggle {
+  display: block;
+  margin: 4px 0 0;
+  border: 0;
+  background: transparent;
+  padding: 1px 0;
+  color: #41646b;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cnv-disease-list-toggle:hover {
+  color: #27474f;
+  text-decoration: underline;
+}
+.cnv-gene-disease-list > .cnv-disease-list-toggle {
+  width: 100%;
+  margin: 0;
+  padding: 5px 2px;
+  text-align: left;
 }
 
 .cnv-sv-gene-overflow {
@@ -2921,6 +2967,13 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   -webkit-line-clamp: unset;
           line-clamp: unset;
   overflow: visible;
+}
+.cnv-sv-overlap-content.cnv-sv-overlap-content-counted {
+  display: block;
+  -webkit-line-clamp: unset;
+          line-clamp: unset;
+  overflow: visible;
+  word-break: normal;
 }
 .cnv-sv-overlap-phen { margin-bottom: 2px; }
 .cnv-overlap-disease-option {

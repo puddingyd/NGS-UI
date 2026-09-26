@@ -7127,14 +7127,16 @@ function _renderCnvGeneDiseases(g, id) {
     .filter(association => association?.source_kind === "omim");
   if (!associations.length) return "";
   const picked = _cnvReportDiseaseItems(id);
-  const rows = associations.map(association => {
+  const visibleLimit = 2;
+  const rows = associations.map((association, rowIndex) => {
     const key = _cnvOmimDiseaseKey(g, association);
     const label = association.display_name || diseaseAssociationSummary(association);
     const summary = diseaseAssociationSummary(association) || label;
     const detail = diseaseAssociationDetail(association) || summary;
     const checked = picked[key] ? "checked" : "";
     const badges = diseaseSourceBadges(association, ["OMIM"]);
-    return `<details class="disease-row disease-row-omim cnv-gene-disease">
+    const extraClass = rowIndex >= visibleLimit ? " cnv-disease-extra" : "";
+    return `<details class="disease-row disease-row-omim cnv-gene-disease${extraClass}">
       <summary><input type="checkbox" class="cnv-report-disease-pick" data-id="${escapeAttr(id)}"
         data-idx="${escapeAttr(key)}" data-label="${escapeAttr(label)}" data-source="omim"
         data-gene="${escapeAttr(g.gene || "")}" data-phenotype-mim="${escapeAttr(association.phenotype_mim || "")}"
@@ -7143,7 +7145,12 @@ function _renderCnvGeneDiseases(g, id) {
       <div class="disease-detail">${escapeHtml(detail)}<button type="button" class="disease-collapse">▴ 收合</button></div>
     </details>`;
   });
-  return `<div class="cnv-gene-disease-list">${rows.join("")}</div>`;
+  const hiddenCount = Math.max(0, associations.length - visibleLimit);
+  const toggle = hiddenCount
+    ? `<button type="button" class="cnv-disease-list-toggle" aria-expanded="false"
+         data-collapsed-label="▾ 展開其餘 ${hiddenCount} 個疾病" data-expanded-label="▴ 收合">▾ 展開其餘 ${hiddenCount} 個疾病</button>`
+    : "";
+  return `<div class="cnv-gene-disease-list cnv-disease-collapsible">${rows.join("")}${toggle}</div>`;
 }
 
 function _renderCnvSvGeneRow(g, id) {
@@ -7233,10 +7240,9 @@ function _renderCnvSvOverlap(v, id) {
   else if (v.sv_type === "DUP") allowed.add("p_gain");
   else { allowed.add("p_loss"); allowed.add("p_gain"); allowed.add("p_ins"); }
 
-  // Each block clamps to 2 visible lines via CSS line-clamp (the
-  // `\n`-split approach broke when AnnotSV puts the entire phen text
-  // on one wrapped line). A toggle button below each block flips a
-  // `.expanded` class to reveal the rest.
+  // Pathogenic disease choices use a count-based collapse so the first five
+  // are always readable regardless of line wrapping. Benign evidence keeps
+  // the older line-clamp treatment in `_renderCnvSvBenign` below.
   const groups = [];
   for (const [key, label] of [["p_loss", "P_loss"], ["p_gain", "P_gain"], ["p_ins", "P_ins"]]) {
     if (!allowed.has(key)) continue;
@@ -7245,22 +7251,26 @@ function _renderCnvSvOverlap(v, id) {
     const diseases = (p.diseases || String(p.phens || "").split(/[;\n]+/)
       .map(value => value.replaceAll("_", " ").trim()).filter(Boolean));
     const picked = _cnvReportDiseaseItems(id);
-    const phenLine = diseases.length ? `<div class="cnv-sv-overlap-phen">${diseases.map(label => {
+    const visibleLimit = 5;
+    const phenLine = diseases.length ? `<div class="cnv-sv-overlap-phen cnv-disease-collapsible">${diseases.map((label, diseaseIndex) => {
       const selectionKey = `overlap:${key}:${label}`;
       const checked = picked[selectionKey] ? "checked" : "";
-      return `<label class="cnv-overlap-disease-option"><input type="checkbox" class="cnv-report-disease-pick"
+      const extraClass = diseaseIndex >= visibleLimit ? " cnv-disease-extra" : "";
+      return `<label class="cnv-overlap-disease-option${extraClass}"><input type="checkbox" class="cnv-report-disease-pick"
         data-id="${escapeAttr(id)}" data-idx="${escapeAttr(selectionKey)}" data-label="${escapeAttr(label)}"
         data-source="overlap" data-overlap-type="${escapeAttr(key)}" ${checked} title="報告要發這個疾病" />
         <span>${escapeHtml(label)}</span></label>`;
-    }).join("")}</div>` : "";
+    }).join("")}${diseases.length > visibleLimit
+      ? `<button type="button" class="cnv-disease-list-toggle" aria-expanded="false"
+           data-collapsed-label="▾ 展開其餘 ${diseases.length - visibleLimit} 個疾病" data-expanded-label="▴ 收合">▾ 展開其餘 ${diseases.length - visibleLimit} 個疾病</button>`
+      : ""}</div>` : "";
     const sources = p.sources || [];
     const sourcesHtml = sources.length
       ? `<div class="muted cnv-sv-overlap-sources">${sources.map(escapeHtml).join("； ")}</div>`
       : "";
     groups.push(`<div class="cnv-sv-overlap-row">
       <div class="cnv-sv-overlap-head"><strong>${label}:</strong></div>
-      <div class="cnv-sv-overlap-content">${phenLine}${sourcesHtml}</div>
-      <button type="button" class="cnv-sv-overlap-toggle">▸ 展開全部</button>
+      <div class="cnv-sv-overlap-content cnv-sv-overlap-content-counted">${phenLine}${sourcesHtml}</div>
     </div>`);
   }
   if (!groups.length) {
@@ -7485,6 +7495,19 @@ document.addEventListener("toggle", ev => {
 // a CSS-line-clamped div; this toggle flips the expanded class and
 // updates the button label.
 document.addEventListener("click", ev => {
+  const diseaseBtn = ev.target.closest?.(".cnv-disease-list-toggle");
+  if (diseaseBtn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const list = diseaseBtn.closest(".cnv-disease-collapsible");
+    if (!list) return;
+    const expanded = list.classList.toggle("expanded");
+    diseaseBtn.setAttribute("aria-expanded", String(expanded));
+    diseaseBtn.textContent = expanded
+      ? diseaseBtn.dataset.expandedLabel
+      : diseaseBtn.dataset.collapsedLabel;
+    return;
+  }
   const btn = ev.target.closest?.(".cnv-sv-overlap-toggle");
   if (!btn) return;
   const row = btn.closest(".cnv-sv-overlap-row");

@@ -45,6 +45,21 @@ test('CNV phenotype uses selectable OMIM workbook disease rows', () => {
   assert.match(html, /data-phenotype-mim="114000"/);
 });
 
+test('CNV phenotype shows two OMIM diseases before the count-based expander', () => {
+  const c = context();
+  const disease_associations = Array.from({ length: 4 }, (_, idx) => ({
+    id: `omim-slot:${idx + 1}`, omim_slot: idx + 1, source_kind: 'omim',
+    display_name: `Disease ${idx + 1}`, phenotype_mim: `60000${idx + 1}`,
+    inheritance: 'AD', detail: `Detail ${idx + 1}`,
+  }));
+  const html = c._renderCnvGeneDiseases({
+    gene: 'GENE1', omim_id: '123456', disease_associations,
+  }, 'cnv1');
+  assert.equal((html.match(/cnv-gene-disease cnv-disease-extra/g) || []).length, 2);
+  assert.match(html, /展開其餘 2 個疾病/);
+  assert.match(html, /aria-expanded="false"/);
+});
+
 test('pathogenic overlap renders one report checkbox per disease', () => {
   const c = context();
   const html = c._renderCnvSvOverlap({
@@ -55,4 +70,16 @@ test('pathogenic overlap renders one report checkbox per disease', () => {
   assert.match(html, /Disease A/);
   assert.match(html, /Disease B/);
   assert.doesNotMatch(html, /p_gain/);
+});
+
+test('pathogenic overlap shows five diseases before the count-based expander', () => {
+  const c = context();
+  const diseases = Array.from({ length: 7 }, (_, idx) => `Disease ${idx + 1}`);
+  const html = c._renderCnvSvOverlap({
+    sv_type: 'DEL', p_loss: { diseases, sources: ['CLN:1'], coords: [] },
+  }, 'cnv1');
+  assert.equal((html.match(/cnv-overlap-disease-option cnv-disease-extra/g) || []).length, 2);
+  assert.match(html, /展開其餘 2 個疾病/);
+  assert.match(html, /cnv-sv-overlap-content-counted/);
+  assert.doesNotMatch(html, /cnv-sv-overlap-toggle/);
 });
