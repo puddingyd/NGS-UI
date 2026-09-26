@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Iterable
 
-from ..services import gene_disease_store, panel_deadzone, cnv_sv_impact
+from ..services import cnv_sv_impact, gene_disease_store, omim_store, panel_deadzone
 
 # Tier names mirror the frontend's CNV_SV_TIER_ORDER.
 CNV_TIERS = ["CNV-1A", "CNV-1B"]
@@ -123,6 +124,44 @@ def _split_genes(gene_name: str) -> list[str]:
     return [g.strip() for g in (gene_name or "").split(";") if g.strip()]
 
 
+def _omim_record(raw_id: str, gene: str) -> dict | None:
+    """Resolve an AnnotSV gene row against the curator-owned OMIM workbook.
+
+    AnnotSV normally emits one numeric gene MIM per split row, but older
+    releases occasionally concatenate identifiers. Try every numeric token
+    before falling back to the canonical gene symbol.
+    """
+    for token in re.findall(r"\d+", raw_id or ""):
+        try:
+            record = omim_store.lookup_cached(omim_id=int(token), gene="")
+        except ValueError:
+            record = None
+        if record:
+            return record
+    return omim_store.lookup_cached(gene=gene)
+
+
+def _pathogenic_diseases(value: str | None) -> list[str]:
+    """Split AnnotSV pathogenic-region phenotypes without splitting commas.
+
+    Disease names commonly contain commas, while AnnotSV uses semicolons for
+    repeated overlap records. Underscores are presentation separators in the
+    source annotations and are converted to spaces for the reviewer UI/report.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[;\n]+", str(value or "")):
+        label = re.sub(r"_+", " ", raw).strip()
+        if not label or label.upper() in {"NA", "."}:
+            continue
+        key = " ".join(label.casefold().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(label)
+    return out
+
+
 def _split_row_to_gene(
     row: dict,
     pheno_by_gene: dict[str, float],
@@ -139,7 +178,13 @@ def _split_row_to_gene(
     gene, _hid = panel_deadzone.canonical_gene_symbol(row.get("Gene_name", ""))
     score = pheno_by_gene.get(gene)
     matched = pheno_matched.get(gene, 0.0) if pheno_matched else 0.0
-    disease_associations = gene_disease_store.merged_associations(gene, None, refresh=False)
+    raw_omim_id = (row.get("OMIM_ID") or "").strip()
+    raw_omim_phenotype = (row.get("OMIM_phenotype") or "").strip()
+    raw_omim_inheritance = (row.get("OMIM_inheritance") or "").strip()
+    omim_record = _omim_record(raw_omim_id, gene)
+    disease_associations = gene_disease_store.merged_associations(
+        gene, omim_record, refresh=False
+    )
     return {
         "gene":             gene,
         "tx":               (row.get("Tx") or "").strip(),
@@ -154,9 +199,14 @@ def _split_row_to_gene(
         "splice_type":     (row.get("Nearest_SS_type") or "").strip(),
         "hi":              _to_int(row.get("HI")),
         "ts":              _to_int(row.get("TS")),
-        "omim_id":          (row.get("OMIM_ID") or "").strip(),
-        "omim_phenotype":   (row.get("OMIM_phenotype") or "").strip(),
-        "omim_inheritance": (row.get("OMIM_inheritance") or "").strip(),
+        # Curator-owned OMIM.xlsx is authoritative for card/report disease
+        # choices. Preserve AnnotSV values explicitly for fallback/audit.
+        "omim_id":          str((omim_record or {}).get("OMIM_id") or raw_omim_id),
+        "omim_phenotype":   str((omim_record or {}).get("OMIM_disease") or raw_omim_phenotype),
+        "omim_inheritance": str((omim_record or {}).get("Inheritance") or raw_omim_inheritance),
+        "annotsv_omim_id":          raw_omim_id,
+        "annotsv_omim_phenotype":   raw_omim_phenotype,
+        "annotsv_omim_inheritance": raw_omim_inheritance,
         "loeuf_bin":        _to_float(row.get("LOEUF_bin")),
         "pli":              _to_float(row.get("GnomAD_pLI") or row.get("ExAC_pLI")),
         "pheno_score":      round(score, 2) if score is not None else None,
@@ -217,16 +267,19 @@ def _full_row_to_variant(
         "ranking_criteria":  (full_row.get("AnnotSV_ranking_criteria") or "").strip(),
         "p_loss": {
             "phens":    (full_row.get("P_loss_phen") or "").strip(),
+            "diseases": _pathogenic_diseases(full_row.get("P_loss_phen")),
             "sources":  _split_semi(full_row.get("P_loss_source") or ""),
             "coords":   _split_semi(full_row.get("P_loss_coord") or ""),
         },
         "p_gain": {
             "phens":    (full_row.get("P_gain_phen") or "").strip(),
+            "diseases": _pathogenic_diseases(full_row.get("P_gain_phen")),
             "sources":  _split_semi(full_row.get("P_gain_source") or ""),
             "coords":   _split_semi(full_row.get("P_gain_coord") or ""),
         },
         "p_ins": {
             "phens":    (full_row.get("P_ins_phen") or "").strip(),
+            "diseases": _pathogenic_diseases(full_row.get("P_ins_phen")),
             "sources":  _split_semi(full_row.get("P_ins_source") or ""),
             "coords":   _split_semi(full_row.get("P_ins_coord") or ""),
         },
@@ -347,8 +400,7 @@ def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], list[dict], 
     overflow_compact = [
         {"gene": g.get("gene"),
          "omim_id": g.get("omim_id"),
-         "in_panel": g.get("in_panel"),
-         "disease_associations": g.get("disease_associations") or []}
+         "in_panel": g.get("in_panel")}
         for g in rest if not g.get("in_panel")
     ]
     return visible, overflow_full, overflow_compact, len(genes)
@@ -371,6 +423,7 @@ def load_annotsv_tsv(
     """
     pheno_by_gene = pheno_by_gene or {}
     pheno_matched = pheno_matched or {}
+    omim_store.ensure_loaded()
     gene_disease_store.ensure_loaded()
     tiers = list(CNV_TIERS) if source == "cnv" else list(SV_TIERS)
     variants: dict[str, dict] = {}

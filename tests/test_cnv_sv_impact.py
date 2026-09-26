@@ -92,6 +92,70 @@ def test_adapter_computes_before_trim_and_preserves_out_of_order_split_rows(tmp_
     assert categories["CNV-1B" if source == "cnv" else "SV-2B"] == []
 
 
+def test_adapter_uses_omim_workbook_diseases_and_splits_pathogenic_overlap(
+    tmp_path, monkeypatch
+):
+    from app.services import gene_disease_store, omim_store, panel_deadzone
+
+    omim_row = omim_store._empty_row()
+    omim_row.update({
+        "OMIM_id": "120150",
+        "OMIM_disease": "Workbook disease A (600001)(AD)\nWorkbook disease B (600002)(AR)",
+        "Inheritance": "AD;AR",
+        "Disease1": "Workbook disease A (600001)(AD)\n\nDetail A.",
+        "Disease2": "Workbook disease B (600002)(AR)\n\nDetail B.",
+    })
+    monkeypatch.setattr(omim_store, "ensure_loaded", lambda: None)
+    monkeypatch.setattr(
+        omim_store, "lookup_cached",
+        lambda *, omim_id=None, gene="": omim_row if omim_id == 120150 or gene == "COL1A1" else None,
+    )
+    monkeypatch.setattr(gene_disease_store, "ensure_loaded", lambda: None)
+    monkeypatch.setattr(
+        gene_disease_store, "merged_associations",
+        lambda gene, row, refresh=False: gene_disease_store._omim_associations(row),
+    )
+    monkeypatch.setattr(panel_deadzone, "canonical_gene_symbol", lambda g: (g, None))
+
+    headers = [
+        "AnnotSV_ID", "Annotation_mode", "SV_chrom", "SV_start", "SV_end",
+        "SV_type", "Gene_name", "OMIM_ID", "OMIM_phenotype",
+        "OMIM_inheritance", "P_loss_phen", "P_loss_source", "P_loss_coord",
+    ]
+    path = tmp_path / "annotated.tsv"
+    rows = [
+        {
+            "AnnotSV_ID": "cnv1", "Annotation_mode": "full", "SV_chrom": "17",
+            "SV_start": "100", "SV_end": "200", "SV_type": "DEL",
+            "Gene_name": "COL1A1",
+            "P_loss_phen": "Overlap_disease_A;Overlap disease B;Overlap_disease_A",
+            "P_loss_source": "CLN:1;dbVar:nsv2", "P_loss_coord": "17:100-150;17:151-200",
+        },
+        {
+            "AnnotSV_ID": "cnv1", "Annotation_mode": "split", "SV_chrom": "17",
+            "SV_start": "100", "SV_end": "200", "SV_type": "DEL",
+            "Gene_name": "COL1A1", "OMIM_ID": "120150",
+            "OMIM_phenotype": "Stale AnnotSV disease", "OMIM_inheritance": "AD",
+        },
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=headers, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
+
+    variants, _ = load_annotsv_tsv(path, source="cnv")
+
+    gene_row = variants["cnv1"]["genes"][0]
+    assert gene_row["omim_phenotype"].startswith("Workbook disease A")
+    assert gene_row["annotsv_omim_phenotype"] == "Stale AnnotSV disease"
+    assert [item["display_name"] for item in gene_row["disease_associations"]] == [
+        "Workbook disease A", "Workbook disease B",
+    ]
+    assert variants["cnv1"]["p_loss"]["diseases"] == [
+        "Overlap disease A", "Overlap disease B",
+    ]
+
+
 def test_backend_parent_preserves_segment_scope():
     from app.services.cnv_sv_merge import build_parent
     first = {"id": "a", "source": "cnv", "CHROM": "1", "POS": 100, "END": 200,

@@ -26,6 +26,30 @@ def _dedupe_genes(segments: list[dict]) -> list[dict]:
     return out
 
 
+def _merge_pathogenic_block(segments: list[dict], key: str) -> dict:
+    """Union display/report evidence across every member segment."""
+    diseases: list[str] = []
+    sources: list[str] = []
+    coords: list[str] = []
+    for segment in segments:
+        block = segment.get(key) or {}
+        for target, values in (
+            (diseases, block.get("diseases") or []),
+            (sources, block.get("sources") or []),
+            (coords, block.get("coords") or []),
+        ):
+            for value in values:
+                clean = str(value or "").strip()
+                if clean and clean not in target:
+                    target.append(clean)
+    return {
+        "phens": ";".join(diseases),
+        "diseases": diseases,
+        "sources": sources,
+        "coords": coords,
+    }
+
+
 def build_parent(merge: dict, variants: dict[str, dict]) -> dict | None:
     member_ids = merge.get("member_ids") or []
     segments = [variants[mid] for mid in member_ids if mid in variants]
@@ -71,6 +95,9 @@ def build_parent(merge: dict, variants: dict[str, dict]) -> dict | None:
         "impact_all": merge_summaries([v["impact_all"] for v in segments if "impact_all" in v]),
         "impact_clinical": merge_summaries([v["impact_clinical"] for v in segments
                                            if v.get("in_panel") and "impact_clinical" in v]),
+        "p_loss": _merge_pathogenic_block(segments, "p_loss"),
+        "p_gain": _merge_pathogenic_block(segments, "p_gain"),
+        "p_ins": _merge_pathogenic_block(segments, "p_ins"),
         "cnv_rescue_events": [
             evidence for segment in segments
             for evidence in (segment.get("cnv_rescue_events") or

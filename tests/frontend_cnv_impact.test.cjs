@@ -82,12 +82,16 @@ test('fixed ordering is unaffected by unrelated scaled ranking scores or rescue 
 
 test('merged parent uses actual segments, preserves clinical scope and member protection', () => {
   const c = fixture(), variants = c.state.data.cnv_variants;
-  variants.a = variant('a');
-  variants.b = variant('b', 'functional', { POS: 300, END: 400, in_panel: false });
+  variants.a = variant('a', 'noncoding', {
+    p_loss: { diseases: ['Disease A'], sources: ['CLN:1'], coords: ['1:100-200'] },
+  });
+  variants.b = variant('b', 'functional', { POS: 300, END: 400, in_panel: false,
+    p_loss: { diseases: ['Disease B'], sources: ['dbVar:2'], coords: ['1:300-400'] } });
   c.state.data.cnv_categories['CNV-1A'] = ['a'];
   const parent = c._cnvSvBuildParent({ member_ids: ['a', 'b'] });
   assert.equal(parent.impact_clinical.category, 'noncoding');
   assert.equal(parent.impact_all.category, 'functional');
+  assert.deepEqual(Array.from(parent.p_loss.diseases), ['Disease A', 'Disease B']);
   assert.equal(c._cnvSvIdsForTier('CNV-1A').length, 0);
   assert.equal(c._cnvSvIdsForTier('CNV-1A', false).length, 1);
   c.state.reports.status.a = '1';

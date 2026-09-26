@@ -79,3 +79,81 @@ def test_em_dash_uses_full_width_for_ascii_table_padding():
     assert docx_export._str_width("—") == 2
     assert docx_export._pad_right("—", 13) == "—" + (" " * 11)
 
+
+def test_cnv_report_disease_is_selected_union_plus_free_text():
+    edits = {
+        "report_disease_items": {
+            "omim:GENE:1:1": {
+                "label": "Disease A", "source": "omim", "gene": "GENE",
+                "phenotype_mim": "600001", "inheritance": "AD",
+            },
+            "overlap:p_loss:Disease B": {
+                "label": "Disease B", "source": "overlap", "overlap_type": "p_loss",
+            },
+            "duplicate": {"label": "disease a", "source": "overlap"},
+        },
+        "disease": "Disease A、Manual disease",
+    }
+
+    assert docx_export._cnv_report_disease(edits) == (
+        "Disease A、Disease B、Manual disease"
+    )
+
+
+def test_single_gene_cnv_keeps_one_point_and_uses_combined_disease_text():
+    doc = Document()
+    variant = {
+        "id": "cnv1", "source": "cnv", "CHROM": "17", "POS": 100,
+        "END": 200, "sv_type": "DEL", "copy_number": 1, "zygosity": "het",
+        "acmg_class": 5,
+        "genes": [{
+            "gene": "COL1A1", "location": "exon1-exon2", "omim_id": "120150",
+            "omim_phenotype": "Legacy disease (600000)(AD)",
+            "omim_inheritance": "AD",
+        }],
+    }
+    edits = {
+        "report_disease_items": {
+            "omim:COL1A1:120150:1": {"label": "Disease A", "source": "omim"},
+            "overlap:p_loss:Disease B": {"label": "Disease B", "source": "overlap"},
+        },
+        "disease": "Manual disease",
+    }
+
+    docx_export._cnv_variant_block(
+        doc, variant, tier="1", is_wgs=True, edits=edits
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "COL1A1為Disease A、Disease B、Manual disease的致病基因之一" in text
+    assert "Phenotype MIM number" not in text
+
+
+def test_single_overlap_disease_does_not_inherit_gene_omim_metadata():
+    doc = Document()
+    variant = {
+        "id": "cnv1", "source": "cnv", "CHROM": "17", "POS": 100,
+        "END": 200, "sv_type": "DEL", "copy_number": 1, "zygosity": "het",
+        "acmg_class": 5,
+        "genes": [{
+            "gene": "COL1A1", "location": "exon1-exon2", "omim_id": "120150",
+            "omim_phenotype": "Legacy disease (600000)(AD)",
+            "omim_inheritance": "AD",
+        }],
+    }
+    edits = {
+        "report_disease_items": {
+            "overlap:p_loss:Overlap disease": {
+                "label": "Overlap disease", "source": "overlap",
+            },
+        },
+    }
+
+    docx_export._cnv_variant_block(
+        doc, variant, tier="1", is_wgs=True, edits=edits
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "COL1A1為Overlap disease的致病基因之一" in text
+    assert "Phenotype MIM number" not in text
+    assert "顯性遺傳" not in text

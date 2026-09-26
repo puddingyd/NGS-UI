@@ -6039,6 +6039,22 @@ function _cnvSvMergeId(source, chrom, start, end, svType) {
   return `MERGED-${String(source || "cnv").toUpperCase()}-${chrom}-${start}-${end}-${String(svType || "").toUpperCase()}`;
 }
 
+function _cnvSvMergePathogenicBlock(segments, key) {
+  const diseases = [], sources = [], coords = [];
+  const addUnique = (target, values) => (values || []).forEach(value => {
+    const clean = String(value || "").trim();
+    if (clean && !target.includes(clean)) target.push(clean);
+  });
+  segments.forEach(segment => {
+    const block = segment?.[key] || {};
+    addUnique(diseases, block.diseases || String(block.phens || "").split(/[;\n]+/)
+      .map(value => value.replaceAll("_", " ").trim()).filter(Boolean));
+    addUnique(sources, block.sources);
+    addUnique(coords, block.coords);
+  });
+  return { phens: diseases.join(";"), diseases, sources, coords };
+}
+
 function _cnvSvBuildParent(merge) {
   const segments = (merge.member_ids || []).map(_cnvSvBaseVariantById).filter(Boolean);
   if (segments.length < 2) return null;
@@ -6076,6 +6092,9 @@ function _cnvSvBuildParent(merge) {
     impact_all: _cnvSvMergeImpacts(segments.map(s => s.impact_all || { category: "unknown" })),
     impact_clinical: _cnvSvMergeImpacts(segments.filter(s => s.in_panel)
       .map(s => s.impact_clinical || { category: "unknown" })),
+    p_loss: _cnvSvMergePathogenicBlock(segments, "p_loss"),
+    p_gain: _cnvSvMergePathogenicBlock(segments, "p_gain"),
+    p_ins: _cnvSvMergePathogenicBlock(segments, "p_ins"),
     cnv_rescue_events: segments.flatMap(seg => seg.cnv_rescue_events || (seg.cnv_rescue ? [seg.cnv_rescue] : [])),
   };
 }
@@ -6915,7 +6934,8 @@ function renderMitoCard(v, id, opts = {}) {
 //   • per-gene table built from split rows (Tx / Location / OMIM)
 //   • pathogenic-region overlap (P_loss / P_gain) + benign AF
 //   • AnnotSV reasoning text (collapsed)
-//   • disease list synthesised from gene OMIM_phenotype lines
+//   • per-gene selectable disease rows joined from curator OMIM.xlsx
+//   • selectable pathogenic-region overlap diseases
 //
 // Edits (status / comment / report-disease checkbox) reuse the same
 // state.reports.{status,edits} dicts as SNV cards — AnnotSV_IDs and
@@ -7092,6 +7112,84 @@ function _renderCnvSvDetailBox(v, id) {
   </div>`;
 }
 
+function _cnvReportDiseaseItems(id) {
+  const picked = getEdit(id, "report_disease_items") || {};
+  return (picked && typeof picked === "object" && !Array.isArray(picked)) ? picked : {};
+}
+
+function _cnvOmimDiseaseKey(g, association) {
+  const slot = association?.omim_slot || association?.id || association?.display_name || "";
+  return `omim:${g.gene || ""}:${g.omim_id || ""}:${slot}`;
+}
+
+function _renderCnvGeneDiseases(g, id) {
+  const associations = (g.disease_associations || [])
+    .filter(association => association?.source_kind === "omim");
+  if (!associations.length) return "";
+  const picked = _cnvReportDiseaseItems(id);
+  const rows = associations.map(association => {
+    const key = _cnvOmimDiseaseKey(g, association);
+    const label = association.display_name || diseaseAssociationSummary(association);
+    const summary = diseaseAssociationSummary(association) || label;
+    const detail = diseaseAssociationDetail(association) || summary;
+    const checked = picked[key] ? "checked" : "";
+    const badges = diseaseSourceBadges(association, ["OMIM"]);
+    return `<details class="disease-row disease-row-omim cnv-gene-disease">
+      <summary><input type="checkbox" class="cnv-report-disease-pick" data-id="${escapeAttr(id)}"
+        data-idx="${escapeAttr(key)}" data-label="${escapeAttr(label)}" data-source="omim"
+        data-gene="${escapeAttr(g.gene || "")}" data-phenotype-mim="${escapeAttr(association.phenotype_mim || "")}"
+        data-inheritance="${escapeAttr(association.inheritance || "")}" ${checked}
+        title="報告要發這個疾病" /><span class="disease-summary-text">${escapeHtml(summary)}</span><span class="disease-source-badges">${badges}</span></summary>
+      <div class="disease-detail">${escapeHtml(detail)}<button type="button" class="disease-collapse">▴ 收合</button></div>
+    </details>`;
+  });
+  return `<div class="cnv-gene-disease-list">${rows.join("")}</div>`;
+}
+
+function _renderCnvSvGeneRow(g, id) {
+  const pickedGenes = getEdit(id, "report_genes") || {};
+  const checked = pickedGenes[g.gene] ? "checked" : "";
+  const triggerMark = g.in_panel ? `<span class="pheno-star" title="HPO/panel match">★</span>` : "";
+  const omimCell = g.omim_id
+    ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
+    : "—";
+  const cdsPct = (g.overlap_cds_pct != null)
+    ? `${Math.round(Number(g.overlap_cds_pct))}%` : "—";
+  const fmtWeight = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
+  const pheno = (g.pheno_total && g.pheno_total > 0)
+    ? `${fmtWeight(g.pheno_matched || 0)}/${fmtWeight(g.pheno_total)}`
+    : "—";
+  const inh = g.omim_inheritance || "";
+  const phenAll = g.omim_phenotype || "";
+  const diseaseOptions = _renderCnvGeneDiseases(g, id);
+  const phenotypeCell = diseaseOptions || `<span class="gene-clip-fallback">${escapeHtml((phenAll || "").split("\n")[0]) || "—"}</span>`;
+  const phenotypeAttrs = diseaseOptions
+    ? `class="cnv-gene-phenotype-cell"`
+    : `class="cnv-gene-phenotype-cell gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開"`;
+  const sameGeneCell = g.gene
+    ? `<button class="same-gene-btn" data-gene="${escapeAttr(g.gene)}" type="button" title="列出 ${escapeAttr(g.gene)} 的所有 SNV/Indel + CNV/SV 變異">搜尋同基因</button>`
+    : "";
+  return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
+    <td class="gene-pick-cell"><input type="checkbox" class="gene-pick" data-id="${escapeAttr(id)}" data-gene="${escapeAttr(g.gene || "")}" ${checked} title="勾選=放進報告" /></td>
+    <td><strong>${escapeHtml(g.gene || "?")}</strong>${triggerMark}</td>
+    <td>${escapeHtml(g.tx || "")}</td>
+    <td>${escapeHtml(g.location || "")}</td>
+    <td>${cdsPct}</td>
+    <td class="gene-clip-cell" data-full="${escapeAttr(inh)}" title="點此展開">${escapeHtml(inh) || "—"}</td>
+    <td>${omimCell}</td>
+    <td ${phenotypeAttrs}>${phenotypeCell}</td>
+    <td>${pheno}</td>
+    <td class="gene-search-cell">${sameGeneCell}</td>
+  </tr>`;
+}
+
+function _cnvSvGeneTableHead() {
+  return `<thead><tr>
+    <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
+    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th><th></th>
+  </tr></thead>`;
+}
+
 function _renderCnvSvGeneTable(v, id) {
   // Backend trims `genes` to the visible-table set (≤10 rows + any
   // in-panel overflow), and ships the long tail in `genes_compact`
@@ -7102,54 +7200,9 @@ function _renderCnvSvGeneTable(v, id) {
   const total = (v.genes_total != null) ? v.genes_total : genes.length + genesCompact.length;
   if (!total) return "";
 
-  const picked = getEdit(id, "report_genes") || {};
-  const _fmtW = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
-  const _firstLine = s => (s || "").split("\n")[0] || "";
-  const rowHtml = (g) => {
-    const checked = picked[g.gene] ? "checked" : "";
-    const triggerMark = g.in_panel ? `<span class="pheno-star" title="HPO/panel match">★</span>` : "";
-    const omimCell = g.omim_id
-      ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
-      : "—";
-    // AnnotSV emits Overlapped_CDS_percent as 0..100 already (saw
-    // 100 → "10000%" pre-fix). Treat the value as the percent itself,
-    // no extra ×100.
-    const cdsPct = (g.overlap_cds_pct != null)
-      ? `${Math.round(Number(g.overlap_cds_pct))}%` : "—";
-    // Pheno reads as `matched/total` so the reviewer sees how many
-    // input HPO/panel weights implicate this gene. Falls back to "—"
-    // when phenotype isn't configured (denominator 0).
-    const pheno = (g.pheno_total && g.pheno_total > 0)
-      ? `${_fmtW(g.pheno_matched || 0)}/${_fmtW(g.pheno_total)}`
-      : "—";
-    const inh     = g.omim_inheritance || "";
-    const phenAll = g.omim_phenotype   || "";
-    const sameGeneCell = g.gene
-      ? `<button class="same-gene-btn" data-gene="${escapeAttr(g.gene)}" type="button" title="列出 ${escapeAttr(g.gene)} 的所有 SNV/Indel + CNV/SV 變異">搜尋同基因</button>`
-      : "";
-    return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
-      <td class="gene-pick-cell">
-        <input type="checkbox" class="gene-pick" data-id="${escapeAttr(id)}" data-gene="${escapeAttr(g.gene || "")}" ${checked} title="勾選=放進報告" />
-      </td>
-      <td><strong>${escapeHtml(g.gene || "?")}</strong>${triggerMark}</td>
-      <td>${escapeHtml(g.tx || "")}</td>
-      <td>${escapeHtml(g.location || "")}</td>
-      <td>${cdsPct}</td>
-      <td class="gene-clip-cell" data-full="${escapeAttr(inh)}" title="點此展開">${escapeHtml(inh) || "—"}</td>
-      <td>${omimCell}</td>
-      <td class="gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開">${escapeHtml(_firstLine(phenAll)) || "—"}</td>
-      <td>${pheno}</td>
-      <td class="gene-search-cell">${sameGeneCell}</td>
-    </tr>`;
-  };
-
-  const tableHead = `<thead><tr>
-    <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
-    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th><th></th>
-  </tr></thead>`;
   const relevantGenes = genes.filter(g => g.in_panel);
   const hiddenFullGenes = genes.filter(g => !g.in_panel);
-  const visibleRows = relevantGenes.map(rowHtml).join("");
+  const visibleRows = relevantGenes.map(g => _renderCnvSvGeneRow(g, id)).join("");
 
   // Overflow body is rendered lazily on first <details> open. For
   // SVs that span 1500+ genes, eagerly building the chip DOM was
@@ -7166,12 +7219,12 @@ function _renderCnvSvGeneTable(v, id) {
 
   return `<div class="cnv-sv-section">
     <div class="cnv-sv-section-title">基因 (${total})</div>
-    <table class="cnv-sv-gene-table">${tableHead}<tbody>${visibleRows}</tbody></table>
+    <table class="cnv-sv-gene-table">${_cnvSvGeneTableHead()}<tbody>${visibleRows}</tbody></table>
     ${overflowHtml}
   </div>`;
 }
 
-function _renderCnvSvOverlap(v) {
+function _renderCnvSvOverlap(v, id) {
   // Type-specific filter: a deletion only meaningfully overlaps loss
   // pathogenic regions; a duplication only gain regions; everything
   // else (INV / INS / TRA) shows all three so reviewers can pick.
@@ -7189,7 +7242,17 @@ function _renderCnvSvOverlap(v) {
     if (!allowed.has(key)) continue;
     const p = v[key];
     if (!p || (!p.phens && !(p.sources || []).length)) continue;
-    const phenLine = p.phens ? `<div class="cnv-sv-overlap-phen">${escapeHtml(p.phens)}</div>` : "";
+    const diseases = (p.diseases || String(p.phens || "").split(/[;\n]+/)
+      .map(value => value.replaceAll("_", " ").trim()).filter(Boolean));
+    const picked = _cnvReportDiseaseItems(id);
+    const phenLine = diseases.length ? `<div class="cnv-sv-overlap-phen">${diseases.map(label => {
+      const selectionKey = `overlap:${key}:${label}`;
+      const checked = picked[selectionKey] ? "checked" : "";
+      return `<label class="cnv-overlap-disease-option"><input type="checkbox" class="cnv-report-disease-pick"
+        data-id="${escapeAttr(id)}" data-idx="${escapeAttr(selectionKey)}" data-label="${escapeAttr(label)}"
+        data-source="overlap" data-overlap-type="${escapeAttr(key)}" ${checked} title="報告要發這個疾病" />
+        <span>${escapeHtml(label)}</span></label>`;
+    }).join("")}</div>` : "";
     const sources = p.sources || [];
     const sourcesHtml = sources.length
       ? `<div class="muted cnv-sv-overlap-sources">${sources.map(escapeHtml).join("； ")}</div>`
@@ -7289,7 +7352,7 @@ function renderCnvSvCard(v, id, opts = {}) {
     ${_renderCnvSvImpactReason(v, opts.tier)}
     ${_renderCnvSvDetailBox(v, id)}
     ${_renderCnvSvGeneTable(v, id)}
-    ${_renderCnvSvOverlap(v)}
+    ${_renderCnvSvOverlap(v, id)}
     ${_renderCnvSvBenign(v)}
     ${_renderCnvSvDisease(v, id)}
     ${_renderCnvSvComment(v, id)}
@@ -7318,6 +7381,24 @@ document.addEventListener("change", ev => {
     const gene = t.dataset.gene;
     if (t.checked) picked[gene] = true; else delete picked[gene];
     setEdit(id, "report_genes", picked);
+    updateSaveHint();
+  } else if (t.matches(".cnv-report-disease-pick")) {
+    const picked = { ..._cnvReportDiseaseItems(id) };
+    const key = t.dataset.idx;
+    if (t.checked) {
+      picked[key] = {
+        label: t.dataset.label || "",
+        source: t.dataset.source || "",
+        gene: t.dataset.gene || "",
+        phenotype_mim: t.dataset.phenotypeMim || "",
+        inheritance: t.dataset.inheritance || "",
+        overlap_type: t.dataset.overlapType || "",
+      };
+    } else {
+      delete picked[key];
+    }
+    setEdit(id, "report_disease_items", picked);
+    _syncVariantCheckboxes(".cnv-report-disease-pick", id, key, t.checked, t);
     updateSaveHint();
   } else if (t.matches(".cnv-sv-acmg-select")) {
     setEdit(id, "ACMG_class_sv", t.value);
@@ -7386,44 +7467,8 @@ document.addEventListener("toggle", ev => {
   // (so reviewers can still see Tx / Location / Phenotype for them).
   // Non-in-panel rows collapse to compact chips since they were
   // shipped without those fields.
-  const picked = getEdit(id, "report_genes") || {};
-  const _fmtW = w => (w % 1 === 0) ? String(w | 0) : Number(w).toFixed(1);
-  const _firstLine = s => (s || "").split("\n")[0] || "";
-  const fullRowHtml = (g) => {
-    const checked = picked[g.gene] ? "checked" : "";
-    const triggerMark = g.in_panel ? `<span class="pheno-star" title="HPO/panel match">★</span>` : "";
-    const omimCell = g.omim_id
-      ? `<a href="https://www.omim.org/entry/${escapeAttr(g.omim_id)}" target="_blank" rel="noopener">${escapeHtml(g.omim_id)}</a>`
-      : "—";
-    const cdsPct = (g.overlap_cds_pct != null)
-      ? `${Math.round(Number(g.overlap_cds_pct))}%` : "—";
-    const pheno = (g.pheno_total && g.pheno_total > 0)
-      ? `${_fmtW(g.pheno_matched || 0)}/${_fmtW(g.pheno_total)}`
-      : "—";
-    const inh     = g.omim_inheritance || "";
-    const phenAll = g.omim_phenotype   || "";
-    const sameGeneCell = g.gene
-      ? `<button class="same-gene-btn" data-gene="${escapeAttr(g.gene)}" type="button" title="列出 ${escapeAttr(g.gene)} 的所有 SNV/Indel + CNV/SV 變異">搜尋同基因</button>`
-      : "";
-    return `<tr class="${g.in_panel ? "gene-row-in-panel" : ""}" data-gene="${escapeAttr(g.gene || "")}">
-      <td class="gene-pick-cell"><input type="checkbox" class="gene-pick" data-id="${escapeAttr(id)}" data-gene="${escapeAttr(g.gene || "")}" ${checked} title="勾選=放進報告" /></td>
-      <td><strong>${escapeHtml(g.gene || "?")}</strong>${triggerMark}</td>
-      <td>${escapeHtml(g.tx || "")}</td>
-      <td>${escapeHtml(g.location || "")}</td>
-      <td>${cdsPct}</td>
-      <td class="gene-clip-cell" data-full="${escapeAttr(inh)}" title="點此展開">${escapeHtml(inh) || "—"}</td>
-      <td>${omimCell}</td>
-      <td class="gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開">${escapeHtml(_firstLine(phenAll)) || "—"}</td>
-      <td>${pheno}</td>
-      <td class="gene-search-cell">${sameGeneCell}</td>
-    </tr>`;
-  };
-  const tableHead = `<thead><tr>
-    <th></th><th>Gene</th><th>Tx</th><th>Location</th><th>CDS%</th>
-    <th>Inheritance</th><th>OMIM</th><th>Phenotype</th><th>Pheno</th><th></th>
-  </tr></thead>`;
   const fullTable = overflowFull.length
-    ? `<table class="cnv-sv-gene-table">${tableHead}<tbody>${overflowFull.map(fullRowHtml).join("")}</tbody></table>`
+    ? `<table class="cnv-sv-gene-table">${_cnvSvGeneTableHead()}<tbody>${overflowFull.map(g => _renderCnvSvGeneRow(g, id)).join("")}</tbody></table>`
     : "";
   const chipBlock = compact.length
     ? `<div class="gene-overflow-chips">${compact.map(g =>
@@ -8338,7 +8383,7 @@ document.addEventListener("click", ev => {
   } else if (t.matches(".btn-remove-manual")) {
     ev.stopPropagation();
     removeManualVariant(t.dataset.mid);
-  } else if (t.matches(".disease-pick, .mito-disease-pick")) {
+  } else if (t.matches(".disease-pick, .mito-disease-pick, .cnv-report-disease-pick")) {
     // Don't let clicking the checkbox also toggle its <details> container.
     ev.stopPropagation();
   } else if (t.matches(".disease-collapse")) {

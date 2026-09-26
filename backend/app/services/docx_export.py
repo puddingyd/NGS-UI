@@ -27,6 +27,7 @@ from docx.shared import Cm, Pt
 from . import (
     acmg_sf_education,
     clinvar_latest_store,
+    cnv_disease_selection,
     cnv_sv_merge,
     hpo_ontology,
     omim_store,
@@ -1264,8 +1265,8 @@ def _sv_kind_zh(v: dict) -> str:
 
 
 def _cnv_report_disease(edits: dict) -> str:
-    """Reviewer-entered CNV/SV disease label for the formal report."""
-    return str(edits.get("disease") or "").strip()
+    """Ordered union of selected OMIM/overlap diseases and free text."""
+    return cnv_disease_selection.disease_text(edits)
 
 
 def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
@@ -1320,13 +1321,33 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         loc_zh = _location_zh(g)
         _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {_gene_loc_phrase(gname, loc_zh)}。")
         # 2. OMIM phenotype + inheritance, per-gene
+        selected_items = []
+        if disease_override:
+            selected_items = cnv_disease_selection.selected_items(edits)
         ph, ph_inheritance, phenotype_mim = _disease_info(
             disease_override or (g.get("omim_phenotype") or "").strip()
         )
+        # A combined disease string must not inherit the first disease's MIM
+        # or mode of inheritance. Keep precise metadata only for one explicit
+        # workbook selection; legacy free text retains the previous fallback.
+        explicit_multi = len(cnv_disease_selection.disease_labels(edits)) > 1
+        has_explicit_selection = bool(selected_items)
+        if len(selected_items) == 1 and not explicit_multi:
+            ph_inheritance = selected_items[0].get("inheritance") or ph_inheritance
+            phenotype_mim = selected_items[0].get("phenotype_mim") or phenotype_mim
+        elif selected_items:
+            ph_inheritance = ""
+            phenotype_mim = ""
         inh = _inheritance_zh(
-            ph_inheritance or g.get("omim_inheritance", "") or ""
+            "" if explicit_multi else (
+                ph_inheritance if has_explicit_selection
+                else (ph_inheritance or g.get("omim_inheritance", "") or "")
+            )
         )
-        mim = phenotype_mim or (g.get("omim_id") or "").strip()
+        mim = "" if explicit_multi else (
+            phenotype_mim if has_explicit_selection
+            else (phenotype_mim or (g.get("omim_id") or "").strip())
+        )
         bits = [f"{gname}為"]
         bits.append(f"{ph}的致病基因之一" if ph else "此疾病的致病基因之一")
         if inh: bits.append(f"，其遺傳模式屬於{inh}")

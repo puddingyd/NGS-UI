@@ -2865,6 +2865,26 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   outline: 1px solid rgba(0,0,0,0.15);
   outline-offset: -1px;
 }
+.cnv-gene-phenotype-cell {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.cnv-gene-disease-list .disease-row {
+  margin: 0 0 3px;
+}
+.cnv-gene-disease-list .disease-row:last-child { margin-bottom: 0; }
+.cnv-gene-disease-list .disease-row summary {
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.cnv-gene-disease-list .disease-detail {
+  font-size: 11px;
+}
+.cnv-gene-disease-list .cnv-report-disease-pick,
+.cnv-overlap-disease-option .cnv-report-disease-pick {
+  flex: 0 0 auto;
+  margin: 1px 4px 0 0;
+}
 
 .cnv-sv-gene-overflow {
   margin-top: 4px; font-size: 12px;
@@ -2903,6 +2923,12 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   overflow: visible;
 }
 .cnv-sv-overlap-phen { margin-bottom: 2px; }
+.cnv-overlap-disease-option {
+  display: flex;
+  align-items: flex-start;
+  margin: 2px 0;
+  word-break: normal;
+}
 .cnv-sv-overlap-sources { font-size: 11px; }
 .cnv-sv-overlap-toggle {
   display: inline-block;

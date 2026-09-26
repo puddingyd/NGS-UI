@@ -46,6 +46,7 @@ from . import (
     annotation_versions,
     analyses_store,
     clinvar_latest_store,
+    cnv_disease_selection,
     gene_disease_store,
     hpo_ontology,
     litvar2_on_demand,
@@ -876,9 +877,9 @@ def _case_management_summary(
         if str(statuses.get(vid, "")).strip() == "1":
             if label:
                 causative.append(label)
-            disease = str(edits.get("disease") or "").strip()
-            if disease and disease not in diseases:
-                diseases.append(disease)
+            for disease in cnv_disease_selection.disease_labels(edits):
+                if disease not in diseases:
+                    diseases.append(disease)
         elif label:
             other.append(label)
 
