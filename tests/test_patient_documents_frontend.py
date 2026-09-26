@@ -33,6 +33,27 @@ def test_documents_frontend_supports_paste_rename_delete_and_tiff_preview():
     assert "archive.zip?mrn=" in script
 
 
+def test_document_preview_supports_zoom_pan_drag_and_keeps_file_navigation_separate():
+    script = (ROOT / "frontend" / "documents.js").read_text(encoding="utf-8")
+    style = (ROOT / "frontend" / "documents.css").read_text(encoding="utf-8")
+
+    assert 'data-pdoc-zoom-out' in script
+    assert 'data-pdoc-zoom-in' in script
+    assert 'data-pdoc-zoom-reset' in script
+    assert 'data-pdoc-pan-left' in script
+    assert 'data-pdoc-pan-right' in script
+    assert 'data-pdoc-pan-up' in script
+    assert 'data-pdoc-pan-down' in script
+    assert 'addEventListener("pointerdown"' in script
+    assert 'addEventListener("pointermove"' in script
+    assert 'setPointerCapture' in script
+    assert 'Ctrl/⌘＋滾輪縮放' in script
+    assert 'event.shiftKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]' in script
+    assert 'movePreviewDocument(event.key === "ArrowLeft" ? -1 : 1)' in script
+    assert '.pdoc-preview-body.is-zoomed' in style
+    assert 'touch-action: none' in style
+
+
 def test_documents_api_requires_authentication_and_streams_downloads():
     router = (ROOT / "backend" / "app" / "routers" / "documents.py").read_text(encoding="utf-8")
     service = (ROOT / "backend" / "app" / "services" / "patient_documents.py").read_text(encoding="utf-8")

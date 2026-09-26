@@ -211,21 +211,67 @@
 .pdoc-file-nav:focus-visible { outline: 2px solid #8ab4f8; outline-offset: -3px; }
 .pdoc-file-nav:disabled { opacity: 0.25; cursor: default; }
 .pdoc-preview-body {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 320px;
+  height: min(680px, calc(92vh - 220px));
   padding: 14px;
-  overflow: auto;
+  overflow: hidden;
   background: #202124;
+  touch-action: none;
+  user-select: none;
 }
 .pdoc-preview-body img {
   display: block;
   max-width: 100%;
-  max-height: calc(92vh - 150px);
+  max-height: 100%;
   object-fit: contain;
   background: #fff;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  will-change: transform;
 }
+.pdoc-preview-body.is-zoomed { cursor: grab; }
+.pdoc-preview-body.is-dragging { cursor: grabbing; }
+.pdoc-preview-body.is-dragging img { transition: none; }
+.pdoc-view-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 8px 12px;
+  border-top: 1px solid #d8dee4;
+  background: #fff;
+}
+.pdoc-tool-group { display: inline-flex; align-items: center; gap: 5px; }
+.pdoc-tool-btn {
+  min-width: 34px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #24292f;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pdoc-tool-btn:hover:not(:disabled) { background: #eef1f4; border-color: #afb8c1; }
+.pdoc-tool-btn:focus-visible { outline: 2px solid #0969da; outline-offset: 1px; }
+.pdoc-tool-btn:disabled { opacity: 0.38; cursor: default; }
+.pdoc-reset-btn { width: auto; font-size: 12px; }
+.pdoc-zoom-label {
+  min-width: 48px;
+  color: #24292f;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.pdoc-tool-label, .pdoc-view-hint { color: #6e7781; font-size: 11px; }
 .pdoc-preview-controls {
   display: flex;
   justify-content: center;
@@ -249,6 +295,11 @@
 
 @media (max-width: 720px) {
   .pdoc-preview-stage { grid-template-columns: 36px minmax(0, 1fr) 36px; }
+  .pdoc-preview-body { height: calc(96vh - 260px); min-height: 280px; padding: 8px; }
+  .pdoc-view-controls { gap: 7px 10px; padding: 7px 8px; }
+  .pdoc-view-hint { display: none; }
+  .pdoc-tool-label { display: none; }
+  .pdoc-tool-btn { min-width: 32px; height: 30px; padding: 0 7px; }
   .pdoc-overlay { padding: 8px; }
   .pdoc-card { max-height: 96vh; }
   .pdoc-pending-row { grid-template-columns: 48px minmax(0, 1fr); }

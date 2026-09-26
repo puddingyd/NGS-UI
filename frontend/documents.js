@@ -4,6 +4,10 @@
   const API = "/api/documents";
   const ACCEPT = ".pdf,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/jpeg,image/png,image/tiff";
   const MRN_RE = /^[A-Za-z0-9_-]{1,32}$/;
+  const PREVIEW_ZOOM_MIN = 0.5;
+  const PREVIEW_ZOOM_MAX = 4;
+  const PREVIEW_ZOOM_STEP = 0.25;
+  const PREVIEW_PAN_STEP = 80;
   let options = {};
   let context = null;
   let pending = [];
@@ -13,6 +17,10 @@
   let previewDocuments = [];
   let previewRequest = 0;
   let previewController = null;
+  let previewZoom = 1;
+  let previewPanX = 0;
+  let previewPanY = 0;
+  let previewDrag = null;
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -145,6 +153,22 @@
             <button type="button" class="pdoc-file-nav" data-pdoc-file-prev aria-label="上一個檔案" title="上一個檔案（←）">&#10094;</button>
             <div id="pdoc-preview-body" class="pdoc-preview-body" aria-live="polite"><span class="pdoc-muted">載入中…</span></div>
             <button type="button" class="pdoc-file-nav" data-pdoc-file-next aria-label="下一個檔案" title="下一個檔案（→）">&#10095;</button>
+          </div>
+          <div id="pdoc-view-controls" class="pdoc-view-controls" role="toolbar" aria-label="圖片檢視工具">
+            <div class="pdoc-tool-group" role="group" aria-label="縮放">
+              <button type="button" class="pdoc-tool-btn" data-pdoc-zoom-out aria-label="縮小" title="縮小（−）">&#8722;</button>
+              <output id="pdoc-zoom-label" class="pdoc-zoom-label" aria-live="polite">100%</output>
+              <button type="button" class="pdoc-tool-btn" data-pdoc-zoom-in aria-label="放大" title="放大（＋）">&#43;</button>
+              <button type="button" class="pdoc-tool-btn pdoc-reset-btn" data-pdoc-zoom-reset title="回到符合視窗的大小（0）">重設</button>
+            </div>
+            <div class="pdoc-tool-group pdoc-pan-tools" role="group" aria-label="移動圖片">
+              <span class="pdoc-tool-label">移動</span>
+              <button type="button" class="pdoc-tool-btn" data-pdoc-pan-left aria-label="圖片向左移" title="圖片向左移（Shift＋←）">&#8592;</button>
+              <button type="button" class="pdoc-tool-btn" data-pdoc-pan-up aria-label="圖片向上移" title="圖片向上移（Shift＋↑）">&#8593;</button>
+              <button type="button" class="pdoc-tool-btn" data-pdoc-pan-down aria-label="圖片向下移" title="圖片向下移（Shift＋↓）">&#8595;</button>
+              <button type="button" class="pdoc-tool-btn" data-pdoc-pan-right aria-label="圖片向右移" title="圖片向右移（Shift＋→）">&#8594;</button>
+            </div>
+            <span class="pdoc-view-hint">放大後可拖曳；Ctrl/⌘＋滾輪縮放</span>
           </div>
           <div id="pdoc-preview-controls" class="pdoc-preview-controls" hidden>
             <button type="button" class="btn btn-secondary" data-pdoc-preview-prev>上一頁</button>
@@ -402,6 +426,83 @@
     previewUrl = "";
   }
 
+  function clamp(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, value));
+  }
+
+  function previewPanBounds() {
+    const body = document.getElementById("pdoc-preview-body");
+    const image = body?.querySelector("img");
+    if (!body || !image || previewZoom <= 1) return { x: 0, y: 0 };
+    const availableWidth = Math.max(0, body.clientWidth - 28);
+    const availableHeight = Math.max(0, body.clientHeight - 28);
+    return {
+      x: Math.max(0, (image.offsetWidth * previewZoom - availableWidth) / 2),
+      y: Math.max(0, (image.offsetHeight * previewZoom - availableHeight) / 2),
+    };
+  }
+
+  function renderPreviewViewportControls() {
+    const bounds = previewPanBounds();
+    const hasImage = !!document.querySelector("#pdoc-preview-body img");
+    const label = document.getElementById("pdoc-zoom-label");
+    if (label) label.value = `${Math.round(previewZoom * 100)}%`;
+    const setDisabled = (selector, disabled) => {
+      const button = document.querySelector(selector);
+      if (button) button.disabled = disabled;
+    };
+    setDisabled("[data-pdoc-zoom-out]", !hasImage || previewZoom <= PREVIEW_ZOOM_MIN);
+    setDisabled("[data-pdoc-zoom-in]", !hasImage || previewZoom >= PREVIEW_ZOOM_MAX);
+    setDisabled("[data-pdoc-zoom-reset]", !hasImage || (
+      previewZoom === 1 && previewPanX === 0 && previewPanY === 0
+    ));
+    setDisabled("[data-pdoc-pan-left]", !hasImage || bounds.x === 0 || previewPanX <= -bounds.x);
+    setDisabled("[data-pdoc-pan-right]", !hasImage || bounds.x === 0 || previewPanX >= bounds.x);
+    setDisabled("[data-pdoc-pan-up]", !hasImage || bounds.y === 0 || previewPanY <= -bounds.y);
+    setDisabled("[data-pdoc-pan-down]", !hasImage || bounds.y === 0 || previewPanY >= bounds.y);
+  }
+
+  function applyPreviewViewport() {
+    const body = document.getElementById("pdoc-preview-body");
+    const image = body?.querySelector("img");
+    if (!body || !image) {
+      renderPreviewViewportControls();
+      return;
+    }
+    const bounds = previewPanBounds();
+    previewPanX = clamp(previewPanX, -bounds.x, bounds.x);
+    previewPanY = clamp(previewPanY, -bounds.y, bounds.y);
+    image.style.transform = `translate3d(${previewPanX}px, ${previewPanY}px, 0) scale(${previewZoom})`;
+    body.classList.toggle("is-zoomed", previewZoom > 1);
+    renderPreviewViewportControls();
+  }
+
+  function resetPreviewViewport() {
+    previewZoom = 1;
+    previewPanX = 0;
+    previewPanY = 0;
+    previewDrag = null;
+    const body = document.getElementById("pdoc-preview-body");
+    body?.classList.remove("is-zoomed", "is-dragging");
+    applyPreviewViewport();
+  }
+
+  function setPreviewZoom(value) {
+    previewZoom = Math.round(clamp(value, PREVIEW_ZOOM_MIN, PREVIEW_ZOOM_MAX) * 100) / 100;
+    if (previewZoom <= 1) {
+      previewPanX = 0;
+      previewPanY = 0;
+    }
+    applyPreviewViewport();
+  }
+
+  function panPreview(deltaX, deltaY) {
+    if (previewZoom <= 1) return;
+    previewPanX += deltaX;
+    previewPanY += deltaY;
+    applyPreviewViewport();
+  }
+
   async function loadPreviewPage(page) {
     if (!previewDocument) return;
     const pages = Number(previewDocument.image_pages || 1);
@@ -411,9 +512,11 @@
     previewController = new AbortController();
     const currentDocument = previewDocument;
     previewPage = page;
+    resetPreviewViewport();
     renderPreviewControls();
     const body = document.getElementById("pdoc-preview-body");
     body.innerHTML = `<span class="pdoc-muted">載入中…</span>`;
+    renderPreviewViewportControls();
     releasePreviewUrl();
     try {
       const response = await fetch(
@@ -433,10 +536,14 @@
       const blob = await response.blob();
       if (request !== previewRequest) return;
       previewUrl = URL.createObjectURL(blob);
-      body.innerHTML = `<img src="${esc(previewUrl)}" alt="${esc(currentDocument.display_name)}">`;
+      body.innerHTML = `<img src="${esc(previewUrl)}" alt="${esc(currentDocument.display_name)}" draggable="false">`;
+      const image = body.querySelector("img");
+      image?.addEventListener("load", applyPreviewViewport, { once: true });
+      if (image?.complete) applyPreviewViewport();
     } catch (error) {
       if (request !== previewRequest || error.name === "AbortError") return;
       body.innerHTML = `<div class="pdoc-error">${esc(error.message || error)}</div>`;
+      renderPreviewViewportControls();
     }
   }
 
@@ -483,6 +590,7 @@
     const previousId = previewDocument?.id;
     releasePreviewUrl();
     previewDocument = null;
+    resetPreviewViewport();
     document.getElementById("patient-document-preview").hidden = true;
     document.getElementById("pdoc-preview-body").innerHTML = "";
     if (previousId) {
@@ -590,6 +698,50 @@
     document.querySelector("[data-pdoc-preview-next]")?.addEventListener("click", () => loadPreviewPage(previewPage + 1));
     document.querySelector("[data-pdoc-file-prev]")?.addEventListener("click", () => movePreviewDocument(-1));
     document.querySelector("[data-pdoc-file-next]")?.addEventListener("click", () => movePreviewDocument(1));
+    document.querySelector("[data-pdoc-zoom-out]")?.addEventListener("click", () => setPreviewZoom(previewZoom - PREVIEW_ZOOM_STEP));
+    document.querySelector("[data-pdoc-zoom-in]")?.addEventListener("click", () => setPreviewZoom(previewZoom + PREVIEW_ZOOM_STEP));
+    document.querySelector("[data-pdoc-zoom-reset]")?.addEventListener("click", resetPreviewViewport);
+    document.querySelector("[data-pdoc-pan-left]")?.addEventListener("click", () => panPreview(-PREVIEW_PAN_STEP, 0));
+    document.querySelector("[data-pdoc-pan-right]")?.addEventListener("click", () => panPreview(PREVIEW_PAN_STEP, 0));
+    document.querySelector("[data-pdoc-pan-up]")?.addEventListener("click", () => panPreview(0, -PREVIEW_PAN_STEP));
+    document.querySelector("[data-pdoc-pan-down]")?.addEventListener("click", () => panPreview(0, PREVIEW_PAN_STEP));
+    const previewBody = document.getElementById("pdoc-preview-body");
+    previewBody?.addEventListener("pointerdown", event => {
+      if (previewZoom <= 1 || !event.target.closest("img")) return;
+      event.preventDefault();
+      previewDrag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        panX: previewPanX,
+        panY: previewPanY,
+      };
+      previewBody.setPointerCapture(event.pointerId);
+      previewBody.classList.add("is-dragging");
+    });
+    previewBody?.addEventListener("pointermove", event => {
+      if (!previewDrag || previewDrag.pointerId !== event.pointerId) return;
+      previewPanX = previewDrag.panX + event.clientX - previewDrag.startX;
+      previewPanY = previewDrag.panY + event.clientY - previewDrag.startY;
+      applyPreviewViewport();
+    });
+    const stopPreviewDrag = event => {
+      if (!previewDrag || previewDrag.pointerId !== event.pointerId) return;
+      if (previewBody.hasPointerCapture(event.pointerId)) previewBody.releasePointerCapture(event.pointerId);
+      previewDrag = null;
+      previewBody.classList.remove("is-dragging");
+    };
+    previewBody?.addEventListener("pointerup", stopPreviewDrag);
+    previewBody?.addEventListener("pointercancel", stopPreviewDrag);
+    previewBody?.addEventListener("wheel", event => {
+      if ((!event.ctrlKey && !event.metaKey) || !previewBody.querySelector("img")) return;
+      event.preventDefault();
+      setPreviewZoom(previewZoom + (event.deltaY < 0 ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP));
+    }, { passive: false });
+    previewBody?.addEventListener("dblclick", event => {
+      if (!event.target.closest("img")) return;
+      setPreviewZoom(previewZoom === 1 ? 2 : 1);
+    });
     document.getElementById("patient-documents-modal")?.addEventListener("click", event => {
       if (event.target.id === "patient-documents-modal") close();
     });
@@ -597,6 +749,34 @@
       if (event.target.id === "patient-document-preview") closePreview();
     });
     document.addEventListener("keydown", event => {
+      const previewIsOpen = !document.getElementById("patient-document-preview")?.hidden;
+      const isTyping = !!event.target.closest("input, textarea, select, [contenteditable]");
+      if (previewIsOpen && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (event.shiftKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+          event.preventDefault();
+          const movement = {
+            ArrowLeft: [-PREVIEW_PAN_STEP, 0], ArrowRight: [PREVIEW_PAN_STEP, 0],
+            ArrowUp: [0, -PREVIEW_PAN_STEP], ArrowDown: [0, PREVIEW_PAN_STEP],
+          }[event.key];
+          panPreview(...movement);
+          return;
+        }
+        if (["+", "="].includes(event.key)) {
+          event.preventDefault();
+          setPreviewZoom(previewZoom + PREVIEW_ZOOM_STEP);
+          return;
+        }
+        if (["-", "_"].includes(event.key)) {
+          event.preventDefault();
+          setPreviewZoom(previewZoom - PREVIEW_ZOOM_STEP);
+          return;
+        }
+        if (event.key === "0") {
+          event.preventDefault();
+          resetPreviewViewport();
+          return;
+        }
+      }
       if (!document.getElementById("patient-document-preview")?.hidden
           && ["ArrowLeft", "ArrowRight"].includes(event.key)
           && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
@@ -609,6 +789,7 @@
       if (!document.getElementById("patient-document-preview")?.hidden) closePreview();
       else if (!document.getElementById("patient-documents-modal")?.hidden) close();
     });
+    window.addEventListener("resize", applyPreviewViewport);
   }
 
   async function open(event) {
