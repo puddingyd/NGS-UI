@@ -79,7 +79,8 @@ _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
 CASE_SUMMARY_CACHE_NAME = "case_summary.json"
 CASE_TABLE_CACHE_NAME = "_case_table.json"
-CASE_TABLE_VERSION = 2
+CASE_SUMMARY_VERSION = 2
+CASE_TABLE_VERSION = 3
 _case_table_lock = threading.Lock()
 
 
@@ -211,6 +212,7 @@ def _file_signature(path: Path) -> tuple[str, int, int]:
 def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> list:
     sample_id = _sample_id_from_state_dir(sample_dir)
     return [
+        ["case_summary_version", CASE_SUMMARY_VERSION],
         list(_file_signature(sample_layout.state_file(sample_id, "sample_metadata.json"))),
         list(_file_signature(sample_layout.snv_raw_tsv(sample_id))),
         list(_file_signature(sample_layout.snv_overlay_path(sample_id))),
@@ -616,8 +618,9 @@ def _scan_snv_review_rows_by_ids(tsv_path: Path, wanted: set[str]) -> list[dict[
                 continue
             if variant.get("id") in wanted:
                 out.append(row)
-                if len(out) >= len(wanted):
-                    break
+                # Keep scanning: one genomic id may occupy multiple rows for
+                # different transcripts/genes, and the reviewer may have
+                # selected any one of them.
     return out
 
 
@@ -652,7 +655,14 @@ def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, di
             except (KeyError, TypeError, ValueError):
                 continue
             if variant.get("id") in wanted:
-                variants[variant["id"]] = variant
+                # A genomic variant can have several transcript rows (and
+                # even overlap different genes, such as TSC2/PKD1).  The main
+                # sample loader merges those rows before applying the saved
+                # selected_transcript_key.  Do the same on the lightweight
+                # case-list path; assigning by id here used to let the final
+                # raw row silently replace the transcript chosen by the
+                # reviewer.
+                merge_snv_variant_row(variants, variant)
     if variants:
         _enrich_snv_variants(variants, sample_id, sample_dir)
         meta = _read_json_or(
