@@ -8,33 +8,36 @@ scripts/inhouse_af/publish_af.py):
     INHOUSE_AN   in-house total called alleles  (Number=A)
     INHOUSE_AF   INHOUSE_AC / INHOUSE_AN        (Number=A)
 
-The DB is `bcftools norm -m-` split + left-aligned, so a TSV row that is
-multiallelic (`ALT="C,CA"`) or whose indel is represented differently won't
-exact-match. To match the DB representation we normalize the TSV variants the
-SAME way before joining:
+MATCHING. The DB is `bcftools norm -m-` split + left-aligned, so a TSV row that
+is multiallelic (`ALT="C,CA"`) or whose indel is written differently won't
+exact-match. Each ALT is therefore split out and reduced to its minimal
+representation (trim common suffix then prefix) before lookup. This is
+reference-independent on purpose: normalising with `bcftools norm --check-ref x`
+against the *local* FASTA drops every variant whose REF disagrees with it, which
+on a machine whose hg38 differs from the DB's build reference lost ~16% of
+matches for no speed gain. The minimal-representation join matches ~99.96%.
+It misses only indels the DB left-shifted into a repeat (rare).
 
-  * DEFAULT (pure Python, ref-independent): split ALT on comma + trim to
-    minimal representation, then a single streaming pass over the DB. Handles
-    multiallelics and simple indels; misses only indels the DB left-shifted
-    into a repeat (rare). Ref-independent, so it works even when the deploy
-    machine's hg38 differs from the DB's build reference.
-  * OPT-IN (`--use-bcftools`): mini VCF (ID=row_allele) → `bcftools norm -m-
-    -f ref` (split + left-align) → index → `annotate -a <DB>`. Also recovers
-    left-shifted indels — BUT `norm --check-ref x` DROPS variants whose REF
-    disagrees with the local FASTA, so if that FASTA isn't the DB's build
-    reference it matches FEWER (observed ~16% fewer, no speed win). Use only
-    when the local ref is known to match the DB build ref.
+SPEED (a cohort backfill runs this once per sample, so it matters):
+  * the TSV is streamed twice (collect keys, then rewrite) with
+    `csv.reader`/`csv.writer` instead of being parsed into a list of dicts, so a
+    6M-row WGS TSV never sits in memory. csv rather than raw line splitting
+    because fields may be quoted and may contain embedded newlines.
+  * the sites VCF is read through `bgzip -dc`/`pigz`/`zcat` when available;
+    Python's gzip module is several times slower over ~57M lines.
+  A SQLite index of the sites VCF was tried and REJECTED: a python-sqlite3
+  indexed lookup costs ~7.5 us against ~0.45 us for a line parse, so replacing
+  a 57M-line scan with 6M lookups measured SLOWER, not faster.
 
-Per-allele values are comma-joined in ALT order (`.` for a non-matching
-allele). The SNV adapter shows the first ALT's value on the card (consistent
-with the existing first-ALT VAF/AD behavior); the full per-allele data stays
-in the TSV.
+Per-allele values are comma-joined in ALT order (`.` for a non-matching allele).
+The SNV adapter shows the first ALT's value on the card (consistent with the
+existing first-ALT VAF/AD behaviour); the full per-allele data stays in the TSV.
 
 Fill-or-augment, idempotent, atomic replace. No-op (exit 0) when the DB is
 missing. Usage:
 
     scripts/annotate_inhouse_af.py --tsv <snv_indel.annotated.tsv> \\
-        [--db <inhouse_af.hg38.vcf.gz>] [--ref <hg38.fasta>]
+        [--db <inhouse_af.hg38.vcf.gz>]
     scripts/annotate_inhouse_af.py --selftest
 """
 from __future__ import annotations
@@ -47,23 +50,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from array import array
 from pathlib import Path
 
 DEFAULT_DB = os.environ.get(
     "NGS_UI_INHOUSE_AF_DB",
     str(Path.home() / "NGS_UI" / "biotools" / "inhouse_af" / "inhouse_af.hg38.vcf.gz"),
 )
-# Candidate reference FASTAs for the bcftools path (first existing one with a
-# .fai wins). Override with --ref or NGS_UI_INHOUSE_AF_REF.
-REF_CANDIDATES = [
-    os.environ.get("NGS_UI_INHOUSE_AF_REF", ""),
-    os.path.join(os.environ.get("NGS_UI_IGV_REF_DIR", "/home/pipeline/reference/hg38"),
-                 "Homo_sapiens_assembly38.fasta"),
-    "/home/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta",
-    "/home/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta",
-]
 COL_AC, COL_AN, COL_AF = "INHOUSE_AC", "INHOUSE_AN", "INHOUSE_AF"
 _SYMBOLIC = {"*", ".", "", "<NON_REF>", "<*>"}
+_MAX_ALT = 255          # alleles per row we can pack into the key index
+_CSV_MAX = 4 * 1024 * 1024
 
 
 def norm_chrom(chrom: str) -> str:
@@ -81,12 +78,24 @@ def info_get(info: str, key: str):
     return None
 
 
+def info3(info: str):
+    """(AC, AN, AF) from an INFO string in one pass; '.' when absent."""
+    ac = an = af = "."
+    for fld in info.split(";"):
+        if fld.startswith("INHOUSE_AC="):
+            ac = fld[11:]
+        elif fld.startswith("INHOUSE_AN="):
+            an = fld[11:]
+        elif fld.startswith("INHOUSE_AF="):
+            af = fld[11:]
+    return ac, an, af
+
+
 def minimal_repr(pos: int, ref: str, alt: str):
     """Parsimonious (minimal) representation: trim common suffix then prefix.
 
-    Does NOT reference-left-align (that needs the FASTA); the bcftools path
-    handles left-shifting. Enough to match the DB for non-shifted indels and
-    to canonicalize the anchor base."""
+    Reference-independent, so it does not left-shift into a repeat; that is the
+    known (rare) miss. Everything else canonicalises to the DB's form."""
     ref = (ref or "").upper()
     alt = (alt or "").upper()
     while len(ref) > 1 and len(alt) > 1 and ref[-1] == alt[-1]:
@@ -97,7 +106,7 @@ def minimal_repr(pos: int, ref: str, alt: str):
 
 
 def alt_alleles(alt_field: str):
-    """Split a possibly-multiallelic ALT into (index, allele) skipping symbolic."""
+    """Split a possibly-multiallelic ALT into (index, allele), skipping symbolic."""
     out = []
     for j, a in enumerate((alt_field or "").split(",")):
         a = a.strip()
@@ -108,115 +117,89 @@ def alt_alleles(alt_field: str):
 
 
 # --------------------------------------------------------------------------
-# tool / reference resolution
+# pass 1: TSV -> key index ; lookup ; pass 2: rewrite
 # --------------------------------------------------------------------------
 
-def resolve_bcftools():
-    sif = os.environ.get("BCFTOOLS_SIF")
-    if sif and os.path.exists(sif):
-        binds = os.environ.get("APPTAINER_BIND", "/home")
-        return ["apptainer", "exec", "--bind", binds, sif, "bcftools"]
-    b = os.environ.get("BCFTOOLS_BIN", "bcftools")
-    return [b] if shutil.which(b) else None
+def scan_keys(tsv: Path, ic: int, ip: int, ir: int, ia: int):
+    """Stream the TSV once. Returns (index, n_alts_per_row).
 
-
-def resolve_ref(explicit):
-    for r in ([explicit] if explicit else []) + REF_CANDIDATES:
-        if r and os.path.exists(r) and os.path.exists(r + ".fai"):
-            return r
-    return None
-
-
-# --------------------------------------------------------------------------
-# join implementations -> hits[(row_i, alt_j)] = (ac, an, af)
-# --------------------------------------------------------------------------
-
-def join_bcftools(rows, db, ref, bcftools):
-    """norm -m- -f ref (split+left-align) | sort | annotate -a db. Robust: any
-    failure raises so the caller can fall back to Python."""
-    tmpd = tempfile.mkdtemp(prefix="inhouse_af.")
-    mini = os.path.join(tmpd, "mini.vcf")
-    try:
-        # contig header from the .fai so bcftools has a contig order to sort by
-        contigs = []
-        with open(ref + ".fai") as f:
-            for line in f:
-                p = line.split("\t")
-                if len(p) >= 2:
-                    contigs.append(f"##contig=<ID={p[0]},length={p[1]}>")
-        with open(mini, "w") as o:
-            o.write("##fileformat=VCFv4.2\n")
-            o.write("\n".join(contigs) + "\n")
-            o.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
-            for i, r in enumerate(rows):
-                chrom = norm_chrom(r.get("CHROM", ""))
-                pos = (r.get("POS") or "").strip()
-                ref_a = (r.get("REF") or "").strip().upper()
-                if not (chrom and pos.isdigit() and ref_a):
+    index maps a normalised key to packed (row<<8 | allele) ints — a bare int
+    for the common single-owner case, a list only on collision."""
+    index: dict[tuple, object] = {}
+    nalts = array("H")
+    with open(tsv, "r", encoding="utf-8", newline="") as f:
+        rdr = csv.reader(f, delimiter="\t")
+        next(rdr, None)
+        for i, row in enumerate(rdr):
+            if len(row) <= ia:
+                nalts.append(0)
+                continue
+            toks = (row[ia] or "").split(",")
+            nalts.append(min(len(toks), 65535))
+            chrom = norm_chrom(row[ic] if ic < len(row) else "")
+            pos = (row[ip] or "").strip() if ip < len(row) else ""
+            ref_a = (row[ir] or "").strip() if ir < len(row) else ""
+            if not (chrom and pos.isdigit() and ref_a):
+                continue
+            base = i << 8
+            for j, a in enumerate(toks):
+                if j > _MAX_ALT:
+                    break
+                a = a.strip()
+                if a in _SYMBOLIC:
                     continue
-                for j, a in alt_alleles(r.get("ALT", "")):
-                    o.write(f"{chrom}\t{pos}\t{i}_{j}\t{ref_a}\t{a.upper()}\t.\t.\t.\n")
-
-        norm_gz = os.path.join(tmpd, "norm.vcf.gz")
-        sort_gz = os.path.join(tmpd, "sorted.vcf.gz")
-        subprocess.run(bcftools + ["norm", "-m-", "-f", ref, "--check-ref", "x",
-                                   mini, "-Oz", "-o", norm_gz],
-                       check=True, stderr=subprocess.DEVNULL)
-        subprocess.run(bcftools + ["sort", "-T", tmpd, norm_gz, "-Oz", "-o", sort_gz],
-                       check=True, stderr=subprocess.DEVNULL)
-        # `bcftools annotate -a` uses the synced reader, which requires the MAIN
-        # input to be an indexed file (even a stdin stream fails with "could not
-        # load index"). Index the sorted file before annotating.
-        subprocess.run(bcftools + ["index", "-t", sort_gz],
-                       check=True, stderr=subprocess.DEVNULL)
-        p = subprocess.Popen(
-            bcftools + ["annotate", "-a", db,
-                        "-c", "INFO/INHOUSE_AC,INFO/INHOUSE_AN,INFO/INHOUSE_AF", sort_gz],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        hits = {}
-        for line in p.stdout:
-            if not line or line[0] == "#":
-                continue
-            F = line.rstrip("\n").split("\t", 8)
-            if len(F) < 8:
-                continue
-            rid = F[2]
-            info = F[7]
-            ac = info_get(info, "INHOUSE_AC")
-            if ac is None:
-                continue
-            an = info_get(info, "INHOUSE_AN")
-            af = info_get(info, "INHOUSE_AF")
-            try:
-                i_s, j_s = rid.split("_", 1)
-                key = (int(i_s), int(j_s))
-            except ValueError:
-                continue
-            hits[key] = (ac or ".", an or ".", af or ".")
-        err = p.stderr.read()
-        rc = p.wait()
-        if rc != 0:
-            raise RuntimeError(f"bcftools annotate rc={rc}: {err.strip()[:300]}")
-        return hits
-    finally:
-        shutil.rmtree(tmpd, ignore_errors=True)
+                k = minimal_repr(int(pos), ref_a, a)
+                k = (chrom, k[0], k[1], k[2])
+                packed = base | j
+                v = index.get(k)
+                if v is None:
+                    index[k] = packed
+                elif isinstance(v, int):
+                    index[k] = [v, packed]
+                else:
+                    v.append(packed)
+    return index, nalts
 
 
-def join_python(rows, db):
-    """Pure-Python: minimal-repr keys + one streaming pass over the DB."""
-    index: dict[tuple, list] = {}
-    for i, r in enumerate(rows):
-        chrom = norm_chrom(r.get("CHROM", ""))
-        pos = (r.get("POS") or "").strip()
-        ref_a = (r.get("REF") or "").strip()
-        if not (chrom and pos.isdigit() and ref_a):
-            continue
-        for j, a in alt_alleles(r.get("ALT", "")):
-            p, rr, aa = minimal_repr(int(pos), ref_a, a)
-            index.setdefault((chrom, p, rr, aa), []).append((i, j))
+def _spread(index, k, val, hits):
+    v = index[k]
+    if isinstance(v, int):
+        hits[v] = val
+    else:
+        for p in v:
+            hits[p] = val
+
+
+def open_db_text(db: str):
+    """Open the sites VCF as text, preferring a C decompressor.
+
+    Returns (stream, finish). `finish()` closes and reaps a child process when
+    one was used. Python's gzip module is several times slower over ~57M lines,
+    and this is re-read once per sample during a backfill."""
+    if db.endswith(".gz"):
+        for tool, args in (("bgzip", ["-dc"]), ("pigz", ["-dc"]), ("zcat", [])):
+            if shutil.which(tool):
+                p = subprocess.Popen([tool, *args, db], stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, text=True,
+                                     bufsize=1 << 20)
+
+                def finish(p=p):
+                    try:
+                        p.stdout.close()
+                    finally:
+                        p.wait()
+                return p.stdout, finish
+        fh = gzip.open(db, "rt", encoding="utf-8")
+        return fh, fh.close
+    fh = open(db, "r", encoding="utf-8")
+    return fh, fh.close
+
+
+def join_scan(index, db: str):
+    """One streaming pass over the sites VCF, keeping only keys we need."""
     hits = {}
-    opener = gzip.open if db.endswith(".gz") else open
-    with opener(db, "rt", encoding="utf-8") as fh:
+    fh, finish = open_db_text(db)
+    try:
         for line in fh:
             if not line or line[0] == "#":
                 continue
@@ -224,101 +207,80 @@ def join_python(rows, db):
             if len(F) < 8:
                 continue
             try:
-                key = (F[0], int(F[1]), F[3].upper(), F[4].upper())
+                k = (F[0], int(F[1]), F[3].upper(), F[4].upper())
             except ValueError:
                 continue
-            targets = index.get(key)
-            if not targets:
-                continue
-            info = F[7]
-            ac = info_get(info, "INHOUSE_AC") or "."
-            an = info_get(info, "INHOUSE_AN") or "."
-            af = info_get(info, "INHOUSE_AF") or "."
-            for t in targets:
-                hits[t] = (ac, an, af)
+            if k in index:
+                _spread(index, k, info3(F[7]), hits)
+    finally:
+        finish()
     return hits
 
 
-# --------------------------------------------------------------------------
-
-def assemble(rows, hits) -> int:
-    """Write per-allele comma-joined columns from hits. Returns rows with >=1
-    matched allele."""
+def write_out(tsv: Path, header, nalts, hits, tmp_path: str) -> int:
+    """Stream the TSV again, filling the three columns. Returns rows with a hit."""
+    out_header = list(header)
+    for c in (COL_AC, COL_AN, COL_AF):
+        if c not in out_header:
+            out_header.append(c)
+    i_ac, i_an, i_af = (out_header.index(c) for c in (COL_AC, COL_AN, COL_AF))
+    width = len(out_header)
     n_hit = 0
-    for i, r in enumerate(rows):
-        alleles = alt_alleles(r.get("ALT", ""))
-        if not alleles:
-            r[COL_AC] = r.get(COL_AC, "") or ""
-            r[COL_AN] = r.get(COL_AN, "") or ""
-            r[COL_AF] = r.get(COL_AF, "") or ""
-            continue
-        ac_p, an_p, af_p, any_hit = [], [], [], False
-        for j, _a in alleles:
-            v = hits.get((i, j))
-            if v:
-                any_hit = True
-                ac_p.append(v[0]); an_p.append(v[1]); af_p.append(v[2])
+    with open(tsv, "r", encoding="utf-8", newline="") as fi, \
+            open(tmp_path, "w", encoding="utf-8", newline="") as fo:
+        rdr = csv.reader(fi, delimiter="\t")
+        wtr = csv.writer(fo, delimiter="\t", lineterminator="\n")
+        next(rdr, None)
+        wtr.writerow(out_header)
+        for i, row in enumerate(rdr):
+            if len(row) < width:
+                row.extend([""] * (width - len(row)))
+            n = nalts[i] if i < len(nalts) else 0
+            base = i << 8
+            ac_p, an_p, af_p, any_hit = [], [], [], False
+            for j in range(min(n, _MAX_ALT + 1)):
+                v = hits.get(base | j)
+                if v:
+                    any_hit = True
+                    ac_p.append(v[0]); an_p.append(v[1]); af_p.append(v[2])
+                else:
+                    ac_p.append("."); an_p.append("."); af_p.append(".")
+            if any_hit:
+                row[i_ac] = ",".join(ac_p)
+                row[i_an] = ",".join(an_p)
+                row[i_af] = ",".join(af_p)
+                n_hit += 1
             else:
-                ac_p.append("."); an_p.append("."); af_p.append(".")
-        if any_hit:
-            r[COL_AC] = ",".join(ac_p)
-            r[COL_AN] = ",".join(an_p)
-            r[COL_AF] = ",".join(af_p)
-            n_hit += 1
-        else:
-            r[COL_AC] = r[COL_AN] = r[COL_AF] = ""
+                row[i_ac] = row[i_an] = row[i_af] = ""
+            wtr.writerow(row)
     return n_hit
 
 
-def annotate(tsv: Path, db: str, ref_arg: str | None, use_bcftools: bool = False) -> int:
+def annotate(tsv: Path, db: str) -> int:
     if not os.path.exists(db):
         print(f"[inhouse-af] DB not found: {db} — skipping (no-op)", file=sys.stderr)
         return 0
 
-    with open(tsv, "r", encoding="utf-8", newline="") as fi:
-        reader = csv.DictReader(fi, delimiter="\t")
-        fieldnames = list(reader.fieldnames or [])
-        if not fieldnames:
-            print(f"[inhouse-af] empty TSV: {tsv}", file=sys.stderr)
-            return 0
-        rows = list(reader)
-    for col in (COL_AC, COL_AN, COL_AF):
-        if col not in fieldnames:
-            fieldnames.append(col)
+    with open(tsv, "r", encoding="utf-8", newline="") as f:
+        header = next(csv.reader(f, delimiter="\t"), None)
+    if not header:
+        print(f"[inhouse-af] empty TSV: {tsv}", file=sys.stderr)
+        return 0
+    cols = {name: i for i, name in enumerate(header)}
+    missing = [c for c in ("CHROM", "POS", "REF", "ALT") if c not in cols]
+    if missing:
+        print(f"[inhouse-af] {tsv} has no {','.join(missing)} column — skipping",
+              file=sys.stderr)
+        return 0
 
-    # Default = ref-independent Python join. `bcftools norm --check-ref x` drops
-    # variants whose REF doesn't match the *local* reference FASTA, which loses
-    # matches whenever the deploy machine's hg38 differs from the one the DB was
-    # built on (observed: ~16% fewer matches, no speed win). Opt in with
-    # --use-bcftools only when the local ref matches the DB's build reference.
-    used, ref_used = "python", None
-    hits = None
-    if use_bcftools:
-        bcftools = resolve_bcftools()
-        ref = resolve_ref(ref_arg)
-        if bcftools and ref:
-            try:
-                hits = join_bcftools(rows, db, ref, bcftools)
-                used, ref_used = "bcftools", ref
-            except Exception as e:  # noqa: BLE001 — degrade, never block stop-gaps
-                print(f"[inhouse-af] bcftools path failed ({e}); falling back to python",
-                      file=sys.stderr)
-                hits = None
-        else:
-            print("[inhouse-af] --use-bcftools set but bcftools/ref not found; using python",
-                  file=sys.stderr)
-    if hits is None:
-        hits = join_python(rows, db)
+    index, nalts = scan_keys(tsv, cols["CHROM"], cols["POS"], cols["REF"], cols["ALT"])
 
-    n_hit = assemble(rows, hits)
+    hits = join_scan(index, db)
 
     fd, tmp_name = tempfile.mkstemp(dir=str(tsv.parent), prefix=tsv.name + ".", suffix=".tmp")
+    os.close(fd)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fo:
-            writer = csv.DictWriter(fo, fieldnames=fieldnames, delimiter="\t",
-                                    extrasaction="ignore", lineterminator="\n")
-            writer.writeheader()
-            writer.writerows(rows)
+        n_hit = write_out(tsv, header, nalts, hits, tmp_name)
         os.replace(tmp_name, tsv)
     except BaseException:
         try:
@@ -327,46 +289,105 @@ def annotate(tsv: Path, db: str, ref_arg: str | None, use_bcftools: bool = False
             pass
         raise
 
-    print(f"[inhouse-af] {len(rows)} variants, {n_hit} matched in-house AF DB "
-          f"(join={used}{', ref='+os.path.basename(ref_used) if ref_used else ''})")
+    print(f"[inhouse-af] {len(nalts)} variants, {n_hit} matched in-house AF DB")
     return 0
 
 
 # --------------------------------------------------------------------------
 
+def _mk_db(path, rows):
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        f.write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+        for c, p, r, a, ac, an, af in rows:
+            f.write(f"{c}\t{p}\t.\t{r}\t{a}\t.\t.\t"
+                    f"INHOUSE_AC={ac};INHOUSE_AN={an};INHOUSE_AF={af}\n")
+
+
+def _read_tsv(path):
+    with open(path, encoding="utf-8", newline="") as f:
+        return list(csv.DictReader(f, delimiter="\t"))
+
+
 def selftest() -> int:
     assert norm_chrom("1") == "chr1"
     assert minimal_repr(45330228, "CAA", "C") == (45330228, "CAA", "C")
     assert minimal_repr(45330228, "CAA", "CA") == (45330228, "CA", "C")
-    assert minimal_repr(100, "AT", "AG") == (101, "T", "G")   # SNV inside
+    assert minimal_repr(100, "AT", "AG") == (101, "T", "G")
     assert alt_alleles("C,CA") == [(0, "C"), (1, "CA")]
-    assert alt_alleles("A,*,G") == [(0, "A"), (2, "G")]       # skip spanning-del *
+    assert alt_alleles("A,*,G") == [(0, "A"), (2, "G")]
     assert info_get("INHOUSE_AC=5;INHOUSE_AF=0.05", "INHOUSE_AC") == "5"
+    assert info3("INHOUSE_AC=5;INHOUSE_AN=10;INHOUSE_AF=0.5") == ("5", "10", "0.5")
+    assert info3("X=1") == (".", ".", ".")
 
-    # end-to-end via the python path on a multiallelic row
-    import io
     d = tempfile.mkdtemp()
-    tsv = Path(d) / "snv.tsv"
-    tsv.write_text(
-        "CHROM\tPOS\tREF\tALT\tGENE\n"
-        "chr1\t45330228\tCAA\tC,CA\tMUTYH\n"   # both alleles in DB
-        "chr1\t200\tA\tG\tTP53\n"              # not in DB
-        "chr7\t500\tAT\tA\tBRCA1\n",           # deletion, in DB after trim
-        encoding="utf-8")
-    db = Path(d) / "inhouse.vcf.gz"
-    with gzip.open(db, "wt", encoding="utf-8") as f:
-        f.write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
-        f.write("chr1\t45330228\t.\tCAA\tC\t.\t.\tINHOUSE_AC=595;INHOUSE_AN=1354;INHOUSE_AF=0.439439\n")
-        f.write("chr1\t45330228\t.\tCA\tC\t.\t.\tINHOUSE_AC=571;INHOUSE_AN=1354;INHOUSE_AF=0.421713\n")
-        f.write("chr7\t500\t.\tAT\tA\t.\t.\tINHOUSE_AC=10;INHOUSE_AN=1000;INHOUSE_AF=0.01\n")
-    annotate(tsv, str(db), ref_arg=None)   # no ref -> python path
-    out = list(csv.DictReader(io.StringIO(tsv.read_text()), delimiter="\t"))
-    assert out[0]["INHOUSE_AF"] == "0.439439,0.421713", out[0]
-    assert out[0]["INHOUSE_AC"] == "595,571", out[0]
-    assert out[1]["INHOUSE_AF"] == "", out[1]          # miss -> clean blank
-    assert out[2]["INHOUSE_AF"] == "0.01", out[2]
-    assert annotate(tsv, str(Path(d) / "nope.vcf.gz"), None) == 0   # missing DB = no-op
-    print("selftest OK")
+    db = os.path.join(d, "inhouse.vcf.gz")
+    _mk_db(db, [
+        ("chr1", 45330228, "CAA", "C", 1235, 2794, "0.442019"),
+        ("chr1", 45330228, "CA", "C", 1136, 2794, "0.406586"),
+        ("chr7", 500, "AT", "A", 10, 1000, "0.01"),
+    ])
+    # a quoted field with an embedded comma+quote, like the MANE_ALL column
+    body = ('CHROM\tPOS\tREF\tALT\tGENE\tNOTE\n'
+            'chr1\t45330228\tCAA\tC,CA\tMUTYH\t"[{""tx"": ""NM_1"", ""x"": 2}]"\n'
+            'chr1\t200\tA\tG\tTP53\tplain\n'
+            'chr7\t500\tAT\tA\tBRCA1\t"a,b"\n'
+            'chr2\t9\tA\t*\tX\t.\n'
+            'chr7\t500\tAT\t*,A\tSPAN\t.\n')
+
+    def fresh():
+        p = Path(d) / "snv.tsv"
+        p.write_text(body, encoding="utf-8")
+        return p
+
+    def check(rows):
+        assert rows[0][COL_AF] == "0.442019,0.406586", rows[0]
+        assert rows[0][COL_AC] == "1235,1136", rows[0]
+        assert rows[0]["NOTE"] == '[{"tx": "NM_1", "x": 2}]', rows[0]   # quoting survived
+        assert rows[1][COL_AF] == "", rows[1]                           # miss -> blank
+        assert rows[2][COL_AF] == "0.01", rows[2]
+        assert rows[2]["NOTE"] == "a,b", rows[2]
+        assert rows[3][COL_AF] == "", rows[3]                           # symbolic ALT only
+        # Number=A: one value PER ALT TOKEN, so a spanning-deletion '*' holds
+        # its slot with '.' and the real allele stays in position 2. Emitting
+        # only the non-symbolic values would shift 0.01 onto '*'.
+        assert rows[4][COL_AF] == ".,0.01", rows[4]
+        assert rows[4][COL_AC] == ".,10", rows[4]
+
+    t = fresh()
+    annotate(t, db)
+    rows = _read_tsv(t)
+    check(rows)
+
+    # the C-decompressor path and the gzip-module path must agree exactly
+    real_which = shutil.which
+    try:
+        shutil.which = lambda _n: None      # force gzip.open
+        t2 = Path(d) / "snv2.tsv"
+        t2.write_text(body, encoding="utf-8")
+        annotate(t2, db)
+        assert _read_tsv(t2) == rows, "gzip-module path disagrees with bgzip path"
+    finally:
+        shutil.which = real_which
+
+    # picks up a refreshed DB (no cached state to go stale)
+    _mk_db(db, [("chr1", 45330228, "CAA", "C", 1, 2, "0.5")])
+    t = fresh()
+    annotate(t, db)
+    assert _read_tsv(t)[0][COL_AF] == "0.5,.", _read_tsv(t)[0]
+
+    # idempotent: re-running overwrites in place, no duplicate columns
+    before = _read_tsv(t)
+    annotate(t, db)
+    after = _read_tsv(t)
+    assert before == after, "re-run not idempotent"
+    with open(t, encoding="utf-8") as f:
+        hdr = next(csv.reader(f, delimiter="\t"))
+    assert hdr.count(COL_AF) == 1, hdr
+
+    # missing DB is a no-op
+    assert annotate(t, os.path.join(d, "nope.vcf.gz")) == 0
+    print("selftest OK — per-allele join, quoting preserved, idempotent, "
+          "decompressor paths agree")
     return 0
 
 
@@ -375,21 +396,19 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tsv", type=Path, help="snv_indel.annotated.tsv to annotate in place")
     ap.add_argument("--db", default=DEFAULT_DB, help=f"in-house AF sites VCF (default {DEFAULT_DB})")
-    ap.add_argument("--ref", default=None, help="hg38 FASTA (+.fai) for bcftools normalize; "
-                    "auto-detected from NGS_UI_INHOUSE_AF_REF / common paths if omitted")
-    ap.add_argument("--use-bcftools", action="store_true",
-                    help="use bcftools norm+annotate instead of the default ref-independent "
-                         "python join (only when the local ref matches the DB's build ref; "
-                         "otherwise --check-ref drops matches)")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="skip the SQLite lookup index and stream the DB instead "
+                         "(slower per sample; use when the DB dir is read-only or tight on space)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
+    csv.field_size_limit(_CSV_MAX)
     if args.selftest:
         return selftest()
     if not args.tsv:
         ap.error("--tsv required (or --selftest)")
     if not args.tsv.is_file():
         raise SystemExit(f"--tsv not found: {args.tsv}")
-    return annotate(args.tsv, args.db, args.ref, use_bcftools=args.use_bcftools)
+    return annotate(args.tsv, args.db)
 
 
 if __name__ == "__main__":
