@@ -224,6 +224,8 @@ tail -f ~/NGS_UI/backfill.log
 > （= 三級分析 worker 當初用的）→ DRAGEN 來源用 WGS → 最後才是 WES。
 > 這很重要：WES 會套 DP ≥ 20 的硬門檻，WGS 樣本誤用 WES 會少掉低深度的列；而 test type 跟後端要的不同時，
 > UI 第一次開這個個案又會整份重建一次（WGS 約 2–3 分鐘）。
+> （三級 worker 現在也用同一規則寫 manifest：`build_snv_review_tsv.py` 對 `26T…` 記 `TITAN-WGS`。在這之前跑的 26T 樣本 manifest 記的是 `WGS`，
+> 篩選結果相同，只是標籤不同；backfill 會順便整份重建一次把標籤對齊，log 顯示 `test type WGS -> TITAN-WGS`。）
 
 > 舊做法是「raw + overlay 還原成完整 working TSV → 註解 → 用 `build_overlay()` 重新 diff」，結果相同，
 > 但每隻 WGS 要在 NFS 上寫出／讀回好幾倍 TSV 大小的資料，一隻 15 分鐘以上且中途完全沒輸出。

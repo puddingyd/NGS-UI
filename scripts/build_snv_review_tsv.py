@@ -10,12 +10,21 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
+from app.services import test_types  # noqa: E402
 from app.services.snv_review import ensure_review_tsv  # noqa: E402
 
 
-def _infer_test_type(raw_tsv: Path, output_dir: Path | None = None) -> str:
+def _infer_sample_id(raw_tsv: Path, output_dir: Path | None = None) -> str:
     directory = output_dir or raw_tsv.parent
-    sample_id = directory.parent.name if directory.name == "08_postprocessing" else ""
+    if directory.name == "08_postprocessing":
+        return directory.parent.name
+    if raw_tsv.name == "snv_indel.annotated.tsv":   # legacy UI tertiary_output/<SID>/
+        return raw_tsv.parent.name
+    return ""
+
+
+def _read_metadata(raw_tsv: Path, output_dir: Path | None, sample_id: str) -> dict:
+    directory = output_dir or raw_tsv.parent
     candidates = (
         directory / f"{sample_id}.sample_metadata.json",
         directory / "sample_metadata.json",
@@ -25,9 +34,27 @@ def _infer_test_type(raw_tsv: Path, output_dir: Path | None = None) -> str:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        value = str(meta.get("test_type") or "").upper()
-        return value if value in {"WES", "WGS"} else "WES"
-    return "WES"
+        if isinstance(meta, dict):
+            return meta
+    return {}
+
+
+def resolve_test_type(
+    raw_tsv: Path,
+    output_dir: Path | None,
+    requested: str = "",
+    sample_id: str = "",
+) -> str:
+    """Record the same test type the backend loader will ask for
+    (sample_loader._effective_test_type): otherwise the review manifest never
+    matches and the UI rebuilds the whole review TSV on first open. Year+T
+    LIS IDs (26T...) are TITAN-WGS even when the worker says WGS; filtering is
+    identical, only the manifest label differs."""
+    sample_id = sample_id or _infer_sample_id(raw_tsv, output_dir)
+    meta = _read_metadata(raw_tsv, output_dir, sample_id)
+    identity = str(meta.get("lis_id") or meta.get("sample_id") or sample_id)
+    value = requested or str(meta.get("test_type") or "")
+    return test_types.normalize_test_type(value, sample_id=identity, default="WES")
 
 
 def main() -> int:
@@ -49,8 +76,16 @@ def main() -> int:
     )
     ap.add_argument(
         "--test-type",
-        choices=["WES", "WGS"],
-        help="Apply WES/WGS-specific review TSV filters. Defaults to sample_metadata.json, then WES.",
+        type=str.upper,
+        choices=["WES", "WGS", "TITAN-WGS"],
+        help="Apply WES/WGS-specific review TSV filters. Defaults to sample_metadata.json, "
+             "then WES. Year+T sample IDs are always recorded as TITAN-WGS.",
+    )
+    ap.add_argument(
+        "--sample",
+        default="",
+        help="UI sample ID (default: inferred from --output-dir / --tsv path); "
+             "used for the TITAN-WGS rule",
     )
     args = ap.parse_args()
 
@@ -68,7 +103,7 @@ def main() -> int:
             manifest_path
             or output_dir / f"{sample_id}.snv_indel.review.tsv.source.json"
         )
-    test_type = args.test_type or _infer_test_type(raw_tsv, output_dir)
+    test_type = resolve_test_type(raw_tsv, output_dir, args.test_type or "", args.sample)
     review_tsv = ensure_review_tsv(
         raw_tsv,
         test_type=test_type,

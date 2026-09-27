@@ -361,7 +361,7 @@ step_start "review-tsv" "sample-step"
 "$SCRIPT_DIR/build_snv_review_tsv.py" \
   --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
   --output-path "$REVIEW_PATH" --manifest-path "$REVIEW_MANIFEST_PATH" \
-  --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE" \
+  --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE" --sample "$SID" \
   --gpn-msa-db "$GPN_MSA_DB"
 step_done
 
