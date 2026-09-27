@@ -6,10 +6,16 @@ every refresh of the in-house AF DB (the cohort grows, so AN and every AF
 change). New analyses don't need it — run_stopgaps.sh does the same work
 inline.
 
-It mirrors what the tertiary worker does, which matters because the two
-layouts store annotations completely differently:
+It mirrors what the tertiary worker does. Which of the two modes applies is
+decided by THE RESOLVED FILE, not by sample_layout.uses_unified_layout(): a
+"legacy" sample can still resolve to a pipeline 03_acmg file, because
+snv_raw_tsv() falls back to <legacy pipeline root>/<sample>/03_acmg/… when no
+UI copy exists. Only a file literally named snv_indel.annotated.tsv outside
+03_acmg is the UI's own copy and safe to rewrite; do_inplace() additionally
+refuses any path containing 03_acmg.
 
-UNIFIED layout (<TERTIARY_ROOT>/<sample>/):
+OVERLAY mode — the resolved TSV is a pipeline source (03_acmg, under either
+the unified or the legacy pipeline root):
     03_acmg/<source>.snv_indel.acmg.tsv   IMMUTABLE pipeline source of truth;
                                           exported reports read it. NEVER written.
     08_postprocessing/<sid>.snv_annotations.sqlite
@@ -27,10 +33,15 @@ UNIFIED layout (<TERTIARY_ROOT>/<sample>/):
   diffing raw against a fresh copy carrying only INHOUSE_* would silently drop
   every other annotation.
 
-LEGACY UI tree (<NGS_UI_HOME>/tertiary_output/<sample>/):
-    snv_indel.annotated.tsv is itself the annotated copy, so it is rewritten in
-    place and the gene index MUST be rebuilt with it — the atomic replace
-    shifts every byte offset and the index is only auto-rebuilt when missing.
+IN-PLACE mode — the resolved TSV is the legacy UI copy
+(<NGS_UI_HOME>/tertiary_output/<sample>/snv_indel.annotated.tsv):
+    that file is itself the annotated copy, so it is rewritten in place and the
+    gene index MUST be rebuilt with it — the atomic replace shifts every byte
+    offset and the index is only auto-rebuilt when missing.
+
+Derived artifacts (overlay, review TSV, gene index) always live where
+state_dir() says, which for most samples is the unified 08_postprocessing even
+when the source TSV still sits under the legacy pipeline root.
 
 Paths come from backend/app/services/sample_layout.py, so this follows the
 backend exactly.
@@ -44,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -93,11 +105,22 @@ def materialise(raw: Path, overlay: Path, out: Path) -> None:
             wtr.writerows(rdr)
 
 
+def is_ui_copy(raw: Path) -> bool:
+    """True only for the legacy UI *annotated copy*, which is ours to rewrite.
+
+    Do NOT decide this from sample_layout.uses_unified_layout(): a sample can
+    be 'legacy' yet still resolve to a pipeline 03_acmg file, because
+    snv_raw_tsv() falls back to <legacy pipeline root>/<sample>/03_acmg/… when
+    no UI copy exists. Anything under 03_acmg is a pipeline source of truth
+    (exported reports read it) and must never be modified."""
+    return raw.name == "snv_indel.annotated.tsv" and "03_acmg" not in raw.parts
+
+
 def run(cmd) -> None:
     subprocess.run([str(c) for c in cmd], check=True)
 
 
-def do_unified(sid: str, raw: Path, p: dict, db: Path) -> None:
+def do_overlay(sid: str, raw: Path, p: dict, db: Path) -> None:
     work = p["post"] / f".snv_indel.backfill.working.tsv"
     try:
         materialise(raw, p["overlay"], work)
@@ -111,7 +134,10 @@ def do_unified(sid: str, raw: Path, p: dict, db: Path) -> None:
         work.unlink(missing_ok=True)
 
 
-def do_legacy(sid: str, raw: Path, p: dict, db: Path) -> None:
+def do_inplace(sid: str, raw: Path, p: dict, db: Path) -> None:
+    # belt and braces: never rewrite a pipeline source of truth
+    if "03_acmg" in raw.parts:
+        raise RuntimeError(f"refusing to rewrite pipeline source in place: {raw}")
     run([SCRIPTS / "annotate_inhouse_af.py", "--tsv", raw, "--db", db])
     run([SCRIPTS / "build_snv_review_tsv.py", "--tsv", raw,
          "--output-dir", p["post"], "--output-path", p["review"],
@@ -131,6 +157,10 @@ def main() -> int:
     ap.add_argument("--continue-on-error", action="store_true",
                     help="keep going when one sample fails (default: stop)")
     args = ap.parse_args()
+    try:               # behave like a normal tool under `| head`
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    except (AttributeError, ValueError):
+        pass
 
     db = Path(args.db)
     if not db.is_file():
@@ -156,22 +186,22 @@ def main() -> int:
             n_skip += 1
             continue
         p = derived_paths(sid)
-        unified = layout.uses_unified_layout(sid)
+        inplace = is_ui_copy(raw)
         if args.dry_run:
-            kind = "unified" if unified else "legacy"
-            fate = "read-only" if unified else "REWRITTEN IN PLACE"
+            kind = "legacy UI copy" if inplace else "pipeline source + overlay"
+            fate = "REWRITTEN IN PLACE" if inplace else "read-only"
             print(f"  • {sid}  [{kind}]")
             print(f"      raw      {raw}   ({fate})")
             print(f"      overlay  {p['overlay']}")
             print(f"      review   {p['review']}")
-            if not unified:
+            if inplace:
                 print(f"      index    {p['gene_index']}   (rebuilt)")
             n_ok += 1
             continue
         p["post"].mkdir(parents=True, exist_ok=True)
-        print(f"  • {sid}  [{'unified' if unified else 'legacy'}]")
+        print(f"  • {sid}  [{'in-place' if inplace else 'overlay'}]")
         try:
-            (do_unified if unified else do_legacy)(sid, raw, p, db)
+            (do_inplace if inplace else do_overlay)(sid, raw, p, db)
             n_ok += 1
         except subprocess.CalledProcessError as e:
             n_fail += 1

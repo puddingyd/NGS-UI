@@ -197,18 +197,24 @@ time python3 scripts/backfill_inhouse_af.py <某一隻 SID>    # 先測一隻並
 
 nohup python3 scripts/backfill_inhouse_af.py > ~/NGS_UI/backfill.log 2>&1 &
 ```
-腳本會自動分辨兩種 layout，做法不同：
+腳本會**依「解析出來的那個檔案是什麼」**自動選模式（不是看 layout 標記）：
 
-**Unified layout**（`<TERTIARY_ROOT>/<sample>/`，新樣本）——`03_acmg` 是**唯讀的原始真相**，匯出報告讀它，**絕不寫入**：
+**Overlay 模式**（解析到的是 pipeline 的 `03_acmg/*.snv_indel.acmg.tsv`，不論在 unified 還是舊 pipeline root）
+——`03_acmg` 是**唯讀的原始真相**，匯出報告讀它，**絕不寫入**：
 1. 把 `03_acmg` 的 TSV **加上現有 overlay** 還原成一份暫存 working TSV
 2. 在 working TSV 上寫入 `INHOUSE_*`
-3. 用 raw vs working 重新產生 `08_postprocessing/<sid>.snv_annotations.sqlite`（sparse overlay）
+3. 用 raw vs working 重新產生 `08_postprocessing/<sid>.snv_annotations.sqlite`
 4. 重建 review TSV，刪掉 working TSV
-5. **gene index 不用重建**（它是從 raw 建的，raw 沒變、byte offset 沒動）
+5. **gene index 不用重建**（從未變動的 raw 建的，byte offset 沒動）
 
-> 第 1 步的「先還原 overlay」是關鍵：`build_overlay()` 是**整份取代**，如果直接拿 raw 和一份只有 `INHOUSE_*` 的副本去 diff，會把 GeneBe / SpliceAI / MANE / LitVar2 **全部清掉**。
+> 第 1 步的「先還原 overlay」是關鍵：`build_overlay()` 是**整份取代**，直接拿 raw 和一份只有 `INHOUSE_*` 的副本去 diff，會把 GeneBe / SpliceAI / MANE / LitVar2 **全部清掉**。
 
-**Legacy UI tree**（`<NGS_UI_HOME>/tertiary_output/<sample>/`，舊樣本）——那份 `snv_indel.annotated.tsv` 本來就是註解後的副本，所以是原地改寫，而且**必須一起重建 gene index**（原子改寫會位移所有 byte offset，index 只在缺檔時才自動重建）。
+**In-place 模式**（解析到的是舊 UI 副本 `<NGS_UI_HOME>/tertiary_output/<sample>/snv_indel.annotated.tsv`）
+——那份本來就是註解後的副本，所以原地改寫，而且**必須一起重建 gene index**。
+
+> ⚠️ 判斷依據是**檔案本身**，不是 `uses_unified_layout()`。有些樣本標記為 legacy，但 `snv_raw_tsv()` 仍會回傳舊 pipeline root 下的 `03_acmg` 檔——那還是原始真相，不能改。腳本另外有硬性防護：`do_inplace()` 一旦看到路徑含 `03_acmg` 就直接報錯中止。
+
+`--dry-run` 會逐隻印出模式與路徑，`raw` 那行標 `(read-only)` 或 `(REWRITTEN IN PLACE)`。**全跑前先確認沒有任何 `03_acmg` 的路徑被標成 REWRITTEN IN PLACE。**
 
 - ✅ 每隻印 `[inhouse-af] N variants, M matched in-house AF DB`，比例約 **99.9%**（DRAGEN 樣本）
 - ⚠️ `-nckuh` 樣本配對率較低（約 87%）是**正常的**：DB 用 DRAGEN gVCF 建的，in-house pipeline 的 variant caller 表示法與變異集合不同
