@@ -191,23 +191,30 @@ scripts/inhouse_af/deploy_inhouse_af_db.sh \
 **NGS-UI 主機：**
 ```bash
 python3 scripts/annotate_inhouse_af.py --selftest      # 先確認 code 是新的
+python3 scripts/backfill_inhouse_af.py --selftest      # overlay 直接更新 == 參考流程
 
 python3 scripts/backfill_inhouse_af.py --dry-run | head     # 看解析出的路徑對不對
 time python3 scripts/backfill_inhouse_af.py <某一隻 SID>    # 先測一隻並計時
 
-nohup python3 scripts/backfill_inhouse_af.py > ~/NGS_UI/backfill.log 2>&1 &
+nohup python3 scripts/backfill_inhouse_af.py --continue-on-error > ~/NGS_UI/backfill.log 2>&1 &
+tail -f ~/NGS_UI/backfill.log
 ```
 腳本會**依「解析出來的那個檔案是什麼」**自動選模式（不是看 layout 標記）：
 
 **Overlay 模式**（解析到的是 pipeline 的 `03_acmg/*.snv_indel.acmg.tsv`，不論在 unified 還是舊 pipeline root）
 ——`03_acmg` 是**唯讀的原始真相**，匯出報告讀它，**絕不寫入**：
-1. 把 `03_acmg` 的 TSV **加上現有 overlay** 還原成一份暫存 working TSV
-2. 在 working TSV 上寫入 `INHOUSE_*`
-3. 用 raw vs working 重新產生 `08_postprocessing/<sid>.snv_annotations.sqlite`
-4. 重建 review TSV，刪掉 working TSV
+1. 讀 `03_acmg` TSV（唯讀）建 allele key → 串流掃一次 in-house DB 找命中
+2. **直接在** `08_postprocessing/<sid>.snv_annotations.sqlite` 裡、同一個 SQLite transaction：
+   先把所有舊的 `INHOUSE_*` 拿掉（DB 更新後已過期；payload 變空的列整列刪），
+   再把新值 **merge 進每列既有的 payload**——GeneBe / SpliceAI / MANE / LitVar2 等其他欄位完全不動
+3. 更新 overlay meta 的欄位清單；raw 沒變，所以 source signature 仍有效（`is_current()` 仍成立）
+4. 重建 review TSV
 5. **gene index 不用重建**（從未變動的 raw 建的，byte offset 沒動）
 
-> 第 1 步的「先還原 overlay」是關鍵：`build_overlay()` 是**整份取代**，直接拿 raw 和一份只有 `INHOUSE_*` 的副本去 diff，會把 GeneBe / SpliceAI / MANE / LitVar2 **全部清掉**。
+> 舊做法是「raw + overlay 還原成完整 working TSV → 註解 → 用 `build_overlay()` 重新 diff」，結果相同，
+> 但每隻 WGS 要在 NFS 上寫出／讀回好幾倍 TSV 大小的資料，一隻 15 分鐘以上且中途完全沒輸出。
+> 現在不產生 working TSV。`--selftest` 會拿舊做法當參考，驗證直接更新的 overlay 逐列相同、
+> raw md5 不變、其他註解保留、過期的 `INHOUSE_*` 被清掉、重跑結果相同（idempotent）。
 
 **In-place 模式**（解析到的是舊 UI 副本 `<NGS_UI_HOME>/tertiary_output/<sample>/snv_indel.annotated.tsv`）
 ——那份本來就是註解後的副本，所以原地改寫，而且**必須一起重建 gene index**。
@@ -216,12 +223,26 @@ nohup python3 scripts/backfill_inhouse_af.py > ~/NGS_UI/backfill.log 2>&1 &
 
 `--dry-run` 會逐隻印出模式與路徑，`raw` 那行標 `(read-only)` 或 `(REWRITTEN IN PLACE)`。**全跑前先確認沒有任何 `03_acmg` 的路徑被標成 REWRITTEN IN PLACE。**
 
-- ✅ 每隻印 `[inhouse-af] N variants, M matched in-house AF DB`，比例約 **99.9%**（DRAGEN 樣本）
+每隻樣本會印帶累計秒數的進度行，正常的 overlay 模式長這樣：
+```
+  • 26T00028-dragen  [overlay]
+      [    0.0s] scan raw TSV (4.21 GB)
+      [   55.3s] 5,312,004 rows, 5,401,877 allele keys; join in-house DB
+      [  140.2s] 5,301,550 rows matched; update overlay
+      [  260.8s] overlay updated (5,301,550 rows with INHOUSE_AF); rebuild review TSV
+      [  330.1s] done
+```
+（數字只是示意；秒數是從腳本啟動起算的累計值。）
+
+- ✅ matched / rows 比例約 **99.9%**（DRAGEN 樣本）；in-place 模式另印 `[inhouse-af] N variants, M matched in-house AF DB`
 - ⚠️ `-nckuh` 樣本配對率較低（約 87%）是**正常的**：DB 用 DRAGEN gVCF 建的，in-house pipeline 的 variant caller 表示法與變異集合不同
+- ❌ `overlay is stale (raw TSV changed after post-processing)` → `03_acmg` 在上次 post-processing 之後被重跑過，UI 本來就會忽略這份 overlay；先重跑該樣本的三級 post-processing，再 backfill。overlay 不會被動到
 - ❌ `no SNV TSV (...), skip` → 該樣本沒有 `03_acmg/*.snv_indel.acmg.tsv`，通常是三級分析沒跑完
 - ❌ `in-house AF DB not found` → Step 6 沒做或路徑不對
 - 預設**一失敗就停**；要跳過壞樣本繼續用 `--continue-on-error`
-- ⏱ 230 隻約 7–8 小時
+- 中途被砍（Ctrl-C / kill）是安全的：overlay 更新是單一 transaction，沒 commit 就整個 rollback，
+  不會留下一半新一半舊的 AF；重跑即可
+- ⏱ 先用單隻 `time` 的結果乘以樣本數估總時間（本機 1M 列合成資料約 35 秒；WGS 主要花在讀 raw TSV 兩次與掃 DB 一次）
 
 ## Step 8｜重啟與確認
 
@@ -655,7 +676,10 @@ sites VCF is joined into the TSV as columns, NOT `bcftools annotate`, because
    `AF (carrier AC/callable mito AN; hom/het carriers)`. "—" when the variant
    isn't in the DB.
 7. **`scripts/backfill_inhouse_af.py`** — for existing samples / after a batch
-   refresh: annotate → rebuild review TSV → **rebuild gene index** (offsets shift).
+   refresh. Pipeline `03_acmg` sources (read-only): update `INHOUSE_*` directly
+   in the `08_postprocessing` overlay SQLite (one transaction, other fields
+   kept) → rebuild review TSV; gene index untouched. Legacy UI copies:
+   annotate in place → rebuild review TSV → **rebuild gene index** (offsets shift).
 8. **`scripts/inhouse_af/deploy_inhouse_af_db.sh`** — atomic-install the sites VCF
    onto the NGS-UI host under `biotools/inhouse_af/`.
 
