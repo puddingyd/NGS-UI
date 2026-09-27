@@ -381,6 +381,10 @@ def _install(work: Path, overlay: Path, before) -> None:
             raise
     try:
         if before is not None:
+            try:        # keep the group (e.g. dgm_nckuh), not our primary one
+                os.chown(src, -1, before.st_gid)
+            except OSError:
+                pass
             os.chmod(src, before.st_mode & 0o7777)
         os.replace(src, overlay)
     except BaseException:
