@@ -28,8 +28,11 @@ the unified or the legacy pipeline root):
   TSV (read-only), join it against the DB, strip every old INHOUSE_* value from
   the overlay, merge the new ones into each row's existing payload, all in one
   SQLite transaction. Other annotations are never touched, and the overlay's
-  source signature stays valid because the raw TSV does not change. Then the
-  review TSV is rebuilt. The gene index is built from the raw TSV, which never
+  source signature stays valid because the raw TSV does not change. Then only
+  the INHOUSE_* columns of the review TSV are patched (its row set does not
+  depend on them); it is rebuilt in full only when it wasn't current or was
+  built for another test type. The test type follows the backend loader's rule
+  (see sample_test_type), so the UI doesn't rebuild it again on open. The gene index is built from the raw TSV, which never
   changes, so it is NOT rebuilt here.
 
   The earlier approach (materialise raw+overlay into a full working TSV,
@@ -76,7 +79,7 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from app import config  # noqa: E402
 from app.services import sample_layout as layout  # noqa: E402
-from app.services import snv_overlay  # noqa: E402
+from app.services import snv_overlay, snv_review, test_types  # noqa: E402
 from app.services.snv_overlay import KEY_FIELDS, OverlayReader  # noqa: E402
 
 SCRIPTS = REPO / "scripts"
@@ -146,58 +149,67 @@ def _row_values(i, nalts, hits):
     return (",".join(ac), ",".join(an), ",".join(af))
 
 
-def _strip_inhouse(conn) -> None:
-    """Remove every INHOUSE_* value from the overlay (stale after a DB refresh),
-    dropping rows whose payload becomes empty."""
-    like = '%"INHOUSE_%'
+_JSON_RM = "json_remove(payload_json, " + ", ".join(f"'$.{c}'" for c in INH) + ")"
+_SQL_UPSERT = (
+    "INSERT INTO annotations(row_key, payload_json) VALUES (?, ?) "
+    "ON CONFLICT(row_key) DO UPDATE SET payload_json = "
+    f"json_patch({_JSON_RM}, excluded.payload_json)")
+_SQL_STRIP = (f"UPDATE annotations SET payload_json = {_JSON_RM} "
+              "WHERE row_key = ? AND payload_json LIKE '%\"INHOUSE_%'")
+
+
+def _has_sql_json(conn) -> bool:
+    """UPSERT (3.24+) and JSON1 let SQLite merge payloads in C, with no
+    SELECT round trip and no Python json per row."""
+    if sqlite3.sqlite_version_info < (3, 24, 0):
+        return False
     try:
-        conn.execute(
-            "UPDATE annotations SET payload_json = json_remove(payload_json, "
-            + ", ".join(f"'$.{c}'" for c in INH)
-            + ") WHERE payload_json LIKE ?", (like,))
-        conn.execute("DELETE FROM annotations WHERE payload_json = '{}'")
-        return
-    except sqlite3.OperationalError:      # SQLite built without JSON1
-        pass
-    rows = conn.execute("SELECT row_key, payload_json FROM annotations "
-                        "WHERE payload_json LIKE ?", (like,)).fetchall()
-    for key, raw_payload in rows:
-        try:
-            payload = json.loads(raw_payload)
-        except (TypeError, json.JSONDecodeError):
-            continue
-        if not isinstance(payload, dict):
-            continue
-        for c in INH:
-            payload.pop(c, None)
-        if payload:
-            conn.execute("UPDATE annotations SET payload_json = ? WHERE row_key = ?",
-                         (json.dumps(payload, ensure_ascii=False), key))
-        else:
-            conn.execute("DELETE FROM annotations WHERE row_key = ?", (key,))
+        conn.execute("SELECT json_patch(json_remove('{}', '$.a'), '{}')").fetchone()
+        return True
+    except sqlite3.OperationalError:
+        return False
 
 
-def _merge_chunk(conn, chunk: dict) -> None:
-    keys = list(chunk)
-    existing = {}
-    for start in range(0, len(keys), 800):
-        part = keys[start:start + 800]
-        q = ",".join("?" for _ in part)
-        for key, raw_payload in conn.execute(
-                f"SELECT row_key, payload_json FROM annotations WHERE row_key IN ({q})",
-                part):
-            try:
-                payload = json.loads(raw_payload)
-            except (TypeError, json.JSONDecodeError):
-                payload = {}
-            existing[key] = payload if isinstance(payload, dict) else {}
-    out = []
-    for key, add in chunk.items():
-        merged = existing.get(key, {})
-        merged.update(add)
-        out.append((key, json.dumps(merged, ensure_ascii=False)))
-    conn.executemany(
-        "INSERT OR REPLACE INTO annotations(row_key, payload_json) VALUES (?, ?)", out)
+class _PyMerge:
+    """Fallback for an SQLite without UPSERT/JSON1: same result, in Python."""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def _load(self, keys):
+        out = {}
+        for start in range(0, len(keys), 800):
+            part = keys[start:start + 800]
+            q = ",".join("?" for _ in part)
+            for key, raw_payload in self.conn.execute(
+                    f"SELECT row_key, payload_json FROM annotations WHERE row_key IN ({q})",
+                    part):
+                try:
+                    payload = json.loads(raw_payload)
+                except (TypeError, json.JSONDecodeError):
+                    payload = {}
+                out[key] = payload if isinstance(payload, dict) else {}
+        return out
+
+    def upsert(self, pairs):
+        existing = self._load([k for k, _ in pairs])
+        out = []
+        for key, add in pairs:
+            merged = {k: v for k, v in existing.get(key, {}).items() if k not in INH}
+            merged.update(json.loads(add))
+            existing[key] = merged
+            out.append((key, json.dumps(merged, ensure_ascii=False)))
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO annotations(row_key, payload_json) VALUES (?, ?)", out)
+
+    def strip(self, keys):
+        existing = self._load([k for (k,) in keys])
+        for key, payload in existing.items():
+            if not any(c in payload for c in INH):
+                continue
+            left = {k: v for k, v in payload.items() if k not in INH}
+            self.conn.execute("UPDATE annotations SET payload_json = ? WHERE row_key = ?",
+                              (json.dumps(left, ensure_ascii=False), key))
 
 
 def update_overlay(raw: Path, overlay: Path, db: Path) -> int:
@@ -250,29 +262,42 @@ def update_overlay(raw: Path, overlay: Path, db: Path) -> int:
         conn.execute("CREATE TABLE annotations ("
                      "row_key TEXT PRIMARY KEY, payload_json TEXT NOT NULL)")
     conn.execute("PRAGMA cache_size=-262144")   # 256 MB: big WGS overlays
+    sql_json = _has_sql_json(conn)
+    py = None if sql_json else _PyMerge(conn)
     try:
         conn.execute("BEGIN IMMEDIATE")
-        if have:
-            _strip_inhouse(conn)
-        chunk: dict = {}
+        # One pass over raw. A row with a hit gets its old INHOUSE_* replaced
+        # by the new values (other fields kept); a row without one only has
+        # stale INHOUSE_* removed. Payloads left empty are deleted at the end.
+        ups, strips = [], []
+
+        def flush():
+            if ups:
+                conn.executemany(_SQL_UPSERT, ups) if sql_json else py.upsert(ups)
+                ups.clear()
+            if strips:
+                conn.executemany(_SQL_STRIP, strips) if sql_json else py.strip(strips)
+                strips.clear()
+
         with open(raw, "r", encoding="utf-8", newline="") as f:
             rdr = csv.reader(f, delimiter="\t")
             next(rdr, None)
             for i, row in enumerate(rdr):
-                if not (every_row or (i < len(hit_row) and hit_row[i])):
-                    continue
-                vals = _row_values(i, nalts, hits)
-                add = {c: v for c, v, ri in zip(INH, vals, raw_inh) if v != _cell(row, ri)}
-                if not add:
-                    continue
                 key = json.dumps([_cell(row, k) for k in key_idx],
                                  ensure_ascii=False, separators=(",", ":"))
-                chunk[key] = add
-                if len(chunk) >= 20000:
-                    _merge_chunk(conn, chunk)
-                    chunk.clear()
-        if chunk:
-            _merge_chunk(conn, chunk)
+                add = None
+                if every_row or (i < len(hit_row) and hit_row[i]):
+                    vals = _row_values(i, nalts, hits)
+                    add = {c: v for c, v, ri in zip(INH, vals, raw_inh)
+                           if v != _cell(row, ri)}
+                if add:
+                    ups.append((key, json.dumps(add, ensure_ascii=False)))
+                else:
+                    strips.append((key,))
+                if len(ups) + len(strips) >= 20000:
+                    flush()
+        flush()
+        conn.execute("DELETE FROM annotations WHERE payload_json = '{}'")
 
         meta = dict(conn.execute("SELECT key, value FROM meta").fetchall())
         raw_fields = json.loads(meta.get("raw_fields_json") or "null") or header
@@ -325,16 +350,125 @@ def run(cmd) -> None:
     subprocess.run([str(c) for c in cmd], check=True)
 
 
-def build_review(raw: Path, p: dict) -> None:
-    run([SCRIPTS / "build_snv_review_tsv.py", "--tsv", raw,
-         "--output-dir", p["post"], "--output-path", p["review"],
-         "--manifest-path", p["manifest"], "--overlay", p["overlay"]])
+def _read_json(path: Path) -> dict:
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def sample_test_type(sid: str, old_manifest: dict) -> str:
+    """The test type the backend loader will ask the review TSV for, so the
+    review built here is not thrown away and rebuilt on first open.
+
+    Same rule as sample_loader._effective_test_type (year+T IDs are always
+    TITAN-WGS); with no metadata yet (sample not registered), fall back to what
+    the tertiary worker used (old manifest), then DRAGEN -> WGS, then WES."""
+    meta = _read_json(layout.state_file(sid, "sample_metadata.json"))
+    src = _read_json(layout.state_file(sid, "pipeline_source.json"))
+    fallback = (str(old_manifest.get("test_type") or "").upper()
+                or ("WGS" if str(src.get("pipeline_type") or "").lower() == "dragen" else "")
+                or "WES")
+    identity = str(meta.get("lis_id") or meta.get("sample_id") or sid)
+    return test_types.normalize_test_type(
+        meta.get("test_type") or "", sample_id=identity, default=fallback)
+
+
+def build_review(raw: Path, p: dict, test_type: str) -> None:
+    """Full rebuild (one pass over the whole raw TSV)."""
+    snv_review.ensure_review_tsv(
+        raw, test_type=test_type, output_dir=p["post"], output_path=p["review"],
+        manifest_path=p["manifest"], overlay_path=p["overlay"])
+
+
+def patch_review(raw: Path, p: dict, old_manifest: dict, old_overlay_sig: dict,
+                 test_type: str) -> bool:
+    """Refresh only INHOUSE_* in the existing review TSV.
+
+    The review row set never depends on INHOUSE_* (selection uses raw fields,
+    the BED, gnomAD AF and CLINVAR_CHANGE), so if the review TSV was current
+    for (raw, overlay before this update, test type), then after replacing
+    those three columns it is current for the new overlay. Anything else it
+    was stale for (BED, GPN-MSA) stays exactly as stale as before. Returns
+    False — caller does a full rebuild — whenever that can't be shown."""
+    review, manifest = p["review"], p["manifest"]
+    st = raw.stat()
+    if not (review.is_file() and old_manifest
+            and old_manifest.get("raw_mtime_ns") == st.st_mtime_ns
+            and old_manifest.get("raw_size") == st.st_size
+            and str(old_manifest.get("test_type") or "").upper() == test_type.upper()
+            and old_manifest.get("overlay") == old_overlay_sig):
+        return False
+    with open(raw, "r", encoding="utf-8", newline="") as f:
+        raw_header = next(csv.reader(f, delimiter="\t"), None) or []
+    if any(c in raw_header for c in INH):
+        return False          # values would need raw fallbacks; just rebuild
+
+    with open(review, "r", encoding="utf-8", newline="") as f:
+        rows = list(csv.reader(f, delimiter="\t"))
+    if not rows:
+        return False
+    header = rows[0]
+    if any(f not in header for f in KEY_FIELDS):
+        return False
+    for c in INH:
+        if c not in header:
+            header.append(c)
+    width = len(header)
+    key_idx = [header.index(f) for f in KEY_FIELDS]
+    inh_idx = [header.index(c) for c in INH]
+    body = rows[1:]
+    keys = [json.dumps([_cell(r, k) for k in key_idx], ensure_ascii=False,
+                       separators=(",", ":")) for r in body]
+    payloads = {}
+    with sqlite3.connect(p["overlay"]) as conn:
+        uniq = list(dict.fromkeys(keys))
+        for start in range(0, len(uniq), 800):
+            part = uniq[start:start + 800]
+            q = ",".join("?" for _ in part)
+            for key, raw_payload in conn.execute(
+                    f"SELECT row_key, payload_json FROM annotations WHERE row_key IN ({q})",
+                    part):
+                try:
+                    payloads[key] = json.loads(raw_payload)
+                except (TypeError, json.JSONDecodeError):
+                    pass
+    for r, key in zip(body, keys):
+        if len(r) < width:
+            r.extend([""] * (width - len(r)))
+        pl = payloads.get(key) or {}
+        for c, i in zip(INH, inh_idx):
+            r[i] = str(pl.get(c) or "")
+
+    tmp = review.with_suffix(review.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f, delimiter="\t", lineterminator="\n")
+        w.writerow(header)
+        w.writerows(body)
+    os.replace(tmp, review)
+    snv_review._write_manifest(manifest, {
+        **old_manifest,
+        "overlay": snv_overlay.overlay_signature(raw, p["overlay"]),
+    })
+    return True
 
 
 def do_overlay(sid: str, raw: Path, p: dict, db: Path) -> None:
+    old_manifest = _read_json(p["manifest"])
+    test_type = sample_test_type(sid, old_manifest)
+    old_sig = snv_overlay.overlay_signature(raw, p["overlay"])
     n_hit = update_overlay(raw, p["overlay"], db)
-    log(f"overlay updated ({n_hit:,} rows with INHOUSE_AF); rebuild review TSV")
-    build_review(raw, p)
+    log(f"overlay updated ({n_hit:,} rows with INHOUSE_AF)")
+    if patch_review(raw, p, old_manifest, old_sig, test_type):
+        log(f"review TSV patched in place (test type {test_type})")
+    else:
+        why = ("no review TSV yet" if not p["review"].is_file() else
+               f"test type {old_manifest.get('test_type')} -> {test_type}"
+               if str(old_manifest.get("test_type") or "").upper() != test_type.upper()
+               else "review TSV was not current")
+        log(f"rebuild review TSV ({why}; test type {test_type})")
+        build_review(raw, p, test_type)
     log("done")
 
 
@@ -344,8 +478,9 @@ def do_inplace(sid: str, raw: Path, p: dict, db: Path) -> None:
         raise RuntimeError(f"refusing to rewrite pipeline source in place: {raw}")
     log("annotate UI copy in place")
     run([SCRIPTS / "annotate_inhouse_af.py", "--tsv", raw, "--db", db])
-    log("rebuild review TSV")
-    build_review(raw, p)
+    test_type = sample_test_type(sid, _read_json(p["manifest"]))
+    log(f"rebuild review TSV (test type {test_type})")
+    build_review(raw, p, test_type)
     log("rebuild gene index")
     # raw was rewritten in place -> every byte offset moved
     run([SCRIPTS / "build_snv_gene_index.py", "--tsv", raw, "--out", p["gene_index"]])
@@ -359,7 +494,7 @@ def _dump_overlay(path: Path):
     return ann, meta
 
 
-def selftest() -> int:
+def _selftest_overlay() -> None:
     """Direct overlay update == reference path (materialise -> annotate ->
     build_overlay), raw untouched, other annotations kept, stale INHOUSE_*
     removed, idempotent."""
@@ -458,8 +593,115 @@ def selftest() -> int:
         assert "stale" in str(e)
     assert stale.read_bytes() == before, "stale overlay was modified"
     shutil.rmtree(d, ignore_errors=True)
-    print("selftest OK — direct overlay update matches materialise+annotate+"
-          "build_overlay, raw untouched, idempotent, stale overlay refused")
+
+
+def _selftest_review() -> None:
+    """patch_review() on the old review TSV == a full rebuild after the update."""
+    import shutil
+    d = Path(tempfile.mkdtemp())
+    raw = d / "raw.acmg.tsv"
+    raw.write_text(
+        "CHROM\tPOS\tREF\tALT\tGENE\tTRANSCRIPT\tHGVS_C\tHGVS_P\tCONSEQUENCE\tIMPACT\tDP_DV\tNOTE\n"
+        "chr1\t1000\tA\tG\tAAA\tNM_1\tc.1\tp.1\tmis\tMODERATE\t30\t\"x,\"\"y\"\"\"\n"
+        "chr1\t1100\tC\tT\tAAA\tNM_1\tc.2\tp.2\tmis\tMODERATE\t30\tmiss now\n"
+        "chr1\t1200\tG\tA\tAAA\tNM_1\tc.3\tp.3\tmis\tMODERATE\t30\tnew hit\n"
+        "chr1\t900000\tG\tA\tBBB\tNM_2\tc.4\tp.4\tmis\tMODERATE\t30\toff-BED\n",
+        encoding="utf-8")
+    bed = d / "cds.bed"
+    bed.write_text("chr1\t900\t2000\n", encoding="utf-8")
+    ann = d / "ann.tsv"
+    rows = list(csv.reader(raw.open(encoding="utf-8", newline=""), delimiter="\t"))
+    old = {1: ("P", "0.1"), 2: ("", "0.2"), 3: ("B", "")}
+    with ann.open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f, delimiter="\t", lineterminator="\n")
+        w.writerow(rows[0] + ["GENEBE_ACMG_CLASS", "INHOUSE_AF"])
+        for i, r in enumerate(rows[1:], 1):
+            w.writerow(r + list(old.get(i, ("", ""))))
+    db = d / "inhouse.vcf.gz"
+    iaf._mk_db(str(db), [("chr1", 1000, "A", "G", 3, 2794, "0.00107"),
+                         ("chr1", 1200, "G", "A", 9, 2794, "0.00322")])
+
+    def paths(tag):
+        post = d / tag
+        post.mkdir()
+        return {"post": post, "review": post / "review.tsv",
+                "manifest": post / "review.tsv.source.json",
+                "overlay": post / "ov.sqlite"}
+
+    def as_rows(path):
+        with open(path, encoding="utf-8", newline="") as f:
+            return [dict(r) for r in csv.DictReader(f, delimiter="\t")]
+
+    env_old = os.environ.get("NGS_UI_CDS_CANDIDATE_BED")
+    os.environ["NGS_UI_CDS_CANDIDATE_BED"] = str(bed)
+    try:
+        pa, pb = paths("patch"), paths("full")
+        for x in (pa, pb):
+            snv_overlay.build_overlay(raw, ann, x["overlay"])
+            build_review(raw, x, "WGS")
+        before = as_rows(pa["review"])
+        assert len(before) == 3 and before[1]["INHOUSE_AF"] == "0.2", before
+
+        m = _read_json(pa["manifest"])
+        sig = snv_overlay.overlay_signature(raw, pa["overlay"])
+        update_overlay(raw, pa["overlay"], db)
+        assert patch_review(raw, pa, m, sig, "WGS"), "patch refused"
+        update_overlay(raw, pb["overlay"], db)
+        build_review(raw, pb, "WGS")
+        got, want = as_rows(pa["review"]), as_rows(pb["review"])
+        assert got == want, f"patched review != rebuilt review\n{got}\n{want}"
+        assert [r["INHOUSE_AF"] for r in got] == ["0.00107", "", "0.00322"], got
+        assert got[0]["NOTE"] == 'x,"y"' and got[0]["GENEBE_ACMG_CLASS"] == "P", got
+        # the patched manifest is what the backend expects -> no rebuild on open
+        mtime = pa["review"].stat().st_mtime_ns
+        build_review(raw, pa, "WGS")
+        assert pa["review"].stat().st_mtime_ns == mtime, "loader would rebuild"
+
+        # wrong test type / overlay changed since the review -> refuse (full rebuild)
+        m = _read_json(pa["manifest"])
+        sig = snv_overlay.overlay_signature(raw, pa["overlay"])
+        assert not patch_review(raw, pa, m, sig, "WES"), "test-type change not detected"
+        # overlay changed by something else after the review was built: the
+        # next backfill's pre-update signature no longer matches the manifest
+        st = pa["overlay"].stat()      # (explicit bump: coarse fs clocks)
+        os.utime(pa["overlay"], ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+        sig = snv_overlay.overlay_signature(raw, pa["overlay"])
+        update_overlay(raw, pa["overlay"], db)
+        assert not patch_review(raw, pa, m, sig, "WGS"), "stale review not detected"
+    finally:
+        if env_old is None:
+            os.environ.pop("NGS_UI_CDS_CANDIDATE_BED", None)
+        else:
+            os.environ["NGS_UI_CDS_CANDIDATE_BED"] = env_old
+        shutil.rmtree(d, ignore_errors=True)
+
+    assert sample_test_type("26T00028-dragen", {"test_type": "WES"}) == "TITAN-WGS"
+    assert sample_test_type("NOPE-X", {"test_type": "wgs"}) == "WGS"
+    assert sample_test_type("NOPE-X", {}) == "WES"
+
+
+def selftest() -> int:
+    global _has_sql_json
+    import contextlib
+    import io
+    real = _has_sql_json
+    for label, force_py in (("SQLite JSON1 upsert", False), ("Python fallback", True)):
+        if force_py:
+            _has_sql_json = lambda _conn: False   # noqa: E731
+        elif not real(sqlite3.connect(":memory:")):
+            print(f"  ({label}: not available in this SQLite, skipped)")
+            continue
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                _selftest_overlay()
+                _selftest_review()
+        finally:
+            _has_sql_json = real
+        print(f"  {label}: OK")
+    print(f"selftest OK (SQLite {sqlite3.sqlite_version}) — overlay update == "
+          "materialise+annotate+build_overlay, raw untouched, idempotent, stale "
+          "overlay refused; patched review TSV == full rebuild; test type rule")
     return 0
 
 

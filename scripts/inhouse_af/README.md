@@ -204,17 +204,29 @@ tail -f ~/NGS_UI/backfill.log
 **Overlay 模式**（解析到的是 pipeline 的 `03_acmg/*.snv_indel.acmg.tsv`，不論在 unified 還是舊 pipeline root）
 ——`03_acmg` 是**唯讀的原始真相**，匯出報告讀它，**絕不寫入**：
 1. 讀 `03_acmg` TSV（唯讀）建 allele key → 串流掃一次 in-house DB 找命中
-2. **直接在** `08_postprocessing/<sid>.snv_annotations.sqlite` 裡、同一個 SQLite transaction：
-   先把所有舊的 `INHOUSE_*` 拿掉（DB 更新後已過期；payload 變空的列整列刪），
-   再把新值 **merge 進每列既有的 payload**——GeneBe / SpliceAI / MANE / LitVar2 等其他欄位完全不動
+2. **直接在** `08_postprocessing/<sid>.snv_annotations.sqlite` 裡、同一個 SQLite transaction 更新：
+   有命中的列 → 舊 `INHOUSE_*` 換成新值，**其他欄位（GeneBe / SpliceAI / MANE / LitVar2…）原封不動**；
+   沒命中的列 → 只移除過期的 `INHOUSE_*`；payload 變空的列整列刪除。
+   SQLite ≥ 3.24 且有 JSON1 時用 `INSERT … ON CONFLICT DO UPDATE SET payload_json = json_patch(json_remove(…))`
+   在 SQLite 內合併；否則自動改用 Python 合併（結果相同，較慢）
 3. 更新 overlay meta 的欄位清單；raw 沒變，所以 source signature 仍有效（`is_current()` 仍成立）
-4. 重建 review TSV
+4. **review TSV 只修補 `INHOUSE_*` 三欄**，不整份重建：review 選哪些列只看 raw 欄位、BED、gnomAD AF
+   與 `CLINVAR_CHANGE`，跟 `INHOUSE_*` 無關。所以只要舊 review TSV 對「raw + 更新前的 overlay + 同一個
+   test type」是最新的（manifest 裡的 raw mtime/size、overlay 簽章、test_type 都相符），換掉這三欄後就對新
+   overlay 也是最新的，manifest 只更新 overlay 簽章。**任一條件不符就整份重建**（log 會寫原因）
 5. **gene index 不用重建**（從未變動的 raw 建的，byte offset 沒動）
+
+> **Test type 規則**與後端載入時（`sample_loader._effective_test_type`）完全相同：`sample_metadata.json` 的
+> `test_type` → 年份+T 開頭的 ID（如 `26T…`）一律 `TITAN-WGS` → 還沒登錄的樣本用原本 manifest 記錄的值
+> （= 三級分析 worker 當初用的）→ DRAGEN 來源用 WGS → 最後才是 WES。
+> 這很重要：WES 會套 DP ≥ 20 的硬門檻，WGS 樣本誤用 WES 會少掉低深度的列；而 test type 跟後端要的不同時，
+> UI 第一次開這個個案又會整份重建一次（WGS 約 2–3 分鐘）。
 
 > 舊做法是「raw + overlay 還原成完整 working TSV → 註解 → 用 `build_overlay()` 重新 diff」，結果相同，
 > 但每隻 WGS 要在 NFS 上寫出／讀回好幾倍 TSV 大小的資料，一隻 15 分鐘以上且中途完全沒輸出。
 > 現在不產生 working TSV。`--selftest` 會拿舊做法當參考，驗證直接更新的 overlay 逐列相同、
-> raw md5 不變、其他註解保留、過期的 `INHOUSE_*` 被清掉、重跑結果相同（idempotent）。
+> raw md5 不變、其他註解保留、過期的 `INHOUSE_*` 被清掉、重跑結果相同（idempotent）；
+> 也驗證「修補後的 review TSV」與「整份重建」逐列相同，SQLite 合併與 Python fallback 兩條路徑各跑一次。
 
 **In-place 模式**（解析到的是舊 UI 副本 `<NGS_UI_HOME>/tertiary_output/<sample>/snv_indel.annotated.tsv`）
 ——那份本來就是註解後的副本，所以原地改寫，而且**必須一起重建 gene index**。
@@ -226,13 +238,20 @@ tail -f ~/NGS_UI/backfill.log
 每隻樣本會印帶累計秒數的進度行，正常的 overlay 模式長這樣：
 ```
   • 26T00028-dragen  [overlay]
-      [    0.0s] scan raw TSV (4.21 GB)
-      [   55.3s] 5,312,004 rows, 5,401,877 allele keys; join in-house DB
-      [  140.2s] 5,301,550 rows matched; update overlay
-      [  260.8s] overlay updated (5,301,550 rows with INHOUSE_AF); rebuild review TSV
-      [  330.1s] done
+      [    0.1s] scan raw TSV (2.02 GB)
+      [   22.7s] 5,935,963 rows, 4,970,219 allele keys; join in-house DB
+      [   69.8s] 5,799,956 rows matched; update overlay
+      [  150.0s] overlay updated (5,799,956 rows with INHOUSE_AF)
+      [  152.0s] review TSV patched in place (test type TITAN-WGS)
+      [  152.0s] done
 ```
-（數字只是示意；秒數是從腳本啟動起算的累計值。）
+（前三行是實測；後面的秒數是估計。秒數是從腳本啟動起算的累計值。）
+
+若出現 `rebuild review TSV (<原因>; test type …)` 而不是 `patched in place`，代表走了整份重建（多約 2–3 分鐘，WGS）。
+結果仍然正確。常見原因：
+- `test type WES -> TITAN-WGS`：舊 review 是用錯的 test type 建的，這次順便修正
+- `review TSV was not current`：review 建好之後 overlay 又被別的步驟改過
+- `no review TSV yet`：這隻還沒有 review TSV
 
 - ✅ matched / rows 比例約 **99.9%**（DRAGEN 樣本）；in-place 模式另印 `[inhouse-af] N variants, M matched in-house AF DB`
 - ⚠️ `-nckuh` 樣本配對率較低（約 87%）是**正常的**：DB 用 DRAGEN gVCF 建的，in-house pipeline 的 variant caller 表示法與變異集合不同
@@ -242,7 +261,7 @@ tail -f ~/NGS_UI/backfill.log
 - 預設**一失敗就停**；要跳過壞樣本繼續用 `--continue-on-error`
 - 中途被砍（Ctrl-C / kill）是安全的：overlay 更新是單一 transaction，沒 commit 就整個 rollback，
   不會留下一半新一半舊的 AF；重跑即可
-- ⏱ 先用單隻 `time` 的結果乘以樣本數估總時間（本機 1M 列合成資料約 35 秒；WGS 主要花在讀 raw TSV 兩次與掃 DB 一次）
+- ⏱ 先用單隻 `time` 的結果乘以樣本數估總時間。WGS（約 590 萬列、2 GB）主要花在讀 raw TSV 兩次（各約 20 秒）、掃 DB 一次（約 45 秒）和 overlay upsert；WES 小很多
 
 ## Step 8｜重啟與確認
 
@@ -677,8 +696,10 @@ sites VCF is joined into the TSV as columns, NOT `bcftools annotate`, because
    isn't in the DB.
 7. **`scripts/backfill_inhouse_af.py`** — for existing samples / after a batch
    refresh. Pipeline `03_acmg` sources (read-only): update `INHOUSE_*` directly
-   in the `08_postprocessing` overlay SQLite (one transaction, other fields
-   kept) → rebuild review TSV; gene index untouched. Legacy UI copies:
+   in the `08_postprocessing` overlay SQLite (one transaction, SQLite
+   `json_patch` upsert, other fields kept) → patch only the INHOUSE_* columns of
+   the review TSV (full rebuild if it wasn't current or the test type changed);
+   gene index untouched. Legacy UI copies:
    annotate in place → rebuild review TSV → **rebuild gene index** (offsets shift).
 8. **`scripts/inhouse_af/deploy_inhouse_af_db.sh`** — atomic-install the sites VCF
    onto the NGS-UI host under `biotools/inhouse_af/`.
