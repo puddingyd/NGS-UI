@@ -204,11 +204,14 @@ tail -f ~/NGS_UI/backfill.log
 **Overlay 模式**（解析到的是 pipeline 的 `03_acmg/*.snv_indel.acmg.tsv`，不論在 unified 還是舊 pipeline root）
 ——`03_acmg` 是**唯讀的原始真相**，匯出報告讀它，**絕不寫入**：
 1. 讀 `03_acmg` TSV（唯讀）建 allele key → 串流掃一次 in-house DB 找命中
-2. **直接在** `08_postprocessing/<sid>.snv_annotations.sqlite` 裡、同一個 SQLite transaction 更新：
+2. 把 `08_postprocessing/<sid>.snv_annotations.sqlite` **循序複製到本機暫存**（`--tmp-dir`，預設 `$TMPDIR` 或 `/tmp`；空間不足 overlay 的 2.5 倍時改用 overlay 所在目錄），在副本上更新：
    有命中的列 → 舊 `INHOUSE_*` 換成新值，**其他欄位（GeneBe / SpliceAI / MANE / LitVar2…）原封不動**；
    沒命中的列 → 只移除過期的 `INHOUSE_*`；payload 變空的列整列刪除。
    SQLite ≥ 3.24 且有 JSON1 時用 `INSERT … ON CONFLICT DO UPDATE SET payload_json = json_patch(json_remove(…))`
    在 SQLite 內合併；否則自動改用 Python 合併（結果相同，較慢）
+   更新完再循序寫回 NFS，用 `os.replace` **原子換檔**（讀者只會看到舊檔或新檔）；若這段期間 overlay 被別的程序改過，就拒絕覆蓋。
+   > 為什麼不直接在 NFS 上改：幾乎每一頁都會被改到，rollback journal + fsync 的零碎寫入在 NFS 上極慢
+   > （實測一隻 WGS 263 秒，user CPU 只占一小部分）。本機副本不需要 journal，失敗就直接丟掉。
 3. 更新 overlay meta 的欄位清單；raw 沒變，所以 source signature 仍有效（`is_current()` 仍成立）
 4. **review TSV 只修補 `INHOUSE_*` 三欄**，不整份重建：review 選哪些列只看 raw 欄位、BED、gnomAD AF
    與 `CLINVAR_CHANGE`，跟 `INHOUSE_*` 無關。所以只要舊 review TSV 對「raw + 更新前的 overlay + 同一個
@@ -239,13 +242,15 @@ tail -f ~/NGS_UI/backfill.log
 ```
   • 26T00028-dragen  [overlay]
       [    0.1s] scan raw TSV (2.02 GB)
-      [   22.7s] 5,935,963 rows, 4,970,219 allele keys; join in-house DB
-      [   69.8s] 5,799,956 rows matched; update overlay
-      [  150.0s] overlay updated (5,799,956 rows with INHOUSE_AF)
-      [  152.0s] review TSV patched in place (test type TITAN-WGS)
-      [  152.0s] done
+      [   22.5s] 5,935,963 rows, 4,970,219 allele keys; join in-house DB
+      [   69.7s] 5,799,956 rows matched; update overlay
+      [   70.0s] copy overlay (x.xx GB) -> /tmp
+      [  1xx.xs] write overlay back (x.xx GB)
+      [  1xx.xs] overlay updated (5,799,956 rows with INHOUSE_AF)
+      [  1xx.xs] review TSV patched in place (test type TITAN-WGS)
+      [  1xx.xs] done
 ```
-（前三行是實測；後面的秒數是估計。秒數是從腳本啟動起算的累計值。）
+（前三行是實測；後面的是示意。秒數是從腳本啟動起算的累計值。）
 
 若出現 `rebuild review TSV (<原因>; test type …)` 而不是 `patched in place`，代表走了整份重建（多約 2–3 分鐘，WGS）。
 結果仍然正確。常見原因：
@@ -259,8 +264,11 @@ tail -f ~/NGS_UI/backfill.log
 - ❌ `no SNV TSV (...), skip` → 該樣本沒有 `03_acmg/*.snv_indel.acmg.tsv`，通常是三級分析沒跑完
 - ❌ `in-house AF DB not found` → Step 6 沒做或路徑不對
 - 預設**一失敗就停**；要跳過壞樣本繼續用 `--continue-on-error`
-- 中途被砍（Ctrl-C / kill）是安全的：overlay 更新是單一 transaction，沒 commit 就整個 rollback，
-  不會留下一半新一半舊的 AF；重跑即可
+- 中途被砍（Ctrl-C / `kill`）是安全的：更新都在暫存副本上做，最後才原子換檔，真正的 overlay 不會
+  出現一半新一半舊的 AF；暫存副本會自動清掉。重跑即可（`kill -9` 例外：可能在 `/tmp` 留下
+  `*.snv_annotations.sqlite.*.work`，手動刪掉即可）
+- ❌ `overlay changed during backfill, not replaced` → 這段期間有別的程序（例如三級分析重跑）改了 overlay，
+  這次的結果已丟棄；等那個程序結束再重跑這隻
 - ⏱ 先用單隻 `time` 的結果乘以樣本數估總時間。WGS（約 590 萬列、2 GB）主要花在讀 raw TSV 兩次（各約 20 秒）、掃 DB 一次（約 45 秒）和 overlay upsert；WES 小很多
 
 ## Step 8｜重啟與確認

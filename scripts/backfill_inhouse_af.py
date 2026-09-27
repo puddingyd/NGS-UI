@@ -70,6 +70,7 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -89,6 +90,7 @@ import annotate_inhouse_af as iaf  # noqa: E402
 INH = (iaf.COL_AC, iaf.COL_AN, iaf.COL_AF)
 csv.field_size_limit(4 * 1024 * 1024)
 _T0 = time.monotonic()
+WORK_TMP = ""          # --tmp-dir; empty = $TMPDIR or /tmp
 
 
 def log(msg: str) -> None:
@@ -248,16 +250,24 @@ def update_overlay(raw: Path, overlay: Path, db: Path) -> int:
     every_row = any(i is not None for i in raw_inh)
     key_idx = [cols.get(f) for f in KEY_FIELDS]
 
+    # Work on a private copy on local disk, then swap it in atomically. An
+    # in-place transaction on NFS rewrites nearly every page through a
+    # rollback journal with fsyncs -- measured 263 s for one WGS overlay.
+    # The copy needs no journal: on any failure it is simply thrown away.
+    before = overlay.stat() if have else None
+    wdir = _work_dir(overlay, (before.st_size if before else 0))
+    fd, tmp_name = tempfile.mkstemp(dir=str(wdir), prefix=overlay.name + ".", suffix=".work")
+    os.close(fd)
+    work = Path(tmp_name)
     if have:
-        conn = sqlite3.connect(overlay, isolation_level=None)
-        target = None
+        log(f"copy overlay ({before.st_size / 1e9:.2f} GB) -> {wdir}")
+        shutil.copyfile(overlay, work)
     else:
-        fd, tmp_name = tempfile.mkstemp(dir=str(overlay.parent),
-                                        prefix=overlay.name + ".", suffix=".tmp")
-        os.close(fd)
-        target = Path(tmp_name)
-        target.unlink()
-        conn = sqlite3.connect(target, isolation_level=None)
+        work.unlink()
+    conn = sqlite3.connect(work, isolation_level=None)
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=OFF")
+    if not have:
         conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         conn.execute("CREATE TABLE annotations ("
                      "row_key TEXT PRIMARY KEY, payload_json TEXT NOT NULL)")
@@ -323,16 +333,60 @@ def update_overlay(raw: Path, overlay: Path, db: Path) -> int:
                          sorted(meta.items()))
         conn.execute("COMMIT")
     except BaseException:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        conn.close()
-        if target is not None:
-            target.unlink(missing_ok=True)
+        try:
+            conn.close()
+        finally:
+            work.unlink(missing_ok=True)
         raise
     conn.close()
-    if target is not None:
-        os.replace(target, overlay)
+    try:
+        _install(work, overlay, before)
+    finally:
+        work.unlink(missing_ok=True)
     return n_hit
+
+
+def _work_dir(overlay: Path, size: int) -> Path:
+    """Local scratch for the overlay copy: --tmp-dir / $TMPDIR, if it has room
+    (the copy plus growth and SQLite temp space), else next to the overlay."""
+    need = int(size * 2.5) + (512 << 20)
+    for cand in (WORK_TMP or tempfile.gettempdir(), str(overlay.parent)):
+        try:
+            if shutil.disk_usage(cand).free > need:
+                return Path(cand)
+        except OSError:
+            continue
+    return overlay.parent
+
+
+def _install(work: Path, overlay: Path, before) -> None:
+    """Swap the updated copy in with os.replace (readers see old or new, never
+    half). Refuses if the overlay changed while we worked on the copy."""
+    if before is not None:
+        now = overlay.stat()
+        if (now.st_mtime_ns, now.st_size) != (before.st_mtime_ns, before.st_size):
+            raise RuntimeError(f"overlay changed during backfill, not replaced: {overlay}")
+    if work.stat().st_dev == overlay.parent.stat().st_dev:
+        src = work
+    else:
+        log(f"write overlay back ({work.stat().st_size / 1e9:.2f} GB)")
+        fd, tmp_name = tempfile.mkstemp(dir=str(overlay.parent),
+                                        prefix=overlay.name + ".", suffix=".tmp")
+        os.close(fd)
+        src = Path(tmp_name)
+        try:
+            shutil.copyfile(work, src)
+        except BaseException:
+            src.unlink(missing_ok=True)
+            raise
+    try:
+        if before is not None:
+            os.chmod(src, before.st_mode & 0o7777)
+        os.replace(src, overlay)
+    except BaseException:
+        if src != work:
+            src.unlink(missing_ok=True)
+        raise
 
 
 def is_ui_copy(raw: Path) -> bool:
@@ -499,7 +553,6 @@ def _selftest_overlay() -> None:
     build_overlay), raw untouched, other annotations kept, stale INHOUSE_*
     removed, idempotent."""
     import hashlib
-    import shutil
     d = Path(tempfile.mkdtemp())
     raw = d / "raw.acmg.tsv"
     raw.write_text(
@@ -597,7 +650,6 @@ def _selftest_overlay() -> None:
 
 def _selftest_review() -> None:
     """patch_review() on the old review TSV == a full rebuild after the update."""
-    import shutil
     d = Path(tempfile.mkdtemp())
     raw = d / "raw.acmg.tsv"
     raw.write_text(
@@ -715,15 +767,23 @@ def main() -> int:
                     help="list each sample, its layout and resolved paths; run nothing")
     ap.add_argument("--continue-on-error", action="store_true",
                     help="keep going when one sample fails (default: stop)")
+    ap.add_argument("--tmp-dir", default="",
+                    help="local scratch for the overlay copy (default $TMPDIR or /tmp; "
+                         "falls back to the overlay's own dir when short of space)")
     ap.add_argument("--selftest", action="store_true",
                     help="synthetic check of the overlay update; touches no real data")
     args = ap.parse_args()
+    global WORK_TMP
+    WORK_TMP = args.tmp_dir
     if args.selftest:
         return selftest()
     try:               # behave like a normal tool under `| head`
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
     except (AttributeError, ValueError):
         pass
+    # `kill` -> unwind normally, so the local overlay copy is cleaned up and
+    # the real overlay is left untouched
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
 
     db = Path(args.db)
     if not db.is_file():
