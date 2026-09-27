@@ -3,38 +3,47 @@
 
 Run this for samples analysed before the in-house AF step existed, and after
 every refresh of the in-house AF DB (the cohort grows, so AN and every AF
-change). New analyses don't need it — run_stopgaps.sh runs the same annotate
-step inline.
+change). New analyses don't need it — run_stopgaps.sh does the same work
+inline.
 
-For each sample it does the three things that must happen together:
+It mirrors what the tertiary worker does, which matters because the two
+layouts store annotations completely differently:
 
-  1. annotate_inhouse_af.py   fill/refresh INHOUSE_AC/AN/AF on the pipeline SNV
-                              TSV (03_acmg in the unified layout)
-  2. build_snv_review_tsv.py  rebuild the main-screen review TSV so the new
-                              columns reach the UI
-  3. build_snv_gene_index.py  REBUILD the gene index — step 1 rewrites the whole
-                              TSV (atomic replace), shifting every byte offset,
-                              and the index is only auto-rebuilt when missing.
-                              Skipping this makes gene search seek stale bytes.
+UNIFIED layout (<TERTIARY_ROOT>/<sample>/):
+    03_acmg/<source>.snv_indel.acmg.tsv   IMMUTABLE pipeline source of truth;
+                                          exported reports read it. NEVER written.
+    08_postprocessing/<sid>.snv_annotations.sqlite
+                                          sparse overlay holding every field
+                                          post-processing adds (GeneBe,
+                                          SpliceAI, MANE, LitVar2, INHOUSE_*)
+    08_postprocessing/<sid>.snv_indel.review.tsv
+                                          main-screen rows, built from raw+overlay
+  So the steps are: materialise raw+overlay -> a temp working TSV, add
+  INHOUSE_* to THAT, re-diff it against raw into the overlay, rebuild the
+  review TSV, delete the working file. The gene index is built from the raw
+  TSV, which never changes, so it is NOT rebuilt here.
+
+  Materialising first is essential: build_overlay() REPLACES the overlay, so
+  diffing raw against a fresh copy carrying only INHOUSE_* would silently drop
+  every other annotation.
+
+LEGACY UI tree (<NGS_UI_HOME>/tertiary_output/<sample>/):
+    snv_indel.annotated.tsv is itself the annotated copy, so it is rewritten in
+    place and the gene index MUST be rebuilt with it — the atomic replace
+    shifts every byte offset and the index is only auto-rebuilt when missing.
 
 Paths come from backend/app/services/sample_layout.py, so this follows the
-unified layout (<TERTIARY_ROOT>/<sample>/03_acmg + 08_postprocessing) and the
-legacy UI tree identically to the backend. Derived filenames are sample-
-prefixed under 08_postprocessing, matching run_stopgaps.sh.
-
---test-type and --gpn-msa-db are deliberately NOT passed through: the review
-builder infers the test type from the sample metadata (run_stopgaps passes an
-explicit WES default, which would be wrong for WGS samples here) and reads
-NGS_UI_GPN_MSA_DB itself.
+backend exactly.
 
 Usage:
     scripts/backfill_inhouse_af.py                  # every sample
     scripts/backfill_inhouse_af.py SID1 SID2 ...    # only these
-    scripts/backfill_inhouse_af.py --dry-run        # show what would run
+    scripts/backfill_inhouse_af.py --dry-run        # show plan, run nothing
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import subprocess
 import sys
 from pathlib import Path
@@ -44,23 +53,71 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from app import config  # noqa: E402
 from app.services import sample_layout as layout  # noqa: E402
+from app.services.snv_overlay import OverlayReader  # noqa: E402
 
 SCRIPTS = REPO / "scripts"
+csv.field_size_limit(4 * 1024 * 1024)
 
 
 def derived_paths(sample_id: str):
-    """(post_dir, review, manifest, gene_index, overlay) — same names as
-    run_stopgaps.sh, i.e. sample-prefixed under 08_postprocessing and bare in
-    the legacy tree."""
+    """Same names run_stopgaps.sh uses: sample-prefixed under 08_postprocessing,
+    bare in the legacy tree."""
     post = layout.state_dir(sample_id, for_write=True)
     pre = f"{sample_id}." if post.name == layout.POSTPROCESSING_DIRNAME else ""
-    return (
-        post,
-        post / f"{pre}snv_indel.review.tsv",
-        post / f"{pre}snv_indel.review.tsv.source.json",
-        post / f"{pre}snv_gene_index.sqlite",
-        post / f"{pre}snv_annotations.sqlite",
-    )
+    return {
+        "post": post,
+        "review": post / f"{pre}snv_indel.review.tsv",
+        "manifest": post / f"{pre}snv_indel.review.tsv.source.json",
+        "gene_index": post / f"{pre}snv_gene_index.sqlite",
+        "overlay": post / f"{pre}snv_annotations.sqlite",
+    }
+
+
+def materialise(raw: Path, overlay: Path, out: Path) -> None:
+    """raw + existing overlay -> full annotated TSV, so the re-diff preserves
+    annotations this backfill does not touch."""
+    have = overlay.is_file()
+    with OverlayReader(raw, overlay if have else None) as rd, \
+            open(raw, "r", encoding="utf-8", newline="") as fi, \
+            open(out, "w", encoding="utf-8", newline="") as fo:
+        rdr = csv.DictReader(fi, delimiter="\t")
+        fields = list(rdr.fieldnames or [])
+        fields += [f for f in (rd.fields if rd.active else []) if f not in fields]
+        wtr = csv.DictWriter(fo, fieldnames=fields, delimiter="\t",
+                             extrasaction="ignore", lineterminator="\n")
+        wtr.writeheader()
+        if rd.active:
+            for row in rdr:
+                wtr.writerow(rd.apply(row))
+        else:
+            wtr.writerows(rdr)
+
+
+def run(cmd) -> None:
+    subprocess.run([str(c) for c in cmd], check=True)
+
+
+def do_unified(sid: str, raw: Path, p: dict, db: Path) -> None:
+    work = p["post"] / f".snv_indel.backfill.working.tsv"
+    try:
+        materialise(raw, p["overlay"], work)
+        run([SCRIPTS / "annotate_inhouse_af.py", "--tsv", work, "--db", db])
+        run([SCRIPTS / "build_snv_annotation_overlay.py",
+             "--raw", raw, "--annotated", work, "--out", p["overlay"]])
+        run([SCRIPTS / "build_snv_review_tsv.py", "--tsv", raw,
+             "--output-dir", p["post"], "--output-path", p["review"],
+             "--manifest-path", p["manifest"], "--overlay", p["overlay"]])
+    finally:
+        work.unlink(missing_ok=True)
+
+
+def do_legacy(sid: str, raw: Path, p: dict, db: Path) -> None:
+    run([SCRIPTS / "annotate_inhouse_af.py", "--tsv", raw, "--db", db])
+    run([SCRIPTS / "build_snv_review_tsv.py", "--tsv", raw,
+         "--output-dir", p["post"], "--output-path", p["review"],
+         "--manifest-path", p["manifest"], "--overlay", p["overlay"]])
+    # raw was rewritten in place -> every byte offset moved
+    run([SCRIPTS / "build_snv_gene_index.py", "--tsv", raw, "--out", p["gene_index"]])
 
 
 def main() -> int:
@@ -70,7 +127,7 @@ def main() -> int:
     ap.add_argument("--db", default=str(config.INHOUSE_AF_DB),
                     help=f"in-house AF sites VCF (default {config.INHOUSE_AF_DB})")
     ap.add_argument("--dry-run", action="store_true",
-                    help="list the samples and resolved paths, run nothing")
+                    help="list each sample, its layout and resolved paths; run nothing")
     ap.add_argument("--continue-on-error", action="store_true",
                     help="keep going when one sample fails (default: stop)")
     args = ap.parse_args()
@@ -98,23 +155,23 @@ def main() -> int:
             print(f"  - {sid}: no SNV TSV ({raw}), skip", file=sys.stderr)
             n_skip += 1
             continue
-        post, review, manifest, gene_index, overlay = derived_paths(sid)
+        p = derived_paths(sid)
+        unified = layout.uses_unified_layout(sid)
         if args.dry_run:
-            print(f"  • {sid}\n      tsv   {raw}\n      post  {post}")
+            kind = "unified" if unified else "legacy"
+            fate = "read-only" if unified else "REWRITTEN IN PLACE"
+            print(f"  • {sid}  [{kind}]")
+            print(f"      raw      {raw}   ({fate})")
+            print(f"      overlay  {p['overlay']}")
+            print(f"      review   {p['review']}")
+            if not unified:
+                print(f"      index    {p['gene_index']}   (rebuilt)")
             n_ok += 1
             continue
-        post.mkdir(parents=True, exist_ok=True)
-        steps = [
-            [SCRIPTS / "annotate_inhouse_af.py", "--tsv", raw, "--db", db],
-            [SCRIPTS / "build_snv_review_tsv.py", "--tsv", raw,
-             "--output-dir", post, "--output-path", review,
-             "--manifest-path", manifest, "--overlay", overlay],
-            [SCRIPTS / "build_snv_gene_index.py", "--tsv", raw, "--out", gene_index],
-        ]
-        print(f"  • {sid}")
+        p["post"].mkdir(parents=True, exist_ok=True)
+        print(f"  • {sid}  [{'unified' if unified else 'legacy'}]")
         try:
-            for cmd in steps:
-                subprocess.run([str(c) for c in cmd], check=True)
+            (do_unified if unified else do_legacy)(sid, raw, p, db)
             n_ok += 1
         except subprocess.CalledProcessError as e:
             n_fail += 1
@@ -122,6 +179,11 @@ def main() -> int:
                   file=sys.stderr)
             if not args.continue_on_error:
                 print("stopping (use --continue-on-error to keep going)", file=sys.stderr)
+                break
+        except Exception as e:  # noqa: BLE001
+            n_fail += 1
+            print(f"  ! {sid}: {e}", file=sys.stderr)
+            if not args.continue_on_error:
                 break
 
     print(f"done. {n_ok} annotated, {n_skip} skipped, {n_fail} failed.")
