@@ -1,13 +1,223 @@
-# In-house allele frequency (in-house AF) — Phase 0
+# In-house allele frequency (in-house AF)
 
 Build a cohort allele-frequency database from our own NovaSeq + DRAGEN WGS
-gVCFs, and annotate `snv_indel.annotated.tsv` with `INHOUSE_AF` the same way
+gVCFs, and annotate the pipeline SNV TSV with `INHOUSE_AF` the same way
 we annotate `GNOMAD_G_AF`. Goal: an in-house AF (incl. **rare** variants) for
 annotation, and a filter for locally common polymorphisms that gnomAD
 under-represents.
 
-> **Scope (Phase 0/1):** SNV/indel only. SV in-house frequency (breakpoint /
+> **Scope:** SNV/indel only. SV in-house frequency (breakpoint /
 > reciprocal-overlap matching) is a later phase. Mito is separate.
+
+**目前狀態（2026-09）**：cohort **1397 隻**、**57,171,081** 個站點、AN = **2794**。
+
+---
+
+# 批次更新 SOP（新樣本下機後照這個做）
+
+> 這是**操作手冊**。下面「Cohort / Files / Phase …」是設計與歷史紀錄，平常不用看。
+
+## 機器角色
+
+| 機器 | 位置 | 負責 |
+|---|---|---|
+| **DGX**（`n102968@dgx2`） | DB 在 `/raid/DGM/n102968/inhouse_af`、script 在 `~/dgx_stage/inhouse_af` | 建資料庫（ingest / accumulate / publish）。有 1.5 TB RAM，無外網 |
+| **DGM**（`n102968@server`） | git checkout `~/NGS_UI/inhouse-af` | 從 GitHub 拉 code，再中繼給 DGX |
+| **NGS-UI 主機** | `~/NGS_UI/NGS-UI`、DB 裝在 `~/NGS_UI/biotools/inhouse_af/` | 部署 DB、backfill 既有樣本 |
+
+DGM 與 DGX 之間**沒有 ssh**，靠共用的 datalake 當中繼。
+
+## Step 0｜環境變數（每次開新 shell 都要設）
+
+**DGX：**
+```bash
+export PATH=$HOME/bin:$PATH          # bcftools/bgzip/tabix 的 apptainer wrapper
+DB=/raid/DGM/n102968/inhouse_af
+SCR=~/dgx_stage/inhouse_af
+for c in /datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta \
+         /datalake_Intermediate/datalake_Intermediate/pipeline/reference/hg38/Homo_sapiens_assembly38.fasta; do
+  [ -f "$c" ] && REF="$c" && break
+done; echo "REF=$REF"
+```
+- ✅ 正常：印出 `REF=/datalake_Intermediate/...fasta`
+- ❌ `REF=` 空的 → datalake 掛載點又變了，用 `find /datalake* -name 'Homo_sapiens_assembly38.fasta' 2>/dev/null | head` 找
+
+## Step 1｜同步最新 script 到 DGX
+
+**DGM：**
+```bash
+cd ~/NGS_UI/inhouse-af
+git status --short | head                       # 先確認沒有未提交的修改
+git checkout claude/plan-ngs-ui-RQW8J
+git pull --ff-only origin claude/plan-ngs-ui-RQW8J
+scripts/inhouse_af/sync_to_dgx.sh --repo ~/NGS_UI/inhouse-af \
+  --via /home/datalake_Intermediate/n102968/_sync_inhouse_af
+```
+- ✅ 會印 `branch : claude/plan-ngs-ui-RQW8J`、`HEAD -> <commit>`，最後印一行 DGX 要跑的 `cp`
+- ❌ `Not possible to fast-forward, aborting` → checkout 停在舊分支。用上面的 `git checkout` 切過去再 pull。**不要用 `--no-pull` 硬跳過**，那會把舊 script 送出去（踩過一次）
+
+**DGX**（貼上它印出來的那行）：
+```bash
+mkdir -p ~/dgx_stage/inhouse_af && cp -f /datalake_Intermediate/n102968/_sync_inhouse_af/*.{py,sh,yml,txt} ~/dgx_stage/inhouse_af/
+python3 "$SCR/accumulate.py" --selftest
+python3 "$SCR/annotate_inhouse_af.py" --selftest
+```
+- ✅ 兩個都印 `selftest OK`
+- ❌ `error: the following arguments are required: --db-dir` → 拿到的是舊版，回 DGM 確認分支
+
+## Step 2｜掃描有哪些新檢體（唯讀，不動 DB）
+
+**DGX：**
+```bash
+find /datalake_Raw/datalake_Raw/Novaseq -maxdepth 5 -name '*.hard-filtered.gvcf.gz' \
+  -printf '%s\t%p\n' > "$DB/gvcf_sizes.new.txt"
+
+python3 "$SCR/select_cohort.py" --sizes "$DB/gvcf_sizes.new.txt" \
+  --exclude-range 'VAL-:37-54' \
+  --out-manifest "$DB/cohort_manifest.new.tsv" --out-list "$DB/cohort_gvcfs.new.txt"
+
+sqlite3 "$DB/counts.sqlite" "SELECT sample_id FROM samples;" | sort > "$DB/.ingested.txt"
+awk -F'\t' 'NR>1 && $4=="include"{print $1}' "$DB/cohort_manifest.new.tsv" | sort > "$DB/.included.txt"
+comm -23 "$DB/.included.txt" "$DB/.ingested.txt" > "$DB/new_samples.txt"
+
+echo "新 cohort: $(wc -l < "$DB/.included.txt")  DB 現有: $(wc -l < "$DB/.ingested.txt")  要新增: $(wc -l < "$DB/new_samples.txt")"
+echo "--- DB 有但 cohort 沒有（必須是空的）---"; comm -13 "$DB/.included.txt" "$DB/.ingested.txt"
+```
+- ✅ `EXCLUDE_standard_ref 18`、`EXCLUDE_broken_empty 1`（排除規則有作用）；最後一行**空的**
+- ⚠️ 最後一行**不是空的** → 有樣本從 datalake 消失或改名。**先停下來釐清**：AN track 是累加的，沒辦法用增量移除樣本
+- ⚠️ 新增清單裡有不該收的對照品 → 加進 `--exclude-range` 或 `--exclude-id-file` 再跑一次
+
+## Step 3｜ingest 新檢體
+
+**DGX：**
+```bash
+awk -F'\t' 'NR==FNR{new[$1];next} FNR>1 && $4=="include" && ($1 in new){
+  if (match($5, /\/(vcf\.gz|other)\//)) print substr($5,1,RSTART-1) "/other/" $1;
+}' "$DB/new_samples.txt" "$DB/cohort_manifest.new.tsv" > "$DB/new_other_dirs.txt"
+
+# 驗證每個目錄都有 gVCF 與 ploidy CSV（遞迴找，因新 run 用 germline_seq/ 巢狀）
+miss_g=0; miss_p=0
+while read -r d; do
+  [ -n "$(find "$d" -name '*.hard-filtered.gvcf.gz' -print -quit 2>/dev/null)" ] || miss_g=$((miss_g+1))
+  [ -n "$(find "$d" -name '*ploidy_estimation_metrics.csv' -print -quit 2>/dev/null)" ] || miss_p=$((miss_p+1))
+done < "$DB/new_other_dirs.txt"
+echo "dirs=$(wc -l < "$DB/new_other_dirs.txt")  missing gVCF=$miss_g  ploidy CSV=$miss_p"
+
+nohup "$SCR/ingest_batch.sh" --dirs-file "$DB/new_other_dirs.txt" \
+  --ref "$REF" --out-dir "$DB/per_sample" --jobs 16 > "$DB/ingest.log" 2>&1 &
+```
+- ✅ 兩個 missing 都是 **0**；log 持續出現 `[ok] <id>`
+- ❌ `missing ploidy CSV` > 0 → 性別判不出來會被當 ambiguous（X/Y 不計入），先查那些目錄的結構
+- 進度：`echo "$(ls "$DB/per_sample"/*/qc.json | wc -l) / <新 cohort 總數>"`；`grep -c '\[FAIL\]' "$DB/ingest.log"` 要維持 0
+- 可中斷重跑（已有 `qc.json` 的會跳過）
+- ⏱ 720 隻約數小時
+
+ingest 完做一次性別檢查：
+```bash
+for s in "$DB"/per_sample/*/qc.json; do grep -o '"sex_class": *"[a-z]*"' "$s"; done | sort | uniq -c
+```
+- ✅ female/male 各佔多數，`ambiguous` 只有零星幾隻且散落在不同 run
+- ⚠️ `ambiguous` 集中成一整批（幾十上百隻）→ 那批的 ploidy CSV 沒被讀到，**先別 accumulate**
+
+## Step 4｜accumulate + publish
+
+**DGX：**
+```bash
+nohup bash -c "
+  '$SCR/accumulate.py' --db-dir '$DB' --sort-tmp '$DB/.sorttmp' --jobs 16 &&
+  '$SCR/publish_af.py' --db-dir '$DB' --ref '$REF'
+" > "$DB/rebuild.log" 2>&1 &
+tail -f "$DB/rebuild.log"
+```
+依序會看到：
+```
+[accumulate] adding N sample(s) (have M)
+[accumulate]   + <sample>  (…… variant rows)      ← 每隻一行
+[accumulate] rebuilding AN track (old + N); sort tmp=…
+[accumulate]   phase 1/3 demux: N inputs, 16 workers (…)
+[accumulate]   phase 2/3 reduce: 25 chromosomes, 16 in parallel
+[accumulate]   phase 3/3 concat + bgzip
+[accumulate] AN track -> …/an_track.bg.gz  (NNNNs)
+[accumulate] cohort=<總數> samples, <變異數> distinct variants
+[publish] <站點數> sites written, <少量> dropped (AN=0/AC=0)
+```
+- ⏱ 增量（`old + N`）比全量快很多；全量 1397 隻約 8 小時
+- **phase 1 沒有輸出不代表當掉**：進度看 `du -sh "$DB"/.sorttmp/an_track.*`；讀到第幾份 BED 用
+  ```bash
+  WD=$(ls -d "$DB"/.sorttmp/an_track.* | head -1)
+  for p in $(pgrep -x gzip); do tr '\0' '\n' < /proc/$p/cmdline 2>/dev/null | grep -o 'per_sample/[^/]*'; done | head
+  ```
+- ❌ **中途失敗（OOM／磁碟滿／被 kill）絕對不要直接重跑** `accumulate.py`：`counts.sqlite` 已經寫入新樣本、`an_track` 還是舊的，直接重跑會印 `AN track unchanged` 然後**所有 AF 靜靜地偏高**。正確復原：
+  ```bash
+  "$SCR/accumulate.py" --db-dir "$DB" --sort-tmp "$DB/.sorttmp" --rebuild-an-track --jobs 16
+  ```
+  （`--rebuild-an-track` 會從全部樣本重建，較久但正確）
+
+## Step 5｜驗收（重要，2 分鐘）
+
+**DGX：**
+```bash
+ls -lah "$DB/an_track.bg.gz" "$DB/inhouse_af.hg38.vcf.gz"
+tabix "$DB/inhouse_af.hg38.vcf.gz" chr1:1000000-1100000 | head -3
+tabix "$DB/inhouse_af.hg38.vcf.gz" chr1:45330228-45330228   # MUTYH 常見 indel
+```
+**判準**：`INHOUSE_AN` 要接近 **2 × 樣本數**；而且拿一個**常見變異**對照上一版——
+> **AF 應該幾乎不變，AC 和 AN 各自等比例增加。**
+
+這是最有力的檢查：常見變異的頻率不該因為樣本數變多而改變。若 AF 大幅偏移，代表 AN track 與 counts 不同步（見 Step 4 的復原）。
+
+## Step 6｜部署到 NGS-UI 主機
+
+**DGX：**
+```bash
+mkdir -p /datalake_Intermediate/n102968/_deploy_inhouse_af
+cp -f "$DB/inhouse_af.hg38.vcf.gz" "$DB/inhouse_af.hg38.vcf.gz.tbi" \
+      /datalake_Intermediate/n102968/_deploy_inhouse_af/
+```
+**NGS-UI 主機：**
+```bash
+cd ~/NGS_UI/NGS-UI && git pull --ff-only origin claude/plan-ngs-ui-RQW8J
+scripts/inhouse_af/deploy_inhouse_af_db.sh \
+  /home/datalake_Intermediate/n102968/_deploy_inhouse_af/inhouse_af.hg38.vcf.gz
+```
+- ✅ 會驗 bgzip、沿用或重建 `.tbi`、探測一個站點、印站點數，最後**原子換檔**
+- ✅ 裝到預設路徑就**不用設 `NGS_UI_INHOUSE_AF_DB`**
+- ❌ `compression ... is not BGZF` → 來源檔壞了，回 DGX 重新 publish
+
+## Step 7｜backfill 既有樣本
+
+**cohort 一變，所有既有樣本的 AF 都過期了，一定要重跑。**
+
+**NGS-UI 主機：**
+```bash
+python3 scripts/annotate_inhouse_af.py --selftest      # 先確認 code 是新的
+
+python3 scripts/backfill_inhouse_af.py --dry-run | head     # 看解析出的路徑對不對
+time python3 scripts/backfill_inhouse_af.py <某一隻 SID>    # 先測一隻並計時
+
+nohup python3 scripts/backfill_inhouse_af.py > ~/NGS_UI/backfill.log 2>&1 &
+```
+每隻會跑三步（**必須一起做**）：annotate → 重建 review TSV → **重建 gene index**（annotate 原子改寫整個 TSV 會位移所有 byte offset，不重建 gene 搜尋會 seek 到錯位 bytes）。
+
+- ✅ 每隻印 `[inhouse-af] N variants, M matched in-house AF DB`，比例約 **99.9%**（DRAGEN 樣本）
+- ⚠️ `-nckuh` 樣本配對率較低（約 87%）是**正常的**：DB 用 DRAGEN gVCF 建的，in-house pipeline 的 variant caller 表示法與變異集合不同
+- ❌ `no SNV TSV (...), skip` → 該樣本沒有 `03_acmg/*.snv_indel.acmg.tsv`，通常是三級分析沒跑完
+- ❌ `in-house AF DB not found` → Step 6 沒做或路徑不對
+- 預設**一失敗就停**；要跳過壞樣本繼續用 `--continue-on-error`
+- ⏱ 230 隻約 7–8 小時
+
+## Step 8｜重啟與確認
+
+```bash
+# 重啟 NGS-UI 服務（載入新的 adapter / config）
+```
+瀏覽器 **Ctrl-Shift-R** 強制重新整理，開一個個案搜常見基因：
+- ✅ SNV 卡片的 `AF_nckuh` 顯示成 `0.44202 (1235/2794)`，括號裡的 AN = 2 × 樣本數
+- ✅ 不在 DB 的變異顯示乾淨的 `—`
+- ❌ 顯示 `— (0/0)` → adapter 是舊版（缺 `_first_num`），確認主機 checkout 有 pull 到且服務已重啟
+- ❌ 數字還是舊的 → 那隻樣本還沒 backfill，或瀏覽器快取沒清
+
+---
 
 ## Cohort
 
@@ -427,7 +637,7 @@ sites VCF is joined into the TSV as columns, NOT `bcftools annotate`, because
    display filter (deliberately). Mito cards show
    `AF (carrier AC/callable mito AN; hom/het carriers)`. "—" when the variant
    isn't in the DB.
-7. **`scripts/backfill_inhouse_af.sh`** — for existing samples / after a batch
+7. **`scripts/backfill_inhouse_af.py`** — for existing samples / after a batch
    refresh: annotate → rebuild review TSV → **rebuild gene index** (offsets shift).
 8. **`scripts/inhouse_af/deploy_inhouse_af_db.sh`** — atomic-install the sites VCF
    onto the NGS-UI host under `biotools/inhouse_af/`.
