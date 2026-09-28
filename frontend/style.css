@@ -4516,3 +4516,14 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .case-delete-actions { flex-wrap: wrap; }
 .btn-danger { color: #cf222e; border-color: #cf222e; background: #fff; }
 .btn-danger:hover { color: #fff; background: #cf222e; }
+/* Targeted somatic analysis shares SNV cards, with additive source evidence. */
+.badge-somatic { background: #e9ddfa; color: #67389a; border: 1px solid #ccb7e8; }
+.somatic-modal-card { max-height: 90vh; overflow-y: auto; }
+.somatic-modal-head, .somatic-actions, .somatic-job-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.somatic-modal-head { justify-content: space-between; }
+.somatic-job-row { border-top: 1px solid #ddd; padding: 10px 0; }
+.somatic-card-evidence { font-size: 12px; color: #67389a; padding: 6px 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#somatic-error { color: #a32626; white-space: pre-wrap; }
+#somatic-preview pre, #somatic-detail pre { max-height: 240px; overflow: auto; white-space: pre-wrap; }
+#somatic-detail table { width: 100%; font-size: 12px; border-collapse: collapse; }
+#somatic-detail td, #somatic-detail th { padding: 5px; border-bottom: 1px solid #ddd; text-align: left; }

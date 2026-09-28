@@ -221,6 +221,9 @@ function hideSampleLoading() {
 }
 
 function resetSampleScopedUiState() {
+  document.getElementById("filter-somatic").checked = true;
+  document.getElementById("filter-somatic-label").classList.add("hidden");
+  document.getElementById("somatic-modal").classList.add("hidden");
   activeTierTab = null;
   activeCnvSvTab = null;
   activeMitoTab = null;
@@ -1118,6 +1121,7 @@ function depthSupportHint(v) {
   const lines = [];
   if (v?.low_depth) lines.push(`Low total depth (DP ${v.depth ?? "?"})`);
   if (v?.low_alt_support) lines.push(`Low ALT support (ALT AD ${v.alt_depth ?? "?"} < 10)`);
+  if (v?.somatic) return `${lines.join("; ")} — 請核對 IGV、FILTER 與適合此低比例的驗證方法`;
   return lines.length ? `${lines.join("; ")} — 建議 IGV 複核，必要時 Sanger 確認` : "";
 }
 
@@ -1390,6 +1394,12 @@ async function openIgvModal(variant) {
   let bamIndex;
   try {
     bamIndex = await apiFetch(`/igv/bams?sample_id=${encodeURIComponent(sid)}`);
+    if (variant?.somatic && variant.somatic_bam) {
+      const somaticInfo = await somaticApi(sid);
+      const selectedBam = somaticInfo.bams.find(b => b.path === variant.somatic_bam);
+      if (!selectedBam) throw new Error("本次 Somatic 分析的 BAM 已無法讀取");
+      bamIndex = { ...bamIndex, primary: selectedBam, siblings: [] };
+    }
   } catch (e) {
     document.getElementById("igv-bam-hint").textContent = "BAM 查詢失敗：" + (e.message || e);
     _renderIgvBamList();
@@ -4710,6 +4720,11 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v, id)}
+    ${v.somatic ? `<div class="somatic-card-evidence">Somatic pipeline · Mutect2 · FILTER ${escapeHtml(v.somatic_filter || "—")}
+      ${v.somatic_historical ? " · 先前分析保留的已標記點位" : ""}
+      <details><summary>品質資訊</summary>${Object.entries(v.somatic_qc || {}).map(([k, val]) => `${escapeHtml(k)} ${escapeHtml(val || "—")}`).join(" · ")}</details>
+      <button type="button" class="btn btn-ghost somatic-run-detail" data-run="${escapeAttr(v.somatic_run_id)}">分析紀錄</button>
+      <label>驗證狀態 <select class="somatic-validation" data-id="${escapeAttr(id)}">${["未驗證", "已驗證", "未確認"].map(s => `<option ${s === (getEdit(id, "somatic_validation") || "未驗證") ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>` : ""}
     <div class="comment-row">
       <label>Comment:
         <input class="variant-comment" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editComment)}" />
@@ -4731,7 +4746,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         </div>
       </div>
       <div class="snv-annotation-column">
-        <span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span><span class="v">${renderClinvarValue(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars)}</span>
+        ${v.somatic ? `<span class="k">ClinVar (${escapeHtml(v.somatic_clinvar_release || "版本未提供")})${clinvarExternalLink}</span>` : `<span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span>`}<span class="v">${renderClinvarValue(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars)}</span>
         ${hasErepo ? `<span class="k">ERepo</span>
         <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 ACMG/AMP criteria；ERepo 為 ClinGen VCEP experts 評估">
           <span class="acmg-summary-value ${classifySignificance(erepoDisplayClass) || ""}">${escapeHtml(erepoDisplayClass || "—")} (${escapeHtml(v.clingen_vcep_score == null ? "—" : v.clingen_vcep_score)})</span>
@@ -4802,6 +4817,7 @@ const GIAB_STRATA_DISPLAY = {
 // the row hides itself when nothing is worth showing.
 function renderVariantBadges(v, id) {
   const chips = [];
+  if (v.somatic) chips.push('<span class="badge badge-somatic">Somatic pipeline</span>');
   if (v.transcript_type) {
     const cls = "badge-tx badge-" + v.transcript_type.toLowerCase().replace(/_/g, "-");
     chips.push(`<span class="badge ${cls}" title="Transcript type">${escapeHtml(v.transcript_type)}</span>`);
@@ -5776,6 +5792,7 @@ function _passesMainSnvDisplayFilters(
   { id = "", ignoreInPanelOnly = false, ignoreDiseaseAssociated = false } = {},
 ) {
   if (!v) return false;
+  if (v.somatic) return document.getElementById("filter-somatic")?.checked !== false;
   if (!ignoreDiseaseAssociated
       && document.getElementById("filter-disease-associated")?.checked
       && !v.disease_associated) return false;
@@ -7972,6 +7989,7 @@ document.addEventListener("click", ev => {
 
 function renderAll() {
   if (!state.data) return;
+  renderSomaticControls();
   updateWelcomeVisibility();
   renderSampleMeta();
   renderGeneticCounseling();
@@ -7986,6 +8004,185 @@ function renderAll() {
   renderDiseaseAssociatedReportWarning();
   updateSaveHint();
 }
+
+// ---------- Targeted somatic jobs -----------------------------------
+const somaticUi = { sid: null, timer: null, jobs: [], replace: null, detail: null, pollSequence: 0, detailSequence: 0 };
+const SOMATIC_STEPS = { queued: "排隊中", preflight: "檢查輸入", mutect2: "Mutect2",
+  filtering: "品質過濾", "subtract-germline": "排除 germline 既有點位", annotation: "註解",
+  coverage: "檢查覆蓋", publishing: "發布結果", completed: "完成", failed: "失敗", cancelled: "已取消" };
+
+function somaticSampleId() { return state.data?.sample_id || state.currentLIS; }
+
+async function somaticApi(sid, suffix = "", payload) {
+  const response = await fetch(`${API_BASE}/samples/${encodeURIComponent(sid)}/somatic${suffix}`, {
+    credentials: "same-origin", cache: "no-store", method: payload === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json" }, body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.detail || `HTTP ${response.status}`);
+  return value;
+}
+
+function renderSomaticControls() {
+  const done = !!state.data?.somatic?.completed;
+  document.getElementById("filter-somatic-label")?.classList.toggle("hidden", !done);
+  if (somaticUi.sid !== somaticSampleId()) {
+    clearTimeout(somaticUi.timer);
+    somaticUi.sid = somaticSampleId();
+    somaticUi.jobs = [];
+    somaticUi.replace = null;
+    somaticUi.detail = null;
+    document.getElementById("somatic-progress").textContent = "";
+    document.getElementById("somatic-genes").value = "";
+    document.getElementById("somatic-positions").value = "";
+    document.getElementById("somatic-detail").innerHTML = "";
+    document.getElementById("somatic-preview").innerHTML = "";
+    document.getElementById("somatic-error").textContent = "";
+    somaticPoll(somaticSampleId()).catch(somaticError);
+  }
+}
+
+function somaticError(error) {
+  document.getElementById("somatic-error").textContent = error.message || String(error);
+}
+
+function somaticPayload() {
+  return { genes: document.getElementById("somatic-genes").value,
+    positions: document.getElementById("somatic-positions").value,
+    region_mode: document.getElementById("somatic-region").value,
+    bam_path: document.getElementById("somatic-bam").value,
+    replace_run_id: somaticUi.replace };
+}
+
+async function somaticRefresh(sid) {
+  if (somaticSampleId() !== sid) return;
+  if (!await flushPendingSave()) throw new Error("尚有未儲存的判讀，請儲存後按「更新卡片」");
+  if (somaticSampleId() !== sid) return;
+  // Preserve all staged auxiliary payloads and reviewer state; replace only SNV data.
+  const version = state.data?.active_analysis;
+  const params = version ? `?version=${encodeURIComponent(version)}` : "";
+  const fresh = await apiFetch(`/samples/${encodeURIComponent(sid)}${params}`);
+  if (!fresh || somaticSampleId() !== sid || state.data?.active_analysis !== version) return;
+  const secondaryIds = new Set(Object.entries(state.data.categories || {})
+    .filter(([tier]) => !["1A", "1B", "1C", "2"].includes(tier)).flatMap(([, ids]) => ids));
+  const retained = Object.fromEntries(Object.entries(state.data.variants || {}).filter(([id]) => secondaryIds.has(id)));
+  state.data.variants = { ...retained, ...fresh.variants };
+  for (const tier of ["1A", "1B", "1C", "2"]) state.data.categories[tier] = fresh.categories[tier] || [];
+  state.data.somatic = fresh.somatic;
+  renderAll();
+}
+
+async function somaticPoll(sid) {
+  if (!sid || somaticSampleId() !== sid) return;
+  const sequence = ++somaticUi.pollSequence;
+  const data = await somaticApi(sid);
+  if (somaticSampleId() !== sid || sequence !== somaticUi.pollSequence) return;
+  const completedNow = data.jobs.some(job => job.status === "completed" &&
+    somaticUi.jobs.some(old => old.run_id === job.run_id && old.status !== "completed"));
+  somaticUi.jobs = data.jobs;
+  state.data.somatic = { ...state.data.somatic, ...data.summary };
+  document.getElementById("filter-somatic-label").classList.toggle("hidden", !data.summary.completed);
+  const bamSelect = document.getElementById("somatic-bam");
+  const previous = bamSelect.value;
+  bamSelect.innerHTML = data.bams.map(b => `<option value="${escapeAttr(b.path)}">${escapeHtml(b.path)}</option>`).join("");
+  if (data.bams.some(b => b.path === previous)) bamSelect.value = previous;
+  document.getElementById("somatic-sample").textContent = `${sid} · GRCh38`;
+  const active = data.jobs.find(j => ["queued", "running", "cancelling"].includes(j.status));
+  document.getElementById("somatic-progress").textContent = active ? (SOMATIC_STEPS[active.step] || active.step) :
+    data.summary.stale ? "germline 已更新，請重跑 Somatic" :
+    state.data.somatic.review_missing_ids?.length ? "已標記的 Somatic 點位需要重新核對" : "";
+  document.getElementById("somatic-start-btn").disabled = !!active || !!data.configuration_error || !data.bams.length;
+  if (data.configuration_error) document.getElementById("somatic-error").textContent = data.configuration_error;
+  else if (!data.bams.length) document.getElementById("somatic-error").textContent = "找不到目前個案的 BAM／index";
+  document.getElementById("somatic-replace-label").textContent = somaticUi.replace ? "重新執行已選的分析；成功後取代其結果" : "";
+  document.getElementById("somatic-jobs").innerHTML = data.jobs.map(job => `<div class="somatic-job-row">
+    <span>${escapeHtml(new Date(job.created * 1000).toLocaleString())}</span>
+    <strong>${escapeHtml(SOMATIC_STEPS[job.step] || job.step)}</strong>
+    <span>${escapeHtml((job.targets.genes || []).join(", "))} · ${job.targets.total_bases.toLocaleString()} bp</span>
+    ${job.counts ? `<span>新增 ${job.counts.pass} PASS / ${job.counts.new_candidates} 候選；排除 ${job.counts.germline_excluded} germline</span>` : ""}
+    <button type="button" class="btn btn-ghost somatic-run-detail" data-run="${escapeAttr(job.run_id)}">詳細／Log</button>
+    ${job.status === "completed" ? `<button type="button" class="btn btn-ghost somatic-rerun" data-run="${escapeAttr(job.run_id)}">重新執行</button>` : ""}
+    ${["queued", "running", "cancelling"].includes(job.status) ? `<button type="button" class="btn btn-ghost somatic-cancel" data-run="${escapeAttr(job.run_id)}">取消</button>` : ""}
+    ${job.error ? `<span>${escapeHtml(job.error)}</span>` : ""}</div>`).join("");
+  clearTimeout(somaticUi.timer);
+  if (active) somaticUi.timer = setTimeout(() => somaticPoll(sid).catch(somaticError), 4000);
+  if (completedNow) {
+    await somaticRefresh(sid);
+    if (somaticUi.detail) await somaticDetail(somaticUi.detail);
+  }
+}
+
+async function somaticDetail(runId) {
+  const sid = somaticSampleId();
+  const sequence = ++somaticUi.detailSequence;
+  const data = await somaticApi(sid, `/jobs/${encodeURIComponent(runId)}`);
+  if (somaticSampleId() !== sid || sequence !== somaticUi.detailSequence) return;
+  somaticUi.detail = runId;
+  document.getElementById("somatic-modal").classList.remove("hidden");
+  const coverage = data.job.coverage;
+  document.getElementById("somatic-detail").innerHTML = `
+    <h3>分析紀錄</h3><p>${escapeHtml((data.job.warnings || []).join("；"))}</p>
+    ${coverage ? `<p>指定範圍平均有效深度 ${coverage.mean_depth.toFixed(1)}×；有覆蓋 ${coverage.covered_bases.toLocaleString()} / ${coverage.target_bases.toLocaleString()} bp。未產生候選不代表排除低比例變異。</p>
+      ${(coverage.positions || []).map(p => `<p>${escapeHtml(`${p.chrom}:${p.start}-${p.end}`)}：平均 ${p.mean_depth.toFixed(1)}×，最低 ${p.min_depth}×</p>`).join("")}` : ""}
+    ${data.candidates.length ? `<table><thead><tr><th>點位／基因</th><th>DP / AD / VAF</th><th>FILTER</th><th></th></tr></thead><tbody>${data.candidates.map(v => `<tr><td>${escapeHtml(v.id)} ${escapeHtml(v.gene)}</td><td>${escapeHtml(`${v.dp} / ${v.ad} / ${v.vaf}`)}</td><td>${escapeHtml(v.filter)}</td><td>${v.filter !== "PASS" ? `<button type="button" class="btn btn-ghost somatic-include" data-run="${escapeAttr(runId)}" data-vid="${escapeAttr(v.id)}">加入判讀（保留 FILTER）</button>` : "已納入"}</td></tr>`).join("")}</tbody></table>` : ""}
+    <details><summary>執行 Log</summary><pre>${escapeHtml(data.log)}</pre></details>`;
+}
+
+document.addEventListener("change", event => {
+  const input = event.target.closest(".somatic-validation");
+  if (!input) return;
+  setEdit(input.dataset.id, "somatic_validation", input.value);
+  document.querySelectorAll(`.somatic-validation[data-id="${CSS.escape(input.dataset.id)}"]`).forEach(el => { el.value = input.value; });
+  scheduleAutoSave();
+});
+
+document.addEventListener("click", async event => {
+  const button = event.target.closest("#btn-somatic, #somatic-preview-btn, #somatic-start-btn, #somatic-refresh-btn, .somatic-run-detail, .somatic-rerun, .somatic-cancel, .somatic-include");
+  if (!button || !somaticSampleId()) return;
+  const sid = somaticSampleId();
+  button.disabled = true;
+  document.getElementById("somatic-error").textContent = "";
+  try {
+    if (button.id === "btn-somatic") {
+      somaticUi.replace = null;
+      document.getElementById("somatic-modal").classList.remove("hidden");
+      await somaticPoll(sid);
+    } else if (button.id === "somatic-preview-btn") {
+      const data = await somaticApi(sid, "/preview", somaticPayload());
+      if (sid !== somaticSampleId()) return;
+      document.getElementById("somatic-preview").innerHTML = `<p>${data.intervals.length} 個區域 · ${data.total_bases.toLocaleString()} bp · ${escapeHtml(data.gene_regions_release)}</p><details><summary>座標（1-based）</summary><pre>${escapeHtml(data.intervals.map(([c, s, e]) => `${c}:${s}-${e}`).join("\n"))}</pre></details>`;
+    } else if (button.id === "somatic-start-btn") {
+      await somaticApi(sid, "/jobs", somaticPayload());
+      somaticUi.replace = null;
+      await somaticPoll(sid);
+    } else if (button.id === "somatic-refresh-btn") {
+      await somaticRefresh(sid);
+    } else if (button.matches(".somatic-run-detail")) {
+      await somaticDetail(button.dataset.run);
+    } else if (button.matches(".somatic-rerun")) {
+      const job = somaticUi.jobs.find(j => j.run_id === button.dataset.run);
+      if (job) {
+        somaticUi.replace = job.run_id;
+        document.getElementById("somatic-genes").value = job.request.genes;
+        document.getElementById("somatic-positions").value = job.request.positions;
+        document.getElementById("somatic-region").value = job.targets.region_mode;
+        document.getElementById("somatic-bam").value = job.bam_path;
+        document.getElementById("somatic-replace-label").textContent = "重新執行已選的分析；成功後取代其結果";
+      }
+    } else if (button.matches(".somatic-cancel")) {
+      await somaticApi(sid, `/jobs/${button.dataset.run}/cancel`, {});
+      await somaticPoll(sid);
+    } else if (button.matches(".somatic-include")) {
+      await somaticApi(sid, `/jobs/${button.dataset.run}/include`, { variant_id: button.dataset.vid });
+      await somaticRefresh(sid);
+    }
+  } catch (error) { if (somaticSampleId() === sid) somaticError(error); }
+  finally {
+    if (button.id === "somatic-start-btn") {
+      button.disabled = somaticUi.jobs.some(j => ["queued", "running", "cancelling"].includes(j.status));
+    } else button.disabled = false;
+  }
+});
 
 // ---------- Welcome / version notes --------------------------------
 
@@ -10193,6 +10390,7 @@ function setupSnvDisplayFilters() {
     "filter-in-panel-only",
     "filter-nckuh-common",
     "filter-vaf",
+    "filter-somatic",
     "filter-impact-modifier",
   ]) {
     document.getElementById(id)?.addEventListener("change", () => {

@@ -6,6 +6,13 @@
 
 ## 版本紀錄
 
+### v9.32 — 2026-09-28
+
+- SNV/Indel 新增「Somatic 分析」：modal 支援多基因、GRCh38 單點／區間、指定 allele、exon＋20 bp 或完整基因、BAM 選擇、進度、取消與重跑。
+- Mutect2／品質過濾後與完整 germline 原始結果正規化去重，再做 VEP／ClinVar／本地 GeneBe 註解。僅新增點位加入 SNV/Indel 卡片並標示 Somatic pipeline；germline 原卡片及 AD/DP/VAF 不變。
+- 「☑ Somatic」僅在個案有完成的分析後出現。新增點位支援 FILTER 複核、儲存、搜尋、IGV、驗證狀態與人工選取後的診斷報告。
+- 啟用前須在 server 設定 `NGS_UI_SOMATIC_CONFIG` 及工具/reference；部署及院內驗證步驟見 `docs/ops/SOMATIC_ANALYSIS.md`。
+
 ### v9.31 — 2026-09-26
 
 - 修正同一 SNV/Indel 點位跨不同基因 transcript 時，個案清單可能被最後一筆 transcript 覆蓋的問題；摘要現在會保留所有 transcript，並依卡片已儲存的 transcript 顯示正確基因、HGVS 與疾病（例如 TSC2/PKD1 重疊點位）。既有個案摘要會在更新後自動重建。

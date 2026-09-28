@@ -1,5 +1,11 @@
 # NGS 分析平台 (NGS-UI)
 
+### 指定範圍 Somatic 分析（v9.32）
+
+載入個案後可在 SNV/Indel 標題旁開啟「Somatic 分析」，輸入多基因、GRCh38 座標或區間，由背景 worker 執行 Mutect2、品質過濾與註解。與完整 germline 去重後，僅新增點位併入原 SNV/Indel 卡片並標示 Somatic pipeline；germline 卡片及 read support 不變。「☑ Somatic」只在有完成的分析後顯示。支援進度、取消、歷史、重跑、FILTER 複核、IGV、儲存及診斷報告。
+
+須先在執行主機配置 `NGS_UI_SOMATIC_CONFIG`、GATK／bcftools／Samtools／VEP 與相容 reference/cache；不會自動安裝院內資料庫或跨主機排程。[部署與驗證說明](docs/ops/SOMATIC_ANALYSIS.md)；[設定檔範例](deploy/somatic_config.example.json)。
+
 成大醫院基因醫學部的 NGS 三級分析判讀工具。次級 pipeline（Nextflow，跑在另一台 compute cluster）產出 per-sample 的註解 TSV，本平台讓 reviewer 載入個案、檢視 SNV/Indel + CNV/SV + Mitochondria + STR + PGx 變異、標記 causative / candidate / other、整理 ACMG SF / 遺傳癌症 v2.0 / 中風 / Carrier screening secondary findings、撰寫判讀意見，並匯出診斷報告或健檢報告 (docx)。另附一個獨立的「臨床表徵輸入 (HPO / gene panel)」工具掛在 `/phenotype/`。
 
 依 2026-09-14 開發約定，直接在遠端 default branch 工作並推送；目前 default branch 為 `claude/plan-ngs-ui-RQW8J`，先前報告修改已從 `Codex/plan-ngs-ui-RQW8J` 合入。後續以遠端 HEAD 為準，不假定為 `main`。

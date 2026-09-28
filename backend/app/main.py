@@ -8,7 +8,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
-from .routers import acmg, analyses, auth, documents, dragen, emr, igv, jobs, phenotype, phenotype_tool, samples, secondary
+from .routers import acmg, analyses, auth, documents, dragen, emr, igv, jobs, phenotype, phenotype_tool, samples, secondary, somatic
 from .services import (
     clinvar_mito,
     hpo_ontology,
@@ -110,6 +110,7 @@ app.include_router(emr.router)
 app.include_router(dragen.router)
 app.include_router(secondary.router)
 app.include_router(igv.router)
+app.include_router(somatic.router)
 
 
 # Friendly direct URL for the standalone HPO/panel tool: /phenotype

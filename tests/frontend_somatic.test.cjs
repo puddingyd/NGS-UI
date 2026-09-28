@@ -1,0 +1,54 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const test = require('node:test');
+const source = fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8');
+function fn(name) {
+  const start = source.indexOf(`function ${name}(`);
+  return source.slice(start, source.indexOf('\n}\n', start) + 3);
+}
+function setup() {
+  const elements = new Map();
+  function element(id) {
+    if (!elements.has(id)) elements.set(id, { checked: false, hidden: false,
+      classList: { toggle(_name, value) { elements.get(id).hidden = value; } } });
+    return elements.get(id);
+  }
+  const context = vm.createContext({ document: { getElementById: element },
+    state: { currentLIS: 'S1', data: { somatic: { completed: false } } },
+    somaticUi: { sid: 'S1' }, _passesNckuhCommonFilter: () => true,
+    _numericValue: x => x, _isReferenceZygosity: () => false, _isClinvarPlp: () => false });
+  vm.runInContext('function somaticSampleId() { return state.data?.sample_id || state.currentLIS; }\n' +
+    fn('_passesMainSnvDisplayFilters') + fn('renderSomaticControls'), context);
+  return { context, element };
+}
+test('Somatic checkbox is absent before a completed run, including zero-result completion', () => {
+  const { context, element } = setup();
+  context.renderSomaticControls();
+  assert.equal(element('filter-somatic-label').hidden, true);
+  context.state.data.somatic.completed = true;
+  context.renderSomaticControls();
+  assert.equal(element('filter-somatic-label').hidden, false);
+});
+test('Somatic toggle only changes additional calls, not germline low-VAF behavior', () => {
+  const { context, element } = setup();
+  const germline = { alt_af: 0.03 };
+  const original = JSON.stringify(germline);
+  element('filter-somatic').checked = true;
+  assert.equal(context._passesMainSnvDisplayFilters({ ...germline, somatic: true }), true);
+  assert.equal(context._passesMainSnvDisplayFilters(germline), false);
+  element('filter-somatic').checked = false;
+  element('filter-vaf').checked = true;
+  assert.equal(context._passesMainSnvDisplayFilters({ ...germline, somatic: true }), false);
+  assert.equal(context._passesMainSnvDisplayFilters(germline), true);
+  assert.equal(JSON.stringify(germline), original);
+});
+test('explicitly targeted somatic variants survive germline gene-scope filters', () => {
+  const { context, element } = setup();
+  element('filter-somatic').checked = true;
+  element('filter-disease-associated').checked = true;
+  element('filter-in-panel-only').checked = true;
+  assert.equal(context._passesMainSnvDisplayFilters({ somatic: true, in_panel: false }), true);
+  assert.equal(context._passesMainSnvDisplayFilters({ in_panel: false }), false);
+});

@@ -1,0 +1,19 @@
+{
+  "assembly": "GRCh38",
+  "reference": "/path/to/hg38.fa",
+  "gene_regions": "/path/to/somatic_gene_regions.bed",
+  "gene_regions_release": "replace-with-GTF-release",
+  "vep_cache": "/path/to/vep/cache",
+  "vep_cache_version": "replace-with-numeric-cache-version",
+  "germline_resource": "/path/to/af-only-gnomad.hg38.vcf.gz",
+  "clinvar_vcf": "/path/to/clinvar_20260720.vcf.gz",
+  "clinvar_release": "2026-07-20",
+  "pon": "",
+  "contamination_sites": "",
+  "max_target_bases": 20000000,
+  "max_concurrent_jobs": 1,
+  "gatk_command": ["gatk"],
+  "bcftools_command": ["bcftools"],
+  "samtools_command": ["samtools"],
+  "vep_command": ["vep"]
+}

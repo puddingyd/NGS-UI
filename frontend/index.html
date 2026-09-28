@@ -389,6 +389,10 @@
           <input id="filter-vaf" type="checkbox" />
           <span>VAF &lt; 0.2 / zygosity=ref</span>
         </label>
+        <label id="filter-somatic-label" class="filter-toggle hidden">
+          <input id="filter-somatic" type="checkbox" checked />
+          <span>Somatic</span>
+        </label>
         <label class="filter-toggle">
           <input id="filter-impact-modifier" type="checkbox" />
           <span>impact=MODIFIER</span>
@@ -404,6 +408,8 @@
           <span></span>
           <span class="ac-title">SNV / Indel</span>
           <span class="ac-gene-search">
+            <button id="btn-somatic" type="button" class="btn btn-ghost">Somatic 分析</button>
+            <span id="somatic-progress" class="muted" aria-live="polite"></span>
             <input type="text" class="gene-search-input" data-kind="snv" placeholder="搜尋基因…" autocomplete="off" title="輸入一或多個基因名稱，以 , 或 、 分隔，按 Enter 列出 SNV/Indel 變異" />
             <button type="button" class="btn btn-ghost ac-tool-btn" data-tool="lirical" title="LIRICAL rank 1–20 的變異">LIRICAL</button>
             <button type="button" class="btn btn-ghost ac-tool-btn" data-tool="exomiser" title="Exomiser rank 1–20 的變異">Exomiser</button>
@@ -481,6 +487,24 @@
   <!-- Load new case modal: pick a pipeline-dropped directory + attach
        basic info. The TSV already lives in tertiary_output/{LIS_ID}/;
        only phenotype.txt is optional reviewer-side input. -->
+  <div id="somatic-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="somatic-title">
+    <div class="modal-card modal-card-wide somatic-modal-card">
+      <div class="somatic-modal-head"><h2 id="somatic-title">Somatic 分析</h2><button type="button" class="btn btn-ghost" data-close="somatic-modal">關閉</button></div>
+      <p id="somatic-sample" class="muted"></p>
+      <div class="form-grid">
+        <label class="form-grid-wide">分析 BAM<select id="somatic-bam"></select></label>
+        <label>基因（可輸入多個）<textarea id="somatic-genes" rows="3" placeholder="PIK3CA, MTOR, AKT1"></textarea></label>
+        <label>Genomic position（GRCh38，1-based）<textarea id="somatic-positions" rows="3" placeholder="chr1:100000&#10;chr1:100000-101000&#10;chr1:100000:A&gt;G"></textarea></label>
+        <label>基因分析範圍<select id="somatic-region"><option value="exons">所有外顯子＋兩側各 20 bp</option><option value="gene">完整基因範圍</option></select></label>
+      </div>
+      <p class="muted">基因和座標取聯集。僅新增 germline 未有的點位；原本的卡片與 read support 維持不變。</p>
+      <div class="somatic-actions"><button id="somatic-preview-btn" class="btn" type="button">預覽範圍</button><button id="somatic-start-btn" class="btn btn-primary" type="button">開始分析</button><button id="somatic-refresh-btn" class="btn" type="button">更新卡片</button><span id="somatic-replace-label" class="muted"></span></div>
+      <p id="somatic-error" role="alert"></p>
+      <div id="somatic-preview" class="muted"></div>
+      <div id="somatic-jobs"></div>
+      <div id="somatic-detail"></div>
+    </div>
+  </div>
   <div id="new-case-modal" class="modal hidden">
     <form id="new-case-form" class="modal-card modal-card-wide">
       <h2>載入新個案</h2>

@@ -60,6 +60,7 @@ from . import (
     snv_gene_index,
     snv_overlay,
     snv_review,
+    somatic,
     test_types,
 )
 from .snv_rows import is_reportable_raw_row
@@ -219,6 +220,7 @@ def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> 
         list(_file_signature(sample_layout.clinvar_comparison_path(sample_id))),
         list(_file_signature(sample_layout.snv_gene_index_path(sample_id))),
         list(_file_signature(sample_layout.review_tsv(sample_id))),
+        list(_file_signature(somatic.index_path(sample_id))),
         list(_file_signature(sample_layout.mito_tsv(sample_id))),
         list(_file_signature(sample_layout.cnv_tsv(sample_id))),
         list(_file_signature(sample_layout.sv_tsv(sample_id))),
@@ -663,6 +665,8 @@ def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, di
                 # raw row silently replace the transcript chosen by the
                 # reviewer.
                 merge_snv_variant_row(variants, variant)
+    for vid, variant in somatic.load_variants(sample_id, wanted=wanted).items():
+        variants.setdefault(vid, variant)
     if variants:
         _enrich_snv_variants(variants, sample_id, sample_dir)
         meta = _read_json_or(
@@ -1058,6 +1062,8 @@ def _is_secondary_snv_candidate(variant: dict) -> bool:
     # LOFTEE HC; tier 1C covers ACMG points >=4, P-KNN LLR >=1, and the other
     # configured predictor triggers. Selection into the report remains
     # ClinVar-only by default.
+    if variant.get("somatic"):
+        return False
     tier = str(variant.get("tier") or "").strip().upper()
     return (
         (_is_clinvar_plp(variant) or tier in {"1A", "1B", "1C"})
@@ -2151,6 +2157,15 @@ def load_sample(sample_id: str, version: str | None = None,
             index_path=sample_layout.snv_gene_index_path(sample_id),
             overlay_path=sample_layout.snv_overlay_path(sample_id),
         )
+    additions = somatic.load_variants(sample_id, keep_ids={
+        vid for vid, status in (_meta_early.get("status") or {}).items() if str(status) in {"1", "2", "C"}
+    })
+    if additions:
+        _enrich_snv_variants(additions, sample_id, sidecar_dir)
+    for vid, variant in additions.items():
+        if vid not in variants:
+            variants[vid] = variant
+            categories.setdefault(variant.get("tier", "2"), []).append(vid)
     _apply_effective_acmg(
         variants,
         categories,
@@ -2282,6 +2297,9 @@ def load_sample(sample_id: str, version: str | None = None,
         # this to render a "請重跑新版 pipeline" banner instead of an
         # empty SNV card.
         "snv_tsv_error":     old_format_error,
+        "somatic":           {**somatic.summary(sample_id), "review_missing_ids": somatic.missing_review_ids(
+            sample_id, {vid for vid, status in (_meta_early.get("status") or {}).items()
+                        if str(status) in {"1", "2", "C"}}, set(variants))},
         "categories":        categories,
         "tiers":             TIERS,
         # CNV / SV side-channels (independent variant maps + tier
@@ -2379,6 +2397,11 @@ def search_snv_by_genes(
         matches = variants
         search_source = "raw_stream_fallback"
         raw_variant_count = "streamed"
+    additions = somatic.load_variants(sample_id, genes={somatic.canonical_gene(g) for g in wanted})
+    if additions:
+        _enrich_snv_variants(additions, sample_id, sidecar_dir)
+    for vid, variant in additions.items():
+        matches.setdefault(vid, variant)
     _log_perf(
         "sample.snv_search",
         started,

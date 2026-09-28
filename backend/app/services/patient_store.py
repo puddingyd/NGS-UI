@@ -75,6 +75,9 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     behavior used by pipeline-output management.
     """
     _validate_lis_id(lis_id)
+    from . import somatic
+    if lis_id in somatic.active_ids():
+        raise RuntimeError("此個案的 Somatic 分析仍在執行中")
     ui_dir = sample_layout.state_dir(lis_id)
     if not ui_dir.is_dir():
         raise FileNotFoundError(f"sample not found: {lis_id}")

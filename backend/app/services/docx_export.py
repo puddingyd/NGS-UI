@@ -1058,6 +1058,15 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
         ("ACMG&AMP指引", 12, "token"),
     ], rows=table_rows)
 
+    for variant, variant_edits in rows:
+        if variant.get("somatic"):
+            vaf = variant.get("alt_af")
+            vaf_text = f"{float(vaf):.1%}" if vaf is not None else "—"
+            _add_paragraph(doc, f"    {variant.get('id', '')}：Somatic pipeline (Mutect2)，"
+                           f"VAF {vaf_text}；FILTER {variant.get('somatic_filter', '')}；"
+                           f"驗證狀態：{variant_edits.get('somatic_validation') or '未驗證'}；"
+                           f"ClinVar {variant.get('somatic_clinvar_release', '')}。")
+
     for index, disease_line in enumerate(disease_lines, start=1):
         _add_paragraph(doc, f"    {index}. {disease_line}")
     _add_paragraph(
@@ -3664,6 +3673,8 @@ def build_diagnosis_docx(sample_id: str, *, gene_list_mode: str = "grouped") -> 
 
     report = report_store.load(sample_id)
     meta   = sample.get("meta") or {}
+    if (sample.get("somatic") or {}).get("review_missing_ids"):
+        raise ValueError("部分已標記 Somatic 點位不在目前結果中，請重跑核對或重新選取後再匯出報告")
     test_type = meta.get("Test", "") or "WES"
 
     doc = Document()

@@ -511,7 +511,8 @@ def list_jobs(limit: int = 50) -> list[dict]:
 
 def active_sample_ids() -> set[str]:
     """Return UI/source sample IDs currently owned by active tertiary jobs."""
-    active: set[str] = set()
+    from . import somatic
+    active: set[str] = somatic.active_ids()
     for job in list_jobs(limit=1000):
         job_id = job.get("job_id", "")
         if not (job.get("running") or job.get("state") in ("queued", "running")):
@@ -761,6 +762,9 @@ def get_pipeline_nextflow_log(sample_id: str) -> tuple[Path, str]:
 def delete_pipeline_output(sample_id: str) -> dict:
     """Delete UI/pipeline output and all NGS-UI job logs unless one is active."""
     _validate_sample_id(sample_id)
+    from . import somatic
+    if sample_id in somatic.active_ids():
+        raise RuntimeError("此個案的 Somatic 分析仍在執行中")
     jobs = [
         j for j in list_jobs(limit=1000)
         if any(
@@ -780,6 +784,8 @@ def delete_pipeline_output(sample_id: str) -> dict:
         )
     source_sample_id = (matched_sample or {}).get("source_sample_id") or sample_id
     ui_sample_id = (matched_sample or {}).get("sample_id") or sample_id
+    if {ui_sample_id, source_sample_id} & somatic.active_ids():
+        raise RuntimeError("此個案的 Somatic 分析仍在執行中")
     pipeline_sample_id = source_sample_id
     # Resolve the state path before deleting the unified sample tree.  Once the
     # layout marker is gone, state_dir() can no longer identify 08_postprocessing.
@@ -844,6 +850,11 @@ def delete_pipeline_output(sample_id: str) -> dict:
         if job_dir.is_dir():
             shutil.rmtree(job_dir)
             deleted.append(str(job_dir))
+    for job in somatic.jobs(ui_sample_id):
+        path = somatic.job_dir(job["run_id"])
+        if path.is_dir():
+            shutil.rmtree(path)
+            deleted.append(str(path))
     from . import sample_loader
     sample_loader.invalidate_sample_cache(ui_state_dir)
     sample_loader.remove_case_table_row(ui_sample_id)
