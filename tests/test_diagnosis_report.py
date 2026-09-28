@@ -60,6 +60,54 @@ def test_diagnosis_groups_same_gene_snvs_and_combines_acmg_wording():
     assert "此為致病性及疑似致病性之變異位點，與臨床症狀相關。" in text
 
 
+def test_diagnosis_joins_all_checked_snv_diseases_and_mim_numbers():
+    doc = Document()
+    variant = _gjb2_variant(
+        "v1",
+        rs_id="rs80338943",
+        hgvs_c="c.235del",
+        hgvs_p="p.Leu79CysfsTer3",
+        acmg="Pathogenic",
+    )
+    variant["Disease1"] = "Disease A (600001)(AD)"
+    variant["Disease2"] = "Disease B (600001)(AR)"
+    variant["Disease3"] = "Disease C (600003)(XLR)"
+    edits = {"report_diseases": {"1": True, "2": True}}
+
+    assert docx_export._picked_diseases_for_snv(variant, edits) == [
+        "Disease A (600001)(AD)",
+        "Disease B (600001)(AR)",
+    ]
+
+    docx_export._section_results(
+        doc,
+        {"variants": {"v1": variant}},
+        {"status": {"v1": "1"}, "edits": {"v1": edits}},
+        "WES",
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert (
+        "GJB2為Disease A、Disease B的致病基因之一，"
+        "其遺傳模式屬於體染色體顯性遺傳、體染色體隱性遺傳 "
+        "(Phenotype MIM number: 600001、600001)。"
+    ) in text
+    assert "Disease C" not in text
+
+
+def test_diagnosis_without_snv_disease_ticks_keeps_first_slot_fallback():
+    variant = _gjb2_variant(
+        "v1", rs_id="", hgvs_c="c.1A>G", hgvs_p="p.Met1Val", acmg="VUS"
+    )
+    variant["Disease1"] = "Disease A (600001)(AD)"
+    variant["Disease2"] = "Disease B (600002)(AR)"
+
+    assert docx_export._picked_diseases_for_snv(variant, {}) == [
+        "Disease A (600001)(AD)"
+    ]
+    assert "Disease B" not in docx_export._omim_block_for_snv(variant, {})
+
+
 def test_diagnosis_empty_first_category_uses_reviewed_wording():
     doc = Document()
 

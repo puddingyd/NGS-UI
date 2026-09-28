@@ -260,8 +260,15 @@ def test_omim_render_and_report_fallback_cover_all_16_slots():
     render_helper = APP_JS[render_start:render_end]
     assert "i <= OMIM_DISEASE_SLOT_COUNT" in render_helper
 
-    picked_start = APP_JS.index("function pickedDiseaseSlot(")
+    picked_start = APP_JS.index("function pickedDiseaseSlots(")
     picked_end = APP_JS.index("function diseaseInfo(", picked_start)
     picked_helper = APP_JS[picked_start:picked_end]
     assert "n <= OMIM_DISEASE_SLOT_COUNT" in picked_helper
     assert "i <= OMIM_DISEASE_SLOT_COUNT" in picked_helper
+    assert "if (selected.length) return selected" in picked_helper
+
+    summary_start = APP_JS.index("function pickedDiseaseSummary(")
+    summary_end = APP_JS.index("// HGVS", summary_start)
+    summary_helper = APP_JS[summary_start:summary_end]
+    assert 'names: names.join("、")' in summary_helper
+    assert 'phenotypeMims: phenotypeMims.join("、")' in summary_helper

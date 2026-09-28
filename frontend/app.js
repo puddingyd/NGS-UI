@@ -9408,22 +9408,30 @@ function formatVariantTable(rows) {
 
 // Disease helpers ---------------------------------------------------
 
-// Which Disease{i} did the user tick on this variant card? First ticked,
-// or fall back to Disease1 if nothing ticked.
-function pickedDiseaseSlot(id, v) {
+// Which Disease{i} rows did the user tick on this variant card? Keep every
+// valid tick in slot order, or fall back to the first disease if none is ticked.
+function pickedDiseaseSlots(id, v) {
   const picked = (state.reports?.edits?.[id]?.report_diseases) || {};
   const idxs = Object.keys(picked).filter(k => picked[k]).map(Number)
     .filter(n => Number.isInteger(n) && n >= 1 && n <= OMIM_DISEASE_SLOT_COUNT)
     .sort((a, b) => a - b);
+  const selected = [];
   for (const i of idxs) {
     const d = v[`Disease${i}`];
-    if (d && d !== "NA") return { idx: i, text: d };
+    if (d && d !== "NA") {
+      selected.push({ idx: i, text: d });
+    }
   }
+  if (selected.length) return selected;
   for (let i = 1; i <= OMIM_DISEASE_SLOT_COUNT; i++) {
     const d = v[`Disease${i}`];
-    if (d && d !== "NA") return { idx: i, text: d };
+    if (d && d !== "NA") return [{ idx: i, text: d }];
   }
-  return { idx: 1, text: "" };
+  return [];
+}
+
+function pickedDiseaseSlot(id, v) {
+  return pickedDiseaseSlots(id, v)[0] || { idx: 1, text: "" };
 }
 
 // Disease text format: "<Name> (INH) [: description]" or "<Name>, somatic"
@@ -9431,14 +9439,17 @@ function pickedDiseaseSlot(id, v) {
 // comma + whitespace inside the parens so "(AR, DD)" parses as
 // inheritance="AR, DD" instead of falling through to a verbatim suffix.
 function diseaseInfo(text) {
-  if (!text) return { name: "", inheritance: "" };
+  if (!text) return { name: "", inheritance: "", phenotypeMim: "" };
   const firstLine = String(text).split("\n")[0].trim();
   const inhMatch = firstLine.match(/\(([A-Z][A-Z?\/,\s]*)\)/);
+  const mimMatch = firstLine.match(/\((\d{6})\)/);
   const inh = inhMatch ? inhMatch[1].trim() : "";
   let name = firstLine;
-  if (inhMatch) name = name.slice(0, firstLine.indexOf(inhMatch[0]));
+  const metadataStarts = [inhMatch, mimMatch]
+    .filter(Boolean).map(match => firstLine.indexOf(match[0]));
+  if (metadataStarts.length) name = name.slice(0, Math.min(...metadataStarts));
   name = name.replace(/[:,;]+\s*$/, "").trim();
-  return { name, inheritance: inh };
+  return { name, inheritance: inh, phenotypeMim: mimMatch ? mimMatch[1] : "" };
 }
 function inheritanceCH(code) {
   if (!code) return "遺傳模式未明確";
@@ -9446,6 +9457,21 @@ function inheritanceCH(code) {
   const parts = code.split(/[\/,]/).map(s => s.trim()).filter(Boolean);
   const labels = parts.map(p => INHERITANCE_LABELS[p] || p);
   return labels.join("或");
+}
+
+function pickedDiseaseSummary(id, v) {
+  const infos = pickedDiseaseSlots(id, v).map(slot => diseaseInfo(slot.text));
+  const names = infos.map(info => info.name).filter(Boolean);
+  const inheritance = [...new Set(
+    infos.map(info => inheritanceCH(info.inheritance)).filter(Boolean)
+  )];
+  const phenotypeMims = infos.map(info => info.phenotypeMim).filter(Boolean);
+  if (!phenotypeMims.length && v.OMIM_id) phenotypeMims.push(String(v.OMIM_id).trim());
+  return {
+    names: names.join("、"),
+    inheritance: inheritance.join("、") || "遺傳模式未明確",
+    phenotypeMims: phenotypeMims.join("、"),
+  };
 }
 
 // HGVS = "<gene>:<transcript>:<cdna>[:<protein>]" — split into pieces.
@@ -9604,15 +9630,16 @@ function renderVariantBlock(vid, v, kind) {
   ]]);
   for (const ln of tableText.split("\n")) out.push("    " + ln);
 
-  // Numbered remarks (use the user-picked Disease for inheritance + name)
-  const dis = pickedDiseaseSlot(vid, v);
-  const info = diseaseInfo(dis.text);
-  const inhTxt = inheritanceCH(info.inheritance);
+  // Numbered remarks (use every user-picked Disease and phenotype MIM)
+  const diseaseSummary = pickedDiseaseSummary(vid, v);
   const acmgTxt = acmgClassCH(v.ACMG_classification) || "—";
   const tail = kind === "causative"
     ? "與臨床症狀相關"
     : "無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷";
-  out.push(`    1. ${gene}為${info.name || "—"}的致病基因之一，其遺傳模式屬於${inhTxt}。`);
+  const mimText = diseaseSummary.phenotypeMims
+    ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
+    : "";
+  out.push(`    1. ${gene}為${diseaseSummary.names || "—"}的致病基因之一，其遺傳模式屬於${diseaseSummary.inheritance}${mimText}。`);
   out.push(`    2. 此為${acmgTxt}之變異位點，${tail}。`);
 
   // Descriptive paragraph
@@ -9940,9 +9967,7 @@ function pdfWriteVariant(w, vid, v, kind) {
   const h = parseHGVS(v.HGVS);
   const gene = v.gene_symbol || h.gene || "";
   const transcript = h.transcript || "";
-  const dis = pickedDiseaseSlot(vid, v);
-  const info = diseaseInfo(dis.text);
-  const inhTxt = inheritanceCH(info.inheritance);
+  const diseaseSummary = pickedDiseaseSummary(vid, v);
   const acmgTxt = acmgClassCH(v.ACMG_classification) || "—";
 
   // Variant title — gene + transcript + HGVS (cdna+protein) all on the
@@ -9968,7 +9993,10 @@ function pdfWriteVariant(w, vid, v, kind) {
   const tail = kind === "causative"
     ? "與臨床症狀相關"
     : "建議比對臨床表徵";
-  w.para(`1. ${gene}為${info.name || "—"}的致病基因之一，其遺傳模式屬於${inhTxt}。`, { indent: 4 });
+  const mimText = diseaseSummary.phenotypeMims
+    ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
+    : "";
+  w.para(`1. ${gene}為${diseaseSummary.names || "—"}的致病基因之一，其遺傳模式屬於${diseaseSummary.inheritance}${mimText}。`, { indent: 4 });
   w.para(`2. 此為${acmgTxt}之變異位點，${tail}。`, { indent: 4 });
   w.gap(2);
 
@@ -9990,7 +10018,7 @@ function pdfWriteVariant(w, vid, v, kind) {
 
 // Only the variants the user has marked V on the candidate card (which
 // promotes them into the Report area's panel section) end up in the PDF.
-// pickedDiseaseSlot() inside pdfWriteVariant already falls back to Disease1
+// pickedDiseaseSummary() inside pdfWriteVariant already falls back to Disease1
 // when no Disease checkbox is ticked.
 function pdfWriteSection(w, title, ids, dataVariants, panelKey) {
   w.heading(title, 2);

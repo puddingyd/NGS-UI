@@ -847,20 +847,30 @@ def _patho_sentence(acmg_class: str) -> str:
     return "此變異位點之臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。"
 
 
-def _picked_disease_for_snv(v: dict, edits: dict) -> str:
-    """Return the reviewer-picked Disease cell, falling back to the first."""
+def _picked_diseases_for_snv(v: dict, edits: dict) -> list[str]:
+    """Return every reviewer-picked Disease cell, falling back to the first."""
     picked = edits.get("report_diseases") or {}
+    selected: list[str] = []
     if isinstance(picked, dict):
         for idx, field in enumerate(omim_store.DISEASE_FIELDS, start=1):
             if picked.get(str(idx)) or picked.get(idx):
                 disease = (v.get(field) or "").strip()
                 if disease and disease != "NA":
-                    return disease
+                    selected.append(disease)
+    if selected:
+        return selected
     for field in omim_store.DISEASE_FIELDS:
         disease = (v.get(field) or "").strip()
         if disease and disease != "NA":
-            return disease
-    return (v.get("OMIM_disease") or "").strip()
+            return [disease]
+    fallback = (v.get("OMIM_disease") or "").strip()
+    return [fallback] if fallback else []
+
+
+def _picked_disease_for_snv(v: dict, edits: dict) -> str:
+    """Return the first picked Disease cell for legacy single-disease callers."""
+    diseases = _picked_diseases_for_snv(v, edits)
+    return diseases[0] if diseases else ""
 
 
 def _disease_info(disease: str) -> tuple[str, str, str]:
@@ -885,24 +895,36 @@ def _disease_info(disease: str) -> tuple[str, str, str]:
 
 
 def _omim_block_for_snv(v: dict, edits: dict) -> str:
-    """『GENE 為 DISEASE 的致病基因之一，其遺傳模式屬於 X
-    (Phenotype MIM number: M)』 — fall back to whatever is present."""
+    """Build the SNV OMIM sentence from all reviewer-picked diseases."""
     gene = v.get("gene_symbol") or v.get("GENE") or "?"
-    disease_str, inheritance, phenotype_mim = _disease_info(
-        _picked_disease_for_snv(v, edits)
-    )
-    inh_zh = _inheritance_zh(inheritance)
-    mim = phenotype_mim or (v.get("OMIM_id") or "").strip()
+    disease_names: list[str] = []
+    inheritance_labels: list[str] = []
+    phenotype_mims: list[str] = []
+    for picked in _picked_diseases_for_snv(v, edits):
+        disease_name, inheritance, phenotype_mim = _disease_info(picked)
+        if disease_name:
+            disease_names.append(disease_name)
+        inh_zh = _inheritance_zh(inheritance)
+        if inh_zh and inh_zh not in inheritance_labels:
+            inheritance_labels.append(inh_zh)
+        if phenotype_mim:
+            phenotype_mims.append(phenotype_mim)
+    if not phenotype_mims:
+        fallback_mim = (v.get("OMIM_id") or "").strip()
+        if fallback_mim:
+            phenotype_mims.append(fallback_mim)
 
     parts = [f"{gene}為"]
-    if disease_str:
-        parts.append(f"{disease_str}的致病基因之一")
+    if disease_names:
+        parts.append(f"{'、'.join(disease_names)}的致病基因之一")
     else:
         parts.append("此疾病的致病基因之一")
-    if inh_zh:
-        parts.append(f"，其遺傳模式屬於{inh_zh}")
-    if mim:
-        parts.append(f" (Phenotype MIM number: {mim})")
+    if inheritance_labels:
+        parts.append(f"，其遺傳模式屬於{'、'.join(inheritance_labels)}")
+    if phenotype_mims:
+        parts.append(
+            f" (Phenotype MIM number: {'、'.join(phenotype_mims)})"
+        )
     return "".join(parts) + "。"
 
 
