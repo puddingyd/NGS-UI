@@ -53,7 +53,7 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 6. Samtools depth（BQ/MQ ≥20、paired overlap 不重複）與指定座標覆蓋摘要。零候選仍完成，無 call 不表示排除變異，coverage 不是 validated LOD。
 7. 檢查 annotation 候選完整、input/resource 未變，複製至目的 filesystem 隱藏目錄後 rename，最後原子發布 index。
 
-## 儲存、重跑與報告
+## 儲存、刪除與報告
 
 ```text
 data/jobs/somatic/{run_id}/
@@ -67,7 +67,7 @@ tertiary_output/{LIS_ID}/09_somatic/{run_id}/
 
 Legacy 個案的 index 由現有 state resolver 放在原 UI state 目錄。每 run 獨立，不修改 germline 00–07。暫存的完整 germline VCF/normalization 檔最後刪除，不保留第二份完整 raw。取消／失敗不切換 index，共用三級 sample lock；active job 阻擋取消登錄和刪 output。
 
-不同範圍累積，重新執行某次 run 成功後 archive 前次；已標記 1/2/C 的歷史點位保留顯示。相同 variant 使用較新有效 observation，不累加 DP/AD。Germline raw signature 改變後停止載入 stale somatic、提示重跑；已標記點位因此缺失時阻擋診斷 DOCX，避免靜默漏報。
+不同範圍可累積。已完成、失敗或取消的 run 可從歷史列按「刪除」，一次清除該 run 的結果、索引、工作狀態與 Log；執行中須先終止再刪除。相同 variant 使用較新有效 observation，不累加 DP/AD。Germline raw signature 改變後停止載入 stale somatic、提示重新分析；已標記點位因此缺失時阻擋診斷 DOCX，避免靜默漏報。若有人先從檔案系統刪除 `09_somatic/{run_id}`，平台會略過缺檔結果，個案仍可載入，Somatic modal 會提示刪除殘留紀錄後再執行。
 
 診斷 DOCX 對人工選取的 somatic-only 變異附來源、VAF、FILTER、驗證狀態、該次 ClinVar release；germline 報告不變。完整刪 pipeline 清除 somatic jobs/results，單純取消登錄保留結果。
 

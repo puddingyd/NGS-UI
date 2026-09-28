@@ -83,6 +83,20 @@ def cancel(sample_id: str, run_id: str):
     return {"cancel_requested": True}
 
 
+@router.delete("/jobs/{run_id}")
+def delete(sample_id: str, run_id: str):
+    check_sample(sample_id)
+    try:
+        with somatic.submission_lock():
+            return somatic.delete_run(sample_id, run_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.post("/jobs/{run_id}/include")
 def include(sample_id: str, run_id: str, payload: dict):
     owned_job(sample_id, run_id)

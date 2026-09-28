@@ -4722,7 +4722,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     ${renderVariantBadges(v, id)}
     ${v.somatic ? `<div class="somatic-card-evidence">Somatic pipeline · Mutect2 · FILTER ${escapeHtml(v.somatic_filter || "—")}
       ${v.somatic_historical ? " · 先前分析保留的已標記點位" : ""}
-      <details><summary>品質資訊</summary>${Object.entries(v.somatic_qc || {}).map(([k, val]) => `${escapeHtml(k)} ${escapeHtml(val || "—")}`).join(" · ")}</details>
+      <span class="somatic-qc-metrics">品質：${Object.entries(v.somatic_qc || {}).map(([k, val]) => `${escapeHtml(k)} ${escapeHtml(val || "—")}`).join(" · ")}</span>
       <button type="button" class="btn btn-ghost somatic-run-detail" data-run="${escapeAttr(v.somatic_run_id)}">分析紀錄</button>
       <label>驗證狀態 <select class="somatic-validation" data-id="${escapeAttr(id)}">${["未驗證", "已驗證", "未確認"].map(s => `<option ${s === (getEdit(id, "somatic_validation") || "未驗證") ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>` : ""}
     <div class="comment-row">
@@ -8006,7 +8006,7 @@ function renderAll() {
 }
 
 // ---------- Targeted somatic jobs -----------------------------------
-const somaticUi = { sid: null, timer: null, jobs: [], replace: null, detail: null,
+const somaticUi = { sid: null, timer: null, jobs: [], detail: null,
   panelRun: null, logOpen: false, pollSequence: 0, detailSequence: 0 };
 const SOMATIC_STEPS = { queued: "排隊中", preflight: "檢查輸入", mutect2: "Mutect2",
   filtering: "品質過濾", "filtering:orientation": "校正方向性偏差",
@@ -8059,9 +8059,9 @@ function renderSomaticJobPanel(data) {
 
 function somaticSampleId() { return state.data?.sample_id || state.currentLIS; }
 
-async function somaticApi(sid, suffix = "", payload) {
+async function somaticApi(sid, suffix = "", payload, method = null) {
   const response = await fetch(`${API_BASE}/samples/${encodeURIComponent(sid)}/somatic${suffix}`, {
-    credentials: "same-origin", cache: "no-store", method: payload === undefined ? "GET" : "POST",
+    credentials: "same-origin", cache: "no-store", method: method || (payload === undefined ? "GET" : "POST"),
     headers: { "Content-Type": "application/json" }, body: payload === undefined ? undefined : JSON.stringify(payload),
   });
   const value = await response.json();
@@ -8076,7 +8076,6 @@ function renderSomaticControls() {
     clearTimeout(somaticUi.timer);
     somaticUi.sid = somaticSampleId();
     somaticUi.jobs = [];
-    somaticUi.replace = null;
     somaticUi.detail = null;
     somaticUi.panelRun = null;
     somaticUi.logOpen = false;
@@ -8099,8 +8098,7 @@ function somaticPayload() {
   return { genes: document.getElementById("somatic-genes").value,
     positions: document.getElementById("somatic-positions").value,
     region_mode: document.getElementById("somatic-region").value,
-    bam_path: document.getElementById("somatic-bam").value,
-    replace_run_id: somaticUi.replace };
+    bam_path: document.getElementById("somatic-bam").value };
 }
 
 async function somaticRefresh(sid) {
@@ -8139,19 +8137,21 @@ async function somaticPoll(sid) {
   const active = data.jobs.find(j => ["queued", "running", "cancelling"].includes(j.status));
   document.getElementById("somatic-progress").textContent = active ? (SOMATIC_STEPS[active.step] || active.step) :
     data.summary.stale ? "germline 已更新，請重跑 Somatic" :
+    data.summary.broken_run_ids?.length ? `有 ${data.summary.broken_run_ids.length} 筆 Somatic 結果檔遺失，請刪除該紀錄後重跑` :
     state.data.somatic.review_missing_ids?.length ? "已標記的 Somatic 點位需要重新核對" : "";
   document.getElementById("somatic-start-btn").disabled = !!active || !!data.configuration_error || !data.bams.length;
   if (data.configuration_error) document.getElementById("somatic-error").textContent = data.configuration_error;
   else if (!data.bams.length) document.getElementById("somatic-error").textContent = "找不到目前個案的 BAM／index";
-  document.getElementById("somatic-replace-label").textContent = somaticUi.replace ? "重新執行已選的分析；成功後取代其結果" : "";
+  const brokenRunIds = new Set(data.summary.broken_run_ids || []);
   document.getElementById("somatic-jobs").innerHTML = data.jobs.map(job => `<div class="somatic-job-row">
     <span>${escapeHtml(new Date(job.created * 1000).toLocaleString())}</span>
     <strong>${escapeHtml(SOMATIC_STEPS[job.step] || job.step)}</strong>
     <span>${escapeHtml((job.targets.genes || []).join(", "))} · ${job.targets.total_bases.toLocaleString()} bp</span>
     ${job.counts ? `<span>新增 ${job.counts.pass} PASS / ${job.counts.new_candidates} 候選；排除 ${job.counts.germline_excluded} germline</span>` : ""}
+    ${brokenRunIds.has(job.run_id) ? `<strong class="text-danger">結果檔遺失</strong>` : ""}
     <button type="button" class="btn btn-ghost somatic-run-detail" data-run="${escapeAttr(job.run_id)}">詳細／Log</button>
-    ${job.status === "completed" ? `<button type="button" class="btn btn-ghost somatic-rerun" data-run="${escapeAttr(job.run_id)}">重新執行</button>` : ""}
     ${["queued", "running", "cancelling"].includes(job.status) ? `<button type="button" class="btn btn-ghost somatic-cancel" data-run="${escapeAttr(job.run_id)}">取消</button>` : ""}
+    ${!["queued", "running", "cancelling"].includes(job.status) ? `<button type="button" class="btn btn-danger somatic-delete" data-run="${escapeAttr(job.run_id)}">刪除</button>` : ""}
     ${job.error ? `<span>${escapeHtml(job.error)}</span>` : ""}</div>`).join("");
   const panelJob = active || data.jobs[0];
   if (panelJob) {
@@ -8201,14 +8201,13 @@ document.addEventListener("change", event => {
 });
 
 document.addEventListener("click", async event => {
-  const button = event.target.closest("#btn-somatic, #somatic-preview-btn, #somatic-start-btn, #somatic-refresh-btn, #somatic-job-log-toggle, #somatic-job-cancel-btn, .somatic-run-detail, .somatic-rerun, .somatic-cancel, .somatic-include");
+  const button = event.target.closest("#btn-somatic, #somatic-preview-btn, #somatic-start-btn, #somatic-refresh-btn, #somatic-job-log-toggle, #somatic-job-cancel-btn, .somatic-run-detail, .somatic-delete, .somatic-cancel, .somatic-include");
   if (!button || !somaticSampleId()) return;
   const sid = somaticSampleId();
   button.disabled = true;
   document.getElementById("somatic-error").textContent = "";
   try {
     if (button.id === "btn-somatic") {
-      somaticUi.replace = null;
       document.getElementById("somatic-modal").classList.remove("hidden");
       await somaticPoll(sid);
     } else if (button.id === "somatic-preview-btn") {
@@ -8217,7 +8216,6 @@ document.addEventListener("click", async event => {
       document.getElementById("somatic-preview").innerHTML = `<p>${data.intervals.length} 個區域 · ${data.total_bases.toLocaleString()} bp · ${escapeHtml(data.gene_regions_release)}</p><details><summary>座標（1-based）</summary><pre>${escapeHtml(data.intervals.map(([c, s, e]) => `${c}:${s}-${e}`).join("\n"))}</pre></details>`;
     } else if (button.id === "somatic-start-btn") {
       await somaticApi(sid, "/jobs", somaticPayload());
-      somaticUi.replace = null;
       await somaticPoll(sid);
     } else if (button.id === "somatic-refresh-btn") {
       await somaticRefresh(sid);
@@ -8232,16 +8230,17 @@ document.addEventListener("click", async event => {
       await somaticPoll(sid);
     } else if (button.matches(".somatic-run-detail")) {
       await somaticDetail(button.dataset.run);
-    } else if (button.matches(".somatic-rerun")) {
-      const job = somaticUi.jobs.find(j => j.run_id === button.dataset.run);
-      if (job) {
-        somaticUi.replace = job.run_id;
-        document.getElementById("somatic-genes").value = job.request.genes;
-        document.getElementById("somatic-positions").value = job.request.positions;
-        document.getElementById("somatic-region").value = job.targets.region_mode;
-        document.getElementById("somatic-bam").value = job.bam_path;
-        document.getElementById("somatic-replace-label").textContent = "重新執行已選的分析；成功後取代其結果";
+    } else if (button.matches(".somatic-delete")) {
+      if (!window.confirm("確定刪除這次 Somatic 分析、結果與 Log？此操作無法復原。")) return;
+      const runId = button.dataset.run;
+      await somaticApi(sid, `/jobs/${encodeURIComponent(runId)}`, {}, "DELETE");
+      if (somaticUi.detail === runId) {
+        somaticUi.detail = null;
+        document.getElementById("somatic-detail").innerHTML = "";
       }
+      if (somaticUi.panelRun === runId) somaticUi.panelRun = null;
+      await somaticPoll(sid);
+      await somaticRefresh(sid);
     } else if (button.matches(".somatic-cancel")) {
       await somaticApi(sid, `/jobs/${button.dataset.run}/cancel`, {});
       await somaticPoll(sid);

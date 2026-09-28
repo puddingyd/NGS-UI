@@ -2,6 +2,7 @@ import csv
 import gzip
 import json
 import os
+import shutil
 import sqlite3
 import time
 from pathlib import Path
@@ -114,6 +115,25 @@ def test_zero_result_run_still_enables_checkbox(setup):
     assert somatic.load_variants(sid) == {}
 
 
+def test_missing_published_result_does_not_break_case_and_can_be_deleted(setup):
+    sid, raw, _ = setup
+    run = publish(sid, raw, [row()])
+    somatic.atomic_json(somatic.job_dir(run) / "state.json", {
+        "sample_id": sid, "run_id": run, "status": "completed", "created": 1,
+    })
+    shutil.rmtree(somatic.result_dir(sid, run))
+
+    assert somatic.load_variants(sid) == {}
+    status = somatic.summary(sid)
+    assert status["completed"] is False
+    assert status["broken_run_ids"] == [run]
+
+    result = somatic.delete_run(sid, run)
+    assert result == {"deleted": True, "result_deleted": False, "job_deleted": True}
+    assert somatic.manifest(sid)["runs"] == []
+    assert not somatic.job_dir(run).exists()
+
+
 def test_rerun_archives_but_preserves_marked_evidence_and_search(setup):
     sid, raw, _ = setup
     publish(sid, raw, [row()], archived=True)
@@ -191,6 +211,22 @@ def test_authenticated_scoped_api(setup, monkeypatch):
     somatic.atomic_json(somatic.job_dir(run) / "state.json", {"sample_id": "OTHER", "status": "completed"})
     assert client.get(f"/api/samples/{sid}/somatic/jobs/{run}").status_code == 404
     assert client.post(f"/api/samples/{sid}/somatic/jobs/{run}/cancel", json={}).status_code == 404
+
+    terminal = "f" * 32
+    somatic.atomic_json(somatic.job_dir(terminal) / "state.json", {
+        "sample_id": sid, "run_id": terminal, "status": "cancelled", "created": 1,
+    })
+    assert client.delete(f"/api/samples/{sid}/somatic/jobs/{terminal}").status_code == 200
+    assert not somatic.job_dir(terminal).exists()
+
+    active = "1" * 32
+    somatic.atomic_json(somatic.job_dir(active) / "state.json", {
+        "sample_id": sid, "run_id": active, "status": "running", "created": time.time(),
+        "updated": time.time(), "pid": os.getpid(),
+    })
+    response = client.delete(f"/api/samples/{sid}/somatic/jobs/{active}")
+    assert response.status_code == 409
+    assert somatic.job_dir(active).exists()
 
 
 def test_failed_worker_and_cancel_do_not_publish(setup, monkeypatch):

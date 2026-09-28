@@ -317,9 +317,44 @@ def summary(sid: str) -> dict:
     data = manifest(sid)
     raw = sample_layout.snv_raw_tsv(sid)
     sig = signature(raw) if raw.exists() else []
-    stale = any(r.get("raw_signature") != sig for r in data.get("runs", []) if not r.get("archived"))
-    return {"completed": bool(data.get("runs")), "stale": stale,
-            "run_count": len(data.get("runs", []))}
+    usable = []
+    broken = []
+    for run in data.get("runs", []):
+        annotation = result_dir(sid, run["run_id"]) / "annotations.tsv"
+        (usable if annotation.is_file() else broken).append(run)
+    stale = any(r.get("raw_signature") != sig for r in usable if not r.get("archived"))
+    return {"completed": bool(usable), "stale": stale,
+            "run_count": len(data.get("runs", [])), "published_run_count": len(usable),
+            "broken_run_ids": [r["run_id"] for r in broken]}
+
+
+def delete_run(sid: str, run_id: str) -> dict:
+    """Delete one terminal job and its published result, including broken publications."""
+    validate_sid(sid)
+    directory = job_dir(run_id)
+    job = read_job(run_id)
+    data = manifest(sid)
+    indexed = [run for run in data.get("runs", []) if run.get("run_id") == run_id]
+    if job and job.get("sample_id") != sid:
+        raise FileNotFoundError("找不到分析工作")
+    if not job and not indexed:
+        raise FileNotFoundError("找不到分析工作")
+    if job.get("status") in ACTIVE:
+        raise RuntimeError("分析仍在執行，請先終止後再刪除")
+
+    if indexed:
+        data["runs"] = [run for run in data.get("runs", []) if run.get("run_id") != run_id]
+        selected = data.get("selected_filtered", {})
+        if isinstance(selected, dict):
+            selected.pop(run_id, None)
+        atomic_json(index_path(sid), data)
+
+    published = result_dir(sid, run_id)
+    result_existed = published.exists()
+    job_existed = directory.exists()
+    shutil.rmtree(published, ignore_errors=True)
+    shutil.rmtree(directory, ignore_errors=True)
+    return {"deleted": True, "result_deleted": result_existed, "job_deleted": job_existed}
 
 
 def missing_review_ids(sid: str, marked: set[str], available: set[str]) -> list[str]:
@@ -356,7 +391,9 @@ def load_variants(sid: str, *, wanted: set[str] | None = None, genes: set[str] |
             continue
         path = result_dir(sid, run["run_id"]) / "annotations.tsv"
         if not path.is_file():
-            raise RuntimeError("已發布 Somatic annotation 遺失，請檢查伺服器檔案")
+            # A manually removed or partially lost publication must not make the
+            # entire case unloadable.  summary() exposes it for cleanup.
+            continue
         current = {}
         with path.open(encoding="utf-8") as handle:
             for row in csv.DictReader(handle, delimiter="\t"):

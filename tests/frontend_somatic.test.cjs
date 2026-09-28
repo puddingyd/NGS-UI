@@ -62,3 +62,13 @@ test('Somatic progress uses the same stable percentage model as the tertiary pan
   assert.equal(context.somaticProgressPercent({ status: 'completed', step: 'completed' }), 100);
   assert.equal(context.somaticProgressPercent({ status: 'failed', step: 'publishing' }), 98);
 });
+
+test('Somatic history uses deletion and card quality metrics are always expanded', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 'utf8');
+  assert.match(source, /class="btn btn-danger somatic-delete"/);
+  assert.doesNotMatch(source, /somatic-rerun/);
+  assert.match(source, /class="somatic-qc-metrics">品質：/);
+  assert.doesNotMatch(source, /<details><summary>品質資訊<\/summary>/);
+  assert.match(html, /<span>VAF &lt; 0\.2<\/span>/);
+  assert.doesNotMatch(html, /VAF &lt; 0\.2 \/ zygosity=ref/);
+});

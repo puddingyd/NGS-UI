@@ -387,7 +387,7 @@
         </label>
         <label class="filter-toggle">
           <input id="filter-vaf" type="checkbox" />
-          <span>VAF &lt; 0.2 / zygosity=ref</span>
+          <span>VAF &lt; 0.2</span>
         </label>
         <label id="filter-somatic-label" class="filter-toggle hidden">
           <input id="filter-somatic" type="checkbox" checked />
@@ -498,7 +498,7 @@
         <label>基因分析範圍<select id="somatic-region"><option value="exons">所有外顯子＋兩側各 20 bp</option><option value="gene">完整基因範圍</option></select></label>
       </div>
       <p class="muted">基因和座標取聯集。僅新增 germline 未有的點位；原本的卡片與 read support 維持不變。</p>
-      <div class="somatic-actions"><button id="somatic-preview-btn" class="btn" type="button">預覽範圍</button><button id="somatic-start-btn" class="btn btn-primary" type="button">開始分析</button><button id="somatic-refresh-btn" class="btn" type="button">更新卡片</button><span id="somatic-replace-label" class="muted"></span></div>
+      <div class="somatic-actions"><button id="somatic-preview-btn" class="btn" type="button">預覽範圍</button><button id="somatic-start-btn" class="btn btn-primary" type="button">開始分析</button><button id="somatic-refresh-btn" class="btn" type="button">更新卡片</button></div>
       <p id="somatic-error" role="alert"></p>
       <div id="somatic-preview" class="muted"></div>
       <div id="somatic-job-panel" class="dragen-job-panel somatic-job-panel" hidden>
