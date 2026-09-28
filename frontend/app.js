@@ -8183,8 +8183,7 @@ async function somaticDetail(runId) {
   document.getElementById("somatic-detail").innerHTML = `
     <h3>分析紀錄</h3><p>${escapeHtml((data.job.warnings || []).join("；"))}</p>
     ${predictors ? `<div class="somatic-predictor-summary"><strong>In-silico annotation</strong><br>
-      dbNSFP ${escapeHtml(predictors.dbnsfp_version || "")} · ${escapeHtml(populated || "此批候選沒有可套用的 predictor 分數")}<br>
-      <span class="muted">REVEL、MutPred2、VEST4、CADD 與 SpliceAI 屬 Research-only；標準 Somatic run 不會填入。</span></div>` :
+      dbNSFP ${escapeHtml(predictors.dbnsfp_version || "")} · ${escapeHtml(populated || "此批候選沒有可套用的 predictor 分數")}</div>` :
       `<div class="somatic-predictor-summary muted">這是舊版 Somatic run，未記錄 predictor 覆蓋；請重新執行以取得核心 dbNSFP 分數。</div>`}
     ${coverage ? `<p>指定範圍平均有效深度 ${coverage.mean_depth.toFixed(1)}×；有覆蓋 ${coverage.covered_bases.toLocaleString()} / ${coverage.target_bases.toLocaleString()} bp。未產生候選不代表排除低比例變異。</p>
       ${(coverage.positions || []).map(p => `<p>${escapeHtml(`${p.chrom}:${p.start}-${p.end}`)}：平均 ${p.mean_depth.toFixed(1)}×，最低 ${p.min_depth}×</p>`).join("")}` : ""}
@@ -8213,7 +8212,7 @@ document.addEventListener("click", async event => {
     } else if (button.id === "somatic-preview-btn") {
       const data = await somaticApi(sid, "/preview", somaticPayload());
       if (sid !== somaticSampleId()) return;
-      document.getElementById("somatic-preview").innerHTML = `<p>${data.intervals.length} 個區域 · ${data.total_bases.toLocaleString()} bp · ${escapeHtml(data.gene_regions_release)}</p><details><summary>座標（1-based）</summary><pre>${escapeHtml(data.intervals.map(([c, s, e]) => `${c}:${s}-${e}`).join("\n"))}</pre></details>`;
+      document.getElementById("somatic-preview").innerHTML = `<p>${data.intervals.length} 個區域 · ${data.total_bases.toLocaleString()} bp · ${escapeHtml(data.gene_regions_release)}</p><details><summary>座標</summary><pre>${escapeHtml(data.intervals.map(([c, s, e]) => `${c}:${s}-${e}`).join("\n"))}</pre></details>`;
     } else if (button.id === "somatic-start-btn") {
       await somaticApi(sid, "/jobs", somaticPayload());
       await somaticPoll(sid);

@@ -9,6 +9,8 @@
 ### v9.32.4 — 2026-09-28
 
 - SNV/Indel 診斷報告與列印輸出若勾選多筆 OMIM disease，會依欄位順序完整列出所有疾病名稱與 Phenotype MIM number，兩者均以「、」連接；不同 disease 共用 MIM 時也保留每一筆，未勾選時仍沿用第一筆疾病。
+- Somatic modal 簡化 genomic position 與座標文字，移除合併規則說明。
+- Somatic VEP 改用三級 Research-only 的 dbNSFP 5.3a + P-KNN，完整提供原有 predictors 以及 REVEL、MutPred2、VEST4、CADD，並加入 SpliceAI；分析紀錄不再顯示標準模式不提供 Research-only 的提示。
 
 ### v9.32.3 — 2026-09-28
 

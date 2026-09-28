@@ -72,3 +72,13 @@ test('Somatic history uses deletion and card quality metrics are always expanded
   assert.match(html, /<span>VAF &lt; 0\.2<\/span>/);
   assert.doesNotMatch(html, /VAF &lt; 0\.2 \/ zygosity=ref/);
 });
+
+test('Somatic modal uses concise coordinate labels and no standard-only predictor notice', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 'utf8');
+  assert.match(html, /Genomic position（GRCh38）/);
+  assert.doesNotMatch(html, /Genomic position（GRCh38，1-based）/);
+  assert.doesNotMatch(html, /基因和座標取聯集。僅新增 germline 未有的點位/);
+  assert.match(source, /<summary>座標<\/summary>/);
+  assert.doesNotMatch(source, /<summary>座標（1-based）<\/summary>/);
+  assert.doesNotMatch(source, /標準 Somatic run 不會填入/);
+});

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import fcntl
+import gzip
 import json
 import os
 import re
@@ -25,6 +26,12 @@ from . import panel_deadzone, sample_layout
 ACTIVE = {"queued", "running", "cancelling"}
 SID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 RUN_RE = re.compile(r"^[0-9a-f]{32}$")
+SOMATIC_DBNSFP_FIELDS = (
+    "PKNN_LLR", "AlphaMissense_score", "BayesDel_noAF_score", "ESM1b_score",
+    "VARITY_R_score", "SIFT_score", "SIFT_pred", "DANN_score",
+    "PHACTboost_score", "phyloP100way_vertebrate", "GERP++_RS", "REVEL_score",
+    "MutPred2_score", "MutPred2_pred", "VEST4_score", "CADD_phred",
+)
 
 
 def validate_sid(sid: str) -> str:
@@ -76,6 +83,21 @@ def signature(path: Path) -> list:
     return [str(path.resolve()), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
 
 
+def validate_dbnsfp_header(path: Path) -> None:
+    """Fail before a run if the configured tertiary dbNSFP lacks UI fields."""
+    try:
+        with gzip.open(path, "rt", encoding="utf-8", errors="replace") as handle:
+            header = next((line.rstrip("\n").lstrip("#").split("\t")
+                           for line in handle if line.startswith("#chr\t")), None)
+    except OSError as exc:
+        raise ValueError(f"Somatic dbNSFP 無法讀取：{path}") from exc
+    if not header:
+        raise ValueError(f"Somatic dbNSFP 缺少 #chr header：{path}")
+    missing = [field for field in SOMATIC_DBNSFP_FIELDS if field not in header]
+    if missing:
+        raise ValueError(f"Somatic dbNSFP 缺少欄位：{', '.join(missing)}")
+
+
 def settings() -> dict:
     path = Path(os.environ.get("NGS_UI_SOMATIC_CONFIG", config.DATA_ROOT / "somatic_config.json"))
     if not path.is_file():
@@ -86,18 +108,22 @@ def settings() -> dict:
     for key in ("reference", "gene_regions", "vep_cache", "germline_resource", "clinvar_vcf"):
         if not cfg.get(key) or not Path(cfg[key]).exists():
             raise ValueError(f"Somatic 資源缺失：{key}")
-    # The standard tertiary pipeline's dbNSFP 4.9c + P-KNN database is the
-    # source of the core in-silico panel.  Infer the established deployment
-    # path so existing installations only need to override it when their
-    # reference layout differs.
+    # Somatic always exposes the complete tertiary in-silico panel. The
+    # academic dbNSFP file is the tertiary pipeline's 5.3a build with P-KNN
+    # merged in, so it contains both the original and Research-only fields.
     cfg.setdefault(
-        "dbnsfp",
-        str(Path(cfg["reference"]).parent / "tertiary/dbnsfp/dbNSFP4.9c_with_pknn_grch38.gz"),
+        "dbnsfp_academic",
+        str(Path(cfg["reference"]).parent / "tertiary/dbnsfp/dbNSFP5.3a_with_pknn_grch38.gz"),
     )
-    cfg.setdefault("dbnsfp_version", "4.9c")
-    for path in (Path(cfg["dbnsfp"]), Path(str(cfg["dbnsfp"]) + ".tbi")):
-        if not path.is_file():
-            raise ValueError(f"Somatic core predictor 資源缺失：{path}")
+    cfg.setdefault("dbnsfp_academic_version", "5.3a")
+    cfg.setdefault("spliceai_snv", str(config.BIOTOOLS_DIR / "spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"))
+    cfg.setdefault("spliceai_indel", str(config.BIOTOOLS_DIR / "spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"))
+    for key in ("dbnsfp_academic", "spliceai_snv", "spliceai_indel"):
+        resource = Path(cfg[key])
+        for path in (resource, Path(str(resource) + ".tbi")):
+            if not path.is_file():
+                raise ValueError(f"Somatic complete predictor 資源缺失：{path}")
+    validate_dbnsfp_header(Path(cfg["dbnsfp_academic"]))
     if not cfg.get("clinvar_release") or not cfg.get("gene_regions_release") or not str(cfg.get("vep_cache_version", "")).isdigit():
         raise ValueError("必須設定 clinvar_release、gene_regions_release 與數字 vep_cache_version")
     for suffix in (".fai",):

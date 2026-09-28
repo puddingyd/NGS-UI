@@ -59,6 +59,18 @@ def row(pos="101", alt="T", filt="PASS", dp="8", gene="GENE1", tx="ENST1"):
             "CALLERS": "Mutect2", "DP": dp, "AD": "7,1", "VAF": "0.125", "ACMG_CRITERIA": ""}
 
 
+def test_complete_dbnsfp_header_is_required(tmp_path):
+    path = tmp_path / "dbNSFP.gz"
+    fields = ["chr", *somatic.SOMATIC_DBNSFP_FIELDS]
+    with gzip.open(path, "wt") as handle:
+        handle.write("#" + "\t".join(fields) + "\n")
+    somatic.validate_dbnsfp_header(path)
+    with gzip.open(path, "wt") as handle:
+        handle.write("#chr\tPKNN_LLR\n")
+    with pytest.raises(ValueError, match="REVEL_score"):
+        somatic.validate_dbnsfp_header(path)
+
+
 def test_targets_union_aliases_padding_and_alleles(setup):
     _, _, cfg = setup
     result = somatic.resolve_targets({"genes": "OLD, GENE2\nGENE1", "positions": "chr1:125-150; 1:150:A>G"}, cfg)
@@ -183,7 +195,11 @@ def test_vep_preserves_mutect_evidence_and_all_transcripts(tmp_path):
                                          "bayesdel_noaf_score": "0.31", "esm1b_score": "-13.2",
                                          "varity_r_score": "0.88", "dann_score": "0.99",
                                          "phactboost_score": "0.72", "phylop100way_vertebrate": "4.2",
-                                         "gerp++_rs": "5.1", "sift_score": "0.001", "sift_pred": "D"},
+                                         "gerp++_rs": "5.1", "sift_score": "0.001", "sift_pred": "D",
+                                         "revel_score": "0.81", "mutpred2_score": "0.92",
+                                         "mutpred2_pred": "D", "vest4_score": "0.87", "cadd_phred": "25.1",
+                                         "spliceai": {"DS_AG": 0.01, "DS_AL": 0.02,
+                                                      "DS_DG": 0.35, "DS_DL": 0.03}},
                                        {"gene_symbol": "GENE2", "transcript_id": "ENST2", "consequence_terms": ["intron_variant"]}]}
     path.write_text(json.dumps(obj) + "\n")
     rows = vep_rows(path)
@@ -194,6 +210,9 @@ def test_vep_preserves_mutect_evidence_and_all_transcripts(tmp_path):
     assert rows[0]["PKNN_LLR"] == "2.5" and rows[0]["PKNN_EVIDENCE"] == "PP3_Moderate"
     assert rows[0]["ALPHAMISSENSE"] == "0.94" and rows[0]["BAYESDEL_NOAF"] == "0.31"
     assert rows[0]["ESM1B"] == "-13.2" and rows[0]["GERP"] == "5.1"
+    assert rows[0]["REVEL"] == "0.81" and rows[0]["MUTPRED2"] == "0.92"
+    assert rows[0]["VEST4"] == "0.87" and rows[0]["CADD_PHRED"] == "25.1"
+    assert rows[0]["SPLICEAI_MAX"] == "0.35"
 
 
 def test_authenticated_scoped_api(setup, monkeypatch):
@@ -267,7 +286,8 @@ def test_worker_complete_chain_only_publishes_novel_alleles(setup, tmp_path, mon
     bam.write_text("synthetic")
     cfg.update({key: str(raw) for key in ("germline_resource", "clinvar_vcf")})
     cfg.update(vep_cache=str(tmp_path), vep_cache_version="115", clinvar_release="2026-07-20",
-               dbnsfp=str(raw), dbnsfp_version="4.9c")
+               dbnsfp=str(raw), dbnsfp_version="4.9c", dbnsfp_academic=str(raw),
+               dbnsfp_academic_version="5.3a", spliceai_snv=str(raw), spliceai_indel=str(raw))
     cfg.update({key + "_command": [key] for key in ("gatk", "samtools", "bcftools", "vep")})
     monkeypatch.setattr(config, "GENEBE_DB", tmp_path / "missing.genebe.gz")
     run = "e" * 32
@@ -306,7 +326,10 @@ def test_worker_complete_chain_only_publishes_novel_alleles(setup, tmp_path, mon
             assert "\t100\t" not in source, "Existing low-DP germline must be removed before annotation"
             dest = Path(args[args.index("--output_file") + 1])
             dest.write_text("".join(json.dumps({"input": line,
-                "transcript_consequences": [{"gene_symbol": "GENE1", "transcript_id": "ENST1", "consequence_terms": ["missense_variant"]}]}) + "\n"
+                "transcript_consequences": [{"gene_symbol": "GENE1", "transcript_id": "ENST1",
+                    "consequence_terms": ["missense_variant"], "pknn_llr": "2.1", "revel_score": "0.8",
+                    "mutpred2_score": "0.9", "vest4_score": "0.7", "cadd_phred": "24",
+                    "spliceai": {"DS_AG": 0.01, "DS_AL": 0.02, "DS_DG": 0.3, "DS_DL": 0.04}}]}) + "\n"
                 for line in source.splitlines() if not line.startswith("#")))
     monkeypatch.setattr(Worker, "run", fake_run)
     Worker(run).execute()
@@ -319,7 +342,14 @@ def test_worker_complete_chain_only_publishes_novel_alleles(setup, tmp_path, mon
     assert any("FilterMutectCalls" in cmd for cmd in commands)
     assert any("--clinvar" in cmd for cmd in commands)
     vep_cmd = next(cmd for cmd in commands if cmd[0] == "vep" and "--input_file" in cmd)
-    assert "--plugin" in vep_cmd and "PKNN_LLR" in vep_cmd[vep_cmd.index("--plugin") + 1]
+    plugins = [vep_cmd[i + 1] for i, token in enumerate(vep_cmd) if token == "--plugin"]
+    assert any("PKNN_LLR" in plugin and "REVEL_score" in plugin and "MutPred2_score" in plugin
+               and "VEST4_score" in plugin and "CADD_phred" in plugin for plugin in plugins)
+    assert any(plugin.startswith("SpliceAI,") for plugin in plugins)
+    loaded = somatic.load_variants(sid)["chr1-101-A-T"]
+    assert loaded["PKNN_LLR"] == 2.1 and loaded["REVEL_score"] == 0.8
+    assert loaded["MutPred2_score"] == 0.9 and loaded["VEST4_score"] == 0.7
+    assert loaded["CADD_score"] == 24 and loaded["SpliceAI_score"] == 0.3
 
 
 def test_submission_cannot_accept_arbitrary_bam(setup, monkeypatch):

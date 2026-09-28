@@ -36,6 +36,10 @@ CORE_DBNSFP_FIELDS = (
     "SIFT_score", "SIFT_pred", "DANN_score", "PHACTboost_score",
     "phyloP100way_vertebrate", "GERP++_RS", "PKNN_LLR",
 )
+RESEARCH_DBNSFP_FIELDS = (
+    "REVEL_score", "MutPred2_score", "MutPred2_pred", "VEST4_score", "CADD_phred",
+)
+COMPLETE_DBNSFP_FIELDS = CORE_DBNSFP_FIELDS + RESEARCH_DBNSFP_FIELDS
 
 
 def _vep_value(tx: dict, *names: str) -> str:
@@ -70,6 +74,25 @@ def pknn_evidence(value: str) -> str:
     if score <= -1:
         return "BP4_Supporting"
     return ""
+
+
+def spliceai_max(tx: dict) -> str:
+    """Return the largest SpliceAI delta score from VEP JSON."""
+    payload = tx.get("spliceai")
+    if isinstance(payload, dict):
+        candidates = [payload.get(key) for key in ("DS_AG", "DS_AL", "DS_DG", "DS_DL")]
+    else:
+        candidates = [_vep_value(tx, key) for key in
+                      ("SpliceAI_pred_DS_AG", "SpliceAI_pred_DS_AL",
+                       "SpliceAI_pred_DS_DG", "SpliceAI_pred_DS_DL")]
+    values = []
+    for value in candidates:
+        for token in str(value if value is not None else "").split("&"):
+            try:
+                values.append(abs(float(token)))
+            except ValueError:
+                pass
+    return f"{max(values):g}" if values else ""
 
 
 def in_targets(chrom: str, pos: int, ref: str, intervals: list) -> bool:
@@ -205,7 +228,13 @@ def vep_rows(path: Path) -> list[dict]:
                                  PHACTBOOST=_vep_value(tx, "PHACTboost_score"),
                                  PHYLOP100=_vep_value(tx, "phyloP100way_vertebrate"),
                                  GERP=_vep_value(tx, "GERP++_RS"),
-                                 PKNN_LLR=pknn, PKNN_EVIDENCE=pknn_evidence(pknn)))
+                                 PKNN_LLR=pknn, PKNN_EVIDENCE=pknn_evidence(pknn),
+                                 REVEL=_vep_value(tx, "REVEL_score"),
+                                 MUTPRED2=_vep_value(tx, "MutPred2_score"),
+                                 MUTPRED2_PRED=_vep_value(tx, "MutPred2_pred"),
+                                 VEST4=_vep_value(tx, "VEST4_score"),
+                                 CADD_PHRED=_vep_value(tx, "CADD_phred"),
+                                 SPLICEAI_MAX=spliceai_max(tx)))
     return rows
 
 
@@ -221,7 +250,8 @@ def write_rows(path: Path, rows: list[dict]) -> None:
 def predictor_summary(path: Path, *, dbnsfp: str, dbnsfp_version: str,
                       gpn_status: dict | None = None) -> dict:
     fields = ("PKNN_LLR", "ALPHAMISSENSE", "BAYESDEL_NOAF", "ESM1B", "VARITY_R",
-              "SIFT", "DANN", "PHACTBOOST", "PHYLOP100", "GERP", "GPN_MSA_SCORE")
+              "SIFT", "DANN", "PHACTBOOST", "PHYLOP100", "GERP", "REVEL",
+              "MUTPRED2", "VEST4", "CADD_PHRED", "SPLICEAI_MAX", "GPN_MSA_SCORE")
     counts = {field: 0 for field in fields}
     rows = 0
     with path.open(encoding="utf-8", newline="") as handle:
@@ -306,7 +336,9 @@ class Worker:
                 raise ValueError(f"BAM 與 GRCh38 reference 不相容：{chrom}")
         self.job["bam_sample"] = next(iter(samples))
         self.job["resource_signatures"] = {key: store.signature(Path(cfg[key])) for key in
-            ("reference", "gene_regions", "germline_resource", "clinvar_vcf", "dbnsfp", "pon", "contamination_sites") if cfg.get(key)}
+            ("reference", "gene_regions", "germline_resource", "clinvar_vcf",
+             "dbnsfp_academic", "spliceai_snv", "spliceai_indel", "pon",
+             "contamination_sites") if cfg.get(key)}
         target_bed = stage / "targets.bed"
         with target_bed.open("w") as handle:
             for chrom, start, end in self.job["targets"]["intervals"]:
@@ -407,7 +439,9 @@ class Worker:
                             "--cache_version", str(cfg["vep_cache_version"]),
                             "--fasta", ref, "--format", "vcf", "--json", "--everything", "--no_stats", "--safe",
                             "--dir_plugins", "/opt/vep/Plugins", "--plugin",
-                            f'dbNSFP,{cfg["dbnsfp"]},{",".join(CORE_DBNSFP_FIELDS)}',
+                            f'dbNSFP,{cfg["dbnsfp_academic"]},{",".join(COMPLETE_DBNSFP_FIELDS)}',
+                            "--plugin",
+                            f'SpliceAI,snv={cfg["spliceai_snv"]},indel={cfg["spliceai_indel"]}',
                             "--force_overwrite", "--input_file", stage / "novel.vcf",
                             "--output_file", stage / "vep.json"])
             rows = vep_rows(stage / "vep.json")
@@ -430,8 +464,8 @@ class Worker:
         gpn_status = gpn_msa.annotate_review_tsv(annotation)
         predictors = predictor_summary(
             annotation,
-            dbnsfp=cfg["dbnsfp"],
-            dbnsfp_version=str(cfg.get("dbnsfp_version") or "4.9c"),
+            dbnsfp=cfg["dbnsfp_academic"],
+            dbnsfp_version=str(cfg.get("dbnsfp_academic_version") or "5.3a"),
             gpn_status=gpn_status,
         )
         self.update("coverage")
