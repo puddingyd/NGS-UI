@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """GeneBe ACMG annotation — write a second opinion to GENEBE_* columns.
 
-Reads `--tsv snv_indel.annotated.tsv`, looks every variant up in the
-**local GeneBe database** (`genebe_hg38.tsv.gz`, a bgzip TSV), then uses
-the live GeneBe API only for unresolved variants that meet the exact
-review-TSV candidate filter. It writes the GeneBe classification into:
+Reads `--tsv snv_indel.annotated.tsv`. The default tertiary path looks every
+variant up in the **local GeneBe database** (`genebe_hg38.tsv.gz`, a bgzip
+TSV), then uses the live GeneBe API only for unresolved variants that meet the
+exact review-TSV candidate filter. Small targeted runs may opt into
+`--api-first-max-variants N`: when the input has at most N unique variants,
+all concrete alleles are sent to the live API first and only unresolved API
+results fall back to the local DB and API cache. It writes the classification
+into:
     GENEBE_ACMG_SCORE
     GENEBE_ACMG_CRITERIA
     GENEBE_ACMG_CLASS
@@ -1029,6 +1033,86 @@ def merge_into_tsv(in_tsv: Path, out_tsv: Path, gb: dict) -> tuple[int, int]:
     return n_filled, n_total
 
 
+def lookup_local(
+    db: Path,
+    idx: dict[str, int],
+    wanted: set[str],
+    *,
+    no_sqlite: bool,
+    sqlite_db: str | None,
+    sqlite_strict: bool,
+) -> dict[str, tuple[str, str, str]]:
+    """Resolve a bounded key set from the local DB and normalize its values."""
+    if not wanted:
+        return {}
+    t0 = time.time()
+    db_hits: dict[str, tuple[str, str]]
+    if no_sqlite:
+        db_hits = scan_db(db, idx, wanted)
+        print(f"[genebe] streamed DB in {time.time() - t0:.0f}s, "
+              f"{len(db_hits)} raw hits", file=sys.stderr)
+    else:
+        sqlite_path = Path(sqlite_db).resolve() if sqlite_db else default_sqlite_path(db)
+        try:
+            rebuilt, status = ensure_sqlite_cache(db, sqlite_path, idx)
+            action = "rebuilt" if rebuilt else "ready"
+            print(f"[genebe] sqlite {action}: {sqlite_path} ({status})",
+                  file=sys.stderr)
+            db_hits = sqlite_lookup(sqlite_path, wanted)
+            print(f"[genebe] sqlite lookup in {time.time() - t0:.0f}s, "
+                  f"{len(db_hits)} raw hits", file=sys.stderr)
+        except (GeneBeDBError, OSError, sqlite3.Error) as exc:
+            if sqlite_strict:
+                raise
+            print(f"[genebe] WARNING: SQLite cache failed ({exc}); "
+                  "falling back to streaming DB", file=sys.stderr)
+            db_hits = scan_db(db, idx, wanted)
+            print(f"[genebe] streamed DB in {time.time() - t0:.0f}s, "
+                  f"{len(db_hits)} raw hits", file=sys.stderr)
+    resolved = assemble_gb(db_hits)
+    print(f"[genebe] resolved DB hits in {time.time() - t0:.0f}s, "
+          f"{len(resolved)} variants matched", file=sys.stderr)
+    return resolved
+
+
+def save_live_api_results(
+    *,
+    db: Path,
+    api_cache: Path,
+    pending_dir: Path,
+    api_sif: Path,
+    candidates: set[str],
+    live_hits: dict[str, tuple[str, str, str]],
+    no_results: set[str],
+    failed_count: int,
+    negative_ttl_days: int,
+) -> None:
+    """Persist successful API rows and bounded negative-cache outcomes."""
+    try:
+        cache_api_outcomes(
+            api_cache,
+            live_hits,
+            no_results,
+            negative_ttl_days=negative_ttl_days,
+        )
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"[genebe] WARNING: cannot update API cache: {exc}", file=sys.stderr)
+    try:
+        pending = write_pending_tsv(
+            pending_dir,
+            live_hits,
+            source_db=db,
+            queried_count=len(candidates),
+            no_result_count=len(no_results),
+            failed_count=failed_count,
+            sif=api_sif,
+        )
+        if pending is not None:
+            print(f"[genebe] import-ready API rows → {pending}", file=sys.stderr)
+    except (OSError, ValueError) as exc:
+        print(f"[genebe] WARNING: cannot save pending API TSV: {exc}", file=sys.stderr)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -1066,6 +1150,14 @@ def main() -> int:
                     help="review filter used for live API fallback (default WES)")
     ap.add_argument("--skip-api", action="store_true",
                     help="disable live API fallback even when credentials exist")
+    ap.add_argument(
+        "--api-first-max-variants",
+        type=int,
+        default=0,
+        help=("query all concrete variants through live API first when the "
+              "input has at most this many unique variants; 0 disables "
+              "API-first mode (default 0)"),
+    )
     ap.add_argument("--api-cache",
                     help="persistent live-API result/negative cache SQLite "
                          "(default beside --genebe-db)")
@@ -1123,46 +1215,6 @@ def main() -> int:
         print("[genebe] nothing to look up", file=sys.stderr)
         return 0
 
-    t0 = time.time()
-    db_hits: dict[str, tuple[str, str]]
-    if args.no_sqlite:
-        try:
-            db_hits = scan_db(db, idx, wanted)
-        except GeneBeDBError as e:
-            print(f"ERROR: GeneBe DB 掃描失敗：{e}", file=sys.stderr)
-            return 2
-        print(f"[genebe] streamed DB in {time.time() - t0:.0f}s, "
-              f"{len(db_hits)} raw hits", file=sys.stderr)
-    else:
-        sqlite_path = Path(args.sqlite_db).resolve() if args.sqlite_db else default_sqlite_path(db)
-        try:
-            rebuilt, status = ensure_sqlite_cache(db, sqlite_path, idx)
-            action = "rebuilt" if rebuilt else "ready"
-            print(f"[genebe] sqlite {action}: {sqlite_path} ({status})",
-                  file=sys.stderr)
-            db_hits = sqlite_lookup(sqlite_path, wanted)
-            print(f"[genebe] sqlite lookup in {time.time() - t0:.0f}s, "
-                  f"{len(db_hits)} raw hits", file=sys.stderr)
-        except (GeneBeDBError, OSError, sqlite3.Error) as e:
-            if args.sqlite_strict:
-                print(f"ERROR: GeneBe SQLite cache failed: {e}", file=sys.stderr)
-                return 2
-            print(f"[genebe] WARNING: SQLite cache failed ({e}); "
-                  "falling back to streaming DB", file=sys.stderr)
-            try:
-                db_hits = scan_db(db, idx, wanted)
-            except GeneBeDBError as e2:
-                print(f"ERROR: GeneBe DB 掃描失敗：{e2}", file=sys.stderr)
-                return 2
-            print(f"[genebe] streamed DB in {time.time() - t0:.0f}s, "
-                  f"{len(db_hits)} raw hits", file=sys.stderr)
-    gb = assemble_gb(db_hits)
-    print(f"[genebe] resolved DB hits in {time.time() - t0:.0f}s, "
-          f"{len(gb)} variants matched", file=sys.stderr)
-
-    # Local API-result cache is second priority. It preserves prior live
-    # results across reruns and avoids sending the same site repeatedly.
-    unresolved = wanted - set(gb)
     api_cache = (
         Path(args.api_cache).resolve()
         if args.api_cache
@@ -1171,6 +1223,72 @@ def main() -> int:
             default_api_cache_path(db),
         )).resolve()
     )
+    pending_dir = (
+        Path(args.api_pending_dir).resolve()
+        if args.api_pending_dir
+        else Path(os.environ.get(
+            "NGS_UI_GENEBE_API_PENDING_DIR",
+            default_api_pending_dir(db),
+        )).resolve()
+    )
+    username = (os.environ.get("GENEBE_USER") or "").strip()
+    api_key = (os.environ.get("GENEBE_API_KEY") or "").strip()
+    api_sif = Path(args.api_sif).expanduser().resolve()
+    api_enabled = (
+        not args.skip_api
+        and _env_enabled("NGS_UI_GENEBE_API_ENABLED", True)
+        and bool(username and api_key)
+        and api_sif.is_file()
+    )
+    api_first = (
+        args.api_first_max_variants > 0
+        and len(wanted) <= args.api_first_max_variants
+    )
+    live_hits: dict[str, tuple[str, str, str]] = {}
+    no_results: set[str] = set()
+    failed_count = 0
+    api_candidates: set[str] = set()
+    if api_first:
+        api_candidates = {key for key in wanted if _is_concrete_api_variant(key)}
+        print(
+            f"[genebe] API-first small batch: variants={len(wanted)} "
+            f"threshold={args.api_first_max_variants} candidates={len(api_candidates)}",
+            file=sys.stderr,
+        )
+        if api_candidates and api_enabled:
+            live_hits, no_results, failed_count = run_live_api(
+                api_candidates,
+                sif=api_sif,
+                username=username,
+                api_key=api_key,
+                batch_size=args.api_batch_size,
+                timeout_seconds=args.api_timeout_seconds,
+                retries=args.api_retries,
+            )
+        elif api_candidates:
+            print("[genebe] API-first unavailable; using local fallback",
+                  file=sys.stderr)
+
+    local_wanted = wanted - set(live_hits)
+    try:
+        local_hits = lookup_local(
+            db,
+            idx,
+            local_wanted,
+            no_sqlite=args.no_sqlite,
+            sqlite_db=args.sqlite_db,
+            sqlite_strict=args.sqlite_strict,
+        )
+    except (GeneBeDBError, OSError, sqlite3.Error) as exc:
+        print(f"ERROR: GeneBe local DB lookup failed: {exc}", file=sys.stderr)
+        return 2
+    gb = dict(live_hits)
+    gb.update(local_hits)
+
+    # API cache follows the local DB. In API-first mode this is the last
+    # fallback for live no-result/failed sites; in the default tertiary mode
+    # it also prevents duplicate network calls.
+    unresolved = wanted - set(gb)
     cached_api: dict[str, tuple[str, str, str]] = {}
     negative_cached: set[str] = set()
     if unresolved:
@@ -1189,30 +1307,19 @@ def main() -> int:
         )
 
     unresolved = wanted - set(gb) - negative_cached
-    api_candidates = collect_api_candidates(
-        in_tsv,
-        unresolved,
-        test_type=args.test_type,
-    )
-    print(
-        f"[genebe] review-filtered live API candidates={len(api_candidates)} "
-        f"from unresolved={len(unresolved)}",
-        file=sys.stderr,
-    )
+    if not api_first:
+        api_candidates = collect_api_candidates(
+            in_tsv,
+            unresolved,
+            test_type=args.test_type,
+        )
+        print(
+            f"[genebe] review-filtered live API candidates={len(api_candidates)} "
+            f"from unresolved={len(unresolved)}",
+            file=sys.stderr,
+        )
 
-    username = (os.environ.get("GENEBE_USER") or "").strip()
-    api_key = (os.environ.get("GENEBE_API_KEY") or "").strip()
-    api_sif = Path(args.api_sif).expanduser().resolve()
-    api_enabled = (
-        not args.skip_api
-        and _env_enabled("NGS_UI_GENEBE_API_ENABLED", True)
-        and bool(username and api_key)
-        and api_sif.is_file()
-    )
-    live_hits: dict[str, tuple[str, str, str]] = {}
-    no_results: set[str] = set()
-    failed_count = 0
-    if api_candidates and api_enabled:
+    if not api_first and api_candidates and api_enabled:
         print(
             f"[genebe] live API enabled: candidates={len(api_candidates)} "
             f"batch_size={max(1, args.api_batch_size)}",
@@ -1228,38 +1335,7 @@ def main() -> int:
             retries=args.api_retries,
         )
         gb.update(live_hits)
-        try:
-            cache_api_outcomes(
-                api_cache,
-                live_hits,
-                no_results,
-                negative_ttl_days=args.api_negative_ttl_days,
-            )
-        except (OSError, sqlite3.Error, ValueError) as exc:
-            print(f"[genebe] WARNING: cannot update API cache: {exc}", file=sys.stderr)
-        pending_dir = (
-            Path(args.api_pending_dir).resolve()
-            if args.api_pending_dir
-            else Path(os.environ.get(
-                "NGS_UI_GENEBE_API_PENDING_DIR",
-                default_api_pending_dir(db),
-            )).resolve()
-        )
-        try:
-            pending = write_pending_tsv(
-                pending_dir,
-                live_hits,
-                source_db=db,
-                queried_count=len(api_candidates),
-                no_result_count=len(no_results),
-                failed_count=failed_count,
-                sif=api_sif,
-            )
-            if pending is not None:
-                print(f"[genebe] import-ready API rows → {pending}", file=sys.stderr)
-        except (OSError, ValueError) as exc:
-            print(f"[genebe] WARNING: cannot save pending API TSV: {exc}", file=sys.stderr)
-    elif api_candidates:
+    elif not api_first and api_candidates:
         reasons: list[str] = []
         if args.skip_api or not _env_enabled("NGS_UI_GENEBE_API_ENABLED", True):
             reasons.append("disabled")
@@ -1271,6 +1347,22 @@ def main() -> int:
             f"[genebe] live API skipped ({'; '.join(reasons) or 'not configured'}); "
             "tertiary analysis continues with DB/pipeline ACMG",
             file=sys.stderr,
+        )
+
+    if live_hits or no_results:
+        # A prior successful cache entry remains a valid fallback when a fresh
+        # API-first request returns no result, so do not replace it with a
+        # negative cache row.
+        save_live_api_results(
+            db=db,
+            api_cache=api_cache,
+            pending_dir=pending_dir,
+            api_sif=api_sif,
+            candidates=api_candidates,
+            live_hits=live_hits,
+            no_results=no_results - set(cached_api),
+            failed_count=failed_count,
+            negative_ttl_days=args.api_negative_ttl_days,
         )
 
     n_filled, n_total = merge_into_tsv(in_tsv, out_tsv, gb)

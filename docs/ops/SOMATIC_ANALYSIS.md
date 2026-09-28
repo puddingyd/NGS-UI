@@ -50,7 +50,7 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 3. LearnReadOrientationModel；選配 GetPileupSummaries/CalculateContamination；FilterMutectCalls。
 4. bcftools norm 拆 ALT/left-align；完整 germline 同法正規化後去重，結果依原始指定區域收錄。
 5. VEP offline JSON（固定 cache version、所有 transcript）載入三級 Research-only 的 dbNSFP 5.3a + P-KNN 與 SpliceAI，產生 P-KNN、AlphaMissense、BayesDel、ESM1b、VARITY_R、SIFT、DANN、PHACTboost、PhyloP、GERP、REVEL、MutPred2、VEST4、CADD 與 SpliceAI。dbNSFP 工具主要適用 missense SNV；intronic、UTR、frameshift 或一般 indel 本來就可能全部空白，run summary 會顯示候選類型與適用數，不把無適用變異誤報為失敗。
-6. 沿用三級 post-processing 的可重用步驟：固定與最新版 ClinVar、本地 GeneBe DB → API cache → live API、GIAB stratification、本院 AF、MANE RefSeq、LitVar2，以及 best-effort GPN-MSA。Somatic worker 和三級 worker 一樣載入 `NGS_UI_HOME/secrets.env`；不再強制 `--skip-api`。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay。Pangolin 需要獨立 inference，未在這個流程產生。
+6. 沿用三級 post-processing 的可重用步驟：固定與最新版 ClinVar、GeneBe、GIAB stratification、本院 AF、MANE RefSeq、LitVar2，以及 best-effort GPN-MSA。Somatic worker 和三級 worker 一樣載入 `NGS_UI_HOME/secrets.env`；不再強制 `--skip-api`。GeneBe 在唯一候選點位數 ≤ `NGS_UI_SOMATIC_GENEBE_API_FIRST_MAX`（預設 100）時先將全部具體 allele 交給 live API，未命中或 API 失敗的點位再依序查 local DB 與 API cache；超過門檻時維持三級大批次的 local DB → API cache → review-filtered live API。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay。Pangolin 需要獨立 inference，未在這個流程產生。
 7. Samtools depth（BQ/MQ ≥20、paired overlap 不重複）與指定座標覆蓋摘要。零候選仍完成，無 call 不表示排除變異，coverage 不是 validated LOD。
 8. 檢查 annotation 候選完整、input/resource 未變，複製至目的 filesystem 隱藏目錄後 rename，最後原子發布 index。
 

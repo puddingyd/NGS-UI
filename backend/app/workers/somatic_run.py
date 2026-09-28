@@ -487,6 +487,8 @@ class Worker:
                           "--tsv", annotation, "--genebe-db", config.GENEBE_DB,
                           "--api-cache", config.GENEBE_API_CACHE,
                           "--api-pending-dir", config.GENEBE_API_PENDING_DIR,
+                          "--api-first-max-variants",
+                          os.environ.get("NGS_UI_SOMATIC_GENEBE_API_FIRST_MAX", "100"),
                           "--test-type", "WGS"])
             else:
                 warnings.append("GeneBe 本地資料庫不存在；ACMG 保留未分類")

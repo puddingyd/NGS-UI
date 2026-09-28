@@ -273,3 +273,76 @@ def test_main_uses_db_then_review_filtered_api_and_reuses_cache(
     monkeypatch.setattr(sys, "argv", argv)
     assert genebe.main() == 0
     assert len(list(pending.glob("*.tsv"))) == 1
+
+
+def test_small_batch_api_first_then_db_and_cache_fallback(
+    tmp_path,
+    monkeypatch,
+):
+    db = tmp_path / "genebe_hg38.tsv.gz"
+    _write_genebe_db(db)
+    tsv = tmp_path / "working.tsv"
+    _write_tsv(tsv, [
+        {
+            "CHROM": "chr1", "POS": "100", "REF": "A", "ALT": "G",
+            "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.2", "DP": "30",
+            "ACMG_CLASS": "VUS",
+        },
+        {
+            "CHROM": "chr1", "POS": "200", "REF": "C", "ALT": "T",
+            "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.001", "DP": "30",
+            "ACMG_CLASS": "VUS",
+        },
+        {
+            "CHROM": "chr1", "POS": "300", "REF": "G", "ALT": "A",
+            "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.2", "DP": "30",
+            "ACMG_CLASS": "VUS",
+        },
+    ])
+    sif = tmp_path / "genebe.sif"
+    sif.touch()
+    cache = tmp_path / "api.sqlite"
+    pending = tmp_path / "pending"
+    genebe.cache_api_outcomes(
+        cache,
+        {"chr1:300:G:A": ("-2", "BP4", "Likely_benign")},
+        set(),
+        negative_ttl_days=30,
+    )
+    order: list[str] = []
+    original_scan = genebe.scan_db
+
+    def fake_api(candidates, **_kwargs):
+        order.append("api")
+        assert candidates == {
+            "chr1:100:A:G", "chr1:200:C:T", "chr1:300:G:A",
+        }
+        return (
+            {"chr1:200:C:T": ("7", "PM2,PP3", "Likely_pathogenic")},
+            {"chr1:100:A:G"},
+            1,
+        )
+
+    def tracked_scan(*args, **kwargs):
+        order.append("db")
+        return original_scan(*args, **kwargs)
+
+    monkeypatch.setattr(genebe, "run_live_api", fake_api)
+    monkeypatch.setattr(genebe, "scan_db", tracked_scan)
+    monkeypatch.setenv("GENEBE_USER", "test-user")
+    monkeypatch.setenv("GENEBE_API_KEY", "test-key")
+    monkeypatch.setattr(sys, "argv", [
+        str(SCRIPT), "--tsv", str(tsv), "--genebe-db", str(db),
+        "--no-sqlite", "--test-type", "WGS", "--api-sif", str(sif),
+        "--api-cache", str(cache), "--api-pending-dir", str(pending),
+        "--api-first-max-variants", "100",
+    ])
+
+    assert genebe.main() == 0
+    assert order == ["api", "db"]
+    with tsv.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert rows[0]["GENEBE_ACMG_SCORE"] == "-4"
+    assert rows[1]["GENEBE_ACMG_CLASS"] == "Likely_pathogenic"
+    assert rows[2]["GENEBE_ACMG_SCORE"] == "-2"
+    assert len(list(pending.glob("*.tsv"))) == 1

@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.34 — 2026-09-29
+
+- Somatic GeneBe 小批次改為 live API 優先：100 個候選點位以下會先查詢所有具體 allele，未取得結果的點位再依序使用 local GeneBe DB 與 API cache。
+- 超過門檻時維持原本三級分析的 local DB 優先流程，避免大批點位發送過多 live API 請求。
+
 ### v9.33 — 2026-09-29
 
 - Somatic 候選變異改由獨立 modal 以完整 SNV/Indel 卡片顯示；PASS 點位標示已納入，其他 FILTER 可在卡片上人工加入判讀。
