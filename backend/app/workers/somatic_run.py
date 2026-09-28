@@ -22,7 +22,7 @@ from pathlib import Path
 from .. import config
 from ..services import gpn_msa, somatic as store, sample_layout
 from ..services.snv_rows import is_reportable_raw_row
-from .dragen_run import _acquire_sample_locks, _release_sample_locks
+from .dragen_run import _acquire_sample_locks, _load_secrets, _release_sample_locks
 
 
 class Cancelled(Exception):
@@ -254,13 +254,36 @@ def predictor_summary(path: Path, *, dbnsfp: str, dbnsfp_version: str,
               "MUTPRED2", "VEST4", "CADD_PHRED", "SPLICEAI_MAX", "GPN_MSA_SCORE")
     counts = {field: 0 for field in fields}
     rows = 0
+    sites: dict[tuple[str, str, str, str], set[str]] = {}
+    site_has_dbnsfp: set[tuple[str, str, str, str]] = set()
     with path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle, delimiter="\t"):
             rows += 1
+            key = tuple(str(row.get(field) or "") for field in ("CHROM", "POS", "REF", "ALT"))
+            sites.setdefault(key, set()).update(filter(None, str(row.get("CONSEQUENCE") or "").split("&")))
             for field in fields:
                 counts[field] += str(row.get(field) or "").strip() not in {"", ".", "NA"}
+            if any(str(row.get(field) or "").strip() not in {"", ".", "NA"}
+                   for field in fields if field not in {"SPLICEAI_MAX", "GPN_MSA_SCORE"}):
+                site_has_dbnsfp.add(key)
+    applicability = {"candidate_sites": len(sites), "snv": 0, "indel": 0,
+                     "missense_snv": 0, "coding_nonmissense": 0, "noncoding": 0,
+                     "dbnsfp_annotated_sites": len(site_has_dbnsfp)}
+    coding = {"stop_gained", "stop_lost", "start_lost", "frameshift_variant",
+              "inframe_insertion", "inframe_deletion", "synonymous_variant",
+              "protein_altering_variant", "coding_sequence_variant"}
+    for key, consequences in sites.items():
+        is_snv = len(key[2]) == len(key[3]) == 1
+        applicability["snv" if is_snv else "indel"] += 1
+        if is_snv and "missense_variant" in consequences:
+            applicability["missense_snv"] += 1
+        elif consequences & coding:
+            applicability["coding_nonmissense"] += 1
+        else:
+            applicability["noncoding"] += 1
     return {"dbnsfp": dbnsfp, "dbnsfp_version": dbnsfp_version, "rows": rows,
-            "populated_rows": counts, "gpn_msa": gpn_status or {}}
+            "populated_rows": counts, "applicability": applicability,
+            "gpn_msa": gpn_status or {}}
 
 
 class Worker:
@@ -452,12 +475,36 @@ class Worker:
             self.update("annotation:clinvar", counts=counts)
             self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_clinvar.py",
                       "--tsv", annotation, "--clinvar", cfg["clinvar_vcf"]])
+            if config.CLINVAR_LATEST_DB.is_file():
+                self.update("annotation:clinvar-latest", counts=counts)
+                self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_clinvar_latest.py",
+                          "--tsv", annotation, "--db", config.CLINVAR_LATEST_DB,
+                          "--marker", stage / "clinvar_comparison.json",
+                          "--baseline-release", cfg["clinvar_release"]])
             if config.GENEBE_DB.is_file():
                 self.update("annotation:genebe", counts=counts)
                 self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_acmg_genebe.py",
-                          "--tsv", annotation, "--genebe-db", config.GENEBE_DB, "--skip-api", "--test-type", "WGS"])
+                          "--tsv", annotation, "--genebe-db", config.GENEBE_DB,
+                          "--api-cache", config.GENEBE_API_CACHE,
+                          "--api-pending-dir", config.GENEBE_API_PENDING_DIR,
+                          "--test-type", "WGS"])
             else:
                 warnings.append("GeneBe 本地資料庫不存在；ACMG 保留未分類")
+            self.update("annotation:giab", counts=counts)
+            self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_giab_strata.py",
+                      "--tsv", annotation, "--strat-dir", config.GIAB_STRAT_DIR])
+            if config.INHOUSE_AF_DB.is_file():
+                self.update("annotation:inhouse-af", counts=counts)
+                self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_inhouse_af.py",
+                          "--tsv", annotation, "--db", config.INHOUSE_AF_DB])
+            self.update("annotation:mane", counts=counts)
+            self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_mane_refseq.py",
+                      "--tsv", annotation])
+            if config.LITVAR2_DB.is_file():
+                self.update("annotation:litvar2", counts=counts)
+                self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_litvar2.py",
+                          "--tsv", annotation, "--db", config.LITVAR2_DB,
+                          "--test-type", "WGS", "--marker", stage / "litvar2_annotation.json"])
         else:
             write_rows(annotation, [])
         self.update("annotation:gpn-msa", counts=counts)
@@ -544,6 +591,7 @@ def re_strip_chr(chrom: str) -> str:
 
 
 def main(run_id: str) -> int:
+    _load_secrets()
     worker = Worker(run_id)
     def interrupted(signum, frame):
         raise Cancelled("Somatic worker 收到停止訊號")

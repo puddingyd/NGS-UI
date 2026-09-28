@@ -15,7 +15,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import config
 from app.auth import current_user
 from app.services import somatic, sample_layout, sample_loader
-from app.workers.somatic_run import Worker, Cancelled, subtract_vcf, vep_rows, write_rows, prepare_allele_filters
+from app.workers.somatic_run import (Worker, Cancelled, predictor_summary,
+                                    subtract_vcf, vep_rows, write_rows,
+                                    prepare_allele_filters)
 from app.routers import somatic as router
 
 
@@ -46,7 +48,10 @@ def publish(sid, raw, rows, *, run_id="a" * 32, archived=False, created=1):
     target = somatic.result_dir(sid, run_id)
     target.mkdir(parents=True)
     write_rows(target / "annotations.tsv", rows)
-    somatic.atomic_json(target / "candidates.json", [{"id": f'{r["CHROM"]}-{r["POS"]}-{r["REF"]}-{r["ALT"]}'} for r in rows])
+    somatic.atomic_json(target / "candidates.json", [
+        {"id": f'{r["CHROM"]}-{r["POS"]}-{r["REF"]}-{r["ALT"]}',
+         "filter": r.get("SOMATIC_FILTER", "")} for r in rows
+    ])
     data = somatic.manifest(sid)
     data["runs"].append({"run_id": run_id, "created": created, "raw_signature": somatic.signature(raw), "archived": archived})
     somatic.atomic_json(somatic.index_path(sid), data)
@@ -69,6 +74,23 @@ def test_complete_dbnsfp_header_is_required(tmp_path):
         handle.write("#chr\tPKNN_LLR\n")
     with pytest.raises(ValueError, match="REVEL_score"):
         somatic.validate_dbnsfp_header(path)
+
+
+def test_readable_log_keeps_results_and_hides_tool_noise():
+    raw = "\n".join([
+        "annotation:genebe",
+        'RUN ["python", "/secret/path/annotate_acmg_genebe.py", "--tsv", "/patient/result.tsv"]',
+        "21:00 INFO NativeLibraryLoader - verbose noise",
+        "[genebe] DB: /secret/db.gz",
+        "[genebe] API cache hits=3 active_no_result=0",
+        "[genebe] API batch 1: requested=1 hits=1 no_result=0",
+        "WARNING: BAM index is older than BAM",
+    ])
+    display = somatic.format_log(raw)
+    assert "【GeneBe ACMG】" in display
+    assert "執行：annotate acmg genebe" in display
+    assert "API batch 1" in display and "WARNING" in display
+    assert "NativeLibraryLoader" not in display and "/secret/" not in display
 
 
 def test_targets_union_aliases_padding_and_alleles(setup):
@@ -118,6 +140,33 @@ def test_somatic_low_depth_loads_and_filtered_requires_selection(setup):
     assert somatic.summary(sid)["completed"] is True
     with pytest.raises(ValueError):
         somatic.select_filtered(sid, run, "chr1-999-A-T")
+
+
+def test_candidate_modal_payload_contains_full_cards_and_selection_state(setup):
+    sid, raw, _ = setup
+    run = publish(sid, raw, [row(), row("102", filt="weak_evidence")])
+    candidates = somatic.candidate_variants(sid, run)
+    assert [item["id"] for item in candidates] == ["chr1-101-A-T", "chr1-102-A-T"]
+    assert candidates[0]["included"] is True
+    assert candidates[1]["included"] is False
+    assert candidates[1]["variant"]["somatic_filter"] == "weak_evidence"
+    assert candidates[1]["variant"]["somatic"] is True
+    somatic.select_filtered(sid, run, "chr1-102-A-T")
+    assert somatic.candidate_variants(sid, run)[1]["included"] is True
+
+
+def test_predictor_summary_explains_non_missense_candidates(tmp_path):
+    path = tmp_path / "annotations.tsv"
+    write_rows(path, [
+        dict(row(), CONSEQUENCE="intron_variant", SPLICEAI_MAX="0.2"),
+        dict(row("102", alt="AT"), CONSEQUENCE="frameshift_variant", GPN_MSA_SCORE=""),
+    ])
+    summary = predictor_summary(path, dbnsfp="db.gz", dbnsfp_version="5.3a")
+    assert summary["applicability"] == {
+        "candidate_sites": 2, "snv": 1, "indel": 1, "missense_snv": 0,
+        "coding_nonmissense": 1, "noncoding": 1, "dbnsfp_annotated_sites": 0,
+    }
+    assert summary["populated_rows"]["SPLICEAI_MAX"] == 1
 
 
 def test_zero_result_run_still_enables_checkbox(setup):

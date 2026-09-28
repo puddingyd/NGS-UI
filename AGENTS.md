@@ -135,6 +135,8 @@ HPO reference、fixed/custom panel 與既有 `pheno_score.tsv` 讀入時都會�
 
 Somatic VEP 固定載入三級 Research-only 的 `dbNSFP5.3a_with_pknn_grch38.gz` 及 `.tbi`；設定未明寫 `dbnsfp_academic` 時由 FASTA 同層推導 `tertiary/dbnsfp/`。啟動前檢查 header 含完整欄位。輸出 P-KNN、AlphaMissense、BayesDel、ESM1b、VARITY_R、SIFT、DANN、PHACTboost、PhyloP、GERP、REVEL、MutPred2、VEST4、CADD，並以 VEP SpliceAI plugin 讀 `BIOTOOLS_DIR/spliceai/` 的 SNV/indel VCF，再由既有 `gpn_msa.annotate_review_tsv()` best-effort 補 GPN-MSA；Pangolin 需要獨立 inference，不在 Somatic run 產生。Job state／manifest 保存每個 predictor 有值 row 數。Modal 進度採固定單調百分比，細分 orientation、contamination、FilterMutectCalls、VEP、ClinVar、GeneBe、GPN-MSA、coverage、publish；原始工具輸出預設收合於與三級分析相同的深色 Log panel。
 
+Somatic 完成後自動 reload SNV，不提供手動更新卡片。每個完成 run 的「候選變異」另開 modal，後端 `candidate_variants()` 將該 run 全部 transcript 合併成主畫面同款卡片；PASS 標示已納入，非 PASS 在卡片上明確加入並保留 FILTER，未加入前不允許 status/comment/ACMG 編輯。Log API 同時回傳 `log`（去除第三方 verbose noise 的步驟摘要）與 `raw_log`，前端可切換。Somatic worker 啟動時沿用三級 `_load_secrets()` 載入 `NGS_UI_HOME/secrets.env`，GeneBe 不再帶 `--skip-api`，依主 DB → API cache → live API 執行；另條件式執行 latest ClinVar、GIAB、本院 AF、MANE、LitVar2，再補 GPN-MSA。Predictor summary 需保存候選類型及 missense-SNV 適用數；dbNSFP 對 intronic／UTR／frameshift／一般 indel 沒有值時須明示，不得假造分數。
+
 ```
 三級 pipeline (Nextflow)
   → 每次都啟動 `-resume`；同 pipeline 類型共用 session，跨 batch 沿用相同 sample/input cache

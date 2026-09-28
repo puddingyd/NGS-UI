@@ -68,9 +68,12 @@ def detail(sample_id: str, run_id: str):
             handle.seek(max(0, log_path.stat().st_size - 64000))
             log = handle.read().decode("utf-8", errors="replace")
     candidates = []
+    candidate_variants = []
     if job.get("status") == "completed":
         candidates = somatic.read_json(somatic.result_dir(sample_id, run_id) / "candidates.json", [])
-    return {"job": job, "log": log, "candidates": candidates}
+        candidate_variants = somatic.candidate_variants(sample_id, run_id)
+    return {"job": job, "log": somatic.format_log(log), "raw_log": log,
+            "candidates": candidates, "candidate_variants": candidate_variants}
 
 
 @router.post("/jobs/{run_id}/cancel")

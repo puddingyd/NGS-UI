@@ -1,8 +1,8 @@
 # NGS 分析平台 (NGS-UI)
 
-### 指定範圍 Somatic 分析（v9.32.4）
+### 指定範圍 Somatic 分析（v9.33）
 
-載入個案後可在 SNV/Indel 標題旁開啟「Somatic 分析」，輸入多基因、GRCh38 座標或區間，由背景 worker 執行 Mutect2、品質過濾與註解。與完整 germline 去重後，僅新增點位併入原 SNV/Indel 卡片並標示 Somatic pipeline；germline 卡片及 read support 不變。「☑ Somatic」只在有可用的完成結果後顯示。支援三級分析同款進度條／收合 Log、取消、歷史、刪除完成／失敗／取消的 run、FILTER 複核、IGV、儲存及診斷報告；結果檔被外部刪除時仍可載入個案並刪除殘留紀錄。annotation 共用三級 Research-only 的 dbNSFP 5.3a + P-KNN 與 SpliceAI，並 best-effort join GPN-MSA；每次 run 保存 predictor 覆蓋統計。
+載入個案後可在 SNV/Indel 標題旁開啟「Somatic 分析」，輸入多基因、GRCh38 座標或區間，由背景 worker 執行 Mutect2、品質過濾與註解。與完整 germline 去重後，僅新增點位併入原 SNV/Indel 卡片並標示 Somatic pipeline；germline 卡片及 read support 不變。「☑ Somatic」只在有可用的完成結果後顯示。支援三級分析同款進度條、整理後／原始 Log、取消、歷史、刪除、FILTER 複核、IGV、儲存及診斷報告；完成後自動更新主畫面。每次 run 可開啟獨立候選 modal，以完整卡片檢視所有 PASS 與被 FILTER 的點位。annotation 共用三級 Research-only 的 dbNSFP 5.3a + P-KNN、SpliceAI、GPN-MSA 與本地 post-processing；GeneBe 依本地 DB → API cache → live API 查詢。
 
 須先在執行主機配置 `NGS_UI_SOMATIC_CONFIG`、GATK／bcftools／Samtools／VEP、dbNSFP + TBI 與相容 reference/cache；不會自動安裝院內資料庫或跨主機排程。[部署與驗證說明](docs/ops/SOMATIC_ANALYSIS.md)；[設定檔範例](deploy/somatic_config.example.json)。
 

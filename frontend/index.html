@@ -497,7 +497,7 @@
         <label>Genomic position（GRCh38）<textarea id="somatic-positions" rows="3" placeholder="chr1:100000&#10;chr1:100000-101000&#10;chr1:100000:A&gt;G"></textarea></label>
         <label>基因分析範圍<select id="somatic-region"><option value="exons">所有外顯子＋兩側各 20 bp</option><option value="gene">完整基因範圍</option></select></label>
       </div>
-      <div class="somatic-actions"><button id="somatic-preview-btn" class="btn" type="button">預覽範圍</button><button id="somatic-start-btn" class="btn btn-primary" type="button">開始分析</button><button id="somatic-refresh-btn" class="btn" type="button">更新卡片</button></div>
+      <div class="somatic-actions"><button id="somatic-preview-btn" class="btn" type="button">預覽範圍</button><button id="somatic-start-btn" class="btn btn-primary" type="button">開始分析</button></div>
       <p id="somatic-error" role="alert"></p>
       <div id="somatic-preview" class="muted"></div>
       <div id="somatic-job-panel" class="dragen-job-panel somatic-job-panel" hidden>
@@ -507,6 +507,7 @@
           <span id="somatic-job-state" class="muted"></span>
           <button id="somatic-job-cancel-btn" class="btn btn-danger dragen-cancel-btn" type="button" hidden>終止</button>
           <button id="somatic-job-log-toggle" class="dragen-log-toggle" type="button" aria-expanded="false">▶ Log</button>
+          <button id="somatic-job-log-view-toggle" class="dragen-log-toggle" type="button" hidden>顯示原始 Log</button>
         </div>
         <div class="dragen-progress-row">
           <div class="dragen-progress-track"><div id="somatic-job-progress-bar" class="dragen-progress-bar"></div></div>
@@ -516,6 +517,15 @@
       </div>
       <div id="somatic-jobs"></div>
       <div id="somatic-detail"></div>
+    </div>
+  </div>
+  <div id="somatic-candidates-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="somatic-candidates-title">
+    <div class="modal-card modal-card-wide somatic-candidates-card">
+      <div class="somatic-modal-head">
+        <div><h2 id="somatic-candidates-title">Somatic 候選變異</h2><p id="somatic-candidates-summary" class="muted"></p></div>
+        <button type="button" class="btn btn-ghost" data-close="somatic-candidates-modal">關閉</button>
+      </div>
+      <div id="somatic-candidates-list"></div>
     </div>
   </div>
   <div id="new-case-modal" class="modal hidden">

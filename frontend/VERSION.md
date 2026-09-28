@@ -6,6 +6,14 @@
 
 ## 版本紀錄
 
+### v9.33 — 2026-09-29
+
+- Somatic 候選變異改由獨立 modal 以完整 SNV/Indel 卡片顯示；PASS 點位標示已納入，其他 FILTER 可在卡片上人工加入判讀。
+- Somatic 分析完成後仍自動更新主畫面，移除重複的「更新卡片」按鈕。
+- Somatic Log 預設顯示整理過的步驟、重要計數、warning 與 annotation 結果，可切換查看完整原始 Log。
+- Somatic GeneBe 改為沿用三級 post-processing：載入 `secrets.env`，依序查本地 DB、API cache、live API，並保存 cache 與待匯入資料；另接上最新版 ClinVar、GIAB、本院 AF、MANE RefSeq、LitVar2 與 GPN-MSA 等可重用的本地註解。
+- In-silico 摘要增加候選類型與 dbNSFP 適用性；沒有 missense SNV 時會明確說明，避免把 intronic、UTR 或 frameshift 本來沒有 dbNSFP 分數誤認為 annotation 失敗。
+
 ### v9.32.4 — 2026-09-28
 
 - SNV/Indel 診斷報告與列印輸出若勾選多筆 OMIM disease，會依欄位順序完整列出所有疾病名稱與 Phenotype MIM number，兩者均以「、」連接；不同 disease 共用 MIM 時也保留每一筆，未勾選時仍沿用第一筆疾病。

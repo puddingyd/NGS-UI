@@ -4,7 +4,7 @@
 
 載入個案後，SNV/Indel 標題旁「Somatic 分析」開啟 modal。支援多基因（空白、逗號、分號或換行分隔）、`chr1:100000`、`chr1:100000-101000` 或指定 allele `chr1:100000:A>G`。以上僅為格式範例。座標固定 GRCh38、1-based inclusive；基因／座標取聯集。預設所有 transcript 的 exon 聯集加兩側各 20 bp，也可選完整 gene span。可預覽合併後的確切區域。
 
-BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 IGV 使用本次實際選取的 BAM。Modal 可關閉，背景工作繼續；重新開啟可看進度、log、取消、被過濾候選和重新執行。
+BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 IGV 使用本次實際選取的 BAM。Modal 可關閉，背景工作繼續；重新開啟可看進度、整理後或原始 log、取消與歷史。完成後自動更新主畫面；候選按鈕另開 modal，以主畫面相同的 SNV/Indel 卡片顯示全部候選，非 PASS 可在卡片上加入判讀。
 
 完整 germline raw TSV 和 Mutect2 結果以相同 FASTA 做 bcftools normalization，再依 CHROM/POS/REF/ALT 排除既有 allele。比對不套 germline DP/VAF/BED/AF/主畫面篩選；`CALLERS=NONE`、reference rows 不算 germline ALT。同座標不同 ALT 保留。不能先從 calling interval 排除 germline 座標，以免漏掉不同 ALT。原始 Mutect2 VCF 保留稽核，送往 annotation 的 `novel.vcf` 已排除 germline 重複點位。
 
@@ -49,9 +49,10 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 2. Mutect2 單檢體模式，指定 interval 加 100 bp assembly padding，可 force-call 指定 allele。
 3. LearnReadOrientationModel；選配 GetPileupSummaries/CalculateContamination；FilterMutectCalls。
 4. bcftools norm 拆 ALT/left-align；完整 germline 同法正規化後去重，結果依原始指定區域收錄。
-5. VEP offline JSON（固定 cache version、所有 transcript）載入三級 Research-only 的 dbNSFP 5.3a + P-KNN 與 SpliceAI，產生 P-KNN、AlphaMissense、BayesDel、ESM1b、VARITY_R、SIFT、DANN、PHACTboost、PhyloP、GERP、REVEL、MutPred2、VEST4、CADD 與 SpliceAI；再加固定 ClinVar、本地 GeneBe（存在時；不呼叫 live API）及 best-effort GPN-MSA。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay。Pangolin 需要獨立 inference，未在這個流程產生。
-6. Samtools depth（BQ/MQ ≥20、paired overlap 不重複）與指定座標覆蓋摘要。零候選仍完成，無 call 不表示排除變異，coverage 不是 validated LOD。
-7. 檢查 annotation 候選完整、input/resource 未變，複製至目的 filesystem 隱藏目錄後 rename，最後原子發布 index。
+5. VEP offline JSON（固定 cache version、所有 transcript）載入三級 Research-only 的 dbNSFP 5.3a + P-KNN 與 SpliceAI，產生 P-KNN、AlphaMissense、BayesDel、ESM1b、VARITY_R、SIFT、DANN、PHACTboost、PhyloP、GERP、REVEL、MutPred2、VEST4、CADD 與 SpliceAI。dbNSFP 工具主要適用 missense SNV；intronic、UTR、frameshift 或一般 indel 本來就可能全部空白，run summary 會顯示候選類型與適用數，不把無適用變異誤報為失敗。
+6. 沿用三級 post-processing 的可重用步驟：固定與最新版 ClinVar、本地 GeneBe DB → API cache → live API、GIAB stratification、本院 AF、MANE RefSeq、LitVar2，以及 best-effort GPN-MSA。Somatic worker 和三級 worker 一樣載入 `NGS_UI_HOME/secrets.env`；不再強制 `--skip-api`。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay。Pangolin 需要獨立 inference，未在這個流程產生。
+7. Samtools depth（BQ/MQ ≥20、paired overlap 不重複）與指定座標覆蓋摘要。零候選仍完成，無 call 不表示排除變異，coverage 不是 validated LOD。
+8. 檢查 annotation 候選完整、input/resource 未變，複製至目的 filesystem 隱藏目錄後 rename，最後原子發布 index。
 
 ## 儲存、刪除與報告
 
@@ -75,6 +76,6 @@ Legacy 個案的 index 由現有 state resolver 放在原 UI state 目錄。每 
 
 `tests/test_somatic.py`：區域、別名、多 ALT、低 VAF/DP、權限、FILTER 明確納入、stale、歷史、DOCX，以及使用合成工具輸出的 worker 全流程。`tests/frontend_somatic.test.cjs`：checkbox 顯示條件與 germline/somatic 篩選隔離。另與既有 layout、case summary、secondary finding、三級刪除及報告測試一起執行。
 
-Modal 的目前工作採用和三級分析相同的進度面板：顯示百分比、細分步驟、終止按鈕；原始工具輸出預設收合於深色 Log 區。分析詳細資料另外列出 dbNSFP 版本及每個 predictor 實際有值的 row 數，讓「該 consequence 本來沒有分數」和「annotation 資源未執行」可以區分。
+Modal 的目前工作採用和三級分析相同的進度面板：顯示百分比、細分步驟、終止按鈕；深色 Log 區預設顯示去除 GATK/VEP 重複訊息後的步驟摘要，可切換原始 Log。分析詳細資料列出 dbNSFP 版本、候選類型、適用位點及每個 predictor 實際有值的 row 數，讓「該 consequence 本來沒有分數」和「annotation 資源未執行」可以區分。
 
 參考：[Mutect2](https://gatk.broadinstitute.org/hc/en-us/articles/21905083931035-Mutect2)、[GATK somatic workflow](https://github.com/broadinstitute/gatk/blob/master/scripts/mutect2_wdl/mutect2.wdl)、[VEP 格式](https://www.ensembl.org/info/docs/tools/vep/vep_formats.html)。

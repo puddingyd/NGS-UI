@@ -32,6 +32,29 @@ SOMATIC_DBNSFP_FIELDS = (
     "PHACTboost_score", "phyloP100way_vertebrate", "GERP++_RS", "REVEL_score",
     "MutPred2_score", "MutPred2_pred", "VEST4_score", "CADD_phred",
 )
+LOG_STEP_LABELS = {
+    "preflight": "檢查輸入與工具",
+    "mutect2": "Mutect2 變異偵測",
+    "filtering:orientation": "校正方向性偏差",
+    "filtering:pileup": "估計樣本污染",
+    "filtering:contamination": "計算污染比例",
+    "filtering:mutect-calls": "套用品質過濾",
+    "subtract-germline": "排除 germline 已有點位",
+    "annotation:vep": "VEP、dbNSFP 與 SpliceAI",
+    "annotation:clinvar": "固定版 ClinVar",
+    "annotation:clinvar-latest": "最新版 ClinVar 比對",
+    "annotation:genebe": "GeneBe ACMG",
+    "annotation:giab": "GIAB 困難區域",
+    "annotation:inhouse-af": "本院族群頻率",
+    "annotation:mane": "MANE RefSeq",
+    "annotation:litvar2": "LitVar2 文獻",
+    "annotation:gpn-msa": "GPN-MSA",
+    "coverage": "檢查指定範圍覆蓋",
+    "publishing": "發布結果",
+    "completed": "完成",
+    "failed": "失敗",
+    "cancelled": "已取消",
+}
 
 
 def validate_sid(sid: str) -> str:
@@ -96,6 +119,62 @@ def validate_dbnsfp_header(path: Path) -> None:
     missing = [field for field in SOMATIC_DBNSFP_FIELDS if field not in header]
     if missing:
         raise ValueError(f"Somatic dbNSFP 缺少欄位：{', '.join(missing)}")
+
+
+def _command_label(args: list[str]) -> str:
+    names = [Path(token).name for token in args]
+    for action, label in (
+        ("Mutect2", "Mutect2 calling"),
+        ("LearnReadOrientationModel", "建立方向性偏差模型"),
+        ("GetPileupSummaries", "整理污染估計位點"),
+        ("CalculateContamination", "計算污染比例"),
+        ("FilterMutectCalls", "Mutect2 品質過濾"),
+    ):
+        if action in args:
+            return label
+    for tool in ("bcftools", "samtools", "vep"):
+        if tool in names:
+            index = names.index(tool)
+            action = args[index + 1] if index + 1 < len(args) else ""
+            return f"{tool} {action}".strip()
+    for token in names:
+        if token.endswith(".py"):
+            return token.removesuffix(".py").replace("_", " ")
+    return names[0] if names else "command"
+
+
+def format_log(raw: str) -> str:
+    """Turn verbose third-party output into a reviewer-readable timeline."""
+    output: list[str] = []
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line in LOG_STEP_LABELS:
+            output.extend(([""] if output else []) + [f"【{LOG_STEP_LABELS[line]}】"])
+            continue
+        if line.startswith("RUN "):
+            try:
+                args = json.loads(line[4:])
+            except json.JSONDecodeError:
+                args = []
+            output.append(f"  執行：{_command_label([str(value) for value in args])}")
+            continue
+        lower = line.lower()
+        keep = (
+            "warning" in lower or "error" in lower or "traceback" in lower
+            or "total reads filtered" in lower or line.startswith("Lines   total/")
+            or (line.startswith("[clinvar]") and any(word in lower for word in ("matched", "scanned", "backfilled", "done")))
+            or (line.startswith("[genebe]") and not any(word in lower for word in (" db:", "sqlite ready")))
+            or line.startswith("[gpn-msa]") or line.startswith("[giab-strata]")
+            or line.startswith("[inhouse-af]") or line.startswith("[mane-refseq]")
+            or line.startswith("[litvar2]")
+        )
+        if keep:
+            output.append("  " + line)
+    if not output:
+        return "目前沒有可顯示的執行摘要。"
+    return "\n".join(output).strip()
 
 
 def settings() -> dict:
@@ -448,6 +527,50 @@ def load_variants(sid: str, *, wanted: set[str] | None = None, genes: set[str] |
         # Latest observation wins without combining AD/DP from different runs.
         out.update(current)
     return out
+
+
+def candidate_variants(sid: str, run_id: str) -> list[dict]:
+    """Return every candidate in one run as a full SNV card payload."""
+    from ..adapters.snv_tsv import _row_to_variant, merge_snv_variant_row
+
+    data = manifest(sid)
+    run = next((item for item in data.get("runs", []) if item.get("run_id") == run_id), None)
+    if run is None:
+        return []
+    annotation = result_dir(sid, run_id) / "annotations.tsv"
+    if not annotation.is_file():
+        return []
+    current: dict[str, dict] = {}
+    with annotation.open(encoding="utf-8") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            vid = f'{row["CHROM"]}-{row["POS"]}-{row["REF"]}-{row["ALT"]}'
+            variant = _row_to_variant(row)
+            variant.update(
+                somatic=True,
+                somatic_run_id=run_id,
+                somatic_filter=row.get("SOMATIC_FILTER", ""),
+                somatic_clinvar_release=run.get("clinvar_release", ""),
+                somatic_bam=run.get("bam_path", ""),
+                somatic_qc={key: row.get("SOMATIC_" + key, "") for key in
+                            ("TLOD", "MMQ", "MBQ", "MPOS", "F1R2", "F2R1")},
+                somatic_validation="未驗證",
+                low_depth=(variant.get("depth") or 0) < 10,
+            )
+            merge_snv_variant_row(current, variant)
+    selected = set(data.get("selected_filtered", {}).get(run_id, []))
+    ordered = read_json(result_dir(sid, run_id) / "candidates.json", [])
+    result = []
+    for item in ordered:
+        vid = item.get("id", "")
+        variant = current.get(vid)
+        if not variant:
+            continue
+        result.append({
+            "id": vid,
+            "variant": variant,
+            "included": item.get("filter") == "PASS" or vid in selected,
+        })
+    return result
 
 
 def select_filtered(sid: str, run_id: str, vid: str) -> None:

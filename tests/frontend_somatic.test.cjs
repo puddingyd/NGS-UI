@@ -82,3 +82,13 @@ test('Somatic modal uses concise coordinate labels and no standard-only predicto
   assert.doesNotMatch(source, /<summary>座標（1-based）<\/summary>/);
   assert.doesNotMatch(source, /標準 Somatic run 不會填入/);
 });
+
+test('Somatic candidates use a separate card modal and refresh is automatic', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 'utf8');
+  assert.match(html, /id="somatic-candidates-modal"/);
+  assert.match(source, /renderSomaticCandidates/);
+  assert.match(source, /renderVariantCard\(entry\.variant, entry\.id/);
+  assert.match(source, /顯示原始 Log/);
+  assert.doesNotMatch(html, /id="somatic-refresh-btn"/);
+  assert.doesNotMatch(source, /button\.id === "somatic-refresh-btn"/);
+});
