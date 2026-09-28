@@ -349,6 +349,7 @@ CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一
 
 ## 11. 已知踩雷 / 慣例
 
+- **HGNC 查找效能**：`canonical_panel_gene_symbol()` 的 exact current-symbol 判斷須使用既有 `symbol_to_hgnc_id()` 反向索引，不能用 `sym in hgnc_id_to_symbol().values()`；Somatic `resolve_targets()` 逐列讀全基因組 exon BED 時，線性掃描約 45k symbols 會讓預覽占滿 web process 的 Python 執行資源並拖慢其他 request。保留 exact current → case-insensitive current → alias → 原字串的既有優先序。
 - 大型 HPO reference 仍用 `config.PHENO_DATA_DIR`（= `NGS_UI_HOME/phenotype_data`，**無 fallback** —— dev 機部署時要放 `hp.obo`、`phenotype_to_genes.txt` 等，不然 HPO 搜尋空、pheno_score 全 0）。fixed/custom panel data 改用 repo 內 `GENE_PANELS_DIR` / `FIXED_PANELS_DIR` / `CUSTOM_GENE_PANELS_DIR`。
 - MITOMAP 兩個 TSV 是 **Latin-1**，不是 UTF-8（`0xa0` nbsp），loader 用 `encoding="latin-1"`。
 - `parse_mito_vcf.py` 不做 POS-only MITOMAP fallback（不然 `m.114C>A` 會被配到 `m.114C>T` 的 disease，等等）。

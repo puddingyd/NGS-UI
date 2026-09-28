@@ -217,6 +217,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 
 ### 載入效能
 
+- HGNC 基因名稱正規化使用快取的反向索引查找，避免 Somatic 全基因組 exon BED 預覽逐列掃描所有 HGNC 名稱，拖慢同一服務的首頁與個案載入。
 - 首頁登入後的 `/api/samples` 只載入搜尋用的輕量樣本索引，不同步計算個案清單摘要。
 - SNV 載入會把畫面中的 variant IDs 一次送進 `manual_current` / `observations` indexed bulk query，再疊加 per-sample snapshot；不會逐張卡片查 SQLite。Observed badge 只先取 count，實際 case list 點擊後才 lazy 查詢。
 - 「個案清單」開啟時呼叫 `/api/samples/case-summary`，後端直接讀統一三級 root 的 `_case_table.json` 總表；若總表缺失或 sample 集合不一致才重建。

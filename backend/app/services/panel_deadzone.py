@@ -179,8 +179,9 @@ def canonical_panel_gene_symbol(symbol: str) -> str:
     if not sym:
         return ""
     by_upper = _current_symbol_by_upper()
-    current = hgnc_id_to_symbol()
-    if sym in current.values():
+    # The inverse map is already cached. Scanning ~45k values for every
+    # exon in a whole-genome BED stalls concurrent web requests for minutes.
+    if sym in symbol_to_hgnc_id():
         return sym
     cased = by_upper.get(sym.upper())
     if cased:
