@@ -16,7 +16,7 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 
 本版本由 UI server 啟動 detached Python worker，在**同一主機**執行工具；不需要 RQ、SSH 或重跑完整 Nextflow 00–07。原生工具或管理員配置的 Apptainer command prefix 均可。若工具/reference 僅存在 DGX，須先讓 worker 主機可執行並存取相同檔案；本版本不含跨主機排程。
 
-必備：GATK 4（Mutect2、LearnReadOrientationModel、FilterMutectCalls）、bcftools、Samtools（支援 `depth -s`）、VEP offline cache、GRCh38 FASTA/FAI/dictionary、germline population-AF resource/index、版本固定的 ClinVar VCF、gene/exon BED。工具／容器版本應在院內固定並驗證；worker 保存版本輸出及 config/resource signatures。
+必備：GATK 4（Mutect2、LearnReadOrientationModel、FilterMutectCalls）、bcftools、Samtools（支援 `depth -s`）、VEP offline cache、GRCh38 FASTA/FAI/dictionary、germline population-AF resource/index、版本固定的 ClinVar VCF、gene/exon BED，以及三級流程相同的 dbNSFP 4.9c + P-KNN bgzip/TBI。工具／容器版本應在院內固定並驗證；worker 保存版本輸出及 config/resource signatures。
 
 1. 以相容的 GRCh38 GTF 建立五欄 BED（`chrom start0 end gene exon|gene`），保留所有 transcript：
 
@@ -29,7 +29,7 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 
    Reference/BAM 使用 `chr1` 命名；gene alias 由現有 HGNC/panel canonicalizer 處理。
 
-2. 複製 `deploy/somatic_config.example.json` 到 `NGS_UI_HOME/data/somatic_config.json`，填入實際路徑與 release；也可透過 `NGS_UI_SOMATIC_CONFIG` 指定檔案。`vep_cache_version` 是實際 numeric cache version。設定檔由管理員維護，request 不得提供命令。
+2. 複製 `deploy/somatic_config.example.json` 到 `NGS_UI_HOME/data/somatic_config.json`，填入實際路徑與 release；也可透過 `NGS_UI_SOMATIC_CONFIG` 指定檔案。`vep_cache_version` 是實際 numeric cache version。`dbnsfp` 未填時會從 FASTA 同層推導 `tertiary/dbnsfp/dbNSFP4.9c_with_pknn_grch38.gz`，檔案與 `.tbi` 都必須存在。設定檔由管理員維護，request 不得提供命令。
 
    原生工具範例：`"gatk_command": ["/path/to/gatk"]`。
 
@@ -49,7 +49,7 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 2. Mutect2 單檢體模式，指定 interval 加 100 bp assembly padding，可 force-call 指定 allele。
 3. LearnReadOrientationModel；選配 GetPileupSummaries/CalculateContamination；FilterMutectCalls。
 4. bcftools norm 拆 ALT/left-align；完整 germline 同法正規化後去重，結果依原始指定區域收錄。
-5. VEP offline JSON（固定 cache version、所有 transcript）、固定 ClinVar、本地 GeneBe（存在時；不呼叫 live API）。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay；未配置的額外 germline predictor/plugin 不假造分數或 tier evidence。
+5. VEP offline JSON（固定 cache version、所有 transcript）載入標準三級 dbNSFP 4.9c + P-KNN，產生 P-KNN、AlphaMissense、BayesDel、ESM1b、VARITY_R、SIFT、DANN、PHACTboost、PhyloP、GERP；再加固定 ClinVar、本地 GeneBe（存在時；不呼叫 live API）及 best-effort GPN-MSA。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay。REVEL、MutPred2、VEST4、CADD 與 SpliceAI 仍屬 Research-only，不由標準 Somatic run 填入；Pangolin 需要獨立 inference，亦不假造分數。
 6. Samtools depth（BQ/MQ ≥20、paired overlap 不重複）與指定座標覆蓋摘要。零候選仍完成，無 call 不表示排除變異，coverage 不是 validated LOD。
 7. 檢查 annotation 候選完整、input/resource 未變，複製至目的 filesystem 隱藏目錄後 rename，最後原子發布 index。
 
@@ -74,5 +74,7 @@ Legacy 個案的 index 由現有 state resolver 放在原 UI state 目錄。每 
 ## 軟體驗證
 
 `tests/test_somatic.py`：區域、別名、多 ALT、低 VAF/DP、權限、FILTER 明確納入、stale、歷史、DOCX，以及使用合成工具輸出的 worker 全流程。`tests/frontend_somatic.test.cjs`：checkbox 顯示條件與 germline/somatic 篩選隔離。另與既有 layout、case summary、secondary finding、三級刪除及報告測試一起執行。
+
+Modal 的目前工作採用和三級分析相同的進度面板：顯示百分比、細分步驟、終止按鈕；原始工具輸出預設收合於深色 Log 區。分析詳細資料另外列出 dbNSFP 版本及每個 predictor 實際有值的 row 數，讓「該 consequence 本來沒有分數」和「annotation 資源未執行」可以區分。
 
 參考：[Mutect2](https://gatk.broadinstitute.org/hc/en-us/articles/21905083931035-Mutect2)、[GATK somatic workflow](https://github.com/broadinstitute/gatk/blob/master/scripts/mutect2_wdl/mutect2.wdl)、[VEP 格式](https://www.ensembl.org/info/docs/tools/vep/vep_formats.html)。

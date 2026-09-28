@@ -501,6 +501,20 @@
       <div class="somatic-actions"><button id="somatic-preview-btn" class="btn" type="button">預覽範圍</button><button id="somatic-start-btn" class="btn btn-primary" type="button">開始分析</button><button id="somatic-refresh-btn" class="btn" type="button">更新卡片</button><span id="somatic-replace-label" class="muted"></span></div>
       <p id="somatic-error" role="alert"></p>
       <div id="somatic-preview" class="muted"></div>
+      <div id="somatic-job-panel" class="dragen-job-panel somatic-job-panel" hidden>
+        <div class="dragen-job-head">
+          <strong>進度</strong>
+          <span id="somatic-job-step" class="muted"></span>
+          <span id="somatic-job-state" class="muted"></span>
+          <button id="somatic-job-cancel-btn" class="btn btn-danger dragen-cancel-btn" type="button" hidden>終止</button>
+          <button id="somatic-job-log-toggle" class="dragen-log-toggle" type="button" aria-expanded="false">▶ Log</button>
+        </div>
+        <div class="dragen-progress-row">
+          <div class="dragen-progress-track"><div id="somatic-job-progress-bar" class="dragen-progress-bar"></div></div>
+          <span id="somatic-job-progress-text" class="dragen-progress-text">0%</span>
+        </div>
+        <pre id="somatic-job-log" class="dragen-job-log" hidden></pre>
+      </div>
       <div id="somatic-jobs"></div>
       <div id="somatic-detail"></div>
     </div>

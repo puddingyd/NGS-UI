@@ -158,7 +158,12 @@ def test_report_blocks_missing_reviewed_somatic(monkeypatch):
 def test_vep_preserves_mutect_evidence_and_all_transcripts(tmp_path):
     path = tmp_path / "vep.json"
     obj = {"input": "chr1\t101\t.\tA\tT\t.\tPASS\tTLOD=12\tGT:AD:AF:DP\t0/1:97,3:0.03:100",
-           "transcript_consequences": [{"gene_symbol": "GENE1", "transcript_id": "ENST1", "hgvsc": "ENST1:c.1A>T", "consequence_terms": ["missense_variant"]},
+           "transcript_consequences": [{"gene_symbol": "GENE1", "transcript_id": "ENST1", "hgvsc": "ENST1:c.1A>T", "consequence_terms": ["missense_variant"],
+                                         "pknn_llr": "2.5", "alphamissense_score": "0.94",
+                                         "bayesdel_noaf_score": "0.31", "esm1b_score": "-13.2",
+                                         "varity_r_score": "0.88", "dann_score": "0.99",
+                                         "phactboost_score": "0.72", "phylop100way_vertebrate": "4.2",
+                                         "gerp++_rs": "5.1", "sift_score": "0.001", "sift_pred": "D"},
                                        {"gene_symbol": "GENE2", "transcript_id": "ENST2", "consequence_terms": ["intron_variant"]}]}
     path.write_text(json.dumps(obj) + "\n")
     rows = vep_rows(path)
@@ -166,6 +171,9 @@ def test_vep_preserves_mutect_evidence_and_all_transcripts(tmp_path):
     assert rows[0]["AD"] == "97,3" and rows[0]["VAF"] == "0.03"
     assert rows[0]["ZYGOSITY"] == "" and rows[0]["SOMATIC_GT"] == "0/1"
     assert rows[0]["HGVS_C"] == "c.1A>T"
+    assert rows[0]["PKNN_LLR"] == "2.5" and rows[0]["PKNN_EVIDENCE"] == "PP3_Moderate"
+    assert rows[0]["ALPHAMISSENSE"] == "0.94" and rows[0]["BAYESDEL_NOAF"] == "0.31"
+    assert rows[0]["ESM1B"] == "-13.2" and rows[0]["GERP"] == "5.1"
 
 
 def test_authenticated_scoped_api(setup, monkeypatch):
@@ -222,7 +230,8 @@ def test_worker_complete_chain_only_publishes_novel_alleles(setup, tmp_path, mon
     bam = tmp_path / "S1.bam"
     bam.write_text("synthetic")
     cfg.update({key: str(raw) for key in ("germline_resource", "clinvar_vcf")})
-    cfg.update(vep_cache=str(tmp_path), vep_cache_version="115", clinvar_release="2026-07-20")
+    cfg.update(vep_cache=str(tmp_path), vep_cache_version="115", clinvar_release="2026-07-20",
+               dbnsfp=str(raw), dbnsfp_version="4.9c")
     cfg.update({key + "_command": [key] for key in ("gatk", "samtools", "bcftools", "vep")})
     monkeypatch.setattr(config, "GENEBE_DB", tmp_path / "missing.genebe.gz")
     run = "e" * 32
@@ -273,6 +282,8 @@ def test_worker_complete_chain_only_publishes_novel_alleles(setup, tmp_path, mon
     assert len(somatic.read_json(somatic.result_dir(sid, run) / "candidates.json")) == 2
     assert any("FilterMutectCalls" in cmd for cmd in commands)
     assert any("--clinvar" in cmd for cmd in commands)
+    vep_cmd = next(cmd for cmd in commands if cmd[0] == "vep" and "--input_file" in cmd)
+    assert "--plugin" in vep_cmd and "PKNN_LLR" in vep_cmd[vep_cmd.index("--plugin") + 1]
 
 
 def test_submission_cannot_accept_arbitrary_bam(setup, monkeypatch):

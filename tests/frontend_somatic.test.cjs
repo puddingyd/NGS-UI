@@ -52,3 +52,13 @@ test('explicitly targeted somatic variants survive germline gene-scope filters',
   assert.equal(context._passesMainSnvDisplayFilters({ somatic: true, in_panel: false }), true);
   assert.equal(context._passesMainSnvDisplayFilters({ in_panel: false }), false);
 });
+
+test('Somatic progress uses the same stable percentage model as the tertiary panel', () => {
+  const context = vm.createContext({ SOMATIC_PROGRESS: { queued: 1, mutect2: 15,
+    'annotation:vep': 72, publishing: 98, completed: 100 } });
+  vm.runInContext(fn('somaticProgressPercent'), context);
+  assert.equal(context.somaticProgressPercent({ status: 'running', step: 'mutect2' }), 15);
+  assert.equal(context.somaticProgressPercent({ status: 'running', step: 'annotation:vep' }), 72);
+  assert.equal(context.somaticProgressPercent({ status: 'completed', step: 'completed' }), 100);
+  assert.equal(context.somaticProgressPercent({ status: 'failed', step: 'publishing' }), 98);
+});

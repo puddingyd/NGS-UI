@@ -86,6 +86,18 @@ def settings() -> dict:
     for key in ("reference", "gene_regions", "vep_cache", "germline_resource", "clinvar_vcf"):
         if not cfg.get(key) or not Path(cfg[key]).exists():
             raise ValueError(f"Somatic 資源缺失：{key}")
+    # The standard tertiary pipeline's dbNSFP 4.9c + P-KNN database is the
+    # source of the core in-silico panel.  Infer the established deployment
+    # path so existing installations only need to override it when their
+    # reference layout differs.
+    cfg.setdefault(
+        "dbnsfp",
+        str(Path(cfg["reference"]).parent / "tertiary/dbnsfp/dbNSFP4.9c_with_pknn_grch38.gz"),
+    )
+    cfg.setdefault("dbnsfp_version", "4.9c")
+    for path in (Path(cfg["dbnsfp"]), Path(str(cfg["dbnsfp"]) + ".tbi")):
+        if not path.is_file():
+            raise ValueError(f"Somatic core predictor 資源缺失：{path}")
     if not cfg.get("clinvar_release") or not cfg.get("gene_regions_release") or not str(cfg.get("vep_cache_version", "")).isdigit():
         raise ValueError("必須設定 clinvar_release、gene_regions_release 與數字 vep_cache_version")
     for suffix in (".fai",):

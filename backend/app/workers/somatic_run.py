@@ -9,6 +9,7 @@ import csv
 import gzip
 import json
 import os
+import re
 import signal
 import sqlite3
 import subprocess
@@ -19,13 +20,56 @@ from urllib.parse import quote, unquote
 from pathlib import Path
 
 from .. import config
-from ..services import somatic as store, sample_layout
+from ..services import gpn_msa, somatic as store, sample_layout
 from ..services.snv_rows import is_reportable_raw_row
 from .dragen_run import _acquire_sample_locks, _release_sample_locks
 
 
 class Cancelled(Exception):
     pass
+
+
+CORE_DBNSFP_FIELDS = (
+    "BayesDel_noAF_score", "BayesDel_noAF_pred",
+    "AlphaMissense_score", "AlphaMissense_pred",
+    "ESM1b_score", "ESM1b_pred", "VARITY_R_score",
+    "SIFT_score", "SIFT_pred", "DANN_score", "PHACTboost_score",
+    "phyloP100way_vertebrate", "GERP++_RS", "PKNN_LLR",
+)
+
+
+def _vep_value(tx: dict, *names: str) -> str:
+    """Read VEP JSON plugin keys across harmless case/punctuation variants."""
+    normalized = {re.sub(r"[^a-z0-9]", "", str(key).lower()): value for key, value in tx.items()}
+    for name in names:
+        value = tx.get(name)
+        if value in (None, "", "."):
+            value = normalized.get(re.sub(r"[^a-z0-9]", "", name.lower()))
+        if value not in (None, "", "."):
+            if isinstance(value, list):
+                return "&".join(map(str, value))
+            return str(value)
+    return ""
+
+
+def pknn_evidence(value: str) -> str:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if score >= 4:
+        return "PP3_Strong"
+    if score >= 2:
+        return "PP3_Moderate"
+    if score >= 1:
+        return "PP3_Supporting"
+    if score <= -4:
+        return "BP4_Strong"
+    if score <= -2:
+        return "BP4_Moderate"
+    if score <= -1:
+        return "BP4_Supporting"
+    return ""
 
 
 def in_targets(chrom: str, pos: int, ref: str, intervals: list) -> bool:
@@ -135,6 +179,7 @@ def vep_rows(path: Path) -> list[dict]:
             if afs:
                 base["GNOMAD_G_AF"] = str(max(afs))
             for tx in obj.get("transcript_consequences") or [{}]:
+                pknn = _vep_value(tx, "PKNN_LLR")
                 rows.append(dict(base, GENE=tx.get("gene_symbol", ""), HGNC_ID=tx.get("hgnc_id", ""),
                                  TRANSCRIPT=tx.get("transcript_id", ""),
                                  TRANSCRIPT_TYPE="MANE_SELECT" if tx.get("mane_select") else "",
@@ -146,7 +191,21 @@ def vep_rows(path: Path) -> list[dict]:
                                  MANE_STATUS="MANE_SELECT" if tx.get("mane_select") else "",
                                  CONSEQUENCE="&".join(tx.get("consequence_terms", [obj.get("most_severe_consequence", "")])),
                                  IMPACT=tx.get("impact", ""),
-                                 SIFT=tx.get("sift_score", ""), POLYPHEN=tx.get("polyphen_score", "")))
+                                 SIFT=_vep_value(tx, "SIFT_score", "sift_score"),
+                                 SIFT_PRED=_vep_value(tx, "SIFT_pred", "sift_prediction"),
+                                 POLYPHEN=tx.get("polyphen_score", ""),
+                                 BAYESDEL_NOAF=_vep_value(tx, "BayesDel_noAF_score"),
+                                 BAYESDEL_NOAF_PRED=_vep_value(tx, "BayesDel_noAF_pred"),
+                                 ALPHAMISSENSE=_vep_value(tx, "AlphaMissense_score"),
+                                 ALPHAMISSENSE_PRED=_vep_value(tx, "AlphaMissense_pred"),
+                                 ESM1B=_vep_value(tx, "ESM1b_score"),
+                                 ESM1B_PRED=_vep_value(tx, "ESM1b_pred"),
+                                 VARITY_R=_vep_value(tx, "VARITY_R_score"),
+                                 DANN=_vep_value(tx, "DANN_score"),
+                                 PHACTBOOST=_vep_value(tx, "PHACTboost_score"),
+                                 PHYLOP100=_vep_value(tx, "phyloP100way_vertebrate"),
+                                 GERP=_vep_value(tx, "GERP++_RS"),
+                                 PKNN_LLR=pknn, PKNN_EVIDENCE=pknn_evidence(pknn)))
     return rows
 
 
@@ -157,6 +216,21 @@ def write_rows(path: Path, rows: list[dict]) -> None:
         writer = csv.DictWriter(handle, fields, delimiter="\t", lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def predictor_summary(path: Path, *, dbnsfp: str, dbnsfp_version: str,
+                      gpn_status: dict | None = None) -> dict:
+    fields = ("PKNN_LLR", "ALPHAMISSENSE", "BAYESDEL_NOAF", "ESM1B", "VARITY_R",
+              "SIFT", "DANN", "PHACTBOOST", "PHYLOP100", "GERP", "GPN_MSA_SCORE")
+    counts = {field: 0 for field in fields}
+    rows = 0
+    with path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            rows += 1
+            for field in fields:
+                counts[field] += str(row.get(field) or "").strip() not in {"", ".", "NA"}
+    return {"dbnsfp": dbnsfp, "dbnsfp_version": dbnsfp_version, "rows": rows,
+            "populated_rows": counts, "gpn_msa": gpn_status or {}}
 
 
 class Worker:
@@ -232,7 +306,7 @@ class Worker:
                 raise ValueError(f"BAM 與 GRCh38 reference 不相容：{chrom}")
         self.job["bam_sample"] = next(iter(samples))
         self.job["resource_signatures"] = {key: store.signature(Path(cfg[key])) for key in
-            ("reference", "gene_regions", "germline_resource", "clinvar_vcf", "pon", "contamination_sites") if cfg.get(key)}
+            ("reference", "gene_regions", "germline_resource", "clinvar_vcf", "dbnsfp", "pon", "contamination_sites") if cfg.get(key)}
         target_bed = stage / "targets.bed"
         with target_bed.open("w") as handle:
             for chrom, start, end in self.job["targets"]["intervals"]:
@@ -263,14 +337,16 @@ class Worker:
         if cfg.get("pon"):
             cmd += ["--panel-of-normals", cfg["pon"]]
         self.run(cmd)
-        self.update("filtering")
+        self.update("filtering:orientation")
         orientation = stage / "orientation.tar.gz"
         self.run(gatk + ["LearnReadOrientationModel", "-I", stage / "f1r2.tar.gz", "-O", orientation])
         contamination_args = []
         warnings = []
         if cfg.get("contamination_sites"):
+            self.update("filtering:pileup")
             self.run(gatk + ["GetPileupSummaries", "-I", bam, "-V", cfg["contamination_sites"],
                              "-L", cfg["contamination_sites"], "-O", stage / "pileups.table"])
+            self.update("filtering:contamination")
             self.run(gatk + ["CalculateContamination", "-I", stage / "pileups.table",
                              "-O", stage / "contamination.table"])
             contamination_args = ["--contamination-table", stage / "contamination.table"]
@@ -279,6 +355,7 @@ class Worker:
         if not cfg.get("pon"):
             warnings.append("未設定相容的 panel of normals")
         filtered = stage / "filtered.vcf.gz"
+        self.update("filtering:mutect-calls")
         self.run(gatk + ["FilterMutectCalls", "-R", ref, "-V", raw_vcf,
                          "--stats", str(raw_vcf) + ".stats", "--ob-priors", orientation,
                          "-O", filtered] + contamination_args)
@@ -323,12 +400,14 @@ class Worker:
         germline.unlink()
         norm_germline.unlink()
         (stage / ".germline.sqlite").unlink()
-        self.update("annotation", counts=counts)
+        self.update("annotation:vep", counts=counts)
         annotation = stage / "annotations.tsv"
         if counts["new_candidates"]:
             self.run(vep + ["--offline", "--cache", "--dir_cache", cfg["vep_cache"], "--assembly", "GRCh38",
                             "--cache_version", str(cfg["vep_cache_version"]),
-                            "--fasta", ref, "--format", "vcf", "--json", "--everything", "--no_stats",
+                            "--fasta", ref, "--format", "vcf", "--json", "--everything", "--no_stats", "--safe",
+                            "--dir_plugins", "/opt/vep/Plugins", "--plugin",
+                            f'dbNSFP,{cfg["dbnsfp"]},{",".join(CORE_DBNSFP_FIELDS)}',
                             "--force_overwrite", "--input_file", stage / "novel.vcf",
                             "--output_file", stage / "vep.json"])
             rows = vep_rows(stage / "vep.json")
@@ -336,15 +415,25 @@ class Worker:
             if len(ids) != counts["new_candidates"]:
                 raise ValueError("VEP 未完整保留所有新增點位，拒絕發布")
             write_rows(annotation, rows)
+            self.update("annotation:clinvar", counts=counts)
             self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_clinvar.py",
                       "--tsv", annotation, "--clinvar", cfg["clinvar_vcf"]])
             if config.GENEBE_DB.is_file():
+                self.update("annotation:genebe", counts=counts)
                 self.run([sys.executable, config.REPO_ROOT / "scripts/annotate_acmg_genebe.py",
                           "--tsv", annotation, "--genebe-db", config.GENEBE_DB, "--skip-api", "--test-type", "WGS"])
             else:
                 warnings.append("GeneBe 本地資料庫不存在；ACMG 保留未分類")
         else:
             write_rows(annotation, [])
+        self.update("annotation:gpn-msa", counts=counts)
+        gpn_status = gpn_msa.annotate_review_tsv(annotation)
+        predictors = predictor_summary(
+            annotation,
+            dbnsfp=cfg["dbnsfp"],
+            dbnsfp_version=str(cfg.get("dbnsfp_version") or "4.9c"),
+            gpn_status=gpn_status,
+        )
         self.update("coverage")
         # Quality-filtered, non-overlapping read depth; no LOD claim is derived from it.
         depth_file = stage / "depth.tsv"
@@ -392,6 +481,7 @@ class Worker:
         record = {"run_id": self.run_id, "created": self.job["created"], "raw_signature": self.job["raw_signature"],
                   "bam_path": bam, "clinvar_release": cfg["clinvar_release"], "counts": counts}
         store.atomic_json(stage / "manifest.json", dict(self.job, warnings=warnings, coverage=coverage,
+                                                        predictor_summary=predictors,
                                                         config=cfg, clinvar_release=cfg["clinvar_release"]))
         self.update("publishing")
         target = store.result_dir(sid, self.run_id)
@@ -411,7 +501,8 @@ class Worker:
                     prior["archived"] = True
             data["runs"].append(record)
             store.atomic_json(store.index_path(sid), data)
-            self.update("completed", status="completed", counts=counts, warnings=warnings, coverage=coverage)
+            self.update("completed", status="completed", counts=counts, warnings=warnings,
+                        coverage=coverage, predictor_summary=predictors)
 
 
 def re_strip_chr(chrom: str) -> str:

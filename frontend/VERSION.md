@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.32.2 — 2026-09-28
+
+- Somatic modal 改用三級分析同款進度面板，顯示細分步驟、百分比、終止按鈕及預設收合的深色 Log；歷史 run 詳細資料會列出 predictor 實際有值的筆數。
+- Somatic VEP annotation 補接標準三級 dbNSFP 4.9c + P-KNN，提供 P-KNN、AlphaMissense、BayesDel、ESM1b、VARITY_R、SIFT、DANN、PHACTboost、PhyloP、GERP，並 best-effort 補 GPN-MSA。Research-only predictors 與 Pangolin 不會假造值。
+
 ### v9.32.1 — 2026-09-28
 
 - 修正 Somatic 基因區域預覽重複掃描 HGNC 名稱，造成平台首頁與個案載入變慢的問題；改用既有基因索引直接查找，維持名稱轉換與分析規則。
