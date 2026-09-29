@@ -142,10 +142,34 @@ def test_diagnosis_docx_merged_gene_list_includes_all_scope_names(monkeypatch):
     )
 
     paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+    assert paragraphs[5:7] == [
+        "     b. 族群資料庫: dbSNP (v150)、1000 Genomes (popfreq_max_20150413)、",
+        "                    gnomAD (v4.1 genome)",
+    ]
     assert paragraphs[-3:] == [
         "  4. 本次檢測基因包括:",
         "    Global developmental delay, 先天神經肌肉疾病:",
         "    AARS1, ABAT, DMD",
+    ]
+
+    population_first = doc.paragraphs[5]
+    population_second = doc.paragraphs[6]
+    assert population_first.text.startswith(" " * 5)
+    assert not population_first.text.startswith(" " * 6)
+    assert population_second.text.startswith(" " * 20)
+    assert not population_second.text.startswith(" " * 21)
+    assert 'xml:space="preserve"' in population_first._p.xml
+    assert 'xml:space="preserve"' in population_second._p.xml
+
+
+def test_health_docx_population_databases_use_same_two_line_format():
+    doc = Document()
+
+    docx_export._section_health_annotations(doc, set())
+
+    assert [paragraph.text for paragraph in doc.paragraphs][4:6] == [
+        "     b. 族群資料庫: dbSNP (v150)、1000 Genomes (popfreq_max_20150413)、",
+        "                    gnomAD (v4.1 genome)",
     ]
 
 
