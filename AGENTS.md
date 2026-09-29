@@ -20,7 +20,8 @@
 
 - 依使用者 2026-09-14 指示，**直接在遠端 default branch 開發，完成後可直接 push**，不再推到獨立的 `Codex/plan-ngs-ui-RQW8J` 分支，也不需另開 PR。
 - 本次以 `git ls-remote --symref origin HEAD` 確認 default branch 為 **`claude/plan-ngs-ui-RQW8J`**；不可假定名稱是 `main`。新的 session 先確認遠端 HEAD，若 default branch 已改名就跟隨其設定。
-- 先前 `Codex/plan-ngs-ui-RQW8J` 上的修改已合入 default branch（fast-forward 至 `0a0befb`）。dev 機（`n102968@server`，repo 在 `~/NGS_UI/NGS-UI`，remote 為 `git@github.com:puddingyd/NGS-UI.git`）亦應追蹤並拉取 default branch。
+- 先前 `Codex/plan-ngs-ui-RQW8J` 上的修改已合入 default branch（fast-forward 至 `0a0befb`）。dev 機（`n102968@server`，repo 在 `~/NGS_UI/NGS-UI`，remote 為 `git@github.com:puddingyd/NGS-UI.git`）亦應追蹤 default branch。
+- **部署由使用者本人執行。Codex 完成修改、測試、commit 與 push 後即停止；除非使用者在當次對話明確要求，否則不得 SSH 到 dev 機、不得在 dev 機執行 `git pull`、不得啟停或重啟任何後端程序／systemd 服務，也不得另行部署。** 使用者會自行在 dev 機執行 `git pull && sudo systemctl restart ngs-ui`。
 - push 失敗（網路）retry 最多 4 次 exponential backoff（2/4/8/16s）。不要建 PR 除非使用者明說。
 
 ---

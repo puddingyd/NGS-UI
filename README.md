@@ -8,7 +8,7 @@
 
 成大醫院基因醫學部的 NGS 三級分析判讀工具。次級 pipeline（Nextflow，跑在另一台 compute cluster）產出 per-sample 的註解 TSV，本平台讓 reviewer 載入個案、檢視 SNV/Indel + CNV/SV + Mitochondria + STR + PGx 變異、標記 causative / candidate / other、整理 ACMG SF / 遺傳癌症 v2.0 / 中風 / Carrier screening secondary findings、撰寫判讀意見，並匯出診斷報告或健檢報告 (docx)。另附一個獨立的「臨床表徵輸入 (HPO / gene panel)」工具掛在 `/phenotype/`。
 
-依 2026-09-14 開發約定，直接在遠端 default branch 工作並推送；目前 default branch 為 `claude/plan-ngs-ui-RQW8J`，先前報告修改已從 `Codex/plan-ngs-ui-RQW8J` 合入。後續以遠端 HEAD 為準，不假定為 `main`。
+依開發約定，直接在遠端 default branch 工作並推送；目前 default branch 為 `claude/plan-ngs-ui-RQW8J`，後續以遠端 HEAD 為準，不假定為 `main`。Codex 的工作範圍到修改、測試、commit 與 push 為止，不連入 dev 機部署或重啟服務；部署由使用者自行在 dev 機執行 `git pull && sudo systemctl restart ngs-ui`。
 
 - 後端：FastAPI + uvicorn（Python 3.10+）
 - 前端：原生 HTML/CSS/JS，**無 build step**（直接 serve `frontend/`）
