@@ -651,7 +651,7 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     man1 = _manual_for(report, "1")
     man2 = _manual_for(report, "2")
 
-    def _render_bucket(items: list[tuple[str, dict]], tier: str) -> None:
+    def _render_bucket(items: list[tuple[str, dict]], tier: str) -> bool:
         """Keep same-gene SNVs in one heading/table/narrative block."""
         snv_groups: dict[str, list[tuple[dict, dict]]] = {}
         other_items: list[tuple[str, dict]] = []
@@ -665,10 +665,15 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
             key = gene or f"__missing__:{variant.get('id', id(variant))}"
             snv_groups.setdefault(key, []).append((variant, variant_edits))
 
+        rendered = False
         for rows in snv_groups.values():
+            if rendered:
+                _blank(doc)
             _snv_gene_block(doc, rows, tier=tier)
-            _blank(doc)
+            rendered = True
         for kind, variant in other_items:
+            if rendered:
+                _blank(doc)
             _render_variant(
                 doc,
                 kind,
@@ -677,13 +682,41 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
                 edits=edits.get(variant.get("id", ""), {}),
                 is_wgs=is_wgs,
             )
+            rendered = True
+        return rendered
+
+    # When neither report category contains a finding, use the compact
+    # diagnostic-negative wording requested by the report template.  The
+    # active HPO/panel names describe the otherwise fixed 「非特定」套組.
+    if not (bucket1 or bucket2 or man1 or man2):
+        scope_names = _report_scope_names(sample)
+        scope = "非特定"
+        if scope_names:
+            scope += f" ({', '.join(scope_names)}) "
+        _add_paragraph(doc, f"    在{scope}檢驗套組中未找到已知致病性位點。")
+        _add_paragraph(doc, "    建議持續追蹤。")
+        _add_paragraph(doc, "  參考資料:")
+        _add_paragraph(
+            doc,
+            "    依據疾病資料庫中目前記載，本次檢測套組所涵蓋的基因，"
+            "未檢測到具有足夠疾病關連性的致病變異。",
+        )
+        _add_paragraph(
+            doc,
+            "    此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。",
+        )
+        _blank(doc)
+        return
 
     # — 第一類
     _add_paragraph(doc, "    第一類：與臨床症狀相關基因之已知致病性變異位點")
     if bucket1 or man1:
-        _render_bucket(bucket1, "1")
+        rendered = _render_bucket(bucket1, "1")
         for m in man1:
+            if rendered:
+                _blank(doc)
             _render_manual_variant(doc, m)
+            rendered = True
     else:
         _add_paragraph(doc, _summary_line())
     _blank(doc)
@@ -691,9 +724,12 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     # — 第二類
     _add_paragraph(doc, "    第二類：其他變異位點")
     if bucket2 or man2:
-        _render_bucket(bucket2, "2")
+        rendered = _render_bucket(bucket2, "2")
         for m in man2:
+            if rendered:
+                _blank(doc)
             _render_manual_variant(doc, m)
+            rendered = True
     else:
         _add_paragraph(doc, "    未找到其他變異位點。")
     _blank(doc)
@@ -721,7 +757,6 @@ def _render_variant(doc, kind: str, v: dict, *, tier: str, edits: dict,
         _mito_variant_block(doc, v, tier=tier, edits=edits)
     else:  # cnv / sv share the same template
         _cnv_variant_block(doc, v, tier=tier, is_wgs=is_wgs, edits=edits)
-    _blank(doc)
 
 
 def _variant_reference_text(kind: str, v: dict, *, edits: dict,
@@ -745,7 +780,6 @@ def _render_manual_variant(doc, m: dict) -> None:
         _add_paragraph(doc, f"    {m['disease']}")
     if m.get("comment"):
         _add_paragraph(doc, f"    {m['comment']}")
-    _blank(doc)
 
 
 # ── Subsections: per variant type ─────────────────────────────────
@@ -1516,7 +1550,7 @@ def _section_annotations(doc, sample: dict, gene_list_mode: str) -> None:
     _add_paragraph(doc, f"     a. 疾病資料庫: OMIM、ClinVar ({CLINVAR_DATE})")
     _add_paragraph(doc, "     b. 族群資料庫: gnomAD (v4.1 genome)")
     _add_paragraph(doc, "     c. 序列資料庫: RefSeqGene (105.20220307)")
-    _add_paragraph(doc, "  4. 本次檢測基因包括")
+    _add_paragraph(doc, "  4. 本次檢測基因包括:")
     _render_gene_list(doc, sample, gene_list_mode)
 
 
@@ -1539,6 +1573,42 @@ def _gene_list_label(gene: str, test_type: str) -> str:
     return gene
 
 
+def _report_scope_names(sample: dict) -> list[str]:
+    """Return ordered HPO names and prefix-free panel display names."""
+    names: list[str] = []
+    for row in sample.get("patient_phenotype") or []:
+        phenotype_id = row.get("phenotype") or ""
+        if phenotype_id:
+            names.append(row.get("label") or _hpo_label_for(phenotype_id))
+    for entry in sample.get("selected_panels") or []:
+        panel_name = entry.get("name") if isinstance(entry, dict) else str(entry)
+        if panel_name:
+            names.append(phenotype_scorer.panel_output_name(panel_name))
+    return names
+
+
+def _report_scope_sections(sample: dict) -> list[tuple[str, list[str]]]:
+    """Return ordered HPO/panel display names and their reportable genes."""
+    hpo_rows: list = sample.get("patient_phenotype") or []
+    panel_entries: list = sample.get("selected_panels") or []
+    sections: list[tuple[str, list[str]]] = []
+    for row in hpo_rows:
+        hid = row.get("phenotype") or ""
+        label = row.get("label") or _hpo_label_for(hid)
+        if not hid:
+            continue
+        sections.append((label, _genes_for_term_or_panel(hid)))
+    for entry in panel_entries:
+        panel_name = entry.get("name") if isinstance(entry, dict) else str(entry)
+        if not panel_name:
+            continue
+        sections.append((
+            phenotype_scorer.panel_output_name(panel_name),
+            _genes_for_term_or_panel(panel_name),
+        ))
+    return sections
+
+
 def _add_dead_zone_gene_list_note(doc, threshold: int) -> None:
     _blank(doc)
     _add_paragraph(doc, f"註：括號中標示之 exon 為 cohort dead-zone，代表該 exon coverage 低於本檢測判讀門檻（<{threshold}X）。")
@@ -1548,26 +1618,9 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
     """mode = 'grouped' → one paragraph per HPO term / panel,
        mode = 'merged'  → single deduped list.
     """
-    hpo_rows: list = sample.get("patient_phenotype") or []
-    # selected_panels is a list of {name, weight} dicts (see
-    # phenotype_io.parse) — pull the name field.
-    panel_entries: list = sample.get("selected_panels") or []
     test_type = ((sample.get("meta") or {}).get("Test") or "WES").upper()
     include_docx_dead_zone = False
-
-    # Build [(display_name, [genes...])] preserving order.
-    sections: list[tuple[str, list[str]]] = []
-    for r in hpo_rows:
-        hid = r.get("phenotype") or ""
-        label = r.get("label") or _hpo_label_for(hid)
-        if not hid: continue
-        genes = _genes_for_term_or_panel(hid)
-        sections.append((label, genes))
-    for entry in panel_entries:
-        pname = entry.get("name") if isinstance(entry, dict) else str(entry)
-        if not pname: continue
-        genes = _genes_for_term_or_panel(pname)
-        sections.append((phenotype_scorer.panel_output_name(pname), genes))
+    sections = _report_scope_sections(sample)
 
     if not sections:
         _add_paragraph(doc, "    （未設定 HPO / panel — 無檢測基因清單）")
@@ -1577,8 +1630,9 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
         merged: set[str] = set()
         for _, gs in sections:
             merged |= set(gs)
+        _add_paragraph(doc, f"    {', '.join(name for name, _ in sections)}:")
         gene_str = ", ".join(_gene_list_label(g, test_type) for g in sorted(merged))
-        _add_paragraph(doc, gene_str)
+        _add_paragraph(doc, f"    {gene_str}" if gene_str else "    （無對應基因）")
         if include_docx_dead_zone:
             _add_dead_zone_gene_list_note(doc, threshold)
         return
@@ -1587,11 +1641,13 @@ def _render_gene_list(doc, sample: dict, mode: str) -> None:
     for idx, (name, gs) in enumerate(sections):
         if idx:
             _blank(doc)
-        _add_paragraph(doc, f"{name}:")
+        _add_paragraph(doc, f"    {name}:")
         if gs:
-            _add_paragraph(doc, ", ".join(_gene_list_label(g, test_type) for g in gs))
+            _add_paragraph(doc, "    " + ", ".join(
+                _gene_list_label(g, test_type) for g in gs
+            ))
         else:
-            _add_paragraph(doc, "（無對應基因）")
+            _add_paragraph(doc, "    （無對應基因）")
     if include_docx_dead_zone:
         _add_dead_zone_gene_list_note(doc, threshold)
 

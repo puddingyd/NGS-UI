@@ -299,6 +299,8 @@ SNV/Indel 卡片的 ESM1b 依 ClinGen SVI 校準區間上色；ESM1b 分數越�
 
 CNV/SV Phenotype 的 OMIM 疾病使用透明底與細分隔樣式，每個基因預設顯示前 2 筆；已知致病區域重疊每組預設顯示前 5 筆。超過上限時顯示帶剩餘數量的展開／收合按鈕，不影響疾病勾選與報告內容。
 
+診斷 DOCX 的 §五.4「本次檢測基因包括」以冒號結尾；選「合併去重」時先以四個半形空格縮排列出全部 HPO 與 panel 短名稱（panel 不帶 WES-I／WES-II／WGS 及科別前綴），下一行再以相同縮排列出合併去重後的 gene list。選「依 HPO/panel 分組」時，每組名稱與 gene list 也都固定縮排四格，組與組之間留一個空白行。綜合說明中若第一類有結果而第二類沒有，第一類列點後只留一個空白行再列第二類，第二類陰性句後再留一行接家族檢測建議；若第一、二類皆無結果，則不列兩個類別標題，改輸出「在非特定（全部 HPO／panel 短名稱）檢驗套組中未找到已知致病性位點」、持續追蹤建議及固定兩句參考說明。
+
 二級分析 FASTQ discovery index 由 `ngs-ui-secondary-index-update.timer` 每天台北時間 02:00 自動更新；人工「更新索引」、首次建立與 24 小時 stale fallback 保留，排程與 UI 共用 `secondary_analysis.refresh_index()`，並以跨程序 file lock 避免並行寫入。
 
 **WES 二級分析 QC summary（v9.15／腳本 v1.1.0）**：UI 產生的 DGX2 指令會先檢查 QC 執行環境，Nextflow 成功後在 DGX2 從 BAM 計算 QC，於 `<batch>/pipeline_info/report_summary.csv` 產生固定八欄摘要。Total reads ≥30M、Mapping ≥95%、On target ≥40%、Mean depth ≥50X、Uniformity ≥90%；Duplicated rate 僅列出。Mean depth／Uniformity 共用舊深度規則：MQ/BQ ≥0、排除 duplicate、paired overlap 各計一次、含 target 0X；target 沿用 pipeline 的 hg38 `params.wes_targets`。CSV 保留原八欄，不另存品質篩選後的參考深度；新版腳本會使舊方法快取自動失效，補算時更新原報表。需先將 repository 的 `scripts/secondary_qc_report.py` 上傳到 DGX2 `${PIPELINE_CODE}/scripts/secondary_qc_report.py`，再更新 UI 並重新產生指令。樣本未達標為 FAIL，計算失敗為 ERROR；`DONE` 不代表全批樣本 QC 通過。WGS 保留原流程。部署、完整定義與舊批次補算見 [WES QC summary](docs/ops/SECONDARY_QC_REPORT.md)。

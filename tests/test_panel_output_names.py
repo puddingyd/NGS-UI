@@ -105,6 +105,85 @@ def test_diagnosis_docx_gene_list_uses_panel_output_name(monkeypatch):
     )
 
     assert [paragraph.text for paragraph in doc.paragraphs] == [
-        "遺傳癌症 v2.0:",
-        "BRCA1",
+        "    遺傳癌症 v2.0:",
+        "    BRCA1",
+    ]
+
+
+def test_diagnosis_docx_merged_gene_list_includes_all_scope_names(monkeypatch):
+    gene_map = {
+        "HP:0001263": ["AARS1", "ABAT"],
+        "WES-I__兒科__先天神經肌肉疾病": ["ABAT", "DMD"],
+    }
+    monkeypatch.setattr(
+        docx_export,
+        "_genes_for_term_or_panel",
+        lambda key: gene_map[key],
+    )
+    monkeypatch.setattr(
+        phenotype_scorer,
+        "panel_output_name",
+        lambda name: "先天神經肌肉疾病",
+    )
+    doc = Document()
+    docx_export._section_annotations(
+        doc,
+        {
+            "patient_phenotype": [{
+                "phenotype": "HP:0001263",
+                "label": "Global developmental delay",
+            }],
+            "selected_panels": [{
+                "name": "WES-I__兒科__先天神經肌肉疾病",
+            }],
+            "meta": {"Test": "WES"},
+        },
+        "merged",
+    )
+
+    paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+    assert paragraphs[-3:] == [
+        "  4. 本次檢測基因包括:",
+        "    Global developmental delay, 先天神經肌肉疾病:",
+        "    AARS1, ABAT, DMD",
+    ]
+
+
+def test_diagnosis_docx_grouped_gene_list_indents_each_name_and_gene_list(monkeypatch):
+    gene_map = {
+        "HP:0002119": ["KIF11", "L1CAM"],
+        "WES-I__兒科__先天神經肌肉疾病": ["DMD"],
+    }
+    monkeypatch.setattr(
+        docx_export,
+        "_genes_for_term_or_panel",
+        lambda key: gene_map[key],
+    )
+    monkeypatch.setattr(
+        phenotype_scorer,
+        "panel_output_name",
+        lambda name: "先天神經肌肉疾病",
+    )
+    doc = Document()
+    docx_export._render_gene_list(
+        doc,
+        {
+            "patient_phenotype": [{
+                "phenotype": "HP:0002119",
+                "label": "Ventriculomegaly",
+            }],
+            "selected_panels": [{
+                "name": "WES-I__兒科__先天神經肌肉疾病",
+            }],
+            "meta": {"Test": "WES"},
+        },
+        "grouped",
+    )
+
+    assert [paragraph.text for paragraph in doc.paragraphs] == [
+        "    Ventriculomegaly:",
+        "    KIF11, L1CAM",
+        "",
+        "    先天神經肌肉疾病:",
+        "    DMD",
     ]

@@ -59,6 +59,18 @@ def test_diagnosis_groups_same_gene_snvs_and_combines_acmg_wording():
     assert text.count("GJB2為Deafness, autosomal recessive 1A的致病基因之一") == 1
     assert "此為致病性及疑似致病性之變異位點，與臨床症狀相關。" in text
 
+    paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+    patho_index = paragraphs.index(
+        "    2. 此為致病性及疑似致病性之變異位點，與臨床症狀相關。"
+    )
+    assert paragraphs[patho_index + 1:patho_index + 5] == [
+        "",
+        "    第二類：其他變異位點",
+        "    未找到其他變異位點。",
+        "",
+    ]
+    assert paragraphs[patho_index + 5].startswith("    建議比對臨床表徵")
+
 
 def test_diagnosis_joins_all_checked_snv_diseases_and_mim_numbers():
     doc = Document()
@@ -108,19 +120,37 @@ def test_diagnosis_without_snv_disease_ticks_keeps_first_slot_fallback():
     assert "Disease B" not in docx_export._omim_block_for_snv(variant, {})
 
 
-def test_diagnosis_empty_first_category_uses_reviewed_wording():
+def test_diagnosis_without_first_or_second_category_uses_compact_negative_summary():
     doc = Document()
 
     docx_export._section_results(
         doc,
-        {"patient_phenotype": [{"label": "Developmental delay"}]},
+        {
+            "patient_phenotype": [
+                {"phenotype": "HP:0001263", "label": "Global developmental delay"},
+                {"phenotype": "HP:0002119", "label": "Ventriculomegaly"},
+            ],
+            "selected_panels": [{
+                "name": "WES-I__兒科__先天神經肌肉疾病",
+            }],
+        },
         {"status": {}, "edits": {}},
         "WES",
     )
 
-    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
-    assert "未找到與臨床症狀相關基因之已知致病性變異位點。" in text
-    assert "在非特定" not in text
+    paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+    assert paragraphs == [
+        "三、檢測結果",
+        "  檢體說明:",
+        "    檢體類別：血液",
+        "  綜合說明:",
+        "    在非特定 (Global developmental delay, Ventriculomegaly, 先天神經肌肉疾病) 檢驗套組中未找到已知致病性位點。",
+        "    建議持續追蹤。",
+        "  參考資料:",
+        "    依據疾病資料庫中目前記載，本次檢測套組所涵蓋的基因，未檢測到具有足夠疾病關連性的致病變異。",
+        "    此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。",
+        "",
+    ]
 
 
 def test_em_dash_uses_full_width_for_ascii_table_padding():
