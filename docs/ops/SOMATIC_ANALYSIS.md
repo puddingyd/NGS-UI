@@ -8,7 +8,7 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 
 完整 germline raw TSV 和 Mutect2 結果以相同 FASTA 做 bcftools normalization，再依 CHROM/POS/REF/ALT 排除既有 allele。比對不套 germline DP/VAF/BED/AF/主畫面篩選；`CALLERS=NONE`、reference rows 不算 germline ALT。同座標不同 ALT 保留。不能先從 calling interval 排除 germline 座標，以免漏掉不同 ALT。原始 Mutect2 VCF 保留稽核，送往 annotation 的 `novel.vcf` 已排除 germline 重複點位。
 
-原 germline 卡片不加 somatic 標籤，不覆寫 AD/DP/VAF。僅新增卡片顯示「Somatic pipeline」、Mutect2 read support、FILTER、品質資訊及人工驗證狀態，沿用 SNV tiers、reviewer 標記、comment、transcript、搜尋與報告。來源本身不提高 tier，也不自動進 secondary findings 或選入報告。
+原 germline 卡片不加 somatic 標籤，不覆寫 AD/DP/VAF。僅新增卡片顯示「Somatic pipeline」、Mutect2 read support、FILTER、品質資訊及 IGV 驗證；主畫面選項為未確認（黃）、通過（綠）、不通過（紅），候選 modal 不顯示此列。沿用 SNV tiers、reviewer 標記、comment、transcript、搜尋與報告。來源本身不提高 tier，也不自動進 secondary findings 或選入報告。
 
 「☑ Somatic」只在成功完成的 run（含零候選）後出現，預設勾選。它只控制新增卡片，不放寬 germline 的篩選。Somatic 候選不受既有 VAF、疾病基因、HPO/panel、MODIFIER、local-common 顯示限制；使用自己的 caller/filter 結果。PASS 預設納入，其他 FILTER 須在 modal 明確「加入判讀」，不改成 PASS。`AS_FilterStatus` 逐 allele 處理，避免 site PASS 掩蓋個別 ALT 的失敗。
 
@@ -50,7 +50,7 @@ BAM 只允許目前個案的 IGV resolver 找到且有 index 的檔案。卡片 
 3. LearnReadOrientationModel；選配 GetPileupSummaries/CalculateContamination；FilterMutectCalls。
 4. bcftools norm 拆 ALT/left-align；完整 germline 同法正規化後去重，結果依原始指定區域收錄。
 5. VEP offline JSON（固定 cache version、所有 transcript）載入三級 Research-only 的 dbNSFP 5.3a + P-KNN 與 SpliceAI，產生 P-KNN、AlphaMissense、BayesDel、ESM1b、VARITY_R、SIFT、DANN、PHACTboost、PhyloP、GERP、REVEL、MutPred2、VEST4、CADD 與 SpliceAI。dbNSFP 工具主要適用 missense SNV；intronic、UTR、frameshift 或一般 indel 本來就可能全部空白，run summary 會顯示候選類型與適用數，不把無適用變異誤報為失敗。
-6. 沿用三級 post-processing 的可重用步驟：固定與最新版 ClinVar、GeneBe、GIAB stratification、本院 AF、MANE RefSeq、LitVar2，以及 best-effort GPN-MSA。Somatic worker 和三級 worker 一樣載入 `NGS_UI_HOME/secrets.env`；不再強制 `--skip-api`。GeneBe 在唯一候選點位數 ≤ `NGS_UI_SOMATIC_GENEBE_API_FIRST_MAX`（預設 100）時先將全部具體 allele 交給 live API，未命中或 API 失敗的點位再依序查 local DB 與 API cache；超過門檻時維持三級大批次的 local DB → API cache → review-filtered live API。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay。Pangolin 需要獨立 inference，未在這個流程產生。
+6. 沿用三級 post-processing 的可重用步驟：固定與最新版 ClinVar、GeneBe、GIAB stratification、本院 AF、MANE RefSeq、LitVar2，以及 best-effort GPN-MSA。Somatic worker 和三級 worker 一樣載入 `NGS_UI_HOME/secrets.env`；不再強制 `--skip-api`。GeneBe 在唯一候選點位數 ≤ `NGS_UI_SOMATIC_GENEBE_API_FIRST_MAX`（預設 10,000）時先將全部具體 allele 交給 live API，未命中或 API 失敗的點位再依序查 local DB 與 API cache；超過門檻時維持三級大批次的 local DB → API cache → review-filtered live API。UI 共用 HPO/panel、OMIM/gene-disease、有效 ACMG overlay。Pangolin 需要獨立 inference，未在這個流程產生。
 7. Samtools depth（BQ/MQ ≥20、paired overlap 不重複）與指定座標覆蓋摘要。零候選仍完成，無 call 不表示排除變異，coverage 不是 validated LOD。
 8. 檢查 annotation 候選完整、input/resource 未變，複製至目的 filesystem 隱藏目錄後 rename，最後原子發布 index。
 
@@ -70,7 +70,7 @@ Legacy 個案的 index 由現有 state resolver 放在原 UI state 目錄。每 
 
 不同範圍可累積。已完成、失敗或取消的 run 可從歷史列按「刪除」，一次清除該 run 的結果、索引、工作狀態與 Log；執行中須先終止再刪除。相同 variant 使用較新有效 observation，不累加 DP/AD。Germline raw signature 改變後停止載入 stale somatic、提示重新分析；已標記點位因此缺失時阻擋診斷 DOCX，避免靜默漏報。若有人先從檔案系統刪除 `09_somatic/{run_id}`，平台會略過缺檔結果，個案仍可載入，Somatic modal 會提示刪除殘留紀錄後再執行。
 
-診斷 DOCX 對人工選取的 somatic-only 變異附來源、VAF、FILTER、驗證狀態、該次 ClinVar release；germline 報告不變。完整刪 pipeline 清除 somatic jobs/results，單純取消登錄保留結果。
+診斷 DOCX 對人工選取的 somatic-only 變異附來源、VAF、FILTER、IGV 驗證、該次 ClinVar release；germline 報告不變。完整刪 pipeline 清除 somatic jobs/results，單純取消登錄保留結果。
 
 ## 軟體驗證
 

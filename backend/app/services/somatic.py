@@ -522,7 +522,7 @@ def load_variants(sid: str, *, wanted: set[str] | None = None, genes: set[str] |
                          somatic_qc={key: row.get("SOMATIC_" + key, "") for key in
                                      ("TLOD", "MMQ", "MBQ", "MPOS", "F1R2", "F2R1")},
                          somatic_historical=bool(run.get("archived")),
-                         somatic_validation="未驗證", low_depth=(v.get("depth") or 0) < 10)
+                         somatic_validation="未確認", low_depth=(v.get("depth") or 0) < 10)
                 merge_snv_variant_row(current, v)
         # Latest observation wins without combining AD/DP from different runs.
         out.update(current)
@@ -553,7 +553,7 @@ def candidate_variants(sid: str, run_id: str) -> list[dict]:
                 somatic_bam=run.get("bam_path", ""),
                 somatic_qc={key: row.get("SOMATIC_" + key, "") for key in
                             ("TLOD", "MMQ", "MBQ", "MPOS", "F1R2", "F2R1")},
-                somatic_validation="未驗證",
+                somatic_validation="未確認",
                 low_depth=(variant.get("depth") or 0) < 10,
             )
             merge_snv_variant_row(current, variant)

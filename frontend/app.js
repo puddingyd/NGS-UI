@@ -4542,6 +4542,20 @@ function _syncVariantCheckboxes(selector, id, idx, checked, source = null) {
   });
 }
 
+function normalizeSomaticValidation(value) {
+  return ({ "未驗證": "未確認", "已驗證": "通過" })[String(value || "")] || String(value || "未確認");
+}
+
+function somaticValidationClass(value) {
+  return ({ "通過": "somatic-validation-pass", "不通過": "somatic-validation-fail" })[normalizeSomaticValidation(value)]
+    || "somatic-validation-unconfirmed";
+}
+
+function updateSomaticValidationStyle(select) {
+  select.classList.remove("somatic-validation-unconfirmed", "somatic-validation-pass", "somatic-validation-fail");
+  select.classList.add(somaticValidationClass(select.value));
+}
+
 function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const isPanel    = dropdownKind === "panel";
   const panelKey   = isPanel ? (opts.category || "") : "";
@@ -4603,6 +4617,9 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     v.clingen_vcep_class, v.clingen_vcep_score,
   );
   const editComment   = getEdit(id, "comment")             ?? "";
+  const somaticValidation = normalizeSomaticValidation(
+    getEdit(id, "somatic_validation") || v.somatic_validation,
+  );
 
   const latestClinvarDate = formatClinvarDate(state.data?.clinvar_latest_date);
   const clinvarExternalLink = _clinvarExternalLinkHtml(v);
@@ -4724,7 +4741,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       ${v.somatic_historical ? " · 先前分析保留的已標記點位" : ""}
       <span class="somatic-qc-metrics">品質：${Object.entries(v.somatic_qc || {}).map(([k, val]) => `${escapeHtml(k)} ${escapeHtml(val || "—")}`).join(" · ")}</span>
       <button type="button" class="btn btn-ghost somatic-run-detail" data-run="${escapeAttr(v.somatic_run_id)}">分析紀錄</button>
-      <label>驗證狀態 <select class="somatic-validation" data-id="${escapeAttr(id)}">${["未驗證", "已驗證", "未確認"].map(s => `<option ${s === (getEdit(id, "somatic_validation") || "未驗證") ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>` : ""}
+      <label class="somatic-validation-field">IGV 驗證 <select class="somatic-validation ${somaticValidationClass(somaticValidation)}" data-id="${escapeAttr(id)}">${["未確認", "通過", "不通過"].map(s => `<option ${s === somaticValidation ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>` : ""}
     <div class="comment-row">
       <label>Comment:
         <input class="variant-comment" data-id="${escapeAttr(id)}" type="text" value="${escapeAttr(editComment)}" />
@@ -8218,14 +8235,15 @@ function renderSomaticCandidates(data, runId) {
     const wrapper = document.createElement("section");
     wrapper.className = "somatic-candidate-item";
     wrapper.innerHTML = `<div class="somatic-candidate-action">
-      <strong>${entry.included ? "已納入主畫面" : `尚未納入 · FILTER ${escapeHtml(entry.variant?.somatic_filter || "—")}`}</strong>
-      ${entry.included ? "" : `<button type="button" class="btn btn-primary somatic-include" data-run="${escapeAttr(runId)}" data-vid="${escapeAttr(entry.id)}">加入判讀（保留 FILTER）</button>`}
+      <strong>${entry.included ? "已納入主畫面" : "尚未納入"}</strong>
+      ${entry.included ? "" : `<button type="button" class="btn btn-primary somatic-include" data-run="${escapeAttr(runId)}" data-vid="${escapeAttr(entry.id)}">加入判讀</button>`}
     </div>`;
     const card = renderVariantCard(entry.variant, entry.id, "candidate", { index: index + 1 });
     card.querySelector(".somatic-run-detail")?.remove();
+    card.querySelector(".somatic-validation-field")?.remove();
     if (!entry.included) {
       card.classList.add("somatic-candidate-preview");
-      card.querySelectorAll('.status-radio input, .variant-comment, .somatic-validation, .js-acmg-open').forEach(control => { control.disabled = true; });
+      card.querySelectorAll('.status-radio input, .variant-comment, .js-acmg-open').forEach(control => { control.disabled = true; });
     }
     wrapper.appendChild(card);
     list.appendChild(wrapper);
@@ -8245,7 +8263,10 @@ document.addEventListener("change", event => {
   const input = event.target.closest(".somatic-validation");
   if (!input) return;
   setEdit(input.dataset.id, "somatic_validation", input.value);
-  document.querySelectorAll(`.somatic-validation[data-id="${CSS.escape(input.dataset.id)}"]`).forEach(el => { el.value = input.value; });
+  document.querySelectorAll(`.somatic-validation[data-id="${CSS.escape(input.dataset.id)}"]`).forEach(el => {
+    el.value = input.value;
+    updateSomaticValidationStyle(el);
+  });
   scheduleAutoSave();
 });
 

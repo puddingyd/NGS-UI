@@ -85,9 +85,18 @@ test('Somatic modal uses concise coordinate labels and no standard-only predicto
 
 test('Somatic candidates use a separate card modal and refresh is automatic', () => {
   const html = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '../frontend/style.css'), 'utf8');
   assert.match(html, /id="somatic-candidates-modal"/);
   assert.match(source, /renderSomaticCandidates/);
   assert.match(source, /renderVariantCard\(entry\.variant, entry\.id/);
+  assert.match(source, /card\.querySelector\("\.somatic-validation-field"\)\?\.remove\(\)/);
+  assert.match(source, /IGV 驗證/);
+  assert.match(source, /\["未確認", "通過", "不通過"\]/);
+  assert.match(css, /\.somatic-validation-unconfirmed/);
+  assert.match(css, /\.somatic-validation-pass/);
+  assert.match(css, /\.somatic-validation-fail/);
+  assert.doesNotMatch(source, /尚未納入 · FILTER/);
+  assert.doesNotMatch(source, /加入判讀（保留 FILTER）/);
   assert.match(source, /顯示原始 Log/);
   assert.doesNotMatch(html, /id="somatic-refresh-btn"/);
   assert.doesNotMatch(source, /button\.id === "somatic-refresh-btn"/);

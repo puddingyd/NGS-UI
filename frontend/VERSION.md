@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v9.35 — 2026-09-29
+
+- Somatic GeneBe live API 優先門檻由 100 提高為 10,000 個候選點位。
+- 候選變異 modal 簡化為「尚未納入」與「加入判讀」，FILTER 細節留在卡片內，並移除該 modal 的 IGV 驗證選單。
+- 主畫面 Somatic 卡片改為「IGV 驗證」，提供未確認／通過／不通過，分別以黃／綠／紅色顯示；舊值自動對應到新名稱。
+
 ### v9.34 — 2026-09-29
 
 - Somatic GeneBe 小批次改為 live API 優先：100 個候選點位以下會先查詢所有具體 allele，未取得結果的點位再依序使用 local GeneBe DB 與 API cache。

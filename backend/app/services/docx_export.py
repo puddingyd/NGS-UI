@@ -1084,9 +1084,16 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
         if variant.get("somatic"):
             vaf = variant.get("alt_af")
             vaf_text = f"{float(vaf):.1%}" if vaf is not None else "—"
+            validation = {
+                "未驗證": "未確認",
+                "已驗證": "通過",
+            }.get(
+                variant_edits.get("somatic_validation") or "未確認",
+                variant_edits.get("somatic_validation") or "未確認",
+            )
             _add_paragraph(doc, f"    {variant.get('id', '')}：Somatic pipeline (Mutect2)，"
                            f"VAF {vaf_text}；FILTER {variant.get('somatic_filter', '')}；"
-                           f"驗證狀態：{variant_edits.get('somatic_validation') or '未驗證'}；"
+                           f"IGV 驗證：{validation}；"
                            f"ClinVar {variant.get('somatic_clinvar_release', '')}。")
 
     for index, disease_line in enumerate(disease_lines, start=1):

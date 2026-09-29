@@ -151,6 +151,7 @@ def test_candidate_modal_payload_contains_full_cards_and_selection_state(setup):
     assert candidates[1]["included"] is False
     assert candidates[1]["variant"]["somatic_filter"] == "weak_evidence"
     assert candidates[1]["variant"]["somatic"] is True
+    assert candidates[1]["variant"]["somatic_validation"] == "未確認"
     somatic.select_filtered(sid, run, "chr1-102-A-T")
     assert somatic.candidate_variants(sid, run)[1]["included"] is True
 
@@ -320,9 +321,10 @@ def test_report_source_and_vaf_for_somatic_only():
     doc = Document()
     variant = {"id": "chr1-101-A-T", "gene_symbol": "GENE1", "somatic": True, "alt_af": .03,
                "somatic_filter": "PASS", "somatic_clinvar_release": "2026-07-20"}
-    _snv_gene_block(doc, [(variant, {"somatic_validation": "已驗證"})], tier="1")
+    _snv_gene_block(doc, [(variant, {"somatic_validation": "通過"})], tier="1")
     text = "\n".join(p.text for p in doc.paragraphs)
-    assert "Somatic pipeline (Mutect2)" in text and "3.0%" in text and "已驗證" in text
+    assert "Somatic pipeline (Mutect2)" in text and "3.0%" in text
+    assert "IGV 驗證：通過" in text
     doc = Document()
     _snv_gene_block(doc, [(dict(variant, somatic=False), {})], tier="1")
     assert "Somatic pipeline" not in "\n".join(p.text for p in doc.paragraphs)
