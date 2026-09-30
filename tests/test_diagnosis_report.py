@@ -207,6 +207,125 @@ def test_single_gene_cnv_keeps_one_point_and_uses_combined_disease_text():
     assert "Phenotype MIM number" not in text
 
 
+def test_wes_single_gene_cnv_uses_exon_range_and_cnv_wording():
+    doc = Document()
+    variant = {
+        "id": "cnv1", "source": "cnv", "CHROM": "17", "POS": 50180000,
+        "END": 50200000, "sv_type": "DEL", "copy_number": 1,
+        "zygosity": "het", "acmg_class": 5,
+        "genes": [{
+            "gene": "COL1A1", "location": "txStart-intron28",
+            "exon_count": 51, "omim_id": "120150",
+            "omim_phenotype": "Osteogenesis imperfecta (166200)(AD)",
+            "omim_inheritance": "AD",
+        }],
+    }
+
+    docx_export._cnv_variant_block(
+        doc, variant, tier="1", is_wgs=False, edits={}
+    )
+
+    paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+    assert (
+        "    1. 此片段位於第 17 號染色體上 COL1A1 基因，"
+        "涵蓋 Exon 1 至 Exon 28 區域。"
+    ) in paragraphs
+    assert "    3. 此為致病性之變異，與臨床症狀相關。" in paragraphs
+    assert any("內含子(Intron)，則無法" in paragraph for paragraph in paragraphs)
+    assert all("內含子(Intron) ，" not in paragraph for paragraph in paragraphs)
+
+    reference = docx_export._cnv_reference_text(
+        variant, {}, docx_export._omim_genes(variant), "缺失", False
+    )
+    assert "COL1A1 基因之 Exon 1 至 Exon 28 區域" in reference
+    assert "評測此變異為「Pathogenic」" in reference
+    assert "評測此變異位點" not in reference
+
+
+def test_wes_single_gene_cnv_marks_breakpoint_exon_as_partial():
+    assert docx_export._wes_exon_span({
+        "location": "txStart-exon4", "exon_count": 10,
+    }) == "Exon 1 至部分 Exon 4 區域"
+    assert docx_export._wes_exon_span({
+        "location": "intron2-intron4", "exon_count": 10,
+    }) == "Exon 3 至 Exon 4 區域"
+    assert docx_export._wes_exon_span({
+        "location": "exon4-exon4", "exon_count": 10,
+    }) == "部分 Exon 4 區域"
+
+
+def test_wgs_single_gene_cnv_retains_location_wording():
+    doc = Document()
+    variant = {
+        "id": "cnv1", "source": "cnv", "CHROM": "17", "POS": 100,
+        "END": 200, "sv_type": "DEL", "copy_number": 1,
+        "zygosity": "het", "acmg_class": 5,
+        "genes": [{
+            "gene": "COL1A1", "location": "txStart-intron28",
+            "exon_count": 51, "omim_id": "120150",
+            "omim_phenotype": "Osteogenesis imperfecta (166200)(AD)",
+            "omim_inheritance": "AD",
+        }],
+    }
+
+    docx_export._cnv_variant_block(
+        doc, variant, tier="1", is_wgs=True, edits={}
+    )
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "COL1A1 基因之基因起始至 Intron 28 區域" in text
+    assert "涵蓋 Exon 1 至 Exon 28 區域" not in text
+
+
+def test_wes_multi_gene_cnv_retains_location_wording_with_one_omim_gene():
+    doc = Document()
+    variant = {
+        "id": "cnv1", "source": "cnv", "CHROM": "17", "POS": 100,
+        "END": 200, "sv_type": "DEL", "copy_number": 1,
+        "zygosity": "het", "acmg_class": 5, "gene_count": 2,
+        "genes": [{
+            "gene": "COL1A1", "location": "txStart-intron28",
+            "exon_count": 51, "omim_id": "120150",
+            "omim_phenotype": "Osteogenesis imperfecta (166200)(AD)",
+            "omim_inheritance": "AD",
+        }, {
+            "gene": "OTHER", "location": "txStart-txEnd", "omim_id": "",
+        }],
+    }
+
+    docx_export._cnv_variant_block(
+        doc, variant, tier="1", is_wgs=False, edits={}
+    )
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "COL1A1 基因之基因起始至 Intron 28 區域" in text
+    assert "涵蓋 Exon 1 至 Exon 28 區域" not in text
+
+
+def test_wes_single_gene_sv_retains_existing_location_and_site_wording():
+    doc = Document()
+    variant = {
+        "id": "sv1", "source": "sv", "CHROM": "17", "POS": 100,
+        "END": 200, "sv_type": "DEL", "copy_number": 1,
+        "zygosity": "het", "acmg_class": 5,
+        "genes": [{
+            "gene": "COL1A1", "location": "txStart-intron28",
+            "exon_count": 51, "omim_id": "120150",
+            "omim_phenotype": "Osteogenesis imperfecta (166200)(AD)",
+            "omim_inheritance": "AD",
+        }],
+    }
+
+    docx_export._cnv_variant_block(
+        doc, variant, tier="1", is_wgs=False, edits={}
+    )
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "COL1A1 基因之基因起始至 Intron 28 區域" in text
+    assert "此為致病性之變異位點，與臨床症狀相關。" in text
+    reference = docx_export._cnv_reference_text(
+        variant, {}, docx_export._omim_genes(variant), "缺失", False
+    )
+    assert "評測此變異位點為「Pathogenic」" in reference
+
+
 def test_single_overlap_disease_does_not_inherit_gene_omim_metadata():
     doc = Document()
     variant = {

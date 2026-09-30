@@ -6291,7 +6291,7 @@ function _renderCnvSvImpactReason(v, tier) {
     ? ` · HPO match ${Number(summary.hpo_score).toFixed(1)} / 100` : ""}</div>`;
 }
 
-function _cnvSvIdsForTier(tier, applyFilter = true) {
+function _cnvSvTierDisplayIds(tier) {
   const cats = tier.startsWith("CNV-")
     ? state.data?.cnv_categories
     : state.data?.sv_categories;
@@ -6312,6 +6312,19 @@ function _cnvSvIdsForTier(tier, applyFilter = true) {
     if (replacements.has(id)) out.push(replacements.get(id));
     if (!suppressed.has(id)) out.push(id);
   });
+  return out;
+}
+
+function _cnvSvIdsForTier(tier, applyFilter = true) {
+  let out = _cnvSvTierDisplayIds(tier);
+  const clinicalTier = { "CNV-1B": "CNV-1A", "SV-2B": "SV-2A" }[tier];
+  if (clinicalTier) {
+    // Clinical is the primary display.  Keep backend tier membership intact,
+    // but do not render the same event again in the corresponding Pathogenic
+    // panel, even when an impact filter currently hides it in Clinical.
+    const clinicalIds = new Set(_cnvSvTierDisplayIds(clinicalTier));
+    out = out.filter(id => !clinicalIds.has(id));
+  }
   return out.filter(id => !applyFilter || _cnvSvPassesImpact(_cnvSvVariantById(id), tier))
     .sort((a, b) => _cnvSvCompareImpact(a, b, tier));
 }

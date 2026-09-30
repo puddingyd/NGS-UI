@@ -1304,6 +1304,99 @@ def _gene_loc_phrase(gname: str, loc_zh: str) -> str:
     return f"{gname} 基因{sep}{loc_zh}"
 
 
+def _wes_exon_span(g: dict) -> str:
+    """Convert one AnnotSV gene location into the affected WES exon range.
+
+    AnnotSV locations describe the two genomic breakpoints.  A breakpoint in
+    intron N leaves exon N on the left side of the interval and exon N+1 on
+    the right; a breakpoint within an exon means that exon is only partially
+    covered.  Return an empty string when the range cannot be stated without
+    guessing, so callers can retain the legacy location wording.
+    """
+    if not isinstance(g, dict):
+        return ""
+    loc = str(g.get("location") or "").strip()
+    parts = loc.split("-", 1)
+    if len(parts) != 2:
+        return ""
+
+    try:
+        exon_count = int(g.get("exon_count") or 0)
+    except (TypeError, ValueError):
+        exon_count = 0
+
+    def endpoint(raw: str, *, is_start: bool) -> tuple[int, bool] | None:
+        token = raw.strip()
+        if token == "txStart":
+            return (1, False) if is_start else None
+        if token == "txEnd":
+            return (exon_count, False) if exon_count > 0 and not is_start else None
+        match = re.fullmatch(r"exon(\d+)", token, re.IGNORECASE)
+        if match:
+            return int(match.group(1)), True
+        match = re.fullmatch(r"intron(\d+)", token, re.IGNORECASE)
+        if match:
+            intron_number = int(match.group(1))
+            return intron_number + 1 if is_start else intron_number, False
+        return None
+
+    start = endpoint(parts[0], is_start=True)
+    end = endpoint(parts[1], is_start=False)
+    if not start or not end or start[0] > end[0]:
+        return ""
+
+    start_number, start_partial = start
+    end_number, end_partial = end
+    if start_number == end_number:
+        partial = start_partial or end_partial
+        partial_prefix = "部分 " if partial else ""
+        return f"{partial_prefix}Exon {start_number} 區域"
+
+    start_prefix = "部分 " if start_partial else ""
+    end_prefix = "部分 " if end_partial else ""
+    start_text = f"{start_prefix}Exon {start_number}"
+    end_text = f"{end_prefix}Exon {end_number}"
+    separator = " 至" + (" " if not end_partial else "")
+    return f"{start_text}{separator}{end_text} 區域"
+
+
+def _cnv_patho_sentence(acmg_class: str) -> str:
+    """CNV result wording uses 「變異」 rather than 「變異位點」."""
+    return _patho_sentence(acmg_class).replace("變異位點", "變異")
+
+
+def _is_cnv_record(v: dict) -> bool:
+    """Older CNV payloads may omit source; explicit SV remains distinguishable."""
+    return str(v.get("source") or "cnv").strip().lower() != "sv"
+
+
+def _cnv_event_gene_count(v: dict) -> int:
+    """Return the event-wide gene count, including trimmed UI payloads."""
+    for key in ("genes_total", "gene_count"):
+        try:
+            count = int(v.get(key) or 0)
+        except (TypeError, ValueError):
+            count = 0
+        if count > 0:
+            return count
+
+    names = set()
+    for key in ("genes", "genes_overflow", "genes_compact"):
+        for gene in v.get(key) or []:
+            if isinstance(gene, dict):
+                name = str(gene.get("gene") or "").strip()
+            else:
+                name = str(gene or "").strip()
+            if name:
+                names.add(name)
+    names.update(
+        str(name).strip()
+        for name in (v.get("gene_list") or [])
+        if str(name).strip()
+    )
+    return len(names)
+
+
 def _omim_genes(v: dict) -> list[dict]:
     """Filter the variant's `genes` list to those carrying an OMIM_ID —
     the only ones worth surfacing in the diagnostic report."""
@@ -1391,7 +1484,16 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         g = omim_genes[0]
         gname = g.get("gene") or "?"
         loc_zh = _location_zh(g)
-        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {_gene_loc_phrase(gname, loc_zh)}。")
+        exon_span = (
+            _wes_exon_span(g)
+            if not is_wgs and _is_cnv_record(v) and _cnv_event_gene_count(v) == 1
+            else ""
+        )
+        if exon_span:
+            location_text = f"{gname} 基因，涵蓋 {exon_span}"
+        else:
+            location_text = _gene_loc_phrase(gname, loc_zh)
+        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {location_text}。")
         # 2. OMIM phenotype + inheritance, per-gene
         selected_items = []
         if disease_override:
@@ -1438,11 +1540,14 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
                             "未涵蓋 OMIM 疾病相關基因"
                             f"{disease_suffix}。")
 
-    _add_paragraph(doc, f"    {next_idx}. {_patho_sentence(acmg)}")
+    patho_sentence = (
+        _cnv_patho_sentence(acmg) if _is_cnv_record(v) else _patho_sentence(acmg)
+    )
+    _add_paragraph(doc, f"    {next_idx}. {patho_sentence}")
     next_idx += 1
     if not is_wgs:
         _add_paragraph(doc, f"    {next_idx}. 由於此檢驗技術為全外顯子定序，"
-                            "若缺失片段之斷點(Breakpoints)發生於內含子(Intron) ，"
+                            "若缺失片段之斷點(Breakpoints)發生於內含子(Intron)，"
                             "則無法明確判別起始及末端位置。")
 
 def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
@@ -1462,7 +1567,15 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
         g = omim_genes[0]
         gname = g.get("gene") or "?"
         loc_zh = _location_zh(g)
-        span_desc = f"此段{kind_zh}涵蓋 {_gene_loc_phrase(gname, loc_zh)}"
+        exon_span = (
+            _wes_exon_span(g)
+            if not is_wgs and _is_cnv_record(v) and _cnv_event_gene_count(v) == 1
+            else ""
+        )
+        if exon_span:
+            span_desc = f"此段{kind_zh}涵蓋 {gname} 基因之 {exon_span}"
+        else:
+            span_desc = f"此段{kind_zh}涵蓋 {_gene_loc_phrase(gname, loc_zh)}"
     elif len(omim_genes) > 1:
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         span_desc = f"此段{kind_zh}涵蓋 {', '.join(names)} 等 OMIM 疾病基因"
@@ -1471,6 +1584,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
 
     disease = _cnv_report_disease(edits)
     disease_sent = f"此變異與「{disease}」相關。" if disease else ""
+    assessment_subject = "此變異" if _is_cnv_record(v) else "此變異位點"
     return (
         f"    在個案之檢體中，檢測到位於 {coords} {zyg_phrase}片段{kind_zh}變異，"
         f"{span_desc}。"
@@ -1478,7 +1592,8 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
         "根據美國醫學遺傳學暨基因體學學會 (American College of Medical "
         "Genetics and Genomics) 與分子病理學學會 (Association for Molecular "
         "Pathology) 於2015年發表之準則，並參照ClinGen 及Riggs等人於 2020 年發布之"
-        f"拷貝數變異判讀專用ACMG/ClinGen技術標準進行評估，評測此變異位點為「{acmg}」。"
+        f"拷貝數變異判讀專用ACMG/ClinGen技術標準進行評估，"
+        f"評測{assessment_subject}為「{acmg}」。"
         "此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。"
     )
 

@@ -59,6 +59,34 @@ test('Clinical uses matched genes; Pathogenic uses every involved gene', () => {
   assert.equal(c._cnvSvPassesImpact(v, 'CNV-1B'), true);
 });
 
+test('Pathogenic panels omit events already present in the matching Clinical panel', () => {
+  const c = fixture();
+  c.state.data.cnv_variants.shared = variant('shared', 'noncoding');
+  c.state.data.cnv_variants.pathOnly = variant('pathOnly', 'functional', { POS: 1000000, END: 1000100 });
+  c.state.data.cnv_categories['CNV-1A'] = ['shared'];
+  c.state.data.cnv_categories['CNV-1B'] = ['shared', 'pathOnly'];
+  assert.deepEqual(Array.from(c._cnvSvIdsForTier('CNV-1B', false)), ['pathOnly']);
+  assert.deepEqual(Array.from(c._cnvSvIdsForTier('CNV-1B')), ['pathOnly']);
+
+  c.state.data.sv_variants.svShared = variant('svShared', 'functional', { source: 'sv' });
+  c.state.data.sv_variants.svPathOnly = variant('svPathOnly', 'functional', {
+    source: 'sv', POS: 1000000, END: 1000100,
+  });
+  c.state.data.sv_categories['SV-2A'] = ['svShared'];
+  c.state.data.sv_categories['SV-2B'] = ['svShared', 'svPathOnly'];
+  assert.deepEqual(Array.from(c._cnvSvIdsForTier('SV-2B', false)), ['svPathOnly']);
+});
+
+test('a merged event shown in Clinical is not repeated in Pathogenic', () => {
+  const c = fixture();
+  c.state.data.cnv_variants.a = variant('a', 'functional', { POS: 100, END: 200 });
+  c.state.data.cnv_variants.b = variant('b', 'functional', { POS: 250, END: 350, acmg_class: 5 });
+  c.state.data.cnv_categories['CNV-1A'] = ['a'];
+  c.state.data.cnv_categories['CNV-1B'] = ['b'];
+  assert.equal(c._cnvSvIdsForTier('CNV-1A', false).length, 1);
+  assert.deepEqual(Array.from(c._cnvSvIdsForTier('CNV-1B', false)), []);
+});
+
 test('all callers and WGS/WES receive the same display rules; no source eligibility changes', () => {
   const c = fixture();
   for (const caller of ['dragen', 'nckuh']) for (const testType of ['WGS', 'WES']) {
