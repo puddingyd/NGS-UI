@@ -4058,6 +4058,20 @@ async function printReportCards() {
     .print-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
     .print-title { margin: 0 0 14px; font-size: 24px; }
     .report-block { margin-bottom: 12px; }
+    .print-report-content .info-grid {
+      grid-template-columns: 0.9fr 1fr 1.2fr 1.5fr 0.8fr;
+      gap: 6px;
+    }
+    .print-report-content .info-grid > .in-silico-column {
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      min-width: 0;
+    }
+    .print-report-content .in-silico-column .k,
+    .print-report-content .in-silico-column .v {
+      min-width: 0;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
     .block-header, .block-body { display: block !important; }
     .block-header { pointer-events: none; }
     .block-header .arrow { display: none; }
@@ -4081,6 +4095,7 @@ async function printReportCards() {
         @bottom-right { content: counter(page); color: #57606a; font-size: 9px; }
       }
       .print-page { max-width: none; padding: 3mm 0 0; }
+      .print-report-content { zoom: 80%; }
       .print-toolbar { display: none; }
       .variant-card { box-shadow: none; }
     }
@@ -4090,7 +4105,7 @@ async function printReportCards() {
   <main class="print-page">
     <div class="print-toolbar"><button type="button" onclick="window.print()">列印 / 儲存 PDF</button></div>
     <h1 class="print-title">${escapeHtml(sid)} Report</h1>
-    ${sections}
+    <div class="print-report-content">${sections}</div>
     ${geneList}
   </main>
   <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>

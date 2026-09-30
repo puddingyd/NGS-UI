@@ -202,6 +202,22 @@ def test_print_report_keeps_litvar2_reference_text_when_links_are_removed():
     assert ".litvar2-references { white-space: normal; overflow-wrap: anywhere; }" in APP_JS
 
 
+def test_print_report_scales_cards_and_keeps_predictors_inside_their_column():
+    start = APP_JS.index("async function printReportCards()")
+    end = APP_JS.index("// Small inline modal asking", start)
+    print_report = APP_JS[start:end]
+
+    assert '<div class="print-report-content">${sections}</div>' in print_report
+    assert ".print-report-content { zoom: 80%; }" in print_report
+    assert "width: 125%" not in print_report
+    assert "grid-template-columns: 0.9fr 1fr 1.2fr 1.5fr 0.8fr;" in print_report
+    assert ".print-report-content .info-grid > .in-silico-column" in print_report
+    assert "grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);" in print_report
+    assert ".print-report-content .in-silico-column .k," in print_report
+    assert "white-space: normal;" in print_report
+    assert "overflow-wrap: anywhere;" in print_report
+
+
 def test_1000g_eas_is_the_fourth_af_row_and_stays_under_more():
     af_start = APP_JS.index('<span class="k">AF</span>')
     af_end = APP_JS.index('<button class="btn-more"', af_start)
