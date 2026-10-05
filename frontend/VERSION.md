@@ -8,7 +8,7 @@
 
 ### v9.40 — 2026-10-05
 
-- NCKUH 三級分析會依精確配對的 ploidy VCF 判定 XY，將 chrX 非 PAR 區域的 SNV/Indel `hom` 顯示為 `hemi`；PAR、XX／其他核型及男性 chrX het 人工複核標記不變。已完成的個案需重新執行三級分析才會更新衍生結果。
+- NCKUH 個案會依 ploidy VCF 的 XY 判定，將 chrX 非 PAR 區域 SNV/Indel 的 `hom` 顯示為 `hemi`；既有個案重新載入即可生效，不需重跑三級。PAR、XX／其他核型及男性 chrX het 人工複核標記維持原值。
 
 ### v9.39 — 2026-09-30
 

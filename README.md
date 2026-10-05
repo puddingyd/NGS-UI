@@ -317,7 +317,7 @@ Nextflow 的 `--out_dir` 指向 job-private `.staging/{job_id}/`，不直接覆�
 
 部署三級 v3.8 腳本後要注意 Nextflow cache：`add_callers_tag.py`、`parse_vep_csq.py` 的內容變更本身不一定會改 task hash。若共享 `-resume` lineage 仍回傳舊 81 欄 TSV，嚴格 staging 驗證會停止發布並提示 stale cache；請在沒有執行中 job 時，從三級分析清單執行一次「清理 Nextflow 暫存」後再送出。若 NCKUH 二級 ensemble 已重跑、輸入檔已改變，Nextflow 通常會自行重算，不需額外清理。
 
-NCKUH 二級 ensemble 若在男性 chrX 仍輸出 diploid `1/1`，三級 TSV 的 `ZYGOSITY` 會沿用 GT 寫成 `hom`。三級 post-processing 會從精確配對的 `03_alignment_qc/{source}.ploidy.vcf.gz` 讀取 `estimatedSexKaryotype`；只有明確 `XY` 時，才在暫存 working TSV 將 GRCh38 chrX 非 PAR（排除 PAR1/PAR2 及跨界 REF）的 `hom` 改為 `hemi`。差異存入 sparse overlay，review TSV、基因搜尋、卡片與報告均使用修正值；`03_acmg` 原始 TSV、GT 與 `HAPLOID_HET` 不改。缺少 ploidy VCF、非 XY 或 PAR 位置維持原值。舊個案須重新執行三級分析以重建衍生檔；此修正不要求重跑二級分析。
+NCKUH 二級 ensemble 若在男性 chrX 仍輸出 diploid `1/1`，三級 TSV 的 `ZYGOSITY` 會沿用 GT 寫成 `hom`。讀取卡片、Secondary findings、基因搜尋、個案摘要與報告時，會依已儲存的 NCKUH source marker 與 ploidy VCF `estimatedSexKaryotype=XY` 即時將 GRCh38 chrX 非 PAR（排除 PAR1/PAR2 及跨界 REF）的 `hom` 顯示為 `hemi`；重新載入個案即可生效，無需重跑三級。`03_acmg` 原始 TSV、08 overlay／review、GT 與 `HAPLOID_HET` 均不改。缺少 ploidy VCF、非 XY 或 PAR 位置維持原值。
 
 最新版 v3.8 的 DRAGEN compound 規則不改 TSV 欄位：只有 phase 已知且屬同一 phase set 的 het 才能合成；沒有 PS 但使用 phased `|` 的紀錄依 VCF 規格視為同一 set。重疊只有落在 indel 錨定鹼基時可合成，其餘缺失內 SNV、巢狀／互相重疊缺失、錨在缺失內的插入及 symbolic ALT 都由 pipeline 原樣保留；同一鹼基則先套 SNV 再套 indel。GUI 不依座標重做 compound，會保留 pipeline 輸出的各自 variant ID。DRAGEN 多等位拆分後的 `GT=0/0`／`ZYGOSITY=ref` 假列另在共用 raw-row eligibility 防禦性排除，和 `CALLERS=NONE` 一樣不進 review、index、search 或衍生 VCF。
 

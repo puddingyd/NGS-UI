@@ -60,6 +60,7 @@ from . import (
     snv_gene_index,
     snv_overlay,
     snv_review,
+    snv_zygosity,
     somatic,
     test_types,
 )
@@ -80,8 +81,8 @@ _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
 CASE_SUMMARY_CACHE_NAME = "case_summary.json"
 CASE_TABLE_CACHE_NAME = "_case_table.json"
-CASE_SUMMARY_VERSION = 2
-CASE_TABLE_VERSION = 3
+CASE_SUMMARY_VERSION = 3
+CASE_TABLE_VERSION = 4
 _case_table_lock = threading.Lock()
 
 
@@ -217,6 +218,8 @@ def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> 
         list(_file_signature(sample_layout.state_file(sample_id, "sample_metadata.json"))),
         list(_file_signature(sample_layout.snv_raw_tsv(sample_id))),
         list(_file_signature(sample_layout.snv_overlay_path(sample_id))),
+        list(_file_signature(sample_layout.state_file(sample_id, "ploidy.vcf.gz"))),
+        list(_file_signature(sample_layout.state_file(sample_id, "pipeline_source.json"))),
         list(_file_signature(sample_layout.clinvar_comparison_path(sample_id))),
         list(_file_signature(sample_layout.snv_gene_index_path(sample_id))),
         list(_file_signature(sample_layout.review_tsv(sample_id))),
@@ -668,6 +671,7 @@ def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, di
     for vid, variant in somatic.load_variants(sample_id, wanted=wanted).items():
         variants.setdefault(vid, variant)
     if variants:
+        snv_zygosity.normalize_loaded_variants(variants, sample_id)
         _enrich_snv_variants(variants, sample_id, sample_dir)
         meta = _read_json_or(
             sample_layout.state_file(sample_id, "sample_metadata.json"), {}
@@ -1987,6 +1991,7 @@ def load_sample_secondary_snv(
     all_variants = {
         variant_id: dict(variant) for variant_id, variant in all_variants.items()
     }
+    snv_zygosity.normalize_loaded_variants(all_variants, sample_id)
     roh.annotate_variants(all_variants, sample_id)
     tiers = {tier: list(ids) for tier, ids in tiers.items()}
     _apply_effective_acmg(
@@ -2166,6 +2171,7 @@ def load_sample(sample_id: str, version: str | None = None,
         if vid not in variants:
             variants[vid] = variant
             categories.setdefault(variant.get("tier", "2"), []).append(vid)
+    snv_zygosity.normalize_loaded_variants(variants, sample_id)
     _apply_effective_acmg(
         variants,
         categories,
@@ -2402,6 +2408,7 @@ def search_snv_by_genes(
         _enrich_snv_variants(additions, sample_id, sidecar_dir)
     for vid, variant in additions.items():
         matches.setdefault(vid, variant)
+    snv_zygosity.normalize_loaded_variants(matches, sample_id)
     _log_perf(
         "sample.snv_search",
         started,

@@ -1,10 +1,9 @@
-"""Correct NCKUH diploid chrX calls in the disposable SNV working TSV."""
+"""Normalize displayed NCKUH chrX zygosity from the saved ploidy VCF."""
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
+import json
 
-from .ploidy import read_karyotype
+from . import ploidy, sample_layout
 
 
 # GRCh38 pseudoautosomal intervals, 1-based and inclusive.
@@ -24,53 +23,45 @@ def _is_x_nonpar(chrom: str, pos: str, ref: str) -> bool:
     return not any(start <= par_end and end >= par_start for par_start, par_end in _X_PAR)
 
 
-def copy_nckuh_work_tsv(
-    raw_tsv: Path,
-    work_tsv: Path,
-    ploidy_vcf: Path | None,
-) -> int:
-    """Copy raw TSV, changing XY non-PAR chrX hom to hemi; return row count.
+def _nckuh_xy_sample(sample_id: str) -> bool:
+    ploidy_result = ploidy.load_sample_ploidy(sample_id)
+    if ploidy_result.get("karyotype") != "XY":
+        return False
+    source_path = sample_layout.state_file(sample_id, "pipeline_source.json")
+    try:
+        source = json.loads(source_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        source = {}
+    mode = (
+        str(source.get("pipeline_type") or "").strip().lower()
+        if isinstance(source, dict) else ""
+    )
+    if mode:
+        return mode in {"inhouse", "nckuh"}
+    kind = str(ploidy_result.get("pipeline_kind") or "").lower()
+    if kind in {"nckuh", "dragen"}:
+        return kind == "nckuh"
+    return sample_id.lower().endswith(("-nckuh", "-inhouse"))
 
-    The ploidy sidecar must be the exact source-sample match selected by the
-    tertiary worker. Unknown/aneuploid karyotypes leave the TSV untouched.
-    GT and HAPLOID_HET stay as recorded by the upstream callers.
-    """
-    raw_tsv = Path(raw_tsv)
-    work_tsv = Path(work_tsv)
-    if raw_tsv.resolve() == work_tsv.resolve():
-        raise ValueError("NCKUH SNV working TSV must differ from the immutable raw TSV")
-    if ploidy_vcf is None or read_karyotype(ploidy_vcf) != "XY":
-        shutil.copyfile(raw_tsv, work_tsv)
+
+def normalize_loaded_variants(variants: dict[str, dict], sample_id: str) -> int:
+    """Correct existing NCKUH cards/reports on read, without a tertiary rerun."""
+    if not variants or not _nckuh_xy_sample(sample_id):
         return 0
-
     corrected = 0
-    with raw_tsv.open("r", encoding="utf-8", newline="") as source, \
-            work_tsv.open("w", encoding="utf-8", newline="") as target:
-        header = source.readline()
-        target.write(header)
-        columns = header.rstrip("\r\n").split("\t")
-        required = ("CHROM", "POS", "REF", "ZYGOSITY", "HAPLOID_HET")
-        missing = [name for name in required if name not in columns]
-        if missing:
-            raise ValueError(f"NCKUH SNV TSV missing columns: {', '.join(missing)}")
-        indices = {name: columns.index(name) for name in required}
-        for line in source:
-            fields = line.rstrip("\r\n").split("\t")
-            if len(fields) != len(columns):
-                raise ValueError("NCKUH SNV TSV row has a different column count")
-            if (
-                fields[indices["ZYGOSITY"]].strip().lower() in {"hom", "homozygous"}
-                and fields[indices["HAPLOID_HET"]].strip() in {"", "."}
-                and _is_x_nonpar(
-                    fields[indices["CHROM"]],
-                    fields[indices["POS"]],
-                    fields[indices["REF"]],
-                )
-            ):
-                fields[indices["ZYGOSITY"]] = "hemi"
-                newline = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
-                target.write("\t".join(fields) + newline)
-                corrected += 1
-            else:
-                target.write(line)
+    for variant in variants.values():
+        if (
+            not variant.get("somatic")
+            and str(variant.get("zygosity") or "").strip().lower()
+            in {"hom", "homozygous"}
+            and not variant.get("haploid_het")
+            and not variant.get("haploid_het_callers")
+            and _is_x_nonpar(
+                str(variant.get("CHROM") or ""),
+                str(variant.get("POS") or ""),
+                str(variant.get("REF") or ""),
+            )
+        ):
+            variant["zygosity"] = "hemi"
+            corrected += 1
     return corrected

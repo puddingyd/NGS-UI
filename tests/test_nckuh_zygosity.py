@@ -1,66 +1,78 @@
 import gzip
+import json
 
 import pytest
 
-from app.services.snv_overlay import OverlayReader, build_overlay
-from app.services.snv_zygosity import copy_nckuh_work_tsv
+from app.services import sample_layout, snv_zygosity
 
 
-HEADER = "CHROM\tPOS\tREF\tALT\tGENE\tTRANSCRIPT\tHGVS_C\tHGVS_P\tCONSEQUENCE\tZYGOSITY\tGT_DV\tGT_HC\tHAPLOID_HET\n"
-
-
-def _row(chrom, pos, zygosity="hom", ref="A", flag="."):
-    return f"{chrom}\t{pos}\t{ref}\tG\tTEST\tENST1\tc.1A>G\tp.Lys1Arg\tmissense_variant\t{zygosity}\t1/1\t1/1\t{flag}\n"
-
-
-def _ploidy(path, karyotype):
+def _ploidy(path, karyotype, source=""):
     with gzip.open(path, "wt", encoding="utf-8") as handle:
-        handle.write(f"##estimatedSexKaryotype={karyotype}\n#CHROM\tPOS\n")
+        handle.write(f"##estimatedSexKaryotype={karyotype}\n")
+        if source:
+            handle.write(f"##source={source}\n")
+        handle.write("#CHROM\tPOS\n")
 
 
-def test_xy_nckuh_chr_x_nonpar_hom_is_hemi_in_overlay(tmp_path):
-    raw = tmp_path / "raw.tsv"
-    work = tmp_path / "work.tsv"
-    overlay_path = tmp_path / "overlay.sqlite"
-    ploidy = tmp_path / "ploidy.vcf.gz"
-    _ploidy(ploidy, "XY")
-    raw.write_text(
-        HEADER
-        + _row("chrX", 2_781_479)  # PAR1 endpoint
-        + _row("chrX", 2_781_480)
-        + _row("X", 60_000_000)
-        + _row("chrX", 155_701_383)  # PAR2 start
-        + _row("chrX", 155_701_382, ref="AT")  # REF overlaps PAR2
-        + _row("chr1", 60_000_000)
-        + _row("chrX", 60_000_001, zygosity="het")
-        + _row("chrX", 60_000_002, flag="DV"),
-        encoding="utf-8",
+def _setup_sample(tmp_path, monkeypatch, *, karyotype="XY", mode="inhouse"):
+    monkeypatch.setattr(
+        sample_layout, "state_file",
+        lambda _sample_id, name, **_kwargs: tmp_path / name,
+    )
+    _ploidy(tmp_path / "ploidy.vcf.gz", karyotype)
+    (tmp_path / "pipeline_source.json").write_text(
+        json.dumps({"pipeline_type": mode}), encoding="utf-8"
     )
 
-    assert copy_nckuh_work_tsv(raw, work, ploidy) == 2
-    assert raw.read_text(encoding="utf-8").count("\themi\t") == 0
-    rows = [line.split("\t") for line in work.read_text(encoding="utf-8").splitlines()[1:]]
-    assert [row[9] for row in rows] == ["hom", "hemi", "hemi", "hom", "hom", "hom", "het", "hom"]
-    assert rows[1][10:12] == ["1/1", "1/1"]
-    build_overlay(raw, work, overlay_path)
-    raw_rows = [
-        dict(zip(HEADER.strip().split("\t"), line.split("\t")))
-        for line in raw.read_text(encoding="utf-8").splitlines()[1:]
-    ]
-    with OverlayReader(raw, overlay_path) as overlay:
-        corrected = overlay.apply_many(raw_rows)
-    assert corrected[1]["ZYGOSITY"] == "hemi"
+
+def test_existing_nckuh_variants_are_corrected_on_read(tmp_path, monkeypatch):
+    _setup_sample(tmp_path, monkeypatch)
+    variants = {
+        "x": {"CHROM": "chrX", "POS": 60_000_000, "REF": "A", "zygosity": "hom"},
+        "x_alias": {"CHROM": "X", "POS": 60_000_001, "REF": "A", "zygosity": "Homozygous"},
+        "par1": {"CHROM": "chrX", "POS": 2_781_479, "REF": "A", "zygosity": "hom"},
+        "nonpar": {"CHROM": "chrX", "POS": 2_781_480, "REF": "A", "zygosity": "hom"},
+        "par2": {"CHROM": "chrX", "POS": 155_701_383, "REF": "A", "zygosity": "hom"},
+        "crosses_par2": {"CHROM": "chrX", "POS": 155_701_382, "REF": "AT", "zygosity": "hom"},
+        "flag": {"CHROM": "chrX", "POS": 60_000_002, "REF": "A", "zygosity": "hom", "haploid_het": True},
+        "somatic": {"CHROM": "chrX", "POS": 60_000_003, "REF": "A", "zygosity": "hom", "somatic": True},
+        "het": {"CHROM": "chrX", "POS": 60_000_004, "REF": "A", "zygosity": "het"},
+        "autosome": {"CHROM": "chr1", "POS": 60_000_000, "REF": "A", "zygosity": "hom"},
+    }
+
+    assert snv_zygosity.normalize_loaded_variants(variants, "S1-nckuh") == 3
+    assert {key for key, variant in variants.items() if variant["zygosity"] == "hemi"} == {
+        "x", "x_alias", "nonpar"
+    }
+    assert snv_zygosity.normalize_loaded_variants(variants, "S1-nckuh") == 0
 
 
 @pytest.mark.parametrize("karyotype", ["XX", "XXY", "X", ""])
-def test_non_xy_ploidy_does_not_reclassify(tmp_path, karyotype):
-    raw = tmp_path / "raw.tsv"
-    work = tmp_path / "work.tsv"
-    ploidy = tmp_path / "ploidy.vcf.gz"
-    raw.write_text(HEADER + _row("chrX", 60_000_000), encoding="utf-8")
-    _ploidy(ploidy, karyotype)
+def test_non_xy_ploidy_keeps_hom(tmp_path, monkeypatch, karyotype):
+    _setup_sample(tmp_path, monkeypatch, karyotype=karyotype)
+    variants = {"x": {"CHROM": "chrX", "POS": 60_000_000, "REF": "A", "zygosity": "hom"}}
 
-    assert copy_nckuh_work_tsv(raw, work, ploidy) == 0
-    assert work.read_bytes() == raw.read_bytes()
-    assert copy_nckuh_work_tsv(raw, work, None) == 0
-    assert work.read_bytes() == raw.read_bytes()
+    assert snv_zygosity.normalize_loaded_variants(variants, "S1-nckuh") == 0
+    assert variants["x"]["zygosity"] == "hom"
+
+
+def test_source_must_be_nckuh_and_saved_ploidy_must_exist(tmp_path, monkeypatch):
+    _setup_sample(tmp_path, monkeypatch, mode="dragen")
+    variants = {"x": {"CHROM": "chrX", "POS": 60_000_000, "REF": "A", "zygosity": "hom"}}
+    assert snv_zygosity.normalize_loaded_variants(variants, "S1-nckuh") == 0
+
+    (tmp_path / "pipeline_source.json").write_text(
+        json.dumps({"pipeline_type": "inhouse"}), encoding="utf-8"
+    )
+    (tmp_path / "ploidy.vcf.gz").unlink()
+    assert snv_zygosity.normalize_loaded_variants(variants, "S1-nckuh") == 0
+
+
+def test_nckuh_ploidy_source_supports_legacy_sample_without_sidecar(tmp_path, monkeypatch):
+    _setup_sample(tmp_path, monkeypatch)
+    (tmp_path / "pipeline_source.json").unlink()
+    _ploidy(tmp_path / "ploidy.vcf.gz", "XY", "NCKUH_PLOIDY_MOSDEPTH")
+    variants = {"x": {"CHROM": "chrX", "POS": 60_000_000, "REF": "A", "zygosity": "hom"}}
+
+    assert snv_zygosity.normalize_loaded_variants(variants, "S1") == 1
+    assert variants["x"]["zygosity"] == "hemi"
