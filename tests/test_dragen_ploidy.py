@@ -1,6 +1,11 @@
 import gzip
 
-from app.services.ploidy import load_sample_ploidy, read_karyotype
+from app.services.ploidy import (
+    build_autosomal_findings,
+    load_sample_ploidy,
+    read_karyotype,
+    stale_finding_ids,
+)
 from app.workers.dragen_run import (
     _copy_dragen_ploidy_vcf,
     _copy_ploidy_artifacts,
@@ -148,6 +153,9 @@ def test_dragen_pass_dup_is_an_aneuploidy_signal_and_ratio_is_derived(tmp_path):
     assert chr21["ratio_source"] == "derived"
     assert chrx["expected_ratio"] == 0.5
     assert chrx["observed_ratio"] == 0.5
+    findings = build_autosomal_findings(result)
+    assert len(findings) == 1
+    assert next(iter(findings.values()))["CHROM"] == "chr21"
 
 
 def test_dragen_lowqual_call_is_retained_but_lowqual_normal_is_qc_only(tmp_path):
@@ -183,3 +191,45 @@ def test_missing_karyotype_is_not_mislabeled_as_aneuploidy(tmp_path):
     assert result["exists"] is True
     assert result["karyotype"] == ""
     assert result["aneuploidy_suspected"] is False
+
+
+def test_nckuh_autosomal_signal_is_reviewable_without_fake_breakpoints(tmp_path):
+    path = tmp_path / "ploidy.vcf.gz"
+    def write(ndc: str):
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            handle.write(
+                "##source=NCKUH_PLOIDY_MOSDEPTH\n"
+                "##estimatedSexKaryotype=XY\n"
+                "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n"
+                "chr21\t1\t.\tN\t.\t.\tSUSPECT\tEND=46709983\tDC:NDC:RATIO\t40:"
+                f"{ndc}:1.346\n"
+                "chrX\t1\t.\tN\t.\t.\tSUSPECT\tEND=156040895\tDC:NDC\t20:1.4\n"
+                "chr20\t1\t.\tN\t.\t.\tPASS\tEND=64444167\tDC:NDC\t30:1.0\n"
+            )
+
+    write("1.346")
+    result = load_sample_ploidy(tmp_path)
+    findings = build_autosomal_findings(result)
+    assert len(findings) == 1
+    finding_id, finding = next(iter(findings.items()))
+    assert finding_id.startswith("PLOIDY-chr21-GAIN-")
+    assert finding["interpretation"] == "possible trisomy 21"
+    assert finding["NDC"] == 1.346
+    assert "POS" not in finding and "END" not in finding
+    assert stale_finding_ids({"status": {finding_id: "1"}}, findings) == []
+
+    write("1.400")
+    changed = build_autosomal_findings(load_sample_ploidy(tmp_path))
+    assert finding_id not in changed
+    assert stale_finding_ids({"status": {finding_id: "1"}}, changed) == [finding_id]
+
+
+def test_generic_nckuh_nonpass_qc_does_not_create_finding(tmp_path):
+    path = tmp_path / "ploidy.vcf.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(
+            "##source=NCKUH_PLOIDY_MOSDEPTH\n"
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n"
+            "chr21\t1\t.\tN\t.\t.\tLowQual\tEND=46709983\tDC:NDC\t40:1.346\n"
+        )
+    assert build_autosomal_findings(load_sample_ploidy(tmp_path)) == {}

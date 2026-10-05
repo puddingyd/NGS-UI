@@ -48,6 +48,8 @@ def get_report_docx(sample_id: str, gene_list_mode: str = "grouped"):
         )
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
     # Archive: NGS_UI/report/{SID}_diagnosis_{YYYYMMDDTHHMMSSZ}.docx —
     # reviewers can audit/redownload past renders without re-clicking

@@ -6,11 +6,11 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8');
 function fixture(render = false) {
   const state = { currentLIS: 'sample', data: { sample_id: 'sample', cnv_variants: {}, sv_variants: {},
-    cnv_categories: {}, sv_categories: {} }, reports: { status: {}, edits: {} } };
+    cnv_categories: {}, sv_categories: {}, ploidy_findings: {} }, reports: { status: {}, edits: {} } };
   const element = () => ({ innerHTML: '', children: [], classList: { add() {}, toggle() {} },
     appendChild(child) { this.children.push(child); },
     addEventListener(event, callback) { this[event] = callback; } });
-  const panels = Object.fromEntries(['CNV-1A', 'CNV-1B', 'SV-2A', 'SV-2B'].map(tier => [tier, { ...element(), dataset: { tier } }]));
+  const panels = Object.fromEntries(['PLOIDY', 'CNV-1A', 'CNV-1B', 'SV-2A', 'SV-2B'].map(tier => [tier, { ...element(), dataset: { tier } }]));
   const bar = element();
   const document = { createElement: element,
     getElementById(id) { return id === 'cnv-sv-tab-bar' ? bar : { querySelectorAll() { return Object.values(panels); } }; },
@@ -207,4 +207,17 @@ test('actual four-panel rendering includes filters even when all events are hidd
     assert.equal(body.children.length, 1);
     assert.match(body.children[0].variantId, /-n$/);
   }
+});
+
+test('chromosome dosage tab shows active findings and flags obsolete review IDs', () => {
+  const c = fixture(true);
+  const id = 'PLOIDY-chr21-GAIN-current';
+  c.state.data.ploidy_findings[id] = { id, CHROM: 'chr21', dosage_call: 'gain' };
+  c.state.reports.status['PLOIDY-chr21-GAIN-old'] = '1';
+  c.renderPloidyFindingCard = (_variant, variantId) => ({ variantId });
+  c.renderCnvSvTabBar();
+  assert.match(c.bar.innerHTML, /染色體劑量訊號/);
+  assert.equal(c.panels.PLOIDY.children[0].children[1].variantId, id);
+  assert.deepEqual(Array.from(c._stalePloidyFindingIds()), ['PLOIDY-chr21-GAIN-old']);
+  assert.match(c.panels.PLOIDY.children[0].children[0].innerHTML, /清除舊標記/);
 });

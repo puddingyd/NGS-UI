@@ -1865,6 +1865,7 @@ function renderPloidySexStatus(reportedSex) {
   const ploidyLabel = document.getElementById("m-ploidy-call");
   const hasPloidy = !!ploidy.exists;
   const hasAneuploidy = hasPloidy && !!ploidy.aneuploidy_suspected;
+  const signalCount = (ploidy.abnormal_chromosomes || []).length;
   const matches = (
     (sex === "M" && ploidyCall === "XY") ||
     (sex === "F" && ploidyCall === "XX")
@@ -1873,7 +1874,9 @@ function renderPloidySexStatus(reportedSex) {
   sexControl?.classList.toggle("ploidy-match", hasPloidy && !hasAneuploidy && matches);
   sexControl?.classList.toggle("ploidy-mismatch", hasPloidy && !hasAneuploidy && !matches);
   if (ploidyLabel) {
-    ploidyLabel.textContent = hasPloidy ? `ploidy VCF: ${ploidyCall || "—"}` : "";
+    ploidyLabel.textContent = hasPloidy
+      ? `ploidy VCF: ${ploidyCall || "—"}${signalCount ? ` · ${signalCount} 條染色體劑量訊號` : ""}`
+      : "";
     ploidyLabel.hidden = !hasPloidy;
   }
 }
@@ -1890,15 +1893,15 @@ function ploidySexSummary(karyotype, reportedSex) {
   const call = String(karyotype || "").trim().toUpperCase();
   const sex = String(reportedSex || "").trim().toUpperCase();
   if (!sex || sex === "U") {
-    return { text: "病歷性別未輸入", cls: "ploidy-fact-alert" };
+    return { text: "病歷性別未輸入", cls: "ploidy-fact-warn" };
   }
   if ((sex === "M" && call === "XY") || (sex === "F" && call === "XX")) {
     return { text: "✓ 相符", cls: "ploidy-fact-pass" };
   }
   if (call && !["XX", "XY"].includes(call)) {
-    return { text: "需人工核對", cls: "ploidy-fact-warn" };
+    return { text: "需人工核對", cls: "ploidy-fact-alert" };
   }
-  return { text: "不符", cls: "ploidy-fact-alert" };
+  return { text: "不符，待核對", cls: "ploidy-fact-warn" };
 }
 
 function ploidyDosageSignal(row) {
@@ -3825,6 +3828,10 @@ async function handleLogin(ev) {
 // NGS_UI/report/ and also streams it back as a download.
 async function exportDiagnosticDocx() {
   if (!state.currentLIS) return;
+  if (_stalePloidyFindingIds().length) {
+    alert("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請在 CNV / SV 的染色體劑量訊號分頁清除舊標記並重新核對。");
+    return;
+  }
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sid = row?.sample_id || state.currentLIS;
 
@@ -4018,6 +4025,10 @@ async function printReportCards() {
   const sampleRow = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sampleId = sampleRow?.sample_id || state.currentLIS;
   let reportGeneList = {};
+  if (_stalePloidyFindingIds().length) {
+    alert("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請在 CNV / SV 的染色體劑量訊號分頁清除舊標記並重新核對。");
+    return;
+  }
   try {
     reportGeneList = await apiFetch(`/samples/${encodeURIComponent(sampleId)}/report-gene-list`) || {};
   } catch (e) {
@@ -4374,7 +4385,7 @@ function setStatus(id, val) {
       updateInPanelCount();
     }
   }
-  if (kind === "cnv" || kind === "sv") renderCnvSvTabBar();
+  if (kind === "cnv" || kind === "sv" || kind === "ploidy") renderCnvSvTabBar();
   _syncStatusRadios(id, "", val);
   updateSaveHint();
 }
@@ -5707,16 +5718,18 @@ const CANDIDATE_SECTION_DEFS = [
   })),
 ];
 
-// Look up a variant id across all four maps (SNV / Mito / CNV / SV)
+// Look up a variant id across the SNV, Mito, Ploidy, CNV and SV maps
 // so the Causative / Other report sections can render variants no
 // matter which card the reviewer flipped the status on. Returns
 // {v, kind} or {v: null, kind: null}.
 function lookupAnyVariant(id) {
   const d = state.data || {};
+  let v = (d.ploidy_findings || {})[id];
+  if (v) return { v, kind: "ploidy" };
   // Mito variants can share the same chrM-pos-ref-alt id with raw SNV
   // rows. Report sections must keep the mito-specific card and m.HGVS
   // display instead of accidentally resolving to the SNV transcript row.
-  let v = (d.mito_variants || {})[id];
+  v = (d.mito_variants || {})[id];
   if (v) return { v, kind: "mito" };
   v = (d.variants || {})[id];
   if (!v) v = (state.snvSearchVariants || {})[id];
@@ -5733,6 +5746,7 @@ function _annotSvSortScore(v) {
 
 function _reportVariantSortScore(id) {
   const { v, kind } = lookupAnyVariant(id);
+  if (kind === "ploidy") return 0;
   if (kind === "cnv" || kind === "sv") return _annotSvSortScore(v);
   const n = Number(v?.total_score);
   return Number.isFinite(n) ? n : -Infinity;
@@ -5741,7 +5755,7 @@ function _reportVariantSortScore(id) {
 function _reportVariantKindRank(id) {
   const kind = lookupAnyVariant(id).kind || "";
   if (kind === "snv") return 0;
-  if (kind === "cnv" || kind === "sv") return 1;
+  if (kind === "ploidy" || kind === "cnv" || kind === "sv") return 1;
   if (kind === "mito") return 2;
   return 3;
 }
@@ -5751,6 +5765,7 @@ function idsForReportSection(def) {
   const known = [
     ...Object.keys(d.variants      || {}),
     ...Object.keys(d.mito_variants || {}),
+    ...Object.keys(d.ploidy_findings || {}),
     ...Object.keys(d.cnv_variants  || {}),
     ...Object.keys(d.sv_variants   || {}),
   ];
@@ -5772,7 +5787,8 @@ function idsForReportSection(def) {
     // scored siblings get pulled up directly behind it instead of
     // scattering down the list. Manual entries (no gene_symbol)
     // stay put as singleton clusters.
-    const sorted = all.filter(def.match).sort((a, b) => {
+    const sorted = all.filter(id => !id.startsWith("PLOIDY-") || !!d.ploidy_findings?.[id])
+      .filter(def.match).sort((a, b) => {
       const rankDiff = _reportVariantKindRank(a) - _reportVariantKindRank(b);
       if (rankDiff) return rankDiff;
       return _reportVariantSortScore(b) - _reportVariantSortScore(a);
@@ -5901,6 +5917,8 @@ function renderBlock(def, ids, openKey, countIds = ids) {
       let card;
       if (v && kind === "mito") {
         card = renderMitoCard(v, id, opts);
+      } else if (v && kind === "ploidy") {
+        card = renderPloidyFindingCard(v, id, opts);
       } else if (v && (kind === "cnv" || kind === "sv")) {
         card = renderCnvSvCard(v, id, opts);
       } else {
@@ -6046,24 +6064,65 @@ function applyTierTabActive() {
   });
 }
 
-// CNV/SV tab bar: same tab UX as SNV, but the backend doesn't produce
-// these tiers yet so every panel renders an empty placeholder. The
-// structure stays so the next pipeline pass can drop variants in
-// without touching the UI.
-const CNV_SV_TIER_ORDER = ["CNV-1A", "CNV-1B", "SV-2A", "SV-2B"];
+// CNV/SV tabs include a dedicated ploidy signal view alongside the
+// AnnotSV clinical/pathogenic tiers.
+const CNV_SV_TIER_ORDER = ["PLOIDY", "CNV-1A", "CNV-1B", "SV-2A", "SV-2B"];
 const CNV_SV_TITLES = {
+  "PLOIDY": "染色體劑量訊號",
   "CNV-1A": "1A CNV Clinical",
   "CNV-1B": "1B CNV Pathogenic",
   "SV-2A":  "2A SV Clinical",
   "SV-2B":  "2B SV Pathogenic",
 };
 const CNV_SV_TIER_CLASS = {
+  "PLOIDY": "tier-ploidy",
   "CNV-1A": "tier-cnv",
   "CNV-1B": "tier-cnv",
   "SV-2A":  "tier-sv",
   "SV-2B":  "tier-sv",
 };
 let activeCnvSvTab = null;
+
+function _stalePloidyFindingIds() {
+  const active = state.data?.ploidy_findings || {};
+  return Object.entries(state.reports?.status || {})
+    .filter(([id, status]) => id.startsWith("PLOIDY-")
+      && _statusValues(status).some(value => ["1", "2", "C"].includes(value))
+      && !active[id])
+    .map(([id]) => id);
+}
+
+function renderPloidyFindingCard(v, id, opts = {}) {
+  const card = document.createElement("div");
+  card.className = "variant-card ploidy-finding-card";
+  card.dataset.id = id;
+  const chrom = String(v.CHROM || "");
+  const chromNumber = chrom.replace(/^chr/i, "");
+  const isGain = v.dosage_call === "gain";
+  const signal = isGain ? "增加" : "減少";
+  const referenceLength = ROH_GRCH38_CHROM_LENGTHS[chrom];
+  const referenceSpan = referenceLength
+    ? `GRCh38 參考染色體範圍：${chrom}:1–${_fmtPos(referenceLength)}（非實測斷點）`
+    : "未提供實測斷點";
+  const ratio = v.NDC != null ? `NDC ${fmtNum(v.NDC)}`
+    : v.observed_ratio != null ? `Ratio ${fmtNum(v.observed_ratio)}` : "深度比未提供";
+  const status = state.reports?.status?.[id] || "";
+  const comment = getEdit(id, "comment") || "";
+  card.innerHTML = `<div class="variant-head">
+    ${opts.index ? `<span class="card-idx">#${opts.index}</span>` : ""}
+    ${_renderStatusRadio(id, status, statusOptions("candidate"))}
+    <span class="cnv-sv-source-tag">Ploidy VCF</span>
+    <strong>${escapeHtml(chrom)} 染色體劑量${signal}訊號</strong>
+    <span class="ploidy-finding-interpretation">${escapeHtml(v.interpretation || `possible ${isGain ? "trisomy" : "monosomy"} ${chromNumber}`)}</span>
+  </div>
+  <div class="ploidy-finding-evidence">${escapeHtml(ratio)} ${isGain ? "↑" : "↓"} · ${escapeHtml(v.filter || "—")}${v.pipeline_source ? ` · ${escapeHtml(v.pipeline_source)}` : ""}</div>
+  <div class="ploidy-finding-reference">${escapeHtml(referenceSpan)}</div>
+  <div class="ploidy-finding-note">染色體深度摘要，並非具精確斷點的 CNV；疑似結果須另行確認。NDC 不代表確定的拷貝數或鑲嵌比例。</div>
+  <label class="ploidy-finding-comment-label">Comment
+    <textarea class="variant-comment" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(comment)}</textarea>
+  </label>`;
+  return card;
+}
 
 // Reads cnv_variants/sv_variants/cnv_categories/sv_categories from
 // state.data and dispatches each variant id to the right tier panel
@@ -6461,11 +6520,23 @@ function _effectiveCnvSvMerges() {
 function renderCnvSvTabBar() {
   const bar = document.getElementById("cnv-sv-tab-bar");
   if (!bar) return;
-  if (!CNV_SV_TIER_ORDER.includes(activeCnvSvTab)) activeCnvSvTab = null;
-  if (!activeCnvSvTab) activeCnvSvTab = "CNV-1A";
+  const ploidyIds = Object.keys(state.data?.ploidy_findings || {})
+    .sort((a, b) => Number((state.data.ploidy_findings[a].CHROM || "").replace("chr", ""))
+      - Number((state.data.ploidy_findings[b].CHROM || "").replace("chr", "")));
+  const stalePloidyIds = _stalePloidyFindingIds();
+  const hasPloidyTab = ploidyIds.length > 0 || stalePloidyIds.length > 0;
+  const visibleTiers = CNV_SV_TIER_ORDER.filter(t => t !== "PLOIDY" || hasPloidyTab);
+  if (!visibleTiers.includes(activeCnvSvTab)) activeCnvSvTab = null;
+  if (!activeCnvSvTab) activeCnvSvTab = hasPloidyTab ? "PLOIDY" : "CNV-1A";
 
-  bar.innerHTML = CNV_SV_TIER_ORDER.map(t => {
+  bar.innerHTML = visibleTiers.map(t => {
     const active = t === activeCnvSvTab ? " active" : "";
+    if (t === "PLOIDY") {
+      return `<button type="button" class="tier-tab tier-ploidy${active}" data-tier="PLOIDY">
+        <span class="tier-tab-title">${CNV_SV_TITLES.PLOIDY}</span>
+        <span class="tier-tab-count">${ploidyIds.length}</span>
+      </button>`;
+    }
     const ids = _cnvSvIdsForTier(t);
     const total = _cnvSvIdsForTier(t, false).length;
     const loading = t.startsWith("CNV-") ? !!state.cnvPending : !!state.svPending;
@@ -6482,6 +6553,24 @@ function renderCnvSvTabBar() {
   CNV_SV_TIER_ORDER.forEach(tier => {
     const panel = document.querySelector(`#cnv-sv-tab-panels .tier-panel[data-tier="${tier}"]`);
     if (!panel) return;
+    if (tier === "PLOIDY") {
+      panel.innerHTML = "";
+      if (!hasPloidyTab) return;
+      const body = document.createElement("div");
+      body.className = "block-body open";
+      if (stalePloidyIds.length) {
+        const warning = document.createElement("div");
+        warning.className = "ploidy-finding-stale";
+        warning.innerHTML = `先前標記的 ${stalePloidyIds.length} 筆染色體劑量訊號已與目前 ploidy VCF 不符；請清除舊標記並重新核對。
+          <button type="button" class="btn btn-ghost" id="clear-stale-ploidy">清除舊標記</button>`;
+        body.appendChild(warning);
+      }
+      ploidyIds.forEach((id, i) => body.appendChild(
+        renderPloidyFindingCard(state.data.ploidy_findings[id], id, { index: i + 1 })
+      ));
+      panel.appendChild(body);
+      return;
+    }
     const ids = _cnvSvIdsForTier(tier);
     const allIds = _cnvSvIdsForTier(tier, false);
     const loading = tier.startsWith("CNV-") ? !!state.cnvPending : !!state.svPending;
@@ -13186,4 +13275,15 @@ document.addEventListener("DOMContentLoaded", () => {
   try { setupSecondaryButton(); } catch (_e) {}
   try { setupDragenButton(); } catch (_e) {}
   try { setupPipelineList(); } catch (_e) {}
+});
+
+document.addEventListener("click", ev => {
+  if (!ev.target.closest("#clear-stale-ploidy")) return;
+  const staleIds = _stalePloidyFindingIds();
+  if (!staleIds.length) return;
+  staleIds.forEach(id => delete state.reports.status[id]);
+  state.dirty = true;
+  renderReportSections();
+  renderCnvSvTabBar();
+  updateSaveHint();
 });

@@ -81,8 +81,8 @@ _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
 CASE_SUMMARY_CACHE_NAME = "case_summary.json"
 CASE_TABLE_CACHE_NAME = "_case_table.json"
-CASE_SUMMARY_VERSION = 3
-CASE_TABLE_VERSION = 4
+CASE_SUMMARY_VERSION = 4
+CASE_TABLE_VERSION = 5
 _case_table_lock = threading.Lock()
 
 
@@ -859,6 +859,20 @@ def _case_management_summary(
     other: list[str] = []
     if wanted:
         omim_store.ensure_loaded()
+
+    ploidy_variants = ploidy.build_autosomal_findings(
+        ploidy.load_sample_ploidy(_sample_id_from_state_dir(sample_dir))
+    )
+    for vid in wanted.intersection(ploidy_variants):
+        variant = ploidy_variants[vid]
+        chrom = variant["CHROM"]
+        direction = variant["dosage_call"]
+        label = f"{chrom} {'gain' if direction == 'gain' else 'loss'} signal (possible {'trisomy' if direction == 'gain' else 'monosomy'} {chrom.removeprefix('chr')})"
+        if statuses.get(vid) == "1":
+            causative.append(label)
+        else:
+            other.append(label)
+    wanted.difference_update(ploidy_variants)
 
     mito_variants = _case_mito_variants_by_id(sample_dir, wanted)
     for vid, variant in mito_variants.items():
@@ -2234,6 +2248,7 @@ def load_sample(sample_id: str, version: str | None = None,
     qc = _read_json_or(sample_layout.state_file(sample_id, "qc_summary.json"), {}) or {}
     roh_summary = _read_json_or(sample_layout.state_file(sample_id, "roh_summary.json"), {}) or {}
     ploidy_result = ploidy.load_sample_ploidy(sample_id)
+    ploidy_findings = ploidy.build_autosomal_findings(ploidy_result)
     dead_zone_hits = panel_deadzone.dead_zone_for_genes(_test_type, set(pheno_by_gene.keys()))
     dead_zone_entries = []
     for gene, hit in dead_zone_hits.items():
@@ -2293,6 +2308,7 @@ def load_sample(sample_id: str, version: str | None = None,
         "roh_regions":       [],
         "roh_pending":       not include_aux,
         "ploidy":            ploidy_result,
+        "ploidy_findings":   ploidy_findings,
         "dead_zone": {
             "threshold": panel_deadzone.dead_zone_threshold(_test_type),
             "entries": dead_zone_entries,

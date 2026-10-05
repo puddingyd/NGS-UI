@@ -621,9 +621,10 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
         report.get("cnv_sv_merges") or [],
     )
     mito_vars = sample.get("mito_variants", {})  or {}
+    ploidy_vars = sample.get("ploidy_findings", {}) or {}
 
     # Group by reviewer status. Each entry is ("kind", variant_dict).
-    # Insertion order = (snv → mito → cnv → sv), so 第一類/第二類 list
+    # Insertion order = (snv → mito → ploidy → cnv → sv), so 第一類/第二類 list
     # SNVs first (the most common case in past reports). CNV/SV entries
     # are sorted inside their source by combined phenotype + AnnotSV score.
     def _ranked_items(src: dict, kind: str):
@@ -639,6 +640,7 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
         out: list[tuple[str, dict]] = []
         for src_kind, src in (("snv",  snv_vars),
                               ("mito", mito_vars),
+                              ("ploidy", ploidy_vars),
                               ("cnv",  cnv_vars),
                               ("sv",   sv_vars)):
             for vid, v in _ranked_items(src, src_kind):
@@ -709,7 +711,11 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
         return
 
     # — 第一類
-    _add_paragraph(doc, "    第一類：與臨床症狀相關基因之已知致病性變異位點")
+    bucket1_has_ploidy = any(kind == "ploidy" for kind, _ in bucket1)
+    bucket2_has_ploidy = any(kind == "ploidy" for kind, _ in bucket2)
+    has_ploidy = bucket1_has_ploidy or bucket2_has_ploidy
+    _add_paragraph(doc, "    第一類：與臨床症狀相關之變異或染色體劑量訊號"
+                   if bucket1_has_ploidy else "    第一類：與臨床症狀相關基因之已知致病性變異位點")
     if bucket1 or man1:
         rendered = _render_bucket(bucket1, "1")
         for m in man1:
@@ -722,7 +728,8 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     _blank(doc)
 
     # — 第二類
-    _add_paragraph(doc, "    第二類：其他變異位點")
+    _add_paragraph(doc, "    第二類：其他變異或染色體劑量訊號"
+                   if bucket2_has_ploidy else "    第二類：其他變異位點")
     if bucket2 or man2:
         rendered = _render_bucket(bucket2, "2")
         for m in man2:
@@ -735,9 +742,13 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     _blank(doc)
 
     # Footer recommendation (always shown)
-    _add_paragraph(doc, "    建議比對臨床表徵並進行父母親與家族成員之變異位點檢測，"
-                        "以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或"
-                        "相關資料庫更新，可能影響變異位點ACMG判讀結果。")
+    if has_ploidy:
+        _add_paragraph(doc, "    建議比對臨床表徵，並以適當的獨立檢驗確認染色體劑量訊號；"
+                            "其他變異則依其類型與臨床狀況安排後續檢測及判讀。")
+    else:
+        _add_paragraph(doc, "    建議比對臨床表徵並進行父母親與家族成員之變異位點檢測，"
+                            "以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或"
+                            "相關資料庫更新，可能影響變異位點ACMG判讀結果。")
     _blank(doc)
     referenced = bucket1 + bucket2
     if referenced:
@@ -755,6 +766,8 @@ def _render_variant(doc, kind: str, v: dict, *, tier: str, edits: dict,
         _snv_variant_block(doc, v, tier=tier, edits=edits)
     elif kind == "mito":
         _mito_variant_block(doc, v, tier=tier, edits=edits)
+    elif kind == "ploidy":
+        _ploidy_variant_block(doc, v)
     else:  # cnv / sv share the same template
         _cnv_variant_block(doc, v, tier=tier, is_wgs=is_wgs, edits=edits)
 
@@ -765,6 +778,8 @@ def _variant_reference_text(kind: str, v: dict, *, edits: dict,
         return _snv_reference_text(v, edits)
     if kind == "mito":
         return _mito_reference_text(v, edits)
+    if kind == "ploidy":
+        return _ploidy_reference_text(v)
     omim_genes = _omim_genes(v)
     report_genes = edits.get("report_genes") or {}
     if isinstance(report_genes, dict):
@@ -780,6 +795,37 @@ def _render_manual_variant(doc, m: dict) -> None:
         _add_paragraph(doc, f"    {m['disease']}")
     if m.get("comment"):
         _add_paragraph(doc, f"    {m['comment']}")
+
+
+def _ploidy_signal_label(v: dict) -> str:
+    chrom = str(v.get("CHROM") or "").removeprefix("chr")
+    return f"第 {chrom} 號染色體劑量{'增加' if v.get('dosage_call') == 'gain' else '減少'}訊號"
+
+
+def _ploidy_variant_block(doc, v: dict) -> None:
+    """Describe a chromosome-level signal without inventing CNV breakpoints."""
+    label = _ploidy_signal_label(v)
+    interpretation = str(v.get("interpretation") or "")
+    _add_paragraph(doc, f"    [GRCh38] {label}（{interpretation}）", bold=True)
+    evidence = []
+    if v.get("NDC") is not None:
+        evidence.append(f"NDC {v['NDC']}")
+    elif v.get("observed_ratio") is not None:
+        evidence.append(f"深度比 {v['observed_ratio']}")
+    if v.get("filter"):
+        evidence.append(f"FILTER {v['filter']}")
+    if v.get("pipeline_source"):
+        evidence.append(str(v["pipeline_source"]))
+    _add_paragraph(doc, f"    定序證據：{'；'.join(evidence) if evidence else '染色體深度異常'}。")
+    _add_paragraph(doc, "    此為疑似染色體劑量異常訊號，無法由此資料確定核型、鑲嵌比例或精確斷點；建議以適當的獨立檢驗確認。")
+
+
+def _ploidy_reference_text(v: dict) -> str:
+    return (
+        f"    {_ploidy_signal_label(v)}（{v.get('interpretation') or 'possible chromosome dosage abnormality'}）"
+        "來自 ploidy VCF 的染色體深度摘要，並非具精確斷點的 AnnotSV CNV；"
+        "判讀及後續處置應結合臨床資料與確認檢驗。"
+    )
 
 
 # ── Subsections: per variant type ─────────────────────────────────
@@ -3875,6 +3921,8 @@ def build_diagnosis_docx(sample_id: str, *, gene_list_mode: str = "grouped") -> 
 
     report = report_store.load(sample_id)
     meta   = sample.get("meta") or {}
+    if ploidy.stale_finding_ids(report, sample.get("ploidy_findings") or {}):
+        raise ValueError("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請清除舊標記並重新核對後再匯出報告")
     if (sample.get("somatic") or {}).get("review_missing_ids"):
         raise ValueError("部分已標記 Somatic 點位不在目前結果中，請重跑核對或重新選取後再匯出報告")
     test_type = meta.get("Test", "") or "WES"

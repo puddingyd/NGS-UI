@@ -72,6 +72,31 @@ def test_diagnosis_groups_same_gene_snvs_and_combines_acmg_wording():
     assert paragraphs[patho_index + 5].startswith("    建議比對臨床表徵")
 
 
+def test_ploidy_finding_report_uses_signal_wording_without_fake_cnv_coordinates():
+    doc = Document()
+    finding = {
+        "id": "PLOIDY-chr21-GAIN-test",
+        "CHROM": "chr21",
+        "dosage_call": "gain",
+        "interpretation": "possible trisomy 21",
+        "NDC": 1.346,
+        "filter": "SUSPECT",
+        "pipeline_source": "NCKUH_PLOIDY_MOSDEPTH",
+    }
+    docx_export._section_results(
+        doc,
+        {"ploidy_findings": {finding["id"]: finding}},
+        {"status": {finding["id"]: "1"}, "edits": {}},
+        "WES",
+    )
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "第 21 號染色體劑量增加訊號（possible trisomy 21）" in text
+    assert "NDC 1.346；FILTER SUSPECT" in text
+    assert "獨立檢驗確認" in text
+    assert "chr21:1-46709983" not in text
+    assert "拷貝數變異判讀專用ACMG" not in text
+
+
 def test_diagnosis_joins_all_checked_snv_diseases_and_mim_numbers():
     doc = Document()
     variant = _gjb2_variant(

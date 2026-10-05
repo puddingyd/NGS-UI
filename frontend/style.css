@@ -837,21 +837,21 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .m-sex-control.ploidy-mismatch {
   padding: 4px;
-  background: #ffebe9;
-  border: 1px solid #cf222e;
+  background: #fff8c5;
+  border: 1px solid #bf8700;
 }
 .m-sex-control.ploidy-mismatch .meta-select {
-  background: #fff5f5;
-  border-color: #cf222e;
+  background: #fffdf0;
+  border-color: #bf8700;
 }
 .m-sex-control.ploidy-aneuploid {
   padding: 4px;
-  background: #f3e8ff;
-  border: 1px solid #7e22ce;
+  background: #ffebe9;
+  border: 1px solid #cf222e;
 }
 .m-sex-control.ploidy-aneuploid .meta-select {
-  background: #faf5ff;
-  border-color: #7e22ce;
+  background: #fff5f5;
+  border-color: #cf222e;
 }
 .m-ploidy-call {
   display: block;
@@ -870,7 +870,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   text-decoration: underline;
 }
 .ploidy-match .m-ploidy-call { color: #116329; }
-.ploidy-aneuploid .m-ploidy-call { color: #6b21a8; }
+.ploidy-mismatch .m-ploidy-call { color: #9a6700; }
+.ploidy-aneuploid .m-ploidy-call { color: #a40e26; }
 .m-ploidy-call[hidden] { display: none; }
 .ploidy-card { max-width: 980px; }
 .ploidy-modal-head {
@@ -901,9 +902,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .ploidy-status-banner > strong { font-size: 17px; }
 .ploidy-status-banner > small { font-size: 12px; font-weight: 500; }
 .ploidy-status-warn {
-  color: #581c87;
-  background: #f3e8ff;
-  border-color: #a855f7;
+  color: #a40e26;
+  background: #ffebe9;
+  border-color: #cf222e;
 }
 .ploidy-status-pass {
   color: #116329;
@@ -938,7 +939,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .ploidy-facts small { font-size: 11px; font-weight: 700; }
 .ploidy-fact-pass { color: #116329; }
 .ploidy-fact-alert { color: #a40e26; }
-.ploidy-fact-warn { color: #6b21a8; }
+.ploidy-fact-warn { color: #9a6700; }
 .ploidy-note { margin: 8px 0 12px; }
 .ploidy-section {
   margin-top: 10px;
@@ -1011,7 +1012,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   font-size: 10px;
   font-weight: 500;
 }
-.ploidy-row-warn { background: #faf5ff; color: #581c87; }
+.ploidy-row-warn { background: #ffebe9; color: #a40e26; }
 .ploidy-quality {
   display: inline-flex;
   align-items: center;
@@ -1032,14 +1033,14 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   border-color: #bf8700;
 }
 .ploidy-quality-suspect {
-  color: #6b21a8;
-  background: #f3e8ff;
-  border-color: #a855f7;
-}
-.ploidy-quality-warning {
   color: #a40e26;
   background: #ffebe9;
   border-color: #cf222e;
+}
+.ploidy-quality-warning {
+  color: #7a4b00;
+  background: #fff8c5;
+  border-color: #bf8700;
 }
 @media (max-width: 700px) {
   .ploidy-facts { grid-template-columns: 1fr; }
@@ -2614,6 +2615,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .tier-tab.tier-2  { background: #fff4a3; }
 /* CNV/SV: blue family for both CNV tiers, violet family for both SV tiers. */
 .tier-tab.tier-cnv { background: #bfdbfe; }
+.tier-tab.tier-ploidy { background: #ffebe9; }
 .tier-tab.tier-sv  { background: #ddd6fe; }
 .tier-tab.tier-mito { background: #99f6e4; }
 .tier-tab.tier-str { background: #fde68a; }
@@ -2624,6 +2626,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .tier-tab.tier-1c .tier-tab-count { background: #fef2f2; }
 .tier-tab.tier-2  .tier-tab-count { background: #fefce8; }
 .tier-tab.tier-cnv .tier-tab-count { background: #dbeafe; }
+.tier-tab.tier-ploidy .tier-tab-count { background: #fff5f5; }
 .tier-tab.tier-sv  .tier-tab-count { background: #ede9fe; }
 .tier-tab.tier-mito .tier-tab-count { background: #ccfbf1; }
 .tier-tab.tier-str .tier-tab-count { background: #fef3c7; }
@@ -2642,6 +2645,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .tier-panel.tier-1c { background: #fee2e2; }
 .tier-panel.tier-2  { background: #fff4a3; }
 .tier-panel.tier-cnv { background: #bfdbfe; }
+.tier-panel.tier-ploidy { background: #ffebe9; }
 .tier-panel.tier-sv  { background: #ddd6fe; }
 .tier-panel.tier-mito { background: #99f6e4; }
 .tier-panel.tier-str { background: #fde68a; }
@@ -2657,6 +2661,19 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   font-size: 10px; font-weight: 600;
   background: #f3f4f6; color: #4b5563;
   padding: 1px 6px; border-radius: 3px;
+}
+
+.ploidy-finding-card { display: grid; gap: 8px; }
+.ploidy-finding-card .variant-head { align-items: center; gap: 7px; flex-wrap: wrap; }
+.ploidy-finding-interpretation { color: #a40e26; font-weight: 700; }
+.ploidy-finding-evidence { font-weight: 700; color: #a40e26; }
+.ploidy-finding-reference, .ploidy-finding-note { color: #57606a; font-size: 12px; }
+.ploidy-finding-comment-label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; }
+.ploidy-finding-comment-label textarea { width: 100%; }
+.ploidy-finding-stale {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px; padding: 10px 12px; border: 1px solid #bf8700;
+  border-radius: 6px; background: #fff8c5; color: #7d4e00; font-size: 12px;
 }
 
 .sv-type-pill {

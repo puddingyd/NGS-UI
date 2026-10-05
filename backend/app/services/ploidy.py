@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -321,3 +323,79 @@ def _path_for_sample(sample: str | Path) -> Path:
 def load_sample_ploidy(sample: str | Path) -> dict:
     """Load a sample's copied VCF only; ploidy_qc.txt is intentionally ignored."""
     return parse_ploidy_vcf(_path_for_sample(sample))
+
+
+FINDING_ID_PREFIX = "PLOIDY-"
+
+
+def build_autosomal_findings(result: dict) -> dict[str, dict]:
+    """Project chromosome-level dosage calls into reviewable findings.
+
+    The VCF's POS=1/END=contig length is a carrier for per-chromosome
+    coverage, not a measured CNV breakpoint.  Deliberately omit POS/END.
+    Evidence is part of the ID so changed calls require a new review.
+    """
+    if not result.get("exists"):
+        return {}
+    findings: dict[str, dict] = {}
+    kind = str(result.get("pipeline_kind") or "unknown")
+    for row in result.get("abnormal_chromosomes") or []:
+        chrom = _chrom_name(row.get("chrom") or "").upper()
+        if not (chrom.isdigit() and 1 <= int(chrom) <= 22):
+            continue
+        direction = row.get("dosage_call")
+        if direction not in {"gain", "loss"}:
+            continue
+        confidence = row.get("confidence")
+        # NCKUH calls require the explicit SUSPECT flag. A generic
+        # non-PASS QC record is insufficient evidence for a finding.
+        if kind == "nckuh" and confidence != "suspect":
+            continue
+        if kind == "unknown":
+            continue
+        evidence = {
+            "chrom": chrom,
+            "direction": direction,
+            "pipeline_source": result.get("pipeline_source"),
+            "karyotype": result.get("karyotype"),
+            "alt": row.get("alt"),
+            "filter": row.get("filter"),
+            "qual": row.get("qual"),
+            "NDC": row.get("NDC"),
+            "DC": row.get("DC"),
+            "RATIO": row.get("RATIO"),
+            "sample": row.get("sample"),
+        }
+        signature = hashlib.sha256(
+            json.dumps(evidence, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()[:12]
+        finding_id = f"{FINDING_ID_PREFIX}chr{chrom}-{direction.upper()}-{signature}"
+        findings[finding_id] = {
+            "id": finding_id,
+            "source": "ploidy",
+            "CHROM": f"chr{chrom}",
+            "dosage_call": direction,
+            "interpretation": row.get("interpretation") or "",
+            "filter": row.get("filter") or "",
+            "confidence": confidence,
+            "NDC": row.get("NDC"),
+            "observed_ratio": row.get("observed_ratio"),
+            "ratio_source": row.get("ratio_source") or "",
+            "qual": row.get("qual"),
+            "pipeline_kind": kind,
+            "pipeline_source": result.get("pipeline_source") or "",
+        }
+    return findings
+
+
+def stale_finding_ids(report: dict, findings: dict[str, dict]) -> list[str]:
+    """Marked ploidy evidence no longer present in the active VCF."""
+    statuses = report.get("status") or {}
+    if not isinstance(statuses, dict):
+        return []
+    return sorted(
+        finding_id for finding_id, status in statuses.items()
+        if str(finding_id).startswith(FINDING_ID_PREFIX)
+        and {value.strip() for value in str(status).split(",")} & {"1", "2", "C"}
+        and finding_id not in findings
+    )
