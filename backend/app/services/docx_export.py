@@ -767,7 +767,7 @@ def _render_variant(doc, kind: str, v: dict, *, tier: str, edits: dict,
     elif kind == "mito":
         _mito_variant_block(doc, v, tier=tier, edits=edits)
     elif kind == "ploidy":
-        _ploidy_variant_block(doc, v)
+        _ploidy_variant_block(doc, v, tier=tier, edits=edits)
     else:  # cnv / sv share the same template
         _cnv_variant_block(doc, v, tier=tier, is_wgs=is_wgs, edits=edits)
 
@@ -802,11 +802,35 @@ def _ploidy_signal_label(v: dict) -> str:
     return f"第 {chrom} 號染色體劑量{'增加' if v.get('dosage_call') == 'gain' else '減少'}訊號"
 
 
-def _ploidy_variant_block(doc, v: dict) -> None:
-    """Describe a chromosome-level signal without inventing CNV breakpoints."""
-    label = _ploidy_signal_label(v)
-    interpretation = str(v.get("interpretation") or "")
-    _add_paragraph(doc, f"    [GRCh38] {label}（{interpretation}）", bold=True)
+def _ploidy_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
+    """Report a reviewed chromosome dosage signal without a false breakpoint."""
+    chrom = str(v.get("CHROM") or "").removeprefix("chr")
+    is_gain = v.get("dosage_call") == "gain"
+    call = "trisomy" if is_gain else "monosomy"
+    copy_number = "3（疑似）" if is_gain else "1（疑似）"
+    _add_paragraph(doc, f"    [GRCh38] chr{chrom} {call}", bold=True)
+    _ascii_table(doc, columns=[
+        ("類別", 5),
+        ("染色體", 7),
+        ("拷貝數", 12),
+    ], rows=[[tier, chrom, copy_number]])
+    acmg = _acmg_label(v, edits)
+    if acmg:
+        _add_paragraph(doc, f"    ACMG 分類（人工判讀）：{acmg}。")
+    disease = str(edits.get("disease") or "").strip()
+    signal = "增加" if is_gain else "減少"
+    karyotype = "三體" if is_gain else "單體"
+    relation = f"，與「{disease}」相關" if disease else ""
+    tier_two = (
+        "，無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷"
+        if tier == "2" else ""
+    )
+    _add_paragraph(
+        doc,
+        f"    1. 此為 Ploidy VCF 顯示之疑似第 {chrom} 號染色體劑量{signal}訊號，"
+        f"提示可能為第 {chrom} 號染色體{karyotype}{relation}{tier_two}；"
+        "此結果尚須以適當的獨立檢驗確認。",
+    )
     evidence = []
     if v.get("NDC") is not None:
         evidence.append(f"NDC {v['NDC']}")
@@ -817,7 +841,6 @@ def _ploidy_variant_block(doc, v: dict) -> None:
     if v.get("pipeline_source"):
         evidence.append(str(v["pipeline_source"]))
     _add_paragraph(doc, f"    定序證據：{'；'.join(evidence) if evidence else '染色體深度異常'}。")
-    _add_paragraph(doc, "    此為疑似染色體劑量異常訊號，無法由此資料確定核型、鑲嵌比例或精確斷點；建議以適當的獨立檢驗確認。")
 
 
 def _ploidy_reference_text(v: dict) -> str:
@@ -1103,6 +1126,16 @@ def _patho_sentence_for_classes(acmg_classes: Iterable[str]) -> str:
     )
 
 
+def _tier_patho_sentence(sentence: str, tier: str) -> str:
+    """Do not claim full phenotype concordance for a second-class result."""
+    if tier == "2":
+        return sentence.replace(
+            "，與臨床症狀相關。",
+            "，無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。",
+        )
+    return sentence
+
+
 def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
     """Render one diagnostic block containing every selected SNV in a gene."""
     first_v, first_edits = rows[0]
@@ -1180,7 +1213,7 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
         _add_paragraph(doc, f"    {index}. {disease_line}")
     _add_paragraph(
         doc,
-        f"    {len(disease_lines) + 1}. {_patho_sentence_for_classes(acmg_labels)}",
+        f"    {len(disease_lines) + 1}. {_tier_patho_sentence(_patho_sentence_for_classes(acmg_labels), tier)}",
     )
 
 
@@ -1589,7 +1622,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
     patho_sentence = (
         _cnv_patho_sentence(acmg) if _is_cnv_record(v) else _patho_sentence(acmg)
     )
-    _add_paragraph(doc, f"    {next_idx}. {patho_sentence}")
+    _add_paragraph(doc, f"    {next_idx}. {_tier_patho_sentence(patho_sentence, tier)}")
     next_idx += 1
     if not is_wgs:
         _add_paragraph(doc, f"    {next_idx}. 由於此檢驗技術為全外顯子定序，"

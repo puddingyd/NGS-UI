@@ -72,7 +72,7 @@ def test_diagnosis_groups_same_gene_snvs_and_combines_acmg_wording():
     assert paragraphs[patho_index + 5].startswith("    建議比對臨床表徵")
 
 
-def test_ploidy_finding_report_uses_signal_wording_without_fake_cnv_coordinates():
+def test_ploidy_finding_report_uses_reviewed_disease_and_acmg_without_fake_breakpoints():
     doc = Document()
     finding = {
         "id": "PLOIDY-chr21-GAIN-test",
@@ -86,15 +86,59 @@ def test_ploidy_finding_report_uses_signal_wording_without_fake_cnv_coordinates(
     docx_export._section_results(
         doc,
         {"ploidy_findings": {finding["id"]: finding}},
-        {"status": {finding["id"]: "1"}, "edits": {}},
+        {"status": {finding["id"]: "2"}, "edits": {finding["id"]: {
+            "disease": "唐氏症", "ACMG_class_sv": "5",
+        }}},
         "WES",
     )
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
-    assert "第 21 號染色體劑量增加訊號（possible trisomy 21）" in text
+    assert "[GRCh38] chr21 trisomy" in text
+    assert "拷貝數" in text and "3（疑似）" in text
+    assert "ACMG 分類（人工判讀）：Pathogenic。" in text
+    assert "與「唐氏症」相關，無法完全解釋受檢者全部之臨床症狀" in text
     assert "NDC 1.346；FILTER SUSPECT" in text
     assert "獨立檢驗確認" in text
     assert "chr21:1-46709983" not in text
-    assert "拷貝數變異判讀專用ACMG" not in text
+
+
+def test_second_class_snv_and_cnv_descriptions_do_not_claim_full_clinical_match():
+    doc = Document()
+    snv = _gjb2_variant(
+        "snv1", rs_id="rs80338943", hgvs_c="c.235del",
+        hgvs_p="p.Leu79CysfsTer3", acmg="Pathogenic",
+    )
+    cnv = {
+        "id": "cnv1", "source": "cnv", "CHROM": "17", "POS": 100,
+        "END": 200, "sv_type": "DEL", "copy_number": 1,
+        "zygosity": "het", "acmg_class": 5, "genes": [],
+    }
+    docx_export._section_results(
+        doc,
+        {"variants": {"snv1": snv}, "cnv_variants": {"cnv1": cnv}},
+        {"status": {"snv1": "2", "cnv1": "2"}, "edits": {}},
+        "WGS",
+    )
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    tail = "無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷。"
+    assert f"此為致病性之變異位點，{tail}" in text
+    assert f"此為致病性之變異，{tail}" in text
+    assert "此為致病性之變異位點，與臨床症狀相關。" not in text
+    assert "此為致病性之變異，與臨床症狀相關。" not in text
+
+
+def test_ploidy_loss_without_manual_edits_stays_unclassified():
+    doc = Document()
+    docx_export._ploidy_variant_block(
+        doc,
+        {"CHROM": "chr18", "dosage_call": "loss", "NDC": 0.7, "filter": "SUSPECT"},
+        tier="1", edits={},
+    )
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "[GRCh38] chr18 monosomy" in text
+    assert "1（疑似）" in text
+    assert "ACMG 分類" not in text
+    assert "與「" not in text
+    assert "獨立檢驗確認" in text
 
 
 def test_diagnosis_joins_all_checked_snv_diseases_and_mim_numbers():

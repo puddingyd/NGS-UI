@@ -3829,7 +3829,7 @@ async function handleLogin(ev) {
 async function exportDiagnosticDocx() {
   if (!state.currentLIS) return;
   if (_stalePloidyFindingIds().length) {
-    alert("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請在 CNV / SV 的染色體劑量訊號分頁清除舊標記並重新核對。");
+    alert("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請在 CNV / SV 的 Ploidy VCF 分頁清除舊標記並重新核對。");
     return;
   }
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
@@ -4026,7 +4026,7 @@ async function printReportCards() {
   const sampleId = sampleRow?.sample_id || state.currentLIS;
   let reportGeneList = {};
   if (_stalePloidyFindingIds().length) {
-    alert("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請在 CNV / SV 的染色體劑量訊號分頁清除舊標記並重新核對。");
+    alert("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請在 CNV / SV 的 Ploidy VCF 分頁清除舊標記並重新核對。");
     return;
   }
   try {
@@ -6068,7 +6068,7 @@ function applyTierTabActive() {
 // AnnotSV clinical/pathogenic tiers.
 const CNV_SV_TIER_ORDER = ["PLOIDY", "CNV-1A", "CNV-1B", "SV-2A", "SV-2B"];
 const CNV_SV_TITLES = {
-  "PLOIDY": "染色體劑量訊號",
+  "PLOIDY": "Ploidy VCF",
   "CNV-1A": "1A CNV Clinical",
   "CNV-1B": "1B CNV Pathogenic",
   "SV-2A":  "2A SV Clinical",
@@ -6097,30 +6097,26 @@ function renderPloidyFindingCard(v, id, opts = {}) {
   card.className = "variant-card ploidy-finding-card";
   card.dataset.id = id;
   const chrom = String(v.CHROM || "");
-  const chromNumber = chrom.replace(/^chr/i, "");
   const isGain = v.dosage_call === "gain";
-  const signal = isGain ? "增加" : "減少";
   const referenceLength = ROH_GRCH38_CHROM_LENGTHS[chrom];
   const referenceSpan = referenceLength
-    ? `GRCh38 參考染色體範圍：${chrom}:1–${_fmtPos(referenceLength)}（非實測斷點）`
-    : "未提供實測斷點";
+    ? `${chrom}（GRCh38 參考染色體範圍：${chrom}:1–${_fmtPos(referenceLength)}）`
+    : chrom;
   const ratio = v.NDC != null ? `NDC ${fmtNum(v.NDC)}`
     : v.observed_ratio != null ? `Ratio ${fmtNum(v.observed_ratio)}` : "深度比未提供";
   const status = state.reports?.status?.[id] || "";
-  const comment = getEdit(id, "comment") || "";
+  const acmgVal = _cnvSvAcmgClassValue(id, v);
   card.innerHTML = `<div class="variant-head">
     ${opts.index ? `<span class="card-idx">#${opts.index}</span>` : ""}
     ${_renderStatusRadio(id, status, statusOptions("candidate"))}
     <span class="cnv-sv-source-tag">Ploidy VCF</span>
-    <strong>${escapeHtml(chrom)} 染色體劑量${signal}訊號</strong>
-    <span class="ploidy-finding-interpretation">${escapeHtml(v.interpretation || `possible ${isGain ? "trisomy" : "monosomy"} ${chromNumber}`)}</span>
+    <span class="sv-type-pill sv-type-ploidy">${isGain ? "Trisomy" : "Monosomy"}</span>
+    <span class="cnv-sv-pos">${escapeHtml(referenceSpan)}</span>
   </div>
   <div class="ploidy-finding-evidence">${escapeHtml(ratio)} ${isGain ? "↑" : "↓"} · ${escapeHtml(v.filter || "—")}${v.pipeline_source ? ` · ${escapeHtml(v.pipeline_source)}` : ""}</div>
-  <div class="ploidy-finding-reference">${escapeHtml(referenceSpan)}</div>
-  <div class="ploidy-finding-note">染色體深度摘要，並非具精確斷點的 CNV；疑似結果須另行確認。NDC 不代表確定的拷貝數或鑲嵌比例。</div>
-  <label class="ploidy-finding-comment-label">Comment
-    <textarea class="variant-comment" data-id="${escapeAttr(id)}" rows="2">${escapeHtml(comment)}</textarea>
-  </label>`;
+  <div class="cnv-sv-detail-box"><div class="cnv-sv-detail-row"><span><strong>ACMG:</strong> ${_renderCnvSvAcmgSelect(id, acmgVal)}</span></div></div>
+  ${_renderCnvSvDisease(v, id)}
+  ${_renderCnvSvComment(v, id)}`;
   return card;
 }
 
@@ -7112,6 +7108,16 @@ const SV_ACMG_SIG_CLASS = {
   1: "sig-b",
 };
 
+function _renderCnvSvAcmgSelect(id, acmgVal) {
+  const sigClass = SV_ACMG_SIG_CLASS[acmgVal] || "";
+  return `<select class="cnv-sv-acmg-select ${sigClass}" data-id="${escapeAttr(id)}">
+    <option value="" ${acmgVal==null ? "selected" : ""}>—</option>
+    ${[5,4,3,2,1].map(n =>
+      `<option value="${n}" ${acmgVal===n?"selected":""}>${escapeHtml(SV_ACMG_LABELS[n])}</option>`
+    ).join("")}
+  </select>`;
+}
+
 function _fmtPos(n) {
   if (n == null) return "?";
   return Number(n).toLocaleString();
@@ -7219,14 +7225,7 @@ function _renderCnvSvDetailBox(v, id) {
   // (separate field from SNV's `ACMG_classification` so they don't
   // collide).
   const acmgVal = _cnvSvAcmgClassValue(id, v);
-  const sigClass = SV_ACMG_SIG_CLASS[acmgVal] || "";
-  const acmgSelect = `
-    <select class="cnv-sv-acmg-select ${sigClass}" data-id="${escapeAttr(id)}">
-      <option value="" ${acmgVal==null ? "selected" : ""}>—</option>
-      ${[5,4,3,2,1].map(n =>
-        `<option value="${n}" ${acmgVal===n?"selected":""}>${escapeHtml(SV_ACMG_LABELS[n])}</option>`
-      ).join("")}
-    </select>`;
+  const acmgSelect = _renderCnvSvAcmgSelect(id, acmgVal);
   const score = (v.ranking_score != null) ? Number(v.ranking_score).toFixed(2) : "—";
   const reasoning = v.ranking_criteria
     ? (() => {
@@ -9833,7 +9832,7 @@ function renderVariantBlock(vid, v, kind) {
   const acmgTxt = acmgClassCH(v.ACMG_classification) || "—";
   const tail = kind === "causative"
     ? "與臨床症狀相關"
-    : "無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷";
+    : "建議比對臨床表徵";
   const mimText = diseaseSummary.phenotypeMims
     ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
     : "";
@@ -10190,7 +10189,7 @@ function pdfWriteVariant(w, vid, v, kind) {
   // standard "建議比對臨床表徵" line.
   const tail = kind === "causative"
     ? "與臨床症狀相關"
-    : "建議比對臨床表徵";
+    : "無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷";
   const mimText = diseaseSummary.phenotypeMims
     ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
     : "";

@@ -216,7 +216,7 @@ test('chromosome dosage tab shows active findings and flags obsolete review IDs'
   c.state.reports.status['PLOIDY-chr21-GAIN-old'] = '1';
   c.renderPloidyFindingCard = (_variant, variantId) => ({ variantId });
   c.renderCnvSvTabBar();
-  assert.match(c.bar.innerHTML, /染色體劑量訊號/);
+  assert.match(c.bar.innerHTML, /Ploidy VCF/);
   assert.equal(c.panels.PLOIDY.children[0].children[1].variantId, id);
   assert.deepEqual(Array.from(c._stalePloidyFindingIds()), ['PLOIDY-chr21-GAIN-old']);
   assert.match(c.panels.PLOIDY.children[0].children[0].innerHTML, /清除舊標記/);

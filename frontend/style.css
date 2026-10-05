@@ -2665,11 +2665,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 
 .ploidy-finding-card { display: grid; gap: 8px; }
 .ploidy-finding-card .variant-head { align-items: center; gap: 7px; flex-wrap: wrap; }
-.ploidy-finding-interpretation { color: #a40e26; font-weight: 700; }
+.ploidy-finding-card .cnv-sv-pos { white-space: normal; overflow-wrap: anywhere; }
 .ploidy-finding-evidence { font-weight: 700; color: #a40e26; }
-.ploidy-finding-reference, .ploidy-finding-note { color: #57606a; font-size: 12px; }
-.ploidy-finding-comment-label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; }
-.ploidy-finding-comment-label textarea { width: 100%; }
 .ploidy-finding-stale {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   margin-bottom: 8px; padding: 10px 12px; border: 1px solid #bf8700;
@@ -2681,6 +2678,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   border-radius: 10px; color: #fff;
 }
 .sv-type-pill.sv-type-DEL { background: #dc2626; }
+.sv-type-pill.sv-type-ploidy { background: #dc2626; }
 .sv-type-pill.sv-type-DUP { background: #2563eb; }
 .sv-type-pill.sv-type-INV { background: #ea580c; }
 .sv-type-pill.sv-type-INS { background: #7c3aed; }
