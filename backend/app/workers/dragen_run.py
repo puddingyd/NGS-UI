@@ -56,7 +56,7 @@ from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
-from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue
+from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, snv_zygosity
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -1903,6 +1903,7 @@ def main() -> int:
         pipeline_annotsv_available: dict[str, set[str]] = {}
         pipeline_cnv_by_sid: dict[str, Path] = {}
         raw_tsv_by_sid: dict[str, Path] = {}
+        ploidy_by_sid: dict[str, Path | None] = {}
         staged_sample_dir_by_sid: dict[str, Path] = {}
         final_raw_tsv_by_sid: dict[str, Path] = {}
         for sample in samples:
@@ -1949,6 +1950,7 @@ def main() -> int:
                 sample_id=sid,
                 post_dir=post_dir,
             )
+            ploidy_by_sid[sid] = ploidy_copy[1] if ploidy_copy else None
             if ploidy_copy is None:
                 _log(f"[copy] {sid}: matching {mode} ploidy VCF not found for {source_vcf}")
             else:
@@ -2080,7 +2082,13 @@ def main() -> int:
 
             signal.signal(signal.SIGTERM, cleanup_work_on_sigterm)
             try:
-                shutil.copyfile(raw_tsv, work_tsv)
+                if mode == "inhouse":
+                    corrected = snv_zygosity.copy_nckuh_work_tsv(
+                        raw_tsv, work_tsv, ploidy_by_sid[sid]
+                    )
+                    _log(f"[post-processing] {sid}: NCKUH chrX non-PAR hom→hemi corrections={corrected}")
+                else:
+                    shutil.copyfile(raw_tsv, work_tsv)
             except BaseException:
                 work_tsv.unlink(missing_ok=True)
                 signal.signal(signal.SIGTERM, previous_sigterm)
