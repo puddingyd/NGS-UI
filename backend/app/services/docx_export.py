@@ -711,11 +711,8 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
         return
 
     # — 第一類
-    bucket1_has_ploidy = any(kind == "ploidy" for kind, _ in bucket1)
-    bucket2_has_ploidy = any(kind == "ploidy" for kind, _ in bucket2)
-    has_ploidy = bucket1_has_ploidy or bucket2_has_ploidy
-    _add_paragraph(doc, "    第一類：與臨床症狀相關之變異或染色體劑量訊號"
-                   if bucket1_has_ploidy else "    第一類：與臨床症狀相關基因之已知致病性變異位點")
+    has_ploidy = any(kind == "ploidy" for kind, _ in bucket1 + bucket2)
+    _add_paragraph(doc, "    第一類：與臨床症狀相關基因之已知致病性變異位點")
     if bucket1 or man1:
         rendered = _render_bucket(bucket1, "1")
         for m in man1:
@@ -728,8 +725,7 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     _blank(doc)
 
     # — 第二類
-    _add_paragraph(doc, "    第二類：其他變異或染色體劑量訊號"
-                   if bucket2_has_ploidy else "    第二類：其他變異位點")
+    _add_paragraph(doc, "    第二類：其他變異位點")
     if bucket2 or man2:
         rendered = _render_bucket(bucket2, "2")
         for m in man2:
@@ -750,7 +746,7 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
                             "以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或"
                             "相關資料庫更新，可能影響變異位點ACMG判讀結果。")
     _blank(doc)
-    referenced = bucket1 + bucket2
+    referenced = [(kind, v) for kind, v in bucket1 + bucket2 if kind != "ploidy"]
     if referenced:
         _add_paragraph(doc, "  參考資料:")
         for kind, v in referenced:
@@ -778,8 +774,6 @@ def _variant_reference_text(kind: str, v: dict, *, edits: dict,
         return _snv_reference_text(v, edits)
     if kind == "mito":
         return _mito_reference_text(v, edits)
-    if kind == "ploidy":
-        return _ploidy_reference_text(v)
     omim_genes = _omim_genes(v)
     report_genes = edits.get("report_genes") or {}
     if isinstance(report_genes, dict):
@@ -797,58 +791,22 @@ def _render_manual_variant(doc, m: dict) -> None:
         _add_paragraph(doc, f"    {m['comment']}")
 
 
-def _ploidy_signal_label(v: dict) -> str:
-    chrom = str(v.get("CHROM") or "").removeprefix("chr")
-    return f"第 {chrom} 號染色體劑量{'增加' if v.get('dosage_call') == 'gain' else '減少'}訊號"
-
-
 def _ploidy_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     """Report a reviewed chromosome dosage signal without a false breakpoint."""
     chrom = str(v.get("CHROM") or "").removeprefix("chr")
     is_gain = v.get("dosage_call") == "gain"
     call = "trisomy" if is_gain else "monosomy"
-    copy_number = "3（疑似）" if is_gain else "1（疑似）"
+    copy_number = "3" if is_gain else "1"
     _add_paragraph(doc, f"    [GRCh38] chr{chrom} {call}", bold=True)
     _ascii_table(doc, columns=[
         ("類別", 5),
         ("染色體", 7),
         ("拷貝數", 12),
     ], rows=[[tier, chrom, copy_number]])
-    acmg = _acmg_label(v, edits)
-    if acmg:
-        _add_paragraph(doc, f"    ACMG 分類（人工判讀）：{acmg}。")
     disease = str(edits.get("disease") or "").strip()
-    signal = "增加" if is_gain else "減少"
     karyotype = "三體" if is_gain else "單體"
-    relation = f"，與「{disease}」相關" if disease else ""
-    tier_two = (
-        "，無法完全解釋受檢者全部之臨床症狀，其臨床意義須由醫師配合其他相關資料進行最佳綜合判斷"
-        if tier == "2" else ""
-    )
-    _add_paragraph(
-        doc,
-        f"    1. 此為 Ploidy VCF 顯示之疑似第 {chrom} 號染色體劑量{signal}訊號，"
-        f"提示可能為第 {chrom} 號染色體{karyotype}{relation}{tier_two}；"
-        "此結果尚須以適當的獨立檢驗確認。",
-    )
-    evidence = []
-    if v.get("NDC") is not None:
-        evidence.append(f"NDC {v['NDC']}")
-    elif v.get("observed_ratio") is not None:
-        evidence.append(f"深度比 {v['observed_ratio']}")
-    if v.get("filter"):
-        evidence.append(f"FILTER {v['filter']}")
-    if v.get("pipeline_source"):
-        evidence.append(str(v["pipeline_source"]))
-    _add_paragraph(doc, f"    定序證據：{'；'.join(evidence) if evidence else '染色體深度異常'}。")
-
-
-def _ploidy_reference_text(v: dict) -> str:
-    return (
-        f"    {_ploidy_signal_label(v)}（{v.get('interpretation') or 'possible chromosome dosage abnormality'}）"
-        "來自 ploidy VCF 的染色體深度摘要，並非具精確斷點的 AnnotSV CNV；"
-        "判讀及後續處置應結合臨床資料與確認檢驗。"
-    )
+    relation = f"，與{disease}相關" if disease else ""
+    _add_paragraph(doc, f"    1. 此為第 {chrom} 號染色體{karyotype}{relation}。")
 
 
 # ── Subsections: per variant type ─────────────────────────────────

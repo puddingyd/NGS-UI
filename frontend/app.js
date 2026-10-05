@@ -4549,14 +4549,22 @@ function setEdit(id, field, val) {
 }
 
 function _syncEditControls(id, field, val, source = null) {
-  const selectorByField = {
-    comment: ".variant-comment",
+  const selectorsByField = {
+    comment: [".variant-comment", ".cnv-sv-comment-text"],
+    disease: [".cnv-sv-disease-text"],
+    ACMG_class_sv: [".cnv-sv-acmg-select"],
   };
-  const selector = selectorByField[field];
-  if (!selector) return;
-  document.querySelectorAll(`${selector}[data-id="${CSS.escape(id)}"]`).forEach(el => {
+  const selectors = selectorsByField[field];
+  if (!selectors) return;
+  const selector = selectors.map(s => `${s}[data-id="${CSS.escape(id)}"]`).join(", ");
+  document.querySelectorAll(selector).forEach(el => {
     if (el === source) return;
     el.value = val ?? "";
+    if (field === "ACMG_class_sv") {
+      el.classList.remove("sig-p", "sig-lp", "sig-vus", "sig-lb", "sig-b");
+      const next = SV_ACMG_SIG_CLASS[Number(val)];
+      if (next) el.classList.add(next);
+    }
   });
 }
 
@@ -7520,19 +7528,17 @@ function renderCnvSvCard(v, id, opts = {}) {
   return card;
 }
 
-// CNV/SV-specific edit hooks. These piggy-back on the existing
+// CNV/SV, Ploidy, and Mito edit hooks. These use the existing
 // state.reports.{status, edits} dicts the SNV cards use; AnnotSV_IDs
 // and chr-pos-ref-alt SNV ids never collide so one flat namespace is
-// fine. Selectors are scoped to .cnv-sv-card so the SNV handlers in
+// fine. Selectors are scoped to these card types so the SNV handlers in
 // renderVariantCard's setup don't double-fire. The status dropdown
 // itself shares the .status-select class with SNV — its existing
 // document-level handler updates state.reports.status keyed by id,
 // which works for either kind of variant.
 document.addEventListener("change", ev => {
   const t = ev.target;
-  // Both CNV/SV cards and Mito cards use this listener block — match
-  // either so changes on a Mito card fire correctly.
-  const card = t.closest?.(".cnv-sv-card, .mito-card");
+  const card = t.closest?.(".cnv-sv-card, .ploidy-finding-card, .mito-card");
   if (!card) return;
   const id = card.dataset.id;
   if (!id) return;
@@ -7562,9 +7568,7 @@ document.addEventListener("change", ev => {
     updateSaveHint();
   } else if (t.matches(".cnv-sv-acmg-select")) {
     setEdit(id, "ACMG_class_sv", t.value);
-    t.classList.remove("sig-p","sig-lp","sig-vus","sig-lb","sig-b");
-    const next = SV_ACMG_SIG_CLASS[Number(t.value)];
-    if (next) t.classList.add(next);
+    _syncEditControls(id, "ACMG_class_sv", t.value);
     renderCnvSvTabBar();
     renderReportSections();
     updateSaveHint();
@@ -7583,7 +7587,9 @@ document.addEventListener("input", ev => {
   if (!t.matches?.(".cnv-sv-comment-text, .cnv-sv-disease-text")) return;
   const id = t.dataset.id;
   if (!id) return;
-  setEdit(id, t.matches(".cnv-sv-disease-text") ? "disease" : "comment", t.value);
+  const field = t.matches(".cnv-sv-disease-text") ? "disease" : "comment";
+  setEdit(id, field, t.value);
+  _syncEditControls(id, field, t.value, t);
   updateSaveHint();
 });
 

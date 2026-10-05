@@ -72,7 +72,7 @@ def test_diagnosis_groups_same_gene_snvs_and_combines_acmg_wording():
     assert paragraphs[patho_index + 5].startswith("    建議比對臨床表徵")
 
 
-def test_ploidy_finding_report_uses_reviewed_disease_and_acmg_without_fake_breakpoints():
+def test_ploidy_finding_report_keeps_standard_headings_and_patient_wording():
     doc = Document()
     finding = {
         "id": "PLOIDY-chr21-GAIN-test",
@@ -86,18 +86,23 @@ def test_ploidy_finding_report_uses_reviewed_disease_and_acmg_without_fake_break
     docx_export._section_results(
         doc,
         {"ploidy_findings": {finding["id"]: finding}},
-        {"status": {finding["id"]: "2"}, "edits": {finding["id"]: {
+        {"status": {finding["id"]: "1"}, "edits": {finding["id"]: {
             "disease": "唐氏症", "ACMG_class_sv": "5",
         }}},
         "WES",
     )
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "第一類：與臨床症狀相關基因之已知致病性變異位點" in text
+    assert "第二類：其他變異位點" in text
+    assert "與臨床症狀相關之變異或染色體劑量訊號" not in text
     assert "[GRCh38] chr21 trisomy" in text
-    assert "拷貝數" in text and "3（疑似）" in text
-    assert "ACMG 分類（人工判讀）：Pathogenic。" in text
-    assert "與「唐氏症」相關，無法完全解釋受檢者全部之臨床症狀" in text
-    assert "NDC 1.346；FILTER SUSPECT" in text
-    assert "獨立檢驗確認" in text
+    assert "拷貝數" in text and "3（疑似）" not in text
+    assert "     1    21" in text and " 3 " in text
+    assert "    1. 此為第 21 號染色體三體，與唐氏症相關。" in text
+    assert "ACMG 分類" not in text
+    assert "Ploidy VCF" not in text
+    assert "NDC" not in text and "FILTER" not in text
+    assert "參考資料:" not in text
     assert "chr21:1-46709983" not in text
 
 
@@ -135,10 +140,25 @@ def test_ploidy_loss_without_manual_edits_stays_unclassified():
     )
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "[GRCh38] chr18 monosomy" in text
-    assert "1（疑似）" in text
+    assert "1（疑似）" not in text
+    assert "    1. 此為第 18 號染色體單體。" in text
     assert "ACMG 分類" not in text
-    assert "與「" not in text
-    assert "獨立檢驗確認" in text
+    assert "Ploidy VCF" not in text
+
+
+def test_second_class_ploidy_keeps_original_second_class_heading():
+    doc = Document()
+    finding = {"id": "PLOIDY-chr21-GAIN-test", "CHROM": "chr21", "dosage_call": "gain"}
+    docx_export._section_results(
+        doc,
+        {"ploidy_findings": {finding["id"]: finding}},
+        {"status": {finding["id"]: "2"}, "edits": {finding["id"]: {"disease": "唐氏症"}}},
+        "WES",
+    )
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert "第二類：其他變異位點" in text
+    assert "第二類：其他變異或染色體劑量訊號" not in text
+    assert "    1. 此為第 21 號染色體三體，與唐氏症相關。" in text
 
 
 def test_diagnosis_joins_all_checked_snv_diseases_and_mim_numbers():

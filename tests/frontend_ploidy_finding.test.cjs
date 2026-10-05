@@ -51,3 +51,95 @@ test('ploidy card uses CNV-style title and manual ACMG and disease fields', () =
   assert.doesNotMatch(card.innerHTML, /NDC 不代表確定的拷貝數/);
   assert.match(card.innerHTML, /class="status-radio">1</);
 });
+
+test('analysis and report ploidy controls stay in sync and schedule autosave', async () => {
+  const id = 'PLOIDY-chr21-GAIN-test';
+  const listeners = {};
+  const controls = [];
+  let scheduled;
+  let delay;
+  let saved;
+  function control(kind) {
+    const classes = new Set([kind]);
+    const el = {
+      dataset: { id }, value: '',
+      classList: {
+        add: name => classes.add(name),
+        remove: (...names) => names.forEach(name => classes.delete(name)),
+        contains: name => classes.has(name),
+      },
+      matches: selector => selector.split(',').some(s => s.trim() === `.${kind}`),
+      closest: selector => selector.includes('.ploidy-finding-card') ? { dataset: { id } } : null,
+    };
+    controls.push(el);
+    return el;
+  }
+  const analysisAcmg = control('cnv-sv-acmg-select');
+  const reportAcmg = control('cnv-sv-acmg-select');
+  const analysisDisease = control('cnv-sv-disease-text');
+  const reportDisease = control('cnv-sv-disease-text');
+  const analysisComment = control('cnv-sv-comment-text');
+  const reportComment = control('cnv-sv-comment-text');
+  const c = vm.createContext({
+    state: { currentLIS: 'LIS-1', dirty: false, reports: { edits: {} } },
+    CSS: { escape: value => value },
+    document: {
+      addEventListener: (event, handler) => { (listeners[event] ||= []).push(handler); },
+      querySelectorAll: selector => {
+        if (selector === '.js-save-hint') return [];
+        const names = [...selector.matchAll(/\.([\w-]+)\[data-id="[^"]+"\]/g)].map(m => m[1]);
+        return controls.filter(el => names.some(name => el.classList.contains(name)));
+      },
+    },
+    setTimeout: (callback, ms) => { scheduled = callback; delay = ms; return 1; },
+    clearTimeout: () => {},
+    renderCnvSvTabBar: () => {},
+    renderReportSections: () => {},
+    saveChanges: async options => { saved = options; },
+  });
+  vm.runInContext(source.slice(acmgStart, acmgEnd), c);
+  const syncStart = source.indexOf('function getEdit(');
+  const syncEnd = source.indexOf('function _syncVariantCheckboxes(', syncStart);
+  vm.runInContext(source.slice(syncStart, syncEnd), c);
+  const saveStart = source.indexOf('let _autoSaveTimer =');
+  const saveEnd = source.indexOf('// Native browser confirmation', saveStart);
+  vm.runInContext(source.slice(saveStart, saveEnd), c);
+  const hookStart = source.indexOf('// CNV/SV, Ploidy, and Mito edit hooks.');
+  const hookEnd = source.indexOf('// Click on a truncated cell', hookStart);
+  vm.runInContext(source.slice(hookStart, hookEnd), c);
+
+  analysisAcmg.value = '5';
+  listeners.change[0]({ target: analysisAcmg });
+  assert.equal(c.state.reports.edits[id].ACMG_class_sv, '5');
+  assert.equal(reportAcmg.value, '5');
+  assert.ok(analysisAcmg.classList.contains('sig-p'));
+  assert.ok(reportAcmg.classList.contains('sig-p'));
+
+  reportAcmg.value = '3';
+  listeners.change[0]({ target: reportAcmg });
+  assert.equal(analysisAcmg.value, '3');
+  assert.ok(analysisAcmg.classList.contains('sig-vus'));
+  assert.ok(!analysisAcmg.classList.contains('sig-p'));
+
+  analysisDisease.value = '唐氏症';
+  listeners.input[0]({ target: analysisDisease });
+  assert.equal(reportDisease.value, '唐氏症');
+  reportComment.value = '人工複核';
+  listeners.input[0]({ target: reportComment });
+  assert.equal(analysisComment.value, '人工複核');
+  assert.deepEqual(JSON.parse(JSON.stringify(c.state.reports.edits[id])), {
+    ACMG_class_sv: '3', disease: '唐氏症', comment: '人工複核',
+  });
+  assert.equal(delay, 1500);
+  await scheduled();
+  assert.equal(saved.silent, true);
+});
+
+test('ploidy ACMG dropdown has a distinct color for each class', () => {
+  const style = fs.readFileSync(path.join(__dirname, '../frontend/style.css'), 'utf8');
+  for (const [value, className] of [[5, 'sig-p'], [4, 'sig-lp'], [3, 'sig-vus'],
+    [2, 'sig-lb'], [1, 'sig-b']]) {
+    assert.match(style, new RegExp(`\\.ploidy-finding-card \\.cnv-sv-acmg-select\\.${className} \\{ background-color:`));
+    assert.match(source, new RegExp(`${value}: "${className}"`));
+  }
+});

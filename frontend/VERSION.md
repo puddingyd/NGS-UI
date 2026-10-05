@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.43 — 2026-10-05
+
+- 診斷報告的第一、第二類標題恢復原文；ploidy 表格拷貝數只列 `3`／`1`，第一點改為病人可讀的染色體三體／單體及人工填寫疾病名稱，不列 NDC、FILTER、Ploidy VCF 或獨立技術參考段落。
+- Ploidy ACMG 下拉選擇現在會生效並依五級分類套色；分析區與報告區的 ACMG、Disease、Comment 即時同步，沿用 1.5 秒自動儲存。
+
 ### v9.42 — 2026-10-05
 
 - CNV/SV 的 ploidy 頁籤改為「Ploidy VCF」。卡片沿用 CNV 樣式顯示紅色 Trisomy／Monosomy 與 GRCh38 參考染色體範圍，新增人工 ACMG 分類與 Disease 自由輸入，並移除卡片上的長段說明。

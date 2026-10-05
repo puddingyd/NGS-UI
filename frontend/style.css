@@ -2795,6 +2795,11 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   font-size: 13px;
   color: var(--fg);
 }
+.ploidy-finding-card .cnv-sv-acmg-select.sig-p { background-color: #ef9a9a; }
+.ploidy-finding-card .cnv-sv-acmg-select.sig-lp { background-color: #ffcdd2; }
+.ploidy-finding-card .cnv-sv-acmg-select.sig-vus { background-color: #fff4a3; }
+.ploidy-finding-card .cnv-sv-acmg-select.sig-lb { background-color: #dcedc8; }
+.ploidy-finding-card .cnv-sv-acmg-select.sig-b { background-color: #a5d6a7; }
 
 /* The grey-box detail block: two info rows + a collapsible
    AnnotSV-criteria sub-block. Mirrors the SNV info-grid look. */
