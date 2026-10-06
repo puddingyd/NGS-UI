@@ -27,19 +27,19 @@ test('isolated NCKUH sex suspect is yellow while an autosomal signal remains red
 
   context.state.data.ploidy = {
     exists: true, karyotype: 'XY', alert_level: 'review', aneuploidy_suspected: true,
-    abnormal_chromosomes: [{ chrom: 'chrY' }],
+    abnormal_chromosomes: [{ chrom: 'chrY', call_label: 'Gain signal' }],
   };
   context.renderPloidySexStatus('M');
   assert.ok(classes.has('ploidy-review'));
   assert.ok(!classes.has('ploidy-aneuploid'));
-  assert.match(label.textContent, /1 筆待複核訊號/);
+  assert.equal(label.textContent, 'ploidy VCF: XY\nchrY gain signal');
 
   context.state.data.ploidy.alert_level = 'high';
-  context.state.data.ploidy.abnormal_chromosomes.push({ chrom: 'chr21' });
+  context.state.data.ploidy.abnormal_chromosomes.push({ chrom: 'chr21', call_label: 'Gain signal' });
   context.renderPloidySexStatus('M');
   assert.ok(classes.has('ploidy-aneuploid'));
   assert.ok(!classes.has('ploidy-review'));
-  assert.match(label.textContent, /2 條染色體劑量訊號/);
+  assert.equal(label.textContent, 'ploidy VCF: XY\nchrY gain signal\nchr21 gain signal');
 });
 
 test('review modal keeps suspect depth visible with an amber status', () => {

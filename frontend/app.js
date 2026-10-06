@@ -1865,7 +1865,12 @@ function renderPloidySexStatus(reportedSex) {
   const ploidyLabel = document.getElementById("m-ploidy-call");
   const hasPloidy = !!ploidy.exists;
   const alertLevel = ploidyAlertLevel(ploidy);
-  const signalCount = (ploidy.abnormal_chromosomes || []).length;
+  const signalLines = (ploidy.abnormal_chromosomes || []).map(row => {
+    const rawChrom = String(row.chrom || "").trim();
+    const chrom = rawChrom && !/^chr/i.test(rawChrom) ? `chr${rawChrom}` : rawChrom;
+    const finding = String(row.call_label || row.dosage_call || "").trim().toLowerCase();
+    return [chrom, finding].filter(Boolean).join(" ");
+  }).filter(Boolean);
   const matches = (
     (sex === "M" && ploidyCall === "XY") ||
     (sex === "F" && ploidyCall === "XX")
@@ -1876,7 +1881,7 @@ function renderPloidySexStatus(reportedSex) {
   sexControl?.classList.toggle("ploidy-mismatch", hasPloidy && alertLevel === "none" && !matches);
   if (ploidyLabel) {
     ploidyLabel.textContent = hasPloidy
-      ? `ploidy VCF: ${ploidyCall || "—"}${signalCount ? ` · ${signalCount} ${alertLevel === "review" ? "筆待複核訊號" : "條染色體劑量訊號"}` : ""}`
+      ? `ploidy VCF: ${ploidyCall || "—"}${signalLines.length ? `\n${signalLines.join("\n")}` : ""}`
       : "";
     ploidyLabel.hidden = !hasPloidy;
   }

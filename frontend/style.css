@@ -872,7 +872,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   font-size: 10px;
   font-weight: 600;
   line-height: 1.2;
-  white-space: normal;
+  white-space: pre-line;
   overflow-wrap: anywhere;
   cursor: pointer;
   text-align: left;

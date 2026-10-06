@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.45 — 2026-10-06
+
+- 基本資料中的 ploidy VCF 提示改為兩行起顯示：第一行列推估核型，後續逐行直接列出異常染色體與 gain／loss signal，例如 `chrY gain signal`；點擊仍可查看完整複核資訊。
+
 ### v9.44 — 2026-10-06
 
 - 院內 ploidy VCF 若僅有單筆 chrX 或 chrY 的 `SUSPECT` 深度訊號，基本資料與複核視窗改以黃色標示待複核；訊號及 DC／NDC／RATIO 仍完整保留。多筆或體染色體訊號、非典型核型與 DRAGEN 明確劑量變化維持紅色，CNV/SV finding 與報告判讀不受影響。
