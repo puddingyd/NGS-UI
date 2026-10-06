@@ -180,6 +180,17 @@ def _annotate_row(
         "dosage_call": dosage_call,
         "call_label": call_label,
         "is_abnormal": is_abnormal,
+        # NCKUH sex-chromosome SUSPECT is based on whole-contig depth alone.
+        # Keep the signal visible without treating it as a high-priority call.
+        "alert_level": (
+            "review"
+            if is_abnormal
+            and pipeline_kind == "nckuh"
+            and _chrom_name(row["chrom"]).upper() in {"X", "Y"}
+            and filter_upper == "SUSPECT"
+            and not (explicit_gain or explicit_loss)
+            else "high" if is_abnormal else "none"
+        ),
         "interpretation": (
             _row_interpretation(row["chrom"], dosage_call)
             if is_abnormal
@@ -206,6 +217,7 @@ def parse_ploidy_vcf(path: Path) -> dict:
         "abnormal_chromosomes": [],
         "qc_warnings": [],
         "aneuploidy_suspected": False,
+        "alert_level": "none",
         "dosage_status": "unavailable",
         "karyotype_interpretation": "",
     }
@@ -294,8 +306,19 @@ def parse_ploidy_vcf(path: Path) -> dict:
         bool(karyotype and karyotype not in {"XX", "XY"})
         or bool(result["abnormal_chromosomes"])
     )
+    result["alert_level"] = (
+        "high"
+        if (karyotype and karyotype not in {"XX", "XY"})
+        or len(result["abnormal_chromosomes"]) > 1
+        or any(row["alert_level"] == "high" for row in result["abnormal_chromosomes"])
+        else "review"
+        if result["abnormal_chromosomes"]
+        else "none"
+    )
     result["dosage_status"] = (
-        "aneuploidy_signal" if result["aneuploidy_suspected"] else "no_signal"
+        "aneuploidy_signal" if result["alert_level"] == "high"
+        else "review_signal" if result["alert_level"] == "review"
+        else "no_signal"
     )
     return result
 

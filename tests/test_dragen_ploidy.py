@@ -61,10 +61,50 @@ def test_load_sample_ploidy_preserves_x_and_xxy(tmp_path):
     assert result["karyotype"] == "XXY"
     assert result["source"] == "ploidy.vcf.gz"
     assert result["aneuploidy_suspected"] is True
+    assert result["alert_level"] == "high"
     assert result["karyotype_interpretation"] == "possible 47,XXY"
 
     _write_ploidy(tmp_path / "ploidy.vcf.gz", "X")
     assert read_karyotype(tmp_path / "ploidy.vcf.gz") == "X"
+
+
+def test_nckuh_sex_suspect_keeps_signal_but_autosome_or_atypical_karyotype_stays_high(tmp_path):
+    path = tmp_path / "ploidy.vcf.gz"
+
+    def read_signal(karyotype="XY", include_chr21=False, include_chrX=False):
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            handle.write(
+                "##source=NCKUH_PLOIDY_MOSDEPTH\n"
+                f"##estimatedSexKaryotype={karyotype}\n"
+                "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n"
+                "chrY\t1\t.\tN\t.\t.\tSUSPECT\tEND=57227415\tDC:NDC:RATIO\t20:1.771:0.8855\n"
+            )
+            if include_chr21:
+                handle.write(
+                    "chr21\t1\t.\tN\t.\t.\tSUSPECT\tEND=46709983\tDC:NDC:RATIO\t40:1.346:1.346\n"
+                )
+            if include_chrX:
+                handle.write(
+                    "chrX\t1\t.\tN\t.\t.\tSUSPECT\tEND=156040895\tDC:NDC:RATIO\t20:1.4:0.7\n"
+                )
+        return load_sample_ploidy(tmp_path)
+
+    isolated = read_signal()
+    assert isolated["aneuploidy_suspected"] is True
+    assert isolated["alert_level"] == "review"
+    assert isolated["dosage_status"] == "review_signal"
+    assert [row["chrom"] for row in isolated["abnormal_chromosomes"]] == ["chrY"]
+    assert isolated["abnormal_chromosomes"][0]["alert_level"] == "review"
+
+    with_autosome = read_signal(include_chr21=True)
+    assert with_autosome["alert_level"] == "high"
+    assert [row["chrom"] for row in with_autosome["abnormal_chromosomes"]] == ["chrY", "chr21"]
+
+    with_x_and_y = read_signal(include_chrX=True)
+    assert with_x_and_y["alert_level"] == "high"
+
+    atypical_karyotype = read_signal(karyotype="XXY")
+    assert atypical_karyotype["alert_level"] == "high"
 
 
 def test_nckuh_ploidy_is_copied_from_alignment_qc_with_qc_text(tmp_path):

@@ -853,6 +853,15 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   background: #fff5f5;
   border-color: #cf222e;
 }
+.m-sex-control.ploidy-review {
+  padding: 4px;
+  background: #fff8c5;
+  border: 1px solid #bf8700;
+}
+.m-sex-control.ploidy-review .meta-select {
+  background: #fffdf0;
+  border-color: #bf8700;
+}
 .m-ploidy-call {
   display: block;
   margin: 0 2px 3px;
@@ -872,6 +881,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .ploidy-match .m-ploidy-call { color: #116329; }
 .ploidy-mismatch .m-ploidy-call { color: #9a6700; }
 .ploidy-aneuploid .m-ploidy-call { color: #a40e26; }
+.ploidy-review .m-ploidy-call { color: #9a6700; }
 .m-ploidy-call[hidden] { display: none; }
 .ploidy-card { max-width: 980px; }
 .ploidy-modal-head {
@@ -905,6 +915,11 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   color: #a40e26;
   background: #ffebe9;
   border-color: #cf222e;
+}
+.ploidy-status-review {
+  color: #7a4b00;
+  background: #fff8c5;
+  border-color: #bf8700;
 }
 .ploidy-status-pass {
   color: #116329;
@@ -1013,6 +1028,12 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   font-weight: 500;
 }
 .ploidy-row-warn { background: #ffebe9; color: #a40e26; }
+.ploidy-row-review { background: #fff8c5; color: #7a4b00; }
+.ploidy-row-review .ploidy-quality-suspect {
+  color: #7a4b00;
+  background: #fffdf0;
+  border-color: #bf8700;
+}
 .ploidy-quality {
   display: inline-flex;
   align-items: center;

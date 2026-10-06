@@ -1864,21 +1864,28 @@ function renderPloidySexStatus(reportedSex) {
   const sexControl = document.getElementById("m-sex-control");
   const ploidyLabel = document.getElementById("m-ploidy-call");
   const hasPloidy = !!ploidy.exists;
-  const hasAneuploidy = hasPloidy && !!ploidy.aneuploidy_suspected;
+  const alertLevel = ploidyAlertLevel(ploidy);
   const signalCount = (ploidy.abnormal_chromosomes || []).length;
   const matches = (
     (sex === "M" && ploidyCall === "XY") ||
     (sex === "F" && ploidyCall === "XX")
   );
-  sexControl?.classList.toggle("ploidy-aneuploid", hasAneuploidy);
-  sexControl?.classList.toggle("ploidy-match", hasPloidy && !hasAneuploidy && matches);
-  sexControl?.classList.toggle("ploidy-mismatch", hasPloidy && !hasAneuploidy && !matches);
+  sexControl?.classList.toggle("ploidy-aneuploid", alertLevel === "high");
+  sexControl?.classList.toggle("ploidy-review", alertLevel === "review");
+  sexControl?.classList.toggle("ploidy-match", hasPloidy && alertLevel === "none" && matches);
+  sexControl?.classList.toggle("ploidy-mismatch", hasPloidy && alertLevel === "none" && !matches);
   if (ploidyLabel) {
     ploidyLabel.textContent = hasPloidy
-      ? `ploidy VCF: ${ploidyCall || "—"}${signalCount ? ` · ${signalCount} 條染色體劑量訊號` : ""}`
+      ? `ploidy VCF: ${ploidyCall || "—"}${signalCount ? ` · ${signalCount} ${alertLevel === "review" ? "筆待複核訊號" : "條染色體劑量訊號"}` : ""}`
       : "";
     ploidyLabel.hidden = !hasPloidy;
   }
+}
+
+function ploidyAlertLevel(ploidy) {
+  if (!ploidy?.exists) return "none";
+  if (ploidy.alert_level === "high" || ploidy.alert_level === "review") return ploidy.alert_level;
+  return ploidy.aneuploidy_suspected ? "high" : "none";
 }
 
 function ploidyPipelineLabel(ploidy) {
@@ -1928,10 +1935,11 @@ function ploidyQualityBadge(row) {
 
 function renderPloidyReviewRow(row) {
   const abnormal = !!row?.is_abnormal;
+  const rowClass = row?.alert_level === "review" ? "ploidy-row-review" : abnormal ? "ploidy-row-warn" : "";
   const interpretation = abnormal && row.interpretation
     ? `<small>${escapeHtml(row.interpretation)}</small>`
     : "";
-  return `<tr class="${abnormal ? "ploidy-row-warn" : ""}">
+  return `<tr class="${rowClass}">
     <td>${escapeHtml(row?.chrom || "—")}</td>
     <td><strong>${escapeHtml(row?.call_label || "—")}</strong>${interpretation}</td>
     <td title="NDC 正常預期約為 1.0">${escapeHtml(ploidyDosageSignal(row))}</td>
@@ -1961,18 +1969,27 @@ function openPloidyModal() {
     ploidy.karyotype_interpretation,
     ...alerts.map(row => row.interpretation),
   ].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index);
-  const hasSignal = !!ploidy.aneuploidy_suspected;
+  const alertLevel = ploidyAlertLevel(ploidy);
+  const statusText = alertLevel === "high" ? "Aneuploidy signal detected"
+    : alertLevel === "review" ? "Sex chromosome signal for review"
+    : "No aneuploidy signal";
+  const statusClass = alertLevel === "high" ? "ploidy-status-warn"
+    : alertLevel === "review" ? "ploidy-status-review"
+    : "ploidy-status-pass";
+  const qcClass = !qcWarnings.length ? "ploidy-fact-pass"
+    : alertLevel === "review" ? "ploidy-fact-warn"
+    : "ploidy-fact-alert";
   if (summary) {
     summary.innerHTML = `
-      <div class="ploidy-status-banner ${hasSignal ? "ploidy-status-warn" : "ploidy-status-pass"}">
+      <div class="ploidy-status-banner ${statusClass}">
         <span>Chromosome dosage</span>
-        <strong>${hasSignal ? "Aneuploidy signal detected" : "No aneuploidy signal"}</strong>
+        <strong>${statusText}</strong>
         <small>${escapeHtml(interpretation.join(" · ") || "No chromosome-level dosage call")}</small>
       </div>
       <div class="ploidy-facts">
         <div><span>Estimated karyotype</span><strong>${escapeHtml(ploidy.karyotype || "—")}</strong></div>
         <div><span>病歷性別</span><strong>${escapeHtml(reportedSex || "—")}</strong><small class="${sexSummary.cls}">${escapeHtml(sexSummary.text)}</small></div>
-        <div><span>Pipeline</span><strong>${escapeHtml(ploidyPipelineLabel(ploidy))}</strong><small class="${qcWarnings.length ? "ploidy-fact-alert" : "ploidy-fact-pass"}">${qcWarnings.length ? `${qcWarnings.length} non-PASS QC` : "QC records PASS"}</small></div>
+        <div><span>Pipeline</span><strong>${escapeHtml(ploidyPipelineLabel(ploidy))}</strong><small class="${qcClass}">${qcWarnings.length ? `${qcWarnings.length} non-PASS QC` : "QC records PASS"}</small></div>
       </div>`;
   }
   if (alertBody) alertBody.innerHTML = alerts.map(renderPloidyReviewRow).join("");
@@ -1990,7 +2007,7 @@ function openPloidyModal() {
         : row.ratio_source === "native"
           ? "來源 VCF 的原始 RATIO"
           : "";
-      return `<tr class="${row.is_abnormal ? "ploidy-row-warn" : ""}">
+      return `<tr class="${row.alert_level === "review" ? "ploidy-row-review" : row.is_abnormal ? "ploidy-row-warn" : ""}">
         <td>${escapeHtml(row.chrom || "—")}</td>
         <td>${escapeHtml(row.alt || "—")}</td>
         <td>${escapeHtml(row.filter || "—")}</td>
