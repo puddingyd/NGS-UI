@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v9.46 — 2026-10-15
+
+- 新增 DRAGEN GBA1 specialized caller 整合，支援重組 haplotype 與一般變異；複合 allele 使用一張既有樣式卡片，原始證據可展開查看，有對應座標時 IGV 同時顯示 GBA1／GBAP1。
+- 健檢單一 heterozygous GBA1 致病 allele 列第二類；兩個獨立變異相位未知仍列第一類。報告維持原表格，在第 2 點新增重組組成說明，附錄保留同一說明。
+- 舊個案需重跑三級匯入 targeted caller 結果；若原本選取的是組成位點，須重新選取完整 allele 後匯出。
+
 ### v9.45 — 2026-10-06
 
 - 基本資料中的 ploidy VCF 提示改為兩行起顯示：第一行列推估核型，後續逐行直接列出異常染色體與 gain／loss signal，例如 `chrY gain signal`；點擊仍可查看完整複核資訊。

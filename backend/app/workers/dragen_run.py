@@ -56,7 +56,7 @@ from pathlib import Path
 
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
-from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue
+from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, gba
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -89,7 +89,7 @@ MANAGED_POSTPROCESSING_NAMES = {
     "ploidy_qc.txt",
     "cnv.annotated.tsv",
     "sv.annotated.tsv",
-} | roh.MANAGED_NAMES | dragen_cnv_rescue.MANAGED_NAMES
+} | roh.MANAGED_NAMES | dragen_cnv_rescue.MANAGED_NAMES | gba.MANAGED_NAMES
 
 
 def _run_automap_for_roh(
@@ -1942,6 +1942,13 @@ def main() -> int:
                 published_source=final_raw_tsv,
             )
             _log(f"[source] {sid}: staged immutable SNV TSV {existing}")
+            gba_result = gba.prepare_outputs(
+                mode=mode, source_vcf=source_vcf, source_sample_id=source_sid,
+                sample_id=sid, post_dir=post_dir, raw_tsv=existing,
+            )
+            _log(f"[gba] {sid}: {gba_result['status']}; alleles={len(gba_result['variants'])}")
+            for warning in gba_result.get("warnings", []):
+                _log(f"[gba] {sid}: {warning}")
             ploidy_copy, ploidy_qc_copy = _copy_ploidy_artifacts(
                 mode=mode,
                 source_vcf=source_vcf,

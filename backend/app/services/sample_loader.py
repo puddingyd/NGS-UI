@@ -48,6 +48,7 @@ from . import (
     clinvar_latest_store,
     cnv_disease_selection,
     gene_disease_store,
+    gba,
     hpo_ontology,
     litvar2_on_demand,
     manual_acmg,
@@ -224,6 +225,7 @@ def _case_summary_signature(sample_dir: Path, omim_sig: tuple | None = None) -> 
         list(_file_signature(sample_layout.snv_gene_index_path(sample_id))),
         list(_file_signature(sample_layout.review_tsv(sample_id))),
         list(_file_signature(somatic.index_path(sample_id))),
+        list(_file_signature(sample_layout.state_file(sample_id, "gba.json"))),
         list(_file_signature(sample_layout.mito_tsv(sample_id))),
         list(_file_signature(sample_layout.cnv_tsv(sample_id))),
         list(_file_signature(sample_layout.sv_tsv(sample_id))),
@@ -670,6 +672,8 @@ def _case_snv_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, di
                 merge_snv_variant_row(variants, variant)
     for vid, variant in somatic.load_variants(sample_id, wanted=wanted).items():
         variants.setdefault(vid, variant)
+    gba.merge(variants, sample_id)
+    variants = {vid: v for vid, v in variants.items() if vid in wanted}
     if variants:
         snv_zygosity.normalize_loaded_variants(variants, sample_id)
         _enrich_snv_variants(variants, sample_id, sample_dir)
@@ -1052,6 +1056,10 @@ def _secondary_variant_gene(variant: dict) -> str:
 
 
 def _secondary_vaf_pass(variant: dict) -> bool:
+    if variant.get("gba"):
+        # The caller's gene assignment is not a conventional VAF; JAF is
+        # combined GBA1/GBAP1 and must never be compared to the SNV gate.
+        return not variant["gba"].get("review_required")
     vaf = _to_num(variant.get("alt_af"))
     return isinstance(vaf, (int, float)) and vaf >= 0.2
 
@@ -1286,7 +1294,7 @@ def _apply_effective_acmg(
             }
             source_scope = "genebe"
         else:
-            source = "in-house"
+            source = "GBA1 allele curation" if (variant.get("gba") or {}).get("clinical_assertion") else "in-house"
             selected = {
                 "classification": variant.get("ACMG_classification") or "",
                 "score": variant.get("ACMG_score"),
@@ -2005,6 +2013,9 @@ def load_sample_secondary_snv(
     all_variants = {
         variant_id: dict(variant) for variant_id, variant in all_variants.items()
     }
+    gba_additions = gba.merge(all_variants, sample_id)
+    if gba_additions:
+        _enrich_snv_variants(gba_additions, sample_id, sidecar_dir)
     snv_zygosity.normalize_loaded_variants(all_variants, sample_id)
     roh.annotate_variants(all_variants, sample_id)
     tiers = {tier: list(ids) for tier, ids in tiers.items()}
@@ -2185,6 +2196,9 @@ def load_sample(sample_id: str, version: str | None = None,
         if vid not in variants:
             variants[vid] = variant
             categories.setdefault(variant.get("tier", "2"), []).append(vid)
+    gba_additions = gba.merge(variants, sample_id)
+    if gba_additions:
+        _enrich_snv_variants(gba_additions, sample_id, sidecar_dir)
     snv_zygosity.normalize_loaded_variants(variants, sample_id)
     _apply_effective_acmg(
         variants,
@@ -2319,6 +2333,8 @@ def load_sample(sample_id: str, version: str | None = None,
         # this to render a "請重跑新版 pipeline" banner instead of an
         # empty SNV card.
         "snv_tsv_error":     old_format_error,
+        "gba": {key: value for key, value in gba.load(sample_id).items()
+                if key in {"status", "warnings", "raw_gba", "software_version", "replaced_ids"}},
         "somatic":           {**somatic.summary(sample_id), "review_missing_ids": somatic.missing_review_ids(
             sample_id, {vid for vid, status in (_meta_early.get("status") or {}).items()
                         if str(status) in {"1", "2", "C"}}, set(variants))},
@@ -2424,6 +2440,9 @@ def search_snv_by_genes(
         _enrich_snv_variants(additions, sample_id, sidecar_dir)
     for vid, variant in additions.items():
         matches.setdefault(vid, variant)
+    gba_additions = gba.merge(matches, sample_id, genes=set(wanted))
+    if gba_additions:
+        _enrich_snv_variants(gba_additions, sample_id, sidecar_dir)
     snv_zygosity.normalize_loaded_variants(matches, sample_id)
     _log_perf(
         "sample.snv_search",

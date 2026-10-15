@@ -176,6 +176,8 @@ def normalize_build(value: Any) -> str:
 
 
 def normalize_variant_id(value: Any) -> str:
+    if re.fullmatch(r"GBA1-[0-9a-f]{24}", str(value or "")):
+        return str(value)
     match = _VARIANT_RE.match(str(value or "").strip())
     if not match:
         raise ValueError("variant 必須是 chr-pos-ref-alt")

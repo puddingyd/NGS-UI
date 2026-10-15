@@ -181,6 +181,8 @@ UI 流程：
 
 ## 4. Adapter / tier 結構
 
+**GBA1 specialized caller（2026-10-15）**：DRAGEN worker 在 staging 產生 `{LIS}.gba.json`，精確配對同 source 的 targeted JSON 與 targeted／hard-filtered VCF，與既有 managed promotion 一起發布，不改 00–07。`services/gba.py` 支援七種 recombinant haplotype、aliases 及一般 `variants[]`；haplotype 合為一筆，對應 marker 不重複回報，主畫面／gene search／secondary／個案摘要／DOCX 共用。stable `GBA1-<24 hex>` ID 支援 manual ACMG；joint JDP/JAD/JAF 不當成 gene-specific DP/AD/VAF。未知／no-call／FILTER 或來源衝突保留待複核狀態，不能自動當陰性或 P。RecNciI 的 whole-allele ClinVar curation 為 VCV000004297.9，不借用 constituent 分類或偽裝成七月 baseline；其他 allele 依相符單點註解／人工判讀，不全面預設致病。健檢 GBA1 疾病名為高雪氏症、AR：單一 het 第二類；兩個獨立變異即使相位未知仍第一類並沿用相位說明。報告維持原表格，重組組成新增為表下第 2 點並在附錄重複，原點次後移；完整 allele AF 缺值不宣稱罕見。舊 component 選取不自動遷移，匯出前需重選 allele；舊個案須重跑三級產生 sidecar。詳細規格與來源見 `docs/ops/GBA1_SPECIALIZED_CALLER.md`。
+
 每種 variant type 一個 adapter（`backend/app/adapters/`），各回傳 `(variants_dict, categories_dict)`。`sample_loader.load_sample()` 把它們全部塞進一個 payload —— id namespace 不衝突（prefix 不同）。
 
 | Type | adapter | id 格式 | tiers（payload key） | tier 規則 | 排序 |

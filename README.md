@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+GBA1 specialized caller 現在整合進既有 SNV 卡片與報告：DRAGEN 的七種重組 haplotype 與一般 targeted variants 均可匯入；RecNciI 等複合 allele 合為一筆，保留原始 caller 證據。健檢單一 heterozygous 致病 allele 列第二類，另有獨立致病變異時列第一類並保留相位說明。表格格式不變，組成說明列於表下第 2 點及附錄。部署後舊個案須重跑三級（可沿用 Nextflow resume）產生 GBA1 sidecar；不會自動改寫既有選取。[輸入、判讀與更新說明](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
+
 ### 指定範圍 Somatic 分析（v9.35）
 
 載入個案後可在 SNV/Indel 標題旁開啟「Somatic 分析」，輸入多基因、GRCh38 座標或區間，由背景 worker 執行 Mutect2、品質過濾與註解。與完整 germline 去重後，僅新增點位併入原 SNV/Indel 卡片並標示 Somatic pipeline；germline 卡片及 read support 不變。「☑ Somatic」只在有可用的完成結果後顯示。支援三級分析同款進度條、整理後／原始 Log、取消、歷史、刪除、FILTER 複核、IGV、儲存及診斷報告；完成後自動更新主畫面。每次 run 可開啟獨立候選 modal，以完整卡片檢視所有 PASS 與被 FILTER 的點位；候選 modal 不顯示 IGV 驗證選單。主畫面的 IGV 驗證可選未確認／通過／不通過，以黃／綠／紅色顯示。annotation 共用三級 Research-only 的 dbNSFP 5.3a + P-KNN、SpliceAI、GPN-MSA 與本地 post-processing；GeneBe 在 10,000 個候選點位以下依 live API → local DB → API cache 查詢，超過門檻時沿用三級大批次的 local DB 優先流程。

@@ -1170,6 +1170,16 @@ function _bamIndexUrl(bam) {
 // reviewer can compare coverage around both breakpoints.
 function _igvLocusFor(v) {
   if (!v) return "";
+  if (v.gba && v.POS) {
+    const geneRegion = `${_normalizeChrom(v.CHROM)}:${Math.max(1, v.POS - 100)}-${(v.END || v.POS) + 100}`;
+    const homologous = (v.gba.evidence || []).flatMap(r => String(r.info?.JIDS || "").split(","))
+      .map(s => /^(chr\w+)_(\d+)_(\d+)$/.exec(s))
+      .filter(m => m && Math.abs(Number(m[2]) - v.POS) > 10000);
+    if (!homologous.length) return geneRegion;
+    const low = Math.min(...homologous.map(m => Number(m[2])));
+    const high = Math.max(...homologous.map(m => Number(m[3])));
+    return `${geneRegion} ${homologous[0][1]}:${low - 100}-${high + 100}`;
+  }
   const chrom = _normalizeChrom(v.CHROM || "");
   if (!chrom) return "";
   const start = Number(v.POS);
@@ -4643,10 +4653,10 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   v = _variantWithSelectedTranscript(v, id);
 
   const links = [
-    `<a href="#" class="btn-igv" data-id="${escapeAttr(id)}" title="在 IGV 內檢視">IGV</a>`,
-    `<a href="${urls.varsome}"  target="_blank" rel="noopener">Varsome</a>`,
-    `<a href="${urls.franklin}" target="_blank" rel="noopener">Franklin</a>`,
-    `<a href="${urls.genebe}"   target="_blank" rel="noopener">GeneBe</a>`,
+    v.POS ? `<a href="#" class="btn-igv" data-id="${escapeAttr(id)}" title="在 IGV 內檢視">IGV</a>` : "",
+    !v.gba || (v.REF && v.ALT) ? `<a href="${urls.varsome}"  target="_blank" rel="noopener">Varsome</a>` : "",
+    !v.gba || (v.REF && v.ALT) ? `<a href="${urls.franklin}" target="_blank" rel="noopener">Franklin</a>` : "",
+    !v.gba || (v.REF && v.ALT) ? `<a href="${urls.genebe}"   target="_blank" rel="noopener">GeneBe</a>` : "",
     urls.omim ? `<a href="${urls.omim}"     target="_blank" rel="noopener">OMIM</a>` : "",
   ].join("");
 
@@ -4793,6 +4803,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v, id)}
+    ${renderGbaEvidence(v)}
     ${v.somatic ? `<div class="somatic-card-evidence">Somatic pipeline · Mutect2 · FILTER ${escapeHtml(v.somatic_filter || "—")}
       ${v.somatic_historical ? " · 先前分析保留的已標記點位" : ""}
       <span class="somatic-qc-metrics">品質：${Object.entries(v.somatic_qc || {}).map(([k, val]) => `${escapeHtml(k)} ${escapeHtml(val || "—")}`).join(" · ")}</span>
@@ -4819,7 +4830,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         </div>
       </div>
       <div class="snv-annotation-column">
-        ${v.somatic ? `<span class="k">ClinVar (${escapeHtml(v.somatic_clinvar_release || "版本未提供")})${clinvarExternalLink}</span>` : `<span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span>`}<span class="v">${renderClinvarValue(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars)}</span>
+        ${v.gba?.clinical_assertion ? `<span class="k">ClinVar (allele)${clinvarExternalLink}</span>` : v.somatic ? `<span class="k">ClinVar (${escapeHtml(v.somatic_clinvar_release || "版本未提供")})${clinvarExternalLink}</span>` : `<span class="k">ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}</span>`}<span class="v">${renderClinvarValue(v.CLNSIG, v.CLNSIGCONF, v.clinvar_stars)}</span>
         ${hasErepo ? `<span class="k">ERepo</span>
         <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 ACMG/AMP criteria；ERepo 為 ClinGen VCEP experts 評估">
           <span class="acmg-summary-value ${classifySignificance(erepoDisplayClass) || ""}">${escapeHtml(erepoDisplayClass || "—")} (${escapeHtml(v.clingen_vcep_score == null ? "—" : v.clingen_vcep_score)})</span>
@@ -4871,6 +4882,27 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
 }
 
 // ---- helpers used by renderVariantCard (Phase 4) -----------------
+
+function renderGbaEvidence(v) {
+  const g = v.gba;
+  if (!g) return "";
+  const breakpoint = g.deletion_breakpoint_in_gene === true ? "是"
+    : g.deletion_breakpoint_in_gene === false ? "否" : "未知";
+  const warnings = (g.review_required || []).map(escapeHtml).join("；");
+  const evidence = (g.evidence || []).map(r => {
+    const metrics = Object.entries(r.format || {}).map(([k, val]) =>
+      `${escapeHtml(k)}=${escapeHtml(String(val))}`).join(" · ");
+    return `<div>${escapeHtml(r.id)} · FILTER ${escapeHtml(r.filter || "—")}<br>${metrics}<br>JIDS: ${escapeHtml(String(r.info?.JIDS || "—"))}</div>`;
+  }).join("");
+  return `<div class="somatic-card-evidence">${escapeHtml(v.gba_composition || g.name)}
+    ${warnings ? `<div class="sig-lp">待複核：${warnings}</div>` : ""}
+    <details><summary>GBA1 specialized caller 證據</summary>
+      <div>GBA1/GBAP1 combined CN: ${escapeHtml(String(g.total_copy_number ?? "—"))} · deletion breakpoint in gene: ${breakpoint}</div>
+      <div>Allele copies: ${escapeHtml(String(g.allele_copy_number ?? "—"))} · FILTER: ${escapeHtml(g.filter || "—")}</div>
+      <div>JDP／JAD／JAF 為 GBA1 與 GBAP1 合併證據，不等同 GBA1 的 DP／AD／VAF。</div>
+      ${evidence}
+    </details></div>`;
+}
 
 // GIAB stratification label → badge text + tooltip. Labels come from the
 // TSV GIAB_STRATA column (written by scripts/annotate_giab_strata.py, which
@@ -5472,7 +5504,7 @@ function _renderSnvTsvErrorBanner() {
   const card = document.getElementById("card-snv");
   if (!card) return;
   const existing = card.querySelector(".snv-tsv-error");
-  const msg = (state.data?.snv_tsv_error || "").trim();
+  const msg = [state.data?.snv_tsv_error || "", ...(state.data?.gba?.warnings || [])].filter(Boolean).join("；").trim();
   if (!msg) {
     if (existing) existing.remove();
     return;
@@ -5498,6 +5530,7 @@ function fmtExonIntron(v) {
 }
 
 function fmtPhase(v) {
+  if (v.gba?.kind === "haplotype") return "Caller-phased haplotype";
   const result = (v.phase_result || "").trim();
   const group  = (v.phase_group  || "").trim();
   if (!result && !group) return "—";
@@ -9744,6 +9777,7 @@ function variantGnomadAF(v) {
   return null;
 }
 function gnomadAFText(v) {
+  if (v.gba?.kind === "haplotype") return "本次註解未提供此完整重組等位基因的 gnomAD 頻率。";
   const af = variantGnomadAF(v);
   if (af == null || af === 0) {
     return "該變異位點在族群資料庫 gnomAD 中未報導過發生率，顯示其為罕見變異位點。";
@@ -9865,7 +9899,8 @@ function renderVariantBlock(vid, v, kind) {
     ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
     : "";
   out.push(`    1. ${gene}為${diseaseSummary.names || "—"}的致病基因之一，其遺傳模式屬於${diseaseSummary.inheritance}${mimText}。`);
-  out.push(`    2. 此為${acmgTxt}之變異位點，${tail}。`);
+  if (v.gba_composition) out.push(`    2. ${v.gba_composition}`);
+  out.push(`    ${v.gba_composition ? 3 : 2}. 此為${acmgTxt}之變異位點，${tail}。`);
 
   // Descriptive paragraph
   const cons = consequenceEntry(v.Consequence);
@@ -9873,7 +9908,7 @@ function renderVariantBlock(vid, v, kind) {
   const prot = h.protein ? ` (${h.protein})` : "";
   const paragraph = [
     `在個案之檢體中，檢測到 1 個位於基因 ${gene} 的變異位點。`,
-    `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
+    v.gba_composition || `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
     gnomadAFText(v),
     clinvarText(v),
     acmgGuidelineText(v),
@@ -10222,7 +10257,8 @@ function pdfWriteVariant(w, vid, v, kind) {
     ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
     : "";
   w.para(`1. ${gene}為${diseaseSummary.names || "—"}的致病基因之一，其遺傳模式屬於${diseaseSummary.inheritance}${mimText}。`, { indent: 4 });
-  w.para(`2. 此為${acmgTxt}之變異位點，${tail}。`, { indent: 4 });
+  if (v.gba_composition) w.para(`2. ${v.gba_composition}`, { indent: 4 });
+  w.para(`${v.gba_composition ? 3 : 2}. 此為${acmgTxt}之變異位點，${tail}。`, { indent: 4 });
   w.gap(2);
 
   // Descriptive paragraph — same composition as the clinical TXT block.
@@ -10231,7 +10267,7 @@ function pdfWriteVariant(w, vid, v, kind) {
   const prot = h.protein ? ` (${h.protein})` : "";
   const para = [
     `在個案之檢體中，檢測到 1 個位於基因 ${gene} 的變異位點。`,
-    `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
+    v.gba_composition || `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
     gnomadAFText(v),
     clinvarText(v),
     acmgGuidelineText(v),

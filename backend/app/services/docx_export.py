@@ -29,6 +29,7 @@ from . import (
     clinvar_latest_store,
     cnv_disease_selection,
     cnv_sv_merge,
+    gba,
     hpo_ontology,
     omim_store,
     panel_deadzone,
@@ -1169,9 +1170,15 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
 
     for index, disease_line in enumerate(disease_lines, start=1):
         _add_paragraph(doc, f"    {index}. {disease_line}")
+    compositions = list(dict.fromkeys(
+        text for variant, _edits in rows
+        if (text := gba.composition_text(variant))
+    ))
+    for index, text in enumerate(compositions, start=len(disease_lines) + 1):
+        _add_paragraph(doc, f"    {index}. {text}")
     _add_paragraph(
         doc,
-        f"    {len(disease_lines) + 1}. {_tier_patho_sentence(_patho_sentence_for_classes(acmg_labels), tier)}",
+        f"    {len(disease_lines) + len(compositions) + 1}. {_tier_patho_sentence(_patho_sentence_for_classes(acmg_labels), tier)}",
     )
 
 
@@ -1196,6 +1203,24 @@ def _snv_reference_text(v: dict, edits: dict, *, acmg_zh: bool = False) -> str:
     clnv_sent = (f"在疾病資料庫 (ClinVar) 中此變異位點被報導為「{clinvar}」"
                  if clinvar and clinvar != "—" else
                  "在疾病資料庫 (ClinVar) 中未被報導過")
+
+    composition = gba.composition_text(v)
+    if composition:
+        assertion = (v.get("gba") or {}).get("clinical_assertion") or {}
+        clinical_sentence = (
+            f"在疾病資料庫 (ClinVar) 中此重組等位基因被報導為「{clinvar}」"
+            f"（{assertion['accession']}）。" if assertion else
+            "本次註解未提供此完整重組等位基因的 ClinVar 分類。"
+        )
+        return (
+            f"    在個案之檢體中，檢測到1個位於基因{gene}的重組變異。{composition}"
+            "本次註解未提供此完整重組等位基因的 gnomAD 頻率。"
+            f"{clinical_sentence}"
+            "根據美國醫學遺傳學暨基因體學學會 (American College of Medical "
+            "Genetics and Genomics) 與分子病理學學會 (Association for "
+            f"Molecular Pathology) 於2015年發表之準則，評測此變異為「{acmg or '尚未分類'}」。"
+            "此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。"
+        )
 
     # PubMed sentence intentionally omitted — the new pipeline carries
     # no HGMD reported-cases column.
@@ -2236,6 +2261,10 @@ def _health_gene_profile(
     edits: dict,
 ) -> tuple[str, list[str]]:
     """Return disease text and inheritance for ACMG or selected panel genes."""
+    if gene in {"GBA", "GBA1"}:
+        # Gaucher pathogenicity and Parkinson susceptibility are distinct
+        # assertions. Carrier status must not inherit an OMIM AD risk row.
+        return "高雪氏症（Gaucher disease）", ["AR"]
     static_rows = _ACMG_SF_DISEASES.get(gene) or []
     if static_rows:
         diseases = [str(row.get("disease") or "").strip() for row in static_rows]
@@ -2572,6 +2601,11 @@ def _health_snv_gene_block(
         same_gene_count=len(rows),
         sex_karyotype=sex_karyotype,
     )
+    compositions = list(dict.fromkeys(
+        text for variant, _edits in rows
+        if (text := gba.composition_text(variant))
+    ))
+    narrative[1:1] = compositions
     for idx, text in enumerate(narrative, start=1):
         _add_paragraph(doc, f"    {idx}. {text}")
 
@@ -3815,6 +3849,15 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     report = report_store.load(sample_id)
     variants = secondary.get("variants") or {}
     categories = secondary.get("categories") or {}
+    if include_disease_findings:
+        gba.validate_saved_selection(sample, report, panels=requested_set.intersection(_HEALTH_DISEASE_SECTIONS))
+        gba_warnings = (sample.get("gba") or {}).get("warnings") or []
+        if gba_warnings and any(
+            {"GBA", "GBA1"}.intersection(genes)
+            for category, genes in sample_loader._secondary_panel_genes().items()
+            if category in requested_set
+        ):
+            raise ValueError("本次所選套組的 GBA1 caller 結果未完整判定，請核對後再匯出：" + "；".join(gba_warnings))
 
     doc = Document()
     _apply_normal_font(doc)
@@ -3842,6 +3885,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             categories,
             variants,
         )
+        gba.validate_report(variants, ids)
         risk_ids, carrier_ids = _health_acmg_categorized_ids(
             ids,
             variants,
@@ -3912,6 +3956,7 @@ def build_diagnosis_docx(sample_id: str, *, gene_list_mode: str = "grouped") -> 
 
     report = report_store.load(sample_id)
     meta   = sample.get("meta") or {}
+    gba.validate_saved_selection(sample, report)
     if ploidy.stale_finding_ids(report, sample.get("ploidy_findings") or {}):
         raise ValueError("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請清除舊標記並重新核對後再匯出報告")
     if (sample.get("somatic") or {}).get("review_missing_ids"):
