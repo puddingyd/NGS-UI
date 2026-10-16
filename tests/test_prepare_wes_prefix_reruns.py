@@ -50,15 +50,59 @@ def test_prepares_three_sheets_and_current_wes_launch(monkeypatch, tmp_path):
         assert "secondary_qc_report.py" in command
 
 
-def test_duplicate_sample_from_different_runs_stops_all_batches(monkeypatch, tmp_path):
+def test_duplicate_sample_uses_newer_run(monkeypatch, tmp_path):
     raw = _configure(monkeypatch, tmp_path)
     for sample in ("23WE0001", "24WE0002", "25WE0003"):
         _pair(raw, sample)
-    _pair(tmp_path / "raw" / "another_run", "23WE0001")
+    newer = tmp_path / "raw" / "20261017_new" / "Analysis" / "1" / "Data" / "fastq"
+    _pair(newer, "23WE0001")
 
-    with pytest.raises(ValueError, match="同一 Sample ID"):
+    results = reruns.prepare(rescan=True)
+
+    with Path(results[0]["samplesheet_path"]).open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert "20261017_new" in rows[0]["fastq_1"]
+
+
+def test_duplicate_sample_with_same_run_date_stops_all_batches(monkeypatch, tmp_path):
+    raw = _configure(monkeypatch, tmp_path)
+    for sample in ("23WE0001", "24WE0002", "25WE0003"):
+        _pair(raw, sample)
+    _pair(tmp_path / "raw" / "20261016_other" / "Analysis" / "1" / "Data" / "fastq", "23WE0001")
+
+    with pytest.raises(ValueError, match="同日有不同 FASTQ"):
         reruns.prepare(rescan=True)
     assert not (tmp_path / "staging").exists()
+
+
+def test_user_reported_runs_choose_february_26_even_when_index_order_reversed(tmp_path):
+    sample = "23WE0093T"
+    entries = []
+    for run in ("240221_VH00815_49_AACFHGMHV", "240226_VH00815_50_AACGKVCHV"):
+        folder = tmp_path / run
+        _pair(folder, sample)
+        entries.append({
+            "sample_id": sample,
+            "run": run,
+            "fastq_1": str(folder / f"{sample}_S1_R1_001.fastq.gz"),
+            "fastq_2": str(folder / f"{sample}_S1_R2_001.fastq.gz"),
+        })
+    for prefix in ("24WE", "25WE"):
+        folder = tmp_path / "240226_VH00815_50_AACGKVCHV"
+        sid = prefix + "0001"
+        _pair(folder, sid)
+        entries.append({
+            "sample_id": sid,
+            "run": folder.name,
+            "fastq_1": str(folder / f"{sid}_S1_R1_001.fastq.gz"),
+            "fastq_2": str(folder / f"{sid}_S1_R2_001.fastq.gz"),
+        })
+
+    selected = reruns.select_samples(entries)["23WE"][0]
+
+    assert selected["run"] == "240226_VH00815_50_AACGKVCHV"
+    assert [entry["run"] for entry in selected["_older_runs"]] == ["240221_VH00815_49_AACFHGMHV"]
 
 
 def test_missing_prefix_or_existing_batch_stops_before_writes(monkeypatch, tmp_path):

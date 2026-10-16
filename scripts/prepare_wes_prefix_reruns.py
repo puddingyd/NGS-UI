@@ -8,8 +8,10 @@ This script prepares files only; it never starts Nextflow or connects to DGX2.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections import defaultdict
+from datetime import date, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -26,10 +28,22 @@ BATCHES = {
 }
 
 
+def _run_date(entry: dict) -> date | None:
+    """Use the sequencing run date, not a copied FASTQ's modification time."""
+    run = str(entry.get("run") or "")
+    match = re.match(r"^(20\d{6}|\d{6})(?:_|$)", run)
+    if not match:
+        return None
+    value = match.group(1)
+    try:
+        return datetime.strptime(value, "%Y%m%d" if len(value) == 8 else "%y%m%d").date()
+    except ValueError:
+        return None
+
+
 def select_samples(discovered: list[dict]) -> dict[str, list[dict]]:
-    """Choose complete WES pairs and reject ambiguous sample IDs."""
-    grouped: dict[str, dict[str, dict]] = {prefix: {} for prefix in BATCHES}
-    conflicts: dict[str, list[str]] = defaultdict(list)
+    """Choose each sample's latest dated run and reject ambiguous ties."""
+    candidates: dict[str, dict[str, list[dict]]] = {prefix: defaultdict(list) for prefix in BATCHES}
     for entry in discovered:
         sample_id = str(entry.get("sample_id") or "")
         prefix = next((p for p in BATCHES if sample_id.startswith(p)), None)
@@ -45,18 +59,31 @@ def select_samples(discovered: list[dict]) -> dict[str, list[dict]]:
             m2 = secondary._NEXTSEQ_RE.fullmatch(f2.name)
         if not m1 or not m2 or m1.group(1) != m2.group(1) or m1.group(2) != "1" or m2.group(2) != "2":
             raise ValueError(f"FASTQ R1/R2 不屬於同一來源樣本：{sample_id}: {f1}, {f2}")
-        previous = grouped[prefix].get(sample_id)
-        if previous:
-            old_pair = (Path(previous["fastq_1"]).resolve(), Path(previous["fastq_2"]).resolve())
-            new_pair = (f1.resolve(), f2.resolve())
-            if old_pair != new_pair:
-                conflicts[sample_id].extend((str(previous["fastq_1"]), str(f1)))
+        pair = (f1.resolve(), f2.resolve())
+        if any((Path(old["fastq_1"]).resolve(), Path(old["fastq_2"]).resolve()) == pair
+               for old in candidates[prefix][sample_id]):
             continue
-        grouped[prefix][sample_id] = entry
+        candidates[prefix][sample_id].append(entry)
 
-    if conflicts:
-        details = "; ".join(f"{sid}: {', '.join(paths)}" for sid, paths in sorted(conflicts.items()))
-        raise ValueError(f"同一 Sample ID 找到不同 FASTQ pair，需先選定來源：{details}")
+    grouped: dict[str, dict[str, dict]] = {prefix: {} for prefix in BATCHES}
+    for prefix, sample_entries in candidates.items():
+        for sample_id, entries in sample_entries.items():
+            if len(entries) == 1:
+                grouped[prefix][sample_id] = entries[0]
+                continue
+            dated = [(_run_date(entry), entry) for entry in entries]
+            if any(run_date is None for run_date, _ in dated):
+                runs = ", ".join(str(entry.get("run") or entry["fastq_1"]) for entry in entries)
+                raise ValueError(f"{sample_id} 有多個來源但無法判斷 run 日期：{runs}")
+            latest_date = max(run_date for run_date, _ in dated)
+            latest = [entry for run_date, entry in dated if run_date == latest_date]
+            if len(latest) != 1:
+                runs = ", ".join(str(entry.get("run") or entry["fastq_1"]) for entry in latest)
+                raise ValueError(f"{sample_id} 同日有不同 FASTQ 來源，需人工選定：{runs}")
+            chosen = dict(latest[0])
+            chosen["_older_runs"] = [entry for run_date, entry in dated if run_date < latest_date]
+            grouped[prefix][sample_id] = chosen
+
     empty = [prefix for prefix, entries in grouped.items() if not entries]
     if empty:
         raise ValueError(f"找不到完整配對的 WES FASTQ：{', '.join(empty)}；未建立任何 samplesheet")
@@ -78,6 +105,12 @@ def prepare(*, dry_run: bool = False, rescan: bool = False) -> list[dict]:
         print(f"使用二級 FASTQ 索引（更新時間：{index['updated_at']}）；若需檢查新檔或缺配對檔，請加 --rescan", flush=True)
         discovered = index.get("wes") or []
     grouped = select_samples(discovered)
+    for prefix, samples in grouped.items():
+        for sample in samples:
+            if sample.get("_older_runs"):
+                old_runs = ", ".join(str(entry.get("run") or entry["fastq_1"])
+                                     for entry in sample["_older_runs"])
+                print(f"{prefix} {sample['sample_id']}: 選用 {sample.get('run') or sample['fastq_1']}；略過較舊 {old_runs}", flush=True)
     for samples in grouped.values():
         for sample in samples:
             secondary._validate_fastq_pair(Path(sample["fastq_1"]), Path(sample["fastq_2"]))
