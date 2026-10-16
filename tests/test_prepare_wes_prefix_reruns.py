@@ -30,7 +30,7 @@ def test_prepares_three_sheets_and_current_wes_launch(monkeypatch, tmp_path):
     for sample in ("23WE0001", "24WE0002", "25WE0003", "22WE0004"):
         _pair(raw, sample)
 
-    results = reruns.prepare()
+    results = reruns.prepare(rescan=True)
 
     assert [result["batch_name"] for result in results] == list(reruns.BATCHES.values())
     for result in results:
@@ -57,7 +57,7 @@ def test_duplicate_sample_from_different_runs_stops_all_batches(monkeypatch, tmp
     _pair(tmp_path / "raw" / "another_run", "23WE0001")
 
     with pytest.raises(ValueError, match="同一 Sample ID"):
-        reruns.prepare()
+        reruns.prepare(rescan=True)
     assert not (tmp_path / "staging").exists()
 
 
@@ -66,13 +66,13 @@ def test_missing_prefix_or_existing_batch_stops_before_writes(monkeypatch, tmp_p
     _pair(raw, "23WE0001")
     _pair(raw, "24WE0002")
     with pytest.raises(ValueError, match="25WE"):
-        reruns.prepare()
+        reruns.prepare(rescan=True)
     assert not (tmp_path / "staging").exists()
 
     _pair(raw, "25WE0003")
     (tmp_path / "output" / "WES_24WE_re").mkdir(parents=True)
     with pytest.raises(FileExistsError, match="WES_24WE_re"):
-        reruns.prepare()
+        reruns.prepare(rescan=True)
     assert not (tmp_path / "staging").exists()
 
 
@@ -83,5 +83,42 @@ def test_incomplete_pair_stops_all_batches(monkeypatch, tmp_path):
     (raw / "23WE0999_S2_R1_001.fastq.gz").touch()
 
     with pytest.raises(ValueError, match="23WE0999"):
-        reruns.prepare()
+        reruns.prepare(rescan=True)
     assert not (tmp_path / "staging").exists()
+
+
+def test_fresh_index_avoids_full_scan(monkeypatch, tmp_path):
+    raw = _configure(monkeypatch, tmp_path)
+    for sample in ("23WE0001", "24WE0002", "25WE0003"):
+        _pair(raw, sample)
+    secondary = reruns.secondary
+    index_path = tmp_path / "index.json"
+    monkeypatch.setattr(secondary, "SECONDARY_FASTQ_INDEX_PATH", index_path)
+    secondary.save_index({
+        "schema_version": secondary._FASTQ_INDEX_SCHEMA_VERSION,
+        "updated_at": secondary._now(),
+        "wes": secondary.list_wes_fastqs(),
+        "wgs": [],
+    })
+    monkeypatch.setattr(secondary, "list_wes_fastqs", lambda **kwargs: pytest.fail("should use index"))
+
+    results = reruns.prepare(dry_run=True)
+
+    assert [result["sample_count"] for result in results] == [1, 1, 1]
+    assert not (tmp_path / "staging").exists()
+
+
+def test_stale_index_requires_explicit_rescan(monkeypatch, tmp_path):
+    _configure(monkeypatch, tmp_path).mkdir(parents=True)
+    secondary = reruns.secondary
+    index_path = tmp_path / "index.json"
+    monkeypatch.setattr(secondary, "SECONDARY_FASTQ_INDEX_PATH", index_path)
+    secondary.save_index({
+        "schema_version": secondary._FASTQ_INDEX_SCHEMA_VERSION,
+        "updated_at": "2020-01-01 00:00:00",
+        "wes": [],
+        "wgs": [],
+    })
+
+    with pytest.raises(ValueError, match="已過期"):
+        reruns.prepare(dry_run=True)

@@ -63,13 +63,24 @@ def select_samples(discovered: list[dict]) -> dict[str, list[dict]]:
     return {prefix: [entries[sid] for sid in sorted(entries)] for prefix, entries in grouped.items()}
 
 
-def prepare(*, dry_run: bool = False) -> list[dict]:
+def prepare(*, dry_run: bool = False, rescan: bool = False) -> list[dict]:
     existing_roots = [root for root in secondary.SECONDARY_WES_FASTQ_ROOTS if root.is_dir()]
     if not existing_roots:
         raise FileNotFoundError("找不到 WES FASTQ roots；請在掛載原始資料的 DGM 主機執行")
 
-    # Scan live files; a cached UI index could omit newly arrived FASTQs.
-    grouped = select_samples(secondary.list_wes_fastqs(strict_prefixes=tuple(BATCHES)))
+    if rescan:
+        print("正在重新掃描 WES FASTQ roots；大型原始資料目錄可能需要數分鐘以上...", flush=True)
+        discovered = secondary.list_wes_fastqs(strict_prefixes=tuple(BATCHES))
+    else:
+        index = secondary.load_index()
+        if secondary.index_is_stale(index):
+            raise ValueError("二級 FASTQ 索引不存在或已過期；請先更新 UI 索引，或加 --rescan 直接掃描")
+        print(f"使用二級 FASTQ 索引（更新時間：{index['updated_at']}）；若需檢查新檔或缺配對檔，請加 --rescan", flush=True)
+        discovered = index.get("wes") or []
+    grouped = select_samples(discovered)
+    for samples in grouped.values():
+        for sample in samples:
+            secondary._validate_fastq_pair(Path(sample["fastq_1"]), Path(sample["fastq_2"]))
     for batch in BATCHES.values():
         staging = secondary.SECONDARY_SAMPLESHEET_STAGING_ROOT / batch
         output = secondary.SECONDARY_OUTPUT_ROOT / batch
@@ -95,9 +106,10 @@ def prepare(*, dry_run: bool = False) -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="只列出各批樣本，不寫入檔案")
+    parser.add_argument("--rescan", action="store_true", help="不用每日索引，重新掃描全部 WES FASTQ（可能較慢）")
     args = parser.parse_args()
     try:
-        results = prepare(dry_run=args.dry_run)
+        results = prepare(dry_run=args.dry_run, rescan=args.rescan)
     except (FileNotFoundError, FileExistsError, ValueError, OSError) as exc:
         parser.exit(1, f"錯誤：{exc}\n")
     for result in results:
