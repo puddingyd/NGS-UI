@@ -139,7 +139,7 @@ def _entry(
     }
 
 
-def list_wes_fastqs() -> list[dict]:
+def list_wes_fastqs(*, strict_prefixes: tuple[str, ...] = ()) -> list[dict]:
     grouped: dict[tuple[str, str, str], dict[str, Path]] = {}
     reanalysis_grouped: dict[Path, dict[str, Path]] = {}
     for root in SECONDARY_WES_FASTQ_ROOTS:
@@ -159,6 +159,7 @@ def list_wes_fastqs() -> list[dict]:
             grouped.setdefault(key, {})[read] = p
 
     out: list[dict] = []
+    incomplete: list[str] = []
     for (sample, run, input_dir), reads in grouped.items():
         if "1" in reads and "2" in reads:
             out.append(_entry(
@@ -169,8 +170,12 @@ def list_wes_fastqs() -> list[dict]:
                 run=run,
                 input_dir=Path(input_dir),
             ))
+        elif strict_prefixes and sample.startswith(strict_prefixes):
+            incomplete.append(f"{sample} ({input_dir})")
     for folder, reads in reanalysis_grouped.items():
         if "1" not in reads or "2" not in reads:
+            if strict_prefixes and folder.name.startswith(strict_prefixes):
+                incomplete.append(f"{folder.name} ({folder})")
             continue
         sample = folder.name
         source = _REANALYSIS_RE.match(reads["1"].name).group(1)
@@ -184,6 +189,8 @@ def list_wes_fastqs() -> list[dict]:
             input_dir=folder,
             reanalysis=True,
         ))
+    if incomplete:
+        raise ValueError("WES FASTQ 缺少 R1/R2 配對：" + ", ".join(sorted(incomplete)))
     out.sort(key=lambda r: (-_run_sort_date(r.get("run", "")), r["sample_id"]))
     return out
 
