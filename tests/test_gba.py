@@ -142,6 +142,7 @@ def test_targeted_vcf_without_joint_markers_uses_hard_filtered_and_keeps_other_a
 def test_load_recovers_joint_display_evidence_from_unchanged_source(tmp_path, monkeypatch):
     source = tmp_path / "SOURCE.hard-filtered.vcf.gz"
     source.write_bytes(b"unchanged source")
+    Path(str(source) + ".tbi").write_bytes(b"index")
     stat = source.stat()
     variant = rec()
     sidecar = tmp_path / "CASE.gba.json"
@@ -164,11 +165,20 @@ def test_load_recovers_joint_display_evidence_from_unchanged_source(tmp_path, mo
     ]
     monkeypatch.setattr(gba.sample_layout, "state_file", lambda *_: sidecar)
     monkeypatch.setattr(gba.sample_layout, "snv_raw_tsv", lambda *_: tmp_path / "missing.tsv")
-    monkeypatch.setattr(gba, "_select_evidence", lambda *_args, **_kwargs: (source, rows))
+    calls = []
+    def select(*_args, **_kwargs):
+        calls.append(1)
+        return source, rows
+    monkeypatch.setattr(gba, "_select_evidence", select)
     loaded = gba.load("CASE")["variants"][variant["id"]]
     assert [r["format"]["JDP"] for r in loaded["gba"]["evidence"]] == ["61", "68", "62"]
     assert loaded["CLNSIG"] == variant["CLNSIG"]
     assert loaded["POS"] == 155235203
+    gba.load("CASE")
+    assert len(calls) == 1
+    Path(str(source) + ".tbi").write_bytes(b"updated index")
+    gba.load("CASE")
+    assert len(calls) == 2
 
 
 def test_components_are_replaced_but_unrelated_variant_is_kept(tmp_path, monkeypatch):
@@ -249,6 +259,23 @@ def test_health_report_negative_limitation_is_conditional():
     assert docx_export._HEALTH_NEGATIVE_LIMITATION.startswith(
         "若於本次檢測之基因中未檢出疾病資料庫中已收錄之致病性或疑似致病性變異，並不能排除"
     )
+
+
+def test_diagnosis_recncii_uses_existing_table_bullets_and_reference():
+    v = rec()
+    v["OMIM_disease"] = "Gaucher disease (AR)"
+    doc = Document()
+    docx_export._snv_gene_block(doc, [(v, {})], tier="1")
+    text = "\n".join(p.text for p in doc.paragraphs)
+    table = next(p.text for p in doc.paragraphs if "RS ID" in p.text)
+    row = next(line for p in doc.paragraphs for line in p.text.splitlines()
+               if line.startswith("     1    GBA1"))
+    assert "－" in row and row.count("－") == 2
+    assert docx_export._str_width(row) == docx_export._str_width(table.splitlines()[0])
+    assert "RecNciI" in row
+    assert "2. " + v["gba_composition"] in text
+    assert "3. 此為致病性之變異位點" in text
+    assert v["gba_composition"] in docx_export._snv_reference_text(v, {})
 
 
 def test_recncii_plus_separate_snv_first_category_with_phase_unknown():

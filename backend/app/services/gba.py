@@ -6,6 +6,7 @@ as evidence, never converted to gene-specific DP/AD/VAF or ACMG points.
 from __future__ import annotations
 
 import csv
+import copy
 import gzip
 import hashlib
 import json
@@ -13,6 +14,7 @@ import re
 import shutil
 import subprocess
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 
 from . import sample_layout
@@ -292,6 +294,28 @@ def _select_evidence(source_vcf: Path, source_sample_id: str,
     return chosen, evidence
 
 
+def _indexed_evidence_signatures(source_vcf: Path, source_sample_id: str) -> tuple:
+    targeted = source_vcf.parent / f"{source_sample_id}.targeted.vcf.gz"
+    paths = list(dict.fromkeys((targeted, source_vcf)))
+    signatures = []
+    for path in paths:
+        index = Path(str(path) + ".tbi")
+        if path.is_file() and index.is_file():
+            source_stat, index_stat = path.stat(), index.stat()
+            signatures.append((str(path), source_stat.st_size, source_stat.st_mtime_ns,
+                               index_stat.st_size, index_stat.st_mtime_ns))
+    return tuple(signatures)
+
+
+@lru_cache(maxsize=16)
+def _cached_indexed_evidence(source_vcf: str, source_sample_id: str,
+                             build: str, signatures: tuple) -> list[dict]:
+    if not signatures:
+        return []
+    return _select_evidence(Path(source_vcf), source_sample_id, build,
+                            indexed_only=True)[1]
+
+
 def prepare_outputs(*, mode: str, source_vcf: str | Path, source_sample_id: str,
                     sample_id: str, post_dir: Path, raw_tsv: Path) -> dict:
     source_vcf = Path(source_vcf)
@@ -362,15 +386,16 @@ def load(sample_id: str) -> dict:
                 ]
                 for source, signature in (sources.get("evidence_vcf_signatures") or {}).items()
             )
-            if sources.get("vcf_signature") == [stat.st_size, stat.st_mtime_ns] and recorded_sources_unchanged:
+            if (sources.get("vcf_signature") == [stat.st_size, stat.st_mtime_ns]
+                    and recorded_sources_unchanged and shutil.which("bcftools")):
                 source_id = result.get("source_sample_id") or ""
                 hard_filtered = recorded_vcf.parent / f"{source_id}.hard-filtered.vcf.gz"
                 source_vcf = hard_filtered if hard_filtered.is_file() else recorded_vcf
                 try:
-                    _, evidence = _select_evidence(
-                        source_vcf, source_id, result.get("genome_build") or "hg38",
-                        indexed_only=True,
-                    )
+                    evidence = copy.deepcopy(_cached_indexed_evidence(
+                        str(source_vcf), source_id, result.get("genome_build") or "hg38",
+                        _indexed_evidence_signatures(source_vcf, source_id),
+                    ))
                     recovered, _, _ = project(result.get("raw_gba") or {}, evidence, {},
                                               result.get("genome_build") or "hg38")
                     for vid, variant in variants.items():

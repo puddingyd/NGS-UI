@@ -8,7 +8,7 @@
 - 同層 `{source}.targeted.vcf.gz` 與原始 hard-filtered VCF 均讀取 GBA 區域；相同 ALT 優先保留有完整 joint metrics／allele ID 的紀錄，其他只見於其中一份的 GBA1 allele 也保留。VCF 必須為單一相同 source sample；JSON sampleId 亦須相符。不同內容的多份候選 JSON、錯誤格式或樣本不符會阻止整批發布。
 - 不使用 LIS ID 猜測來源、不跨 run 搜尋、不把其他樣本的 targeted VCF 合併。JSON SHA256、軟體／組裝版本、VCF 路徑與 size/mtime、原始 gba object、targeted records、FILTER、GT、ALLELE_ID、JIDS 與 joint FORMAT 留存。原始三級 TSV signature 改變時須重新產生衍生結果。
 - 有 bcftools 與 `.tbi` 時只讀 GBA 區域；否則串流 VCF。JSON 缺失不代表陰性。`deletionBreakpointInGene=null` 顯示未知；CN 是 GBA1/GBAP1 combined CN。
-- 舊 sidecar 若重組 allele 缺 JDP／JAD／JAF，loader 僅在既有原始 VCF 的 size／mtime 簽章相符、可用 bcftools 及索引時，唯讀補回對應 evidence 與 IGV 座標；不改 sidecar、不重算 allele 身分、分類或報告選取。若原始檔不在、已改變或無索引，須重做該樣本的 GBA1 post-processing。
+- 舊 sidecar 若重組 allele 缺 JDP／JAD／JAF，loader 僅在既有原始 VCF 的 size／mtime 簽章相符、可用 bcftools 及索引時，唯讀補回對應 evidence 與 IGV 座標；同一 worker 依 VCF／index 簽章快取最多 16 組讀取結果，檔案更新即失效。不改 sidecar、不重算 allele 身分、分類或報告選取。若原始檔不在、已改變或無索引，須重做該樣本的 GBA1 post-processing。
 
 ## Allele 與判讀
 
@@ -24,7 +24,7 @@
 
 ## 報告
 
-健檢仍用原有七欄表格、表下列點與附錄參考資料。RecNciI 的核苷酸欄顯示名稱，缺少 RS ID／結構時填全形 `－` 並保持表格對齊；全文組成在表下第 2 點及附錄各列一次，原本致病性與建議依序後移。所有健檢報告共用的陰性限制段落以「若」起句。診斷 DOCX 同樣保留原表格與增加組成列點。
+健檢仍用原有七欄表格、表下列點與附錄參考資料。RecNciI 的核苷酸欄顯示名稱，缺少 RS ID／結構時填全形 `－` 並保持表格對齊；全文組成在表下第 2 點及附錄各列一次，原本致病性與建議依序後移。所有健檢報告共用的陰性限制段落以「若」起句。診斷 DOCX 同樣沿用原有八欄表格、組成列點與參考資料，RS ID／結構缺值亦填全形 `－`。
 
 健檢 GBA1 使用「高雪氏症（Gaucher disease）」及 AR 模式，單一 het allele 列第二類；兩個獨立 P/LP 變異即使相位未明仍列第一類，沿用原本相位分析說明。RecNciI 內部已知 cis 的三個成分只算一筆。沒有把 Parkinson susceptibility 改成 AD 診斷或 carrier 疾病名稱。完整 allele 的族群頻率沒有提供時明示缺值，不使用 component frequency，也不宣稱缺值表示罕見。
 

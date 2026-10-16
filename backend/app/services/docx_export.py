@@ -1118,7 +1118,7 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
             **variant,
             "exon": _snv_tx_field(variant, variant_edits, "exon"),
             "intron": _snv_tx_field(variant, variant_edits, "intron"),
-        })
+        }) or "－"
         hgvs_c = _strip_hgvs_prefix(
             _snv_tx_field(variant, variant_edits, "HGVS_C", "hgvs_c")
         )
@@ -1133,7 +1133,7 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
         table_rows.append([
             tier,
             row_gene,
-            variant.get("rs_id") or variant.get("RS_ID") or "",
+            variant.get("rs_id") or variant.get("RS_ID") or "－",
             struc,
             hgvs_c + (f"({hgvs_p})" if hgvs_p else ""),
             _zygosity_long(variant.get("zygosity", "")),
