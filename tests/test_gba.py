@@ -166,6 +166,29 @@ def test_carrier_category_and_second_bullet_follow_existing_template():
     assert "顯示其為罕見" not in ref
 
 
+def test_recncii_health_table_missing_fields_use_aligned_fullwidth_dashes():
+    v = rec()
+    doc = Document()
+    docx_export._health_snv_gene_block(
+        doc, [(v, {})], disease_text="高雪氏症（Gaucher disease）",
+        inheritance_codes=["AR"], sex_karyotype="",
+    )
+    table = [p.text for p in doc.paragraphs if "RS ID" in p.text][0]
+    data_line = next(line for p in doc.paragraphs for line in p.text.splitlines()
+                     if line.startswith("     GBA1"))
+    first_dash = data_line.index("－")
+    second_dash = data_line.index("－", first_dash + 1)
+    assert docx_export._str_width(data_line[:first_dash]) == 5 + 9
+    assert docx_export._str_width(data_line[:second_dash]) == 5 + 9 + 7
+    assert docx_export._str_width(data_line) == docx_export._str_width(table.splitlines()[0])
+
+
+def test_health_report_negative_limitation_is_conditional():
+    assert docx_export._HEALTH_NEGATIVE_LIMITATION.startswith(
+        "若於本次檢測之基因中未檢出疾病資料庫中已收錄之致病性或疑似致病性變異，並不能排除"
+    )
+
+
 def test_recncii_plus_separate_snv_first_category_with_phase_unknown():
     v = rec()
     snv = {"id": "chr1-155235843-T-C", "gene_symbol": "GBA1", "HGVS_C": "c.1226A>G", "HGVS_P": "p.Asn409Ser", "zygosity": "het", "ACMG_classification": "Pathogenic"}

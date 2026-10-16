@@ -4799,7 +4799,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     <div class="variant-head">
       ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
       ${_renderStatusRadio(id, curStatus, options, panelAttr)}
-      <span class="hgvs">${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} <span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span></span>
+      <span class="hgvs">${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} ${v.gba ? `<span class="gba-composition-header">${escapeHtml(v.gba_composition || v.gba.name || "GBA1 specialized caller allele")}</span>` : `<span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span>`}</span>
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v, id)}
@@ -4822,7 +4822,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v ${snvZygosityClass(v.zygosity)}">${escapeHtml(snvZygosityDisplay(v.zygosity))}</span>
-        <span class="k">Read support</span><span class="v ${(v.low_depth || v.low_alt_support) ? "sig-lp" : ""}" title="${escapeAttr(depthSupportHint(v))}">${escapeHtml(fmtDepthSupport(v))}</span>
+        <span class="k">Read support</span><span class="v ${(v.low_depth || v.low_alt_support) ? "sig-lp" : ""}" ${v.gba ? "" : `title="${escapeAttr(depthSupportHint(v))}"`}>${v.gba ? renderGbaJointSupport(v) : escapeHtml(fmtDepthSupport(v))}</span>
         <span class="k">Consequence</span><span class="v">${_renderConsequenceCell(v.Consequence)}</span>
         <div class="more-extras hidden">
           <span class="k">Exon / Intron</span><span class="v">${fmtExonIntron(v)}</span>
@@ -4883,25 +4883,25 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
 
 // ---- helpers used by renderVariantCard (Phase 4) -----------------
 
+function renderGbaJointSupport(v) {
+  const records = [...new Map((v.gba?.evidence || []).map(r => [r.id, r])).values()];
+  const hint = "JDP／JAD／JAF 為 GBA1 與 GBAP1 合併證據，不等同 GBA1 的 DP／AD／VAF。";
+  return ["JDP", "JAD", "JAF"].map(key => {
+    const values = records.map(r => {
+      const value = r.format?.[key];
+      return value == null || value === "" ? "—" : String(value);
+    });
+    return `<span class="gba-joint-metric"><span class="gba-joint-label" title="${escapeAttr(hint)}">${key}</span> ${escapeHtml(values.length ? values.join(" / ") : "—")}</span>`;
+  }).join(" · ");
+}
+
 function renderGbaEvidence(v) {
   const g = v.gba;
   if (!g) return "";
   const breakpoint = g.deletion_breakpoint_in_gene === true ? "是"
     : g.deletion_breakpoint_in_gene === false ? "否" : "未知";
   const warnings = (g.review_required || []).map(escapeHtml).join("；");
-  const evidence = (g.evidence || []).map(r => {
-    const metrics = Object.entries(r.format || {}).map(([k, val]) =>
-      `${escapeHtml(k)}=${escapeHtml(String(val))}`).join(" · ");
-    return `<div>${escapeHtml(r.id)} · FILTER ${escapeHtml(r.filter || "—")}<br>${metrics}<br>JIDS: ${escapeHtml(String(r.info?.JIDS || "—"))}</div>`;
-  }).join("");
-  return `<div class="somatic-card-evidence">${escapeHtml(v.gba_composition || g.name)}
-    ${warnings ? `<div class="sig-lp">待複核：${warnings}</div>` : ""}
-    <details><summary>GBA1 specialized caller 證據</summary>
-      <div>GBA1/GBAP1 combined CN: ${escapeHtml(String(g.total_copy_number ?? "—"))} · deletion breakpoint in gene: ${breakpoint}</div>
-      <div>Allele copies: ${escapeHtml(String(g.allele_copy_number ?? "—"))} · FILTER: ${escapeHtml(g.filter || "—")}</div>
-      <div>JDP／JAD／JAF 為 GBA1 與 GBAP1 合併證據，不等同 GBA1 的 DP／AD／VAF。</div>
-      ${evidence}
-    </details></div>`;
+  return `<div class="somatic-card-evidence gba-evidence-line">GBA1 specialized caller 證據：GBA1/GBAP1 combined CN: ${escapeHtml(String(g.total_copy_number ?? "—"))} · deletion breakpoint in gene: ${breakpoint} · Allele copies: ${escapeHtml(String(g.allele_copy_number ?? "—"))} · FILTER: ${escapeHtml(g.filter || "—")}</div>${warnings ? `<div class="gba-review-warning sig-lp">待複核：${warnings}</div>` : ""}`;
 }
 
 // GIAB stratification label → badge text + tooltip. Labels come from the

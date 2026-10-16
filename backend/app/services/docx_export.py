@@ -1838,7 +1838,7 @@ _NO_HEALTH_CARRIER_VARIANT_TEXT = (
 )
 
 _HEALTH_NEGATIVE_LIMITATION = (
-    "於本次檢測之基因中未檢出疾病資料庫中已收錄之致病性或疑似致病性變異，並不能排除受檢者仍具有"
+    "若於本次檢測之基因中未檢出疾病資料庫中已收錄之致病性或疑似致病性變異，並不能排除受檢者仍具有"
     "相關遺傳性疾病風險。"
     "未被偵測或未被回報之情形可能包括：資料庫尚未收錄之新變異、目前證據不足或分類不一致之變異、"
     "拷貝數變異、結構變異、重複序列變異、低比例鑲嵌、低覆蓋或比對困難區域，以及本檢測方法未涵蓋"
@@ -2497,12 +2497,12 @@ def _health_snv_variant_block(doc, v: dict, *, tier: str, edits: dict,
     gene = _health_variant_gene(v, edits) or "?"
     tx = _snv_transcript_label(v, edits)
     _add_paragraph(doc, f"    {gene} ({tx})", bold=True)
-    rs = v.get("rs_id") or v.get("RS_ID") or ""
+    rs = v.get("rs_id") or v.get("RS_ID") or "－"
     struc = _structure_label({
         **v,
         "exon": _snv_tx_field(v, edits, "exon"),
         "intron": _snv_tx_field(v, edits, "intron"),
-    })
+    }) or "－"
     hgvs_c = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
     hgvs_p = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
     nuc = hgvs_c + (f"({hgvs_p})" if hgvs_p else "")
@@ -2565,7 +2565,7 @@ def _health_snv_gene_block(
             **v,
             "exon": _snv_tx_field(v, edits, "exon"),
             "intron": _snv_tx_field(v, edits, "intron"),
-        })
+        }) or "－"
         hgvs_c = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_C", "hgvs_c"))
         hgvs_p = _strip_hgvs_prefix(_snv_tx_field(v, edits, "HGVS_P", "hgvs_p"))
         zyg = _zygosity_long(v.get("zygosity", ""))
@@ -2574,7 +2574,7 @@ def _health_snv_gene_block(
         zygosities.append(zyg)
         table_rows.append([
             gene,
-            v.get("rs_id") or v.get("RS_ID") or "",
+            v.get("rs_id") or v.get("RS_ID") or "－",
             struc,
             hgvs_c + (f"({hgvs_p})" if hgvs_p else ""),
             zyg,

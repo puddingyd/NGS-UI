@@ -19,11 +19,11 @@
 
 主畫面、gene search、case summary、secondary findings 與 DOCX 共用投影；組成 marker 不重複計數。原先已選的組成位點不自動轉成父 allele，匯出時要求重新選取，避免把既有 component 註解轉移到完整 allele。Joint JDP／JAD／JAF 不代替 gene-specific 深度與 VAF；secondary 候選對合格 GBA caller 結果使用專屬品質判定，不捏造 0.5 VAF。GBA1 仍依原 panel gene membership 進 carrier screening，不加入 ACMG SF 清單。
 
-卡片沿用 SNV 模板，顯示 allele 名稱、組成與可收合的原始證據；複合 allele 不產生指向單個 marker 的 Varsome／Franklin／GeneBe 連結。有 JIDS 時 IGV 同時開啟 GBA1 與對應 GBAP1 區間，作為支持性複核，不能單憑三個 marker 證明 locus specificity。
+卡片沿用 SNV 模板，以紫色組成說明取代標題的 opaque stable ID；下一行直接顯示 combined CN、deletion breakpoint、allele copies 與 FILTER。Read support 按組成位點順序列出 JDP／JAD／JAF 原值，游標提示其為 GBA1/GBAP1 合併證據，不能視為 GBA1 的 DP／AD／VAF；完整原始證據仍保存在 sidecar。複合 allele 不產生指向單個 marker 的 Varsome／Franklin／GeneBe 連結。有 JIDS 時 IGV 同時開啟 GBA1 與對應 GBAP1 區間，作為支持性複核，不能單憑三個 marker 證明 locus specificity。
 
 ## 報告
 
-健檢仍用原有七欄表格、表下列點與附錄參考資料。RecNciI 的核苷酸欄顯示名稱，全文組成在表下第 2 點及附錄各列一次，原本致病性與建議依序後移。診斷 DOCX 同樣保留原表格與增加組成列點。
+健檢仍用原有七欄表格、表下列點與附錄參考資料。RecNciI 的核苷酸欄顯示名稱，缺少 RS ID／結構時填全形 `－` 並保持表格對齊；全文組成在表下第 2 點及附錄各列一次，原本致病性與建議依序後移。所有健檢報告共用的陰性限制段落以「若」起句。診斷 DOCX 同樣保留原表格與增加組成列點。
 
 健檢 GBA1 使用「高雪氏症（Gaucher disease）」及 AR 模式，單一 het allele 列第二類；兩個獨立 P/LP 變異即使相位未明仍列第一類，沿用原本相位分析說明。RecNciI 內部已知 cis 的三個成分只算一筆。沒有把 Parkinson susceptibility 改成 AD 診斷或 carrier 疾病名稱。完整 allele 的族群頻率沒有提供時明示缺值，不使用 component frequency，也不宣稱缺值表示罕見。
 

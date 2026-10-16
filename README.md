@@ -1,6 +1,6 @@
 # NGS 分析平台 (NGS-UI)
 
-GBA1 specialized caller 現在整合進既有 SNV 卡片與報告：DRAGEN 的七種重組 haplotype 與一般 targeted variants 均可匯入；RecNciI 等複合 allele 合為一筆，保留原始 caller 證據。健檢單一 heterozygous 致病 allele 列第二類，另有獨立致病變異時列第一類並保留相位說明。表格格式不變，組成說明列於表下第 2 點及附錄。部署後舊個案須重跑三級（可沿用 Nextflow resume）產生 GBA1 sidecar；不會自動改寫既有選取。[輸入、判讀與更新說明](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
+GBA1 specialized caller 現在整合進既有 SNV 卡片與報告：DRAGEN 的七種重組 haplotype 與一般 targeted variants 均可匯入；RecNciI 等複合 allele 合為一筆，保留原始 caller 證據。卡片標題顯示紫色組成說明，證據直接列在一行；Read support 顯示各組成位點的 JDP／JAD／JAF，滑鼠提示其為 GBA1/GBAP1 合併證據。健檢單一 heterozygous 致病 allele 列第二類，另有獨立致病變異時列第一類並保留相位說明。表格格式不變，組成說明列於表下第 2 點及附錄；缺少 RS ID／結構時填全形 `－`。健檢共用陰性限制段落改以「若」起句。部署後舊個案須重跑三級（可沿用 Nextflow resume）產生 GBA1 sidecar；不會自動改寫既有選取。[輸入、判讀與更新說明](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
 
 ### 指定範圍 Somatic 分析（v9.35）
 

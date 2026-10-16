@@ -12,10 +12,11 @@ function fn(name) {
 function context() {
   const c = vm.createContext({
     escapeHtml: s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+    escapeAttr: s => String(s).replaceAll('&', '&amp;').replaceAll('"', '&quot;'),
     _normalizeChrom: c => c,
   });
   // Limit evidence extraction before the following constant declarations.
-  const begin = source.indexOf('function renderGbaEvidence(');
+  const begin = source.indexOf('function renderGbaJointSupport(');
   const end = source.indexOf('// GIAB stratification', begin);
   vm.runInContext(source.slice(begin, end) + fn('_igvLocusFor'), c);
   return c;
@@ -24,13 +25,26 @@ test('GBA evidence keeps null breakpoint unknown and escapes caller strings', ()
   const c = context();
   const rendered = c.renderGbaEvidence({gba_composition: '<script>x</script>', gba: {
     name: 'RecNciI', total_copy_number: 4, deletion_breakpoint_in_gene: null,
-    allele_copy_number: 1, filter: 'PASS', evidence: [], review_required: [],
+    allele_copy_number: 1, filter: '<script>x</script>', evidence: [], review_required: [],
   }});
   assert.match(rendered, /deletion breakpoint in gene: 未知/);
+  assert.match(rendered, /GBA1 specialized caller 證據：GBA1\/GBAP1 combined CN: 4/);
   assert.match(rendered, /&lt;script&gt;/);
   assert.doesNotMatch(rendered, /<script>/);
-  assert.match(rendered, /不等同 GBA1 的 DP／AD／VAF/);
+  assert.doesNotMatch(rendered, /<details>|不等同 GBA1 的 DP／AD／VAF/);
   assert.equal(c.renderGbaEvidence({}), '');
+});
+test('GBA read support displays each joint metric and explains it on hover', () => {
+  const c = context();
+  const rendered = c.renderGbaJointSupport({gba: {evidence: [
+    {id: 'site1', format: {JDP: '61', JAD: '15,46', JAF: '0.75'}},
+    {id: 'site2', format: {JDP: '68', JAD: '16,52', JAF: '0.76'}},
+  ]}});
+  assert.match(rendered, /JDP<\/span> 61 \/ 68/);
+  assert.match(rendered, /JAD<\/span> 15,46 \/ 16,52/);
+  assert.match(rendered, /JAF<\/span> 0.75 \/ 0.76/);
+  assert.equal((rendered.match(/JDP／JAD／JAF 為 GBA1 與 GBAP1 合併證據/g) || []).length, 3);
+  assert.doesNotMatch(rendered, /DP — · AD — · VAF —/);
 });
 test('GBA IGV opens the gene and the paired pseudogene windows', () => {
   const c = context();

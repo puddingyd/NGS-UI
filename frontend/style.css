@@ -1307,6 +1307,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   overflow-wrap: anywhere;
 }
 .variant-head .variant-tag { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+.variant-head .gba-composition-header { color: #67389a; font-weight: 400; font-size: 12px; margin-left: 4px; }
 .clinvar-change {
   display: inline-block;
   margin-left: 3px;
@@ -4576,6 +4577,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .somatic-predictor-summary { margin: 8px 0 12px; padding: 8px 10px; border-radius: 6px; background: #f6f8fa; }
 .somatic-predictor-summary strong { color: #24292f; }
 .somatic-card-evidence { font-size: 12px; color: #67389a; padding: 6px 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gba-evidence-line { display: block; white-space: nowrap; overflow-x: auto; }
+.gba-joint-label { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
+.gba-review-warning { padding: 0 10px 6px; font-size: 12px; }
 .somatic-validation-field { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
 .somatic-validation {
   border: 1px solid;
