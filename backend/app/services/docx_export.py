@@ -30,6 +30,7 @@ from . import (
     cnv_disease_selection,
     cnv_sv_merge,
     gba,
+    specialized,
     hpo_ontology,
     omim_store,
     panel_deadzone,
@@ -1143,7 +1144,7 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
 
     _ascii_table(doc, columns=[
         ("類別",          5),
-        ("基因",          9),
+        ("基因",          9, "token-buffered" if gene == "HBA1/HBA2" else "char"),
         ("RS ID",         7, "buffered"),
         ("結構",          9),
         ("核苷酸",       14, "hgvs"),
@@ -1172,14 +1173,14 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
         _add_paragraph(doc, f"    {index}. {disease_line}")
     compositions = list(dict.fromkeys(
         text for variant, _edits in rows
-        if (text := gba.composition_text(variant))
+        if (text := specialized.composition_text(variant))
     ))
     for index, text in enumerate(compositions, start=len(disease_lines) + 1):
         _add_paragraph(doc, f"    {index}. {text}")
-    _add_paragraph(
-        doc,
-        f"    {len(disease_lines) + len(compositions) + 1}. {_tier_patho_sentence(_patho_sentence_for_classes(acmg_labels), tier)}",
-    )
+    patho_sentence = _tier_patho_sentence(_patho_sentence_for_classes(acmg_labels), tier)
+    if any(v.get("specialized") for v, _ in rows):
+        patho_sentence = patho_sentence.replace("變異位點", "變異")
+    _add_paragraph(doc, f"    {len(disease_lines) + len(compositions) + 1}. {patho_sentence}")
 
 
 def _snv_reference_text(v: dict, edits: dict, *, acmg_zh: bool = False) -> str:
@@ -1204,7 +1205,15 @@ def _snv_reference_text(v: dict, edits: dict, *, acmg_zh: bool = False) -> str:
                  if clinvar and clinvar != "—" else
                  "在疾病資料庫 (ClinVar) 中未被報導過")
 
-    composition = gba.composition_text(v)
+    if v.get("specialized"):
+        d = v["specialized"]
+        return (f"    {specialized.composition_text(v)}"
+                "本結果之完整 allele／locus 的族群頻率未提供，不據此推定罕見性。"
+                f"本次變異分類為「{acmg or '尚未分類'}」。"
+                f"分析方法參考：DRAGEN {d['locus'].upper()} specialized caller（{d['reference']}）。"
+                "結果須結合臨床資料與必要的驗證檢測判讀。")
+
+    composition = specialized.composition_text(v)
     if composition:
         assertion = (v.get("gba") or {}).get("clinical_assertion") or {}
         clinical_sentence = (
@@ -1662,7 +1671,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
 
 # ── §四 方法、§五 注釋 ───────────────────────────────────────────
 
-def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: bool = True) -> None:
+def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: bool = True, specialized_genes: str = "") -> None:
     is_wgs = test_types.is_wgs_type(test_type)
     seq    = "Illumina NovaSeq X Plus" if is_wgs else "Illumina NextSeq 2000"
     depth  = "27X" if is_wgs and health else ("30X" if is_wgs else "50X")
@@ -1671,7 +1680,9 @@ def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: 
     _add_paragraph(doc, "  2. 本次檢測變異位點的錯誤率 ≦ 0.1% (Phred-scaled Q score ≧ 30)。")
     _add_paragraph(doc, f"  3. 本次檢測平均定序深度 ≧ {depth}。")
     if health:
-        _add_paragraph(doc, "  4. 本檢測僅能檢測出基因內單一核苷酸變異 (single nucleotide variant) 、"
+        targeted_scope = (f"本報告另納入 {specialized_genes} 的專一性分析結果，其範圍以回報之 allele／拷貝數結果為限；"
+                          "不代表完整涵蓋上述基因的所有變異。除上述專一性分析外，" if specialized_genes else "")
+        _add_paragraph(doc, "  4. " + targeted_scope + "本檢測僅能檢測出基因內單一核苷酸變異 (single nucleotide variant) 、"
                             "小片段的缺失或插入 (small indel)，無法檢測出拷貝數變異 "
                             "(copy number variant)、轉位 (translocation)、"
                             "倒轉 (inversion) 或其他複雜性結構變異 "
@@ -1697,7 +1708,7 @@ def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: 
                 doc,
                 f"  {next_note_number}. 藥物基因體學分析中，CYP2D6 基因型判定會納入該基因之拷貝數變異 "
                 "(copy number variation) 分析結果；此項專一性分析僅用於 CYP2D6 藥物基因體學判讀，"
-                "不代表本檢測已涵蓋其他基因之拷貝數變異。",
+                + ("不代表本檢測已完整涵蓋其他基因之拷貝數變異。" if specialized_genes else "不代表本檢測已涵蓋其他基因之拷貝數變異。"),
             )
             next_note_number += 1
     else:
@@ -2139,6 +2150,8 @@ _ACMG_SF_DISEASES = {
 }
 
 def _health_variant_gene(v: dict, edits: dict) -> str:
+    if (v.get("specialized") or {}).get("locus") == "hba":
+        return "HBA1/HBA2"
     return _snv_tx_field(v, edits, "gene_symbol") or v.get("gene_symbol") or v.get("GENE") or ""
 
 
@@ -2265,6 +2278,8 @@ def _health_gene_profile(
         # Gaucher pathogenicity and Parkinson susceptibility are distinct
         # assertions. Carrier status must not inherit an OMIM AD risk row.
         return "高雪氏症（Gaucher disease）", ["AR"]
+    if gene in specialized.DISEASES:
+        return specialized.DISEASES[gene], ["AR"]
     static_rows = _ACMG_SF_DISEASES.get(gene) or []
     if static_rows:
         diseases = [str(row.get("disease") or "").strip() for row in static_rows]
@@ -2308,6 +2323,14 @@ def _health_acmg_categorized_ids(
             gene, gene_ids, variants, edits,
         )
         inheritance_codes = set(profile_codes)
+        categories = [(edits.get(vid) or {}).get("specialized_health_category") or
+                      (variants.get(vid, {}).get("specialized") or {}).get("health_category") for vid in gene_ids]
+        if gene == "HBA1/HBA2" and len(set(categories)) == 1 and categories[0] in {"carrier", "risk"}:
+            (carrier_ids if categories[0] == "carrier" else risk_ids).extend(gene_ids)
+            continue
+        if len(gene_ids) == 1 and categories[0] in {"carrier", "risk"}:
+            (carrier_ids if categories[0] == "carrier" else risk_ids).extend(gene_ids)
+            continue
         is_single_heterozygous_ar = (
             inheritance_codes == {"AR"}
             and len(gene_ids) == 1
@@ -2511,7 +2534,7 @@ def _health_snv_variant_block(doc, v: dict, *, tier: str, edits: dict,
     acmg_raw = _acmg_label(v, edits)
 
     _ascii_table(doc, columns=[
-        ("基因",          9),
+        ("基因",          9, "token-buffered" if gene == "HBA1/HBA2" else "char"),
         ("RS ID",         7, "buffered"),
         ("結構",          9),
         ("核苷酸",       22, "hgvs"),
@@ -2573,7 +2596,7 @@ def _health_snv_gene_block(
         acmg_labels.append(acmg_raw)
         zygosities.append(zyg)
         table_rows.append([
-            gene,
+            _snv_tx_field(v, edits, "gene_symbol") or gene,
             v.get("rs_id") or v.get("RS_ID") or "－",
             struc,
             hgvs_c + (f"({hgvs_p})" if hgvs_p else ""),
@@ -2583,7 +2606,7 @@ def _health_snv_gene_block(
         ])
 
     _ascii_table(doc, columns=[
-        ("基因",          9),
+        ("基因",          9, "token-buffered" if gene == "HBA1/HBA2" else "char"),
         ("RS ID",         7, "buffered"),
         ("結構",          9),
         ("核苷酸",       20, "hgvs"),
@@ -2601,9 +2624,17 @@ def _health_snv_gene_block(
         same_gene_count=len(rows),
         sex_karyotype=sex_karyotype,
     )
+    locus_rows = [v for v, _ in rows if (v.get("specialized") or {}).get("kind") in {"copy_number", "locus_genotype"}]
+    if locus_rows or gene == "HBA1/HBA2":
+        categories = [edits.get("specialized_health_category") or (v.get("specialized") or {}).get("health_category") for v, edits in rows]
+        category = "carrier" if set(categories) == {"carrier"} else "risk"
+        narrative[0] = f"{gene} 基因與「{disease_text}」相關，其遺傳模式為體染色體隱性遺傳。"
+        narrative[1] = (f"此為{_health_pathogenicities_zh(acmg_labels)}之變異，"
+                        + (("本結果符合帶因者／trait 狀態，須配合臨床資料評估。" if gene == "HBA1/HBA2" else "本結果符合帶因者狀態，須配合臨床資料評估。") if category == "carrier" else
+                           "本結果需結合完整 locus genotype、其他變異及臨床資料評估相關疾病風險。"))
     compositions = list(dict.fromkeys(
         text for variant, _edits in rows
-        if (text := gba.composition_text(variant))
+        if (text := specialized.composition_text(variant))
     ))
     narrative[1:1] = compositions
     for idx, text in enumerate(narrative, start=1):
@@ -3850,6 +3881,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     variants = secondary.get("variants") or {}
     categories = secondary.get("categories") or {}
     if include_disease_findings:
+        specialized.validate_selection(sample, report, panels=requested_set.intersection(_HEALTH_DISEASE_SECTIONS))
         gba.validate_saved_selection(sample, report, panels=requested_set.intersection(_HEALTH_DISEASE_SECTIONS))
         gba_warnings = (sample.get("gba") or {}).get("warnings") or []
         if gba_warnings and any(
@@ -3886,6 +3918,10 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             variants,
         )
         gba.validate_report(variants, ids)
+        specialized.validate_selection({**sample, "variants": variants}, report, panels=requested_set, selected_ids=ids)
+        panel_genes = set().union(*(genes for category, genes in sample_loader._secondary_panel_genes().items() if category in requested_set))
+        for limitation in specialized.report_limitations(sample.get("specialized") or {}, panel_genes):
+            _add_paragraph(doc, "    " + limitation)
         risk_ids, carrier_ids = _health_acmg_categorized_ids(
             ids,
             variants,
@@ -3909,7 +3945,8 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {},
         )
 
-    _section_methods(doc, test_type, health=True, include_pgx=include_pgx)
+    specialized_genes = "、".join(dict.fromkeys(v.get("gene_symbol", "") for v in referenced if v.get("specialized") or v.get("gba")))
+    _section_methods(doc, test_type, health=True, include_pgx=include_pgx, specialized_genes=specialized_genes)
     _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
 
     if referenced or include_acmg_education or pgx_drug_groups:
@@ -3957,6 +3994,7 @@ def build_diagnosis_docx(sample_id: str, *, gene_list_mode: str = "grouped") -> 
     report = report_store.load(sample_id)
     meta   = sample.get("meta") or {}
     gba.validate_saved_selection(sample, report)
+    specialized.validate_selection(sample, report)
     if ploidy.stale_finding_ids(report, sample.get("ploidy_findings") or {}):
         raise ValueError("已標記的染色體劑量訊號與目前 ploidy VCF 不符，請清除舊標記並重新核對後再匯出報告")
     if (sample.get("somatic") or {}).get("review_missing_ids"):

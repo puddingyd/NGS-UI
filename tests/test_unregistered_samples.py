@@ -114,7 +114,7 @@ def test_detail_loads_current_patient_and_preserves_explicit_empty_snapshot(root
     post = sample("S1-dragen")
     vcf = roots / "source.vcf.gz"
     vcf.write_bytes(b"vcf")
-    (post / "S1-dragen.pipeline_source.json").write_text(json.dumps({"source_vcf_path": str(vcf)}))
+    (post / "S1-dragen.pipeline_source.json").write_text(json.dumps({"source_vcf_path": str(vcf), "source_vcf_size": 3}))
     patient_list_store.link_patient(code="S1", mrn="MRN1")
     patient_phenotype_store.save(mrn="MRN1", hpo=[{"phenotype": "HP:0001250", "label": "Seizure", "weight": 3}])
     first = store.detail("S1-dragen")

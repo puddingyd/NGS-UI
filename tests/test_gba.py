@@ -139,46 +139,23 @@ def test_targeted_vcf_without_joint_markers_uses_hard_filtered_and_keeps_other_a
     assert any(v["gba"]["name"] == "NM_000157.4:c.1226A>G" for v in variants.values())
 
 
-def test_load_recovers_joint_display_evidence_from_unchanged_source(tmp_path, monkeypatch):
-    source = tmp_path / "SOURCE.hard-filtered.vcf.gz"
-    source.write_bytes(b"unchanged source")
-    Path(str(source) + ".tbi").write_bytes(b"index")
-    stat = source.stat()
+def test_legacy_load_never_recovers_from_original_source(tmp_path, monkeypatch):
     variant = rec()
     sidecar = tmp_path / "CASE.gba.json"
     sidecar.write_text(json.dumps({
         "schema_version": gba.SCHEMA_VERSION, "sample_id": "CASE",
         "source_sample_id": "SOURCE", "status": "complete", "genome_build": "hg38",
         "raw_gba": payload(), "variants": {variant["id"]: variant},
-        "sources": {"vcf": str(source), "vcf_signature": [stat.st_size, stat.st_mtime_ns]},
+        "sources": {"vcf": "/unavailable/original/SOURCE.hard-filtered.vcf.gz"},
     }))
-    rows = [
-        {"id": f"chr1-{pos}-{ref}-G", "CHROM": "chr1", "POS": pos,
-         "REF": ref, "ALT": "G", "allele_id": allele_id, "copies": 1,
-         "gt": "0/1", "filter": "PASS", "info": {"TARGETED": True, "Recombinant": True},
-         "format": {"GT": "0/1", "JDP": dp, "JAD": ad, "JAF": af}}
-        for pos, ref, allele_id, dp, ad, af in (
-            (155235203, "C", "", "62", "16,46", "0.74"),
-            (155235217, "C", "NM_000157.4:c.1483G>C", "68", "16,52", "0.76"),
-            (155235252, "A", "NM_000157.4:c.1448T>C", "61", "15,46", "0.75"),
-        )
-    ]
-    monkeypatch.setattr(gba.sample_layout, "state_file", lambda *_: sidecar)
+    monkeypatch.setattr(gba.sample_layout, "state_file", lambda sample, name: tmp_path / f"{sample}.{name}")
     monkeypatch.setattr(gba.sample_layout, "snv_raw_tsv", lambda *_: tmp_path / "missing.tsv")
-    calls = []
-    def select(*_args, **_kwargs):
-        calls.append(1)
-        return source, rows
-    monkeypatch.setattr(gba, "_select_evidence", select)
-    loaded = gba.load("CASE")["variants"][variant["id"]]
-    assert [r["format"]["JDP"] for r in loaded["gba"]["evidence"]] == ["61", "68", "62"]
-    assert loaded["CLNSIG"] == variant["CLNSIG"]
-    assert loaded["POS"] == 155235203
-    gba.load("CASE")
-    assert len(calls) == 1
-    Path(str(source) + ".tbi").write_bytes(b"updated index")
-    gba.load("CASE")
-    assert len(calls) == 2
+    def forbidden(*args, **kwargs):
+        raise AssertionError("must not read original evidence")
+    monkeypatch.setattr(gba, "_select_evidence", forbidden)
+    result = gba.load("CASE")
+    assert result["variants"][variant["id"]]["gba"]["evidence"] == []
+    assert "補建" in result["warnings"][0]
 
 
 def test_components_are_replaced_but_unrelated_variant_is_kept(tmp_path, monkeypatch):

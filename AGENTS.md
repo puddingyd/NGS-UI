@@ -99,7 +99,11 @@
   {LIS_ID}.cnv.rescued.annotated.tsv  僅舊 v1 存在；v2 不再產生，重跑由 managed promotion 清除
   {LIS_ID}.cnv_rescue.json     v2 規則版本、整合來源 SHA256、整合後座標與 FILTER/QUAL、支持 SV、計數
   {LIS_ID}.layout.json        layout v3 activation marker；最後原子寫入
-  {LIS_ID}.pipeline_source.json  source_path/source_sample_id/source_vcf_path/annotated_at
+  {LIS_ID}.pipeline_source.json  source_path/source_sample_id/source_vcf_path/source_vcf_size/annotated_at
+  {LIS_ID}.specialized.manifest.json  四 locus 資料包版本／checksum／generation／來源追溯
+  {LIS_ID}.specialized.source.json  完整小型 targeted JSON 快照
+  {LIS_ID}.specialized.evidence.jsonl.gz  四 locus 原始 VCF headers／records／同源區證據
+  {LIS_ID}.specialized.calls.json  GBA1／CYP21A2／SMN／HBA 正規化 findings 與 locus 狀態
   {LIS_ID}.snv_annotations.sqlite  ClinVar latest/GeneBe/GIAB/院內 AF/MANE/SpliceAI/LitVar2 sparse overlay
   {LIS_ID}.clinvar_comparison.json baseline/latest release、比對統計與升降規則 marker
   {LIS_ID}.snv_indel.review.tsv    主畫面衍生檔；WES DP≥20 + BED/AF + ClinVar rescue
@@ -181,7 +185,11 @@ UI 流程：
 
 ## 4. Adapter / tier 結構
 
-**GBA1 specialized caller（2026-10-15）**：DRAGEN worker 在 staging 產生 `{LIS}.gba.json`，精確配對同 source 的 targeted JSON 與 targeted／hard-filtered VCF，與既有 managed promotion 一起發布，不改 00–07。若兩份 VCF 同時存在，逐 ALT 保留 joint evidence 較完整的記錄，不遺漏只見於其中一份的其他 GBA1 allele；舊 sidecar 缺 joint evidence 時，僅在原始來源簽章相符且有 indexed VCF／bcftools 時讀取補回顯示／IGV 證據，不更改 allele 身分或 ACMG；補回 evidence 的讀取以 VCF／index 簽章為鍵在 worker 記憶體快取 16 組，避免同個案每次載入重讀 VCF。`services/gba.py` 支援七種 recombinant haplotype、aliases 及一般 `variants[]`；haplotype 合為一筆，對應 marker 不重複回報，主畫面／gene search／secondary／個案摘要／DOCX 共用。stable `GBA1-<24 hex>` ID 支援 manual ACMG，但卡片標題以紫色組成說明取代 opaque ID；證據以一行直接列 combined CN、breakpoint、allele copies、FILTER。Read support 顯示各組成位點的 joint JDP/JAD/JAF，滑鼠提示其不等同 gene-specific DP/AD/VAF。未知／no-call／FILTER 或來源衝突保留待複核狀態，不能自動當陰性或 P。RecNciI 的 whole-allele ClinVar curation 為 VCV000004297.9，不借用 constituent 分類或偽裝成七月 baseline；其他 allele 依相符單點註解／人工判讀，不全面預設致病。健檢 GBA1 疾病名為高雪氏症、AR：單一 het 第二類；兩個獨立變異即使相位未知仍第一類並沿用相位說明。健檢與診斷報告維持既有表格／列點／參考資料，重組組成為表下第 2 點並在附錄重複，原點次後移；RS ID／結構缺值顯示全形 `－`，健檢共用陰性限制段落以「若」起句；完整 allele AF 缺值不宣稱罕見。舊 component 選取不自動遷移，匯出前需重選 allele；舊個案須重跑三級產生 sidecar。詳細規格與來源見 `docs/ops/GBA1_SPECIALIZED_CALLER.md`。
+**Specialized caller 共用資料包（2026-10-16）**：三級 staging post-processing 以同 source sample 的 targeted JSON 與 targeted／hard-filtered VCF 擷取 GBA1、CYP21A2、SMN、HBA，輸出 prefixed `specialized.manifest.json`、`specialized.source.json`、`specialized.evidence.jsonl.gz`、`specialized.calls.json`，隨既有 managed promotion／rollback 發布，不改 00–07。JSON 快照保留其他 caller 原始資料；僅上述四個 locus 做 projection。manifest 保存樣本／組裝／caller／parser 版本、來源 provenance、各本地檔 checksum 與 generation；raw VCF header、ref/no-call、FORMAT、JIDS、ALLELE_ID 與同源區紀錄存入小型 evidence。資料包總量與單檔均須 <100 MB；大型 hard-filtered VCF 必須用 bcftools + tbi/csi 查區間，不複製整份 VCF。平台載入、gene search、secondary、摘要、報告與離線重解析只讀三級結果，不依 provenance 路徑 stat/open 原始 JSON/VCF；清單的 VCF size 改讀 post-processing 儲存的 metadata。舊 gba.json 仍可讀，但取消 request-time indexed VCF 補證據。舊個案以 `scripts/rebuild_specialized.py --sample ID --from-source --apply` 補建（不必重跑 Nextflow/VEP）；已有資料包可不帶 `--from-source` 於來源離線時重解析。預設 dry-run，與三級共用 sample lock，保留 review state。
+
+GBA1 沿用七種 recombinant haplotype、一般 variants、原 stable ID 與 RecNciI whole-allele ClinVar curation VCV000004297.9；不把 constituent 分類套到複合 allele。CYP21A2 依 caller `+` 分組同一條 haplotype，保留 combined CN、breakpoint、allele copies／FILTER／GQ；不限定單一變異白名單。SMN 顯示 SMN1、SMN2、SMN2Δ7–8 CN 與 c.*3+80T>G marker；CN 0／1 建立劑量卡，marker 不作確診 carrier，CN≥2 不排除 2+0。HBA 保留完整兩 haplotype genotype（不由 `--` 猜 SEA），小變異另保留 allele copies 與定位／相位限制。synthetic `CYP21A2|SMN|HBA-<24 hex>` ID 可沿用 manual ACMG；CN／locus 結果不捏造 REF/ALT、斷點、DP、heterozygosity 或 ClinVar P。四個 locus 的正常／no-call／missing 都在摘要保留；缺值不當正常。未知 allele／no-call 不可由確認 checkbox 放行；可釐清的品質／定位問題需 matching evidence token 與 Comment，證據更新即失效。HBA 小變異／複合結果需核對完整 locus、手動指定健檢第一／第二類（同 locus 必須一致）及記錄依據。CN／HBA locus 健檢回報須先完成 P/LP 分類。既有 `carrier_mackenzie_1300+` 清單補入 HBA1、HBA2，與帶因區選取及報告基因範圍同步；ACMG SF 清單不變。
+
+卡片沿用原 SNV 模板：紫色組成、單行 caller 證據、joint support tooltip；SMN/HBA 劑量以 CN 顯示。健檢與診斷沿用原表格／列點／附錄，組成列第 2 點，RS ID／結構缺值顯示全形 `－`。GBA1 單一 het 第二類，兩個獨立 P/LP 即使相位未知仍第一類；CYP21A2 也以完整 allele 計數；SMN1 CN1 第二類、CN0 第一類，HBA 常見缺失依完整 genotype 分類。健檢只有實際回報 specialized 結果時補上檢測範圍例外，避免既有 CNV 限制文字矛盾。選取過時／已整合 component 或同時回報 haplotype 與 component 時拒絕匯出，不自動搬移選取。詳見 `docs/ops/SPECIALIZED_CALLERS.md` 及 `docs/ops/GBA1_SPECIALIZED_CALLER.md`。
 
 每種 variant type 一個 adapter（`backend/app/adapters/`），各回傳 `(variants_dict, categories_dict)`。`sample_loader.load_sample()` 把它們全部塞進一個 payload —— id namespace 不衝突（prefix 不同）。
 

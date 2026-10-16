@@ -210,11 +210,7 @@ def detail(sample_id: str, *, mrn: str = "") -> dict:
     # An explicitly entered MRN must not fall back to a different patient's LIS.
     pheno = patient_phenotype_store.load(mrn=patient_mrn, **({} if mrn else {"code": sample_id, "code_candidates": candidates}))
     row["phenotype"] = {key: pheno.get(key) for key in ("path", "mrn", "hpo", "panels")} if pheno else None
-    row["source_vcf_size"] = 0
-    if row["source_vcf_path"]:
-        try:
-            row["source_vcf_size"] = Path(row["source_vcf_path"]).stat().st_size
-        except OSError:
-            pass
+    source = _json(sample_layout.state_file(sample_id, "pipeline_source.json"))
+    row["source_vcf_size"] = source.get("source_vcf_size") or 0
     logger.info("pending-index detail seconds=%.3f", time.perf_counter() - started)
     return row

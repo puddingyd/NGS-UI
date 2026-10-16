@@ -1169,6 +1169,15 @@ function _bamIndexUrl(bam) {
 // payload. SNV/Indel gets ~100bp context; CNV/SV gets 20% flanks so the
 // reviewer can compare coverage around both breakpoints.
 function _igvLocusFor(v) {
+  if (v.specialized?.evidence?.length) {
+    const positions = v.specialized.evidence.flatMap(r => {
+      const own = r.CHROM && r.POS ? [`${r.CHROM}:${Math.max(1, r.POS - 100)}-${r.POS + 100}`] : [];
+      const related = String(r.info?.JIDS || "").split(",").map(x => x.match(/^(chr[^_]+)_(\d+)_(\d+)$/)).filter(Boolean)
+        .map(m => `${m[1]}:${Math.max(1, Number(m[2]) - 100)}-${Number(m[3]) + 100}`);
+      return [...own, ...related];
+    });
+    return [...new Set(positions)].join(" ");
+  }
   if (!v) return "";
   if (v.gba && v.POS) {
     const geneRegion = `${_normalizeChrom(v.CHROM)}:${Math.max(1, v.POS - 100)}-${(v.END || v.POS) + 100}`;
@@ -4654,9 +4663,9 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
 
   const links = [
     v.POS ? `<a href="#" class="btn-igv" data-id="${escapeAttr(id)}" title="在 IGV 內檢視">IGV</a>` : "",
-    !v.gba || (v.REF && v.ALT) ? `<a href="${urls.varsome}"  target="_blank" rel="noopener">Varsome</a>` : "",
-    !v.gba || (v.REF && v.ALT) ? `<a href="${urls.franklin}" target="_blank" rel="noopener">Franklin</a>` : "",
-    !v.gba || (v.REF && v.ALT) ? `<a href="${urls.genebe}"   target="_blank" rel="noopener">GeneBe</a>` : "",
+    !(v.gba || v.specialized) || (v.REF && v.ALT) ? `<a href="${urls.varsome}"  target="_blank" rel="noopener">Varsome</a>` : "",
+    !(v.gba || v.specialized) || (v.REF && v.ALT) ? `<a href="${urls.franklin}" target="_blank" rel="noopener">Franklin</a>` : "",
+    !(v.gba || v.specialized) || (v.REF && v.ALT) ? `<a href="${urls.genebe}"   target="_blank" rel="noopener">GeneBe</a>` : "",
     urls.omim ? `<a href="${urls.omim}"     target="_blank" rel="noopener">OMIM</a>` : "",
   ].join("");
 
@@ -4799,11 +4808,11 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     <div class="variant-head">
       ${idxTxt ? `<span class="card-idx">${idxTxt}</span>` : ""}
       ${_renderStatusRadio(id, curStatus, options, panelAttr)}
-      <span class="hgvs">${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} ${v.gba ? `<span class="gba-composition-header">${escapeHtml(v.gba_composition || v.gba.name || "GBA1 specialized caller allele")}</span>` : `<span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span>`}</span>
+      <span class="hgvs">${escapeHtml(hgvsLabel)}<button class="btn-copy" data-copy="${escapeAttr(hgvsLabel)}" title="複製 HGVS">${COPY_ICON_SVG}</button>${renderTranscriptPicker(v, id)} ${(v.gba || v.specialized) ? `<span class="gba-composition-header">${escapeHtml(v.specialized_composition || v.gba_composition || v.gba?.name || v.specialized?.name || "specialized caller allele")}</span>` : `<span class="variant-tag">([${escapeHtml(state.data?.genome_build || "hg38")}] ${escapeHtml(id)}<button class="btn-copy" data-copy="${escapeAttr(id)}" title="複製 chr-pos-ref-alt">${COPY_ICON_SVG}</button>)</span>`}</span>
       <span class="ext-links">${links}</span>
     </div>
     ${renderVariantBadges(v, id)}
-    ${renderGbaEvidence(v)}
+    ${renderGbaEvidence(v)}${renderSpecializedEvidence(v, id)}
     ${v.somatic ? `<div class="somatic-card-evidence">Somatic pipeline · Mutect2 · FILTER ${escapeHtml(v.somatic_filter || "—")}
       ${v.somatic_historical ? " · 先前分析保留的已標記點位" : ""}
       <span class="somatic-qc-metrics">品質：${Object.entries(v.somatic_qc || {}).map(([k, val]) => `${escapeHtml(k)} ${escapeHtml(val || "—")}`).join(" · ")}</span>
@@ -4822,7 +4831,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
       </div>
       <div>
         <span class="k">Zygosity</span><span class="v ${snvZygosityClass(v.zygosity)}">${escapeHtml(snvZygosityDisplay(v.zygosity))}</span>
-        <span class="k">Read support</span><span class="v ${(v.low_depth || v.low_alt_support) ? "sig-lp" : ""}" ${v.gba ? "" : `title="${escapeAttr(depthSupportHint(v))}"`}>${v.gba ? renderGbaJointSupport(v) : escapeHtml(fmtDepthSupport(v))}</span>
+        <span class="k">Read support</span><span class="v ${(v.low_depth || v.low_alt_support) ? "sig-lp" : ""}" ${v.gba ? "" : `title="${escapeAttr(depthSupportHint(v))}"`}>${v.specialized ? renderSpecializedSupport(v) : v.gba ? renderGbaJointSupport(v) : escapeHtml(fmtDepthSupport(v))}</span>
         <span class="k">Consequence</span><span class="v">${_renderConsequenceCell(v.Consequence)}</span>
         <div class="more-extras hidden">
           <span class="k">Exon / Intron</span><span class="v">${fmtExonIntron(v)}</span>
@@ -4902,6 +4911,52 @@ function renderGbaEvidence(v) {
     : g.deletion_breakpoint_in_gene === false ? "否" : "未知";
   const warnings = (g.review_required || []).map(escapeHtml).join("；");
   return `<div class="somatic-card-evidence gba-evidence-line">GBA1 specialized caller 證據：GBA1/GBAP1 combined CN: ${escapeHtml(String(g.total_copy_number ?? "—"))} · deletion breakpoint in gene: ${breakpoint} · Allele copies: ${escapeHtml(String(g.allele_copy_number ?? "—"))} · FILTER: ${escapeHtml(g.filter || "—")}</div>${warnings ? `<div class="gba-review-warning sig-lp">待複核：${warnings}</div>` : ""}`;
+}
+
+function renderSpecializedSupport(v) {
+  const d = v.specialized;
+  if (!d) return "";
+  if (d.kind === "copy_number" || d.kind === "locus_genotype") {
+    return escapeHtml(d.locus === "smn" ? `SMN1 CN ${d.smn1_copy_number ?? "—"} · SMN2 CN ${d.smn2_copy_number ?? "—"}`
+      : `CN ${d.total_copy_number ?? "—"} · GQ ${d.genotype_quality ?? "—"}`);
+  }
+  const rows = [...new Map((d.evidence || []).map(r => [r.id, r])).values()];
+  const joint = rows.some(r => ["JDP", "JAD", "JAF"].some(k => r.format?.[k] != null));
+  const keys = joint ? ["JDP", "JAD", "JAF"] : ["DP", "AD", "AF"];
+  const hint = joint ? `${d.locus.toUpperCase()} 同源區合併證據，不等同目標基因的 DP／AD／VAF。` : "Caller 原始 read support；缺值不推算。";
+  return keys.map(k => `<span title="${escapeAttr(hint)}">${k} ${escapeHtml(rows.map(r => r.format?.[k] ?? "—").join(" / ") || "—")}</span>`).join(" · ");
+}
+
+function renderSpecializedEvidence(v, id) {
+  const d = v.specialized;
+  if (!d) return "";
+  const values = d.locus === "smn"
+    ? `SMN1 CN: ${d.smn1_copy_number ?? "未知"} · SMN2 CN: ${d.smn2_copy_number ?? "未知"} · SMN2Δ7–8 CN: ${d.smn2_delta78_copy_number ?? "未知"} · c.*3+80T>G ALT CN: ${d.marker?.altCopyNumber ?? "未知"}`
+    : d.locus === "hba" ? `Genotype: ${d.genotype ?? "未知"} · combined CN: ${d.total_copy_number ?? "未知"} · FILTER: ${d.filter ?? "未提供"} · GQ: ${d.genotype_quality ?? "未提供"}`
+    : `CYP21A2/CYP21A1P combined CN: ${d.total_copy_number ?? "未知"} · deletion breakpoint in gene: ${d.deletion_breakpoint_in_gene === true ? "是" : d.deletion_breakpoint_in_gene === false ? "否" : "未知"} · Allele copies: ${d.allele_copy_number ?? "未知"} · FILTER: ${d.filter ?? "未提供"} · GQ: ${d.genotype_quality ?? "未提供"}`;
+  const warning = (d.review_required || []).join("；");
+  return `<div class="somatic-card-evidence gba-evidence-line">${escapeHtml(d.locus.toUpperCase())} specialized caller 證據：${escapeHtml(values)}</div>`
+    + (warning ? `<div class="gba-review-warning sig-lp">待複核：${escapeHtml(warning)}</div>` : "")
+    + (warning && !d.hard_blocked && d.kind !== "risk_marker" ? `<label class="gba-review-warning"><input type="checkbox" class="specialized-review" data-id="${escapeAttr(id)}" data-token="${escapeAttr(d.review_token || "")}" ${getEdit(id, "specialized_review") === d.review_token ? "checked" : ""}> 已核對定位／品質與驗證證據（請於 Comment 記錄依據）</label>` : "")
+    + ((d.kind === "copy_number" || d.kind === "locus_genotype") ? `<div class="gba-review-warning muted">此為 locus／拷貝數結果；健檢回報前請完成變異分類。</div>` : "")
+    + (d.locus === "hba" && !d.hard_blocked ? `<label class="gba-review-warning">HBA 健檢分類 <select class="specialized-health-category" data-id="${escapeAttr(id)}" data-token="${escapeAttr(d.review_token || "")}">${[["", "依完整 genotype（複合結果須指定）"], ["risk", "第一類"], ["carrier", "第二類：帶因者／trait"]].map(([value, label]) => `<option value="${value}" ${getEdit(id, "specialized_health_category") === value ? "selected" : ""}>${label}</option>`).join("")}</select> 指定時請於 Comment 記錄完整 locus 判讀依據。</label>` : "");
+}
+
+function renderSpecializedSummary() {
+  const host = document.getElementById("specialized-summary");
+  if (!host) return;
+  const loci = state.data?.specialized?.loci || {};
+  host.classList.toggle("hidden", !Object.keys(loci).length);
+  const labels = {gba: "GBA1", cyp21a2: "CYP21A2", smn: "SMN1／SMN2", hba: "HBA1／HBA2"};
+  host.innerHTML = `<details><summary>Specialized caller 結果摘要</summary><table class="specialized-summary-table"><thead><tr><th>Locus</th><th>結果</th><th>狀態／限制</th></tr></thead><tbody>`
+    + Object.entries(loci).map(([key, loc]) => {
+      const raw = loc.raw || {};
+      const text = loc.summary || (key === "hba" ? `${raw.genotype ?? "未判定"} · CN ${raw.totalCopyNumber ?? "未知"}`
+        : `combined CN ${raw.totalCopyNumber ?? "未知"} · recombinant haplotypes: ${(raw.recombinantHaplotypes || []).map(x => x === "" ? "無已命名重組" : x ?? "未判定").join(" / ")}`);
+      const status = {complete: "已完成", review_required: "待複核／未完整判定", not_available: "未提供"}[loc.status] || "未知狀態";
+      const note = [status, ...(loc.warnings || []), loc.note || "", loc.evidence_status === "not_provided" ? "未提供區域 VCF 證據" : "", "未列出變異不等同排除全部致病變異"].filter(Boolean).join("；");
+      return `<tr><td>${escapeHtml(labels[key] || key)}</td><td>${escapeHtml(loc.status === "not_available" ? "未提供結果" : text)}</td><td>${escapeHtml(note)}</td></tr>`;
+    }).join("") + `</tbody></table></details>`;
 }
 
 // GIAB stratification label → badge text + tooltip. Labels come from the
@@ -5501,6 +5556,7 @@ function _renderConsequenceCell(raw) {
 // raised OldFormatError). Reviewer state (status / edits / phenotype)
 // is preserved on the backend; just the variant list is empty.
 function _renderSnvTsvErrorBanner() {
+  renderSpecializedSummary();
   const card = document.getElementById("card-snv");
   if (!card) return;
   const existing = card.querySelector(".snv-tsv-error");
@@ -8437,6 +8493,23 @@ async function somaticCandidatesOpen(runId) {
 }
 
 document.addEventListener("change", event => {
+  const input = event.target.closest(".specialized-health-category");
+  if (!input) return;
+  setEdit(input.dataset.id, "specialized_health_category", input.value);
+  setEdit(input.dataset.id, "specialized_health_token", input.value ? input.dataset.token : "");
+  document.querySelectorAll(`.specialized-health-category[data-id="${CSS.escape(input.dataset.id)}"]`).forEach(el => { el.value = input.value; });
+  scheduleAutoSave();
+});
+
+document.addEventListener("change", event => {
+  const input = event.target.closest(".specialized-review");
+  if (!input) return;
+  setEdit(input.dataset.id, "specialized_review", input.checked ? input.dataset.token : "");
+  document.querySelectorAll(`.specialized-review[data-id="${CSS.escape(input.dataset.id)}"]`).forEach(el => { el.checked = input.checked; });
+  scheduleAutoSave();
+});
+
+document.addEventListener("change", event => {
   const input = event.target.closest(".somatic-validation");
   if (!input) return;
   setEdit(input.dataset.id, "somatic_validation", input.value);
@@ -9743,6 +9816,7 @@ function parseHGVS(hgvs) {
   };
 }
 function hgvsCellText(v) {
+  if (v.specialized) return v.HGVS_C || v.specialized.name || "－";
   const h = parseHGVS(v.HGVS);
   return h.protein ? `${h.cdna}(${h.protein})` : h.cdna;
 }
@@ -9777,6 +9851,7 @@ function variantGnomadAF(v) {
   return null;
 }
 function gnomadAFText(v) {
+  if (v.specialized) return "本次註解未提供此完整 allele／locus 的族群頻率。";
   if (v.gba?.kind === "haplotype") return "本次註解未提供此完整重組等位基因的 gnomAD 頻率。";
   const af = variantGnomadAF(v);
   if (af == null || af === 0) {
@@ -9899,8 +9974,8 @@ function renderVariantBlock(vid, v, kind) {
     ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
     : "";
   out.push(`    1. ${gene}為${diseaseSummary.names || "—"}的致病基因之一，其遺傳模式屬於${diseaseSummary.inheritance}${mimText}。`);
-  if (v.gba_composition) out.push(`    2. ${v.gba_composition}`);
-  out.push(`    ${v.gba_composition ? 3 : 2}. 此為${acmgTxt}之變異位點，${tail}。`);
+  if (v.specialized_composition || v.gba_composition) out.push(`    2. ${v.specialized_composition || v.gba_composition}`);
+  out.push(`    ${(v.specialized_composition || v.gba_composition) ? 3 : 2}. 此為${acmgTxt}之${v.specialized ? "變異" : "變異位點"}，${tail}。`);
 
   // Descriptive paragraph
   const cons = consequenceEntry(v.Consequence);
@@ -9908,7 +9983,7 @@ function renderVariantBlock(vid, v, kind) {
   const prot = h.protein ? ` (${h.protein})` : "";
   const paragraph = [
     `在個案之檢體中，檢測到 1 個位於基因 ${gene} 的變異位點。`,
-    v.gba_composition || `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
+    (v.specialized_composition || v.gba_composition) || `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
     gnomadAFText(v),
     clinvarText(v),
     acmgGuidelineText(v),
@@ -10257,8 +10332,8 @@ function pdfWriteVariant(w, vid, v, kind) {
     ? ` (Phenotype MIM number: ${diseaseSummary.phenotypeMims})`
     : "";
   w.para(`1. ${gene}為${diseaseSummary.names || "—"}的致病基因之一，其遺傳模式屬於${diseaseSummary.inheritance}${mimText}。`, { indent: 4 });
-  if (v.gba_composition) w.para(`2. ${v.gba_composition}`, { indent: 4 });
-  w.para(`${v.gba_composition ? 3 : 2}. 此為${acmgTxt}之變異位點，${tail}。`, { indent: 4 });
+  if (v.specialized_composition || v.gba_composition) w.para(`2. ${v.specialized_composition || v.gba_composition}`, { indent: 4 });
+  w.para(`${(v.specialized_composition || v.gba_composition) ? 3 : 2}. 此為${acmgTxt}之${v.specialized ? "變異" : "變異位點"}，${tail}。`, { indent: 4 });
   w.gap(2);
 
   // Descriptive paragraph — same composition as the clinical TXT block.
@@ -10267,7 +10342,7 @@ function pdfWriteVariant(w, vid, v, kind) {
   const prot = h.protein ? ` (${h.protein})` : "";
   const para = [
     `在個案之檢體中，檢測到 1 個位於基因 ${gene} 的變異位點。`,
-    v.gba_composition || `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
+    (v.specialized_composition || v.gba_composition) || `變異位點 ${cdna}${prot} 為${cons.label}，${cons.explain}`,
     gnomadAFText(v),
     clinvarText(v),
     acmgGuidelineText(v),

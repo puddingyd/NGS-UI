@@ -6,6 +6,14 @@
 
 ## 版本紀錄
 
+### v9.50 — 2026-10-16
+
+- 新增 GBA1／CYP21A2／SMN／HBA 共用 specialized 資料包：三級 post-processing 儲存原始小型 JSON、區域 VCF 證據與正規化結果，平台不再讀取原始 JSON／VCF；不複製大型 VCF。
+- CYP21A2 依完整 haplotype 呈現；SMN 顯示 SMN1／SMN2／SMN2Δ7–8 拷貝數及 marker；HBA 保留完整 genotype、小變異與定位／相位限制。正常、未判定及缺資料在結果摘要分別保留。
+- 健檢與診斷沿用原表格、表下列點及參考資料；SMN／HBA 不套用一般 heterozygous SNV 描述。HBA 複合結果可指定第一／第二類，需記錄完整 locus 判讀依據；待複核及未完成分類的結果不能直接進健檢報告。
+- 帶因篩檢清單補入 HBA1／HBA2，使卡片選取與報告基因範圍一致；ACMG SF 清單不變。
+- 新增單樣本 specialized 補建工具，預設 dry-run，可離線重新解析；舊 GBA1 ID 與判讀保留。舊資料缺 joint evidence 時須明確補建，不再在載入時查原始 VCF。
+
 ### v9.49 — 2026-10-16
 
 - GBA1 舊衍生資料的 indexed VCF 補證據加入小型記憶體快取，原始 VCF 或索引異動時自動失效，避免同個案每次載入重讀。

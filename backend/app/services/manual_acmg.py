@@ -176,7 +176,7 @@ def normalize_build(value: Any) -> str:
 
 
 def normalize_variant_id(value: Any) -> str:
-    if re.fullmatch(r"GBA1-[0-9a-f]{24}", str(value or "")):
+    if re.fullmatch(r"(?:GBA1|CYP21A2|SMN|HBA)-[0-9a-f]{24}", str(value or "")):
         return str(value)
     match = _VARIANT_RE.match(str(value or "").strip())
     if not match:

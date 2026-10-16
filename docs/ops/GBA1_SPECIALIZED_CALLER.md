@@ -1,14 +1,14 @@
 # GBA1 specialized caller 整合
 
-三級 DRAGEN worker 在 staging 的 `08_postprocessing/{LIS_ID}.gba.json` 保存 caller 證據與 allele projection，隨既有 promotion／rollback 原子發布；不改寫 00–07，不另建 SNV 完整註解副本。NCKUH 與缺輸入的個案寫明 `not_available`，重跑不會殘留前一次 GBA 結果。舊個案需重跑三級（Nextflow 仍用 resume），才會產生此檔。
+2026-10-16 起 GBA1 移入四 locus [共用資料包](SPECIALIZED_CALLERS.md)：三級 staging 的 `08_postprocessing/` 產生 `specialized.*` 四檔，隨既有 promotion／rollback 發布；不改寫 00–07。舊 `gba.json` 保留唯讀相容。所有 request-time 原始 targeted／hard-filtered VCF 讀取均已移除；舊個案可用單獨補建工具，不必重跑 Nextflow。
 
 ## 輸入與樣本身分
 
 - 以原始 hard-filtered VCF 的 source sample 為準，精確找同層 `{source}.targeted.json`，或同 run 的 `other/{source}/germline_seq/{source}.targeted.json`。
 - 同層 `{source}.targeted.vcf.gz` 與原始 hard-filtered VCF 均讀取 GBA 區域；相同 ALT 優先保留有完整 joint metrics／allele ID 的紀錄，其他只見於其中一份的 GBA1 allele 也保留。VCF 必須為單一相同 source sample；JSON sampleId 亦須相符。不同內容的多份候選 JSON、錯誤格式或樣本不符會阻止整批發布。
-- 不使用 LIS ID 猜測來源、不跨 run 搜尋、不把其他樣本的 targeted VCF 合併。JSON SHA256、軟體／組裝版本、VCF 路徑與 size/mtime、原始 gba object、targeted records、FILTER、GT、ALLELE_ID、JIDS 與 joint FORMAT 留存。原始三級 TSV signature 改變時須重新產生衍生結果。
-- 有 bcftools 與 `.tbi` 時只讀 GBA 區域；否則串流 VCF。JSON 缺失不代表陰性。`deletionBreakpointInGene=null` 顯示未知；CN 是 GBA1/GBAP1 combined CN。
-- 舊 sidecar 若重組 allele 缺 JDP／JAD／JAF，loader 僅在既有原始 VCF 的 size／mtime 簽章相符、可用 bcftools 及索引時，唯讀補回對應 evidence 與 IGV 座標；同一 worker 依 VCF／index 簽章快取最多 16 組讀取結果，檔案更新即失效。不改 sidecar、不重算 allele 身分、分類或報告選取。若原始檔不在、已改變或無索引，須重做該樣本的 GBA1 post-processing。
+- 不使用 LIS ID 猜測來源、不跨 run 搜尋、不把其他樣本的 targeted VCF 合併。JSON SHA256、軟體／組裝版本、VCF 路徑與 size/mtime、原始 gba object、targeted records、FILTER、GT、ALLELE_ID、JIDS 與 joint FORMAT 留存。三級完整重跑會一併重建資料包。
+- 有 bcftools 與 `.tbi`／`.csi` 時只讀四 locus 區域；大型 hard-filtered VCF 沒有索引時拒絕擷取，小型來源可 bounded streaming。JSON 缺失不代表陰性。`deletionBreakpointInGene=null` 顯示未知；CN 是 GBA1/GBAP1 combined CN。
+- 舊 sidecar 缺 JDP／JAD／JAF 時不回原始資料夾補證據；使用 `python scripts/rebuild_specialized.py --sample ID --from-source --apply` 明確補建。已完成共用資料包則所有 evidence／IGV 座標均取自本地快照；來源被移走仍可讀取及重新解析。
 
 ## Allele 與判讀
 
@@ -35,4 +35,4 @@
 - [DRAGEN v4.3 GBA Caller](https://help.dragen.illumina.com/dragen-v4.3/product-guide/dragen-v4.3/dragen-dna-pipeline/targeted-caller/gba-calling)
 - [RecNciI whole haplotype — ClinVar 4297](https://www.ncbi.nlm.nih.gov/clinvar/variation/4297/)
 
-Nextflow pipeline 本身位於伺服器外部 checkout；本次改動在本平台的 staging post-processing 層，無須修改外部 pipeline。部署由使用者執行，之後重跑個案三級以匯入原始 caller 結果。
+Nextflow pipeline 本身位於伺服器外部 checkout；本次改動在本平台的 staging post-processing 層，無須修改外部 pipeline。部署由使用者執行，之後使用單獨補建工具或重跑個案三級匯入 caller 結果。

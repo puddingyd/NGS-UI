@@ -4611,3 +4611,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 #somatic-preview pre { max-height: 240px; overflow: auto; white-space: pre-wrap; }
 #somatic-detail table { width: 100%; font-size: 12px; border-collapse: collapse; }
 #somatic-detail td, #somatic-detail th { padding: 5px; border-bottom: 1px solid #ddd; text-align: left; }
+
+.specialized-summary-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+.specialized-summary-table th, .specialized-summary-table td { padding: 6px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border, #ddd); }
+#specialized-summary { padding: 12px; }
+@media print { #specialized-summary { display: none; } }
