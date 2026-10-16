@@ -1,3 +1,4 @@
+import gzip
 import json
 from pathlib import Path
 
@@ -107,6 +108,67 @@ def test_multiallelic_targeted_gt_and_joint_evidence(tmp_path):
     assert v["gba"]["evidence"][0]["format"]["JDP"] == "80"
     with pytest.raises(ValueError, match="sample"):
         gba.read_evidence(path, "OTHER", "hg38")
+
+
+def test_targeted_vcf_without_joint_markers_uses_hard_filtered_and_keeps_other_alleles(tmp_path):
+    targeted = tmp_path / "SOURCE.targeted.vcf.gz"
+    hard_filtered = tmp_path / "SOURCE.hard-filtered.vcf.gz"
+    def write_gzip(path, records):
+        text = ("##fileformat=VCFv4.2\n"
+                "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSOURCE\n"
+                + "\n".join(records) + "\n")
+        with gzip.open(path, "wt") as handle:
+            handle.write(text)
+    write_gzip(targeted, [
+        "chr1\t155235900\t.\tA\tG\t50\tPASS\tTARGETED;ALLELE_ID=.,NM_000157.4:c.1226A>G\tGT:DP:AD:AF\t0/1:50:25,25:0.5",
+    ])
+    write_gzip(hard_filtered, [
+        "chr1\t155235203\t.\tC\tG\t50\tPASS\tTARGETED;Recombinant\tGT:JDP:JAD:JAF\t0/1:62:16,46:0.74",
+        "chr1\t155235217\t.\tC\tG\t50\tPASS\tTARGETED;Recombinant;ALLELE_ID=.,NM_000157.4:c.1483G>C\tGT:JDP:JAD:JAF\t0/1:68:16,52:0.76",
+        "chr1\t155235252\t.\tA\tG\t50\tPASS\tTARGETED;Recombinant;ALLELE_ID=.,NM_000157.4:c.1448T>C\tGT:JDP:JAD:JAF\t0/1:61:15,46:0.75",
+    ])
+    source, rows = gba._select_evidence(hard_filtered, "SOURCE", "hg38")
+    assert source == targeted
+    assert len(rows) == 4
+    data = payload(variants=[{"alleleId": "NM_000157.4:c.1226A>G",
+                              "alleleCopyNumber": 1, "filter": "PASS"}])
+    variants, _, warnings = gba.project(data, rows, {}, "hg38")
+    assert not warnings and len(variants) == 2
+    recncii = next(v for v in variants.values() if v["gba"]["name"] == "RecNciI")
+    assert [r["format"]["JDP"] for r in recncii["gba"]["evidence"]] == ["61", "68", "62"]
+    assert any(v["gba"]["name"] == "NM_000157.4:c.1226A>G" for v in variants.values())
+
+
+def test_load_recovers_joint_display_evidence_from_unchanged_source(tmp_path, monkeypatch):
+    source = tmp_path / "SOURCE.hard-filtered.vcf.gz"
+    source.write_bytes(b"unchanged source")
+    stat = source.stat()
+    variant = rec()
+    sidecar = tmp_path / "CASE.gba.json"
+    sidecar.write_text(json.dumps({
+        "schema_version": gba.SCHEMA_VERSION, "sample_id": "CASE",
+        "source_sample_id": "SOURCE", "status": "complete", "genome_build": "hg38",
+        "raw_gba": payload(), "variants": {variant["id"]: variant},
+        "sources": {"vcf": str(source), "vcf_signature": [stat.st_size, stat.st_mtime_ns]},
+    }))
+    rows = [
+        {"id": f"chr1-{pos}-{ref}-G", "CHROM": "chr1", "POS": pos,
+         "REF": ref, "ALT": "G", "allele_id": allele_id, "copies": 1,
+         "gt": "0/1", "filter": "PASS", "info": {"TARGETED": True, "Recombinant": True},
+         "format": {"GT": "0/1", "JDP": dp, "JAD": ad, "JAF": af}}
+        for pos, ref, allele_id, dp, ad, af in (
+            (155235203, "C", "", "62", "16,46", "0.74"),
+            (155235217, "C", "NM_000157.4:c.1483G>C", "68", "16,52", "0.76"),
+            (155235252, "A", "NM_000157.4:c.1448T>C", "61", "15,46", "0.75"),
+        )
+    ]
+    monkeypatch.setattr(gba.sample_layout, "state_file", lambda *_: sidecar)
+    monkeypatch.setattr(gba.sample_layout, "snv_raw_tsv", lambda *_: tmp_path / "missing.tsv")
+    monkeypatch.setattr(gba, "_select_evidence", lambda *_args, **_kwargs: (source, rows))
+    loaded = gba.load("CASE")["variants"][variant["id"]]
+    assert [r["format"]["JDP"] for r in loaded["gba"]["evidence"]] == ["61", "68", "62"]
+    assert loaded["CLNSIG"] == variant["CLNSIG"]
+    assert loaded["POS"] == 155235203
 
 
 def test_components_are_replaced_but_unrelated_variant_is_kept(tmp_path, monkeypatch):

@@ -5,9 +5,10 @@
 ## 輸入與樣本身分
 
 - 以原始 hard-filtered VCF 的 source sample 為準，精確找同層 `{source}.targeted.json`，或同 run 的 `other/{source}/germline_seq/{source}.targeted.json`。
-- 同層 `{source}.targeted.vcf.gz` 優先，否則從原始 hard-filtered VCF 讀取 GBA 區域。VCF 必須為單一相同 source sample；JSON sampleId 亦須相符。不同內容的多份候選 JSON、錯誤格式或樣本不符會阻止整批發布。
+- 同層 `{source}.targeted.vcf.gz` 與原始 hard-filtered VCF 均讀取 GBA 區域；相同 ALT 優先保留有完整 joint metrics／allele ID 的紀錄，其他只見於其中一份的 GBA1 allele 也保留。VCF 必須為單一相同 source sample；JSON sampleId 亦須相符。不同內容的多份候選 JSON、錯誤格式或樣本不符會阻止整批發布。
 - 不使用 LIS ID 猜測來源、不跨 run 搜尋、不把其他樣本的 targeted VCF 合併。JSON SHA256、軟體／組裝版本、VCF 路徑與 size/mtime、原始 gba object、targeted records、FILTER、GT、ALLELE_ID、JIDS 與 joint FORMAT 留存。原始三級 TSV signature 改變時須重新產生衍生結果。
 - 有 bcftools 與 `.tbi` 時只讀 GBA 區域；否則串流 VCF。JSON 缺失不代表陰性。`deletionBreakpointInGene=null` 顯示未知；CN 是 GBA1/GBAP1 combined CN。
+- 舊 sidecar 若重組 allele 缺 JDP／JAD／JAF，loader 僅在既有原始 VCF 的 size／mtime 簽章相符、可用 bcftools 及索引時，唯讀補回對應 evidence 與 IGV 座標；不改 sidecar、不重算 allele 身分、分類或報告選取。若原始檔不在、已改變或無索引，須重做該樣本的 GBA1 post-processing。
 
 ## Allele 與判讀
 

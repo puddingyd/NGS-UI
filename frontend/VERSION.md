@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.48 — 2026-10-16
+
+- 修正 GBA1 重組等位基因 Read support 只有 JDP／JAD／JAF「—」的情形：同來源 targeted 與 hard-filtered VCF 逐位點選取較完整的 joint evidence；原始檔未變且具索引時，既有衍生資料也可在載入時補回顯示數值，不改變原判讀。
+
 ### v9.47 — 2026-10-16
 
 - GBA1 卡片標題以紫色顯示重組等位基因組成，caller 證據改為一行直接呈現；Read support 顯示各組成位點的 JDP／JAD／JAF，滑鼠移至名稱可查看合併證據說明。

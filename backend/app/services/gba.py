@@ -255,6 +255,43 @@ def project(data: dict, evidence: list[dict], annotations: dict, build: str) -> 
     return variants, sorted(replaced), warnings
 
 
+def _joint_support_count(rows: list[dict]) -> int:
+    return sum(any(row.get("format", {}).get(key) not in (None, "", ".")
+                   for key in ("JDP", "JAD", "JAF")) for row in rows)
+
+
+def _select_evidence(source_vcf: Path, source_sample_id: str,
+                     build: str, *, indexed_only: bool = False) -> tuple[Path, list[dict]]:
+    targeted = source_vcf.parent / f"{source_sample_id}.targeted.vcf.gz"
+    paths = list(dict.fromkeys(path for path in (targeted, source_vcf) if path.is_file()))
+    if indexed_only:
+        if not shutil.which("bcftools"):
+            return source_vcf, []
+        paths = [path for path in paths if Path(str(path) + ".tbi").is_file()]
+    # The standalone targeted VCF can omit records retained in hard-filtered.
+    # Select the richer record for each genomic ALT, retaining other GBA1
+    # alleles from either file instead of choosing one file wholesale.
+    selected: dict[str, tuple[tuple[int, int, int], Path, list[dict]]] = {}
+    for path in paths:
+        rows = read_evidence(path, source_sample_id, build)
+        by_id: dict[str, list[dict]] = {}
+        for row in rows:
+            by_id.setdefault(row["id"], []).append(row)
+        for vid, group in by_id.items():
+            score = (
+                _joint_support_count(group),
+                sum(bool(row["allele_id"]) for row in group),
+                len(group),
+            )
+            if vid not in selected or score > selected[vid][0]:
+                selected[vid] = score, path, group
+    evidence = [dict(row, source_vcf=str(path)) for _, path, group in selected.values()
+                for row in group]
+    chosen = next((path for path in paths if any(item[1] == path for item in selected.values())),
+                  source_vcf)
+    return chosen, evidence
+
+
 def prepare_outputs(*, mode: str, source_vcf: str | Path, source_sample_id: str,
                     sample_id: str, post_dir: Path, raw_tsv: Path) -> dict:
     source_vcf = Path(source_vcf)
@@ -270,14 +307,17 @@ def prepare_outputs(*, mode: str, source_vcf: str | Path, source_sample_id: str,
         if build not in {"hg38", "hg19"}:
             raise ValueError("GBA1: unsupported genome build")
         if isinstance(payload.get("gba"), dict):
-            targeted = source_vcf.parent / f"{source_sample_id}.targeted.vcf.gz"
-            vcf = targeted if targeted.is_file() else source_vcf
-            evidence = read_evidence(vcf, source_sample_id, build)
+            vcf, evidence = _select_evidence(source_vcf, source_sample_id, build)
             variants, replaced, warnings = project(payload["gba"], evidence, _annotations(raw_tsv, evidence), build)
             result.update(status="complete", genome_build=build, variants=variants,
                           replaced_ids=replaced, warnings=warnings, raw_gba=payload["gba"], evidence=evidence,
                           software_version=payload.get("softwareVersion"),
-                          sources={"json": str(path), "json_sha256": _digest(path), "vcf": str(vcf)},
+                          sources={"json": str(path), "json_sha256": _digest(path), "vcf": str(vcf),
+                                   "evidence_vcfs": sorted({r["source_vcf"] for r in evidence}),
+                                   "evidence_vcf_signatures": {
+                                       str(source): [source.stat().st_size, source.stat().st_mtime_ns]
+                                       for source in {Path(r["source_vcf"]) for r in evidence}
+                                   }},
                           caller_reference=CALLER_REFERENCE)
             if raw_tsv.is_file():
                 stat = raw_tsv.stat()
@@ -303,6 +343,49 @@ def load(sample_id: str) -> dict:
         stat = raw.stat()
         if result["raw_signature"] != [stat.st_size, stat.st_mtime_ns]:
             raise ValueError("GBA1: 原始三級結果已改變，請重新產生 GBA1 衍生結果")
+    # Older sidecars may have been built from a targeted VCF without the
+    # recombinant marker records. Recover only the display/IGV evidence from
+    # the unchanged original source; never revise allele identity or ACMG.
+    variants = result.get("variants") or {}
+    if result.get("status") == "complete" and any(
+        (variant.get("gba") or {}).get("kind") == "haplotype"
+        and not _joint_support_count((variant.get("gba") or {}).get("evidence") or [])
+        for variant in variants.values()
+    ):
+        sources = result.get("sources") or {}
+        recorded_vcf = Path(sources.get("vcf") or "")
+        if recorded_vcf.is_file():
+            stat = recorded_vcf.stat()
+            recorded_sources_unchanged = all(
+                Path(source).is_file() and signature == [
+                    Path(source).stat().st_size, Path(source).stat().st_mtime_ns,
+                ]
+                for source, signature in (sources.get("evidence_vcf_signatures") or {}).items()
+            )
+            if sources.get("vcf_signature") == [stat.st_size, stat.st_mtime_ns] and recorded_sources_unchanged:
+                source_id = result.get("source_sample_id") or ""
+                hard_filtered = recorded_vcf.parent / f"{source_id}.hard-filtered.vcf.gz"
+                source_vcf = hard_filtered if hard_filtered.is_file() else recorded_vcf
+                try:
+                    _, evidence = _select_evidence(
+                        source_vcf, source_id, result.get("genome_build") or "hg38",
+                        indexed_only=True,
+                    )
+                    recovered, _, _ = project(result.get("raw_gba") or {}, evidence, {},
+                                              result.get("genome_build") or "hg38")
+                    for vid, variant in variants.items():
+                        replacement = recovered.get(vid)
+                        if not replacement or (variant.get("gba") or {}).get("kind") != "haplotype":
+                            continue
+                        matched = replacement["gba"]["evidence"]
+                        current = (variant.get("gba") or {}).get("evidence") or []
+                        if _joint_support_count(matched) > _joint_support_count(current):
+                            variant["gba"]["evidence"] = matched
+                            for key in ("CHROM", "POS", "END"):
+                                if not variant.get(key):
+                                    variant[key] = replacement.get(key)
+                except (OSError, ValueError, subprocess.CalledProcessError):
+                    pass
     return result
 
 
