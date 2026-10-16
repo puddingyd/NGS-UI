@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.51 — 2026-10-16
+
+- Specialized 補建工具支援全部 `-dragen` 舊個案的逐一 dry-run／發布、略過已完整資料包、失敗續跑與 JSONL 結果；操作範例改用實際樣本 ID 與 `python3`。
+- 新增唯讀 targeted JSON／VCF 盤點程式，輸出 CYP21A2、SMN、HBA 有 caller 訊號的舊個案 TSV，協助挑選驗證樣本。
+
 ### v9.50 — 2026-10-16
 
 - 新增 GBA1／CYP21A2／SMN／HBA 共用 specialized 資料包：三級 post-processing 儲存原始小型 JSON、區域 VCF 證據與正規化結果，平台不再讀取原始 JSON／VCF；不複製大型 VCF。

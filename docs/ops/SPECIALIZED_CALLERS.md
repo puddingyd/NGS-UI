@@ -53,18 +53,37 @@ review warnings 可經獨立驗證釐清時，需勾選卡片確認並在 Commen
 
 ## 舊個案補建與離線重解析
 
-部署後，尚無資料包的個案依原本 `pipeline_source.json` 精確定位來源。請使用與服務相同的 Python 環境與 NGS_UI_* 設定，在 repo 執行：
+部署後，尚無資料包的個案依原本 `pipeline_source.json` 精確定位來源。實際三級個案 ID 包含 `-dragen`；`source_sample_id` 通常沒有該後綴，工具會依 metadata 正確配對。請使用與服務相同的 Python 環境與 NGS_UI_* 設定，在 server 的 repo 目錄執行：
 
 ```bash
+cd ~/NGS_UI/NGS-UI
 # 舊個案：先驗證，讀原始 targeted JSON / VCF，但不發布
-python scripts/rebuild_specialized.py --sample 26T00054 --from-source
+python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --from-source
 # 確認摘要後發布；不重跑 Nextflow / VEP
-python scripts/rebuild_specialized.py --sample 26T00054 --from-source --apply
+python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --from-source --apply
 
 # 已有資料包：只讀三級快照，原始來源離線也可執行
-python scripts/rebuild_specialized.py --sample 26T00054
-python scripts/rebuild_specialized.py --sample 26T00054 --apply
+python3 scripts/rebuild_specialized.py --sample 26T00054-dragen
+python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --apply
+
+# 全部 -dragen 舊個案：逐一驗證，結果為 JSON lines
+python3 scripts/rebuild_specialized.py --all-dragen --from-source > ~/specialized_backfill_check.jsonl
+# 確認結果後批次發布；成功資料包再次執行會略過，失敗的個案繼續列入
+python3 scripts/rebuild_specialized.py --all-dragen --from-source --apply > ~/specialized_backfill_apply.jsonl
 ```
+
+批次處理只列舉三級 sample 目錄，不遞迴掃描原始 run；每個個案獨立上鎖及發布。`--include-existing` 可強制重做已完整的資料包。摘要含 `validated`／`applied`／`skipped_existing`／`error`，有錯誤時程式最後回傳非零 exit code；詳細失敗原因在對應 JSON line。dry-run 會實際讀取來源並擷取證據，但不發布到既有個案。
+
+要挑 CYP21A2、SMN、HBA 的舊個案測試，可先執行唯讀盤點：
+
+```bash
+cd ~/NGS_UI/NGS-UI
+python3 scripts/scan_targeted_callers.py > ~/targeted_caller_candidates.tsv
+# 單一個案快速檢查；需要盤點無訊號／缺資料者時加 --include-normal
+python3 scripts/scan_targeted_callers.py --sample 26T00054-dragen --include-normal
+```
+
+TSV 每筆列 `sample_id`、來源 sample、caller、狀態、JSON／VCF 訊號與來源檔。預設只列有訊號或讀取錯誤的項目，`candidate_partial` 表示找到訊號但另一來源讀取不完整；VCF observation、SMN marker 與非 1 copy 的 SMN2 CN 都是挑測試案例的線索，並非臨床分類；SMN2 CN 不當作 SMN1 疾病 allele。掃描只讀 targeted JSON 與 targeted VCF，不讀大型 hard-filtered WGS VCF；若 JSON 缺失，VCF 搜尋預設 hg38，可用 `--fallback-build hg19` 指定舊組裝版本。篩出案例後仍須用補建工具與平台卡片核對 caller 完整結果。
 
 來源搬遷時可明確給 `--from-source --source-vcf /new/run/vcf.gz/SOURCE.hard-filtered.vcf.gz`；仍驗證 JSON sampleId、VCF header 與既存 source sample 相同。缺少原始 JSON 的舊個案不能憑空補出不存在的證據；舊 `gba.json` 仍可讀，但不會再向原始 VCF 補數字。
 
