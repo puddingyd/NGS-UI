@@ -2294,10 +2294,10 @@ function renderComment() {
 
 function renderDeadZoneCard() {
   const card = document.getElementById("dead-zone-card");
+  const header = document.getElementById("dead-zone-header");
   const body = document.getElementById("dead-zone-body");
   const thrEl = document.getElementById("dead-zone-threshold");
-  const headerToggle = document.getElementById("dead-zone-header-toggle");
-  if (!card || !body) return;
+  if (!card || !header || !body) return;
   const dz = state.data?.dead_zone || {};
   const threshold = dz.threshold || "";
   const entries = sortDeadZoneEntries(Array.isArray(dz.entries) ? dz.entries : []);
@@ -2305,15 +2305,14 @@ function renderDeadZoneCard() {
     thrEl.textContent = threshold ? `clinical threshold: ${threshold}X` : "";
   }
   card.classList.remove("hidden");
+  const open = toggledBlocks.has(card.id) && card.dataset.wasOpen === "1";
+  card.dataset.wasOpen = open ? "1" : "0";
+  header.classList.toggle("open", open);
+  body.classList.toggle("open", open);
   if (!entries.length) {
     body.innerHTML = `<div class="muted">目前 HPO / panel 基因沒有 cohort dead-zone 註記。</div>`;
     body.dataset.expanded = "0";
     body.dataset.deadZoneKey = "";
-    if (headerToggle) {
-      headerToggle.classList.add("hidden");
-      headerToggle.textContent = "";
-      headerToggle.onclick = null;
-    }
     return;
   }
   const key = entries.map(e => `${e.gene || ""}:${e.exons_label || ""}:${e.cds_dead_pct || ""}`).join("|");
@@ -2332,14 +2331,6 @@ function renderDeadZoneCard() {
       <span class="dead-zone-toggle-arrow">${expanded ? "▾" : "▸"}</span>
       ${toggleLabel}
     </button>` : "";
-  if (headerToggle) {
-    headerToggle.classList.toggle("hidden", !hasToggle);
-    headerToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    headerToggle.innerHTML = hasToggle
-      ? `<span class="dead-zone-toggle-arrow">${expanded ? "▾" : "▸"}</span>${toggleLabel}`
-      : "";
-    headerToggle.onclick = null;
-  }
   body.innerHTML = `<ul class="dead-zone-list">${visibleEntries.map(e => {
     const gene = e.gene || "";
     const label = e.exons_label || (Array.isArray(e.exons) ? e.exons.join(", ") : "");
@@ -2362,7 +2353,6 @@ function renderDeadZoneCard() {
     renderDeadZoneCard();
   };
   document.getElementById("dead-zone-toggle")?.addEventListener("click", toggleExpanded);
-  if (headerToggle && hasToggle) headerToggle.onclick = toggleExpanded;
 }
 
 function deadZoneBucket(pct) {
@@ -3990,10 +3980,13 @@ function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
     ".cnv-sv-reasoning", ".cnv-sv-gene-overflow",
     ".block-header .count",
   ].join(",")).forEach(el => el.remove());
-  clone.querySelectorAll(".cnv-sv-section-title").forEach(title => {
-    if (["已知致病區域重疊", "已知良性區域重疊"].includes(title.textContent.trim())) {
-      title.closest(".cnv-sv-section")?.remove();
-    }
+  clone.querySelectorAll(".cnv-sv-gene-table > tbody").forEach(body => {
+    Array.from(body.rows).slice(5).forEach(row => row.remove());
+  });
+  clone.querySelectorAll(".cnv-sv-gene-table a").forEach(link => {
+    const label = document.createElement("span");
+    label.textContent = link.textContent || "";
+    link.replaceWith(label);
   });
   clone.querySelectorAll(".disease-summary-text").forEach(summary => {
     const text = summary.textContent || "";
@@ -4136,6 +4129,10 @@ async function printReportCards() {
     .print-field { display: inline-block; white-space: pre-wrap; overflow-wrap: anywhere; }
     .litvar2-references { white-space: normal; overflow-wrap: anywhere; }
     .litvar2-print-reference { color: inherit; text-decoration: none; }
+    .print-report-content .cnv-sv-overlap-content {
+      display: block; -webkit-line-clamp: unset; line-clamp: unset; overflow: visible;
+    }
+    .print-report-content .cnv-sv-overlap-row .cnv-disease-extra { display: flex; }
     .disease-row summary { line-height: 1.15; padding-top: 1px; padding-bottom: 1px; }
     details > summary { list-style: none; }
     details > summary::before { display: none !important; }
@@ -7466,6 +7463,19 @@ function _cnvSvGeneTableHead() {
   </tr></thead>`;
 }
 
+function _cnvSvVisibleGenes(v) {
+  const full = [...(v.genes || []), ...(v.genes_overflow || [])];
+  const relevant = full.filter(g => g.in_panel);
+  const unrelated = full.filter(g => !g.in_panel).sort((a, b) =>
+    Number(Boolean(b.omim_phenotype)) - Number(Boolean(a.omim_phenotype))
+    || String(a.gene || "").localeCompare(String(b.gene || "")));
+  const fillCount = Math.max(0, 5 - relevant.length);
+  return {
+    visible: [...relevant, ...unrelated.slice(0, fillCount)],
+    hiddenFull: unrelated.slice(fillCount),
+  };
+}
+
 function _renderCnvSvGeneTable(v, id) {
   // Backend trims `genes` to the visible-table set (≤10 rows + any
   // in-panel overflow), and ships the long tail in `genes_compact`
@@ -7473,18 +7483,17 @@ function _renderCnvSvGeneTable(v, id) {
   // gene_count so the section header reads correctly.
   const genes = v.genes || [];
   const genesCompact = v.genes_compact || [];
-  const total = (v.genes_total != null) ? v.genes_total : genes.length + genesCompact.length;
+  const genesOverflow = v.genes_overflow || [];
+  const total = (v.genes_total != null) ? v.genes_total : genes.length + genesOverflow.length + genesCompact.length;
   if (!total) return "";
 
-  const relevantGenes = genes.filter(g => g.in_panel);
-  const hiddenFullGenes = genes.filter(g => !g.in_panel);
-  const visibleRows = relevantGenes.map(g => _renderCnvSvGeneRow(g, id)).join("");
+  const { visible, hiddenFull } = _cnvSvVisibleGenes(v);
+  const visibleRows = visible.map(g => _renderCnvSvGeneRow(g, id)).join("");
 
   // Overflow body is rendered lazily on first <details> open. For
   // SVs that span 1500+ genes, eagerly building the chip DOM was
   // adding ~100 ms per card even though the panel was hidden.
-  const genesOverflow = v.genes_overflow || [];
-  const overflowCount = hiddenFullGenes.length + genesOverflow.length + genesCompact.length;
+  const overflowCount = hiddenFull.length + genesCompact.length;
   let overflowHtml = "";
   if (overflowCount) {
     overflowHtml = `<details class="cnv-sv-gene-overflow" data-id="${escapeAttr(id)}" data-rendered="0">
@@ -7733,17 +7742,12 @@ document.addEventListener("toggle", ev => {
   const id = det.dataset.id;
   const v = _cnvSvVariantById(id);
   if (!v) return;
-  const overflowFull = [
-    ...(v.genes || []).filter(g => !g.in_panel),
-    ...(v.genes_overflow || []),
-  ];
+  const { hiddenFull: overflowFull } = _cnvSvVisibleGenes(v);
   const compact      = v.genes_compact  || [];
   const body = det.querySelector(".gene-overflow-body");
   if (!body) return;
-  // In-panel rows beyond the visible cap stay in full table format
-  // (so reviewers can still see Tx / Location / Phenotype for them).
-  // Non-in-panel rows collapse to compact chips since they were
-  // shipped without those fields.
+  // Unrelated rows within the backend's full-record cap keep the
+  // detailed table. The remaining compact records only have chip fields.
   const fullTable = overflowFull.length
     ? `<table class="cnv-sv-gene-table">${_cnvSvGeneTableHead()}<tbody>${overflowFull.map(g => _renderCnvSvGeneRow(g, id)).join("")}</tbody></table>`
     : "";

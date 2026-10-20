@@ -301,12 +301,11 @@
 
     <!-- Cohort-level panel dead-zone warning for selected HPO/panel genes. -->
     <section id="dead-zone-card" class="card hidden">
-      <div class="dead-zone-header">
-        <h2>Dead zone</h2>
+      <div id="dead-zone-header" class="clinical-header">
+        <span><span class="arrow"></span><span class="title">Dead zone</span></span>
         <span id="dead-zone-threshold" class="muted"></span>
-        <button id="dead-zone-header-toggle" class="dead-zone-toggle dead-zone-header-toggle hidden" type="button" aria-expanded="false"></button>
       </div>
-      <div id="dead-zone-body" class="dead-zone-body"></div>
+      <div id="dead-zone-body" class="clinical-body dead-zone-body"></div>
     </section>
 
     <!-- Comment (free-text; syncs to NGS_list.xlsx Comment column) +

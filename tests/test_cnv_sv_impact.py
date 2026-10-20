@@ -4,13 +4,25 @@ import csv
 import pytest
 
 from app.services.cnv_sv_impact import attach, gene_impact, summarize
-from app.adapters.annotsv_tsv import load_annotsv_tsv
+from app.adapters.annotsv_tsv import load_annotsv_tsv, _trim_genes
 
 
 def gene(**kwargs):
     return {"gene": "TEST", "location": "intron2-intron2", "location2": "CDS",
             "overlap_cds_len": 0, "splice_distance": 100, "splice_type": "donor",
             "pheno_score": 50, "hpo_score": 30, **kwargs}
+
+
+def test_gene_payload_keeps_omim_disease_rows_available_for_default_table():
+    genes = [{"gene": f"A{i}", "in_panel": False, "omim_phenotype": ""}
+             for i in range(15)]
+    genes.append({"gene": "ZOMIM", "in_panel": False, "omim_phenotype": "Known disease"})
+    visible, overflow_full, overflow_compact, total = _trim_genes(genes)
+    assert total == 16
+    assert visible[0]["gene"] == "ZOMIM"
+    assert len(visible) == 10
+    assert not overflow_full
+    assert len(overflow_compact) == 6
 
 
 @pytest.mark.parametrize("kind", ["DEL", "DUP"])

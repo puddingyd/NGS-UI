@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v9.53 — 2026-10-20
+
+- 主畫面 Dead zone 改為與 Genetic counseling／Clinical presentation 同樣的收合卡片，切換個案時預設收合。
+- CNV/SV Clinical／Pathogenic 卡片顯示全部 phenotype 相關基因；不足五筆時優先補入有 OMIM 疾病的其他基因，其餘可展開。
+- 輸出 PDF 保留 CNV/SV 已知致病與良性區域重疊內容，每張 CNV/SV 卡片最多列五個基因。
+
 ### v9.52 — 2026-10-16
 
 - 新增 23WE／24WE／25WE WES 二級重跑準備工具：在 DGM 各建立 `WES_23WE_re`、`WES_24WE_re`、`WES_25WE_re` samplesheet 與可貼到 DGX2 執行的指令；啟動參數與 QC 流程沿用現行二級分析。重複來源、缺少樣本或批次名稱已存在時停止，避免錯誤覆寫。

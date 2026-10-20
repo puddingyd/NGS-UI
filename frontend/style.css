@@ -1172,6 +1172,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 /* Clinical description card (same collapsible feel as block-header) */
 #clinical-card,
 #counseling-card,
+#dead-zone-card,
 #comment-card { padding: 0; overflow: hidden; }
 .clinical-header {
   display: flex;
@@ -3728,18 +3729,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .qc-level { color: var(--muted); text-transform: uppercase; font-size: 10px; padding-top: 2px; }
 .qc-reason { color: #444; }
 
-.dead-zone-header {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-.dead-zone-header h2 { margin: 0; font-size: 14px; }
-.dead-zone-header-toggle {
-  margin-left: auto;
-  margin-top: 0;
-  white-space: nowrap;
-}
+#dead-zone-threshold { margin-left: auto; font-size: 11px; }
+#dead-zone-body.open { padding: 8px 12px; }
 .dead-zone-list {
   list-style: none;
   padding: 0;

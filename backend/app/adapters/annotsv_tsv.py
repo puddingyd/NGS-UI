@@ -381,7 +381,7 @@ GENE_VISIBLE_CAP = 10
 
 
 def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], list[dict], int]:
-    """Sort genes (in-panel first, then pheno_score desc, then alpha)
+    """Sort genes (in-panel first, then pheno_score; unrelated OMIM first)
     and split into ({visible 10}, {in-panel overflow full}, {other overflow compact}, total).
 
     Visible is strictly the top GENE_VISIBLE_CAP rows. In-panel rows
@@ -391,7 +391,8 @@ def _trim_genes(genes: list[dict]) -> tuple[list[dict], list[dict], list[dict], 
     """
     sorted_genes = sorted(genes, key=lambda g: (
         not g.get("in_panel"),
-        -(g.get("pheno_score") or -1),
+        -(g.get("pheno_score") or 0) if g.get("in_panel") else 0,
+        not bool(g.get("omim_phenotype")) if not g.get("in_panel") else False,
         g.get("gene", ""),
     ))
     visible = sorted_genes[:GENE_VISIBLE_CAP]

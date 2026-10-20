@@ -83,3 +83,30 @@ test('pathogenic overlap shows five diseases before the count-based expander', (
   assert.match(html, /cnv-sv-overlap-content-counted/);
   assert.doesNotMatch(html, /cnv-sv-overlap-toggle/);
 });
+
+test('CNV/SV gene table shows unrelated OMIM genes when no phenotype matches', () => {
+  const c = context();
+  const genes = [
+    { gene: 'PLAIN', in_panel: false },
+    { gene: 'OMIM2', in_panel: false, omim_phenotype: 'Disease 2' },
+    { gene: 'OMIM1', in_panel: false, omim_phenotype: 'Disease 1' },
+    { gene: 'EXTRA', in_panel: false },
+  ];
+  const result = c._cnvSvVisibleGenes({ genes });
+  assert.deepEqual(Array.from(result.visible, g => g.gene), ['OMIM1', 'OMIM2', 'EXTRA', 'PLAIN']);
+  assert.equal(result.hiddenFull.length, 0);
+});
+
+test('CNV/SV gene table keeps all phenotype genes and fills to five', () => {
+  const c = context();
+  const relevant = Array.from({ length: 12 }, (_, i) => ({ gene: `R${i}`, in_panel: true }));
+  const unrelated = Array.from({ length: 6 }, (_, i) => ({
+    gene: `U${i}`, in_panel: false, omim_phenotype: i === 5 ? 'OMIM disease' : '',
+  }));
+  const many = c._cnvSvVisibleGenes({ genes: relevant.slice(0, 10), genes_overflow: relevant.slice(10), genes_compact: unrelated });
+  assert.equal(many.visible.length, 12);
+  assert.equal(many.hiddenFull.length, 0);
+  const few = c._cnvSvVisibleGenes({ genes: [...relevant.slice(0, 2), ...unrelated] });
+  assert.deepEqual(Array.from(few.visible, g => g.gene), ['R0', 'R1', 'U5', 'U0', 'U1']);
+  assert.equal(few.hiddenFull.length, 3);
+});
