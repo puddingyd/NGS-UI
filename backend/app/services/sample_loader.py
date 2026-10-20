@@ -725,7 +725,11 @@ def _case_mito_variants_by_id(sample_dir: Path, wanted: set[str]) -> dict[str, d
         pheno_by_gene = _read_pheno_scores(
             _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
         )
-        variants, _categories = load_mito_tsv(mito_tsv, pheno_by_gene=pheno_by_gene)
+        variants, _categories = load_mito_tsv(
+            mito_tsv, pheno_by_gene=pheno_by_gene,
+            vcf_path=sample_layout.mito_vep_vcf(sample_id),
+            vcf_sample_id=sample_layout.source_sample_id(sample_id),
+        )
     except Exception as e:
         print(f"[case-summary] mito lookup failed for {sample_id}: {e}", flush=True)
         return {}
@@ -1876,7 +1880,11 @@ def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
     sub, _sd, _h, _p, pheno_by_gene = ctx
     mito_path = sample_layout.mito_tsv(sample_id)
     mv, mc = (
-        load_mito_tsv(mito_path, pheno_by_gene=pheno_by_gene)
+        load_mito_tsv(
+            mito_path, pheno_by_gene=pheno_by_gene,
+            vcf_path=sample_layout.mito_vep_vcf(sample_id),
+            vcf_sample_id=sample_layout.source_sample_id(sample_id),
+        )
         if mito_path.exists() else ({}, {t: [] for t in MITO_TIERS})
     )
     _log_perf(
@@ -2259,7 +2267,11 @@ def load_sample(sample_id: str, version: str | None = None,
         # "Clinical (in panel)" tier just like the SNV/CNV/SV sides.
         mito_path = sample_layout.mito_tsv(sample_id)
         mito_variants, mito_categories = (
-            load_mito_tsv(mito_path, pheno_by_gene=pheno_by_gene)
+            load_mito_tsv(
+                mito_path, pheno_by_gene=pheno_by_gene,
+                vcf_path=sample_layout.mito_vep_vcf(sample_id),
+                vcf_sample_id=sample_layout.source_sample_id(sample_id),
+            )
             if mito_path.exists() else ({}, {t: [] for t in MITO_TIERS})
         )
     else:

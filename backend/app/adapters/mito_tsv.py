@@ -31,7 +31,9 @@ most clinically useful rows float upward while preserving all variants.
 from __future__ import annotations
 
 import csv
+import gzip
 import re
+from functools import lru_cache
 from urllib.parse import unquote
 from pathlib import Path
 
@@ -52,6 +54,82 @@ _CLINVAR_DISEASE_SKIP = {
     "see cases",
     "see_cases",
 }
+
+
+@lru_cache(maxsize=16)
+def _vcf_ad_by_allele_cached(
+    path: str, mtime_ns: int, size: int, sample_id: str,
+) -> dict[tuple[int, str, str], str]:
+    """Read only FORMAT/AD from the matching mitochondrial VCF sample."""
+    depths: dict[tuple[int, str, str], str] = {}
+    ambiguous: set[tuple[int, str, str]] = set()
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            sample_col = None
+            for line in handle:
+                if line.startswith("##"):
+                    continue
+                if line.startswith("#CHROM"):
+                    samples = line.rstrip("\r\n").split("\t")[9:]
+                    if sample_id:
+                        if sample_id not in samples:
+                            return {}
+                        sample_col = 9 + samples.index(sample_id)
+                    elif len(samples) == 1:
+                        sample_col = 9
+                    else:
+                        return {}
+                    continue
+                if sample_col is None or line.startswith("#"):
+                    continue
+                fields = line.rstrip("\r\n").split("\t")
+                if len(fields) <= sample_col or fields[0].lower().removeprefix("chr").upper() not in {"M", "MT"}:
+                    continue
+                try:
+                    pos = int(fields[1])
+                except ValueError:
+                    continue
+                ref = fields[3]
+                alts = fields[4].split(",")
+                fmt = fields[8].split(":")
+                if "AD" not in fmt:
+                    continue
+                values = fields[sample_col].split(":")
+                ad_index = fmt.index("AD")
+                if ad_index >= len(values):
+                    continue
+                ad_parts = values[ad_index].split(",")
+                if len(ad_parts) != len(alts) + 1:
+                    continue
+                for alt, alt_depth in zip(alts, ad_parts[1:]):
+                    if not ad_parts[0].isdigit() or not alt_depth.isdigit():
+                        continue
+                    key = (pos, ref, alt)
+                    value = f"{ad_parts[0]},{alt_depth}"
+                    if key in ambiguous:
+                        continue
+                    if key in depths and depths[key] != value:
+                        depths[key] = ""  # conflicting duplicate records are ambiguous
+                        ambiguous.add(key)
+                    else:
+                        depths[key] = value
+    except (OSError, UnicodeError):
+        return {}
+    return depths
+
+
+def _vcf_ad_by_allele(
+    vcf_path: Path | None, sample_id: str = "",
+) -> dict[tuple[int, str, str], str]:
+    if vcf_path is None:
+        return {}
+    try:
+        stat = vcf_path.stat()
+    except OSError:
+        return {}
+    return _vcf_ad_by_allele_cached(
+        str(vcf_path), stat.st_mtime_ns, stat.st_size, sample_id,
+    )
 
 
 def _to_float(s):
@@ -204,6 +282,8 @@ def load_mito_tsv(
     tsv_path: Path,
     *,
     pheno_by_gene: dict[str, float] | None = None,
+    vcf_path: Path | None = None,
+    vcf_sample_id: str = "",
 ) -> tuple[dict[str, dict], dict[str, list[str]]]:
     """Read mito.annotated.tsv → ({id: variant}, {tier: [ids]}).
 
@@ -218,6 +298,11 @@ def load_mito_tsv(
     if not tsv_path or not tsv_path.exists():
         return variants, categories
 
+    if vcf_path is None and tsv_path.name.endswith(".mito.tsv"):
+        vcf_path = tsv_path.with_name(
+            tsv_path.name.removesuffix(".mito.tsv") + ".mito.vep.vcf.gz"
+        )
+    vcf_ad = _vcf_ad_by_allele(vcf_path, vcf_sample_id)
     with tsv_path.open("r", encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f, delimiter="\t"):
             pos = _to_int(row.get("POS"))
@@ -281,7 +366,7 @@ def load_mito_tsv(
                 "aa_change":     _first(row, "AA_CHANGE") or _clean_hgvs_p(row.get("HGVS_P") or ""),
                 "heteroplasmy":  het,                       # 0-1 fraction
                 "genotype":      _first(row, "GENOTYPE"),
-                "AD":            _first(row, "AD"),
+                "AD":            _first(row, "AD") or vcf_ad.get((pos, ref, alt), ""),
                 "depth":         _to_int(_first(row, "DEPTH", "DP")),
                 "filter":        filt,
                 "has_filter":    bool(filt),

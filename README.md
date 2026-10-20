@@ -398,6 +398,8 @@ HPO reference、固定 panel、custom panel 與既有 `pheno_score.tsv` 讀入�
 
 三級 pipeline 的 Mito source 是 `04_mito/{SAMPLE_ID}.mito.tsv`。UI 平常直接讀此檔；若本機 MITOMAP 表確實補到 `MITOMAP_*` 欄位，worker 才在 `08_postprocessing/mito.annotated.tsv` 留一份小型衍生檔並優先讀取。前端 adapter 同時相容舊欄位與 v3.2 欄位；Mito 判讀以 ClinVar P/LP、MITOMAP confirmed/pathogenic、gnomAD-mito rare 或缺值/已報告變異分成三層。本院 AF 不寫回 Mito TSV：FastAPI 啟動背景 warm-up 會透過 `.tbi` 與 `bcftools`/`tabix` 只讀 `NGS_UI_INHOUSE_AF_DB` 的 chrM records 並快取；DB、index 或查詢工具缺失時該欄靜默顯示 `—`。
 
+Mito 卡片若 TSV 沒有 AD，載入時會從同一 `04_mito/` 資料夾、與 TSV 同前綴的 `.mito.vep.vcf.gz` 讀取指定樣本的 `FORMAT/AD`，依位置及 REF/ALT 精確配對；多等位變異只顯示該 ALT 的深度。原 TSV 有 AD 時優先保留；VCF 缺檔或無法配對則顯示 `—`，不由 DP 或 AF 估算。既有個案更新服務並重新載入即可看到 AD，不需重跑三級分析。
+
 舊樣本或手動補跑時，仍可用本 repo 的 legacy script 從 GATK Mutect2 `--mitochondria-mode` 的 VCF 產生 mito TSV（純 Python，只需 VCF + 本地 MITOMAP 表，不需 VEP/bcftools）：
 
 ```bash

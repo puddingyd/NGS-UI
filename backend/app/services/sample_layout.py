@@ -367,6 +367,12 @@ def mito_tsv(sample_id: str) -> Path:
     return derived
 
 
+def mito_vep_vcf(sample_id: str) -> Path:
+    """Return the VCF paired with the 04_mito TSV, even when 08 is displayed."""
+    source = _pipeline_artifact(sample_id, "04_mito", ".mito.tsv", "*.mito.tsv")
+    return source.with_name(source.name.removesuffix(".mito.tsv") + ".mito.vep.vcf.gz")
+
+
 def str_tsv(sample_id: str) -> Path:
     if not uses_unified_layout(sample_id):
         for name in ("str.tsv", "str.annotated.tsv"):

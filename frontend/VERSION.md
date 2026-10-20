@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.54 — 2026-10-20
+
+- Mito TSV 沒有 AD 欄位時，卡片會從同資料夾的 mito VEP VCF 依樣本及變異位置／REF／ALT 補讀 `FORMAT/AD`；無法配對時仍顯示缺值，不由 DP 或 heteroplasmy 推算。
+
 ### v9.53 — 2026-10-20
 
 - 主畫面 Dead zone 改為與 Genetic counseling／Clinical presentation 同樣的收合卡片，切換個案時預設收合。
