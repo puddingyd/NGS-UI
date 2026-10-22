@@ -314,7 +314,9 @@ def _omim_associations(omim_row: dict | None) -> list[dict]:
             "source_kind": "omim",
             "display_name": name or detail.splitlines()[0].strip(),
             "phenotype_mim": mim,
-            "inheritance": inheritance or str(omim_row.get("Inheritance") or "").strip(),
+            # The gene-level Inheritance cell does not describe every
+            # phenotype in Disease1..16. An empty () means unspecified.
+            "inheritance": inheritance,
             "detail": detail,
             "mondo_id": "",
             "source_disease_id": f"OMIM:{mim}" if mim else "",

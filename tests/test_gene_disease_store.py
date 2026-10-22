@@ -125,6 +125,35 @@ def test_duplicate_phenotype_mim_preserves_every_omim_slot(monkeypatch):
     assert associations[3]["display_name"] == "agnathia-otocephaly complex"
 
 
+def test_omim_disease_without_inheritance_does_not_borrow_gene_mode(monkeypatch):
+    row = {
+        "Inheritance": "AD",
+        "Disease1": "RAS-associated autoimmune lymphoproliferative syndrome type 1, somatic (614470)()\n\nCurator detail.",
+        "Disease2": "Other disorder (600001)(AR)",
+    }
+
+    supplemental = gene_disease_store._row_to_item({
+        "gene": "KRAS",
+        "disease_name": "RAS-associated autoimmune lymphoproliferative syndrome type 1, somatic",
+        "source": "GenCC",
+        "classification": "Definitive",
+        "phenotype_mim": "614470",
+        "inheritance": "AD",
+    })
+    monkeypatch.setattr(gene_disease_store, "lookup_cached", lambda gene: [supplemental])
+
+    associations = gene_disease_store.merged_associations("KRAS", row, refresh=False)
+
+    assert associations[0]["display_name"] == (
+        "RAS-associated autoimmune lymphoproliferative syndrome type 1, somatic"
+    )
+    assert associations[0]["phenotype_mim"] == "614470"
+    assert associations[0]["inheritance"] == ""
+    assert associations[0]["detail"].splitlines()[0].endswith("()")
+    assert associations[0]["evidence"] == ["OMIM", "GenCC Definitive"]
+    assert associations[1]["inheritance"] == "AR"
+
+
 def test_supplemental_only_associations_still_group_by_relationship(monkeypatch):
     monkeypatch.setattr(
         gene_disease_store,
