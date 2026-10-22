@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.55 — 2026-10-22
+
+- 修正「輸出 PDF」的 SNV/Indel ACMG 值消失：列印副本將 ACMG 與 ERepo 結果轉成純文字，保留分類、分數及來源。
+
 ### v9.54 — 2026-10-20
 
 - Mito TSV 沒有 AD 欄位時，卡片會從同資料夾的 mito VEP VCF 依樣本及變異位置／REF／ALT 補讀 `FORMAT/AD`；無法配對時仍顯示缺值，不由 DP 或 heteroplasmy 推算。

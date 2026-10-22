@@ -4009,6 +4009,14 @@ function _reportPrintBlock(sectionId, { omitWhenEmpty = false } = {}) {
     text.textContent = link.textContent || "";
     link.replaceWith(text);
   });
+  // ACMG and ERepo results are button labels on screen. Keep their values
+  // in the print copy before removing the interactive controls.
+  clone.querySelectorAll("button.acmg-summary-btn").forEach(button => {
+    const value = document.createElement("span");
+    value.className = "v acmg-summary-btn";
+    while (button.firstChild) value.appendChild(button.firstChild);
+    button.replaceWith(value);
+  });
   clone.querySelectorAll("button, a").forEach(el => el.remove());
   clone.querySelectorAll("input, select, textarea").forEach(control => {
     if (control.matches('[type="checkbox"], [type="radio"]')) {
