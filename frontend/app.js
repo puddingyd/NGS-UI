@@ -9692,6 +9692,7 @@ const INHERITANCE_LABELS = {
   MT:  "粒線體遺傳",
   DD:  "雙等位基因顯性遺傳",
   IC:  "細胞質遺傳",
+  SMU: "體細胞變異",
 };
 
 const ZYG_CH = { het: "Heterozygous", hom: "Homozygous", hemi: "Hemizygous" };
@@ -9788,9 +9789,11 @@ function pickedDiseaseSlot(id, v) {
 function diseaseInfo(text) {
   if (!text) return { name: "", inheritance: "", phenotypeMim: "" };
   const firstLine = String(text).split("\n")[0].trim();
-  const inhMatch = firstLine.match(/\(([A-Z][A-Z?\/,\s]*)\)/);
+  const inhMatch = firstLine.match(
+    /\((?:AD|AR|XLD|XLR|XL|YL|MT|MI|DR|DD|SMU|MU|ISOL|IC)(?:\s*[/,;]\s*(?:AD|AR|XLD|XLR|XL|YL|MT|MI|DR|DD|SMU|MU|ISOL|IC))*\)/i,
+  );
   const mimMatch = firstLine.match(/\((\d{6})\)/);
-  const inh = inhMatch ? inhMatch[1].trim() : "";
+  const inh = inhMatch ? inhMatch[0].slice(1, -1).trim() : "";
   let name = firstLine;
   const metadataStarts = [inhMatch, mimMatch]
     .filter(Boolean).map(match => firstLine.indexOf(match[0]));
@@ -9802,7 +9805,7 @@ function inheritanceCH(code) {
   if (!code) return "遺傳模式未明確";
   // Compound codes like "AD/AR" or "AR, DD" — translate each, join with "或".
   const parts = code.split(/[\/,]/).map(s => s.trim()).filter(Boolean);
-  const labels = parts.map(p => INHERITANCE_LABELS[p] || p);
+  const labels = parts.map(p => INHERITANCE_LABELS[p] || INHERITANCE_LABELS[p.toUpperCase()] || p);
   return labels.join("或");
 }
 

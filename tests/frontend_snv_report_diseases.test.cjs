@@ -12,14 +12,11 @@ function context(reportDiseases = {}) {
   });
   const start = source.indexOf('function pickedDiseaseSlots(');
   const end = source.indexOf('// HGVS', start);
+  const labelsStart = source.indexOf('const INHERITANCE_LABELS =');
+  const labelsEnd = source.indexOf('const ZYG_CH', labelsStart);
   vm.runInContext(`
     const OMIM_DISEASE_SLOT_COUNT = 16;
-    const INHERITANCE_LABELS = {
-      AD: '體染色體顯性遺傳', AR: '體染色體隱性遺傳',
-      XLD: '性染色體顯性遺傳', XLR: '性染色體隱性遺傳',
-      XL: '性聯遺傳', YL: 'Y 染色體遺傳', MT: '粒線體遺傳',
-      DD: '雙等位基因顯性遺傳', IC: '細胞質遺傳',
-    };
+    ${source.slice(labelsStart, labelsEnd)}
     ${source.slice(start, end)}
   `, c);
   return c;
@@ -47,4 +44,15 @@ test('SNV report summary falls back to the first disease when none is checked', 
 
   assert.equal(summary.names, 'Disease A');
   assert.equal(summary.phenotypeMims, '600001');
+});
+
+test('SNV report summary describes SMu as a somatic variant', () => {
+  const c = context({ 1: true });
+  const summary = c.pickedDiseaseSummary('v1', {
+    Disease1: '?RAS-associated autoimmune lymphoproliferative syndrome type 1, somatic (614470)(SMu)\n\nCurator detail.',
+  });
+
+  assert.equal(summary.names, '?RAS-associated autoimmune lymphoproliferative syndrome type 1, somatic');
+  assert.equal(summary.inheritance, '體細胞變異');
+  assert.equal(summary.phenotypeMims, '614470');
 });

@@ -125,9 +125,10 @@ _INHERITANCE_ZH: dict[str, str] = {
     "Mi":   "粒線體遺傳",
     "Mu":   "多因子遺傳",
     "Isol": "散發性",
+    "Smu":  "體細胞變異",
 }
 
-_INHERITANCE_SUPPRESS = {"DR", "DD", "Smu", "SMU", "Digenic", "Somatic"}
+_INHERITANCE_SUPPRESS = {"DR", "DD", "Digenic", "Somatic"}
 
 _ZYGOSITY_ZH: dict[str, str] = {
     "Heterozygous":    "異合子",
@@ -194,6 +195,8 @@ def _inheritance_zh(code: str) -> str:
     # translate each, join with 「、」.
     out = []
     for part in re.split(r"[;,/\s]+", code.strip()):
+        if part.casefold() == "smu":
+            part = "Smu"
         if part in _INHERITANCE_SUPPRESS:
             continue
         out.append(_INHERITANCE_ZH.get(part, part))

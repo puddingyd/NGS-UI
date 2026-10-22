@@ -209,6 +209,33 @@ def test_diagnosis_without_snv_disease_ticks_keeps_first_slot_fallback():
     assert "Disease B" not in docx_export._omim_block_for_snv(variant, {})
 
 
+def test_diagnosis_uses_somatic_variant_wording_for_smu():
+    doc = Document()
+    variant = _gjb2_variant(
+        "v1", rs_id="", hgvs_c="c.38G>A", hgvs_p="p.Gly13Asp",
+        acmg="Pathogenic",
+    )
+    variant["gene_symbol"] = "NRAS"
+    variant["Disease1"] = (
+        "?RAS-associated autoimmune lymphoproliferative syndrome type 1, "
+        "somatic (614470)(SMu)\n\nCurator detail."
+    )
+
+    docx_export._section_results(
+        doc,
+        {"variants": {"v1": variant}},
+        {"status": {"v1": "1"}, "edits": {"v1": {"report_diseases": {"1": True}}}},
+        "WES",
+    )
+
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    assert (
+        "NRAS為?RAS-associated autoimmune lymphoproliferative syndrome type 1, "
+        "somatic的致病基因之一，其遺傳模式屬於體細胞變異 "
+        "(Phenotype MIM number: 614470)。"
+    ) in text
+
+
 def test_diagnosis_without_first_or_second_category_uses_compact_negative_summary():
     doc = Document()
 
