@@ -4152,7 +4152,11 @@ async function printReportCards() {
         @bottom-right { content: counter(page); color: #57606a; font-size: 9px; }
       }
       .print-page { max-width: none; padding: 3mm 0 0; }
-      .print-report-content { zoom: 80%; }
+      .print-report-content {
+        zoom: 80%;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
       .print-toolbar { display: none; }
       .variant-card { box-shadow: none; }
     }

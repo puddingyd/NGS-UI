@@ -208,7 +208,10 @@ def test_print_report_scales_cards_and_keeps_predictors_inside_their_column():
     print_report = APP_JS[start:end]
 
     assert '<div class="print-report-content">${sections}</div>' in print_report
-    assert ".print-report-content { zoom: 80%; }" in print_report
+    assert ".print-report-content {" in print_report
+    assert "zoom: 80%;" in print_report
+    assert "-webkit-print-color-adjust: exact;" in print_report
+    assert "print-color-adjust: exact;" in print_report
     assert "width: 125%" not in print_report
     assert "grid-template-columns: 0.9fr 1fr 1.2fr 1.5fr 0.8fr;" in print_report
     assert ".print-report-content .info-grid > .in-silico-column" in print_report
