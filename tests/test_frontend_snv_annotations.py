@@ -97,7 +97,7 @@ def test_reviewer_requested_annotation_copy_is_streamlined():
 def test_predictor_display_order_primary_count_and_inline_layout_match_review_workflow():
     ordered = [
         'key: "pknn"', 'key: "alphamissense"', 'key: "pangolin"',
-        'key: "revel"', 'key: "spliceai"', 'key: "gpnstar"', 'key: "gpnmsa"', 'key: "esm1b"',
+        'key: "revel"', 'key: "spliceai"', 'key: "gpnmsa"', 'key: "gpnstar"', 'key: "esm1b"',
         'key: "varity"', 'key: "bayesdel"', 'key: "cadd"',
         'key: "dann"', 'key: "mutpred2"', 'key: "vest4"',
         'key: "phactboost"', 'key: "phylop"',
@@ -118,7 +118,7 @@ def test_predictor_visible_count_expands_to_litvar2_rendered_height():
     assert 'data-in-silico-tool="${escapeAttr(tool.key)}"' in APP_JS
     assert "function _fitInSilicoPredictors(card)" in APP_JS
     assert 'card?.querySelector(".litvar2-references")' in APP_JS
-    assert "Math.min(IN_SILICO_PRIMARY_COUNT, rows.length)" in APP_JS
+    assert "_inSilicoMinimumCount(rows.map(row => row.dataset.inSilicoTool))" in APP_JS
     assert "function _litvar2RenderedBottom(litvar2)" in APP_JS
     assert 'child.matches("details:not([open])")' in APP_JS
     assert 'child.querySelector(":scope > summary") || child' in APP_JS

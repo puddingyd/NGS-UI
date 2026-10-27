@@ -728,8 +728,8 @@ const IN_SILICO_TOOLS = [
   { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score" },
   { key: "revel",         label: "REVEL",         scoreField: "REVEL_score" },
   { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score" },
-  { key: "gpnstar",       label: "GPN-Star",      scoreField: "GPN_STAR_score" },
   { key: "gpnmsa",        label: "GPN-MSA",       scoreField: "GPN_MSA_score" },
+  { key: "gpnstar",       label: "GPN-Star",      scoreField: "GPN_STAR_score" },
   { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
   { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
   { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred" },
@@ -750,8 +750,13 @@ function _hasNum(x) {
 }
 
 function _populatedInSilicoTools(v) {
-  return IN_SILICO_TOOLS.filter(t => _hasNum(v[t.scoreField])
-    && (t.key !== "gpnmsa" || !_hasNum(v.GPN_STAR_score)));
+  return IN_SILICO_TOOLS.filter(t => _hasNum(v[t.scoreField]));
+}
+
+function _inSilicoMinimumCount(keys) {
+  const count = Math.min(IN_SILICO_PRIMARY_COUNT, keys.length);
+  // Keep the two GPN scores together when MSA is the last primary row.
+  return keys[count - 1] === "gpnmsa" && keys[count] === "gpnstar" ? count + 1 : count;
 }
 
 function _evidence(cls, label) { return { cls, label }; }
@@ -953,7 +958,7 @@ function _fitInSilicoPredictors(card) {
   const rows = IN_SILICO_TOOLS
     .map(tool => column.querySelector(`[data-in-silico-tool="${tool.key}"]`))
     .filter(Boolean);
-  const minimum = Math.min(IN_SILICO_PRIMARY_COUNT, rows.length);
+  const minimum = _inSilicoMinimumCount(rows.map(row => row.dataset.inSilicoTool));
   const placeRows = visibleCount => {
     rows.forEach((row, index) => {
       if (index < visibleCount) column.insertBefore(row, more);
@@ -4880,9 +4885,10 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
           // Only render tools that actually have a numeric value;
           // first N → primary, rest → More.
           const populated = _populatedInSilicoTools(v);
-          const primary = populated.slice(0, IN_SILICO_PRIMARY_COUNT)
+          const minimum = _inSilicoMinimumCount(populated.map(t => t.key));
+          const primary = populated.slice(0, minimum)
             .map(t => _renderInSilicoCell(v, t)).join("");
-          const secondary = populated.slice(IN_SILICO_PRIMARY_COUNT)
+          const secondary = populated.slice(minimum)
             .map(t => _renderInSilicoCell(v, t)).join("");
           const more = secondary + extrasHtml;
           return primary + (more

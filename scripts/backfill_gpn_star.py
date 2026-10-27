@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Backfill GPN-Star on existing compact reviews, without rerunning Nextflow.
 
-Default is dry-run. --apply takes the tertiary sample lock. Existing review
-rows and all other manifest signatures are preserved (including stale ones).
+Requires --research-only. Default is dry-run. --apply takes the tertiary
+sample lock. Existing review rows and all other manifest signatures are preserved (including stale ones).
 Cases without a review TSV are skipped; rebuild their post-processing first.
 """
 from __future__ import annotations
@@ -36,8 +36,11 @@ def publish_pair(review: Path, manifest: Path, staged_review: Path, payload: dic
         backup.unlink(missing_ok=True)
 
 
-def backfill_one(sample: str, root: Path, *, apply: bool) -> dict:
+def backfill_one(sample: str, root: Path, *, apply: bool, research_only: bool = False) -> dict:
     from app.services import gpn_star, sample_layout
+
+    if not research_only:
+        raise ValueError("GPN-Star backfill requires --research-only")
 
     # Resolve exact existing paths: legacy v2 files remain valid and must not
     # be shadowed by an uncoordinated prefixed copy during a score-only refresh.
@@ -64,7 +67,7 @@ def backfill_one(sample: str, root: Path, *, apply: bool) -> dict:
             shutil.copy2(review, staged)
             stats = gpn_star.annotate_review_tsv(staged, root)
             signature = gpn_star.database_signature(root)
-            payload.update(gpn_star=signature, gpn_star_annotation=stats)
+            payload.update(gpn_star=signature, gpn_star_annotation=stats, gpn_star_research_only=True)
             if stats["status"] == "complete":
                 payload["gpn_star_values"] = {**signature, "revision": stats["revision"]}
             publish_pair(review, manifest, staged, payload)
@@ -82,10 +85,13 @@ def main() -> int:
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--root", type=Path)
     parser.add_argument("--gpn-star-dir", type=Path)
+    parser.add_argument("--research-only", action="store_true", help="explicitly opt these cases into research GPN-Star")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if not args.research_only:
+        parser.error("GPN-Star backfill requires --research-only")
     requested = list(dict.fromkeys([*args.sample, *args.sample_ids]))
     if args.all == bool(requested):
         parser.error("choose --all or one/more sample IDs")
@@ -108,7 +114,7 @@ def main() -> int:
     root = args.gpn_star_dir or gpn_star.GPN_STAR_DIR
     for sample in dict.fromkeys(sample_ids):
         try:
-            result = backfill_one(sample, root, apply=args.apply)
+            result = backfill_one(sample, root, apply=args.apply, research_only=args.research_only)
         except Exception as exc:
             result = {"sample": sample, "status": "failed", "message": str(exc)}
         print(json.dumps(result, ensure_ascii=False), flush=True)

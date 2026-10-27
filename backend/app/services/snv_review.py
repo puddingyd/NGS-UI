@@ -14,7 +14,7 @@ import re
 import time
 from pathlib import Path
 
-from . import gpn_star
+from . import gpn_msa, gpn_star
 from .snv_overlay import OverlayReader, overlay_signature, row_key
 from .snv_rows import is_reportable_raw_row
 
@@ -267,6 +267,38 @@ def is_review_retained(
     )
 
 
+def _refresh_gpn_annotations(
+    tsv: Path, source: dict, previous: dict, *,
+    msa_db: Path, star_dir: Path, research_only: bool,
+    require_msa: bool, require_star: bool, force_msa: bool, force_star: bool,
+) -> tuple[dict, bool]:
+    """Refresh each independent predictor only when its own signature changes."""
+    payload = {**previous, **source}
+    refreshed = False
+    for name, module, database, required, force in (
+        ("gpn_msa", gpn_msa, msa_db, require_msa, force_msa),
+        ("gpn_star", gpn_star, star_dir, require_star, force_star),
+    ):
+        if name == "gpn_star" and not research_only:
+            # This controls new annotation, not visibility of existing scores.
+            # Keep previous *_values provenance for scores already on disk.
+            payload["gpn_star_annotation"] = {"status": "skipped_not_research_only"}
+            continue
+        status = previous.get(f"{name}_annotation") or {}
+        if (previous.get(name) == source[name] and status.get("status")
+                and not force and (not required or status["status"] == "complete")):
+            continue
+        stats = module.annotate_review_tsv(tsv, database, required=required)
+        payload[f"{name}_annotation"] = stats
+        if stats["status"] == "complete":
+            payload[f"{name}_values"] = {
+                **source[name],
+                **({"revision": stats["revision"]} if name == "gpn_star" else {}),
+            }
+        refreshed = True
+    return payload, refreshed or payload != previous
+
+
 def ensure_review_tsv(
     raw_tsv: Path,
     *,
@@ -276,11 +308,20 @@ def ensure_review_tsv(
     output_path: Path | None = None,
     manifest_path: Path | None = None,
     overlay_path: Path | None = None,
+    gpn_msa_db: Path | None = None,
+    require_gpn_msa: bool = False,
+    force_gpn_msa: bool = False,
+    research_only: bool | None = None,
     gpn_star_dir: Path | None = None,
     require_gpn_star: bool = False,
     force_gpn_star: bool = False,
 ) -> Path:
-    """Return an up-to-date compact review TSV derived from *raw_tsv*."""
+    """Return a compact review TSV with MSA and opt-in Research-only Star.
+
+    Loaders omit research_only to inherit the persisted explicit opt-in.
+    Legacy manifests without that flag never enable new Star annotation.
+    Pipeline calls always pass a bool, so a new run records its own choice.
+    """
     started = time.perf_counter()
     keep_ids = keep_ids or set()
     test_type_key = (test_type or "WES").upper()
@@ -297,8 +338,21 @@ def ensure_review_tsv(
         if manifest_path is not None
         else review_tsv.with_suffix(review_tsv.suffix + ".source.json")
     )
+    try:
+        current = json.loads(manifest.read_text(encoding="utf-8"))
+        if not isinstance(current, dict):
+            current = {}
+    except (OSError, json.JSONDecodeError):
+        current = {}
+    star_enabled = (research_only if research_only is not None
+                    else current.get("gpn_star_research_only") is True)
+    if require_gpn_star and not star_enabled:
+        raise ValueError("GPN-Star requires explicit Research-only opt-in")
     candidate_bed_path = _candidate_bed_path()
+    selected_gpn_msa_db = Path(gpn_msa_db or gpn_msa.GPN_MSA_DB)
     selected_gpn_star_dir = Path(gpn_star_dir or gpn_star.GPN_STAR_DIR)
+    if require_gpn_msa:
+        gpn_msa.validate_database(selected_gpn_msa_db)
     if require_gpn_star:
         gpn_star.validate_database(selected_gpn_star_dir)
     source = {
@@ -309,59 +363,36 @@ def ensure_review_tsv(
         "wes_dp_hard_floor": WES_DP_HARD_FLOOR if is_wes else None,
         "candidate_bed": _bed_signature(candidate_bed_path),
         "overlay": overlay_signature(raw_tsv, overlay_path),
-        "gpn_star": gpn_star.database_signature(selected_gpn_star_dir),
+        "gpn_msa": gpn_msa.database_signature(selected_gpn_msa_db),
+        "gpn_star_research_only": star_enabled,
+        "gpn_star": (gpn_star.database_signature(selected_gpn_star_dir)
+                     if star_enabled else {"enabled": False}),
     }
-    if review_tsv.is_file() and manifest.is_file():
-        try:
-            current = json.loads(manifest.read_text(encoding="utf-8"))
-            non_gpn_matches = all(
-                current.get(key) == value
-                for key, value in source.items()
-                if key != "gpn_star"
-            )
-            if non_gpn_matches:
-                gpn_status = current.get("gpn_star_annotation")
-                has_terminal_status = (
-                    isinstance(gpn_status, dict)
-                    and bool(gpn_status.get("status"))
-                )
-                signature_matches = current.get("gpn_star") == source["gpn_star"]
-                if (signature_matches and has_terminal_status and not force_gpn_star
-                        and (not require_gpn_star or gpn_status["status"] == "complete")):
-                    _log_perf(
-                        "snv_review.ensure",
-                        started,
-                        action="hit",
-                        raw_size=_fmt_size(raw_tsv),
-                        review_size=_fmt_size(review_tsv),
-                        keep_ids=len(keep_ids),
-                        gpn_star_status=gpn_status.get("status"),
-                    )
-                    return review_tsv
-
-                gpn_stats = gpn_star.annotate_review_tsv(
-                    review_tsv,
-                    selected_gpn_star_dir,
-                    required=require_gpn_star,
-                )
-                _write_manifest(
-                    manifest,
-                    {**current, **source, "gpn_star_annotation": gpn_stats,
-                     **({"gpn_star_values": {**source["gpn_star"], "revision": gpn_stats["revision"]}} if gpn_stats["status"] == "complete" else {})},
-                )
-                _log_perf(
-                    "snv_review.ensure",
-                    started,
-                    action="gpn-refresh",
-                    raw_size=_fmt_size(raw_tsv),
-                    review_size=_fmt_size(review_tsv),
-                    keep_ids=len(keep_ids),
-                    gpn_star_status=gpn_stats["status"],
-                    gpn_star_annotated=gpn_stats["annotated_rows"],
-                )
-                return review_tsv
-        except (OSError, json.JSONDecodeError):
-            pass
+    annotation_options = {
+        "msa_db": selected_gpn_msa_db, "star_dir": selected_gpn_star_dir,
+        "research_only": star_enabled,
+        "require_msa": require_gpn_msa, "require_star": require_gpn_star,
+        "force_msa": force_gpn_msa, "force_star": force_gpn_star,
+    }
+    non_gpn_matches = all(
+        current.get(key) == value for key, value in source.items()
+        if key not in {"gpn_msa", "gpn_star", "gpn_star_research_only"}
+    )
+    if review_tsv.is_file() and non_gpn_matches:
+        payload, refreshed = _refresh_gpn_annotations(
+            review_tsv, source, current, **annotation_options,
+        )
+        if refreshed:
+            _write_manifest(manifest, payload)
+        _log_perf(
+            "snv_review.ensure", started,
+            action="gpn-refresh" if refreshed else "hit",
+            raw_size=_fmt_size(raw_tsv), review_size=_fmt_size(review_tsv),
+            keep_ids=len(keep_ids),
+            gpn_msa_status=payload["gpn_msa_annotation"]["status"],
+            gpn_star_status=payload["gpn_star_annotation"]["status"],
+        )
+        return review_tsv
 
     candidate_bed = _load_bed(candidate_bed_path)
     tmp = review_tsv.with_suffix(review_tsv.suffix + ".tmp")
@@ -402,11 +433,7 @@ def ensure_review_tsv(
             if batch:
                 writer.writerows(overlay.apply_many(batch))
     try:
-        gpn_stats = gpn_star.annotate_review_tsv(
-            tmp,
-            selected_gpn_star_dir,
-            required=require_gpn_star,
-        )
+        payload, _ = _refresh_gpn_annotations(tmp, source, {}, **annotation_options)
         os.replace(tmp, review_tsv)
     except Exception:
         try:
@@ -414,11 +441,7 @@ def ensure_review_tsv(
         except OSError:
             pass
         raise
-    _write_manifest(
-        manifest,
-        {**source, "gpn_star_annotation": gpn_stats,
-         **({"gpn_star_values": {**source["gpn_star"], "revision": gpn_stats["revision"]}} if gpn_stats["status"] == "complete" else {})},
-    )
+    _write_manifest(manifest, payload)
     _log_perf(
         "snv_review.ensure",
         started,
@@ -430,7 +453,7 @@ def ensure_review_tsv(
         keep_ids=len(keep_ids),
         bed_exists=bool(candidate_bed),
         test_type=test_type_key,
-        gpn_star_status=gpn_stats["status"],
-        gpn_star_annotated=gpn_stats["annotated_rows"],
+        gpn_msa_status=payload["gpn_msa_annotation"]["status"],
+        gpn_star_status=payload["gpn_star_annotation"]["status"],
     )
     return review_tsv

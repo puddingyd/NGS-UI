@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Legacy GPN-MSA backfill for existing review TSVs (tertiary now uses GPN-Star)."""
+"""GPN-MSA backfill for existing review TSVs (standard tertiary predictor)."""
 from __future__ import annotations
 
 import argparse
@@ -142,7 +142,7 @@ def main() -> int:
                 _atomic_json(manifest, payload)
             else:
                 print(f"[backfill-gpn-msa] {sample_id}: missing review; "
-                      "legacy MSA backfill only updates existing reviews", file=sys.stderr)
+                      "MSA backfill only updates existing reviews", file=sys.stderr)
                 errors += 1
                 continue
 

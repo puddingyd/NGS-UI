@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v9.60 — 2026-10-27
+
+- 三級保留 GPN-MSA 為所有個案的標準補分；GPN-Star 改為只有勾選 Research-only 才額外補分。重新載入沿用 manifest 的明確 opt-in，舊個案不會自動開啟 Star。
+- 卡片同時顯示 MSA 與 Star，Star 緊接 MSA 下方，More 分界不拆開兩者。MSA 保留原有 −7 contextual tail 提示，Star 維持中性顯示；既有分數保留。
+- 兩個分數獨立快取／失敗狀態，單一資源更新只補該分數。Star 舊個案補分工具須帶 `--research-only`；Somatic 維持既有 MSA。
+
 ### v9.59 — 2026-10-27
 
 - 三級 post-processing 改用 hg38 GPN-Star-M 的本機 Parquet `llr_calibrated`，只補最終 review SNV；新增精確 allele join、固定 revision 來源紀錄與命中統計。缺資料或查詢失敗只 warning，不阻擋三級。

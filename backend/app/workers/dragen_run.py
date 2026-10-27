@@ -2113,7 +2113,9 @@ def main() -> int:
                     stop_args += ["--inhouse-cnv-vcf", sample["cnv_vcf"]]
                 if sample["sv_vcf"]:
                     stop_args += ["--inhouse-sv-vcf",  sample["sv_vcf"]]
-            if not args.research_only:
+            if args.research_only:
+                stop_args.append("--research-only")
+            else:
                 stop_args.append("--skip-spliceai")
             display_stop_args = [
                 "post-processing",
@@ -2124,6 +2126,8 @@ def main() -> int:
             ]
             if "--skip-cnv" in stop_args:
                 display_stop_args.append("--skip-cnv")
+            if "--research-only" in stop_args:
+                display_stop_args.append("--research-only")
             if "--skip-spliceai" in stop_args:
                 display_stop_args.append("--skip-spliceai")
             try:

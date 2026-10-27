@@ -958,8 +958,8 @@ def _row_to_variant(row: dict) -> dict:
         # overlay.  Legacy MetaRNN is retained in the payload for old cases,
         # but is no longer part of the reviewer display order.
         "SpliceAI_score":      _max_multi(row.get("SPLICEAI_MAX")),
-        # GPN-Star-M is joined only to the compact tertiary review TSV.
-        # Keep legacy/Somatic MSA as a separate field. Both are display-only:
+        # MSA is standard; Star is additionally joined for Research-only cases.
+        # Keep both compact-review scores as independent display-only fields:
         # no tier, ACMG, filter, sorting, or report rule consumes them.
         "GPN_STAR_score":      _to_num(row.get("GPN_STAR_SCORE")),
         "GPN_MSA_score":       _to_num(row.get("GPN_MSA_SCORE")),

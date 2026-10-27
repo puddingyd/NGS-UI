@@ -12,7 +12,7 @@ import polars as pl
 import pytest
 
 from app.adapters.snv_tsv import _row_to_variant, classify_tier
-from app.services import gpn_star, snv_review
+from app.services import gpn_msa, gpn_star, snv_review
 
 REPO = Path(__file__).resolve().parents[1]
 FIELDS = ["CHROM", "POS", "REF", "ALT", "GENE", "CLINVAR_SIG", "GNOMAD_G_AF", "DP", "GPN_MSA_SCORE"]
@@ -124,11 +124,10 @@ def test_only_retained_snvs_queried_and_msa_manifest_migrates_without_raw_scan(t
         captured.append(keys)
         return query(root, keys)
     monkeypatch.setattr(gpn_star, "query_scores", spy)
-    review = snv_review.ensure_review_tsv(raw, test_type="WGS", output_dir=tmp_path / "post", gpn_star_dir=tmp_path / "absent")
+    review = snv_review.ensure_review_tsv(raw, test_type="WGS", output_dir=tmp_path / "post", gpn_star_dir=tmp_path / "absent", research_only=True)
     marker = review.with_suffix(review.suffix + ".source.json")
     old = json.loads(marker.read_text())
     old.pop("gpn_star"); old.pop("gpn_star_annotation")
-    old["gpn_msa"] = {"old": "identity"}
     marker.write_text(json.dumps(old))
     def no_scan(*args):
         raise AssertionError("raw/filter rebuild unexpected")
@@ -170,6 +169,145 @@ def load_script(name):
     return mod
 
 
+@pytest.fixture
+def msa_db(tmp_path, monkeypatch):
+    path = tmp_path / "msa.bgz"
+    path.touch()
+    path.with_suffix(".bgz.tbi").touch()
+    monkeypatch.setattr(gpn_msa, "validate_database", lambda _db: (path, "tabix"))
+    calls = []
+    def query(_db, keys, **kwargs):
+        calls.append(keys)
+        return {key: "-8.25" for key in keys}
+    monkeypatch.setattr(gpn_msa, "query_scores", query)
+    return path, calls
+
+
+def test_standard_review_runs_msa_without_touching_star_resources(tmp_path, msa_db, monkeypatch):
+    raw = tmp_path / "raw.tsv"
+    write_tsv(raw, [row(), row(pos=20, GNOMAD_G_AF="0.2")])
+    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "no.bed")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("standard case must not inspect or query Star")
+    monkeypatch.setattr(gpn_star, "database_signature", forbidden)
+    monkeypatch.setattr(gpn_star, "annotate_review_tsv", forbidden)
+    args = dict(test_type="WGS", output_dir=tmp_path / "post", gpn_msa_db=msa_db[0])
+    review = snv_review.ensure_review_tsv(raw, **args)
+    assert msa_db[1] == [{("1", 10, "A", "G")}]
+    assert read_tsv(review)[0]["GPN_MSA_SCORE"] == "-8.25"
+    assert "GPN_STAR_SCORE" not in read_tsv(review)[0]
+    payload = json.loads(review.with_suffix(review.suffix + ".source.json").read_text())
+    assert payload["gpn_star_research_only"] is False
+    assert payload["gpn_star_annotation"]["status"] == "skipped_not_research_only"
+    snv_review.ensure_review_tsv(raw, **args)
+    assert len(msa_db[1]) == 1
+    with pytest.raises(ValueError, match="Research-only"):
+        snv_review.ensure_review_tsv(raw, **args, require_gpn_star=True)
+
+
+def test_research_both_scores_and_independent_cache_refresh(tmp_path, bundle, msa_db, monkeypatch):
+    raw = tmp_path / "raw.tsv"
+    write_tsv(raw, [row()])
+    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "no.bed")
+    star_calls = []
+    query = gpn_star.query_scores
+    def spy(*args):
+        star_calls.append(1)
+        return query(*args)
+    monkeypatch.setattr(gpn_star, "query_scores", spy)
+    args = dict(test_type="WGS", output_dir=tmp_path / "post", gpn_msa_db=msa_db[0], gpn_star_dir=bundle)
+    review = snv_review.ensure_review_tsv(raw, **args, research_only=True)
+    assert read_tsv(review)[0]["GPN_MSA_SCORE"] == "-8.25"
+    assert float(read_tsv(review)[0]["GPN_STAR_SCORE"]) == pytest.approx(-1.2345678)
+    # Loader calls inherit the explicit mode; neither provider reruns on a hit.
+    snv_review.ensure_review_tsv(raw, **args)
+    assert len(msa_db[1]) == len(star_calls) == 1
+    msa_db[0].write_text("new msa")
+    snv_review.ensure_review_tsv(raw, **args)
+    assert len(msa_db[1]) == 2 and len(star_calls) == 1
+    manifest = bundle / "manifest.json"
+    payload = json.loads(manifest.read_text()); payload["revision"] = "b" * 40
+    manifest.write_text(json.dumps(payload))
+    snv_review.ensure_review_tsv(raw, **args)
+    assert len(msa_db[1]) == len(star_calls) == 2
+    # Explicitly disabling future annotation preserves existing displayed values.
+    before = review.read_bytes()
+    snv_review.ensure_review_tsv(raw, **args, research_only=False)
+    snv_review.ensure_review_tsv(raw, **args)
+    assert review.read_bytes() == before
+    assert len(star_calls) == 2
+    marker = review.with_suffix(review.suffix + ".source.json")
+    saved = json.loads(marker.read_text())
+    assert saved["gpn_star_research_only"] is False
+    assert saved["gpn_star_values"]["revision"] == "b" * 40
+    # A pre-gating Star manifest must not accidentally opt into new research.
+    saved.pop("gpn_star_research_only")
+    marker.write_text(json.dumps(saved))
+    snv_review.ensure_review_tsv(raw, **args)
+    assert len(star_calls) == 2
+
+
+def test_missing_star_does_not_remove_msa(tmp_path, msa_db, monkeypatch):
+    raw = tmp_path / "raw.tsv"
+    write_tsv(raw, [row()])
+    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "no.bed")
+    review = snv_review.ensure_review_tsv(raw, test_type="WGS", output_dir=tmp_path / "post",
+        gpn_msa_db=msa_db[0], gpn_star_dir=tmp_path / "absent", research_only=True)
+    assert read_tsv(review)[0]["GPN_MSA_SCORE"] == "-8.25"
+    payload = json.loads(review.with_suffix(review.suffix + ".source.json").read_text())
+    assert payload["gpn_msa_annotation"]["status"] == "complete"
+    assert payload["gpn_star_annotation"]["status"] == "skipped_missing_db"
+
+
+def test_review_cli_requires_research_flag_for_star_and_restores_msa_option(tmp_path, bundle):
+    raw = tmp_path / "raw.tsv"
+    write_tsv(raw, [row()])
+    command = [sys.executable, "scripts/build_snv_review_tsv.py", "--tsv", str(raw),
+               "--output-dir", str(tmp_path / "post"), "--test-type", "WGS",
+               "--gpn-msa-db", str(tmp_path / "missing.bgz"), "--gpn-star-dir", str(bundle)]
+    env = {**os.environ, "NGS_UI_CDS_CANDIDATE_BED": str(tmp_path / "no.bed")}
+    ordinary = subprocess.run(command, cwd=REPO, env=env, capture_output=True, text=True)
+    assert ordinary.returncode == 0, ordinary.stderr
+    assert "skipped_not_research_only" in ordinary.stdout
+    review = tmp_path / "post" / "snv_indel.review.tsv"
+    assert "GPN_STAR_SCORE" not in read_tsv(review)[0]
+    research = subprocess.run(command + ["--research-only"], cwd=REPO, env=env, capture_output=True, text=True)
+    assert research.returncode == 0, research.stderr
+    assert read_tsv(review)[0]["GPN_STAR_SCORE"]
+
+
+@pytest.mark.parametrize("research", [False, True])
+def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, bundle, research):
+    raw = tmp_path / "raw.tsv"
+    work = tmp_path / "work.tsv"
+    write_tsv(raw, [row()]); work.write_bytes(raw.read_bytes())
+    original = raw.read_bytes()
+    msa = tmp_path / "msa.bgz"
+    msa.touch(); msa.with_suffix(".bgz.tbi").touch()
+    tabix = tmp_path / "tabix"
+    tabix.write_text("#!/bin/sh\nprintf '1\\t10\\tA\\tG\\t-8.25\\n'\n")
+    tabix.chmod(0o755)
+    post = tmp_path / "08_postprocessing"
+    command = ["bash", "scripts/run_stopgaps.sh", "--work-tsv", str(work),
+               "--raw-tsv", str(raw), "--post-dir", str(post), "--sample", "CASE",
+               "--seq-type", "WGS", "--gpn-msa-db", str(msa), "--gpn-star-dir", str(bundle),
+               "--skip-spliceai", "--skip-clinvar-latest", "--skip-genebe",
+               "--skip-giab", "--skip-inhouse-af", "--skip-mane-refseq", "--skip-litvar2",
+               "--skip-cnv", "--skip-candidate-bed"]
+    if research:
+        command.append("--research-only")
+    env = {**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
+           "TABIX_BIN": str(tabix), "NGS_UI_DATA_ROOT": str(tmp_path / "data")}
+    proc = subprocess.run(command, cwd=REPO, env=env, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    actual = read_tsv(post / "CASE.snv_indel.review.tsv")[0]
+    assert actual["GPN_MSA_SCORE"] == "-8.25"
+    assert bool(actual.get("GPN_STAR_SCORE")) is research
+    payload = json.loads((post / "CASE.snv_indel.review.tsv.source.json").read_text())
+    assert payload["gpn_star_research_only"] is research
+    assert raw.read_bytes() == original
+
+
 def test_backfill_dry_run_apply_preserves_state_and_stale_signatures(tmp_path, bundle):
     root = tmp_path / "tertiary"
     post = root / "CASE-nckuh" / "08_postprocessing"
@@ -182,8 +320,12 @@ def test_backfill_dry_run_apply_preserves_state_and_stale_signatures(tmp_path, b
     state = post / "CASE-nckuh.sample_metadata.json"
     state.write_text('{"reviewer": "preserve"}')
     command = [sys.executable, "scripts/backfill_gpn_star.py", "--root", str(root),
-               "--gpn-star-dir", str(bundle), "CASE"]
+               "--gpn-star-dir", str(bundle), "CASE", "--research-only"]
     env = {**os.environ, "NGS_UI_DATA_ROOT": str(tmp_path / "data")}
+    rejected = subprocess.run(command[:-1] + ["--apply"], cwd=REPO, env=env, capture_output=True, text=True)
+    assert rejected.returncode == 2
+    assert "requires --research-only" in rejected.stderr
+    assert review.read_bytes() == original
     dry = subprocess.run(command, cwd=REPO, env=env, capture_output=True, text=True)
     assert dry.returncode == 0, dry.stderr
     assert '"status": "dry_run"' in dry.stdout
@@ -200,6 +342,7 @@ def test_backfill_dry_run_apply_preserves_state_and_stale_signatures(tmp_path, b
     applied = subprocess.run(command + ["--apply"], cwd=REPO, env=env, capture_output=True, text=True)
     assert applied.returncode == 0, applied.stderr
     assert read_tsv(review)[0]["GPN_STAR_SCORE"]
+    assert json.loads(marker.read_text())["gpn_star_research_only"] is True
     assert all(json.loads(marker.read_text())[k] == v for k, v in old.items())
     assert state.read_text() == '{"reviewer": "preserve"}'
 
