@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v9.61 — 2026-10-27
+
+- Research-only 的 GPN-Star 新增 V 模型，與 M 一起在 GPN-MSA 下方單行顯示 `GPN-Star-V/M -7.0/-8.0`；固定 V/M 順序、一位小數，缺值以 `—` 佔位，0 保留。
+- V/M 各自精確 allele join、快取、失敗狀態與成功來源；沿用舊 M 分數及安裝，補裝 V 不重掃 raw 或重查 MSA/M。下載工具預設兩者，可用 `--models V --download` 只補 V；舊個案補分仍須明確 Research-only。
+- 註解加入原始論文的 missense／noncoding benchmark 說明；Star 維持中性研究參考，不新增 cutoff，不影響 tier、ACMG、篩選、排序或報告。
+
 ### v9.60 — 2026-10-27
 
 - 三級保留 GPN-MSA 為所有個案的標準補分；GPN-Star 改為只有勾選 Research-only 才額外補分。重新載入沿用 manifest 的明確 opt-in，舊個案不會自動開啟 Star。

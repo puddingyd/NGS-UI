@@ -70,7 +70,7 @@ def main() -> int:
     ap.add_argument(
         "--gpn-star-dir",
         type=Path,
-        help="canonical GRCh38 GPN-Star-M bundle directory (default: NGS_UI_GPN_STAR_DIR)",
+        help="canonical GRCh38 GPN-Star V/M bundle directory (default: NGS_UI_GPN_STAR_DIR)",
     )
     ap.add_argument(
         "--require-gpn-star",
@@ -130,7 +130,7 @@ def main() -> int:
         status_payload = json.loads(status_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         status_payload = {}
-    for name in ("gpn_msa", "gpn_star"):
+    for name in ("gpn_msa", "gpn_star", "gpn_star_v"):
         gpn_status = status_payload.get(f"{name}_annotation") or {}
         print(
             f"[{name.replace('_', '-')}] "

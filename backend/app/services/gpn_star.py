@@ -1,4 +1,4 @@
-"""Local, allele-exact GPN-Star-M annotation of compact review TSVs only.
+"""Local, allele-exact GPN-Star V/M annotation of compact review TSVs only.
 
 Canonical hg38 Parquet uses 1-based positions. No network access, inference,
 raw/overlay writes, threshold, or ACMG/tier logic belongs in this module.
@@ -19,9 +19,19 @@ from ..config import GPN_STAR_DIR
 
 MODEL = "gpn-star-hg38-m447-200m"
 SCORE_FIELD = "llr_calibrated"
+# Keep the original M column and manifest names for existing installations.
 SCORE_COLUMN = "GPN_STAR_SCORE"
+V_MODEL = "gpn-star-hg38-v100-200m"
+MODELS = (MODEL, V_MODEL)
+SCORE_COLUMNS = {MODEL: SCORE_COLUMN, V_MODEL: "GPN_STAR_V_SCORE"}
 PRIMARY_CONTIGS = {str(n) for n in range(1, 23)} | {"X", "Y"}
 KEY_COLUMNS = ["chrom", "pos", "ref", "alt"]
+
+
+def manifest_path(root: Path, model: str = MODEL) -> Path:
+    if model not in MODELS:
+        raise ValueError(f"unsupported GPN-Star model: {model}")
+    return root / ("manifest.json" if model == MODEL else "manifest.v.json")
 
 
 def _file_signature(path: Path) -> dict:
@@ -32,29 +42,30 @@ def _file_signature(path: Path) -> dict:
         return {"path": str(path), "exists": False}
 
 
-def database_signature(db_path: Path | None = None) -> dict:
+def database_signature(db_path: Path | None = None, *, model: str = MODEL) -> dict:
     root = Path(db_path or GPN_STAR_DIR)
     try:
         version = importlib.metadata.version("polars")
     except importlib.metadata.PackageNotFoundError:
         version = ""
     return {
-        "model": MODEL, "assembly": "hg38", "score_field": SCORE_FIELD,
+        "model": model, "assembly": "hg38", "score_field": SCORE_FIELD,
         "schema_version": 1, "polars": version,
-        "manifest": _file_signature(root / "manifest.json"),
-        "shards": {chrom: _file_signature(shard_path(root, chrom))
+        "manifest": _file_signature(manifest_path(root, model)),
+        "shards": {chrom: _file_signature(shard_path(root, chrom, model))
                    for chrom in sorted(PRIMARY_CONTIGS)},
     }
 
 
-def shard_path(root: Path, chrom: str) -> Path:
-    return root / MODEL / "llr" / f"llr_chr{chrom}.parquet"
+def shard_path(root: Path, chrom: str, model: str = MODEL) -> Path:
+    manifest_path(root, model)  # validate model before constructing a path
+    return root / model / "llr" / f"llr_chr{chrom}.parquet"
 
 
-def validate_database(db_path: Path | None = None) -> dict:
+def validate_database(db_path: Path | None = None, *, model: str = MODEL) -> dict:
     root = Path(db_path or GPN_STAR_DIR)
-    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-    if (manifest.get("model") != MODEL or manifest.get("assembly") != "hg38"
+    manifest = json.loads(manifest_path(root, model).read_text(encoding="utf-8"))
+    if (manifest.get("model") != model or manifest.get("assembly") != "hg38"
             or manifest.get("score_field") != SCORE_FIELD
             or manifest.get("schema_version") != 1
             or not re.fullmatch(r"[0-9a-f]{40}", manifest.get("revision", ""))):
@@ -63,7 +74,7 @@ def validate_database(db_path: Path | None = None) -> dict:
     if len(files) != 24 or {f["chrom"] for f in files} != PRIMARY_CONTIGS:
         raise ValueError("GPN-Star manifest must contain chromosomes 1-22, X, Y")
     for item in files:
-        path = shard_path(root, item["chrom"])
+        path = shard_path(root, item["chrom"], model)
         if item["path"] != path.relative_to(root).as_posix():
             raise ValueError("unexpected GPN-Star shard path")
         if not re.fullmatch(r"[0-9a-f]{64}", item.get("sha256", "")):
@@ -86,7 +97,7 @@ def _normalise_key(row: dict) -> tuple[str, int, str, str] | None:
     return (chrom, pos, ref, alt) if pos > 0 else None
 
 
-def query_scores(root: Path, keys: set[tuple]) -> dict[tuple, str]:
+def query_scores(root: Path, keys: set[tuple], model: str = MODEL) -> dict[tuple, str]:
     import polars as pl
 
     found = {}
@@ -95,7 +106,7 @@ def query_scores(root: Path, keys: set[tuple]) -> dict[tuple, str]:
         positions = sorted({key[1] for key in wanted})
         # Projection + predicate pushdown limits reads to relevant row groups.
         # One query per chromosome avoids repeatedly scanning a large shard.
-        scores = (pl.scan_parquet(shard_path(root, chrom))
+        scores = (pl.scan_parquet(shard_path(root, chrom, model))
                   .filter(pl.col("pos").is_in(positions))
                   .select(*KEY_COLUMNS, SCORE_FIELD)
                   .collect(engine="streaming"))
@@ -113,16 +124,17 @@ def query_scores(root: Path, keys: set[tuple]) -> dict[tuple, str]:
     return found
 
 
-def annotate_review_tsv(tsv_path: Path, db_path: Path | None = None, *, required: bool = False) -> dict:
+def annotate_review_tsv(tsv_path: Path, db_path: Path | None = None, *, required: bool = False, model: str = MODEL) -> dict:
     root = Path(db_path or GPN_STAR_DIR)
+    column = SCORE_COLUMNS[model]
     tsv = Path(tsv_path)
-    stats = {"status": "failed", "model": MODEL, "assembly": "hg38",
+    stats = {"status": "failed", "model": model, "assembly": "hg38",
              "score_field": SCORE_FIELD, "database": str(root), "rows": 0,
              "queryable_variants": 0, "annotated_variants": 0, "annotated_rows": 0,
              "unsupported_rows": 0, "unmatched_variants": 0}
     tmp_name = None
     try:
-        manifest = validate_database(root)
+        manifest = validate_database(root, model=model)
         stats["revision"] = manifest["revision"]
         with tsv.open(encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
@@ -136,21 +148,21 @@ def annotate_review_tsv(tsv_path: Path, db_path: Path | None = None, *, required
                 else:
                     stats["unsupported_rows"] += 1
         stats["queryable_variants"] = len(keys)
-        scores = query_scores(root, keys)
+        scores = query_scores(root, keys, model)
         stats["annotated_variants"] = len(scores)
         stats["unmatched_variants"] = len(keys) - len(scores)
         with tsv.open(encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
             fields = list(reader.fieldnames)
-            if SCORE_COLUMN not in fields:
-                fields.append(SCORE_COLUMN)
+            if column not in fields:
+                fields.append(column)
             fd, tmp_name = tempfile.mkstemp(prefix=f".{tsv.name}.", suffix=".tmp", dir=tsv.parent)
             with os.fdopen(fd, "w", encoding="utf-8", newline="") as output:
                 writer = csv.DictWriter(output, fieldnames=fields, delimiter="\t", lineterminator="\n")
                 writer.writeheader()
                 for row in reader:
                     value = scores.get(_normalise_key(row), "")
-                    row[SCORE_COLUMN] = value
+                    row[column] = value
                     writer.writerow(row)
                     stats["rows"] += 1
                     stats["annotated_rows"] += value != ""
@@ -161,11 +173,11 @@ def annotate_review_tsv(tsv_path: Path, db_path: Path | None = None, *, required
         if required:
             raise
         if isinstance(exc, FileNotFoundError):
-            stats["status"] = "skipped_missing_db" if not (root / "manifest.json").is_file() else "skipped_missing_shard"
+            stats["status"] = "skipped_missing_db" if not manifest_path(root, model).is_file() else "skipped_missing_shard"
         elif isinstance(exc, ImportError):
             stats["status"] = "skipped_missing_polars"
         stats["message"] = str(exc)
-        print(f"[gpn-star] WARNING: {stats['status']}: {exc}", file=sys.stderr, flush=True)
+        print(f"[gpn-star {model}] WARNING: {stats['status']}: {exc}", file=sys.stderr, flush=True)
     finally:
         if tmp_name is not None:
             Path(tmp_name).unlink(missing_ok=True)

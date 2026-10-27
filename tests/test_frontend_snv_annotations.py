@@ -27,7 +27,7 @@ def test_all_displayed_in_silico_tools_have_calibration_metadata():
     }
     for key in expected:
         assert f"  {key}: {{" in APP_JS
-        assert f'case "{key}"' in APP_JS
+        assert f'case "{key}"' in APP_JS or f'if (tool.key === "{key}")' in APP_JS
     assert '"PP3_Strong: ≥ 0.990"' in APP_JS
     assert '"PP3_Strong: ≥ 0.932"' in APP_JS
     assert '"BP4_Strong: ≤ 0.036"' in APP_JS

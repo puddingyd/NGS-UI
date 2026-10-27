@@ -37,25 +37,34 @@ def read_tsv(path):
         return list(csv.DictReader(f, delimiter="\t"))
 
 
-@pytest.fixture
-def bundle(tmp_path):
-    root = tmp_path / "gpn_star"
+def make_bundle(root, model=gpn_star.MODEL):
     entries = []
     for chrom in sorted(gpn_star.PRIMARY_CONTIGS):
-        path = gpn_star.shard_path(root, chrom)
+        path = gpn_star.shard_path(root, chrom, model)
         path.parent.mkdir(parents=True, exist_ok=True)
         pl.DataFrame({"chrom": [chrom] * 5, "pos": [10, 10, 11, 12, 13],
                       "ref": ["A"] * 5, "alt": ["G", "C", "G", "G", "G"],
-                      "llr_calibrated": [-1.2345678, 2.5, 0.0, float("nan"), None]},
+                      "llr_calibrated": [-1.2345678 if model == gpn_star.MODEL else -7.0, 2.5, 0.0, float("nan"), None]},
                      schema={"chrom": pl.String, "pos": pl.Int64, "ref": pl.String,
                              "alt": pl.String, "llr_calibrated": pl.Float32}).write_parquet(path, row_group_size=2)
         entries.append({"chrom": chrom, "path": path.relative_to(root).as_posix(),
                         "size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                        "rows": 5, "assembly": "hg38", "score_set": gpn_star.MODEL, "score_type": "llr"})
-    (root / "manifest.json").write_text(json.dumps({"schema_version": 1,
-        "model": gpn_star.MODEL, "assembly": "hg38", "score_field": "llr_calibrated",
+                        "rows": 5, "assembly": "hg38", "score_set": model, "score_type": "llr"})
+    gpn_star.manifest_path(root, model).write_text(json.dumps({"schema_version": 1,
+        "model": model, "assembly": "hg38", "score_field": "llr_calibrated",
         "revision": "a" * 40, "files": entries}))
     return root
+
+
+@pytest.fixture
+def bundle(tmp_path):
+    return make_bundle(tmp_path / "gpn_star")
+
+
+@pytest.fixture
+def dual_bundle(bundle):
+    make_bundle(bundle, gpn_star.V_MODEL)
+    return bundle
 
 
 def test_real_parquet_exact_alleles_precision_zero_missing_and_unsupported(tmp_path, bundle):
@@ -120,9 +129,9 @@ def test_only_retained_snvs_queried_and_msa_manifest_migrates_without_raw_scan(t
     monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "no.bed")
     captured = []
     query = gpn_star.query_scores
-    def spy(root, keys):
+    def spy(root, keys, model):
         captured.append(keys)
-        return query(root, keys)
+        return query(root, keys, model)
     monkeypatch.setattr(gpn_star, "query_scores", spy)
     review = snv_review.ensure_review_tsv(raw, test_type="WGS", output_dir=tmp_path / "post", gpn_star_dir=tmp_path / "absent", research_only=True)
     marker = review.with_suffix(review.suffix + ".source.json")
@@ -277,7 +286,8 @@ def test_review_cli_requires_research_flag_for_star_and_restores_msa_option(tmp_
 
 
 @pytest.mark.parametrize("research", [False, True])
-def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, bundle, research):
+def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, dual_bundle, research):
+    bundle = dual_bundle
     raw = tmp_path / "raw.tsv"
     work = tmp_path / "work.tsv"
     write_tsv(raw, [row()]); work.write_bytes(raw.read_bytes())
@@ -303,12 +313,16 @@ def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, bundle
     actual = read_tsv(post / "CASE.snv_indel.review.tsv")[0]
     assert actual["GPN_MSA_SCORE"] == "-8.25"
     assert bool(actual.get("GPN_STAR_SCORE")) is research
+    assert bool(actual.get("GPN_STAR_V_SCORE")) is research
+    if research:
+        assert actual["GPN_STAR_V_SCORE"] == "-7"
     payload = json.loads((post / "CASE.snv_indel.review.tsv.source.json").read_text())
     assert payload["gpn_star_research_only"] is research
     assert raw.read_bytes() == original
 
 
-def test_backfill_dry_run_apply_preserves_state_and_stale_signatures(tmp_path, bundle):
+def test_backfill_dry_run_apply_preserves_state_and_stale_signatures(tmp_path, dual_bundle):
+    bundle = dual_bundle
     root = tmp_path / "tertiary"
     post = root / "CASE-nckuh" / "08_postprocessing"
     review = post / "CASE-nckuh.snv_indel.review.tsv"
@@ -342,9 +356,21 @@ def test_backfill_dry_run_apply_preserves_state_and_stale_signatures(tmp_path, b
     applied = subprocess.run(command + ["--apply"], cwd=REPO, env=env, capture_output=True, text=True)
     assert applied.returncode == 0, applied.stderr
     assert read_tsv(review)[0]["GPN_STAR_SCORE"]
+    assert read_tsv(review)[0]["GPN_STAR_V_SCORE"] == "-7"
     assert json.loads(marker.read_text())["gpn_star_research_only"] is True
     assert all(json.loads(marker.read_text())[k] == v for k, v in old.items())
     assert state.read_text() == '{"reviewer": "preserve"}'
+    # Partial backfill reports failure explicitly but keeps successful old V values.
+    gpn_star.manifest_path(bundle, gpn_star.V_MODEL).unlink()
+    before = read_tsv(review)
+    partial = subprocess.run(command + ["--apply"], cwd=REPO, env=env, capture_output=True, text=True)
+    assert partial.returncode == 1
+    result = json.loads(partial.stdout)
+    assert result["status"] == "incomplete"
+    assert result["models"]["gpn_star"]["status"] == "complete"
+    assert result["models"]["gpn_star_v"]["status"] == "skipped_missing_db"
+    assert read_tsv(review) == before
+    assert json.loads(marker.read_text())["gpn_star_v_values"]["revision"] == "a" * 40
 
 
 def test_backfill_rolls_back_when_manifest_publish_fails(tmp_path, monkeypatch):
@@ -427,3 +453,106 @@ def test_duplicate_alleles_fail_without_replacing_review(tmp_path, bundle):
     assert stats["status"] == "failed"
     assert "duplicate" in stats["message"]
     assert review.read_bytes() == before
+
+
+def test_v_upgrade_queries_only_v_and_preserves_msa_m_and_raw(tmp_path, bundle, msa_db, monkeypatch):
+    raw = tmp_path / 'raw.tsv'
+    write_tsv(raw, [row(), row(pos=11), row(ref='T'), row(pos=30, alt='AT')])
+    original = raw.read_bytes()
+    monkeypatch.setattr(snv_review, '_candidate_bed_path', lambda: tmp_path / 'no.bed')
+    args = dict(test_type='WGS', output_dir=tmp_path / 'post', gpn_star_dir=bundle, gpn_msa_db=msa_db[0])
+    review = snv_review.ensure_review_tsv(raw, **args, research_only=True)
+    before = read_tsv(review)
+    marker = review.with_suffix(review.suffix + '.source.json')
+    old = json.loads(marker.read_text())
+    # Simulate a pre-V manifest, then install V without changing M.
+    for key in list(old):
+        if key in {'gpn_star_v', 'gpn_star_v_annotation', 'gpn_star_v_values'}:
+            old.pop(key)
+    marker.write_text(json.dumps(old))
+    make_bundle(bundle, gpn_star.V_MODEL)
+    calls = []
+    query = gpn_star.query_scores
+    def spy(root, keys, model):
+        calls.append(model)
+        assert model == gpn_star.V_MODEL
+        return query(root, keys, model)
+    monkeypatch.setattr(gpn_star, 'query_scores', spy)
+    def forbidden(*args):
+        raise AssertionError('must not rebuild from raw')
+    monkeypatch.setattr(snv_review, '_load_bed', forbidden)
+    snv_review.ensure_review_tsv(raw, **args)
+    snv_review.ensure_review_tsv(raw, **args)
+    assert calls == [gpn_star.V_MODEL]
+    assert len(msa_db[1]) == 1
+    actual = read_tsv(review)
+    assert [r['GPN_STAR_V_SCORE'] for r in actual] == ['-7', '0', '', '']
+    assert [{k: v for k, v in r.items() if k != 'GPN_STAR_V_SCORE'} for r in actual] == before
+    assert raw.read_bytes() == original
+    assert _row_to_variant(actual[0])['GPN_STAR_V_score'] == -7
+    assert _row_to_variant(actual[1])['GPN_STAR_V_score'] == 0
+    assert classify_tier({'GPN_STAR_V_SCORE': '-99', 'GPN_STAR_SCORE': '-99'}) == '2'
+    saved = json.loads(marker.read_text())
+    assert saved['gpn_star_values'] == old['gpn_star_values']
+    assert saved['gpn_star_v_values']['model'] == gpn_star.V_MODEL
+    # V failure preserves both the old V value and its successful provenance.
+    manifest = gpn_star.manifest_path(bundle, gpn_star.V_MODEL)
+    data = json.loads(manifest.read_text()); data['model'] = 'wrong'
+    manifest.write_text(json.dumps(data))
+    snv_review.ensure_review_tsv(raw, **args)
+    failed = json.loads(marker.read_text())
+    assert failed['gpn_star_v_annotation']['status'] == 'failed'
+    assert failed['gpn_star_v_values'] == saved['gpn_star_v_values']
+    assert read_tsv(review) == actual
+
+
+def test_v_can_succeed_when_m_is_unavailable_and_strict_requires_both(tmp_path, dual_bundle, monkeypatch):
+    raw = tmp_path / 'raw.tsv'
+    write_tsv(raw, [row()])
+    (dual_bundle / 'manifest.json').unlink()
+    monkeypatch.setattr(snv_review, '_candidate_bed_path', lambda: tmp_path / 'no.bed')
+    args = dict(test_type='WGS', output_dir=tmp_path / 'post', gpn_star_dir=dual_bundle, research_only=True)
+    review = snv_review.ensure_review_tsv(raw, **args)
+    assert read_tsv(review)[0]['GPN_STAR_V_SCORE'] == '-7'
+    assert 'GPN_STAR_SCORE' not in read_tsv(review)[0]
+    saved = json.loads(review.with_suffix(review.suffix + '.source.json').read_text())
+    assert saved['gpn_star_annotation']['status'] == 'skipped_missing_db'
+    assert saved['gpn_star_v_annotation']['status'] == 'complete'
+    with pytest.raises(FileNotFoundError):
+        snv_review.ensure_review_tsv(raw, **args, require_gpn_star=True)
+
+
+def test_download_v_addition_keeps_active_m_and_partial_files_separate(tmp_path, dual_bundle, monkeypatch):
+    mod = load_script('download_gpn_star_scores')
+    files = []
+    for model in gpn_star.MODELS:
+        payload = json.loads(gpn_star.manifest_path(dual_bundle, model).read_text())
+        files.extend({**f, 'path': 'data/' + f['path']} for f in payload['files'])
+    release = {'repository': {'id': mod.REPOSITORY}, 'parquet': {'files': files}}
+    dest = tmp_path / 'install'
+    interrupted = False
+    transfers = []
+    def curl(command, **kwargs):
+        nonlocal interrupted
+        target = Path(command[command.index('--output') + 1])
+        source = dual_bundle / command[-1].split('/data/', 1)[1]
+        transfers.append(source)
+        if gpn_star.V_MODEL in source.parts and not interrupted:
+            target.write_bytes(source.read_bytes()[:100])
+            interrupted = True
+            raise subprocess.CalledProcessError(18, command)
+        target.write_bytes(source.read_bytes())
+    monkeypatch.setattr(mod.subprocess, 'run', curl)
+    mod.install(dest, release, 'a' * 40, 'https://example.invalid')
+    old_marker = (dest / 'manifest.json').read_bytes()
+    old_shard = gpn_star.shard_path(dest, '1').read_bytes()
+    with pytest.raises(subprocess.CalledProcessError):
+        mod.install(dest, release, 'a' * 40, 'https://example.invalid', gpn_star.V_MODEL)
+    assert not gpn_star.manifest_path(dest, gpn_star.V_MODEL).exists()
+    assert (dest / 'manifest.json').read_bytes() == old_marker
+    assert gpn_star.shard_path(dest, '1').read_bytes() == old_shard
+    mod.install(dest, release, 'a' * 40, 'https://example.invalid', gpn_star.V_MODEL)
+    assert gpn_star.validate_database(dest, model=gpn_star.V_MODEL)['model'] == gpn_star.V_MODEL
+    assert len([p for p in transfers if gpn_star.MODEL in p.parts]) == 24
+    assert (dest / 'manifest.json').read_bytes() == old_marker
+    assert gpn_star.query_scores(dest, {('1', 10, 'A', 'G')}, gpn_star.V_MODEL)[('1', 10, 'A', 'G')] == '-7'

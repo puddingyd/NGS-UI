@@ -961,6 +961,8 @@ def _row_to_variant(row: dict) -> dict:
         # MSA is standard; Star is additionally joined for Research-only cases.
         # Keep both compact-review scores as independent display-only fields:
         # no tier, ACMG, filter, sorting, or report rule consumes them.
+        "GPN_STAR_V_score":    _to_num(row.get("GPN_STAR_V_SCORE")),
+        # Legacy GPN_STAR_SCORE is always M, never a combined value.
         "GPN_STAR_score":      _to_num(row.get("GPN_STAR_SCORE")),
         "GPN_MSA_score":       _to_num(row.get("GPN_MSA_SCORE")),
         "MetaRNN_score":       _max_multi(row.get("METARNN")),

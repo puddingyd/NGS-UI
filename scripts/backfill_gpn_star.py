@@ -65,15 +65,21 @@ def backfill_one(sample: str, root: Path, *, apply: bool, research_only: bool = 
         with tempfile.TemporaryDirectory(prefix=".gpn-star-", dir=review.parent) as folder:
             staged = Path(folder) / review.name
             shutil.copy2(review, staged)
-            stats = gpn_star.annotate_review_tsv(staged, root)
-            signature = gpn_star.database_signature(root)
-            payload.update(gpn_star=signature, gpn_star_annotation=stats, gpn_star_research_only=True)
-            if stats["status"] == "complete":
-                payload["gpn_star_values"] = {**signature, "revision": stats["revision"]}
+            results = {}
+            payload["gpn_star_research_only"] = True
+            for name, model in (("gpn_star", gpn_star.MODEL), ("gpn_star_v", gpn_star.V_MODEL)):
+                stats = gpn_star.annotate_review_tsv(staged, root, model=model)
+                signature = gpn_star.database_signature(root, model=model)
+                payload[name] = signature
+                payload[f"{name}_annotation"] = stats
+                if stats["status"] == "complete":
+                    payload[f"{name}_values"] = {**signature, "revision": stats["revision"]}
+                results[name] = stats
             publish_pair(review, manifest, staged, payload)
         # Running API processes observe the changed review mtime/size in their
         # SNV cache keys. No unrelated reviewer state or raw index is touched.
-        return {"sample": sample, **stats}
+        return {"sample": sample, "models": results,
+                "status": "complete" if all(s["status"] == "complete" for s in results.values()) else "incomplete"}
     finally:
         _release_sample_locks(locks)
 

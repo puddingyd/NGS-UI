@@ -275,25 +275,26 @@ def _refresh_gpn_annotations(
     """Refresh each independent predictor only when its own signature changes."""
     payload = {**previous, **source}
     refreshed = False
-    for name, module, database, required, force in (
-        ("gpn_msa", gpn_msa, msa_db, require_msa, force_msa),
-        ("gpn_star", gpn_star, star_dir, require_star, force_star),
+    for name, module, database, required, force, options in (
+        ("gpn_msa", gpn_msa, msa_db, require_msa, force_msa, {}),
+        ("gpn_star", gpn_star, star_dir, require_star, force_star, {}),
+        ("gpn_star_v", gpn_star, star_dir, require_star, force_star, {"model": gpn_star.V_MODEL}),
     ):
-        if name == "gpn_star" and not research_only:
+        if name.startswith("gpn_star") and not research_only:
             # This controls new annotation, not visibility of existing scores.
             # Keep previous *_values provenance for scores already on disk.
-            payload["gpn_star_annotation"] = {"status": "skipped_not_research_only"}
+            payload[f"{name}_annotation"] = {"status": "skipped_not_research_only"}
             continue
         status = previous.get(f"{name}_annotation") or {}
         if (previous.get(name) == source[name] and status.get("status")
                 and not force and (not required or status["status"] == "complete")):
             continue
-        stats = module.annotate_review_tsv(tsv, database, required=required)
+        stats = module.annotate_review_tsv(tsv, database, required=required, **options)
         payload[f"{name}_annotation"] = stats
         if stats["status"] == "complete":
             payload[f"{name}_values"] = {
                 **source[name],
-                **({"revision": stats["revision"]} if name == "gpn_star" else {}),
+                **({"revision": stats["revision"]} if name.startswith("gpn_star") else {}),
             }
         refreshed = True
     return payload, refreshed or payload != previous
@@ -354,7 +355,8 @@ def ensure_review_tsv(
     if require_gpn_msa:
         gpn_msa.validate_database(selected_gpn_msa_db)
     if require_gpn_star:
-        gpn_star.validate_database(selected_gpn_star_dir)
+        for model in gpn_star.MODELS:
+            gpn_star.validate_database(selected_gpn_star_dir, model=model)
     source = {
         "raw_mtime_ns": raw_tsv.stat().st_mtime_ns,
         "raw_size": raw_tsv.stat().st_size,
@@ -365,6 +367,8 @@ def ensure_review_tsv(
         "overlay": overlay_signature(raw_tsv, overlay_path),
         "gpn_msa": gpn_msa.database_signature(selected_gpn_msa_db),
         "gpn_star_research_only": star_enabled,
+        "gpn_star_v": (gpn_star.database_signature(selected_gpn_star_dir, model=gpn_star.V_MODEL)
+                       if star_enabled else {"enabled": False}),
         "gpn_star": (gpn_star.database_signature(selected_gpn_star_dir)
                      if star_enabled else {"enabled": False}),
     }
@@ -376,7 +380,7 @@ def ensure_review_tsv(
     }
     non_gpn_matches = all(
         current.get(key) == value for key, value in source.items()
-        if key not in {"gpn_msa", "gpn_star", "gpn_star_research_only"}
+        if key not in {"gpn_msa", "gpn_star", "gpn_star_v", "gpn_star_research_only"}
     )
     if review_tsv.is_file() and non_gpn_matches:
         payload, refreshed = _refresh_gpn_annotations(
@@ -391,6 +395,7 @@ def ensure_review_tsv(
             keep_ids=len(keep_ids),
             gpn_msa_status=payload["gpn_msa_annotation"]["status"],
             gpn_star_status=payload["gpn_star_annotation"]["status"],
+            gpn_star_v_status=payload["gpn_star_v_annotation"]["status"],
         )
         return review_tsv
 
@@ -455,5 +460,6 @@ def ensure_review_tsv(
         test_type=test_type_key,
         gpn_msa_status=payload["gpn_msa_annotation"]["status"],
         gpn_star_status=payload["gpn_star_annotation"]["status"],
+        gpn_star_v_status=payload["gpn_star_v_annotation"]["status"],
     )
     return review_tsv

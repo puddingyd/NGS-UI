@@ -190,7 +190,7 @@ GPN_MSA_DB = Path(os.environ.get(
     BIOTOOLS_DIR / "gpn_msa" / "scores.tsv.bgz",
 ))
 
-# Fixed canonical hg38 GPN-Star-M chromosome Parquet bundle (manifest last).
+# Fixed canonical hg38 GPN-Star V/M chromosome Parquet bundles (per-model manifest last).
 GPN_STAR_DIR = Path(os.environ.get(
     "NGS_UI_GPN_STAR_DIR", BIOTOOLS_DIR / "gpn_star",
 ))

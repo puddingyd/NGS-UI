@@ -565,7 +565,7 @@ const IN_SILICO_REFERENCES = {
   pejaver:   { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9748256/", pmid: "36413997" },
   bergquist: { url: "https://pubmed.ncbi.nlm.nih.gov/40084623/", pmid: "40084623" },
   splicing:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10357475/", pmid: "37352859" },
-  gpnstar:   { url: "https://huggingface.co/datasets/songlab/gpn-star-scores" },
+  gpnstar:   { url: "https://www.nature.com/articles/s41586-026-11005-5" },
   gpnmsa:    { url: "https://www.nature.com/articles/s41587-024-02511-w", pmid: "39747647" },
   pangolin:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9022248/", pmid: "35449021" },
   pknn:      { url: "https://doi.org/10.1101/2025.09.24.678417", pmid: "" },
@@ -663,7 +663,9 @@ const IN_SILICO_CALIBRATIONS = {
   },
   gpnstar: {
     lines: [
-      "GPN-Star-M（hg38 / m447-200m），僅涵蓋 SNV",
+      "Research only；數值依 V/M 順序顯示，— 代表缺值；僅涵蓋 GRCh38 SNV",
+      "V：100 種脊椎動物（v100-200m）；M：447 種哺乳動物（m447-200m）",
+      "論文 benchmark：V 在 ClinVar missense 較佳（Fig. 2a）；M 在 OMIM/HGMD noncoding 較佳（Fig. 2e/f），不是互斥適用規則",
       "llr_calibrated：ALT 相對 REF 的 mutation-rate-calibrated LLR；越負代表模型預測越受限制／影響越大",
       "Mutation-rate calibration 不等於 ACMG calibration；不提供 PP3/BP4 或 benign evidence",
     ], reference: IN_SILICO_REFERENCES.gpnstar,
@@ -729,7 +731,7 @@ const IN_SILICO_TOOLS = [
   { key: "revel",         label: "REVEL",         scoreField: "REVEL_score" },
   { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score" },
   { key: "gpnmsa",        label: "GPN-MSA",       scoreField: "GPN_MSA_score" },
-  { key: "gpnstar",       label: "GPN-Star",      scoreField: "GPN_STAR_score" },
+  { key: "gpnstar",       label: "GPN-Star-V/M",  scoreField: "GPN_STAR_score", pairedField: "GPN_STAR_V_score" },
   { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
   { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
   { key: "bayesdel",      label: "BayesDel",      scoreField: "BayesDel",            predField: "BayesDel_pred" },
@@ -750,7 +752,7 @@ function _hasNum(x) {
 }
 
 function _populatedInSilicoTools(v) {
-  return IN_SILICO_TOOLS.filter(t => _hasNum(v[t.scoreField]));
+  return IN_SILICO_TOOLS.filter(t => _hasNum(v[t.scoreField]) || (t.pairedField && _hasNum(v[t.pairedField])));
 }
 
 function _inSilicoMinimumCount(keys) {
@@ -771,6 +773,7 @@ function _pknnEvidence(text) {
 }
 
 function _toolEvidence(v, tool) {
+  if (tool.key === "gpnstar") return _evidence("", "Research only; no calibrated evidence");
   const x = Number(v[tool.scoreField]);
   if (!Number.isFinite(x)) return _evidence("", "Not available");
   switch (tool.key) {
@@ -848,7 +851,6 @@ function _toolEvidence(v, tool) {
       if (x >= .20) return _evidence("sig-lp", "PP3");
       if (x <= .10) return _evidence("sig-b", "BP4");
       return _evidence("sig-vus", "Indeterminate");
-    case "gpnstar": return _evidence("", "Contextual score; no calibrated evidence");
     case "gpnmsa": return x <= -7
       ? _evidence("sig-lp", "Deleterious tail (context only)")
       : _evidence("sig-vus", "Contextual score");
@@ -890,15 +892,21 @@ function _annotationHint(title, lines, reference = null, options = {}) {
   return `<button type="button" class="${className}"${dataId} aria-label="${escapeAttr(title)} 註解" data-tip-html="${escapeAttr(body.join(""))}">ⓘ</button>`;
 }
 
+function _gpnStarPairText(v) {
+  // Fixed V/M order; do not turn missing values into zero or swap models.
+  return [v.GPN_STAR_V_score, v.GPN_STAR_score]
+    .map(score => _hasNum(score) ? Number(score).toFixed(1) : "—").join("/");
+}
+
 function _renderInSilicoCell(v, tool) {
   const score = v[tool.scoreField];
-  const has = _hasNum(score);
+  const has = _hasNum(score) || (tool.pairedField && _hasNum(v[tool.pairedField]));
   const pred = tool.predField ? (v[tool.predField] || "").trim() : "";
   const evidence = has ? _toolEvidence(v, tool) : _evidence("", "Not available");
   const calibration = IN_SILICO_CALIBRATIONS[tool.key] || {};
   const dynamicLines = [`本位點：${evidence.label}`].concat(calibration.lines || []);
   const hint = _annotationHint(tool.label, dynamicLines, calibration.reference);
-  const valueTxt = has
+  const valueTxt = tool.key === "gpnstar" ? _gpnStarPairText(v) : has
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
   return `<span class="in-silico-row" data-in-silico-tool="${escapeAttr(tool.key)}">`
