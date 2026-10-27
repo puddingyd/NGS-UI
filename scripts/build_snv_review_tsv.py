@@ -65,14 +65,14 @@ def main() -> int:
     ap.add_argument("--manifest-path", type=Path, help="exact review manifest output path")
     ap.add_argument("--overlay", type=Path, help="sparse SNV annotation overlay SQLite")
     ap.add_argument(
-        "--gpn-msa-db",
+        "--gpn-star-dir",
         type=Path,
-        help="fixed GRCh38 GPN-MSA scores.tsv.bgz (default: NGS_UI_GPN_MSA_DB)",
+        help="canonical GRCh38 GPN-Star-M bundle directory (default: NGS_UI_GPN_STAR_DIR)",
     )
     ap.add_argument(
-        "--require-gpn-msa",
+        "--require-gpn-star",
         action="store_true",
-        help="fail if the GPN-MSA BGZF, .tbi, or tabix executable is unavailable",
+        help="fail if the GPN-Star manifest, shards, or Polars dependency is unavailable",
     )
     ap.add_argument(
         "--test-type",
@@ -111,8 +111,8 @@ def main() -> int:
         output_path=output_path,
         manifest_path=manifest_path,
         overlay_path=args.overlay.resolve() if args.overlay else None,
-        gpn_msa_db=args.gpn_msa_db.resolve() if args.gpn_msa_db else None,
-        require_gpn_msa=args.require_gpn_msa,
+        gpn_star_dir=args.gpn_star_dir.resolve() if args.gpn_star_dir else None,
+        require_gpn_star=args.require_gpn_star,
     )
     print(f"[review-tsv] {raw_tsv} → {review_tsv}")
     status_path = manifest_path or review_tsv.with_suffix(
@@ -120,11 +120,11 @@ def main() -> int:
     )
     try:
         status_payload = json.loads(status_path.read_text(encoding="utf-8"))
-        gpn_status = status_payload.get("gpn_msa_annotation") or {}
+        gpn_status = status_payload.get("gpn_star_annotation") or {}
     except (OSError, json.JSONDecodeError):
         gpn_status = {}
     print(
-        "[gpn-msa] "
+        "[gpn-star] "
         f"status={gpn_status.get('status') or 'unknown'} "
         f"annotated_rows={gpn_status.get('annotated_rows', 0)} "
         f"manifest={status_path}"

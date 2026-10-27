@@ -63,7 +63,7 @@ def test_manifest_records_titan_wgs_and_keeps_low_dp_rows(tmp_path, monkeypatch)
         [sys.executable, str(SCRIPT), "--tsv", str(raw), "--output-dir", str(post),
          "--output-path", str(review), "--manifest-path", str(manifest),
          "--test-type", "WGS", "--sample", "26T00028-dragen",
-         "--gpn-msa-db", str(tmp_path / "missing.bgz")],
+         "--gpn-star-dir", str(tmp_path / "missing.bgz")],
         check=True, capture_output=True, env={**__import__("os").environ,
                                                "NGS_UI_CDS_CANDIDATE_BED": str(bed)},
     )

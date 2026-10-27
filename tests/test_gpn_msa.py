@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services import gpn_msa, snv_review
+from app.services import gpn_msa
 from app.adapters.snv_tsv import _row_to_variant, classify_tier
 
 
@@ -24,62 +24,6 @@ def _write(path: Path, rows: list[dict[str, str]]) -> None:
         )
         writer.writeheader()
         writer.writerows(rows)
-
-
-def test_gpn_msa_is_joined_only_to_retained_review_snvs(tmp_path, monkeypatch):
-    raw = tmp_path / "raw.tsv"
-    _write(raw, [
-        {
-            "CHROM": "chr1", "POS": "10", "REF": "A", "ALT": "G",
-            "GENE": "KEEP", "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.001", "DP": "30",
-        },
-        {
-            "CHROM": "chr1", "POS": "20", "REF": "C", "ALT": "T",
-            "GENE": "DROP", "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.2", "DP": "30",
-        },
-        {
-            "CHROM": "chr1", "POS": "30", "REF": "A", "ALT": "AT",
-            "GENE": "INDEL", "CLINVAR_SIG": "Pathogenic", "GNOMAD_G_AF": "", "DP": "30",
-        },
-    ])
-    db = tmp_path / "scores.tsv.bgz"
-    db.touch()
-    Path(f"{db}.tbi").touch()
-    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "missing.bed")
-    monkeypatch.setattr(gpn_msa, "validate_database", lambda _db: (db, "tabix"))
-    captured = {}
-
-    def fake_query(_db, keys, *, tabix_bin):
-        captured["keys"] = keys
-        captured["tabix"] = tabix_bin
-        return {("1", 10, "A", "G"): "-8.25"}
-
-    monkeypatch.setattr(gpn_msa, "query_scores", fake_query)
-    review = snv_review.ensure_review_tsv(
-        raw,
-        test_type="WGS",
-        output_dir=tmp_path / "08_postprocessing",
-        gpn_msa_db=db,
-        require_gpn_msa=True,
-    )
-
-    with review.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-    assert [row["GENE"] for row in rows] == ["KEEP", "INDEL"]
-    assert rows[0]["GPN_MSA_SCORE"] == "-8.25"
-    assert rows[1]["GPN_MSA_SCORE"] == ""
-    assert _row_to_variant(rows[0])["GPN_MSA_score"] == -8.25
-    assert captured == {
-        "keys": {("1", 10, "A", "G")},
-        "tabix": "tabix",
-    }
-    assert "GPN_MSA_SCORE" not in raw.read_text(encoding="utf-8").splitlines()[0]
-    manifest = json.loads(
-        review.with_suffix(review.suffix + ".source.json").read_text(encoding="utf-8")
-    )
-    assert manifest["gpn_msa"]["database"]["path"] == str(db)
-    assert manifest["gpn_msa_annotation"]["status"] == "complete"
-    assert manifest["gpn_msa_annotation"]["annotated_rows"] == 1
 
 
 def test_gpn_msa_score_is_display_only_and_does_not_trigger_tier_1c():
@@ -165,76 +109,6 @@ def test_optional_gpn_msa_query_failure_preserves_review(
     assert stats["status"] == "failed"
     assert review.read_bytes() == original
     assert "simulated tabix failure" in capsys.readouterr().err
-
-
-def test_review_build_records_soft_gpn_failure_without_failing(
-    tmp_path, monkeypatch
-):
-    raw = tmp_path / "raw.tsv"
-    _write(raw, [{
-        "CHROM": "chr1", "POS": "10", "REF": "A", "ALT": "G",
-        "GENE": "KEEP", "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.001", "DP": "30",
-    }])
-    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "missing.bed")
-    review = snv_review.ensure_review_tsv(
-        raw,
-        test_type="WGS",
-        output_dir=tmp_path / "08_postprocessing",
-        gpn_msa_db=tmp_path / "missing.tsv.bgz",
-    )
-
-    manifest = json.loads(
-        review.with_suffix(review.suffix + ".source.json").read_text(encoding="utf-8")
-    )
-    assert review.is_file()
-    assert manifest["gpn_msa_annotation"]["status"] == "skipped_missing_db"
-
-
-def test_new_gpn_resource_refreshes_existing_review_without_raw_rebuild(
-    tmp_path, monkeypatch
-):
-    raw = tmp_path / "raw.tsv"
-    _write(raw, [{
-        "CHROM": "chr1", "POS": "10", "REF": "A", "ALT": "G",
-        "GENE": "KEEP", "CLINVAR_SIG": "", "GNOMAD_G_AF": "0.001", "DP": "30",
-    }])
-    db = tmp_path / "scores.tsv.bgz"
-    output = tmp_path / "08_postprocessing"
-    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "missing.bed")
-    review = snv_review.ensure_review_tsv(
-        raw,
-        test_type="WGS",
-        output_dir=output,
-        gpn_msa_db=db,
-    )
-    db.touch()
-    Path(f"{db}.tbi").touch()
-    monkeypatch.setattr(gpn_msa, "validate_database", lambda _db: (db, "tabix"))
-    monkeypatch.setattr(
-        gpn_msa,
-        "query_scores",
-        lambda *_args, **_kwargs: {("1", 10, "A", "G"): "-8.25"},
-    )
-
-    def raw_rebuild_would_fail(_path):
-        raise AssertionError("review filter was unexpectedly rebuilt")
-
-    monkeypatch.setattr(snv_review, "_load_bed", raw_rebuild_would_fail)
-    refreshed = snv_review.ensure_review_tsv(
-        raw,
-        test_type="WGS",
-        output_dir=output,
-        gpn_msa_db=db,
-    )
-
-    assert refreshed == review
-    with review.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-    assert rows[0]["GPN_MSA_SCORE"] == "-8.25"
-    manifest = json.loads(
-        review.with_suffix(review.suffix + ".source.json").read_text(encoding="utf-8")
-    )
-    assert manifest["gpn_msa_annotation"]["status"] == "complete"
 
 
 def test_query_scores_matches_exact_alt_and_normalises_chr(monkeypatch, tmp_path):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backfill best-effort GPN-MSA annotation for existing tertiary cases."""
+"""Legacy GPN-MSA backfill for existing review TSVs (tertiary now uses GPN-Star)."""
 from __future__ import annotations
 
 import argparse
@@ -25,12 +25,6 @@ def _read_json(path: Path) -> dict[str, object]:
     except (OSError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
-
-
-def _test_type(sample_layout, sample_id: str) -> str:
-    metadata = _read_json(sample_layout.state_file(sample_id, "sample_metadata.json"))
-    value = str(metadata.get("test_type") or "").upper()
-    return value if value in {"WES", "WGS"} else "WES"
 
 
 def _deduplicate(values: list[str]) -> list[str]:
@@ -114,7 +108,7 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repo_root / "backend"))
-    from app.services import gpn_msa, sample_layout, snv_review  # noqa: E402
+    from app.services import gpn_msa, sample_layout  # noqa: E402
 
     if args.all:
         sample_ids = sorted(sample_layout.iter_sample_ids())
@@ -147,29 +141,10 @@ def main() -> int:
                 payload["gpn_msa_annotation"] = stats
                 _atomic_json(manifest, payload)
             else:
-                raw = sample_layout.snv_raw_tsv(sample_id)
-                if not raw.is_file():
-                    label = "ERROR" if not args.all else "WARNING"
-                    print(
-                        f"[backfill-gpn-msa] {label}: {sample_id}: "
-                        "no review TSV or raw SNV TSV",
-                        file=sys.stderr,
-                    )
-                    errors += not args.all
-                    continue
-                output_dir = sample_layout.state_dir(sample_id, for_write=True)
-                review = snv_review.ensure_review_tsv(
-                    raw,
-                    test_type=_test_type(sample_layout, sample_id),
-                    output_dir=output_dir,
-                    output_path=sample_layout.review_tsv(sample_id, for_write=True),
-                    manifest_path=manifest,
-                    overlay_path=sample_layout.snv_overlay_path(sample_id),
-                    gpn_msa_db=db,
-                    force_gpn_msa=True,
-                )
-                payload = _read_json(manifest)
-                stats = payload.get("gpn_msa_annotation") or {}
+                print(f"[backfill-gpn-msa] {sample_id}: missing review; "
+                      "legacy MSA backfill only updates existing reviews", file=sys.stderr)
+                errors += 1
+                continue
 
             status = str(stats.get("status") or "unknown")
             counts[status] = counts.get(status, 0) + 1

@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v9.59 — 2026-10-27
+
+- 三級 post-processing 改用 hg38 GPN-Star-M 的本機 Parquet `llr_calibrated`，只補最終 review SNV；新增精確 allele join、固定 revision 來源紀錄與命中統計。缺資料或查詢失敗只 warning，不阻擋三級。
+- 卡片在原 GPN 位置顯示 GPN-Star，以中性顏色呈現，不沿用 MSA 的 −7 門檻；不影響 tier、ACMG、篩選、排序或報告選取。舊 MSA 與 Somatic 保留原名稱及相容性。
+- 新增可續傳／checksum 驗證的 GPN-Star 下載工具，以及預設 dry-run、使用三級 sample lock 的舊個案補分工具；已有 review 不需重跑 Nextflow/VEP。
+
 ### v9.58 — 2026-10-22
 
 - OMIM 疾病的 `SMu`（somatic mutation）在診斷 DOCX 與平台文字報告統一寫為「其遺傳模式屬於體細胞變異」，保留疾病名稱及 Phenotype MIM number。

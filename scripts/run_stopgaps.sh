@@ -19,7 +19,7 @@
 #                              gCNV + Delly VCFs. Skipped if none supplied.
 #   7. build_snv_annotation_overlay.py — persist sparse field differences
 #   8. build_snv_review_tsv.py — materialise final review rows and join the
-#                                  fixed GRCh38 GPN-MSA score table
+#                                  fixed GRCh38 GPN-Star score table
 #      build_snv_gene_index.py
 #
 # (ClinVar annotation was a compatibility step before the new pipeline shipped
@@ -64,8 +64,8 @@
 #   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
 #   NGS_UI_LITVAR2_DB / --litvar2-db   — local bulk LitVar2 SQLite
 #   --skip-litvar2                     — disable local literature annotation
-#   NGS_UI_GPN_MSA_DB / --gpn-msa-db   — fixed GRCh38 pre-computed
-#                                         scores.tsv.bgz (plus .tbi); every
+#   NGS_UI_GPN_STAR_DIR / --gpn-star-dir   — fixed GRCh38 pre-computed
+#                                         GPN-Star-M Parquet bundle; every
 #                                         case attempts this final-review join,
 #                                         but unavailability is warning-only
 #   --skip-cnv                         — disable AnnotSV step 6 even
@@ -123,7 +123,7 @@ MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5
 GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
 INHOUSE_AF_DB="${NGS_UI_INHOUSE_AF_DB:-$NGS_HOME_DEFAULT/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
 LITVAR2_DB="${NGS_UI_LITVAR2_DB:-$NGS_HOME_DEFAULT/biotools/litvar2/litvar2.sqlite}"
-GPN_MSA_DB="${NGS_UI_GPN_MSA_DB:-$NGS_HOME_DEFAULT/biotools/gpn_msa/scores.tsv.bgz}"
+GPN_STAR_DIR="${NGS_UI_GPN_STAR_DIR:-$NGS_HOME_DEFAULT/biotools/gpn_star}"
 CLINVAR_LATEST_DB="${NGS_UI_CLINVAR_LATEST_DB:-$NGS_HOME_DEFAULT/biotools/clinvar_latest/clinvar_latest.sqlite}"
 # Keep the established production SpliceAI paths. On n102968 these resolve to
 # /home/n102968/NGS_UI/biotools/spliceai/...; do not point runtime at a desktop
@@ -160,7 +160,7 @@ while [ $# -gt 0 ]; do
     --skip-inhouse-af)    SKIP_INHOUSE_AF=1; shift;;
     --litvar2-db)         LITVAR2_DB="$2"; shift 2;;
     --skip-litvar2)       SKIP_LITVAR2=1; shift;;
-    --gpn-msa-db)         GPN_MSA_DB="$2"; shift 2;;
+    --gpn-star-dir)         GPN_STAR_DIR="$2"; shift 2;;
     -h|--help) sed -n '2,40p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -217,11 +217,11 @@ else
   export NGS_UI_CDS_CANDIDATE_BED="$CANDIDATE_BED"
 fi
 
-# GPN-MSA is attempted for every final review TSV (including non-Research
+# GPN-Star is attempted for every final review TSV (including non-Research
 # cases). Missing deployment data or a query failure is recorded in the review
 # manifest and warned later by build_snv_review_tsv.py; it never gates the rest
 # of an otherwise valid tertiary analysis.
-echo "  GPN-MSA DB: $GPN_MSA_DB (best-effort)"
+echo "  GPN-Star DB: $GPN_STAR_DIR (best-effort)"
 
 # 1. Compare the immutable v3.6 ClinVar annotation with the latest weekly
 #    local snapshot. This affects only the working TSV/UI overlay and never
@@ -362,7 +362,7 @@ step_start "review-tsv" "sample-step"
   --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
   --output-path "$REVIEW_PATH" --manifest-path "$REVIEW_MANIFEST_PATH" \
   --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE" --sample "$SID" \
-  --gpn-msa-db "$GPN_MSA_DB"
+  --gpn-star-dir "$GPN_STAR_DIR"
 step_done
 
 echo

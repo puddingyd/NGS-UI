@@ -565,6 +565,7 @@ const IN_SILICO_REFERENCES = {
   pejaver:   { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9748256/", pmid: "36413997" },
   bergquist: { url: "https://pubmed.ncbi.nlm.nih.gov/40084623/", pmid: "40084623" },
   splicing:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10357475/", pmid: "37352859" },
+  gpnstar:   { url: "https://huggingface.co/datasets/songlab/gpn-star-scores" },
   gpnmsa:    { url: "https://www.nature.com/articles/s41587-024-02511-w", pmid: "39747647" },
   pangolin:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9022248/", pmid: "35449021" },
   pknn:      { url: "https://doi.org/10.1101/2025.09.24.678417", pmid: "" },
@@ -660,6 +661,13 @@ const IN_SILICO_CALIBRATIONS = {
       "須配合 variant context 與 ClinGen SVI splicing decision tree 使用",
     ], reference: IN_SILICO_REFERENCES.splicing,
   },
+  gpnstar: {
+    lines: [
+      "GPN-Star-M（hg38 / m447-200m），僅涵蓋 SNV",
+      "llr_calibrated：ALT 相對 REF 的 mutation-rate-calibrated LLR；越負代表模型預測越受限制／影響越大",
+      "Mutation-rate calibration 不等於 ACMG calibration；不提供 PP3/BP4 或 benign evidence",
+    ], reference: IN_SILICO_REFERENCES.gpnstar,
+  },
   gpnmsa: {
     lines: [
       "分數是 ALT 相對 REF 的 log-likelihood ratio；越低代表模型預測越 deleterious",
@@ -720,6 +728,7 @@ const IN_SILICO_TOOLS = [
   { key: "pangolin",      label: "Pangolin",      scoreField: "Pangolin_score" },
   { key: "revel",         label: "REVEL",         scoreField: "REVEL_score" },
   { key: "spliceai",      label: "SpliceAI",      scoreField: "SpliceAI_score" },
+  { key: "gpnstar",       label: "GPN-Star",      scoreField: "GPN_STAR_score" },
   { key: "gpnmsa",        label: "GPN-MSA",       scoreField: "GPN_MSA_score" },
   { key: "esm1b",         label: "ESM1b",         scoreField: "ESM1b_score",         predField: "ESM1b_pred" },
   { key: "varity",        label: "VARITY_R",      scoreField: "VARITY_R" },
@@ -738,6 +747,11 @@ const IN_SILICO_PRIMARY_COUNT = 6;
 
 function _hasNum(x) {
   return x != null && x !== "" && Number.isFinite(Number(x));
+}
+
+function _populatedInSilicoTools(v) {
+  return IN_SILICO_TOOLS.filter(t => _hasNum(v[t.scoreField])
+    && (t.key !== "gpnmsa" || !_hasNum(v.GPN_STAR_score)));
 }
 
 function _evidence(cls, label) { return { cls, label }; }
@@ -829,6 +843,7 @@ function _toolEvidence(v, tool) {
       if (x >= .20) return _evidence("sig-lp", "PP3");
       if (x <= .10) return _evidence("sig-b", "BP4");
       return _evidence("sig-vus", "Indeterminate");
+    case "gpnstar": return _evidence("", "Contextual score; no calibrated evidence");
     case "gpnmsa": return x <= -7
       ? _evidence("sig-lp", "Deleterious tail (context only)")
       : _evidence("sig-vus", "Contextual score");
@@ -4864,7 +4879,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         ${(() => {
           // Only render tools that actually have a numeric value;
           // first N → primary, rest → More.
-          const populated = IN_SILICO_TOOLS.filter(t => _hasNum(v[t.scoreField]));
+          const populated = _populatedInSilicoTools(v);
           const primary = populated.slice(0, IN_SILICO_PRIMARY_COUNT)
             .map(t => _renderInSilicoCell(v, t)).join("");
           const secondary = populated.slice(IN_SILICO_PRIMARY_COUNT)

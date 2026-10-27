@@ -22,7 +22,7 @@ def test_core_snv_fields_have_annotation_hints():
 def test_all_displayed_in_silico_tools_have_calibration_metadata():
     expected = {
         "pknn", "alphamissense", "pangolin", "esm1b", "varity", "bayesdel",
-        "revel", "spliceai", "gpnmsa", "cadd", "mutpred2", "vest4", "dann",
+        "revel", "spliceai", "gpnstar", "gpnmsa", "cadd", "mutpred2", "vest4", "dann",
         "phactboost", "phylop", "gerp", "sift", "loftool",
     }
     for key in expected:
@@ -97,7 +97,7 @@ def test_reviewer_requested_annotation_copy_is_streamlined():
 def test_predictor_display_order_primary_count_and_inline_layout_match_review_workflow():
     ordered = [
         'key: "pknn"', 'key: "alphamissense"', 'key: "pangolin"',
-        'key: "revel"', 'key: "spliceai"', 'key: "gpnmsa"', 'key: "esm1b"',
+        'key: "revel"', 'key: "spliceai"', 'key: "gpnstar"', 'key: "gpnmsa"', 'key: "esm1b"',
         'key: "varity"', 'key: "bayesdel"', 'key: "cadd"',
         'key: "dann"', 'key: "mutpred2"', 'key: "vest4"',
         'key: "phactboost"', 'key: "phylop"',
