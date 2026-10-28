@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v9.64 — 2026-10-28
+
+- Specialized caller 結果摘要只在 DRAGEN 個案顯示；院內個案不顯示與其流程無關的摘要，DRAGEN 個案仍可查閱未提供／待複核狀態。
+
 ### v9.63 — 2026-10-28
 
 - 主畫面 SNV/Indel 不再把未提供 GBA1 specialized caller 結果當作所有個案的頂部黃色警示；需要複核的 GBA1 結果警示仍保留，缺資料狀態可在 specialized 摘要查閱。

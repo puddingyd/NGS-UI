@@ -551,8 +551,16 @@ def composition_text(v):
 
 
 def summary(sample_id):
+    pipeline_type = str(sample_layout._pipeline_source(sample_id).get("pipeline_type") or "").strip().lower()
+    if not pipeline_type:
+        name = sample_id.lower()
+        pipeline_type = "dragen" if name.endswith("-dragen") else (
+            "nckuh" if name.endswith(("-nckuh", "-inhouse")) else ""
+        )
     r = load(sample_id)
-    return {k: r.get(k) for k in ("status", "loci", "replaced_ids", "software_version")}
+    result = {k: r.get(k) for k in ("status", "loci", "replaced_ids", "software_version")}
+    result["pipeline_type"] = pipeline_type
+    return result
 
 
 def validate_selection(sample, report, *, panels=None, selected_ids=None):

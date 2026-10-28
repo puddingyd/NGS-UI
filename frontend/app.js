@@ -4985,8 +4985,11 @@ function renderSpecializedEvidence(v, id) {
 function renderSpecializedSummary() {
   const host = document.getElementById("specialized-summary");
   if (!host) return;
-  const loci = state.data?.specialized?.loci || {};
-  host.classList.toggle("hidden", !Object.keys(loci).length);
+  const summary = state.data?.specialized || {};
+  const loci = summary.loci || {};
+  const show = summary.pipeline_type === "dragen" && Object.keys(loci).length > 0;
+  host.classList.toggle("hidden", !show);
+  if (!show) { host.innerHTML = ""; return; }
   const labels = {gba: "GBA1", cyp21a2: "CYP21A2", smn: "SMN1／SMN2", hba: "HBA1／HBA2"};
   host.innerHTML = `<details><summary>Specialized caller 結果摘要</summary><table class="specialized-summary-table"><thead><tr><th>Locus</th><th>結果</th><th>狀態／限制</th></tr></thead><tbody>`
     + Object.entries(loci).map(([key, loc]) => {

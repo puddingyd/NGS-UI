@@ -192,7 +192,7 @@ GBA1 沿用七種 recombinant haplotype、一般 variants、原 stable ID 與 Re
 
 卡片沿用原 SNV 模板：紫色組成、單行 caller 證據、joint support tooltip；SMN/HBA 劑量以 CN 顯示。健檢與診斷沿用原表格／列點／附錄，組成列第 2 點，RS ID／結構缺值顯示全形 `－`。GBA1 單一 het 第二類，兩個獨立 P/LP 即使相位未知仍第一類；CYP21A2 也以完整 allele 計數；SMN1 CN1 第二類、CN0 第一類，HBA 常見缺失依完整 genotype 分類。健檢只有實際回報 specialized 結果時補上檢測範圍例外，避免既有 CNV 限制文字矛盾。選取過時／已整合 component 或同時回報 haplotype 與 component 時拒絕匯出，不自動搬移選取。詳見 `docs/ops/SPECIALIZED_CALLERS.md` 及 `docs/ops/GBA1_SPECIALIZED_CALLER.md`。
 
-主畫面 SNV/Indel 頂部只顯示需要處理的 GBA1 caller 警示；`gba.status=not_available` 時不顯示「來源未提供此 caller 結果」全域警示。specialized 結果摘要仍保留各 locus 的缺資料狀態，不能把缺資料視為陰性。
+主畫面 SNV/Indel 頂部只顯示需要處理的 GBA1 caller 警示；`gba.status=not_available` 時不顯示「來源未提供此 caller 結果」全域警示。Specialized 結果摘要只在 `pipeline_type=dragen` 個案顯示；來源型態優先讀 `pipeline_source.json`，舊個案無 sidecar 時以樣本 ID 後綴判定。院內或來源未知時在前端隱藏摘要，不更動報告判讀。DRAGEN 摘要仍保留各 locus 的缺資料狀態，不能把缺資料視為陰性。
 
 每種 variant type 一個 adapter（`backend/app/adapters/`），各回傳 `(variants_dict, categories_dict)`。`sample_loader.load_sample()` 把它們全部塞進一個 payload —— id namespace 不衝突（prefix 不同）。
 

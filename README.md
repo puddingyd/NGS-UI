@@ -2,7 +2,7 @@
 
 GBA1、CYP21A2、SMN、HBA specialized caller 已整合進既有卡片與報告。三級 post-processing 會先把 targeted JSON 快照、相關 VCF 證據、正規化結果與 checksum manifest 存到 `08_postprocessing/`；平台不再回原始 JSON／VCF 補 GBA1 證據，亦不複製大型 VCF（資料包須小於 100 MB）。SMN 顯示各基因 CN 與 silent-carrier marker，HBA 保留完整 genotype；未知或定位不明的結果保留待複核狀態，不自動標為致病。健檢及診斷沿用原表格、列點及附錄；HBA 複合結果須依完整 locus 指定健檢分類，既有帶因篩檢清單補入 HBA1／HBA2。部署後舊個案可用 `python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --from-source --apply` 補建，不必重跑 Nextflow/VEP；已有資料包可離線重解析。也可用 `python3 scripts/rebuild_specialized.py --all-dragen --from-source --apply` 批次處理；`python3 scripts/scan_targeted_callers.py` 可唯讀盤點 CYP21A2／SMN／HBA 候選個案。省略 `--apply` 先驗證，既有判讀／選取保留。[資料結構、判讀規則與補建操作](docs/ops/SPECIALIZED_CALLERS.md)；[GBA1 細節](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
 
-主畫面 SNV/Indel 頂部只顯示需要處理的 GBA1 caller 警示；來源未提供 GBA1 specialized 結果時，不顯示全域黃色警示。結果摘要仍保留各 locus 的未提供狀態，供需要判讀該 locus 時查閱。
+主畫面 SNV/Indel 頂部只顯示需要處理的 GBA1 caller 警示；來源未提供 GBA1 specialized 結果時，不顯示全域黃色警示。Specialized caller 結果摘要只在 DRAGEN 個案顯示，院內流程不顯示；DRAGEN 摘要仍保留各 locus 的未提供狀態，供需要判讀該 locus 時查閱。
 
 ### 指定範圍 Somatic 分析（v9.35）
 
