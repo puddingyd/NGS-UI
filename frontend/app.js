@@ -5591,16 +5591,16 @@ function _renderConsequenceCell(raw) {
   </span>`;
 }
 
-// "舊格式，請重跑新版 pipeline" banner — shown inside the SNV card
-// whenever sample_loader rejected the TSV (old-format detection
-// raised OldFormatError). Reviewer state (status / edits / phenotype)
-// is preserved on the backend; just the variant list is empty.
+// Show actionable SNV/GBA1 warnings inside the SNV card. Missing GBA1
+// specialized caller data is only a coverage status, not a global warning.
 function _renderSnvTsvErrorBanner() {
   renderSpecializedSummary();
   const card = document.getElementById("card-snv");
   if (!card) return;
   const existing = card.querySelector(".snv-tsv-error");
-  const msg = [state.data?.snv_tsv_error || "", ...(state.data?.gba?.warnings || [])].filter(Boolean).join("；").trim();
+  const gba = state.data?.gba;
+  const gbaWarnings = gba?.status === "not_available" ? [] : (gba?.warnings || []);
+  const msg = [state.data?.snv_tsv_error || "", ...gbaWarnings].filter(Boolean).join("；").trim();
   if (!msg) {
     if (existing) existing.remove();
     return;

@@ -2,6 +2,8 @@
 
 GBA1、CYP21A2、SMN、HBA specialized caller 已整合進既有卡片與報告。三級 post-processing 會先把 targeted JSON 快照、相關 VCF 證據、正規化結果與 checksum manifest 存到 `08_postprocessing/`；平台不再回原始 JSON／VCF 補 GBA1 證據，亦不複製大型 VCF（資料包須小於 100 MB）。SMN 顯示各基因 CN 與 silent-carrier marker，HBA 保留完整 genotype；未知或定位不明的結果保留待複核狀態，不自動標為致病。健檢及診斷沿用原表格、列點及附錄；HBA 複合結果須依完整 locus 指定健檢分類，既有帶因篩檢清單補入 HBA1／HBA2。部署後舊個案可用 `python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --from-source --apply` 補建，不必重跑 Nextflow/VEP；已有資料包可離線重解析。也可用 `python3 scripts/rebuild_specialized.py --all-dragen --from-source --apply` 批次處理；`python3 scripts/scan_targeted_callers.py` 可唯讀盤點 CYP21A2／SMN／HBA 候選個案。省略 `--apply` 先驗證，既有判讀／選取保留。[資料結構、判讀規則與補建操作](docs/ops/SPECIALIZED_CALLERS.md)；[GBA1 細節](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
 
+主畫面 SNV/Indel 頂部只顯示需要處理的 GBA1 caller 警示；來源未提供 GBA1 specialized 結果時，不顯示全域黃色警示。結果摘要仍保留各 locus 的未提供狀態，供需要判讀該 locus 時查閱。
+
 ### 指定範圍 Somatic 分析（v9.35）
 
 載入個案後可在 SNV/Indel 標題旁開啟「Somatic 分析」，輸入多基因、GRCh38 座標或區間，由背景 worker 執行 Mutect2、品質過濾與註解。與完整 germline 去重後，僅新增點位併入原 SNV/Indel 卡片並標示 Somatic pipeline；germline 卡片及 read support 不變。「☑ Somatic」只在有可用的完成結果後顯示。支援三級分析同款進度條、整理後／原始 Log、取消、歷史、刪除、FILTER 複核、IGV、儲存及診斷報告；完成後自動更新主畫面。每次 run 可開啟獨立候選 modal，以完整卡片檢視所有 PASS 與被 FILTER 的點位；候選 modal 不顯示 IGV 驗證選單。主畫面的 IGV 驗證可選未確認／通過／不通過，以黃／綠／紅色顯示。annotation 共用三級 Research-only 的 dbNSFP 5.3a + P-KNN、SpliceAI、GPN-MSA 與本地 post-processing；GeneBe 在 10,000 個候選點位以下依 live API → local DB → API cache 查詢，超過門檻時沿用三級大批次的 local DB 優先流程。
