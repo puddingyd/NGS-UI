@@ -1743,6 +1743,18 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 }
 .sig-lb  { background: #dcedc8; }
 .sig-b   { background: #a5d6a7; }
+.gpn-star-record-link {
+  margin-left: 4px;
+  color: #0969da;
+  text-decoration: underline;
+}
+.gpn-star-v-score.sig-p,
+.gpn-star-v-score.sig-lp,
+.gpn-star-v-score.sig-vus,
+.gpn-star-v-score.sig-b {
+  padding: 0 4px;
+  border-radius: 3px;
+}
 .clinvar-value { line-height: 1.5; }
 .clinvar-assertion, .clinvar-stars { white-space: nowrap; }
 .clinvar-token {

@@ -560,12 +560,11 @@ function acmgDisplayClassification(classification, score, backendSubclass = "") 
 // In-silico annotations use tool-specific evidence calibration.  Do not infer
 // a generic PP3/BP4 strength from a score merely because it is 0–1: only the
 // tools backed by Pejaver 2022, Bergquist 2025, or ClinGen SVI Splicing are
-// labelled PP3/BP4 below.  Other tools are explicitly marked as model cutoffs.
+// labelled PP3/BP4 below. GPN-Star displays exploratory research bins only.
 const IN_SILICO_REFERENCES = {
   pejaver:   { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9748256/", pmid: "36413997" },
   bergquist: { url: "https://pubmed.ncbi.nlm.nih.gov/40084623/", pmid: "40084623" },
   splicing:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10357475/", pmid: "37352859" },
-  gpnstar:   { url: "https://www.nature.com/articles/s41586-026-11005-5" },
   gpnmsa:    { url: "https://www.nature.com/articles/s41587-024-02511-w", pmid: "39747647" },
   pangolin:  { url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC9022248/", pmid: "35449021" },
   pknn:      { url: "https://doi.org/10.1101/2025.09.24.678417", pmid: "" },
@@ -663,12 +662,9 @@ const IN_SILICO_CALIBRATIONS = {
   },
   gpnstar: {
     lines: [
-      "Research only；數值依 V/M 順序顯示，— 代表缺值；僅涵蓋 GRCh38 SNV",
-      "V：100 種脊椎動物（v100-200m）；M：447 種哺乳動物（m447-200m）",
-      "論文 benchmark：V 在 ClinVar missense 較佳（Fig. 2a）；M 在 OMIM/HGMD noncoding 較佳（Fig. 2e/f），不是互斥適用規則",
-      "llr_calibrated：ALT 相對 REF 的 mutation-rate-calibrated LLR；越負代表模型預測越受限制／影響越大",
-      "Mutation-rate calibration 不等於 ACMG calibration；不提供 PP3/BP4 或 benign evidence",
-    ], reference: IN_SILICO_REFERENCES.gpnstar,
+      "Pathogenic / Benign 之套色依 ClinVar (2026-10-25 版本) ≥2 stars 的 autosomal missense SNV，針對 AF <0.01 (gnomAD v4.1 joint) 之 variants 做 calibration 而成 ({{record}}) ，非正式官方公開之標準。",
+    ],
+    recordUrl: "https://github.com/puddingyd/NGS-UI/blob/claude/plan-ngs-ui-RQW8J/docs/research/GPN-Star_ClinVar_PP3_BP4_Steps01-26_Research_Log_Audited_v0.3_20261030.md",
   },
   gpnmsa: {
     lines: [
@@ -773,7 +769,16 @@ function _pknnEvidence(text) {
 }
 
 function _toolEvidence(v, tool) {
-  if (tool.key === "gpnstar") return _evidence("", "Research only; no calibrated evidence");
+  if (tool.key === "gpnstar") {
+    if (!_hasNum(v.GPN_STAR_V_score)) return _evidence("", "V100 無分數；M447 不套色");
+    const score = Number(v.GPN_STAR_V_score);
+    if (score < -11) return _evidence("sig-p", "V100: S>11（研究分箱）");
+    if (score < -9) return _evidence("sig-p", "V100: PP3 Moderate 候選（9<S≤11）");
+    if (score < -8) return _evidence("sig-lp", "V100: PP3 Supporting 候選（8<S≤9）");
+    if (score < -5) return _evidence("sig-vus", "V100: 未定級（5<S≤8）");
+    if (score < -2) return _evidence("sig-b", "V100: BP4 Moderate 候選（2<S≤5）");
+    return _evidence("sig-b", "V100: S≤2（研究分箱）");
+  }
   const x = Number(v[tool.scoreField]);
   if (!Number.isFinite(x)) return _evidence("", "Not available");
   switch (tool.key) {
@@ -881,8 +886,11 @@ function _toolEvidence(v, tool) {
 }
 
 function _annotationHint(title, lines, reference = null, options = {}) {
+  const recordLink = options.recordUrl
+    ? `<a href="${escapeAttr(options.recordUrl)}" target="_blank" rel="noopener noreferrer">紀錄</a>`
+    : "紀錄";
   const body = [`<strong>${escapeHtml(title)}</strong>`]
-    .concat((lines || []).map(line => `<div>${escapeHtml(line)}</div>`));
+    .concat((lines || []).map(line => `<div>${escapeHtml(line).replace("{{record}}", recordLink)}</div>`));
   if (reference?.url) {
     const pmid = reference.pmid ? ` (PMID: ${escapeHtml(reference.pmid)})` : "";
     body.push(`<div class="tip-reference">Reference: <a href="${escapeAttr(reference.url)}" target="_blank" rel="noopener">${escapeHtml(reference.url)}</a>${pmid}</div>`);
@@ -892,10 +900,13 @@ function _annotationHint(title, lines, reference = null, options = {}) {
   return `<button type="button" class="${className}"${dataId} aria-label="${escapeAttr(title)} 註解" data-tip-html="${escapeAttr(body.join(""))}">ⓘ</button>`;
 }
 
+function _gpnStarScoreText(score) {
+  return _hasNum(score) ? Number(score).toFixed(1) : "—";
+}
+
 function _gpnStarPairText(v) {
   // Fixed V/M order; do not turn missing values into zero or swap models.
-  return [v.GPN_STAR_V_score, v.GPN_STAR_score]
-    .map(score => _hasNum(score) ? Number(score).toFixed(1) : "—").join("/");
+  return [_gpnStarScoreText(v.GPN_STAR_V_score), _gpnStarScoreText(v.GPN_STAR_score)].join("/");
 }
 
 function _renderInSilicoCell(v, tool) {
@@ -905,13 +916,19 @@ function _renderInSilicoCell(v, tool) {
   const evidence = has ? _toolEvidence(v, tool) : _evidence("", "Not available");
   const calibration = IN_SILICO_CALIBRATIONS[tool.key] || {};
   const dynamicLines = [`本位點：${evidence.label}`].concat(calibration.lines || []);
-  const hint = _annotationHint(tool.label, dynamicLines, calibration.reference);
-  const valueTxt = tool.key === "gpnstar" ? _gpnStarPairText(v) : has
+  const hint = _annotationHint(tool.label, dynamicLines, calibration.reference, { recordUrl: calibration.recordUrl });
+  const recordLink = tool.key === "gpnstar"
+    ? `<a class="gpn-star-record-link" href="${escapeAttr(calibration.recordUrl)}" target="_blank" rel="noopener noreferrer">紀錄</a>`
+    : "";
+  const pair = tool.key === "gpnstar" ? _gpnStarPairText(v).split("/") : null;
+  const valueTxt = tool.key === "gpnstar"
+    ? `<span class="gpn-star-v-score ${evidence.cls}">${escapeHtml(pair[0])}</span>/${escapeHtml(pair[1])}`
+    : has
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
   return `<span class="in-silico-row" data-in-silico-tool="${escapeAttr(tool.key)}">`
-       + `<span class="k">${escapeHtml(tool.label)}${hint}</span>`
-       + `<span class="v ${evidence.cls}">${valueTxt}</span>`
+       + `<span class="k">${escapeHtml(tool.label)}${hint}${recordLink}</span>`
+       + `<span class="v ${tool.key === "gpnstar" ? "" : evidence.cls}">${valueTxt}</span>`
        + `</span>`;
 }
 
