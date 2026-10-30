@@ -9032,8 +9032,6 @@ document.addEventListener("click", ev => {
     saveAcmgEditor();
   } else if (t.matches(".js-btn-save")) {
     saveChanges();
-  } else if (t.matches("#btn-close-bottom")) {
-    collapseCandidateSections();
   } else if (t.matches(".btn-export-clinical")) {
     exportDiagnosticDocx();
   } else if (t.matches(".btn-export-health")) {
@@ -9330,23 +9328,6 @@ function toggleCollapsibleCard(header) {
     const ta = body.querySelector("#clinical-text, #counseling-text, #comment-text");
     if (ta) requestAnimationFrame(() => autoGrow(ta));
   }
-}
-
-function collapseCandidateSections() {
-  const host = document.getElementById("category-sections");
-  host.querySelectorAll(".cat-block:not(.tier-panel)").forEach(block => {
-    block.dataset.wasOpen = "0";
-    toggledBlocks.add(block.id);
-    block.querySelector(".block-header")?.classList.remove("open");
-    block.querySelector(".block-body")?.classList.remove("open");
-  });
-  // Also close the currently visible tier panels (SNV + CNV/SV) by
-  // deselecting their tabs. The tab strips stay put so the user can
-  // reopen any tier with one click.
-  activeTierTab = null;
-  activeCnvSvTab = null;
-  document.querySelectorAll(".tier-tab").forEach(b => b.classList.remove("active"));
-  document.querySelectorAll(".tier-panel").forEach(p => p.classList.remove("active"));
 }
 
 // ---------- Save: write reports JSON to GitHub via Contents API ----

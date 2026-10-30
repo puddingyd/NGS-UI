@@ -94,7 +94,7 @@ def test_main_comment_textarea_autogrows_like_clinical_presentation():
     assert "autoGrow(t);" in script[comment_start:comment_end]
 
     toggle_start = script.index("function toggleCollapsibleCard(header)")
-    toggle_end = script.index("function collapseCandidateSections()", toggle_start)
+    toggle_end = script.index("// ---------- Save: write reports JSON", toggle_start)
     toggle = script[toggle_start:toggle_end]
     assert '"#clinical-text, #counseling-text, #comment-text"' in toggle
 
