@@ -66,6 +66,7 @@ test('V/M pair renders one row with only V coloured, fixed order and missing pla
     assert.ok(html.includes(`class="gpn-star-v-score ${cls}">${vText}</span>/${mText}`));
     assert.ok(html.includes('class="v ">'));
     assert.ok(html.includes('>紀錄</a>'));
+    assert.ok(!html.includes('gpn-star-record-link'));
   }
   assert.equal(context._populatedInSilicoTools({GPN_STAR_V_score: '', GPN_STAR_score: null}).length, 0);
 });
@@ -95,4 +96,11 @@ test('research note links to the checked-in Markdown record', () => {
   assert.ok(html.includes('AF <0.01 (gnomAD v4.1 joint)'));
   assert.ok(html.includes('非正式官方公開之標準。'));
   assert.ok(html.includes(`href="${recordUrl}"`));
+});
+
+test('tail labels omit the research-bin parenthetical', () => {
+  const context = setup();
+  const tool = Array.from(context._populatedInSilicoTools({ GPN_STAR_V_score: -12 }))[0];
+  assert.equal(context._toolEvidence({ GPN_STAR_V_score: -12 }, tool).label, 'V100: S>11');
+  assert.equal(context._toolEvidence({ GPN_STAR_V_score: -1 }, tool).label, 'V100: S≤2');
 });

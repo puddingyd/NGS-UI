@@ -772,12 +772,12 @@ function _toolEvidence(v, tool) {
   if (tool.key === "gpnstar") {
     if (!_hasNum(v.GPN_STAR_V_score)) return _evidence("", "V100 無分數；M447 不套色");
     const score = Number(v.GPN_STAR_V_score);
-    if (score < -11) return _evidence("sig-p", "V100: S>11（研究分箱）");
+    if (score < -11) return _evidence("sig-p", "V100: S>11");
     if (score < -9) return _evidence("sig-p", "V100: PP3 Moderate 候選（9<S≤11）");
     if (score < -8) return _evidence("sig-lp", "V100: PP3 Supporting 候選（8<S≤9）");
     if (score < -5) return _evidence("sig-vus", "V100: 未定級（5<S≤8）");
     if (score < -2) return _evidence("sig-b", "V100: BP4 Moderate 候選（2<S≤5）");
-    return _evidence("sig-b", "V100: S≤2（研究分箱）");
+    return _evidence("sig-b", "V100: S≤2");
   }
   const x = Number(v[tool.scoreField]);
   if (!Number.isFinite(x)) return _evidence("", "Not available");
@@ -917,9 +917,6 @@ function _renderInSilicoCell(v, tool) {
   const calibration = IN_SILICO_CALIBRATIONS[tool.key] || {};
   const dynamicLines = [`本位點：${evidence.label}`].concat(calibration.lines || []);
   const hint = _annotationHint(tool.label, dynamicLines, calibration.reference, { recordUrl: calibration.recordUrl });
-  const recordLink = tool.key === "gpnstar"
-    ? `<a class="gpn-star-record-link" href="${escapeAttr(calibration.recordUrl)}" target="_blank" rel="noopener noreferrer">紀錄</a>`
-    : "";
   const pair = tool.key === "gpnstar" ? _gpnStarPairText(v).split("/") : null;
   const valueTxt = tool.key === "gpnstar"
     ? `<span class="gpn-star-v-score ${evidence.cls}">${escapeHtml(pair[0])}</span>/${escapeHtml(pair[1])}`
@@ -927,7 +924,7 @@ function _renderInSilicoCell(v, tool) {
     ? (pred ? `${fmtNum(score)} (${escapeHtml(pred)})` : fmtNum(score))
     : "—";
   return `<span class="in-silico-row" data-in-silico-tool="${escapeAttr(tool.key)}">`
-       + `<span class="k">${escapeHtml(tool.label)}${hint}${recordLink}</span>`
+       + `<span class="k">${escapeHtml(tool.label)}${hint}</span>`
        + `<span class="v ${tool.key === "gpnstar" ? "" : evidence.cls}">${valueTxt}</span>`
        + `</span>`;
 }

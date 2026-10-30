@@ -336,7 +336,7 @@ dbNSFP 完全由 Nextflow v3.6 負責：預設 4.9c；勾 `Research-only` 時用
 
 GPN-Star 在 MSA 下方以同一行顯示：`GPN-Star-V/M -7.0/-8.0`，固定 V/M 順序、一位小數；缺值以 `—` 佔位，兩者皆缺則隱藏，0 為有效分數。底層仍保留完整 Float32 精度，V100 以原值判定套色：`V < -11`、`-11 ≤ V < -9` 深紅 `#ef9a9a`；`-9 ≤ V < -8` 淺紅 `#ffcdd2`；`-8 ≤ V < -5` 黃 `#fff4a3`；`V ≥ -5` 綠 `#a5d6a7`。所有有效 V 分數皆套色，不依 consequence 或 AF 額外限制；只有 V 數字著色，M 維持中性。M 沿用 `GPN_STAR_SCORE`／`GPN_STAR_score`，V 使用 `GPN_STAR_V_SCORE`／`GPN_STAR_V_score`；兩者各自紀錄 annotation、signature 與成功來源（`gpn_star*`／`gpn_star_v*`）。已 opt-in 的舊 M 個案在補裝 V 後，載入時只刷新 V，不重掃 raw；尚未 opt-in 者須明確選 Research-only 或執行下方 backfill。任何模型缺失／失敗不會清掉另一套或既有成功分數。
 
-Tooltip 使用使用者指定的 ClinVar 2026-10-25、≥2 stars、autosomal missense SNV、gnomAD v4.1 joint AF <0.01 校正說明，並以「紀錄」連到 repo 的 [GPN-Star 研究紀錄](docs/research/GPN-Star_ClinVar_PP3_BP4_Steps01-26_Research_Log_Audited_v0.3_20261030.md)。分箱標籤僅為研究候選，不平均 V/M、不自動設定 ACMG cutoff 或累計證據權重。
+Tooltip 使用使用者指定的 ClinVar 2026-10-25、≥2 stars、autosomal missense SNV、gnomAD v4.1 joint AF <0.01 校正說明；「紀錄」只在 `ⓘ` 說明文字內連到 repo 的 [GPN-Star 研究紀錄](docs/research/GPN-Star_ClinVar_PP3_BP4_Steps01-26_Research_Log_Audited_v0.3_20261030.md)，卡片標題旁不重複顯示連結。兩端本位點標籤為 `V100: S>11`／`V100: S≤2`，不附「研究分箱」括號。分箱標籤僅為研究候選，不平均 V/M、不自動設定 ACMG cutoff 或累計證據權重。
 
 部署 GPN-Star（由操作者在 server 執行，使用執行 NGS-UI 的 Python 環境）：
 
