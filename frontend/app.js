@@ -663,8 +663,10 @@ const IN_SILICO_CALIBRATIONS = {
   gpnstar: {
     lines: [
       "Pathogenic / Benign 之套色依 ClinVar (2026-10-25 版本) ≥2 stars 的 autosomal missense SNV，針對 AF <0.01 (gnomAD v4.1 joint) 之 variants 做 calibration 而成 ({{record}}) ，非正式官方公開之標準。",
+      "V100 使用 S = -llr_calibrated；BP4：S≤1.7 Strong（資料稀疏，先用 Moderate 綠）；1.7<S≤3.8 Moderate；3.8<S≤5.1 Supporting。",
+      "5.1<S<8.4：未定級；PP3：8.4≤S<9.8 Supporting；9.8≤S<11.6 Moderate；S≥11.6 Strong（資料稀疏，先用 Moderate 紅）。",
     ],
-    recordUrl: "https://github.com/puddingyd/NGS-UI/blob/claude/plan-ngs-ui-RQW8J/docs/research/GPN-Star_ClinVar_PP3_BP4_Steps01-26_Research_Log_Audited_v0.3_20261030.md",
+    recordUrl: "https://github.com/puddingyd/NGS-UI/blob/claude/plan-ngs-ui-RQW8J/docs/research/GPN-Star_V100_PP3_BP4_Final_Methods_Results_Conclusion_20261030.md",
   },
   gpnmsa: {
     lines: [
@@ -772,12 +774,13 @@ function _toolEvidence(v, tool) {
   if (tool.key === "gpnstar") {
     if (!_hasNum(v.GPN_STAR_V_score)) return _evidence("", "V100 無分數；M447 不套色");
     const score = Number(v.GPN_STAR_V_score);
-    if (score < -11) return _evidence("sig-p", "V100: S>11");
-    if (score < -9) return _evidence("sig-p", "V100: PP3 Moderate 候選（9<S≤11）");
-    if (score < -8) return _evidence("sig-lp", "V100: PP3 Supporting 候選（8<S≤9）");
-    if (score < -5) return _evidence("sig-vus", "V100: 未定級（5<S≤8）");
-    if (score < -2) return _evidence("sig-b", "V100: BP4 Moderate 候選（2<S≤5）");
-    return _evidence("sig-b", "V100: S≤2");
+    if (score <= -11.6) return _evidence("sig-p", "V100: S≥11.6");
+    if (score <= -9.8) return _evidence("sig-p", "V100: PP3 Moderate 候選（9.8≤S<11.6）");
+    if (score <= -8.4) return _evidence("sig-lp", "V100: PP3 Supporting 候選（8.4≤S<9.8）");
+    if (score < -5.1) return _evidence("sig-vus", "V100: 未定級（5.1<S<8.4）");
+    if (score < -3.8) return _evidence("sig-lb", "V100: BP4 Supporting 候選（3.8<S≤5.1）");
+    if (score < -1.7) return _evidence("sig-b", "V100: BP4 Moderate 候選（1.7<S≤3.8）");
+    return _evidence("sig-b", "V100: S≤1.7");
   }
   const x = Number(v[tool.scoreField]);
   if (!Number.isFinite(x)) return _evidence("", "Not available");

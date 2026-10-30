@@ -75,10 +75,11 @@ test('V100 research colours follow full-precision bin boundaries for every V sco
   const context = setup();
   const tool = Array.from(context._populatedInSilicoTools({ GPN_STAR_V_score: -8 }))[0];
   for (const [score, cls] of [
-    [-11.0001, 'sig-p'], [-11, 'sig-p'], [-9.0001, 'sig-p'],
-    [-9, 'sig-lp'], [-8.0001, 'sig-lp'], [-8, 'sig-vus'],
-    [-6, 'sig-vus'], [-5.0001, 'sig-vus'], [-5, 'sig-b'],
-    [-2.0001, 'sig-b'], [-2, 'sig-b'], [0, 'sig-b'],
+    [-11.6001, 'sig-p'], [-11.6, 'sig-p'], [-11.5999, 'sig-p'],
+    [-9.8, 'sig-p'], [-9.7999, 'sig-lp'], [-8.4, 'sig-lp'],
+    [-8.3999, 'sig-vus'], [-5.1001, 'sig-vus'], [-5.1, 'sig-lb'],
+    [-3.8001, 'sig-lb'], [-3.8, 'sig-b'], [-1.7001, 'sig-b'],
+    [-1.7, 'sig-b'], [0, 'sig-b'],
   ]) {
     const v = { GPN_STAR_V_score: score, GPN_STAR_score: -9, CHROM: 'X', Consequence: 'intron_variant' };
     assert.equal(context._toolEvidence(v, tool).cls, cls);
@@ -89,18 +90,29 @@ test('V100 research colours follow full-precision bin boundaries for every V sco
 test('research note links to the checked-in Markdown record', () => {
   const context = setup();
   const recordUrl = vm.runInContext('IN_SILICO_CALIBRATIONS.gpnstar.recordUrl', context);
-  assert.match(recordUrl, /github\.com\/puddingyd\/NGS-UI\/blob\/.*\/docs\/research\/GPN-Star_.*\.md$/);
+  assert.match(recordUrl, /github\.com\/puddingyd\/NGS-UI\/blob\/.*\/docs\/research\/GPN-Star_V100_PP3_BP4_Final_Methods_Results_Conclusion_20261030\.md$/);
   assert.ok(fs.existsSync(path.join(__dirname, '../docs/research', path.basename(recordUrl))));
   const html = context._renderInSilicoCell({ GPN_STAR_V_score: -9 }, Array.from(context._populatedInSilicoTools({ GPN_STAR_V_score: -9 }))[0]);
   assert.ok(html.includes('ClinVar (2026-10-25 版本) ≥2 stars'));
   assert.ok(html.includes('AF <0.01 (gnomAD v4.1 joint)'));
   assert.ok(html.includes('非正式官方公開之標準。'));
   assert.ok(html.includes(`href="${recordUrl}"`));
+  for (const threshold of ['1.7', '3.8', '5.1', '8.4', '9.8', '11.6']) {
+    assert.ok(html.includes(threshold));
+  }
+  assert.ok(html.includes('資料稀疏，先用 Moderate 綠'));
+  assert.ok(html.includes('資料稀疏，先用 Moderate 紅'));
 });
 
 test('tail labels omit the research-bin parenthetical', () => {
   const context = setup();
   const tool = Array.from(context._populatedInSilicoTools({ GPN_STAR_V_score: -12 }))[0];
-  assert.equal(context._toolEvidence({ GPN_STAR_V_score: -12 }, tool).label, 'V100: S>11');
-  assert.equal(context._toolEvidence({ GPN_STAR_V_score: -1 }, tool).label, 'V100: S≤2');
+  for (const [score, expected] of [
+    [-11.6, 'V100: S≥11.6'],
+    [-11.5999, 'V100: PP3 Moderate 候選（9.8≤S<11.6）'],
+    [-1.7001, 'V100: BP4 Moderate 候選（1.7<S≤3.8）'],
+    [-1.7, 'V100: S≤1.7'],
+  ]) {
+    assert.equal(context._toolEvidence({ GPN_STAR_V_score: score }, tool).label, expected);
+  }
 });

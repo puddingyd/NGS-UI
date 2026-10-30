@@ -1746,6 +1746,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .gpn-star-v-score.sig-p,
 .gpn-star-v-score.sig-lp,
 .gpn-star-v-score.sig-vus,
+.gpn-star-v-score.sig-lb,
 .gpn-star-v-score.sig-b {
   padding: 0 4px;
   border-radius: 3px;
