@@ -97,11 +97,19 @@ test('research note links to the checked-in Markdown record', () => {
   assert.ok(html.includes('AF <0.01 (gnomAD v4.1 joint)'));
   assert.ok(html.includes('非正式官方公開之標準。'));
   assert.ok(html.includes(`href="${recordUrl}"`));
-  for (const threshold of ['1.7', '3.8', '5.1', '8.4', '9.8', '11.6']) {
-    assert.ok(html.includes(threshold));
+  assert.ok(!html.includes('本位點：'));
+  for (const line of [
+    'Threshold (V model)',
+    '- BP4_Strong：≥ -1.7 Strong（sparse data; need further validation）',
+    '- BP4_Moderate：-1.7 to -3.8',
+    '- BP4_Supporting：-3.8 to -5.1',
+    '- Indeterminate：-5.1 to -8.4',
+    '- PP3_Supporting：-8.4 to -9.8',
+    '- PP3_Moderate：-9.8 to -11.6',
+    '- PP3_Strong：≤ -11.6 Strong（sparse data; need further validation）',
+  ]) {
+    assert.ok(html.includes(line));
   }
-  assert.ok(html.includes('資料稀疏，先用 Moderate 綠'));
-  assert.ok(html.includes('資料稀疏，先用 Moderate 紅'));
 });
 
 test('tail labels omit the research-bin parenthetical', () => {

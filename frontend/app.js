@@ -663,8 +663,14 @@ const IN_SILICO_CALIBRATIONS = {
   gpnstar: {
     lines: [
       "Pathogenic / Benign 之套色依 ClinVar (2026-10-25 版本) ≥2 stars 的 autosomal missense SNV，針對 AF <0.01 (gnomAD v4.1 joint) 之 variants 做 calibration 而成 ({{record}}) ，非正式官方公開之標準。",
-      "V100 使用 S = -llr_calibrated；BP4：S≤1.7 Strong（資料稀疏，先用 Moderate 綠）；1.7<S≤3.8 Moderate；3.8<S≤5.1 Supporting。",
-      "5.1<S<8.4：未定級；PP3：8.4≤S<9.8 Supporting；9.8≤S<11.6 Moderate；S≥11.6 Strong（資料稀疏，先用 Moderate 紅）。",
+      "Threshold (V model)",
+      "- BP4_Strong：≥ -1.7 Strong（sparse data; need further validation）",
+      "- BP4_Moderate：-1.7 to -3.8",
+      "- BP4_Supporting：-3.8 to -5.1",
+      "- Indeterminate：-5.1 to -8.4",
+      "- PP3_Supporting：-8.4 to -9.8",
+      "- PP3_Moderate：-9.8 to -11.6",
+      "- PP3_Strong：≤ -11.6 Strong（sparse data; need further validation）",
     ],
     recordUrl: "https://github.com/puddingyd/NGS-UI/blob/claude/plan-ngs-ui-RQW8J/docs/research/GPN-Star_V100_PP3_BP4_Final_Methods_Results_Conclusion_20261030.md",
   },
@@ -918,7 +924,9 @@ function _renderInSilicoCell(v, tool) {
   const pred = tool.predField ? (v[tool.predField] || "").trim() : "";
   const evidence = has ? _toolEvidence(v, tool) : _evidence("", "Not available");
   const calibration = IN_SILICO_CALIBRATIONS[tool.key] || {};
-  const dynamicLines = [`本位點：${evidence.label}`].concat(calibration.lines || []);
+  const dynamicLines = tool.key === "gpnstar"
+    ? (calibration.lines || [])
+    : [`本位點：${evidence.label}`].concat(calibration.lines || []);
   const hint = _annotationHint(tool.label, dynamicLines, calibration.reference, { recordUrl: calibration.recordUrl });
   const pair = tool.key === "gpnstar" ? _gpnStarPairText(v).split("/") : null;
   const valueTxt = tool.key === "gpnstar"
