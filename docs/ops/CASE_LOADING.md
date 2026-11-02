@@ -38,3 +38,21 @@ WGS與TITAN-WGS使用相同的SNV review篩選規則。舊manifest的 `test_type
 目前的預建腳本本身已會將年＋T的個案記成TITAN-WGS，因此此修正主要保護舊／混合版本輸出及標籤轉換；不能僅憑個案名稱推定它一定遇到這個問題。
 
 本機驗證：`tests/test_review_test_type.py`、`test_gpn_msa.py`、`test_gpn_star.py`、`test_snv_overlay.py` 共46項通過，涵蓋標籤互換不重掃、不重新GPN補分，以及WES深度政策／raw／BED真實變更仍重建。
+
+## v9.74：GPN同步刷新與重疊請求
+
+現場效能紀錄確認一類延遲是GPN刷新：登錄約2.3秒，但核心資料request最久約742秒，其中review整理約738秒；另一重疊request的`action=gpn-refresh`約417秒，其後另一次約171秒。這些是重疊請求，不能相加當成單一耗時。完整5MB review的解析約2.3秒、之後cache命中約0.2秒；PRS讀取在核心資料完成後才發生。這組紀錄支持GPN刷新阻擋載入，並不支持v9.73的檢測名稱差異是此次主要原因。
+
+舊程式沒有同案寫入鎖，且manifest使用共同`.tmp`路徑；多個request可能重複補分、互搶暫存或覆蓋彼此的provider欄位。紀錄出現OSError後沿用既有review，但當時未記例外，無法單憑該行斷定具體errno。舊`error=fallback_raw`標籤亦不可靠，實際selected仍是review；新版記錄`fallback_review`及exception。
+
+本版處理：
+
+- UI的core／secondary SNV讀取若base signature有效，立即使用已發布review；可選GPN更新改排背景。同process每案去重、同時一件背景工作，同案跨process由持久flock保護；其他同步reader取得鎖後重看manifest，避免重算。
+- 更新MSA／Star M／V都在working copy，完成後一次發布；讀者可見舊完整或新完整註解。工作失敗／服務重啟會保留已發布結果；下次載入可再排程。背景完成後重新載入即可顯示新值。
+- 只有成功complete的註解可忽略runtime-only差異：Star的Polars版本、MSA的tabix路徑。資料庫、index、manifest與shard signature仍嚴格比對；失敗／缺套件狀態仍可因環境修復觸發重試。`*_values`保留成功查詢的原始provenance，不以新的runtime覆寫。
+- raw／BED／overlay／WES depth政策失效、review缺失或strict／force診斷仍需同步處理，不可用stale generation冒充有效結果；本版不保證所有首次載入永遠不需重建。
+- 新增`snv_review.gpn_start`／`gpn_done`記各provider的觸發原因、改變欄位、狀態與耗時。`gpn-background`表示已排背景，`busy-reuse`表示使用有效的舊generation；`background status=complete`指工作結束，provider是否成功仍以各自annotation status為準。
+
+當時為何首次判定GPN需要更新，仍需原manifest／執行環境或新版`gpn_start`紀錄判斷；runtime差異是已確認可觸發的不必要更新機制，不能憑現場耗時推定它就是當時的唯一觸發原因。
+
+本機52項相關測試通過：原有lookup／版本刷新／overlay／WGS policy回歸，加上runtime-only不重查、背景排程、重疊請求只查一次、讀者不見M/V中間狀態、background失敗釋放名額、raw變更時不得盲用舊review及strict／force不被延後。未SSH、未部署；院內實際載入耗時需更新服務後驗證。

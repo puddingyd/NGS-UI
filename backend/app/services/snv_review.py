@@ -7,10 +7,15 @@ changes, the next sample load rebuilds it atomically.
 from __future__ import annotations
 
 import csv
+import fcntl
+import functools
 import bisect
 import json
 import os
 import re
+import shutil
+import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -276,39 +281,181 @@ def is_review_retained(
     )
 
 
+def _base_review_source(raw_tsv, test_type, overlay_path):
+    stat = Path(raw_tsv).stat()
+    return {
+        "raw_mtime_ns": stat.st_mtime_ns, "raw_size": stat.st_size,
+        "max_gnomad_g_af": MAX_GNOMAD_G_AF, "test_type": test_type,
+        "wes_dp_hard_floor": WES_DP_HARD_FLOOR if test_type == "WES" else None,
+        "candidate_bed": _bed_signature(_candidate_bed_path()),
+        "overlay": overlay_signature(raw_tsv, overlay_path),
+    }
+
+
+def _base_changes(current, source):
+    return [key for key, value in source.items() if (
+        _filter_test_type(current.get(key)) != _filter_test_type(value)
+        if key == "test_type" else current.get(key) != value
+    )]
+
+
+def _paths(raw_tsv, options):
+    directory = (Path(options['output_path']).parent if options.get('output_path') is not None
+                 else Path(options.get('output_dir') or Path(raw_tsv).parent))
+    review = Path(options.get('output_path') or directory / REVIEW_TSV_NAME)
+    marker = Path(options.get('manifest_path') or review.with_suffix(review.suffix+'.source.json'))
+    return review, marker
+
+
+def _read_manifest(path):
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+        return value if isinstance(value, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _serialize_review(function):
+    @functools.wraps(function)
+    def guarded(raw_tsv, **options):
+        if options.get('refresh_in_background') and any(options.get(key) for key in (
+                'require_gpn_msa', 'require_gpn_star', 'force_gpn_msa', 'force_gpn_star')):
+            raise ValueError('Required/forced GPN annotation must run synchronously')
+        review, marker = _paths(raw_tsv, options)
+        review.parent.mkdir(parents=True, exist_ok=True)
+        # Persistent inode: never unlink this lock while another writer may wait.
+        lock = review.with_name('.'+review.name+'.lock')
+        with lock.open('a') as handle:
+            waiting = time.perf_counter()
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                # A published, valid generation is safe to read while optional
+                # GPN work builds its replacement. Never return a stale raw/filter
+                # generation merely because a writer happens to be busy.
+                if options.get('refresh_in_background') and review.is_file():
+                    source = _base_review_source(raw_tsv, (options.get('test_type') or 'WES').upper(), options.get('overlay_path'))
+                    if not _base_changes(_read_manifest(marker), source):
+                        _log_perf('snv_review.ensure', waiting, action='busy-reuse', review=review.name)
+                        return review
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                _log_perf('snv_review.lock_wait', waiting, review=review.name)
+            try:
+                return function(Path(raw_tsv), **options)
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+    return guarded
+
+
+_background_guard = threading.Lock()
+_background_pending: set[str] = set()
+_background_slot = threading.Semaphore(1)
+
+
+def _enqueue_gpn_refresh(raw_tsv, options):
+    review, _ = _paths(raw_tsv, options)
+    key = str(review.resolve())
+    with _background_guard:
+        if key in _background_pending:
+            return
+        _background_pending.add(key)
+    def work():
+        started = time.perf_counter()
+        try:
+            # One optional background GPN job at a time per web process.
+            with _background_slot:
+                ensure_review_tsv(raw_tsv, **options)
+            _log_perf('snv_review.background', started, review=review.name, status='complete')
+        except Exception as exc:
+            _log_perf('snv_review.background', started, review=review.name,
+                      status='failed', error=repr(exc))
+        finally:
+            with _background_guard:
+                _background_pending.discard(key)
+    thread = threading.Thread(target=work, name='gpn-review-refresh', daemon=True)
+    try:
+        thread.start()
+    except Exception:
+        with _background_guard:
+            _background_pending.discard(key)
+        raise
+
+
+def _gpn_signature_matches(name, previous, source, status):
+    if previous == source:
+        return True
+    # Successful scores are a lookup of fixed data. Package versions and tool
+    # paths remain provenance, but are not a new score database. For failed or
+    # missing providers retain exact runtime comparison so installation enables
+    # retry. All actual DB/index/manifest/shard signatures remain strict.
+    if status != 'complete' or not isinstance(previous, dict) or not isinstance(source, dict):
+        return False
+    runtime_key = 'tabix' if name == 'gpn_msa' else 'polars'
+    return ({k:v for k,v in previous.items() if k != runtime_key}
+            == {k:v for k,v in source.items() if k != runtime_key})
+
+
+def _gpn_plan(source, previous, *, research_only, require_msa, require_star, force_msa, force_star):
+    for name, module, required, force, extra in (
+        ('gpn_msa', gpn_msa, require_msa, force_msa, {}),
+        ('gpn_star', gpn_star, require_star, force_star, {}),
+        ('gpn_star_v', gpn_star, require_star, force_star, {'model':gpn_star.V_MODEL}),
+    ):
+        if name.startswith('gpn_star') and not research_only:
+            continue
+        status = (previous.get(name+'_annotation') or {}).get('status')
+        if (status and not force and (not required or status == 'complete')
+                and _gpn_signature_matches(name, previous.get(name), source[name], status)):
+            continue
+        old = previous.get(name) or {}
+        changed = sorted(k for k in set(old) | set(source[name]) if old.get(k) != source[name].get(k))
+        reason = 'forced' if force else 'missing_status' if not status else 'signature_changed' if changed else 'required_retry'
+        yield name, module, required, extra, reason, changed
+
+
 def _refresh_gpn_annotations(
     tsv: Path, source: dict, previous: dict, *,
     msa_db: Path, star_dir: Path, research_only: bool,
     require_msa: bool, require_star: bool, force_msa: bool, force_star: bool,
 ) -> tuple[dict, bool]:
-    """Refresh each independent predictor only when its own signature changes."""
+    """Stage every provider's changes, then publish one complete TSV."""
     payload = {**previous, **source}
-    refreshed = False
-    for name, module, database, required, force, options in (
-        ("gpn_msa", gpn_msa, msa_db, require_msa, force_msa, {}),
-        ("gpn_star", gpn_star, star_dir, require_star, force_star, {}),
-        ("gpn_star_v", gpn_star, star_dir, require_star, force_star, {"model": gpn_star.V_MODEL}),
-    ):
-        if name.startswith("gpn_star") and not research_only:
-            # This controls new annotation, not visibility of existing scores.
-            # Keep previous *_values provenance for scores already on disk.
-            payload[f"{name}_annotation"] = {"status": "skipped_not_research_only"}
-            continue
-        status = previous.get(f"{name}_annotation") or {}
-        if (previous.get(name) == source[name] and status.get("status")
-                and not force and (not required or status["status"] == "complete")):
-            continue
-        stats = module.annotate_review_tsv(tsv, database, required=required, **options)
-        payload[f"{name}_annotation"] = stats
-        if stats["status"] == "complete":
-            payload[f"{name}_values"] = {
-                **source[name],
-                **({"revision": stats["revision"]} if name.startswith("gpn_star") else {}),
-            }
-        refreshed = True
-    return payload, refreshed or payload != previous
+    for name in ('gpn_star', 'gpn_star_v'):
+        if not research_only:
+            payload[name+'_annotation'] = {'status':'skipped_not_research_only'}
+    plan = list(_gpn_plan(source, previous, research_only=research_only,
+                         require_msa=require_msa, require_star=require_star,
+                         force_msa=force_msa, force_star=force_star))
+    if not plan:
+        return payload, payload != previous
+    fd, work_name = tempfile.mkstemp(prefix='.'+tsv.name+'.gpn-', suffix='.tsv', dir=tsv.parent)
+    os.close(fd)
+    work = Path(work_name)
+    try:
+        shutil.copyfile(tsv, work)
+        updated = False
+        for name, module, required, extra, reason, changed in plan:
+            started = time.perf_counter()
+            _log_perf('snv_review.gpn_start', started, review=tsv.name, provider=name,
+                      reason=reason, changed_fields=','.join(changed))
+            stats = module.annotate_review_tsv(work, msa_db if name == 'gpn_msa' else star_dir,
+                                               required=required, **extra)
+            _log_perf('snv_review.gpn_done', started, review=tsv.name, provider=name, status=stats['status'])
+            payload[name+'_annotation'] = stats
+            if stats['status'] == 'complete':
+                updated = True
+                payload[name+'_values'] = {
+                    **source[name],
+                    **({'revision':stats['revision']} if name.startswith('gpn_star') else {}),
+                }
+        if updated:
+            os.replace(work, tsv)
+        return payload, True
+    finally:
+        work.unlink(missing_ok=True)
 
 
+@_serialize_review
 def ensure_review_tsv(
     raw_tsv: Path,
     *,
@@ -325,17 +472,19 @@ def ensure_review_tsv(
     gpn_star_dir: Path | None = None,
     require_gpn_star: bool = False,
     force_gpn_star: bool = False,
+    refresh_in_background: bool = False,
 ) -> Path:
     """Return a compact review TSV with MSA and opt-in Research-only Star.
 
     Loaders omit research_only to inherit the persisted explicit opt-in.
     Legacy manifests without that flag never enable new Star annotation.
     Pipeline calls always pass a bool, so a new run records its own choice.
+    UI loaders set refresh_in_background to reuse valid published rows while
+    optional GPN changes are prepared; raw/filter changes still require rebuild.
     """
     started = time.perf_counter()
     keep_ids = keep_ids or set()
     test_type_key = (test_type or "WES").upper()
-    is_wes = test_type_key == "WES"
     output_dir = (
         Path(output_path).parent
         if output_path is not None
@@ -348,12 +497,7 @@ def ensure_review_tsv(
         if manifest_path is not None
         else review_tsv.with_suffix(review_tsv.suffix + ".source.json")
     )
-    try:
-        current = json.loads(manifest.read_text(encoding="utf-8"))
-        if not isinstance(current, dict):
-            current = {}
-    except (OSError, json.JSONDecodeError):
-        current = {}
+    current = _read_manifest(manifest)
     star_enabled = (research_only if research_only is not None
                     else current.get("gpn_star_research_only") is True)
     if require_gpn_star and not star_enabled:
@@ -366,14 +510,9 @@ def ensure_review_tsv(
     if require_gpn_star:
         for model in gpn_star.MODELS:
             gpn_star.validate_database(selected_gpn_star_dir, model=model)
+    base_source = _base_review_source(raw_tsv, test_type_key, overlay_path)
     source = {
-        "raw_mtime_ns": raw_tsv.stat().st_mtime_ns,
-        "raw_size": raw_tsv.stat().st_size,
-        "max_gnomad_g_af": MAX_GNOMAD_G_AF,
-        "test_type": test_type_key,
-        "wes_dp_hard_floor": WES_DP_HARD_FLOOR if is_wes else None,
-        "candidate_bed": _bed_signature(candidate_bed_path),
-        "overlay": overlay_signature(raw_tsv, overlay_path),
+        **base_source,
         "gpn_msa": gpn_msa.database_signature(selected_gpn_msa_db),
         "gpn_star_research_only": star_enabled,
         "gpn_star_v": (gpn_star.database_signature(selected_gpn_star_dir, model=gpn_star.V_MODEL)
@@ -387,16 +526,25 @@ def ensure_review_tsv(
         "require_msa": require_gpn_msa, "require_star": require_gpn_star,
         "force_msa": force_gpn_msa, "force_star": force_gpn_star,
     }
-    changed_fields = [
-        key for key, value in source.items()
-        if key not in {"gpn_msa", "gpn_star", "gpn_star_v", "gpn_star_research_only"}
-        and (
-            _filter_test_type(current.get(key)) != _filter_test_type(value)
-            if key == "test_type" else current.get(key) != value
-        )
-    ]
+    changed_fields = _base_changes(current, base_source)
     non_gpn_matches = not changed_fields
     if review_tsv.is_file() and non_gpn_matches:
+        if refresh_in_background and any(_gpn_plan(
+                source, current, research_only=star_enabled,
+                require_msa=require_gpn_msa, require_star=require_gpn_star,
+                force_msa=force_gpn_msa, force_star=force_gpn_star)):
+            try:
+                _enqueue_gpn_refresh(raw_tsv, dict(
+                    keep_ids=set(keep_ids), test_type=test_type, output_path=review_tsv,
+                    manifest_path=manifest, overlay_path=overlay_path,
+                    gpn_msa_db=selected_gpn_msa_db, gpn_star_dir=selected_gpn_star_dir,
+                    research_only=research_only,
+                ))
+            except Exception as exc:
+                _log_perf('snv_review.background', started, review=review_tsv.name,
+                          status='not_started', error=repr(exc))
+            _log_perf('snv_review.ensure', started, action='gpn-background', review=review_tsv.name)
+            return review_tsv
         payload, refreshed = _refresh_gpn_annotations(
             review_tsv, source, current, **annotation_options,
         )

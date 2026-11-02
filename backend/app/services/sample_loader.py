@@ -1992,13 +1992,14 @@ def load_sample_secondary_snv(
         snv_tsv = snv_review.ensure_review_tsv(
             raw_snv_tsv,
             keep_ids=set(),
+            refresh_in_background=True,
             test_type=test_type,
             output_dir=sub,
             output_path=sample_layout.review_tsv(sample_id, for_write=True),
             manifest_path=sample_layout.review_manifest(sample_id, for_write=True),
             overlay_path=sample_layout.snv_overlay_path(sample_id),
         )
-    except OSError:
+    except OSError as exc:
         if not review_tsv.is_file():
             categories = {category: [] for category in SECONDARY_SNV_PANELS}
             _log_perf(
@@ -2018,6 +2019,8 @@ def load_sample_secondary_snv(
                 "secondary_pending": False,
             }
         snv_tsv = review_tsv
+        _log_perf('sample.review_tsv', started, sample=sample_id,
+                  selected=snv_tsv.name, error='fallback_review', exception=repr(exc))
     all_variants, tiers, _pheno, _old_format_error = _load_enriched_snv_cached(
         snv_tsv,
         sample_id=sample_id,
@@ -2094,6 +2097,7 @@ def load_sample(sample_id: str, version: str | None = None,
             snv_tsv = snv_review.ensure_review_tsv(
                 raw_snv_tsv,
                 keep_ids=reported_ids,
+                refresh_in_background=True,
                 test_type=_meta_early["test_type"],
                 output_dir=sub,
                 output_path=sample_layout.review_tsv(sample_id, for_write=True),
@@ -2108,7 +2112,7 @@ def load_sample(sample_id: str, version: str | None = None,
                 raw_size=_fmt_size(raw_snv_tsv),
                 review_size=_fmt_size(snv_tsv),
             )
-        except OSError:
+        except OSError as exc:
             # Read-only / temporarily full disks should not break the
             # reviewer page. Prefer the last compact derived TSV (which
             # already contains overlay fields), then fall back to raw.
@@ -2119,7 +2123,8 @@ def load_sample(sample_id: str, version: str | None = None,
                 review_started,
                 sample=sample_id,
                 selected=snv_tsv.name,
-                error="fallback_raw",
+                error="fallback_review" if snv_tsv == existing_review else "fallback_raw",
+                exception=repr(exc),
                 raw_size=_fmt_size(raw_snv_tsv),
             )
     # Read meta early so the WES/WGS depth gate in load_snv_tsv kicks

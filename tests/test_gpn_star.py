@@ -556,3 +556,137 @@ def test_download_v_addition_keeps_active_m_and_partial_files_separate(tmp_path,
     assert len([p for p in transfers if gpn_star.MODEL in p.parts]) == 24
     assert (dest / 'manifest.json').read_bytes() == old_marker
     assert gpn_star.query_scores(dest, {('1', 10, 'A', 'G')}, gpn_star.V_MODEL)[('1', 10, 'A', 'G')] == '-7'
+
+
+def test_runtime_only_changes_do_not_requery_completed_scores(tmp_path, dual_bundle, msa_db, monkeypatch):
+    raw = tmp_path / 'raw.tsv'
+    write_tsv(raw, [row()])
+    monkeypatch.setattr(snv_review, '_candidate_bed_path', lambda: tmp_path / 'no.bed')
+    args = dict(test_type='WGS', output_dir=tmp_path/'post', gpn_msa_db=msa_db[0],
+                gpn_star_dir=dual_bundle, research_only=True)
+    review = snv_review.ensure_review_tsv(raw, **args)
+    marker = review.with_suffix(review.suffix+'.source.json')
+    saved = json.loads(marker.read_text())
+    saved['gpn_msa']['tabix'] = {'requested':'old-tool','path':'/old/tabix','exists':True}
+    saved['gpn_star']['polars'] = saved['gpn_star_v']['polars'] = 'old-runtime'
+    marker.write_text(json.dumps(saved))
+    before = review.read_bytes(), review.stat().st_mtime_ns
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Runtime-only differences must not query fixed score data again')
+    monkeypatch.setattr(gpn_star, 'annotate_review_tsv', forbidden)
+    monkeypatch.setattr(gpn_msa, 'annotate_review_tsv', forbidden)
+    snv_review.ensure_review_tsv(raw, **args)
+    assert (review.read_bytes(), review.stat().st_mtime_ns) == before
+    current = json.loads(marker.read_text())
+    for key in ('gpn_msa_values','gpn_star_values','gpn_star_v_values'):
+        assert current[key] == saved[key]  # Provenance of actual successful query survives.
+
+
+def test_background_refresh_returns_existing_review_then_updates(tmp_path, dual_bundle, monkeypatch):
+    raw = tmp_path/'raw.tsv';write_tsv(raw,[row()])
+    monkeypatch.setattr(snv_review, '_candidate_bed_path', lambda: tmp_path/'no.bed')
+    args = dict(test_type='WGS',output_dir=tmp_path/'post',gpn_star_dir=dual_bundle,research_only=True)
+    review=snv_review.ensure_review_tsv(raw,**args)
+    marker=gpn_star.manifest_path(dual_bundle,gpn_star.V_MODEL)
+    data=json.loads(marker.read_text());data['revision']='b'*40;marker.write_text(json.dumps(data))
+    pending=[]
+    monkeypatch.setattr(snv_review,'_enqueue_gpn_refresh',lambda raw,options:pending.append((raw,options)))
+    before=review.read_bytes(),review.stat().st_mtime_ns
+    assert snv_review.ensure_review_tsv(raw,**args,refresh_in_background=True)==review
+    assert len(pending)==1 and (review.read_bytes(),review.stat().st_mtime_ns)==before
+    # Background callback uses the ordinary locked writer and only the changed V model.
+    calls=[]
+    query=gpn_star.query_scores
+    def spy(root,keys,model):calls.append(model);return query(root,keys,model)
+    monkeypatch.setattr(gpn_star,'query_scores',spy)
+    snv_review.ensure_review_tsv(pending[0][0],**pending[0][1])
+    assert calls==[gpn_star.V_MODEL]
+
+
+def test_concurrent_refresh_is_single_writer_and_readers_see_full_generation(tmp_path,dual_bundle,monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    raw=tmp_path/'raw.tsv';write_tsv(raw,[row()])
+    monkeypatch.setattr(snv_review,'_candidate_bed_path',lambda:tmp_path/'no.bed')
+    args=dict(test_type='WGS',output_dir=tmp_path/'post',gpn_star_dir=dual_bundle,research_only=True)
+    review=snv_review.ensure_review_tsv(raw,**args)
+    before=review.read_bytes()
+    for model in gpn_star.MODELS:
+        path=gpn_star.manifest_path(dual_bundle,model)
+        data=json.loads(path.read_text());data['revision']='b'*40;path.write_text(json.dumps(data))
+    entered,release=threading.Event(),threading.Event()
+    calls=[]
+    def query(root,keys,model):
+        calls.append(model)
+        if model==gpn_star.V_MODEL:
+            entered.set()
+            assert release.wait(5),'test did not release V query'
+        return {key:('-10' if model==gpn_star.MODEL else '-20') for key in keys}
+    monkeypatch.setattr(gpn_star,'query_scores',query)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first=pool.submit(snv_review.ensure_review_tsv,raw,**args)
+        try:
+            assert entered.wait(5)
+            # M is already updated in the working file, while published M/V stay intact.
+            assert review.read_bytes()==before
+            second=pool.submit(snv_review.ensure_review_tsv,raw,**args)
+            assert snv_review.ensure_review_tsv(raw,**args,refresh_in_background=True)==review
+            assert review.read_bytes()==before
+        finally:
+            release.set()
+        assert first.result(timeout=5)==second.result(timeout=5)==review
+    assert calls==list(gpn_star.MODELS)
+    actual=read_tsv(review)[0]
+    assert actual['GPN_STAR_SCORE']=='-10' and actual['GPN_STAR_V_SCORE']=='-20'
+    assert not list(review.parent.glob('*.tmp'))
+    assert not list(review.parent.glob('.*.gpn-*.tsv'))
+
+
+def test_background_queue_coalesces_and_releases_slot_on_error(tmp_path,monkeypatch):
+    import threading
+    entered,release=threading.Event(),threading.Event()
+    finished=[]
+    original_thread=threading.Thread
+    threads=[]
+    def thread(*args,**kwargs):
+        item=original_thread(*args,**kwargs);threads.append(item);return item
+    monkeypatch.setattr(snv_review.threading,'Thread',thread)
+    def fail(*args,**kwargs):
+        entered.set();assert release.wait(5);finished.append(1);raise OSError('test failure')
+    monkeypatch.setattr(snv_review,'ensure_review_tsv',fail)
+    args={'output_dir':tmp_path}
+    snv_review._enqueue_gpn_refresh(tmp_path/'raw.tsv',args)
+    assert entered.wait(5)
+    snv_review._enqueue_gpn_refresh(tmp_path/'raw.tsv',args)
+    assert len(threads)==1
+    release.set();threads[0].join(5)
+    assert not threads[0].is_alive() and finished==[1]
+    with snv_review._background_guard:
+        assert str((tmp_path/snv_review.REVIEW_TSV_NAME).resolve()) not in snv_review._background_pending
+
+
+def test_busy_writer_cannot_make_ui_reuse_stale_raw_generation(tmp_path,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    raw=tmp_path/'raw.tsv';write_tsv(raw,[row()])
+    monkeypatch.setattr(snv_review,'_candidate_bed_path',lambda:tmp_path/'no.bed')
+    args=dict(test_type='WGS',output_dir=tmp_path/'post',gpn_star_dir=tmp_path/'absent')
+    review=snv_review.ensure_review_tsv(raw,**args)
+    write_tsv(raw,[row(),row(pos=11)])
+    lock=review.with_name('.'+review.name+'.lock')
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with lock.open('a') as handle:
+            fcntl.flock(handle,fcntl.LOCK_EX)
+            future=pool.submit(snv_review.ensure_review_tsv,raw,**args,refresh_in_background=True)
+            try:
+                with pytest.raises(TimeoutError):future.result(timeout=.1)
+            finally:
+                fcntl.flock(handle,fcntl.LOCK_UN)
+        assert future.result(timeout=5)==review
+    assert len(read_tsv(review))==2
+
+
+def test_required_or_forced_annotation_cannot_be_silently_deferred(tmp_path):
+    for flag in ('require_gpn_msa','require_gpn_star','force_gpn_msa','force_gpn_star'):
+        with pytest.raises(ValueError,match='synchronously'):
+            snv_review.ensure_review_tsv(tmp_path/'raw.tsv',output_dir=tmp_path,
+                                        refresh_in_background=True,**{flag:True})
