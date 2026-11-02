@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import signal
+import sys
 import subprocess
 import time
 import uuid
@@ -1027,7 +1028,7 @@ def start_job(
         encoding="utf-8",
     )
     cmd = [
-        "python3", "-m", "app.workers.dragen_run",
+        sys.executable, "-m", "app.workers.dragen_run",
         "--job-id",  job_id,
         "--batch-json", str(batch_path),
         "--mode",    mode,

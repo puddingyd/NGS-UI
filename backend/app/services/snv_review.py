@@ -15,7 +15,6 @@ import os
 import re
 import shutil
 import tempfile
-import threading
 import time
 from pathlib import Path
 
@@ -318,9 +317,9 @@ def _read_manifest(path):
 def _serialize_review(function):
     @functools.wraps(function)
     def guarded(raw_tsv, **options):
-        if options.get('refresh_in_background') and any(options.get(key) for key in (
+        if not options.get('compute_gpn', True) and any(options.get(key) for key in (
                 'require_gpn_msa', 'require_gpn_star', 'force_gpn_msa', 'force_gpn_star')):
-            raise ValueError('Required/forced GPN annotation must run synchronously')
+            raise ValueError('Required/forced GPN annotation needs compute_gpn=True')
         review, marker = _paths(raw_tsv, options)
         review.parent.mkdir(parents=True, exist_ok=True)
         # Persistent inode: never unlink this lock while another writer may wait.
@@ -333,7 +332,7 @@ def _serialize_review(function):
                 # A published, valid generation is safe to read while optional
                 # GPN work builds its replacement. Never return a stale raw/filter
                 # generation merely because a writer happens to be busy.
-                if options.get('refresh_in_background') and review.is_file():
+                if not options.get('compute_gpn', True) and review.is_file():
                     source = _base_review_source(raw_tsv, (options.get('test_type') or 'WES').upper(), options.get('overlay_path'))
                     if not _base_changes(_read_manifest(marker), source):
                         _log_perf('snv_review.ensure', waiting, action='busy-reuse', review=review.name)
@@ -345,40 +344,6 @@ def _serialize_review(function):
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
     return guarded
-
-
-_background_guard = threading.Lock()
-_background_pending: set[str] = set()
-_background_slot = threading.Semaphore(1)
-
-
-def _enqueue_gpn_refresh(raw_tsv, options):
-    review, _ = _paths(raw_tsv, options)
-    key = str(review.resolve())
-    with _background_guard:
-        if key in _background_pending:
-            return
-        _background_pending.add(key)
-    def work():
-        started = time.perf_counter()
-        try:
-            # One optional background GPN job at a time per web process.
-            with _background_slot:
-                ensure_review_tsv(raw_tsv, **options)
-            _log_perf('snv_review.background', started, review=review.name, status='complete')
-        except Exception as exc:
-            _log_perf('snv_review.background', started, review=review.name,
-                      status='failed', error=repr(exc))
-        finally:
-            with _background_guard:
-                _background_pending.discard(key)
-    thread = threading.Thread(target=work, name='gpn-review-refresh', daemon=True)
-    try:
-        thread.start()
-    except Exception:
-        with _background_guard:
-            _background_pending.discard(key)
-        raise
 
 
 def _gpn_signature_matches(name, previous, source, status):
@@ -472,15 +437,15 @@ def ensure_review_tsv(
     gpn_star_dir: Path | None = None,
     require_gpn_star: bool = False,
     force_gpn_star: bool = False,
-    refresh_in_background: bool = False,
+    compute_gpn: bool = True,
 ) -> Path:
     """Return a compact review TSV with MSA and opt-in Research-only Star.
 
     Loaders omit research_only to inherit the persisted explicit opt-in.
     Legacy manifests without that flag never enable new Star annotation.
     Pipeline calls always pass a bool, so a new run records its own choice.
-    UI loaders set refresh_in_background to reuse valid published rows while
-    optional GPN changes are prepared; raw/filter changes still require rebuild.
+    UI loaders set compute_gpn=False: opening a case never queries GPN data.
+    Raw/filter changes may still rebuild rows, marked pending_postprocessing.
     """
     started = time.perf_counter()
     keep_ids = keep_ids or set()
@@ -503,6 +468,12 @@ def ensure_review_tsv(
     if require_gpn_star and not star_enabled:
         raise ValueError("GPN-Star requires explicit Research-only opt-in")
     candidate_bed_path = _candidate_bed_path()
+    base_source = _base_review_source(raw_tsv, test_type_key, overlay_path)
+    changed_fields = _base_changes(current, base_source)
+    non_gpn_matches = not changed_fields
+    if not compute_gpn and review_tsv.is_file() and non_gpn_matches:
+        _log_perf('snv_review.ensure', started, action='read-only', review=review_tsv.name)
+        return review_tsv
     selected_gpn_msa_db = Path(gpn_msa_db or gpn_msa.GPN_MSA_DB)
     selected_gpn_star_dir = Path(gpn_star_dir or gpn_star.GPN_STAR_DIR)
     if require_gpn_msa:
@@ -510,15 +481,14 @@ def ensure_review_tsv(
     if require_gpn_star:
         for model in gpn_star.MODELS:
             gpn_star.validate_database(selected_gpn_star_dir, model=model)
-    base_source = _base_review_source(raw_tsv, test_type_key, overlay_path)
     source = {
         **base_source,
-        "gpn_msa": gpn_msa.database_signature(selected_gpn_msa_db),
         "gpn_star_research_only": star_enabled,
+        "gpn_msa": (gpn_msa.database_signature(selected_gpn_msa_db) if compute_gpn else {'computed':False}),
         "gpn_star_v": (gpn_star.database_signature(selected_gpn_star_dir, model=gpn_star.V_MODEL)
-                       if star_enabled else {"enabled": False}),
+                       if compute_gpn and star_enabled else {"enabled": False}),
         "gpn_star": (gpn_star.database_signature(selected_gpn_star_dir)
-                     if star_enabled else {"enabled": False}),
+                     if compute_gpn and star_enabled else {"enabled": False}),
     }
     annotation_options = {
         "msa_db": selected_gpn_msa_db, "star_dir": selected_gpn_star_dir,
@@ -526,25 +496,7 @@ def ensure_review_tsv(
         "require_msa": require_gpn_msa, "require_star": require_gpn_star,
         "force_msa": force_gpn_msa, "force_star": force_gpn_star,
     }
-    changed_fields = _base_changes(current, base_source)
-    non_gpn_matches = not changed_fields
     if review_tsv.is_file() and non_gpn_matches:
-        if refresh_in_background and any(_gpn_plan(
-                source, current, research_only=star_enabled,
-                require_msa=require_gpn_msa, require_star=require_gpn_star,
-                force_msa=force_gpn_msa, force_star=force_gpn_star)):
-            try:
-                _enqueue_gpn_refresh(raw_tsv, dict(
-                    keep_ids=set(keep_ids), test_type=test_type, output_path=review_tsv,
-                    manifest_path=manifest, overlay_path=overlay_path,
-                    gpn_msa_db=selected_gpn_msa_db, gpn_star_dir=selected_gpn_star_dir,
-                    research_only=research_only,
-                ))
-            except Exception as exc:
-                _log_perf('snv_review.background', started, review=review_tsv.name,
-                          status='not_started', error=repr(exc))
-            _log_perf('snv_review.ensure', started, action='gpn-background', review=review_tsv.name)
-            return review_tsv
         payload, refreshed = _refresh_gpn_annotations(
             review_tsv, source, current, **annotation_options,
         )
@@ -608,7 +560,16 @@ def ensure_review_tsv(
             if batch:
                 writer.writerows(overlay.apply_many(batch))
     try:
-        payload, _ = _refresh_gpn_annotations(tmp, source, {}, **annotation_options)
+        if compute_gpn:
+            payload, _ = _refresh_gpn_annotations(tmp, source, {}, **annotation_options)
+        else:
+            # A genuine raw/filter change invalidates the old generation. UI
+            # may rebuild filtered rows, but must not silently start predictors.
+            payload = {**source, **{
+                name+'_annotation': {'status':('skipped_not_research_only'
+                    if name.startswith('gpn_star') and not star_enabled else 'pending_postprocessing')}
+                for name in ('gpn_msa','gpn_star','gpn_star_v')
+            }}
         os.replace(tmp, review_tsv)
     except Exception:
         try:

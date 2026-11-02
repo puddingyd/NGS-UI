@@ -477,3 +477,28 @@ def test_generation_promotion_removes_old_pgx_when_rerun_disables_it(tmp_path):
     assert not old_pgx.exists()
     dragen_run._rollback_promotion_operations(operations)
     assert (old_pgx / "old.pgx.tsv").is_file()
+
+
+def test_gpn_completion_surfaces_missing_research_scores(tmp_path,monkeypatch):
+    post=tmp_path/'post';post.mkdir()
+    path=post/'S1.snv_indel.review.tsv.source.json'
+    path.write_text(json.dumps({'gpn_star_research_only':True,'gpn_msa_annotation':{'status':'complete'},
+        'gpn_star_annotation':{'status':'skipped_missing_polars'},'gpn_star_v_annotation':{'status':'skipped_missing_polars'}}))
+    saved={}
+    monkeypatch.setattr(dragen_run.dragen_jobs,'load_state',lambda jid:saved)
+    monkeypatch.setattr(dragen_run,'_update',lambda jid,**kw:saved.update(kw))
+    dragen_run._record_gpn_completion('job','S1',post,True)
+    assert len(saved['annotation_warnings'])==2
+    assert saved['gpn_annotations']['S1']['gpn_msa']=='complete'
+    with pytest.raises(RuntimeError,match='flag does not match'):
+        dragen_run._record_gpn_completion('job','S1',post,False)
+
+
+def test_pipeline_source_records_research_choice_and_job(tmp_path):
+    source=tmp_path/'raw.tsv';source.write_text('raw')
+    post=tmp_path/'post';post.mkdir()
+    dragen_run._track_pipeline_source('S1',post,source,source_sample_id='SOURCE',
+        source_vcf_path=str(source),pipeline_type='dragen',seq_type='WGS',
+        research_only=False,job_id='job')
+    payload=json.loads((post/'S1.pipeline_source.json').read_text())
+    assert payload['research_only'] is False and payload['job_id']=='job'

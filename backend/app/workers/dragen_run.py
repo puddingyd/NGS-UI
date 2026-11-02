@@ -1245,6 +1245,8 @@ def _track_pipeline_source(
     source_vcf_path: str,
     pipeline_type: str,
     seq_type: str = "",
+    research_only: bool | None = None,
+    job_id: str = "",
     published_source: Path | None = None,
 ) -> None:
     """Write a small audit record so the reviewer (and a future
@@ -1268,6 +1270,8 @@ def _track_pipeline_source(
         "source_vcf_path": source_vcf_path,
         "pipeline_type": pipeline_type,
         "seq_type": seq_type,
+        "research_only": research_only,
+        "job_id": job_id,
         "annotated_at": _now(),
     }
     sample_layout.scoped_file(
@@ -1521,6 +1525,30 @@ def _run_cnv_rescue_for_sample(*, mode: str, sample: dict, base_tsv: Path,
     )
 
 
+def _record_gpn_completion(job_id: str, sample_id: str, post_dir: Path, research_only: bool) -> None:
+    """Optional predictor failure is visible in the tertiary result, never repaired by a GET."""
+    path = post_dir / f'{sample_id}.snv_indel.review.tsv.source.json'
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    statuses = {name:(payload.get(name+'_annotation') or {}).get('status','not_reported')
+                for name in ('gpn_msa','gpn_star','gpn_star_v')}
+    required = ('gpn_msa','gpn_star','gpn_star_v') if research_only else ('gpn_msa',)
+    labels = {'gpn_msa':'GPN-MSA','gpn_star':'GPN-Star M','gpn_star_v':'GPN-Star V'}
+    warnings = [f'{sample_id}: {labels[name]} 未完成（{statuses[name]}）'
+                for name in required if statuses[name] != 'complete']
+    if type(payload.get('gpn_star_research_only')) is not bool or payload['gpn_star_research_only'] != research_only:
+        raise RuntimeError('Post-processing Research-only flag does not match this job')
+    state = dragen_jobs.load_state(job_id) or {}
+    results = {**state.get('gpn_annotations', {}), sample_id:statuses}
+    notes = list(dict.fromkeys([*state.get('annotation_warnings', []), *warnings]))
+    _update(job_id, gpn_annotations=results, annotation_warnings=notes)
+    _log(f'[gpn-completion] {sample_id}: Research-only={research_only}; {statuses}')
+    for warning in warnings:
+        _log('[gpn-warning] '+warning)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--job-id", required=True)
@@ -1542,6 +1570,10 @@ def main() -> int:
     args = ap.parse_args()
 
     _load_secrets()
+    # Console-script shebangs use env python3. Keep them on the same Python
+    # environment as the web/worker (Polars and other installed dependencies).
+    os.environ['PATH'] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get('PATH', '')
+    _log(f'[runtime] Python={sys.executable}; Research-only={bool(args.research_only)}')
 
     job_id = args.job_id
     samples = _load_samples(args)
@@ -1949,6 +1981,7 @@ def main() -> int:
                 pipeline_type=mode,
                 published_source=final_raw_tsv,
                 seq_type=sample["seq_type"],
+                research_only=bool(args.research_only), job_id=job_id,
             )
             _log(f"[source] {sid}: staged immutable SNV TSV {existing}")
             specialized_result = specialized.prepare_outputs(
@@ -2141,6 +2174,7 @@ def main() -> int:
                     on_line=track_post_processing,
                     display_cmd=display_stop_args,
                 )
+                _record_gpn_completion(job_id, sid, post_dir, bool(args.research_only))
                 _run_cnv_rescue_for_sample(
                     mode=mode, sample=sample, base_tsv=pipeline_cnv_by_sid[sid],
                     post_dir=post_dir, scripts=scripts, on_line=track_post_processing,

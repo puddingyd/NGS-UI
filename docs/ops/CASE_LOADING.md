@@ -39,7 +39,7 @@ WGS與TITAN-WGS使用相同的SNV review篩選規則。舊manifest的 `test_type
 
 本機驗證：`tests/test_review_test_type.py`、`test_gpn_msa.py`、`test_gpn_star.py`、`test_snv_overlay.py` 共46項通過，涵蓋標籤互換不重掃、不重新GPN補分，以及WES深度政策／raw／BED真實變更仍重建。
 
-## v9.74：GPN同步刷新與重疊請求
+## v9.74歷史方案：GPN同步刷新與重疊請求（UI背景補分已由v9.75取代）
 
 現場效能紀錄確認一類延遲是GPN刷新：登錄約2.3秒，但核心資料request最久約742秒，其中review整理約738秒；另一重疊request的`action=gpn-refresh`約417秒，其後另一次約171秒。這些是重疊請求，不能相加當成單一耗時。完整5MB review的解析約2.3秒、之後cache命中約0.2秒；PRS讀取在核心資料完成後才發生。這組紀錄支持GPN刷新阻擋載入，並不支持v9.73的檢測名稱差異是此次主要原因。
 
@@ -56,3 +56,18 @@ WGS與TITAN-WGS使用相同的SNV review篩選規則。舊manifest的 `test_type
 當時為何首次判定GPN需要更新，仍需原manifest／執行環境或新版`gpn_start`紀錄判斷；runtime差異是已確認可觸發的不必要更新機制，不能憑現場耗時推定它就是當時的唯一觸發原因。
 
 本機52項相關測試通過：原有lookup／版本刷新／overlay／WGS policy回歸，加上runtime-only不重查、背景排程、重疊請求只查一次、讀者不見M/V中間狀態、background失敗釋放名額、raw變更時不得盲用舊review及strict／force不被延後。未SSH、未部署；院內實際載入耗時需更新服務後驗證。
+
+## v9.75：載入只讀，GPN在三級或明確補建完成
+
+工作保存的Research-only=true能證明系統收到該設定，不能推斷使用者是否誤按。缺少分數本身不應啟用Star。舊loader依review manifest的持久opt-in允許lazy refresh，因此即使資料庫沒更新，也可能因CLI／web環境差異、先前skipped狀態或其他signature差異觸發查詢；必須看三級GPN輸出／當時manifest，才能區分三級未成功與載入誤判過期。原有耗時紀錄只能確定載入時做了GPN刷新，無法單獨判定最初觸發欄位。
+
+目前行為：
+
+- 載入core／secondary SNV以`compute_gpn=False`取得review，完全不檢查GPN資料庫或查分，不會因缺分、套件／版本差異或新資料庫自動補跑。v9.74的UI背景排程已移除。
+- 未勾Research-only：Star不計算；review manifest未明記opt-in=true時，payload不顯示殘留的M/V分數，MSA仍可顯示。磁碟原始分數不因此改寫或刪除。
+- 真正raw／BED／篩選政策改變時，仍可在載入重建篩選列，GPN標為`pending_postprocessing`（未啟用Star維持skipped）；由三級或明確補建補齊。不能拿舊generation掩蓋來源變更。
+- 三級使用與web相同的Python直譯器，並將該bin加入PATH，讓`env python3`的post-processing腳本能取得相同Polars環境；原工具PATH其餘部分保留。
+- 新pipeline_source記`research_only`、`job_id`。三級post-processing結束時驗證旗標相符並保存`gpn_annotations`；所需provider未complete則記`annotation_warnings`，三級視窗顯示未完成原因。原best-effort保留，但使用者不再靠載入隱性補跑。
+- 同案寫入鎖、工作副本發布、成功lookup忽略runtime-only差異、逐provider觸發原因與耗時仍保留，適用CLI與明確計算路徑。
+
+本機89項相關Python測試與93項既有前端回歸通過，涵蓋資料庫變動仍不允許UI查GPN、缺review重建不跑predictor、非research隱藏殘留分數、三級旗標追溯與未完成提醒。未SSH／未部署；既有已完成個案無須為此重跑整套三級。

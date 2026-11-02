@@ -485,4 +485,4 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 
 個案載入異常久時，依 [載入效能診斷](docs/ops/CASE_LOADING.md) 區分登錄、索引與個案資料讀取。v9.73 避免既有 WGS review 僅因 TITAN-WGS 標籤變更而重建，並在真正重建前記錄原因。
 
-v9.74 將有效review的 GPN更新移到背景：頁面先讀完整既有結果，同一個案只允許一個更新者；避免Polars版本或tabix路徑差異造成不必要重算。背景完成後重新載入會使用新分數；原始輸入或篩選政策改變仍會重建。詳見[載入效能診斷](docs/ops/CASE_LOADING.md)。
+v9.75 個案載入只讀 GPN 結果，補分限定三級 post-processing 或明確補建，停用v9.74的載入背景補分。未勾Research-only不計算／顯示GPN-Star；三級若缺套件或補分失敗，會顯示未完成提醒。原始輸入或篩選政策改變仍可重建篩選列。詳見[載入效能診斷](docs/ops/CASE_LOADING.md)。

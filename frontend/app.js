@@ -12959,7 +12959,7 @@ function _dragenSetJob(state) {
     if (stepEl)  stepEl.textContent  = _dragenJobStepLabel(state);
     if (stateEl) stateEl.textContent = state.error
       ? `failed — ${state.error}`
-      : state.state;
+      : [state.state, ...(state.annotation_warnings || [])].join("；");
     if (progressBar) progressBar.style.width = `${pct}%`;
     if (progressText) progressText.textContent = `${pct}%`;
     if (progressBar) progressBar.classList.toggle("failed", state.state === "failed");

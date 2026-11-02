@@ -959,6 +959,7 @@ def _load_enriched_snv_cached(
     gene_disease_sig = gene_disease_store.cache_signature()
     key = (
         _file_signature(snv_tsv),
+        _file_signature(sample_layout.review_manifest(sample_id)),
         _file_signature(analysis_path),
         _file_signature(pheno_path),
         _file_signature(exo_path),
@@ -1167,6 +1168,8 @@ def _enrich_snv_variants(
     exo = _read_tsv_dict(exo_path)
     lir = _read_tsv_dict(lir_path)
     pheno_by_gene = _read_pheno_scores(pheno_path)
+    review_policy = _read_json_or(sample_layout.review_manifest(sample_id), {}) or {}
+    show_star = review_policy.get('gpn_star_research_only') is True
 
     def _scale_to_100(s):
         n = _to_num(s)
@@ -1179,6 +1182,9 @@ def _enrich_snv_variants(
     omim_store.ensure_loaded()
     gene_disease_store.ensure_loaded()
     for vid, v in variants.items():
+        if not show_star:
+            v.pop('GPN_STAR_score', None)
+            v.pop('GPN_STAR_V_score', None)
         gene = v.get("gene_symbol", "")
         locus_genes = (v.get("specialized") or {}).get("genes") or [gene]
         pheno = max((pheno_by_gene.get(g) or 0 for g in locus_genes), default=0)
@@ -1992,7 +1998,7 @@ def load_sample_secondary_snv(
         snv_tsv = snv_review.ensure_review_tsv(
             raw_snv_tsv,
             keep_ids=set(),
-            refresh_in_background=True,
+            compute_gpn=False,
             test_type=test_type,
             output_dir=sub,
             output_path=sample_layout.review_tsv(sample_id, for_write=True),
@@ -2097,7 +2103,7 @@ def load_sample(sample_id: str, version: str | None = None,
             snv_tsv = snv_review.ensure_review_tsv(
                 raw_snv_tsv,
                 keep_ids=reported_ids,
-                refresh_in_background=True,
+                compute_gpn=False,
                 test_type=_meta_early["test_type"],
                 output_dir=sub,
                 output_path=sample_layout.review_tsv(sample_id, for_write=True),
