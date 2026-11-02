@@ -67,6 +67,7 @@
 #   NGS_UI_GPN_MSA_DB / --gpn-msa-db   — fixed BGZF/TBI, every case
 #   --research-only                   — also annotate GPN-Star
 #   NGS_UI_GPN_STAR_DIR / --gpn-star-dir — canonical Parquet bundle
+#   NGS_UI_PYTHON_BIN                  — explicit review Python (set by worker)
 #   Both GPN predictors are best-effort; missing resources only warn.
 #   --skip-cnv                         — disable AnnotSV step 6 even
 #                                         when --dragen-cnv-source is set
@@ -109,6 +110,7 @@ INHOUSE_CNV_VCF=""
 INHOUSE_SV_VCF=""
 SKIP_SPLICEAI=0
 RESEARCH_ONLY=0
+REVIEW_PYTHON="${NGS_UI_PYTHON_BIN:-python3}"
 SKIP_CANDIDATE_BED=0
 SKIP_CLINVAR_LATEST=0
 SKIP_CNV=0
@@ -365,7 +367,7 @@ step_done
 echo
 echo "[sample] review TSV  build_snv_review_tsv.py"
 step_start "review-tsv" "sample-step"
-"$SCRIPT_DIR/build_snv_review_tsv.py" \
+"$REVIEW_PYTHON" "$SCRIPT_DIR/build_snv_review_tsv.py" \
   --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
   --output-path "$REVIEW_PATH" --manifest-path "$REVIEW_MANIFEST_PATH" \
   --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE" --sample "$SID" \

@@ -1998,7 +1998,6 @@ def load_sample_secondary_snv(
         snv_tsv = snv_review.ensure_review_tsv(
             raw_snv_tsv,
             keep_ids=set(),
-            compute_gpn=False,
             test_type=test_type,
             output_dir=sub,
             output_path=sample_layout.review_tsv(sample_id, for_write=True),
@@ -2103,7 +2102,6 @@ def load_sample(sample_id: str, version: str | None = None,
             snv_tsv = snv_review.ensure_review_tsv(
                 raw_snv_tsv,
                 keep_ids=reported_ids,
-                compute_gpn=False,
                 test_type=_meta_early["test_type"],
                 output_dir=sub,
                 output_path=sample_layout.review_tsv(sample_id, for_write=True),

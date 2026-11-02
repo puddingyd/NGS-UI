@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import importlib.metadata
 import sys
 from pathlib import Path
 
@@ -109,6 +110,11 @@ def main() -> int:
             or output_dir / f"{sample_id}.snv_indel.review.tsv.source.json"
         )
     test_type = resolve_test_type(raw_tsv, output_dir, args.test_type or "", args.sample)
+    try:
+        polars_version = importlib.metadata.version('polars')
+    except importlib.metadata.PackageNotFoundError:
+        polars_version = '(not installed)'
+    print(f'[gpn-runtime] python={sys.executable} polars={polars_version} research_only={args.research_only}', flush=True)
     review_tsv = ensure_review_tsv(
         raw_tsv,
         test_type=test_type,

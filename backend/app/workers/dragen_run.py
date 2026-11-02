@@ -1526,7 +1526,7 @@ def _run_cnv_rescue_for_sample(*, mode: str, sample: dict, base_tsv: Path,
 
 
 def _record_gpn_completion(job_id: str, sample_id: str, post_dir: Path, research_only: bool) -> None:
-    """Optional predictor failure is visible in the tertiary result, never repaired by a GET."""
+    """Optional predictor failure is visible in the tertiary result, status recorded before publication."""
     path = post_dir / f'{sample_id}.snv_indel.review.tsv.source.json'
     try:
         payload = json.loads(path.read_text(encoding='utf-8'))
@@ -1573,6 +1573,7 @@ def main() -> int:
     # Console-script shebangs use env python3. Keep them on the same Python
     # environment as the web/worker (Polars and other installed dependencies).
     os.environ['PATH'] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get('PATH', '')
+    os.environ['NGS_UI_PYTHON_BIN'] = sys.executable
     _log(f'[runtime] Python={sys.executable}; Research-only={bool(args.research_only)}')
 
     job_id = args.job_id

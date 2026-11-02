@@ -286,7 +286,7 @@ def test_review_cli_requires_research_flag_for_star_and_restores_msa_option(tmp_
 
 
 @pytest.mark.parametrize("research", [False, True])
-def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, dual_bundle, research):
+def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, dual_bundle, research, monkeypatch):
     bundle = dual_bundle
     raw = tmp_path / "raw.tsv"
     work = tmp_path / "work.tsv"
@@ -306,8 +306,13 @@ def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, dual_b
                "--skip-cnv", "--skip-candidate-bed"]
     if research:
         command.append("--research-only")
-    env = {**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"],
-           "TABIX_BIN": str(tabix), "NGS_UI_DATA_ROOT": str(tmp_path / "data")}
+    # A legacy shell Python cannot import Polars, but the review subprocess
+    # must use the explicitly supplied web/worker interpreter.
+    import venv
+    legacy=tmp_path/'legacy-python'
+    venv.EnvBuilder(with_pip=False).create(legacy)
+    env = {**os.environ, "PATH": str(legacy/'bin') + os.pathsep + os.environ["PATH"],
+           "NGS_UI_PYTHON_BIN":sys.executable, "TABIX_BIN": str(tabix), "NGS_UI_DATA_ROOT": str(tmp_path / "data")}
     proc = subprocess.run(command, cwd=REPO, env=env, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     actual = read_tsv(post / "CASE.snv_indel.review.tsv")[0]
@@ -319,6 +324,18 @@ def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, dual_b
     payload = json.loads((post / "CASE.snv_indel.review.tsv.source.json").read_text())
     assert payload["gpn_star_research_only"] is research
     assert raw.read_bytes() == original
+    # Immediately loading the finished generation must be a cache hit, even
+    # though PATH above pointed to a different Python without Polars.
+    monkeypatch.setenv('TABIX_BIN',str(tabix))
+    monkeypatch.setattr(snv_review,'_candidate_bed_path',lambda:post/'.candidate-bed-disabled')
+    def forbidden(*args,**kwargs):raise AssertionError('Completed unchanged postprocessing must not query again')
+    monkeypatch.setattr(gpn_msa,'annotate_review_tsv',forbidden)
+    monkeypatch.setattr(gpn_star,'annotate_review_tsv',forbidden)
+    before=(post/'CASE.snv_indel.review.tsv').read_bytes(),(post/'CASE.snv_indel.review.tsv').stat().st_mtime_ns
+    snv_review.ensure_review_tsv(raw,test_type='WGS',output_path=post/'CASE.snv_indel.review.tsv',
+        manifest_path=post/'CASE.snv_indel.review.tsv.source.json',
+        overlay_path=post/'CASE.snv_annotations.sqlite',gpn_msa_db=msa,gpn_star_dir=bundle)
+    assert ((post/'CASE.snv_indel.review.tsv').read_bytes(),(post/'CASE.snv_indel.review.tsv').stat().st_mtime_ns)==before
 
 
 def test_backfill_dry_run_apply_preserves_state_and_stale_signatures(tmp_path, dual_bundle):
@@ -558,31 +575,29 @@ def test_download_v_addition_keeps_active_m_and_partial_files_separate(tmp_path,
     assert gpn_star.query_scores(dest, {('1', 10, 'A', 'G')}, gpn_star.V_MODEL)[('1', 10, 'A', 'G')] == '-7'
 
 
-def test_runtime_only_changes_do_not_requery_completed_scores(tmp_path, dual_bundle, msa_db, monkeypatch):
-    raw = tmp_path / 'raw.tsv'
-    write_tsv(raw, [row()])
-    monkeypatch.setattr(snv_review, '_candidate_bed_path', lambda: tmp_path / 'no.bed')
-    args = dict(test_type='WGS', output_dir=tmp_path/'post', gpn_msa_db=msa_db[0],
-                gpn_star_dir=dual_bundle, research_only=True)
-    review = snv_review.ensure_review_tsv(raw, **args)
-    marker = review.with_suffix(review.suffix+'.source.json')
-    saved = json.loads(marker.read_text())
-    saved['gpn_msa']['tabix'] = {'requested':'old-tool','path':'/old/tabix','exists':True}
-    saved['gpn_star']['polars'] = saved['gpn_star_v']['polars'] = 'old-runtime'
-    marker.write_text(json.dumps(saved))
-    before = review.read_bytes(), review.stat().st_mtime_ns
-    def forbidden(*args, **kwargs):
-        raise AssertionError('Runtime-only differences must not query fixed score data again')
-    monkeypatch.setattr(gpn_star, 'annotate_review_tsv', forbidden)
-    monkeypatch.setattr(gpn_msa, 'annotate_review_tsv', forbidden)
-    snv_review.ensure_review_tsv(raw, **args)
-    assert (review.read_bytes(), review.stat().st_mtime_ns) == before
-    current = json.loads(marker.read_text())
-    for key in ('gpn_msa_values','gpn_star_values','gpn_star_v_values'):
-        assert current[key] == saved[key]  # Provenance of actual successful query survives.
+def test_package_version_change_refreshes_only_star_models(tmp_path, dual_bundle, msa_db, monkeypatch):
+    raw=tmp_path/'raw.tsv';write_tsv(raw,[row()])
+    monkeypatch.setattr(snv_review,'_candidate_bed_path',lambda:tmp_path/'no.bed')
+    args=dict(test_type='WGS',output_dir=tmp_path/'post',gpn_msa_db=msa_db[0],gpn_star_dir=dual_bundle,research_only=True)
+    review=snv_review.ensure_review_tsv(raw,**args)
+    marker=review.with_suffix(review.suffix+'.source.json')
+    calls=[]
+    query=gpn_star.query_scores
+    def spy(root,keys,model):calls.append(model);return query(root,keys,model)
+    monkeypatch.setattr(gpn_star,'query_scores',spy)
+    snv_review.ensure_review_tsv(raw,**args)
+    assert not calls and len(msa_db[1])==1
+    version=gpn_star.importlib.metadata.version
+    monkeypatch.setattr(gpn_star.importlib.metadata,'version',lambda name:'new-polars-version' if name=='polars' else version(name))
+    snv_review.ensure_review_tsv(raw,**args)
+    assert calls==list(gpn_star.MODELS) and len(msa_db[1])==1
+    saved=json.loads(marker.read_text())
+    assert saved['gpn_star_values']['polars']=='new-polars-version'
+    snv_review.ensure_review_tsv(raw,**args)
+    assert calls==list(gpn_star.MODELS)  # Refreshed version is now a hit.
 
 
-def test_ui_reads_existing_scores_without_gpn_lookup_even_when_db_changes(tmp_path, dual_bundle, monkeypatch):
+def test_explicit_readonly_option_skips_lookup_even_when_db_changes(tmp_path, dual_bundle, monkeypatch):
     raw = tmp_path/'raw.tsv';write_tsv(raw,[row()])
     monkeypatch.setattr(snv_review, '_candidate_bed_path', lambda: tmp_path/'no.bed')
     args = dict(test_type='WGS',output_dir=tmp_path/'post',gpn_star_dir=dual_bundle,research_only=True)
@@ -638,7 +653,7 @@ def test_concurrent_refresh_is_single_writer_and_readers_see_full_generation(tmp
     assert not list(review.parent.glob('.*.gpn-*.tsv'))
 
 
-def test_busy_writer_cannot_make_ui_reuse_stale_raw_generation(tmp_path,monkeypatch):
+def test_busy_writer_cannot_make_readonly_caller_reuse_stale_raw_generation(tmp_path,monkeypatch):
     from concurrent.futures import ThreadPoolExecutor, TimeoutError
     raw=tmp_path/'raw.tsv';write_tsv(raw,[row()])
     monkeypatch.setattr(snv_review,'_candidate_bed_path',lambda:tmp_path/'no.bed')
@@ -665,7 +680,7 @@ def test_required_or_forced_annotation_cannot_be_silently_deferred(tmp_path):
                                         compute_gpn=False,**{flag:True})
 
 
-def test_ui_rebuild_of_changed_raw_does_not_run_predictors(tmp_path,monkeypatch):
+def test_explicit_readonly_rebuild_of_changed_raw_does_not_run_predictors(tmp_path,monkeypatch):
     raw=tmp_path/'raw.tsv';write_tsv(raw,[row()])
     monkeypatch.setattr(snv_review,'_candidate_bed_path',lambda:tmp_path/'no.bed')
     def forbidden(*args,**kwargs):raise AssertionError('UI must not run predictors on a raw rebuild')
@@ -701,3 +716,32 @@ def test_nonresearch_display_suppresses_leftover_star_scores_only(tmp_path,monke
     variants={'v':dict(original)}
     sample_loader._enrich_snv_variants(variants,'S1',tmp_path)
     assert variants['v']['GPN_STAR_score']==-10 and variants['v']['GPN_STAR_V_score']==-20
+
+
+def test_reproduces_missing_polars_stage_then_platform_refresh_without_db_change(tmp_path,dual_bundle,monkeypatch,capsys):
+    import venv
+    legacy=tmp_path/'legacy-python';venv.EnvBuilder(with_pip=False).create(legacy)
+    raw=tmp_path/'raw.tsv';write_tsv(raw,[row()])
+    monkeypatch.setenv('NGS_UI_CDS_CANDIDATE_BED',str(tmp_path/'no.bed'))
+    post=tmp_path/'post'
+    files=sorted(dual_bundle.rglob('*'))
+    before={str(p):(p.stat().st_mtime_ns,hashlib.sha256(p.read_bytes()).hexdigest()) for p in files if p.is_file()}
+    proc=subprocess.run([str(legacy/'bin/python3'),str(REPO/'scripts/build_snv_review_tsv.py'),
+        '--tsv',str(raw),'--output-dir',str(post),'--test-type','WGS',
+        '--gpn-msa-db',str(tmp_path/'no-msa'),'--gpn-star-dir',str(dual_bundle),'--research-only'],
+        env=dict(os.environ),cwd=REPO,capture_output=True,text=True)
+    assert proc.returncode==0,proc.stdout+proc.stderr
+    marker=post/'snv_indel.review.tsv.source.json'
+    stage=json.loads(marker.read_text())
+    assert stage['gpn_star_annotation']['status']==stage['gpn_star_v_annotation']['status']=='skipped_missing_polars'
+    assert stage['gpn_star']['polars']==''
+    def no_raw_scan(*args,**kwargs):raise AssertionError('Only the missing predictor must refresh')
+    monkeypatch.setattr(snv_review,'_load_bed',no_raw_scan)
+    snv_review.ensure_review_tsv(raw,test_type='WGS',output_dir=post,
+        gpn_msa_db=tmp_path/'no-msa',gpn_star_dir=dual_bundle)
+    loaded=json.loads(marker.read_text())
+    assert loaded['gpn_star_annotation']['status']==loaded['gpn_star_v_annotation']['status']=='complete'
+    assert [d['field'] for d in snv_review.signature_differences(stage['gpn_star'],loaded['gpn_star'])]==['polars']
+    assert 'signature_diff=[{"field":"polars","before":"","after":' in capsys.readouterr().out
+    after={str(p):(p.stat().st_mtime_ns,hashlib.sha256(p.read_bytes()).hexdigest()) for p in files if p.is_file()}
+    assert after==before  # Database bytes AND timestamps unchanged throughout.

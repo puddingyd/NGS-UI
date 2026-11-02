@@ -347,17 +347,26 @@ def _serialize_review(function):
 
 
 def _gpn_signature_matches(name, previous, source, status):
-    if previous == source:
-        return True
-    # Successful scores are a lookup of fixed data. Package versions and tool
-    # paths remain provenance, but are not a new score database. For failed or
-    # missing providers retain exact runtime comparison so installation enables
-    # retry. All actual DB/index/manifest/shard signatures remain strict.
-    if status != 'complete' or not isinstance(previous, dict) or not isinstance(source, dict):
-        return False
-    runtime_key = 'tabix' if name == 'gpn_msa' else 'polars'
-    return ({k:v for k,v in previous.items() if k != runtime_key}
-            == {k:v for k,v in source.items() if k != runtime_key})
+    # Data AND runtime versions are part of the calculation contract. A changed
+    # Polars installation must refresh Star; unchanged environments must hit.
+    return previous == source
+
+
+def signature_differences(previous, source, prefix=''):
+    """Read-only leaf differences for diagnostics and before-query logs."""
+    if previous is None and isinstance(source, dict):
+        previous = {}
+    if source is None and isinstance(previous, dict):
+        source = {}
+    if isinstance(previous, dict) and isinstance(source, dict):
+        result = []
+        for key in sorted(set(previous) | set(source)):
+            name = f'{prefix}.{key}' if prefix else key
+            result.extend(signature_differences(previous.get(key), source.get(key), name))
+        return result
+    if previous != source:
+        return [{'field':prefix,'before':previous,'after':source}]
+    return []
 
 
 def _gpn_plan(source, previous, *, research_only, require_msa, require_star, force_msa, force_star):
@@ -401,8 +410,11 @@ def _refresh_gpn_annotations(
         updated = False
         for name, module, required, extra, reason, changed in plan:
             started = time.perf_counter()
+            differences = signature_differences(previous.get(name), source[name])
             _log_perf('snv_review.gpn_start', started, review=tsv.name, provider=name,
-                      reason=reason, changed_fields=','.join(changed))
+                      reason=reason, changed_fields=','.join(changed),
+                      signature_diff=json.dumps(differences[:12], ensure_ascii=False, separators=(',',':')),
+                      diff_truncated=len(differences)>12)
             stats = module.annotate_review_tsv(work, msa_db if name == 'gpn_msa' else star_dir,
                                                required=required, **extra)
             _log_perf('snv_review.gpn_done', started, review=tsv.name, provider=name, status=stats['status'])
@@ -444,8 +456,8 @@ def ensure_review_tsv(
     Loaders omit research_only to inherit the persisted explicit opt-in.
     Legacy manifests without that flag never enable new Star annotation.
     Pipeline calls always pass a bool, so a new run records its own choice.
-    UI loaders set compute_gpn=False: opening a case never queries GPN data.
-    Raw/filter changes may still rebuild rows, marked pending_postprocessing.
+    Normal loaders validate the same data/runtime signature as post-processing.
+    compute_gpn=False is reserved for explicit read-only callers.
     """
     started = time.perf_counter()
     keep_ids = keep_ids or set()

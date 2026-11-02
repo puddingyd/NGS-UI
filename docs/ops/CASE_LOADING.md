@@ -57,11 +57,11 @@ WGS與TITAN-WGS使用相同的SNV review篩選規則。舊manifest的 `test_type
 
 本機52項相關測試通過：原有lookup／版本刷新／overlay／WGS policy回歸，加上runtime-only不重查、背景排程、重疊請求只查一次、讀者不見M/V中間狀態、background失敗釋放名額、raw變更時不得盲用舊review及strict／force不被延後。未SSH、未部署；院內實際載入耗時需更新服務後驗證。
 
-## v9.75：載入只讀，GPN在三級或明確補建完成
+## v9.75歷史方案：載入只讀（v9.76已恢復版本刷新）
 
 工作保存的Research-only=true能證明系統收到該設定，不能推斷使用者是否誤按。缺少分數本身不應啟用Star。舊loader依review manifest的持久opt-in允許lazy refresh，因此即使資料庫沒更新，也可能因CLI／web環境差異、先前skipped狀態或其他signature差異觸發查詢；必須看三級GPN輸出／當時manifest，才能區分三級未成功與載入誤判過期。原有耗時紀錄只能確定載入時做了GPN刷新，無法單獨判定最初觸發欄位。
 
-目前行為：
+v9.75當時行為（已由下節取代）：
 
 - 載入core／secondary SNV以`compute_gpn=False`取得review，完全不檢查GPN資料庫或查分，不會因缺分、套件／版本差異或新資料庫自動補跑。v9.74的UI背景排程已移除。
 - 未勾Research-only：Star不計算；review manifest未明記opt-in=true時，payload不顯示殘留的M/V分數，MSA仍可顯示。磁碟原始分數不因此改寫或刪除。
@@ -71,3 +71,22 @@ WGS與TITAN-WGS使用相同的SNV review篩選規則。舊manifest的 `test_type
 - 同案寫入鎖、工作副本發布、成功lookup忽略runtime-only差異、逐provider觸發原因與耗時仍保留，適用CLI與明確計算路徑。
 
 本機89項相關Python測試與93項既有前端回歸通過，涵蓋資料庫變動仍不允許UI查GPN、缺review重建不跑predictor、非research隱藏殘留分數、三級旗標追溯與未完成提醒。未SSH／未部署；既有已完成個案無須為此重跑整套三級。
+
+## v9.76：根因證據與恢復正確版本刷新
+
+補齊原三級Log後，已確認原工作在review建立時M／V皆為`skipped_missing_polars: No module named polars`、annotated_rows=0，MSA則complete。這代表三級根本沒有成功產生Star分數；載入web環境具備Polars，signature的polars由空字串變成已安裝版本，才觸發原本允許的補分。當時不是資料庫無更新卻無故重算complete結果。Research-only工作設定true只能確認系統收到該設定，不能據此判斷是否誤按。
+
+此次修正對準執行環境，並撤回v9.75的正常載入只讀限制：
+
+1. worker沿用web的`sys.executable`，並設定`NGS_UI_PYTHON_BIN`；shell review步驟明確用此Python執行builder。即使shell PATH的python3沒有Polars，review仍使用正確環境。builder先印`[gpn-runtime]`的直譯器、Polars版本與Research-only旗標。獨立手動呼叫shell時可設定同一環境變數，未設定則沿用其python3。
+2. core／secondary正常載入恢復計算與刷新：同一份raw、篩選、DB與runtime signature，三級完成後立即載入必須hit；GPN資料庫／index／manifest／shard／Polars套件版本變動時更新對應provider，不再忽略套件版本差異。compute_gpn=False僅給明確只讀操作，正常UI不使用。
+3. 缺分本身不會開啟Research-only；Star仍只在持久opt-in=true下刷新。MSA獨立，不隨Star開關消失。非research殘留Star值不顯示。
+4. 同案鎖、完整工作副本發布與三級未完成提醒保留；不引入UI背景補分。每次provider查詢前記`signature_diff`實際葉欄位的before／after，最多12項並標示截斷，之後可直接追出polars、path或mtime差異。
+
+重現測試採無Polars的isolated Python執行原review CLI，證實M／V被略過；再以有Polars的測試環境載入時，只刷新缺的M／V，所有DB檔案bytes與mtime皆未變，signature差異只有polars。修正回歸則把shell PATH指向無Polars環境、明確指定平台Python，實際跑run_stopgaps後立即載入，禁止任何再次查詢並驗證review bytes／mtime不變。另以套件版本改變測試保證仍會更新M／V。
+
+這些都是合成資料／小型Parquet測試，沒有執行院內病人WGS，也未SSH／部署。已成功補齊的既有個案不需為本修正重跑三級；更新服務後，後續三級工作會使用一致的執行環境。
+
+原三級Log沒有記錄直譯器路徑，因此它能確定的是「三級當時無法import Polars，平台補分時可以」，無法再細分當時是否為兩個不同Python，或期間曾安裝套件。舊啟動方式以python3／PATH尋找直譯器確有混用風險；本版明確指定同一Python並記錄版本，消除這條風險並留下可驗證證據。
+
+本版90項相關Python測試通過（含PRS任務與三級回歸）；未執行院內真實WGS或部署。
