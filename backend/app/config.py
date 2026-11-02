@@ -64,6 +64,11 @@ REPORT_OUTPUT_DIR = Path(os.environ.get(
 ))
 REPORT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# External research parameter bundle; never substitute a synthetic fixture.
+PRS_BUNDLE = Path(os.environ.get(
+    "NGS_UI_PRS_BUNDLE", NGS_UI_HOME / "biotools/prs/tw_chd_v1/bundle.json",
+))
+
 # Unified tertiary root. Nextflow writes 00-07 below each sample and NGS-UI
 # writes derived/reviewer state to 08_postprocessing. NGS_UI_TERTIARY_ROOT is
 # the preferred override; retain NGS_UI_PIPELINE_OUT_ROOT as an alias.

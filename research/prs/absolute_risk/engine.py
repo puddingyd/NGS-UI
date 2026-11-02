@@ -2,7 +2,7 @@
 
 intervene_discrete_v1 reproduces the published interval approximation.
 competing_exact_v1 integrates constant cause-specific hazards within each bin.
-Neither method has yet been validated against published CHD output tables.
+Source-specific reproduction evidence is recorded in each parameter bundle.
 """
 import math
 
@@ -52,13 +52,14 @@ def validate(bundle):
     if definition.get('ancestry') != 'EAS':
         raise ValueError('This adapter currently supports EAS only')
     bins = bundle.get('bins', [])
+    age_min = number(bundle.get('age_min', 0), 'age_min', 0, 79)
     if not isinstance(bins, list) or any(not isinstance(r, dict) for r in bins):
         raise ValueError('bins must be a list of objects')
     for row in bins:
         number(row['age_start'], 'age_start', 0, 80)
     for sex in ('male', 'female'):
         rows = sorted((r for r in bins if r.get('sex') == sex), key=lambda r: r['age_start'])
-        end = 0
+        end = age_min
         for r in rows:
             start = number(r['age_start'], 'age_start', 0, 80)
             stop = number(r['age_end'], 'age_end', 0, 80)
@@ -80,7 +81,7 @@ def validate(bundle):
                 if number(value, 'HR') == 0:
                     raise ValueError('HR must be positive')
         if end != 80:
-            raise ValueError(f'{sex}: complete coverage [0,80) required')
+            raise ValueError(f'{sex}: complete coverage [{age_min},80) required')
     if any(r.get('sex') not in ('male', 'female') for r in bins):
         raise ValueError('Unknown sex in model bins')
     return bundle
@@ -89,7 +90,7 @@ def validate(bundle):
 def integrate(bundle, sex, percentile, start_age, end_age):
     """Conditional risk given alive and CHD-free at start_age; forward integration."""
     validate(bundle)
-    start = number(start_age, 'start_age', 0, 80)
+    start = number(start_age, 'start_age', bundle.get('age_min', 0), 80)
     end = number(end_age, 'end_age', start, 80)
     if sex not in ('male', 'female'):
         raise ValueError('Explicit male/female model sex required')

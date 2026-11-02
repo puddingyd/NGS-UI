@@ -91,6 +91,14 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(result['clinical_validation'],'NOT_VALIDATED')
         self.assertIsNone(result['uncertainty_interval'])
 
+    def test_adult_model_and_reference_curve(self):
+        self.b['age_min'] = 20
+        self.b['bins'] = [r for r in self.b['bins'] if r['age_start'] >= 20]
+        with self.assertRaises(ValueError): integrate(self.b, 'male', 50, 19, 80)
+        result = evaluate(self.b, self.s, {**self.p, 'age': 50.5}, True)
+        self.assertEqual(result['risk_to_80'], result['reference']['risk_to_80'])
+        self.assertEqual(result['risk_difference_pp']['ten_year'], 0)
+
     def test_cli_and_refusal_to_overwrite(self):
         with tempfile.TemporaryDirectory() as d:
             output=Path(d)/'result.json'

@@ -3,6 +3,8 @@
 // Reads tertiary-output TSV/JSON from this server (no GitHub access).
 // ------------------------------------------------------------------
 
+import { resetPrsSample } from './prs.js';
+
 const API_BASE = "/api";
 const OMIM_DISEASE_SLOT_COUNT = 16;
 
@@ -221,6 +223,7 @@ function hideSampleLoading() {
 }
 
 function resetSampleScopedUiState() {
+  resetPrsSample(state.data?.sample_id || state.currentLIS);
   document.getElementById("filter-somatic").checked = true;
   document.getElementById("filter-somatic-label").classList.add("hidden");
   document.getElementById("somatic-modal").classList.add("hidden");

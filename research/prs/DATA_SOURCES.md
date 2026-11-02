@@ -1,6 +1,8 @@
 # 台灣 CHD absolute risk：資料尋找與核對結果
 
-核對日期：2026-11-02。**已取得台灣 GBD2019 基準、原論文驗算表與東亞候選關聯資料；尚未形成可輸出個案風險的正式參數包。** 本次沒有更動計分或風險引擎，也沒有部署。
+核對日期：2026-11-02。**v9.71 更新：已取得原研究 EstBB 七分組 HR，224筆原文 CHD 結果驗算通過，並建立台灣成人研究參數包與 UI。** 僅使用原研究 EstBB＋台灣 GBD2019；本頁 TWB／BBJ 段落保留前階段搜尋紀錄，並未納入模型。尚未完成台灣臨床驗證、未部署。
+
+新增原始 HR 來自作者原研究 [Drive 根目錄](https://drive.google.com/drive/folders/1bwedgU4lb4Y4i1pLsHXzjVaLBusjfcOQ) 的 EstBB Full_cohort → Update_v3_211122，來源 URL、固定 checksum、模型選擇與誤差見 [操作與驗算文件](../../docs/ops/PRS_CHD_RESEARCH.md)。原檔另存 `runtime/original_hr_20261102/`；先前31檔的 SOURCE_MANIFEST 不涵蓋這批新增檔。新來源 pins 存在 builder、bundle 及 reproduction.json，原始下載 provenance 存在該 runtime 目錄的 SOURCE_MANIFEST.json。
 
 ## 取得狀態
 
@@ -10,7 +12,7 @@
 | 原研究 CHD 預期輸出 | Supplementary Data 4：896 筆；Data 7：896 筆 | 四個地區 × 男女 × 七分組 × 16 年齡終點。Data 7 另含 meta-analysis HR 路徑結果 |
 | CHD 模型選擇 | 已核對 Supplementary Table 3（PDF 第52頁）及 Data 4 | 男性 Age and Sex；女性 Sex。女性的 HR 不應強行套男性年齡斜率 |
 | ICD／疾病定義 | Data 8、9 已取得 | CHD 與 GBD IHD 不能當完全相同；Data 9 在 UKB 的定義比對列為 82% |
-| 歐洲原研究七分組 HR、SE、組內年齡中位數 | 尚未取得完整原始參數 | Data 2 為 per-SD HR；固定 Git tree 沒有腳本引用的原始 HR CSV |
+| 歐洲原研究七分組 HR、SE、組內年齡中位數 | 已取得 EstBB 原始 HR/SE/MedianAAO | 男性 age/sex、女性 sex；已重現原文224筆結果。Data 2 的 per-SD HR 未代替七分組 HR |
 | 台灣 TWB 關聯資料 | 作者 Drive 的 NBCTaiwan 目錄可讀；已下載男女分組表與 cohort 摘要、年齡四分位 | 檔名為 HR，但欄位是 **OR**，且區分 `prs`、`prs_norm`；不能直接當時間風險的 HR |
 | 日本 BBJ 分組參數候選 | 已下載女性分組表與年齡性別分組表，均有 I9_CHD | 欄名 V1…，需核對欄位、score 版本、模型與 endpoint；不能據此宣稱台灣校正完成 |
 
