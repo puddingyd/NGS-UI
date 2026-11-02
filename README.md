@@ -1,6 +1,6 @@
 # NGS 分析平台 (NGS-UI)
 
-INTERVENE PRS 研究流程已接入平台：讀取既有 Model A 計分結果，以原研究 EstBB HR 與台灣 GBD2019 輸出未來10年、目前至80歲 CHD 風險及參考組比較曲線。原文224筆 Estonia CHD 結果驗算通過；UI 使用支援任意評估年齡的連續競爭風險版本，仍未完成台灣臨床驗證。參數包另行安裝，使用方式見 [PRS 安裝與操作](docs/ops/PRS_CHD_RESEARCH.md)，計分程式見 [research/prs](research/prs/README.md)。
+INTERVENE PRS 已接成兩階段流程：三級分析勾選 PRS 後，由原始 WGS gVCF 自動產生 score／percentile 與祖源 QC；在 **Secondary findings → PRS** 的疾病表格上方輸入年齡、性別、CHD病史，再按「風險計算」顯示10年／至80歲風險與比較曲線。目前僅CHD研究模型，未完成台灣臨床驗證；執行環境與風險參數須另安裝。見 [安裝與操作](docs/ops/PRS_CHD_RESEARCH.md)及[計分程式](research/prs/README.md)。
 
 GBA1、CYP21A2、SMN、HBA specialized caller 已整合進既有卡片與報告。三級 post-processing 會先把 targeted JSON 快照、相關 VCF 證據、正規化結果與 checksum manifest 存到 `08_postprocessing/`；平台不再回原始 JSON／VCF 補 GBA1 證據，亦不複製大型 VCF（資料包須小於 100 MB）。SMN 顯示各基因 CN 與 silent-carrier marker，HBA 保留完整 genotype；未知或定位不明的結果保留待複核狀態，不自動標為致病。健檢及診斷沿用原表格、列點及附錄；HBA 複合結果須依完整 locus 指定健檢分類，既有帶因篩檢清單補入 HBA1／HBA2。部署後舊個案可用 `python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --from-source --apply` 補建，不必重跑 Nextflow/VEP；已有資料包可離線重解析。也可用 `python3 scripts/rebuild_specialized.py --all-dragen --from-source --apply` 批次處理；`python3 scripts/scan_targeted_callers.py` 可唯讀盤點 CYP21A2／SMN／HBA 候選個案。省略 `--apply` 先驗證，既有判讀／選取保留。[資料結構、判讀規則與補建操作](docs/ops/SPECIALIZED_CALLERS.md)；[GBA1 細節](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
 

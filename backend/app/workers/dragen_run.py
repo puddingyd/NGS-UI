@@ -1244,6 +1244,7 @@ def _track_pipeline_source(
     source_sample_id: str,
     source_vcf_path: str,
     pipeline_type: str,
+    seq_type: str = "",
     published_source: Path | None = None,
 ) -> None:
     """Write a small audit record so the reviewer (and a future
@@ -1266,6 +1267,7 @@ def _track_pipeline_source(
         "source_sample_id": source_sample_id,
         "source_vcf_path": source_vcf_path,
         "pipeline_type": pipeline_type,
+        "seq_type": seq_type,
         "annotated_at": _now(),
     }
     sample_layout.scoped_file(
@@ -1532,6 +1534,7 @@ def main() -> int:
         dest="research_only", action="store_true",
     )
     ap.add_argument("--without-pgx", action="store_true")
+    ap.add_argument("--with-prs", action="store_true")
     # In-house only — explicit sibling VCF paths from the index.
     ap.add_argument("--cnv-vcf",  default="")
     ap.add_argument("--sv-vcf",   default="")
@@ -1945,6 +1948,7 @@ def main() -> int:
                 source_vcf_path=source_vcf,
                 pipeline_type=mode,
                 published_source=final_raw_tsv,
+                seq_type=sample["seq_type"],
             )
             _log(f"[source] {sid}: staged immutable SNV TSV {existing}")
             specialized_result = specialized.prepare_outputs(
@@ -2191,6 +2195,12 @@ def main() -> int:
             except Exception as cache_error:
                 _log(f"[cache] {sid}: refresh failed: {cache_error}")
 
+        if args.with_prs:
+            from ..services import prs_jobs
+            # Published source marker now binds the PRS input. Child workers
+            # wait for the shared sample locks released in our finally block.
+            prs_children = prs_jobs.enqueue_tertiary(samples, job_id, _log)
+            _update(job_id, prs_jobs=prs_children)
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)
         from ..services import unregistered_samples

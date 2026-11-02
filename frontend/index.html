@@ -48,6 +48,7 @@
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-stroke-c">中風相關基因</button>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-carrier-c">Carrier screening</button>
           <button type="button" class="sidebar-link sub secondary-sub" data-target="cat-pharmcat-c">Pharmacogenomics</button>
+          <button type="button" class="sidebar-link sub secondary-sub" data-target="prs-card">PRS</button>
         </details>
       </details>
     </nav>
@@ -191,36 +192,6 @@
         </div>
       </div>
       <div id="m-meta-hint" class="muted" style="margin-top:6px;font-size:11px"></div>
-    </section>
-
-    <section id="prs-card" class="card prs-card hidden">
-      <details id="prs-details">
-        <summary>CHD 多基因風險 <small>研究用途</small></summary>
-        <div class="prs-content">
-          <p id="prs-score"></p>
-          <p id="prs-message" class="prs-message" role="status" aria-live="polite"></p>
-          <button id="prs-refresh" type="button" class="btn btn-ghost">更新資料</button>
-          <form id="prs-form" class="prs-form" hidden>
-            <label>評估日期<input id="prs-date" type="date" required /></label>
-            <label>評估時年齡<input id="prs-age" type="number" min="20" max="79.99" step="0.01" required /></label>
-            <label>模型使用的性別<select id="prs-sex" required><option value="">請選擇</option><option value="male">男性</option><option value="female">女性</option></select></label>
-            <label>已罹患冠心病（CHD）？<select id="prs-history" required><option value="">尚未確認</option><option value="no">確認沒有</option><option value="yes">已有 CHD</option></select></label>
-            <button id="prs-submit" type="submit" class="btn btn-primary" disabled>估算風險</button>
-          </form>
-          <div id="prs-result" class="prs-results" hidden>
-            <p id="prs-result-context" class="prs-footnote"></p>
-            <div class="prs-stats">
-              <div class="prs-stat"><h3>未來10年 CHD 風險</h3><strong id="prs-risk-ten"></strong><small id="prs-ten-reference"></small></div>
-              <div class="prs-stat"><h3>目前至80歲 CHD 累積風險</h3><strong id="prs-risk-eighty"></strong><small id="prs-eighty-reference"></small></div>
-            </div>
-            <div class="prs-legend"><span>此個案</span><span>PRS 40–60% 參考組</span></div>
-            <svg id="prs-chart" class="prs-chart" viewBox="0 0 720 280" role="img" aria-label="目前至80歲的 CHD 累積風險比較"></svg>
-            <p class="prs-footnote">以目前仍存活且尚未罹患 CHD 為條件；參考組採相同年齡、性別與評估期間。研究估計尚未完成台灣臨床驗證。</p>
-            <details><summary>查看曲線數值</summary><table class="prs-table"><thead><tr><th>至年齡</th><th>此個案</th><th>參考組</th></tr></thead><tbody id="prs-curve-table"></tbody></table></details>
-            <details><summary>模型來源與限制</summary><p id="prs-model" class="prs-footnote"></p><ul id="prs-limitations" class="prs-footnote"></ul></details>
-          </div>
-        </div>
-      </details>
     </section>
 
     <!-- TITAN-WGS is primarily a health-screening workflow. Diagnostic
@@ -502,6 +473,46 @@
       <div id="cat-stroke-c" class="cat-block" data-category="stroke"></div>
       <div id="cat-carrier-c"  class="cat-block" data-category="carrier"></div>
       <div id="cat-pharmcat-c" class="cat-block" data-category="pharmcat"></div>
+      <section id="prs-card" class="analysis-card prs-card hidden">
+        <details id="prs-details">
+          <summary>PRS <small>多基因風險 · 研究用途</small></summary>
+          <div class="prs-content">
+            <form id="prs-form" class="prs-form">
+              <label>評估時年齡：<input id="prs-age" type="number" min="20" max="79.99" step="0.01" required /> 歲</label>
+              <label>性別：<select id="prs-sex" required><option value="">請選擇</option><option value="male">男性</option><option value="female">女性</option></select></label>
+              <label>已有 CHD？<select id="prs-history" required><option value="">尚未確認</option><option value="no">確認沒有</option><option value="yes">已有 CHD</option></select></label>
+              <button id="prs-submit" type="submit" class="btn btn-primary" disabled>風險計算</button>
+            </form>
+            <p id="prs-message" class="prs-message" role="status" aria-live="polite"></p>
+            <div class="prs-table-scroll">
+              <table class="prs-table prs-diseases">
+                <thead><tr><th scope="col">疾病</th><th scope="col" title="Model A 的 total SUM，包含固定模型的缺失補值；與此列 percentile 使用相同計分定義">原始 PRS score</th><th scope="col" title="固定 EAS735 參考分布中的百分位；不是發病機率">PRS percentile</th><th scope="col">未來10年風險</th><th scope="col">目前至80歲累積風險</th></tr></thead>
+                <tbody id="prs-disease-rows"></tbody>
+              </table>
+            </div>
+            <div id="prs-result" class="prs-results" hidden>
+              <p id="prs-result-context" class="prs-footnote"></p>
+              <div class="prs-legend"><span>此個案</span><span>PRS 40–60% 參考組</span></div>
+              <svg id="prs-chart" class="prs-chart" viewBox="0 0 720 280" role="img" aria-label="CHD：目前至80歲的累積風險比較"></svg>
+              <p class="prs-footnote">以評估時仍存活且尚未罹患 CHD 為條件；參考組採相同年齡、性別與期間。研究估計尚未完成台灣臨床驗證。</p>
+              <details><summary>查看曲線數值</summary><table class="prs-table"><thead><tr><th>至年齡</th><th>此個案</th><th>參考組</th></tr></thead><tbody id="prs-curve-table"></tbody></table></details>
+              <details><summary>模型來源與限制</summary><p id="prs-model" class="prs-footnote"></p><ul id="prs-limitations" class="prs-footnote"></ul></details>
+            </div>
+            <div class="prs-analysis">
+              <p id="prs-pipeline-message" class="prs-message" role="status"></p>
+              <div class="prs-actions">
+                <label id="prs-source-label" hidden>原始 gVCF <select id="prs-source"></select></label>
+                <button id="prs-run" type="button" class="btn btn-ghost" disabled>開始 PRS 分析</button>
+                <button id="prs-new-run" type="button" class="btn btn-ghost" hidden>重新開始</button>
+                <button id="prs-cancel" type="button" class="btn btn-ghost" hidden>取消分析</button>
+                <button id="prs-refresh" type="button" class="btn btn-ghost">更新資料</button>
+              </div>
+              <details id="prs-log-details"><summary>分析 Log</summary><pre id="prs-log" class="prs-log">尚無分析紀錄</pre></details>
+              <p class="prs-footnote">原始 score 採 Model A（含固定模型缺失補值），percentile 為 EAS735 參考比較；祖源與品質檢查未通過時僅供條件式比較，無法計算風險。</p>
+            </div>
+          </div>
+        </details>
+      </section>
       <div class="save-row">
         <button id="btn-save-bottom" class="btn btn-primary js-btn-save">💾 儲存變更</button>
         <button class="btn btn-export-clinical" title="匯出診斷報告 (DOCX, 細明體)">📋 匯出診斷報告</button>
@@ -974,6 +985,10 @@
           <label class="filter-toggle dragen-extra-toggle" title="勾選 → 執行 pipeline PGx module；取消勾選會加 --run_pgx false">
             <input id="dragen-pgx" type="checkbox" checked />
             <span>PGx</span>
+          </label>
+          <label class="filter-toggle dragen-extra-toggle" title="三級完成後排入原始 gVCF → PRS score／percentile／祖源檢查；臨床風險另在個案 PRS 頁面計算">
+            <input id="dragen-prs" type="checkbox" />
+            <span>PRS</span>
           </label>
           <button id="dragen-litvar2-update-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="下載官方 LitVar2 bulk JSON 並重建本地 SQLite">更新 LitVar2</button>
           <button id="dragen-refresh-btn" class="btn btn-ghost dragen-toolbar-btn" type="button" title="重新掃描所有 root 目錄">↻ 更新索引</button>

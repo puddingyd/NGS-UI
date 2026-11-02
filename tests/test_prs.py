@@ -35,6 +35,9 @@ def setup(tmp_path, monkeypatch):
     model = tmp_path/'bundle.json'
     model.write_text(json.dumps(bundle))
     monkeypatch.setattr(config, 'PRS_BUNDLE', model)
+    monkeypatch.setattr(prs, 'SCORE_DEFINITION', bundle['score_definition'])
+    from app.services import prs_jobs
+    monkeypatch.setattr(prs_jobs, 'overview', lambda sid: {'job':None,'can_start':False,'candidates':[]})
     monkeypatch.setattr(prs, 'RELEASED_BUNDLE_SHA256', hashlib.sha256(model.read_bytes()).hexdigest())
     monkeypatch.setattr(sample_layout, 'state_dir', lambda sid, **kw: tmp_path/sid)
     monkeypatch.setattr(sample_layout, 'state_file', lambda sid,name,**kw: tmp_path/sid/f'{sid}.{name}')
@@ -58,6 +61,9 @@ def test_auth_and_unknown_case(setup):
     client, app, *_ = setup
     assert client.get('/api/samples/S1/prs').status_code == 401
     assert client.post('/api/samples/S1/prs/assessments', json={}).status_code == 401
+    assert client.post('/api/samples/S1/prs/jobs', json={}).status_code == 401
+    assert client.post('/api/samples/S1/prs/jobs/unknown/cancel').status_code == 401
+    assert client.get('/api/samples/S1/prs/jobs/unknown/log').status_code == 401
     login(app)
     assert client.get('/api/samples/S2/prs').status_code == 404
     with pytest.raises(ValueError): prs.status('../S1')
@@ -169,3 +175,26 @@ def test_concurrent_input_change_rejected(setup,monkeypatch):
     monkeypatch.setattr(prs.calculator,'evaluate',changed)
     assert client.post('/api/samples/S1/prs/assessments',json=payload).status_code == 409
     assert not prs.assessment_dir('S1').exists()
+
+
+def test_score_visible_without_bundle_or_ancestry(setup):
+    client, app, _, _, score, _ = setup
+    login(app)
+    data=json.loads(score.read_text());data['ancestry_status']={'status':'NOT_ASSESSED'}
+    score.write_text(json.dumps(data));prs.import_score('S1',score)
+    config.PRS_BUNDLE.unlink()
+    result=client.get('/api/samples/S1/prs').json()
+    assert result['score']['percentile']==97
+    assert result['score']['raw_score']==data['scores'][0]['total_sum']
+    assert not result['available'] and result['latest'] is None
+    assert result['diseases'][0]['id']=='CHD'
+
+
+def test_explicit_failed_ancestry_qc_rejects_risk(setup):
+    client, app, _, _, score, payload=setup
+    login(app)
+    data=json.loads(score.read_text());data['ancestry_status']['qc_status']='FAIL'
+    score.write_text(json.dumps(data));prs.import_score('S1',score)
+    result=client.get('/api/samples/S1/prs').json()
+    assert result['score'] and not result['available']
+    assert client.post('/api/samples/S1/prs/assessments',json=payload).status_code==400

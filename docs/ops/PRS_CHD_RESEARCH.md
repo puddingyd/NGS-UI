@@ -1,16 +1,66 @@
-# CHD PRS 研究風險 UI — v9.71
+# CHD PRS 研究風險 UI — v9.72
 
 ## 本版範圍
 
-讀取既有 PGS004879 Method2 Model A 結果，輸出：
+平台採兩階段；第一個疾病為 CHD，未建立 DM／cancer 的空白模型。
 
-1. 評估日起未來10年 CHD 風險。
-2. 評估時年齡至80歲 CHD 累積風險。
-3. 兩條比較曲線：此個案與相同年齡／性別的 PRS 40–60% 參考組。
+1. **三級分析**勾選「PRS」：00–08 發布完成後，自動排入原始 gVCF → 固定 v2.1.1 Model A/B score／percentile → 祖源 QC 的背景任務。不需要病人年齡或病史，不計算 absolute risk。PRS 啟動或執行失敗不回滾已完成三級結果。
+2. **Secondary findings → PRS**：上方單行輸入「評估時年齡、性別、已有 CHD？」後按「風險計算」。日期自動記為當日；每次保存獨立評估快照。改臨床輸入只重算 risk，不重跑 gVCF。
 
-僅20至79歲、確認尚未有 CHD、具備合格 EAS 祖源證據及相符 model lock 的個案可估算。年齡大於70歲時，10年結果為 unavailable，仍可輸出至80歲；不截短期間。所有風險都以「評估時仍存活且無 CHD」為條件，不是出生累積率直接相減。既有 CHD 或病史未知不輸出。
+主表每列一個疾病，固定欄位為「疾病／原始 PRS score／PRS percentile／未來10年風險／目前至80歲累積風險」。未計算的兩個風險欄顯示「請輸入臨床資訊後計算」；曲線放表格下方。未安裝 risk bundle 或祖源尚未通過時，合格 score／percentile 仍可獨立顯示，風險按鈕停用並說明原因。
 
-本版沒有 gVCF 排程／重跑按鈕，不從 SNV TSV 計分，也不將研究結果加入診斷／健檢 DOCX 或列印報告。計分仍用既有 v2.1.1 pipeline，UI 接收完成的 summary。換年齡只重算風險，不重跑 genotype。TWB、BBJ 未納入本模型。
+表格的原始 score 指 **Model A total_sum（含固定模型缺失補值）**，與該列 EAS735 ECDF percentile 使用同一定義；不是先前610,677 loci的 observed-only SUM，也不是 pgsc_calc ancestry 的 normalized score。A/B完整結果仍保留於計分 output，B 暫不作UI風險主分析。
+
+風險適用20至79歲、確認尚未有 CHD、具備合格 EAS 祖源證據與相符 model lock 的個案。>70歲不將截短期間冒稱10年風險，仍可計算至80歲。以「評估時存活且無 CHD」為條件，不是出生累積率相減。TWB／BBJ未納入；目前不收血壓、血脂、吸菸或家族史，因為本模型不使用這些欄位。結果不加入診斷／健檢 DOCX 或列印報告。
+
+## 執行環境與首次啟用
+
+程式本身已接上 queue／worker；**Git pull 不會安裝大型計分 reference，也不會自動複製原伺服器的 config**。使用原 v2.1.1 已驗證的設定檔，讓服務讀取：
+
+- `NGS_UI_PRS_CONFIG`：既有完整 config.json 的絕對路徑；未設定時讀 `$NGS_UI_HOME/data/prs_config.json`。欄位見 `research/prs/scoring_v211/config.example.json`，勿直接沿用不存在的示範路徑。
+- `project`：PRS 原始工作／結果 root。保留 `raw_work`、scorefile、model lock、Model A/B reference、FASTA、dbSNP、containers、兩份 Nextflow config 與 ancestry reference 的有效路徑。model lock 的絕對路徑鎖不可為換位置重新 freeze。
+- 平台 worker 的 PATH 需可執行 `nextflow, apptainer, bcftools, samtools`，並具有原工作目錄讀寫權限。`raw_script` bytes 必須等於 repo 中已驗證的 vendor 腳本；既有十檔核心 checksum 仍由 pipeline_v21 驗證。
+- `NGS_UI_PRS_BUNDLE`：第二階段的風險參數包，安裝方式見下節；第一階段不依賴它。
+
+在服務相同使用者／環境中檢查（只讀，不執行個案分析）：
+
+```bash
+PYTHONPATH=backend python3 -c 'from app.services.prs_jobs import settings; c,h=settings(); print("PRS settings OK",h)'
+```
+
+三級視窗「PRS」預設未勾選；勾選時先檢查基本執行環境，缺設定立即回報，不會讓操作者等完整三級後才知道缺設定。每個樣本在三級發布後核對 gVCF；WES、找不到來源或多個候選均記錄到三級 Log／`prs_jobs` 子任務摘要，其他三級結果保留。載入個案後可在 PRS 區補跑或確認 gVCF。
+
+### 原始 gVCF 定位
+
+綁定 `pipeline_source.json` 中的 source sample、原 VCF anchor、來源類型與新保存的 `seq_type`，不從 UI 顯示姓名或 LIS 字串猜檔案。僅WGS；舊 marker 缺類型時可讀已登錄 metadata 的 test_type，仍不明則拒絕。
+
+DRAGEN 預設精確搜尋同一 anchor 目錄或同 run 的 `gvcf.gz/` 中 `{source}.hard-filtered.gvcf.gz`／`{source}.gvcf.gz`。不同實體檔案不自動選最新；多候選由操作者在 UI 下拉確認。單候選自動使用。
+
+In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF後，在同一 config 加入 `gvcf_templates`。這個欄位會取代預設 mapping，需保留所需的 DRAGEN templates。只支援精確模板，不接受 glob 或 browser 提供任意檔案路徑：
+
+```json
+{
+  "gvcf_templates": {
+    "dragen": [
+      "{anchor_dir}/{source}.hard-filtered.gvcf.gz",
+      "{run_dir}/gvcf.gz/{source}.hard-filtered.gvcf.gz"
+    ],
+    "inhouse": []
+  }
+}
+```
+
+`anchor_dir` 是原 SNV VCF 的目錄，`run_dir` 是它的上一層，`source` 是原 sequencing ID。In-house 只有核對 caller、組裝及實際命名後才能填入模板。每個選定輸入都要求單樣本 header 精確符合 source ID、GRCh38 chr1長度248956422、gVCF reference-block allele宣告，以及 tbi/csi index。正式執行另由原 pipeline／bcftools 驗證資料。
+
+### 排程、重試與保存
+
+- 工作狀態／Log：`$NGS_UI_HOME/data/jobs/prs/{UUID}/`；保存該次 config snapshot、source／gVCF／resource fingerprints、操作者與 parent tertiary job。
+- raw／Method2：原 `project/integrated_runs/ui_prs_{UUID}/{source}/`；大型中間檔保留在原 PRS project，不複製到08。
+- ancestry：相同 raw 完成後，以原 pipeline.py 的 reuse 模式執行於 `ui_prs_{UUID}_ancestry/`。**不使用它的 normalized percentile 覆蓋 Method2 percentile**。原始 Method2 summary 不改寫；平台 envelope 另記 QC hash 並附上同源 ancestry evidence。
+- 每次先原子發布已完成 score／percentile，再跑祖源。祖源失敗時顯示「計分完成，祖源檢查未完成」；score 保留，risk 不啟用。非 EAS／低信心亦不啟用風險。
+- 全站同時只跑一個 PRS 計分工作，其他排隊。與三級／Somatic共用 UI及source sample locks，防止同個案來源替換。三級完成不代表其獨立 PRS 子工作已完成；在 PRS 區看進度／Log。
+- 「重新分析／重試」在輸入 fingerprints 完全相同時沿用原 run ID，交給 v2.1.1 guarded resume；不刪除 raw audit。原 pipeline 不能恢復的 early partial run 可用「重新開始」建立新 run ID，原檔保留。
+- 取消由 worker 收到 cancel flag 後終止自己啟動的工具 process group；原有 score／快照保留。完整刪除個案 pipeline 時，active PRS 阻擋刪除，完成工作狀態與08結果一起移除；原 project 的大型 raw audit 不在此刪除範圍。
 
 ## 固定參數與科學驗算
 
@@ -49,7 +99,7 @@ research/prs/runtime/tw_chd_v1.zip
 PYTHONPATH=backend python3 -c 'from app.services.prs import load_bundle; b,h=load_bundle(); print(b["model_id"],h)'
 ```
 
-## 匯入一個已完成的計分結果
+## 相容入口：匯入既有計分結果（新流程不需要手動匯入）
 
 ```bash
 PYTHONPATH=backend python3 scripts/import_prs_summary.py \
@@ -61,11 +111,13 @@ PYTHONPATH=backend python3 scripts/import_prs_summary.py \
 
 「成功匯入」不等於「適合風險計算」。UI 還會檢查 Model A、locus counts、percentile/group 一致性、model lock 與合格 EAS 祖源證據。原 pipeline 預設 raw-only 的 `NOT_ASSESSED` 無法估算；應取得既有流程的真實 ancestry QC，不得手改為 EAS 或偽造 PASS。
 
-使用者自行更新／重啟平台後，載入個案，在「基本資料」下方開啟「CHD 多基因風險」，填入評估日期、當時年齡、模型使用性別與 CHD 病史後按「估算風險」。未安裝參數／未匯入 score 時，UI 明示缺件，不顯示合成數值。
+使用者自行更新／重啟平台後，載入個案，在「Secondary findings → PRS」填入年齡、性別與 CHD 病史後按「風險計算」。未安裝參數／未匯入 score 時，UI 明示缺件，不顯示合成數值。
 
 ## API 與保存
 
 - `GET /api/samples/{sample_id}/prs`：登入保護；回傳 available、issues、score 摘要與有效的上次評估。
+- `POST /api/samples/{sample_id}/prs/jobs`：啟動／重試；只接受伺服器列出的 candidate_id 與布林 new_run。
+- `POST /api/samples/{sample_id}/prs/jobs/{job_id}/cancel`、`GET .../log`：個案綁定，禁止跨個案讀取／取消。
 - `POST /api/samples/{sample_id}/prs/assessments`：只接受 `age, sex, assessment_date, prior_chd`。percentile、HR、參數路徑皆由伺服器讀取，不能由 request 指定。
 - 若輸入缺失／不合格，不會寫評估快照。future date、NaN、bool age、未知性別、既往 CHD 及超出20–79歲皆拒絕。
 
@@ -76,7 +128,7 @@ PYTHONPATH=backend python3 scripts/import_prs_summary.py \
 {LIS_ID}.prs/assessments/{UUID}.json
 ```
 
-每次評估使用新 UUID 原子保存：完整 bundle／summary／person、輸入 hash、建立時間、操作者、兩個風險與兩條曲線。未寫入 SNV review／ACMG／report state。summary 或模型、個案 metadata 改變時，不再顯示舊快照為目前結果；pipeline source marker 改變則要求重新確認並匯入 score。舊快照留作歷史稽核。前端改輸入即隱藏舊數值，切換個案會中止／丟棄舊 request，防止交叉顯示。
+每次評估使用新 UUID 原子保存：完整 bundle／summary／person、輸入 hash、建立時間、操作者、兩個風險與兩條曲線。未寫入 SNV review／ACMG／report state。summary 或模型、個案 metadata 改變時，不再顯示舊快照為目前結果；pipeline source marker 或 worker 記錄的 gVCF／index signature 改變則要求重新分析。舊快照留作歷史稽核。前端改輸入即隱藏舊數值，切換個案會中止／丟棄舊 request，防止交叉顯示。
 
 ## 來源與重建
 
@@ -101,7 +153,18 @@ python3 -m research.prs.absolute_risk.build_taiwan \
 ## 本機驗證
 
 - 原文 Estonia CHD：224/224符合發表表格精度。
-- Python：17個 API／輸入／snapshot 測試案例及12個風險引擎測試，共29項通過。
+- v9.72 Python：PRS API／queue／worker／引擎及相關三級回歸，共66項通過；外部WGS工具以隔離假工具驗證發布流程，非真實WGS驗收。原版計分27項離線測試亦通過。
 - 既有 frontend Node 回歸：93項通過。
-- 獨立瀏覽器：桌面、390px手機、兩曲線、API數值一致、修改輸入清除舊值、>70歲、既往CHD、切換個案的晚到回應，全部通過。預覽使用明示的合成個案，不是實際病人結果。
+- 獨立瀏覽器：桌面單行輸入／疾病表格、390px手機表格捲動、待計算文案、兩曲線、API數值、修改輸入清除舊值、>70歲、祖源不合格仍顯示score、開始／Log／取消、切換個案晚到回應，全部通過。預覽使用明示的合成個案，不是實際病人結果。
 - 未執行院內 fresh WGS、未測試院內部署、未進行台灣 clinical validation。
+
+可重複執行的測試入口：
+
+```bash
+PYTHONPATH=backend python -m pytest tests/test_prs.py tests/test_prs_jobs.py research/prs/tests/test_absolute_risk.py tests/test_dragen_same_directory_batch.py tests/test_dragen_rerun.py tests/test_dragen_delete_output.py -q
+TMPDIR=/private/tmp python3 -m unittest discover -s research/prs/scoring_v211/tests -q
+node --test tests/frontend_*.test.cjs
+# 需可載入 Playwright；CHROME_EXECUTABLE_PATH 可指定已安裝 Chrome。
+# 測試自建本機靜態預覽，所有API為合成資料，不連正式平台。
+node tests/browser_prs_ui.cjs
+```

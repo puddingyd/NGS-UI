@@ -32,6 +32,8 @@ calculator = importlib.import_module(_package + '.__main__')
 
 # Released, locally reproduced parameter artifact. A renamed/edited/synthetic
 # bundle cannot become active merely by claiming that reproduction passed.
+SCORE_DEFINITION = dict(model='A', model_lock_sha256='a3b2bb7a52762d3232cd7e72040b26470c882e5afce66d8e574edc9faeda1083')
+
 RELEASED_BUNDLE_SHA256 = '322d4e68d49a2047d7326172a609b3898b8754f658f800f50806f4e2276a0a27'
 
 
@@ -60,7 +62,7 @@ def atomic_json(path, value):
     raw = json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
     fd, temporary = tempfile.mkstemp(prefix='.prs-', dir=path.parent)
     try:
-        with os.fdopen(fd, 'w') as stream:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
@@ -120,7 +122,14 @@ def load_score(sid):
     if not isinstance(summary, dict) or summary.get('sample') != record.get('source_sample_id'):
         raise NotReady('PRS 來源樣本識別碼不符')
     if record.get('pipeline_source_sha256') != pipeline_source_hash(sid):
-        raise NotReady('個案分析來源已更新，請重新確認並匯入 PRS 結果')
+        raise NotReady('個案分析來源已更新，請重新執行 PRS 分析')
+    if record.get('gvcf_signature'):
+        from .prs_jobs import signature
+        try:
+            if any(signature(stamp[0]) != stamp for stamp in record['gvcf_signature']):
+                raise NotReady('原始 gVCF 已變更，請重新分析 PRS')
+        except OSError as exc:
+            raise NotReady('原始 gVCF 已移動或不存在，請重新確認來源') from exc
     return summary, digest
 
 
@@ -183,32 +192,36 @@ def latest_snapshot(sid):
 
 def status(sid):
     _, meta_hash = case_metadata(sid)
-    issues, bundle, summary = [], None, None
+    issues, bundle, summary, score = [], None, None, None
     bundle_hash = score_hash = None
+    try:
+        summary, score_hash = load_score(sid)
+        if not source_identity_matches(sid, summary['sample']):
+            raise NotReady('PRS 來源與目前個案來源不符，請重新分析')
+        row = calculator.score_row(summary, SCORE_DEFINITION, require_ancestry=False)
+        score = dict(raw_score=row['total_sum'], percentile=row['eas_percentile'],
+                     group=row['intervene_group'], model='A',
+                     ancestry=summary.get('ancestry_status', {}),
+                     observed_loci=row['observed_loci'], missing_loci=row['missing_loci'])
+    except (OSError, ValueError, KeyError, TypeError):
+        summary = None
+        issues.append('尚無有效且與此個案相符的 PRS 結果')
     try:
         bundle, bundle_hash = load_bundle()
     except (OSError, ValueError) as exc:
         issues.append(str(exc))
-    try:
-        summary, score_hash = load_score(sid)
-        if not source_identity_matches(sid, summary['sample']):
-            raise NotReady('PRS 來源與目前個案來源不符，請重新匯入')
-    except (OSError, ValueError, KeyError, TypeError):
-        summary = None
-        issues.append('尚未匯入有效且與此個案相符的 PRS 結果')
-    score = None
     if bundle and summary:
         try:
-            # Probe validates score/QC only. Never return this placeholder age's risk.
-            probe = calculator.evaluate(bundle, summary, dict(sample=summary['sample'], age=50,
-                                        sex='female', assessment_date=dt.date.today().isoformat(), prior_chd=False))
-            score = {'percentile': probe['percentile'], 'group': probe['risk_to_80']['group']}
+            calculator.score_row(summary, bundle['score_definition'])
         except (ValueError, KeyError, TypeError):
-            issues.append('PRS 品質、祖源或計分版本尚未符合風險模型要求')
+            issues.append('PRS 祖源或品質檢查尚未符合風險模型要求')
     current = dict(bundle=bundle_hash, score=score_hash, case_metadata=meta_hash)
     latest = latest_snapshot(sid)
     stale = bool(latest and latest.get('input_sha256') != current)
+    from . import prs_jobs
     return dict(available=not issues, issues=issues, score=score, research_only=True,
+                diseases=[dict(id='CHD', name='冠心病（CHD）', score=score)],
+                pipeline=prs_jobs.overview(sid),
                 age_min=20, age_max_exclusive=80,
                 model_id=bundle['model_id'] if bundle else None,
                 latest=latest if not stale and not issues else None, stale=stale)

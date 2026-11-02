@@ -144,6 +144,7 @@ def post_dragen_job(payload: dict = Body(...)):
             seq_type=seq_type,
             with_research_only=with_research_only,
             with_pgx=with_pgx,
+            with_prs=bool(payload.get("with_prs", False)),
             cnv_vcf=cnv_vcf,
             sv_vcf=sv_vcf,
             mito_vcf=mito_vcf,

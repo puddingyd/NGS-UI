@@ -12,32 +12,21 @@ def read(path):
     return json.loads(Path(path).read_text())
 
 
-def evaluate(bundle, summary, person, allow_synthetic=False):
-    validate(bundle)
-    if not isinstance(summary, dict) or not isinstance(person, dict):
-        raise ValueError('Summary and person must be JSON objects')
-    if bundle['status'] == 'synthetic' and not allow_synthetic:
-        raise ValueError('Synthetic fixture requires --allow-synthetic; never use for real cases')
-    if bundle['status'] == 'synthetic' and person.get('synthetic') is not True:
-        raise ValueError('Synthetic model requires an explicitly synthetic person')
-    if person.get('prior_chd') is not False:
-        raise ValueError('First-event risk requires confirmed absence of prior CHD')
-    datetime.date.fromisoformat(person['assessment_date'])
-    age = number(person['age'], 'age', bundle.get('age_min', 0), 80)
-    if age == 80:
-        raise ValueError('No supported future horizon at age 80')
-    if summary.get('sample') != person.get('sample') or not person.get('sample'):
-        raise ValueError('Sample identity mismatch')
+def score_row(summary, definition, require_ancestry=True):
+    """Validate a score independently of clinical inputs or risk parameters."""
+    if not isinstance(summary, dict):
+        raise ValueError('Summary must be an object')
     if summary.get('schema') != 'PGS004879_METHOD2_V0_20261031' or summary.get('stage') != 'METHOD2_TECHNICAL_PASS':
         raise ValueError('Verified Method 2 output required')
-    definition = bundle['score_definition']
     if summary.get('model_lock_sha256') != definition['model_lock_sha256']:
         raise ValueError('Score model lock mismatch')
     ancestry = summary.get('ancestry_status', {})
     if not isinstance(ancestry, dict):
         raise ValueError('Invalid ancestry evidence')
-    if ancestry.get('ancestry') != 'EAS' or ancestry.get('ancestry_low_confidence') not in (False, 'False'):
+    if require_ancestry and (ancestry.get('ancestry') != 'EAS' or ancestry.get('ancestry_low_confidence') not in (False, 'False')):
         raise ValueError('Confident, linked EAS ancestry evidence required')
+    if require_ancestry and ancestry.get('qc_status') == 'FAIL':
+        raise ValueError('Ancestry QC failed')
     scores = summary.get('scores', [])
     if not isinstance(scores, list) or any(not isinstance(r, dict) for r in scores):
         raise ValueError('Invalid score records')
@@ -57,6 +46,28 @@ def evaluate(bundle, summary, person, allow_synthetic=False):
         value = row[field]
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError('Invalid locus count')
+    return row
+
+
+def evaluate(bundle, summary, person, allow_synthetic=False):
+    validate(bundle)
+    if not isinstance(summary, dict) or not isinstance(person, dict):
+        raise ValueError('Summary and person must be JSON objects')
+    if bundle['status'] == 'synthetic' and not allow_synthetic:
+        raise ValueError('Synthetic fixture requires --allow-synthetic; never use for real cases')
+    if bundle['status'] == 'synthetic' and person.get('synthetic') is not True:
+        raise ValueError('Synthetic model requires an explicitly synthetic person')
+    if person.get('prior_chd') is not False:
+        raise ValueError('First-event risk requires confirmed absence of prior CHD')
+    datetime.date.fromisoformat(person['assessment_date'])
+    age = number(person['age'], 'age', bundle.get('age_min', 0), 80)
+    if age == 80:
+        raise ValueError('No supported future horizon at age 80')
+    if summary.get('sample') != person.get('sample') or not person.get('sample'):
+        raise ValueError('Sample identity mismatch')
+    definition = bundle['score_definition']
+    row = score_row(summary, definition)
+    p = row['eas_percentile']
     ten = integrate(bundle, person['sex'], p, age, age + 10) if age <= 70 else None
     remaining = integrate(bundle, person['sex'], p, age, 80)
     reference_ten = integrate(bundle, person['sex'], 50, age, age + 10) if age <= 70 else None

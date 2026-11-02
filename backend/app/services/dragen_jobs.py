@@ -512,7 +512,8 @@ def list_jobs(limit: int = 50) -> list[dict]:
 def active_sample_ids() -> set[str]:
     """Return UI/source sample IDs currently owned by active tertiary jobs."""
     from . import somatic
-    active: set[str] = somatic.active_ids()
+    from . import prs_jobs
+    active: set[str] = somatic.active_ids() | prs_jobs.active_ids()
     for job in list_jobs(limit=1000):
         job_id = job.get("job_id", "")
         if not (job.get("running") or job.get("state") in ("queued", "running")):
@@ -763,6 +764,9 @@ def delete_pipeline_output(sample_id: str) -> dict:
     """Delete UI/pipeline output and all NGS-UI job logs unless one is active."""
     _validate_sample_id(sample_id)
     from . import somatic
+    from . import prs_jobs
+    if sample_id in prs_jobs.active_ids():
+        raise RuntimeError("此個案的 PRS 分析仍在執行中")
     if sample_id in somatic.active_ids():
         raise RuntimeError("此個案的 Somatic 分析仍在執行中")
     jobs = [
@@ -784,6 +788,8 @@ def delete_pipeline_output(sample_id: str) -> dict:
         )
     source_sample_id = (matched_sample or {}).get("source_sample_id") or sample_id
     ui_sample_id = (matched_sample or {}).get("sample_id") or sample_id
+    if {ui_sample_id, source_sample_id} & prs_jobs.active_ids():
+        raise RuntimeError("此個案的 PRS 分析仍在執行中")
     if {ui_sample_id, source_sample_id} & somatic.active_ids():
         raise RuntimeError("此個案的 Somatic 分析仍在執行中")
     pipeline_sample_id = source_sample_id
@@ -855,6 +861,11 @@ def delete_pipeline_output(sample_id: str) -> dict:
         if path.is_dir():
             shutil.rmtree(path)
             deleted.append(str(path))
+    for job in prs_jobs.jobs(ui_sample_id):
+        path = prs_jobs.job_dir(job["job_id"])
+        if path.is_dir():
+            shutil.rmtree(path)
+            deleted.append(str(path))
     from . import sample_loader
     sample_loader.invalidate_sample_cache(ui_state_dir)
     sample_loader.remove_case_table_row(ui_sample_id)
@@ -874,6 +885,7 @@ def start_job(
     seq_type: str = "",
     with_research_only: bool = False,
     with_pgx: bool = True,
+    with_prs: bool = False,
     cnv_vcf: str = "",
     sv_vcf: str = "",
     mito_vcf: str = "",
@@ -969,6 +981,10 @@ def start_job(
             "tertiary analysis is already running for: " + ", ".join(conflicts)
         )
 
+    if with_prs:
+        from . import prs_jobs
+        prs_jobs.settings()  # Fail early on missing resources, before a long tertiary run.
+
     job_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
     jdir = _job_dir(job_id)
     jdir.mkdir(parents=True, exist_ok=True)
@@ -989,6 +1005,7 @@ def start_job(
         # Compatibility for older job-list frontends/state readers.
         "with_extra_vep": with_research_only,
         "with_pgx":       with_pgx,
+        "with_prs":       with_prs,
         "cnv_vcf":        cnv_vcf,
         "sv_vcf":         sv_vcf,
         "mito_vcf":       mito_vcf,
@@ -1017,6 +1034,8 @@ def start_job(
     ]
     if with_research_only:
         cmd.append("--research-only")
+    if with_prs:
+        cmd.append("--with-prs")
     if not with_pgx:
         cmd.append("--without-pgx")
     if cnv_vcf:  cmd += ["--cnv-vcf",  cnv_vcf]

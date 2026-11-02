@@ -1,8 +1,8 @@
 # INTERVENE PRS → 台灣 CHD 研究流程
 
-2026-11-02 v9.71：完成 CHD 研究風險 API／UI。採 INTERVENE 原研究 EstBB HR＋台灣 GBD2019，輸出未來10年、目前至80歲風險與 PRS 40–60% 比較曲線。原文224筆 Estonia CHD 結果驗算通過；**台灣 outcome validation 尚未完成，結果僅供研究**。TWB／BBJ 未納入本模型。
+2026-11-02 v9.72：接上三級自動計分與兩階段 PRS 表格。先由原始 gVCF 產生 score／percentile／祖源，再由使用者輸入臨床資料並計算風險。採 INTERVENE 原研究 EstBB HR＋台灣 GBD2019，輸出未來10年、目前至80歲風險與 PRS 40–60% 比較曲線。原文224筆 Estonia CHD 結果驗算通過；**台灣 outcome validation 尚未完成，結果僅供研究**。TWB／BBJ 未納入本模型。
 
-安裝參數包、匯入既有 score、操作 UI 與快照規格見 [操作文件](../../docs/ops/PRS_CHD_RESEARCH.md)。來源見 [DATA_SOURCES.md](DATA_SOURCES.md)，驗證範圍見 [VALIDATION.md](VALIDATION.md)。
+設定計分環境、安裝參數包、操作 UI 與快照規格見 [操作文件](../../docs/ops/PRS_CHD_RESEARCH.md)。來源見 [DATA_SOURCES.md](DATA_SOURCES.md)，驗證範圍見 [VALIDATION.md](VALIDATION.md)。
 
 ## 目錄與既有版本
 
@@ -61,9 +61,9 @@ person JSON 必填 sample、age（評估日期的歲數，可小數）、sex、a
 ## 現況與後續驗收
 
 1. **已完成**：原研究 EstBB 男性 age/sex、女性 sex 參數核對；原文224筆 CHD 曲線重現；台灣成人參數包、API、UI、獨立快照、來源變更失效與缺件拒絕。程式隨 Git 更新，參數包須另安裝；沒有自動部署。
-2. **院內操作驗收**：安裝資料包，匯入一個已有技術 PASS 且通過祖源 QC 的真實 summary，確認樣本對應及 UI 數值。raw-only 的 NOT_ASSESSED 仍不可估算，不可手改 EAS。
+2. **院內操作驗收**：設定計分環境與資料包，從 UI 啟動一個真實 WGS 的 raw gVCF → score／percentile／祖源流程，再輸入臨床資訊計算風險，確認樣本對應及 UI 數值。raw-only 的 NOT_ASSESSED 仍不可估算，不可手改 EAS。
 3. **研究限制**：GBD IHD 與 CHD 定義不完全一致；歐洲 HR、Model A 子集與 EAS735 ECDF 的台灣相容性未 outcome validated。不確定性區間尚未實作，明確輸出 null，不作臨床決策。
-4. **之後才擴充**：gVCF 排程／worker、院內5–10 WGS負載與 partial-task recovery、其他疾病；本版僅匯入既有計分結果，不需重跑 genotype 就可更新評估年齡。
+4. **已接上排程／worker**：三級發布後自動讀原 gVCF，完成score即發布，再補祖源；UI有獨立重試／取消與風險計算。院內fresh WGS、5–10 WGS負載與真實partial-task recovery仍待使用者部署後驗收，其他疾病之後再擴充。
 
 ## 來源
 

@@ -1,0 +1,157 @@
+"""Detached PRS worker; serial resource slot and shared tertiary sample locks."""
+import fcntl
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+import traceback
+
+from ..services import prs, prs_jobs as jobs
+from .dragen_run import _acquire_sample_locks, _release_sample_locks, _load_secrets
+
+
+class Cancelled(Exception):
+    pass
+
+
+class Worker:
+    def __init__(self, jid):
+        self.directory = jobs.job_dir(jid)
+        self.job = jobs.read_job(jid)
+        self.cfg, _ = prs.read_json(self.directory/'config.json')
+        self.plan = self.job['plan']
+        self.process = None
+
+    def update(self, **values):
+        self.job.update(values, updated=time.time(), pid=os.getpid())
+        prs.atomic_json(self.directory/'state.json', self.job)
+
+    def check_cancel(self):
+        if (self.directory/'cancel').exists(): raise Cancelled('使用者已取消 PRS 分析')
+
+    def verify_inputs(self):
+        self.check_cancel()
+        info = jobs.source(self.job['sample_id'])
+        if any(info[k] != self.plan[k] for k in info):
+            raise ValueError('三級分析來源已更新，請重新啟動 PRS')
+        if jobs.validate_gvcf(self.plan['gvcf'], self.job['source_sample_id']) != self.plan['gvcf_signature']:
+            raise ValueError('原始 gVCF 或 index 已變更，請重新啟動 PRS')
+        current_config, current_hash = jobs.settings()
+        if (current_hash != self.plan['config_sha256']
+                or jobs.resource_signature(current_config) != self.plan['resources']):
+            raise ValueError('PRS 執行設定已變更，請重新啟動')
+
+    def stop_process(self):
+        if self.process is None or self.process.poll() is not None: return
+        try:
+            os.killpg(self.process.pid, signal.SIGTERM)
+            try: self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(self.process.pid, signal.SIGKILL);self.process.wait(timeout=5)
+        except ProcessLookupError:
+            pass
+
+    def command(self, args, step):
+        self.update(status='running', step=step)
+        print('[PRS] '+step, flush=True)
+        self.process = subprocess.Popen(args, cwd=jobs.SCORING, start_new_session=True)
+        try:
+            while self.process.poll() is None:
+                self.check_cancel()
+                self.update()
+                time.sleep(1)
+            if self.process.returncode:
+                raise RuntimeError(f'{step}失敗（exit {self.process.returncode}），請查看 Log')
+        finally:
+            self.stop_process()
+            self.process = None
+
+    def publish(self, original, qc=None):
+        self.verify_inputs()
+        summary, digest = prs.read_json(original)
+        if summary.get('sample') != self.job['source_sample_id']:
+            raise ValueError('計分結果樣本識別碼不符')
+        prs.calculator.score_row(summary, prs.SCORE_DEFINITION, require_ancestry=False)
+        qc_hash = None
+        if qc:
+            evidence, qc_hash = prs.read_json(qc)
+            if evidence.get('sample') != summary['sample'] or evidence.get('qc_status') not in ('PASS', 'PASS_WITH_REVIEW_FLAGS'):
+                raise ValueError('祖源 QC 未通過')
+            # Derived envelope only; never edit the frozen upstream summary.
+            summary = {**summary, 'ancestry_status': evidence}
+        record = dict(schema='PRS_SCORE_LINK_V1', sample_id=self.job['sample_id'],
+                      source_sample_id=summary['sample'], original_sha256=digest,
+                      pipeline_source_sha256=self.plan['pipeline_source_sha256'],
+                      imported_at=prs.dt.datetime.now(prs.dt.timezone.utc).isoformat(),
+                      job_id=self.job['job_id'], pipeline_run_id=self.job['pipeline_run_id'],
+                      gvcf_signature=self.plan['gvcf_signature'], ancestry_qc_sha256=qc_hash,
+                      summary=summary)
+        prs.atomic_json(prs.score_path(self.job['sample_id']), record)
+
+    def run(self):
+        self.update(status='queued', step='等待 PRS 執行名額')
+        locks = []
+        with (jobs.root()/'.execution.lock').open('a') as slot:
+            try:
+                while True:
+                    self.check_cancel()
+                    try:
+                        fcntl.flock(slot, fcntl.LOCK_EX | fcntl.LOCK_NB);break
+                    except BlockingIOError:
+                        self.update();time.sleep(1)
+                self.update(step='等待個案分析完成')
+                while True:
+                    self.check_cancel()
+                    try:
+                        locks = _acquire_sample_locks([self.job['sample_id'], self.job['source_sample_id']]);break
+                    except RuntimeError:
+                        self.update();time.sleep(1)
+                self.verify_inputs()
+                sid, run = self.job['source_sample_id'], self.job['pipeline_run_id']
+                config_path = str(self.directory/'config.json')
+                dest = Path(self.cfg['project'])/'integrated_runs'/run/sid
+                self.command([sys.executable, str(jobs.SCORING/'pipeline_v21.py'), 'run',
+                              '--config', config_path, '--sample', sid, '--run-id', run,
+                              '--mode', 'fresh', '--gvcf', self.plan['gvcf'], '--resume'],
+                             'gVCF → 原始計分 → percentile')
+                original = dest/'method2/summary.json'
+                self.publish(original)
+                # The legacy ancestry path runs against these SAME raw outputs.
+                # Its normalized percentile does NOT replace Method2 EAS ECDF.
+                ancestry_run = run+'_ancestry'
+                try:
+                    self.command([sys.executable, str(jobs.SCORING/'pipeline.py'), 'run',
+                                  '--config', config_path, '--sample', sid, '--run-id', ancestry_run,
+                                  '--mode', 'reuse', '--raw-source', str(dest/'raw')],
+                                 '祖源與品質檢查（計分已完成）')
+                    qc = Path(self.cfg['project'])/'integrated_runs'/ancestry_run/sid/'qc/qc.json'
+                    self.publish(original, qc)
+                except RuntimeError as exc:
+                    self.update(status='done_with_warnings', step='計分完成；祖源檢查未完成', warning=str(exc))
+                    return
+                self.update(status='done', step='計分與祖源檢查完成；等待臨床資訊')
+            finally:
+                self.stop_process()
+                _release_sample_locks(locks)
+
+
+def main(jid):
+    _load_secrets()
+    worker = Worker(jid)
+    def terminate(*_): raise Cancelled('PRS 工作已終止')
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
+    try:
+        worker.run()
+        return 0
+    except Cancelled as exc:
+        worker.stop_process();worker.update(status='cancelled', step='已取消', error=str(exc));return 1
+    except Exception as exc:
+        traceback.print_exc()
+        worker.stop_process();worker.update(status='failed', step='失敗', error=str(exc));return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1]))

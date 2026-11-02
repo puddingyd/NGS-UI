@@ -29,3 +29,28 @@ def status(sample_id: str):
 @router.post('/assessments')
 def assess(sample_id: str, payload: dict, user=Depends(current_user)):
     return checked(prs.assess, sample_id, payload, user.get('username', ''))
+
+
+@router.post('/jobs')
+def start_score(sample_id: str, payload: dict, user=Depends(current_user)):
+    from ..services import prs_jobs
+    checked(prs.case_metadata, sample_id)
+    if set(payload) - {'candidate_id', 'new_run'}:
+        raise HTTPException(400, 'PRS 只接受伺服器列出的 gVCF 選項')
+    if type(payload.get('new_run', False)) is not bool:
+        raise HTTPException(400, 'new_run 必須是布林值')
+    return checked(prs_jobs.start, sample_id, payload.get('candidate_id'), user.get('username', ''), None, payload.get('new_run', False))
+
+
+@router.post('/jobs/{job_id}/cancel')
+def cancel_score(sample_id: str, job_id: str):
+    from ..services import prs_jobs
+    checked(prs.case_metadata, sample_id)
+    return checked(prs_jobs.cancel, sample_id, job_id)
+
+
+@router.get('/jobs/{job_id}/log')
+def score_log(sample_id: str, job_id: str):
+    from ..services import prs_jobs
+    checked(prs.case_metadata, sample_id)
+    return checked(prs_jobs.log, sample_id, job_id)

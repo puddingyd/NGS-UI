@@ -13140,6 +13140,7 @@ async function _dragenStart() {
     mode,
     with_research_only: !!extra?.checked,
     with_pgx: pgx ? !!pgx.checked : true,
+    with_prs: !!document.getElementById("dragen-prs")?.checked,
     samples,
   };
   const btn = document.getElementById("dragen-start-btn");
