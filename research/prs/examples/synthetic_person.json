@@ -1,0 +1,8 @@
+{
+  "sample": "SYNTHETIC_CASE",
+  "synthetic": true,
+  "age": 50,
+  "sex": "female",
+  "assessment_date": "2026-11-02",
+  "prior_chd": false
+}

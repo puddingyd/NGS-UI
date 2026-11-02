@@ -1,0 +1,9 @@
+{
+  "provenance": "Observed October 2026 3-sample pilot: raw score and pgsc_calc v2.3.0 HGDP+1kGP individual runs",
+  "tolerances": {"raw_sum_abs": 0.000002, "normalized_sum_abs": 0.000002, "percentile_pp_abs": 0.15, "z_abs": 0.0002},
+  "samples": {
+    "26T00970": {"raw_sum": 0.351907, "raw_matched": 609346, "raw_denom": 1218692, "normalized_sum": 0.354661, "percentile": 35.64625850340136, "z_most_similar_pop": -0.344481912761508, "matched": 609032, "excluded": 314, "unmatched": 1331, "reference_n": 3330, "eas_reference_n": 735, "pca_ld_pruned_markers": 27772},
+    "26T00969": {"raw_sum": 0.471545, "raw_matched": 609488, "raw_denom": 1218976, "normalized_sum": 0.475192, "percentile": 60.6803, "z_most_similar_pop": 0.3394, "matched": 609162, "excluded": 326, "unmatched": 1189, "reference_n": 3330, "eas_reference_n": 735, "pca_ld_pruned_markers": 27803},
+    "26T00968": {"raw_sum": 0.559173, "raw_matched": 609597, "raw_denom": 1219194, "normalized_sum": 0.558069, "percentile": 79.5918, "z_most_similar_pop": 0.8658, "matched": 609272, "excluded": 325, "unmatched": 1080, "reference_n": 3330, "eas_reference_n": 735, "pca_ld_pruned_markers": 27764}
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "created_utc": "2026-10-31T07:43:18.617715+00:00",
+  "eas_n": 735,
+  "imputation": "2*p_effect_unrelated_3330",
+  "model_dir": "/home/n102968/2026_INTERVENE_PRS/sensitivity/canonical_v0",
+  "original_source_decompressed_sha256": "0ee9852635bc831bfbcbb144cb308157bed658e0e26fc4243737b3957aea4d3f",
+  "percentile": "ECDF_100_times_count_reference_LE_target_over_735",
+  "schema": "PGS004879_METHOD2_V0_20261031",
+  "sha256": {
+    "PGS004879_modelA_v0.score.tsv": "358dc695afaee2387b14da0641f23a46b8d7cf33312f6ee14225eb9018d37f96",
+    "PGS004879_modelB_v0.score.tsv": "980541e5f1df2d5c5cd439f1f7020b68ce40a0af403bd6a6e44c02a62e675a42",
+    "provenance/provenance_issues_v0.tsv": "242ef31f27119ced105f9f91aa752ec144b23a3dc959eb6cbfd7ccbfb9e14265",
+    "reference_calibration_3330.keep": "d1388988d1caf9627bbc6d5e44ca2b6af3e56f5eddece5284db55d270d652809",
+    "reference_calibration_eas_735.keep": "3ff673496fa2ab9d3ceb7a91ac8172a047fff2bf1e5f9b5f62d0c474aea1e74a",
+    "reference_modelA_v0.sscore": "e0cd802cbe4714f7e71b12700ea3b44bd679f5c3668b1329579ec746779b1b3f",
+    "reference_modelB_v0.sscore": "c322b81019bf8587c39185d95b26fbaf2a97b769df44a3818b5d407a46cf77b1",
+    "reference_qc_master_v0.tsv.gz": "dc8b262840fa84c5fbf523ef0f078f28878fd18117b47acfea950f9944c0f1b4",
+    "reference_qc_unrelated3330.afreq": "0b2e24379c4ee9c0fcabc169ec4de90fcc6f27b078609e048bf3cb831e7dc2ee"
+  },
+  "source_path": "/home/n102968/2026_INTERVENE_PRS/resources/scorefiles/PGS004879_hmPOS_GRCh38.txt.gz",
+  "unrelated_n": 3330,
+  "variants_A": 610305,
+  "variants_B": 603438
+}

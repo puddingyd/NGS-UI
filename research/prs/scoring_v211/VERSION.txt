@@ -1,0 +1,6 @@
+PGS004879 integrated v2.1.1 (2026-11-02)
+Scientific core: v2.0 golden (10 immutable components).
+Execution layer: v2.1; batch Namespace hotfix: v2.1.1.
+Server validation: 27/27 unit, 3/3 fresh, 6/6 A/B, 2/2 parallel fresh, 4/4 A/B, completed-run resume, lock and post-roundtrip recovery PASS.
+Not yet validated: mid-workflow partial-task interruption recovery; scale and clinical CHD absolute-risk.
+Docs/release SHA256 updated only; science code unchanged.

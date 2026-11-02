@@ -1,0 +1,22 @@
+{
+  "sample": "SYNTHETIC_CASE",
+  "schema": "PGS004879_METHOD2_V0_20261031",
+  "stage": "METHOD2_TECHNICAL_PASS",
+  "model_lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "ancestry_status": {
+    "ancestry": "EAS",
+    "ancestry_low_confidence": false
+  },
+  "scores": [
+    {
+      "model": "A",
+      "n_loci": 610305,
+      "observed_loci": 610305,
+      "missing_loci": 0,
+      "total_sum": 0,
+      "eas_z": 0,
+      "eas_percentile": 50,
+      "intervene_group": "40-60"
+    }
+  ]
+}

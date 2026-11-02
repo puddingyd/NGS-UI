@@ -1,0 +1,4 @@
+User-provided ZIP: PGS004879_integrated_v2(1).zip
+SHA256: 4fce8df7f52b95595f852c9d91871603582a00667c5585b5653b19e13bedae68
+Source code and real config remain unchanged in the re-documented source snapshot.
+No integrated_runs/output files or model resources supplied in this ZIP.

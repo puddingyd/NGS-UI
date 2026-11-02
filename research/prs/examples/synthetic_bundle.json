@@ -1,0 +1,600 @@
+{
+  "schema": "CHD_RESEARCH_BUNDLE_V1",
+  "model_id": "SYNTHETIC_CONSTANT_HAZARD_V1",
+  "status": "synthetic",
+  "endpoint": "first_CHD",
+  "population": "SYNTHETIC_NOT_TAIWAN",
+  "baseline_source": "Synthetic analytical test fixture; no epidemiological data",
+  "hr_source": "All HR=1 for analytical comparison; no published HR",
+  "baseline_year": 2000,
+  "baseline_release": "synthetic-v1",
+  "method": "competing_exact_v1",
+  "units": "rates_per_person_year_prevalence_fraction",
+  "limitations": [
+    "Synthetic numbers only. Never use for a patient. No uncertainty interval."
+  ],
+  "score_definition": {
+    "model": "A",
+    "model_lock_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "reference_id": "SYNTHETIC_EAS735",
+    "ancestry": "EAS"
+  },
+  "bins": [
+    {
+      "sex": "male",
+      "age_start": 0,
+      "age_end": 5,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 5,
+      "age_end": 10,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 10,
+      "age_end": 15,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 15,
+      "age_end": 20,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 20,
+      "age_end": 25,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 25,
+      "age_end": 30,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 30,
+      "age_end": 35,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 35,
+      "age_end": 40,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 40,
+      "age_end": 45,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 45,
+      "age_end": 50,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 50,
+      "age_end": 55,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 55,
+      "age_end": 60,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 60,
+      "age_end": 65,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 65,
+      "age_end": 70,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 70,
+      "age_end": 75,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "male",
+      "age_start": 75,
+      "age_end": 80,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 0,
+      "age_end": 5,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 5,
+      "age_end": 10,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 10,
+      "age_end": 15,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 15,
+      "age_end": 20,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 20,
+      "age_end": 25,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 25,
+      "age_end": 30,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 30,
+      "age_end": 35,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 35,
+      "age_end": 40,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 40,
+      "age_end": 45,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 45,
+      "age_end": 50,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 50,
+      "age_end": 55,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 55,
+      "age_end": 60,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 60,
+      "age_end": 65,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 65,
+      "age_end": 70,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 70,
+      "age_end": 75,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    },
+    {
+      "sex": "female",
+      "age_start": 75,
+      "age_end": 80,
+      "incidence": 0.01,
+      "prevalence": 0,
+      "all_cause_mortality": 0.02,
+      "chd_mortality": 0,
+      "hr": {
+        "<20": 1,
+        "20-40": 1,
+        "40-60": 1,
+        "60-80": 1,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 1
+      }
+    }
+  ]
+}

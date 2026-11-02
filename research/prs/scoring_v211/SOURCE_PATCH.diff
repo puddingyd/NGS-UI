@@ -1,0 +1,11 @@
+--- vendor/PGS004879_FINAL_gVCF_ORIGINAL.sh	2026-10-28 02:42:21.873730680 +0000
++++ vendor/PGS004879_FINAL_gVCF_resume.sh	2026-10-28 02:42:23.843663423 +0000
+@@ -673,7 +673,7 @@
+ echo 'Starting pgsc_calc v2.3.0'
+ (
+   cd "$OUT"
+-  nextflow run pgscatalog/pgsc_calc -r v2.3.0 -profile singularity \
++  nextflow run pgscatalog/pgsc_calc -r v2.3.0 -profile singularity -resume \
+      -c "$OUT/local_containers.config" -w "$OUT/nextflow_work" \
+      --input "$SHEET" --target_build GRCh38 \
+      --scorefile "$OUT/scorefiles/PGS004879_hmPOS_GRCh38.txt.gz" \
