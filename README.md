@@ -1,6 +1,6 @@
 # NGS 分析平台 (NGS-UI)
 
-INTERVENE PRS 研究程式已納入 [`research/prs/`](research/prs/README.md)：保留 v2.1.1 固定 Model A/B 核心，新增獨立 CHD 研究風險引擎、資料包規格與合成測試。正式 CHD HR／台灣 baseline 尚未取得，原研究數值重現與平台介面尚未完成；目前不可用合成資料輸出個案風險。
+INTERVENE PRS 研究程式已納入 [`research/prs/`](research/prs/README.md)：保留 v2.1.1 固定 Model A/B 核心，新增獨立 CHD 研究風險引擎、資料包規格與合成測試。台灣 GBD2019 baseline 與原論文驗算表已取得（[來源與缺件](research/prs/DATA_SOURCES.md)）；TWB／BBJ 候選關聯資料仍待模型核對，正式參數包、原研究數值重現與平台介面尚未完成；目前不可用合成資料輸出個案風險。
 
 GBA1、CYP21A2、SMN、HBA specialized caller 已整合進既有卡片與報告。三級 post-processing 會先把 targeted JSON 快照、相關 VCF 證據、正規化結果與 checksum manifest 存到 `08_postprocessing/`；平台不再回原始 JSON／VCF 補 GBA1 證據，亦不複製大型 VCF（資料包須小於 100 MB）。SMN 顯示各基因 CN 與 silent-carrier marker，HBA 保留完整 genotype；未知或定位不明的結果保留待複核狀態，不自動標為致病。健檢及診斷沿用原表格、列點及附錄；HBA 複合結果須依完整 locus 指定健檢分類，既有帶因篩檢清單補入 HBA1／HBA2。部署後舊個案可用 `python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --from-source --apply` 補建，不必重跑 Nextflow/VEP；已有資料包可離線重解析。也可用 `python3 scripts/rebuild_specialized.py --all-dragen --from-source --apply` 批次處理；`python3 scripts/scan_targeted_callers.py` 可唯讀盤點 CYP21A2／SMN／HBA 候選個案。省略 `--apply` 先驗證，既有判讀／選取保留。[資料結構、判讀規則與補建操作](docs/ops/SPECIALIZED_CALLERS.md)；[GBA1 細節](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
 

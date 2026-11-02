@@ -5,5 +5,5 @@
     "LICENSE": "eaa439f2daf4baf16355d2de1dc04844cad1100de0b33d152936029f67b755d3",
     "Sex_LifetimeRiskEstimation_Bootstrap_script.R": "6dc07d5ef0e4c99ae644a0fc51092d1b399438095078d095f25a39c7914bf009"
   },
-  "purpose": "Source review only; sex-stratified example, NOT selected or validated CHD age/sex model. External GBD/HR CSVs absent. Not executed."
+  "purpose": "Source review only; sex-stratified example, NOT a complete validated CHD model. Not executed. GBD sources and candidate association files later collected under gitignored runtime; see ../DATA_SOURCES.md. Original European percentile HR inputs still incomplete."
 }

@@ -2,6 +2,8 @@
 
 2026-11-02：第一階段程式納管與風險計算基礎實作。**目前沒有正式台灣風險參數包；沒有完成原研究數值重現或台灣 outcome validation。不可把合成資料輸出當作個案風險。**
 
+資料尋找更新：台灣 GBD2019 四類基準、原論文 CHD 驗算表及 TWB／BBJ 候選關聯資料已下載，見 [DATA_SOURCES.md](DATA_SOURCES.md)。TWB 檔案欄位為 OR，BBJ 尚待 score／模型核對，均未核准為引擎參數。
+
 ## 目錄與既有版本
 
 - `scoring_v211/`：從使用者 ZIP 選取的既有計分程式、測試與歷史文件，逐檔內容保持不變。
@@ -58,8 +60,8 @@ person JSON 必填 sample、age（評估日期的歲數，可小數）、sex、a
 
 ## 缺件與下一個驗收點
 
-1. **原方法重現資料**：原研究 CHD 分組 HR、SE/共變異、年齡切點、年齡插值／外推規則及選定模型；至少一個原研究國家的 baseline 與 published expected curves。作者 repo 腳本仍引用作者本機的 HR CSV；本次沒有取得完整參數，不能用 Catalog per-SD HR 代替七組年齡別 HR。補齊後逐性別、年齡、分組對照預期數值，保存誤差與來源。
-2. **台灣基準**：同一 GBD release／年度的 IHD 年齡性別別發生、盛行、全死因與 IHD 死亡率及 uncertainty。重現先用 GBD2019；台灣研究版另固定年度，不能混用版本。確認 I9_CHD / IHD ICD 定義一致性。GBD 下載可能需使用者帳號，這次未下載或同意任何條款。
+1. **原方法重現資料**：原研究 CHD 分組 HR、SE/共變異、年齡切點、年齡插值／外推規則及選定模型；至少一個原研究國家的 baseline 與 published expected curves。已取得原論文 Data 4／7 的 CHD 預期曲線及原研究國家的 GBD baseline；原版歐洲分組 HR 仍不完整，不能用 Catalog／Data 2 的 per-SD HR 代替。已確認原研究 CHD 男性採 Age and Sex、女性採 Sex 模型。補齊後逐性別、年齡、分組對照預期數值，保存誤差與來源。
+2. **台灣基準**：已下載作者公開 GBD2019 的 IHD 發生、盛行、全死因與 IHD 死亡率及上下界；資料稽核通過，但第一組是1–4歲，需解決引擎 [0,80) 起點。Data 9 的 UKB 疾病定義重疊為82%，須明列 I9_CHD / IHD 差異；原檔在 gitignored runtime，來源見 DATA_SOURCES.md。尚未產生正式風險包。
 3. **外推與計分相容性**：2024 原研究 HR 為歐洲祖源；EAS735 的 ECDF 與台灣人口並不等價。查核 A/B 子集、全球3330頻率補值、來源PGS與published HR相容性；評估 A/B、高權重缺失、palindromic、EAS reference bootstrap 及跨組穩定性。現有 2pp 是 review flag，不是 CI。
 4. **不確定性**：取得完整來源後再加入參數抽樣及固定 seed；區分 HR／baseline 區間、參考抽樣與 A/B sensitivity。歐洲→台灣的不可辨識外推偏差不能靠 narrow CI 消除。
 5. **作業驗收**：mid-workflow partial-task recovery、5–10 WGS 資源測試需在院內執行；本機測試沒有代替它們。

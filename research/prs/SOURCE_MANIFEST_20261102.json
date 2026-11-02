@@ -1,0 +1,277 @@
+{
+  "retrieved_on": "2026-11-02",
+  "purpose": "Source discovery and audit only; no approved risk bundle",
+  "cache_note": "Files under runtime are local and gitignored; git pull does not download them. URLs and checksums allow retrieval. Drive raw downloads require permitted access. No signed download URLs stored.",
+  "files": [
+    {
+      "path": "runtime/sources_20261102/gbd2019/Sex_Stratified_Incidence.csv",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/Sex_Stratified_Incidence.csv",
+      "bytes": 2441868,
+      "sha256": "0a5da0a297137547002c90e152a71472da6843d2848eb33628197e34edf1194b",
+      "kind": "gbd_source",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/gbd2019/Sex_Stratified_Prevalence.csv",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/Sex_Stratified_Prevalence.csv",
+      "bytes": 2420932,
+      "sha256": "231e5ba00a052161a28f30e0a63c722c11c473de4427fc90476425624999caeb",
+      "kind": "gbd_source",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/gbd2019/Sex_Stratified_Mortality.csv",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/Sex_Stratified_Mortality.csv",
+      "bytes": 2365513,
+      "sha256": "286155ea6dae1b6904c7529f5cde5c83fc38a24c9ff38aeab37ba0e8dfeba2f3",
+      "kind": "gbd_source",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM4_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM4_ESM.xlsx",
+      "bytes": 17786,
+      "sha256": "7d8164a7d97dd940857d5d995a42812b9901440eb4ef20427ef4c85f0cf4507b",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM5_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM5_ESM.xlsx",
+      "bytes": 27972,
+      "sha256": "4668632cedcbe26ad7af7c16aa383b11b26e94bb8904bffb15cc2ad71aaff3ed",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM6_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM6_ESM.xlsx",
+      "bytes": 11491,
+      "sha256": "e1f18df4f23f6d75ae0626bdd79178e767309951384d5db0c20bde2923ca700f",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM7_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM7_ESM.xlsx",
+      "bytes": 1839127,
+      "sha256": "659e782a8f8a9beb5168f0a74cc89100247dc74b33c3ac46c07474748340d5c8",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM8_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM8_ESM.xlsx",
+      "bytes": 14199,
+      "sha256": "2a2fec41963ab43b3b4e30d5271b0640c967b20b404e0855a789f5bc92b52da8",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM9_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM9_ESM.xlsx",
+      "bytes": 11232,
+      "sha256": "ee2badc983b78c6a7e6a27ec7475a552ef3bc87dd3a385d79dcf03c0a7bd0cdf",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM10_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM10_ESM.xlsx",
+      "bytes": 147386,
+      "sha256": "ad715d0b1b9d4991659498317577ea8254af5c39501743feb9f3de272c9727d7",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM11_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM11_ESM.xlsx",
+      "bytes": 10747,
+      "sha256": "05a5db28a767c11137632578772e61daf39b5517a5ae37a028f4bf76075a326e",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM12_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM12_ESM.xlsx",
+      "bytes": 12723,
+      "sha256": "61b9e192626f8e756ea4cf7a27beeda79efb20c2c524dcea9533a3f630917731",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM13_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM13_ESM.xlsx",
+      "bytes": 12977,
+      "sha256": "15d26c9d35c2bd2fe81c0d3469b15579682dfced9294527d6566a09d12a29c78",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM14_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM14_ESM.xlsx",
+      "bytes": 12970,
+      "sha256": "c39ab454324e3fb6d6f0552dcf47bde459b6ae9c26d6486efded91926b2a20e9",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM15_ESM.xlsx",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM15_ESM.xlsx",
+      "bytes": 23996,
+      "sha256": "6f21f0ed9b645874e21d2bca56685623966803f53f38866b04400099c2b13468",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM1_ESM.pdf",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM1_ESM.pdf",
+      "bytes": 8259730,
+      "sha256": "f49260c6237760606dafcbee6977667a6c28ae718db8a19e0d826ddbad98f1c2",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/publication/41467_2024_48938_MOESM3_ESM.pdf",
+      "url": "https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41467-024-48938-2/MediaObjects/41467_2024_48938_MOESM3_ESM.pdf",
+      "bytes": 85586,
+      "sha256": "6eb5121d812aa3dabbaaa159bccc9d19dc00109749fc42504b4450dedf2e5874",
+      "kind": "publication_supplement"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/README.md",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/README.md",
+      "bytes": 22101,
+      "sha256": "92040645525bc693342b28e494ec25fffedb4de1f3a40f3956a0f0f74b5a55eb",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/AbsoluteRiskEstimation__01_AgeandSexStrat_SplineFitting.R",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/01_AgeandSexStrat_SplineFitting.R",
+      "bytes": 9389,
+      "sha256": "5203a792909c6df343e1b37343f69bbf98ac5c87310466e05ad47771fcb92a94",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/AbsoluteRiskEstimation__02_AgeandSexStrat_LifetimeRiskEstimation.R",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/02_AgeandSexStrat_LifetimeRiskEstimation.R",
+      "bytes": 19605,
+      "sha256": "2414737c3b88192e22559c4696db5a5ec63538db23614c66cafa24c72bb42c50",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/AbsoluteRiskEstimation__03_Sex_LifetimeRiskEstimation.R",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/03_Sex_LifetimeRiskEstimation.R",
+      "bytes": 20213,
+      "sha256": "3ca413e4f729f74d3c7978945362fa81562b554a3cd25c49a9db1825052cad89",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/AbsoluteRiskEstimation__scripts__multi_ancestry.R",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/scripts/multi_ancestry.R",
+      "bytes": 3358,
+      "sha256": "3a6a2f570f06f3e619d4e568b36500c08ff73df96a4214948dca8a9927f05309",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/MetaAnalysis__AgeandSexSpecific_MetaAnalysisandHetero.R",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/MetaAnalysis/AgeandSexSpecific_MetaAnalysisandHetero.R",
+      "bytes": 12464,
+      "sha256": "2567d62d9ecef5fa1ff6012659e673e15d460faaf4cf4c999d67c1e452f844da",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/Figures__AgeandSexSpecific_HRPercentile_MetaAnalysis.R",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/Figures/AgeandSexSpecific_HRPercentile_MetaAnalysis.R",
+      "bytes": 9707,
+      "sha256": "4ffe910946db7cb3c25b73c158a52fb2750a0b97c1765386c2b45bb98b863b5e",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/author_code/ModelSelection__README.md",
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/ModelSelection/README.md",
+      "bytes": 1,
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+      "kind": "code_review_only",
+      "git_commit": "179986db2f9af3b6eb32e4e16dc9201a23d2a29c"
+    },
+    {
+      "path": "runtime/sources_20261102/candidate_associations/TWB_EAS_age_quartiles.csv",
+      "url": "https://drive.google.com/file/d/1tsKQ3V9XfxPpnzfLju94qMqMyaZT6KPu/view?usp=drivesdk",
+      "bytes": 318,
+      "sha256": "5ae8291e3ff944e53f671ab6b7eb48e49ae41aec6908637092c283675020901b",
+      "kind": "candidate_not_approved",
+      "modified_time": "2025-03-14T20:35:14.282Z",
+      "cohort": "taiwan",
+      "redistribution_status": "not_reviewed"
+    },
+    {
+      "path": "runtime/sources_20261102/candidate_associations/TWB_EAS_baseline_summary_stats.csv",
+      "url": "https://drive.google.com/file/d/1ObAk4KabVcZzuJM46ap1XE4ropKcFF0b/view?usp=drivesdk",
+      "bytes": 1742,
+      "sha256": "ec33403cf5f5963b8c22da07f85866020cab310217ae84bac2e8ea565db7f3c0",
+      "kind": "candidate_not_approved",
+      "modified_time": "2025-03-14T20:35:08.559Z",
+      "cohort": "taiwan",
+      "redistribution_status": "not_reviewed"
+    },
+    {
+      "path": "runtime/sources_20261102/candidate_associations/HR_FemaleSample_TWB_EAS.csv",
+      "url": "https://drive.google.com/file/d/1nFLlgvae3hwncT5C2u-SakcvUurW3Syl/view?usp=drivesdk",
+      "bytes": 49301,
+      "sha256": "4c38f981f70d0732eb18817bbf97c9e3566134fe144fb9ee59fbdc2eb1d696a3",
+      "kind": "candidate_not_approved",
+      "modified_time": "2024-10-29T09:51:39.000Z",
+      "cohort": "taiwan",
+      "redistribution_status": "not_reviewed"
+    },
+    {
+      "path": "runtime/sources_20261102/candidate_associations/HR_MaleSample_TWB_EAS.csv",
+      "url": "https://drive.google.com/file/d/1pCrXU0Oa7_JPeNac8Kb3LlpaHf5jNIEZ/view?usp=drivesdk",
+      "bytes": 45388,
+      "sha256": "6a0b44ce35939c6f51a3f3867a3aafe9a1b9bf5267032a8c9b7a84afba925e80",
+      "kind": "candidate_not_approved",
+      "modified_time": "2024-10-29T09:51:39.000Z",
+      "cohort": "taiwan",
+      "redistribution_status": "not_reviewed"
+    },
+    {
+      "path": "runtime/sources_20261102/candidate_associations/HR_FemaleSample_BBJ.csv",
+      "url": "https://drive.google.com/file/d/1fFQfTFTsjoaA4gKSRfSaueDJLTACcIHS/view?usp=drivesdk",
+      "bytes": 21380,
+      "sha256": "3d441e8024b88df97ab9fefb803a1eb98b707cf643e0270c79667fb3426fed61",
+      "kind": "candidate_not_approved",
+      "modified_time": "2023-10-17T17:49:51.000Z",
+      "cohort": "japan",
+      "redistribution_status": "not_reviewed"
+    },
+    {
+      "path": "runtime/sources_20261102/candidate_associations/HR_AgeandSexStratified_BBJ.csv",
+      "url": "https://drive.google.com/file/d/1tbdc9qVQTuateRgmuTRqbELoO2uBsj9Z/view?usp=drivesdk",
+      "bytes": 131896,
+      "sha256": "5ba42de3be48f7c92a19982fa31035074c18c1dc8c302109d5fe57ab18cf191c",
+      "kind": "candidate_not_approved",
+      "modified_time": "2023-01-09T01:37:14.000Z",
+      "cohort": "japan",
+      "redistribution_status": "not_reviewed"
+    },
+    {
+      "path": "runtime/sources_20261102/extracted/SOURCE_AUDIT.json",
+      "kind": "local_audit_or_extract_not_risk_bundle",
+      "bytes": 1461,
+      "sha256": "4c7a0dacf00afa680864b2df2bfd017dc6ba37c4ee0ff0a53dfe03b0616a2cec"
+    },
+    {
+      "path": "runtime/sources_20261102/extracted/chd_meta_vs_biobank_cumulative_risk.csv",
+      "kind": "local_audit_or_extract_not_risk_bundle",
+      "bytes": 117249,
+      "sha256": "d2e3eab97b1d7362130dd45fbeb2bea4ff4ab725320203dda1e2bd593d707083"
+    },
+    {
+      "path": "runtime/sources_20261102/extracted/chd_published_cumulative_risk.csv",
+      "kind": "local_audit_or_extract_not_risk_bundle",
+      "bytes": 105045,
+      "sha256": "df04cb4a66c402fb567202819e31759ad3d3d3bc1a7fce000e27b574aea295f3"
+    },
+    {
+      "path": "runtime/sources_20261102/extracted/taiwan_ihd_2019_rates_per_100000.csv",
+      "kind": "local_audit_or_extract_not_risk_bundle",
+      "bytes": 26509,
+      "sha256": "26e6e6a70887cf1045415ee80783d6d7150c3e4b264aedb88821adc15ed83b1d"
+    }
+  ]
+}
