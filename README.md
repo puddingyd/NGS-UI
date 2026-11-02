@@ -482,3 +482,5 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 - EMR 相關功能預設停用，需設 `NGS_UI_EMR_CLIENT_ID` 才會啟用，且只在內網可達。
 - `/api/phenotype-tool/*` 與 `/api/healthz` 是刻意公開無認證；`/api/patient_list` 與其餘 `/api/*` 需登入。
 - 大型 JSON response 會在瀏覽器支援時自動 gzip；SNV parse + phenotype / Exomiser / LIRICAL / OMIM join 使用有上限的 process-local LRU cache，輸入 TSV 或 sidecar 更新後自動失效。
+
+個案載入異常久時，依 [載入效能診斷](docs/ops/CASE_LOADING.md) 區分登錄、索引與個案資料讀取。v9.73 避免既有 WGS review 僅因 TITAN-WGS 標籤變更而重建，並在真正重建前記錄原因。

@@ -77,3 +77,55 @@ def test_run_stopgaps_passes_sample_to_review_builder():
     call = script[script.index('"$SCRIPT_DIR/build_snv_review_tsv.py"'):]
     call = call[:call.index("step_done")]
     assert '--sample "$SID"' in call
+
+
+@pytest.mark.parametrize('built_type,loaded_type', [
+    ('WGS','TITAN-WGS'), ('TITAN-WGS','WGS'),
+])
+def test_equivalent_wgs_labels_reuse_review_without_raw_scan(tmp_path,monkeypatch,built_type,loaded_type):
+    from app.services import snv_review
+    bed=tmp_path/'cds.bed';bed.write_text('chr1\t900\t2000\n')
+    monkeypatch.setenv('NGS_UI_CDS_CANDIDATE_BED',str(bed))
+    raw=tmp_path/'raw.tsv';raw.write_text(RAW)
+    options=dict(output_dir=tmp_path/'post',gpn_msa_db=tmp_path/'no-msa',gpn_star_dir=tmp_path/'no-star')
+    review=snv_review.ensure_review_tsv(raw,test_type=built_type,**options)
+    before=review.read_bytes(),review.stat().st_mtime_ns
+    def no_scan(*args,**kwargs):
+        raise AssertionError('Equivalent WGS labels must reuse the existing review TSV')
+    monkeypatch.setattr(snv_review,'_load_bed',no_scan)
+    monkeypatch.setattr(snv_review.gpn_msa,'annotate_review_tsv',no_scan)
+    assert snv_review.ensure_review_tsv(raw,test_type=loaded_type,**options)==review
+    assert (review.read_bytes(),review.stat().st_mtime_ns)==before
+    assert len(review.read_text().splitlines())==3  # WGS keeps DP12.
+
+
+def test_wes_depth_policy_still_rebuilds_wgs_review(tmp_path,monkeypatch,capsys):
+    from app.services import snv_review
+    bed=tmp_path/'cds.bed';bed.write_text('chr1\t900\t2000\n')
+    monkeypatch.setenv('NGS_UI_CDS_CANDIDATE_BED',str(bed))
+    raw=tmp_path/'raw.tsv';raw.write_text(RAW)
+    options=dict(output_dir=tmp_path/'post',gpn_msa_db=tmp_path/'no-msa',gpn_star_dir=tmp_path/'no-star')
+    review=snv_review.ensure_review_tsv(raw,test_type='WGS',**options)
+    capsys.readouterr()
+    snv_review.ensure_review_tsv(raw,test_type='WES',**options)
+    assert len(review.read_text().splitlines())==2
+    log=capsys.readouterr().out
+    assert 'snv_review.rebuild_start' in log and 'test_type' in log
+
+
+@pytest.mark.parametrize('changed', ['raw','bed'])
+def test_equivalent_labels_do_not_hide_real_input_changes(tmp_path,monkeypatch,changed):
+    from app.services import snv_review
+    bed=tmp_path/'cds.bed';bed.write_text('chr1\t900\t2000\n')
+    monkeypatch.setenv('NGS_UI_CDS_CANDIDATE_BED',str(bed))
+    raw=tmp_path/'raw.tsv';raw.write_text(RAW)
+    options=dict(output_dir=tmp_path/'post',gpn_msa_db=tmp_path/'no-msa',gpn_star_dir=tmp_path/'no-star')
+    review=snv_review.ensure_review_tsv(raw,test_type='WGS',**options)
+    if changed=='raw':
+        raw.write_text(RAW+'chr1\t1200\tA\tT\tBBB\tNM_2\tc.3\tp.3\tmis\tMODERATE\t30\n')
+        expected_lines=4
+    else:
+        bed.write_text('chr1\t900\t1050\n')
+        expected_lines=2
+    snv_review.ensure_review_tsv(raw,test_type='TITAN-WGS',**options)
+    assert len(review.read_text().splitlines())==expected_lines

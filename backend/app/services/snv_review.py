@@ -40,6 +40,15 @@ def _fmt_size(path: Path) -> str:
     return f"{size:.1f}GB"
 
 
+def _filter_test_type(value: object) -> object:
+    """WGS and TITAN-WGS have identical review filters, including depth.
+
+    Keep the displayed test label in the manifest, but allow existing WGS
+    generations to be reused after a TITAN registration (and vice versa).
+    """
+    return "WGS" if value in ("WGS", "TITAN-WGS") else value
+
+
 def _log_perf(event: str, started: float, **fields) -> None:
     parts = [f"[perf] {event}", f"elapsed={time.perf_counter() - started:.3f}s"]
     parts.extend(f"{key}={value}" for key, value in fields.items())
@@ -378,10 +387,15 @@ def ensure_review_tsv(
         "require_msa": require_gpn_msa, "require_star": require_gpn_star,
         "force_msa": force_gpn_msa, "force_star": force_gpn_star,
     }
-    non_gpn_matches = all(
-        current.get(key) == value for key, value in source.items()
+    changed_fields = [
+        key for key, value in source.items()
         if key not in {"gpn_msa", "gpn_star", "gpn_star_v", "gpn_star_research_only"}
-    )
+        and (
+            _filter_test_type(current.get(key)) != _filter_test_type(value)
+            if key == "test_type" else current.get(key) != value
+        )
+    ]
+    non_gpn_matches = not changed_fields
     if review_tsv.is_file() and non_gpn_matches:
         payload, refreshed = _refresh_gpn_annotations(
             review_tsv, source, current, **annotation_options,
@@ -399,6 +413,14 @@ def ensure_review_tsv(
         )
         return review_tsv
 
+    # Emit this BEFORE the potentially long raw scan so a live server log
+    # explains why a newly registered WGS case is still loading.
+    _log_perf(
+        "snv_review.rebuild_start", started,
+        raw_size=_fmt_size(raw_tsv), review=review_tsv.name,
+        reason="missing_review" if not review_tsv.is_file() else "signature_changed",
+        changed_fields=",".join(changed_fields), test_type=test_type_key,
+    )
     candidate_bed = _load_bed(candidate_bed_path)
     tmp = review_tsv.with_suffix(review_tsv.suffix + ".tmp")
     kept = 0
