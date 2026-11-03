@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -171,7 +172,8 @@ def test_launch_command_uses_group_writable_umask_after_environment():
 
     assert source_position < umask_position < mkdir_position
     assert 'ORIGINAL_UMASK="$(umask)"' in command
-    assert 'umask "${ORIGINAL_UMASK}"\n    exec bash -i' in command
+    assert 'umask "${ORIGINAL_UMASK}"\n    exit "${status}"' in command
+    assert "exec bash -i" in command
 
 
 @pytest.mark.parametrize("failure,expected,stage", [
@@ -232,7 +234,7 @@ echo "QC: FAIL=1 ERROR=0"
     result = subprocess.run(["/bin/bash", "-c", runner], capture_output=True, text=True,
                             env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
                                  "EVENTS": str(events), "FAIL_STAGE": failure}, timeout=20)
-    assert result.returncode == 0  # Only the test's final interactive-shell replacement.
+    assert result.returncode == (0 if not failure else (7 if failure in {"config", "nextflow"} else (2 if failure == "missing_script" else 9)))
     assert (events.read_text().splitlines() if events.exists() else []) == expected
     if stage:
         assert f"FAILED: {stage};" in result.stdout
@@ -248,74 +250,57 @@ echo "QC: FAIL=1 ERROR=0"
 
 
 def test_cleanup_secondary_nextflow_work_returns_guarded_dgx_command(monkeypatch):
-    work_root = Path("/raid/DGM/work")
-    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", work_root)
-
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", Path("/raid/DGM/work"))
     result = secondary.cleanup_nf_work_command()
-
+    argv = shlex.split(result["command"])
     assert result["path"] == "/raid/DGM/work"
-    assert 'if [ ! -d "${SECONDARY_WORK_ROOT}" ]' in result["command"]
-    assert "pgrep -af '[n]extflow'" in result["command"]
-    assert 'find "${SECONDARY_WORK_ROOT}" -mindepth 1 -maxdepth 1 -print' in result["command"]
-    assert 'read -r -p "確定刪除以上二級分析 Nextflow 暫存？[y/N] "' in result["command"]
-    assert 'if ! find "${SECONDARY_WORK_ROOT}"' in result["command"]
-    assert '-exec rm -rf -- {} +; then' in result["command"]
-    assert '-maxdepth 1 -print -quit)' in result["command"]
-    assert "部分檔案無法刪除" in result["command"]
-    assert "目錄仍有殘留項目" in result["command"]
+    assert argv[:2] == ["python3", "-c"]
+    assert argv[3:5] == ["cleanup", "/raid/DGM/work"]
+    assert "def acquire_lease" in argv[2]
 
 
-def test_cleanup_secondary_nextflow_work_reports_success_only_after_empty(
-    monkeypatch, tmp_path
-):
-    work_root = tmp_path / "work"
-    _touch(work_root / "batch" / "task" / ".command.out")
+def test_generated_cleanup_executes_embedded_guard_and_preserves_busy_batch(monkeypatch, tmp_path):
+    root = tmp_path / "work"
+    busy = _touch(root / "busy" / "task" / ".command.out")
+    idle = _touch(root / "idle" / "task" / ".command.out")
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", root)
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_OUTPUT_ROOT", tmp_path / "output")
+    argv = shlex.split(secondary.cleanup_nf_work_command()["command"])
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin / "pgrep", "exit 1")
-    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", work_root)
-    command = secondary.cleanup_nf_work_command()["command"]
-    env = os.environ.copy()
-    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-
-    completed = subprocess.run(
-        ["bash", "-c", command],
-        input="y\n",
-        text=True,
-        capture_output=True,
-        env=env,
-        check=False,
-    )
-
-    assert completed.returncode == 0
-    assert list(work_root.iterdir()) == []
-    assert f"已清理：{work_root}" in completed.stdout
+    _fake_command(fake_bin / "ps", "exit 0")
+    from backend.app.services import nextflow_work
+    with nextflow_work.acquire_lease(root, "busy"):
+        completed = subprocess.run(argv, input="y\n", text=True, capture_output=True, timeout=20,
+                                   env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"})
+    assert completed.returncode == 0, completed.stderr
+    assert busy.exists()
+    assert not idle.exists()
+    assert "已清理 1；保留 1；失敗 0" in completed.stdout
 
 
-def test_cleanup_secondary_nextflow_work_does_not_report_false_success(
-    monkeypatch, tmp_path
-):
-    work_root = tmp_path / "work"
-    leftover = _touch(work_root / "batch" / "task" / ".command.out")
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    _fake_command(fake_bin / "pgrep", "exit 1")
-    _fake_command(fake_bin / "rm", "exit 1")
-    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", work_root)
-    command = secondary.cleanup_nf_work_command()["command"]
-    env = os.environ.copy()
-    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
-
-    completed = subprocess.run(
-        ["bash", "-c", command],
-        input="y\n",
-        text=True,
-        capture_output=True,
-        env=env,
-        check=False,
-    )
-
-    assert completed.returncode == 1
-    assert leftover.exists()
-    assert "部分檔案無法刪除" in completed.stdout
-    assert "已清理：" not in completed.stdout
+def test_generated_secondary_launch_holds_lease_until_runner_finishes(monkeypatch, tmp_path):
+    from backend.app.services import nextflow_work
+    monkeypatch.setattr(secondary, "SECONDARY_DGX_WORK_ROOT", tmp_path / "work")
+    # Parse the actual tmux command, keeping the embedded Python unchanged.
+    command = secondary._launch_command("BATCH", "WGS")
+    # Source includes newlines, so use shell parsing on everything after the runner heredoc.
+    tmux_args = shlex.split(command.split("\nNGS2_EOF\n", 1)[1])
+    pane = tmux_args[5]
+    assert len(pane) < 4096  # Do not put the embedded module into a tmux argument.
+    argv = shlex.split(pane.removesuffix("; exec bash -i"))
+    helper = tmp_path / 'guard.py'
+    helper.write_text(command.split("<<'NGS2_GUARD_EOF'\n", 1)[1].split("\nNGS2_GUARD_EOF", 1)[0])
+    argv[1] = str(helper)
+    runner = tmp_path / "runner.sh"
+    runner.write_text('echo ready; read answer')
+    argv[-1] = str(runner)
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        assert proc.stdout.readline().strip() == "ready"
+        with pytest.raises(BlockingIOError):
+            nextflow_work.open_lock(nextflow_work._lock_path(tmp_path / "work", "BATCH"), blocking=False)
+    finally:
+        proc.communicate("done\n", timeout=10)
+    handle = nextflow_work.open_lock(nextflow_work._lock_path(tmp_path / "work", "BATCH"), blocking=False)
+    handle.close()

@@ -11,6 +11,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import nextflow_work
+
 from ..config import (
     SECONDARY_DGX_ENV_SCRIPT,
     SECONDARY_DGX_LAUNCH_ROOT,
@@ -428,6 +430,15 @@ def _launch_command(batch_name: str, seq_type: str) -> str:
         " \\\n    --run_automap"
     )
     script_path = f"/tmp/{session}.sh"
+    guard_path = f"/tmp/{session}.guard.py"
+    guard_source = Path(nextflow_work.__file__).read_text(encoding="utf-8")
+    guarded_run = shlex.join([
+        'python3', guard_path, 'run', str(SECONDARY_DGX_WORK_ROOT),
+        batch_name, 'bash', script_path,
+    ])
+    # The interactive pane is outside the lease: finishing the pipeline/QC
+    # releases protection even when the operator leaves tmux open.
+    pane_command = guarded_run + '; exec bash -i'
     staged_sheet = SECONDARY_DGX_SAMPLESHEET_STAGING_ROOT / batch_name / "samplesheet.csv"
     qc_preflight = ""
     qc_run = ""
@@ -452,7 +463,10 @@ python3 "${QC_SCRIPT}" --out-dir "${OUT_DIR}" --samplesheet "${OUT_DIR}/samplesh
 echo "[NGS2] QC report: ${OUT_DIR}/pipeline_info/report_summary.csv (review each sample's PASS/FAIL)"
 '''
         completion = "Nextflow and QC report completed. Check the CSV for sample QC results."
-    return f"""cat > "{script_path}" <<'NGS2_EOF'
+    return f"""cat > "{guard_path}" <<'NGS2_GUARD_EOF'
+{guard_source}
+NGS2_GUARD_EOF
+cat > "{script_path}" <<'NGS2_EOF'
 set -euo pipefail
 BATCH_NAME="{batch_name}"
 OUT_DIR="{SECONDARY_DGX_OUTPUT_ROOT}/${{BATCH_NAME}}"
@@ -483,7 +497,7 @@ finish() {{
     fi
     echo "[NGS2] tmux pane kept open. Type 'exit' to close this shell."
     umask "${{ORIGINAL_UMASK}}"
-    exec bash -i
+    exit "${{status}}"
 }}
 trap finish EXIT
 
@@ -503,55 +517,21 @@ nextflow -c "${{PIPELINE_CONFIG}}" run "${{PIPELINE_CODE}}/main.nf" \\
     -w "${{WORK_DIR}}" \\
     -resume{qc_run}
 NGS2_EOF
-tmux new-session -d -s "{session}" "bash {script_path}"
+tmux new-session -d -s "{session}" {shlex.quote(pane_command)}
 tmux attach -t "{session}"
 """
 
 
 def cleanup_nf_work_command() -> dict:
-    """Return a guarded cleanup script to run manually on DGX2."""
+    """Embed the stdlib guard so DGX2 needs no separately deployed helper."""
+    # This path belongs to DGX2; resolve it only on DGX2, not on the UI host.
     root = SECONDARY_DGX_WORK_ROOT
-    if not root.is_absolute() or str(root) in {"", "/"} or root == root.parent:
+    if not root.is_absolute() or root == root.parent:
         raise ValueError(f"不安全的二級分析 Nextflow work root：{root}")
-    root_text = str(root)
-    command = f'''SECONDARY_WORK_ROOT={shlex.quote(root_text)}
-
-if [ ! -d "${{SECONDARY_WORK_ROOT}}" ]; then
-    echo "找不到二級分析 Nextflow 暫存路徑：${{SECONDARY_WORK_ROOT}}"
-    exit 1
-fi
-
-if pgrep -af '[n]extflow' >/dev/null; then
-    echo "偵測到 Nextflow 程序，停止清理："
-    pgrep -af '[n]extflow'
-    exit 1
-fi
-
-echo "準備清理 ${{SECONDARY_WORK_ROOT}}；以下項目將被刪除："
-find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -print
-read -r -p "確定刪除以上二級分析 Nextflow 暫存？[y/N] " answer
-case "${{answer}}" in
-    y|Y|yes|YES)
-        if ! find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {{}} +; then
-            echo "錯誤：部分檔案無法刪除，請檢查上方訊息。"
-            echo "目前殘留項目："
-            find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 2 -print
-            exit 1
-        fi
-
-        if [ -n "$(find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-            echo "錯誤：清理指令完成，但目錄仍有殘留項目："
-            find "${{SECONDARY_WORK_ROOT}}" -mindepth 1 -maxdepth 2 -print
-            exit 1
-        fi
-
-        echo "已清理：${{SECONDARY_WORK_ROOT}}"
-        ;;
-    *)
-        echo "已取消。"
-        ;;
-esac'''
-    return {"path": root_text, "command": command}
+    source = Path(nextflow_work.__file__).read_text(encoding="utf-8")
+    command = shlex.join(['python3', '-c', source, 'cleanup', str(root),
+                          str(SECONDARY_DGX_OUTPUT_ROOT)])
+    return {"path": str(root), "command": command}
 
 
 def create_samplesheet(seq_type: str, samples: list[dict], batch_name: str = "") -> dict:

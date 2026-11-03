@@ -33,7 +33,7 @@ from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
                        PIPELINE_VCF_INDEX_TTL_HOURS, PIPELINE_OUT_ROOT,
                        LEGACY_PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_NF_WORK_ROOT)
-from . import sample_layout
+from . import sample_layout, nextflow_work
 
 # Final pipeline steps, in order — the worker writes the current one
 # into state.json so the UI can show progress.
@@ -571,54 +571,29 @@ def _active_tertiary_jobs() -> list[dict]:
     return active
 
 
-def _path_size(path: Path) -> int:
-    if not path.exists():
-        return 0
-    if path.is_symlink() or path.is_file():
-        try:
-            return path.stat().st_size
-        except OSError:
-            return 0
-    total = 0
-    for child in path.rglob("*"):
-        if child.is_symlink() or child.is_file():
-            try:
-                total += child.stat().st_size
-            except OSError:
-                pass
-    return total
-
-
 def cleanup_nf_work() -> dict:
-    """Remove all direct children under the tertiary Nextflow work root."""
-    active = _active_tertiary_jobs()
-    if active:
-        samples: list[str] = []
-        for job in active:
-            samples.extend(str(sample.get("sample_id") or "") for sample in _job_samples(job))
-        names = ", ".join(s for s in samples if s) or ", ".join(
-            str(job.get("job_id") or "") for job in active
-        )
-        raise RuntimeError(f"仍有三級分析執行中，請先終止或等完成：{names}")
-
-    root = TERTIARY_NF_WORK_ROOT.resolve()
-    if str(root) in {"", "/"} or root == root.parent:
-        raise ValueError(f"不安全的 Nextflow work root：{root}")
-    if not root.exists():
-        return {"path": str(root), "deleted_count": 0, "freed_bytes": 0, "existed": False}
-    if not root.is_dir():
-        raise ValueError(f"Nextflow work root 不是資料夾：{root}")
-
-    deleted = 0
-    freed = 0
-    for child in root.iterdir():
-        freed += _path_size(child)
-        if child.is_dir() and not child.is_symlink():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-        deleted += 1
-    return {"path": str(root), "deleted_count": deleted, "freed_bytes": freed, "existed": True}
+    """Skip active lineages, adopted work and published output references."""
+    busy = set()
+    for job in _active_tertiary_jobs():
+        mode = job.get('pipeline_type') or job.get('mode')
+        busy.update({'dragen', 'nckuh'} if mode not in {'dragen', 'nckuh', 'inhouse'}
+                    else {'nckuh' if mode == 'inhouse' else mode})
+    handles = []
+    try:
+        # Also honor the pre-upgrade cache locks. Old workers do not yet hold
+        # lifetime leases; process inspection fails closed for manual/orphan runs.
+        for scope in ('dragen', 'nckuh'):
+            try:
+                handles.append(nextflow_work.open_lock(
+                    TERTIARY_JOBS_DIR / '.nextflow_locks' / f'{scope}.lock', blocking=False))
+            except BlockingIOError:
+                busy.add(scope)
+        return nextflow_work.cleanup(
+            TERTIARY_NF_WORK_ROOT, tertiary=True, busy_scopes=busy,
+            output_roots=(PIPELINE_OUT_ROOT, LEGACY_PIPELINE_OUT_ROOT))
+    finally:
+        for handle in handles:
+            handle.close()
 
 
 def _latest_job_for_sample(sample_id: str) -> dict | None:
@@ -986,75 +961,79 @@ def start_job(
         from . import prs_jobs
         prs_jobs.settings()  # Fail early on missing resources, before a long tertiary run.
 
-    job_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
-    jdir = _job_dir(job_id)
-    jdir.mkdir(parents=True, exist_ok=True)
+    scope = "dragen" if mode == "dragen" else "nckuh"
+    with nextflow_work.acquire_lease(TERTIARY_NF_WORK_ROOT, scope) as work_lease:
+        job_id = f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
+        jdir = _job_dir(job_id)
+        jdir.mkdir(parents=True, exist_ok=True)
 
-    created_at = _now()
-    save_state(job_id, {
-        "job_id":         job_id,
-        "mode":           mode,
-        "vcf_path":       str(vcf),
-        "sample_id":      sample_id,
-        "source_sample_id": source_sample_id,
-        "sample_ids":     sample_ids,
-        "source_sample_ids": source_sample_ids,
-        "sample_count":   len(batch_samples),
-        "samples":        batch_samples,
-        "pipeline_type":  "dragen" if mode == "dragen" else "nckuh",
-        "with_research_only": with_research_only,
-        # Compatibility for older job-list frontends/state readers.
-        "with_extra_vep": with_research_only,
-        "with_pgx":       with_pgx,
-        "with_prs":       with_prs,
-        "cnv_vcf":        cnv_vcf,
-        "sv_vcf":         sv_vcf,
-        "mito_vcf":       mito_vcf,
-        "state":          "queued",
-        "step":           "queued",
-        "created_at":     created_at,
-        "started_at":     None,
-        "finished_at":    None,
-        "error":          None,
-        "step_started_at": created_at,
-        "step_history":   [{"step": "queued", "started_at": created_at}],
-        "nextflow_step_history": [],
-    })
+        created_at = _now()
+        save_state(job_id, {
+            "job_id":         job_id,
+            "mode":           mode,
+            "vcf_path":       str(vcf),
+            "sample_id":      sample_id,
+            "source_sample_id": source_sample_id,
+            "sample_ids":     sample_ids,
+            "source_sample_ids": source_sample_ids,
+            "sample_count":   len(batch_samples),
+            "samples":        batch_samples,
+            "pipeline_type":  "dragen" if mode == "dragen" else "nckuh",
+            "with_research_only": with_research_only,
+            # Compatibility for older job-list frontends/state readers.
+            "with_extra_vep": with_research_only,
+            "with_pgx":       with_pgx,
+            "with_prs":       with_prs,
+            "cnv_vcf":        cnv_vcf,
+            "sv_vcf":         sv_vcf,
+            "mito_vcf":       mito_vcf,
+            "state":          "queued",
+            "step":           "queued",
+            "created_at":     created_at,
+            "started_at":     None,
+            "finished_at":    None,
+            "error":          None,
+            "step_started_at": created_at,
+            "step_history":   [{"step": "queued", "started_at": created_at}],
+            "nextflow_step_history": [],
+        })
 
-    log_fh = _log_path(job_id).open("w", buffering=1)
-    batch_path = _job_dir(job_id) / "batch.json"
-    batch_path.write_text(
-        json.dumps({"samples": batch_samples}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    cmd = [
-        sys.executable, "-m", "app.workers.dragen_run",
-        "--job-id",  job_id,
-        "--batch-json", str(batch_path),
-        "--mode",    mode,
-    ]
-    if with_research_only:
-        cmd.append("--research-only")
-    if with_prs:
-        cmd.append("--with-prs")
-    if not with_pgx:
-        cmd.append("--without-pgx")
-    if cnv_vcf:  cmd += ["--cnv-vcf",  cnv_vcf]
-    if sv_vcf:   cmd += ["--sv-vcf",   sv_vcf]
-    if mito_vcf: cmd += ["--mito-vcf", mito_vcf]
+        log_fh = _log_path(job_id).open("w", buffering=1)
+        batch_path = _job_dir(job_id) / "batch.json"
+        batch_path.write_text(
+            json.dumps({"samples": batch_samples}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        cmd = [
+            sys.executable, "-m", "app.workers.dragen_run",
+            "--job-id",  job_id,
+            "--batch-json", str(batch_path),
+            "--mode",    mode,
+        ]
+        if with_research_only:
+            cmd.append("--research-only")
+        if with_prs:
+            cmd.append("--with-prs")
+        if not with_pgx:
+            cmd.append("--without-pgx")
+        if cnv_vcf:  cmd += ["--cnv-vcf",  cnv_vcf]
+        if sv_vcf:   cmd += ["--sv-vcf",   sv_vcf]
+        if mito_vcf: cmd += ["--mito-vcf", mito_vcf]
 
-    env = os.environ.copy()
-    env.setdefault("PYTHONPATH", str(REPO_ROOT / "backend"))
+        env = os.environ.copy()
+        env.setdefault("PYTHONPATH", str(REPO_ROOT / "backend"))
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=log_fh, stderr=subprocess.STDOUT,
-        cwd=str(REPO_ROOT),
-        env=env,
-        start_new_session=True,
-    )
-    _pid_path(job_id).write_text(str(proc.pid))
-    return job_id
+        env.update(nextflow_work.lease_env(TERTIARY_NF_WORK_ROOT, scope, work_lease))
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_fh, stderr=subprocess.STDOUT,
+            cwd=str(REPO_ROOT),
+            env=env,
+            start_new_session=True,
+            pass_fds=(work_lease.fileno(),),
+        )
+        _pid_path(job_id).write_text(str(proc.pid))
+        return job_id
 
 
 def cancel_job(job_id: str) -> bool:

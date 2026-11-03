@@ -57,6 +57,7 @@ from pathlib import Path
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
 from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, gba, specialized
+from ..services import nextflow_work
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -1493,6 +1494,7 @@ def _run(
         errors="replace",
         bufsize=1,
         cwd=str(cwd) if cwd is not None else None,
+        pass_fds=nextflow_work.inherited_fds(),
     )
     assert proc.stdout is not None
     for line in proc.stdout:
@@ -1582,8 +1584,10 @@ def main() -> int:
     sample_ids = [sample["sample_id"] for sample in samples]
 
     scripts = REPO_ROOT / "scripts"
-    nf_launch, nf_work = _nextflow_context(samples)
     pipeline_type = "dragen" if mode == "dragen" else "nckuh"
+    work_lease = nextflow_work.acquire_lease(TERTIARY_NF_WORK_ROOT, pipeline_type)
+    os.environ.update(nextflow_work.lease_env(TERTIARY_NF_WORK_ROOT, pipeline_type, work_lease))
+    nf_launch, nf_work = _nextflow_context(samples)
     legacy_staging = os.environ.get("NGS_UI_TERTIARY_LEGACY_STAGING", "").strip().lower() in {
         "1", "true", "yes", "y", "on"
     }
@@ -2258,6 +2262,7 @@ def main() -> int:
         for path in (staging_root, rollback_root):
             if path is not None and path.is_dir():
                 shutil.rmtree(path, ignore_errors=True)
+        work_lease.close()
 
 
 if __name__ == "__main__":

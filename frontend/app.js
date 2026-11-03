@@ -13389,15 +13389,21 @@ async function _downloadPipelineNextflowLog(sampleId, button, status) {
 async function _cleanupNextflowWork() {
   const btn = document.getElementById("pipeline-clean-nf-work");
   const status = document.getElementById("pipeline-list-status");
-  if (!confirm("確定清理 Nextflow 暫存？\n\n將刪除 /home/n102968/NGS_UI/nf_work 底下的所有內容。\n正在執行三級分析時後端會拒絕清理。")) return;
+  if (!confirm("確定清理閒置的 Nextflow 暫存？\n\n執行中、等待中，以及仍被輸出引用的暫存會保留。\n已清理部分將無法再沿用原本的暫存續跑。")) return;
   if (btn) { btn.disabled = true; btn.textContent = "清理中…"; }
   if (status) status.textContent = "清理 Nextflow 暫存中…";
   try {
     const result = await apiFetch("/dragen/nf-work/cleanup", { method: "POST" });
     const count = Number(result?.deleted_count || 0);
     const size = _fmtBytes(result?.freed_bytes || 0);
-    const path = result?.path || "/home/n102968/NGS_UI/nf_work";
-    if (status) status.textContent = `已清理 ${count} 個項目，約釋放 ${size}：${path}`;
+    const skipped = Number(result?.skipped_count || 0);
+    const failed = Number(result?.failed_count || 0);
+    const details = [...(result?.skipped || []), ...(result?.failed || [])]
+      .map(item => `${item.path}：${item.reason}`).join("\n");
+    if (status) {
+      status.textContent = `已清理 ${count} 個項目，約釋放 ${size}；保留 ${skipped}；失敗 ${failed}。${details ? "\n" + details : ""}`;
+      status.style.whiteSpace = "pre-line";
+    }
   } catch (e) {
     if (status) status.textContent = `清理失敗：${e.message || e}`;
   } finally {
