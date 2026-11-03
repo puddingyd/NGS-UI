@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import tempfile
 
 from .. import config
@@ -44,11 +45,29 @@ def groovy_string(value):
     return "'" + str(value).replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n').replace('\r', '\\r') + "'"
 
 
+def container_tmp(paths):
+    path = Path(paths['project']) / '.runtime/tmp'
+    # Apptainer bind specifications use colon/comma separators, not shell syntax.
+    if any(c in str(path) for c in (':', ',', '\n', '\r', '\0')):
+        raise ValueError('PRS 容器暫存路徑不能包含冒號、逗號或換行')
+    return path
+
+
+def container_tmp_options(paths):
+    path = str(container_tmp(paths))
+    # Mount the same absolute path for Nextflow's forwarded TMPDIR, plus both
+    # conventional temporary directories for software that ignores TMPDIR.
+    return ['--bind', f'{path}:{path}', '--bind', f'{path}:/tmp',
+            '--bind', f'{path}:/var/tmp',
+            '--env', f'TMPDIR={path},TMP={path},TEMP={path}']
+
+
 def execution_config(sid, cfg):
     paths = layout(sid, cfg)
     project = Path(paths['project'])
     runtime = project / '.runtime'
     effective = {**cfg, 'project': str(project), 'raw_work': str(project)}
+    tmp_options = shlex.join(container_tmp_options(paths))
     wrappers = {}
     for key in ('raw_nextflow_config', 'ancestry_nextflow_config'):
         # Keep source include locations intact, then override execution-only
@@ -60,9 +79,14 @@ def execution_config(sid, cfg):
             ('timeline.file', 'timeline.html'),
             ('trace.file', 'trace.txt'),
             ('dag.file', 'dag.html')))
+        literal = groovy_string(tmp_options)
+        container_overrides = ('singularity.runOptions = '
+            f"((singularity.runOptions ?: '').contains({literal}) ? singularity.runOptions : "
+            f"((singularity.runOptions ?: '') + ' ' + {literal}).trim())\n")
         text = ('// NGS-UI: preserve model/process settings; own writable paths.\n'
                 f'includeConfig {groovy_string(Path(cfg[key]).resolve())}\n'
-                f'{overrides}\nprofiles {{\n  singularity {{\n{overrides}\n  }}\n}}\n')
+                f'{overrides}\n{container_overrides}'
+                f'profiles {{\n  singularity {{\n{overrides}\n{container_overrides}  }}\n}}\n')
         path = runtime/'configs'/f'{key}-{hashlib.sha256(text.encode()).hexdigest()}.config'
         wrappers[path] = text
         effective[key] = str(path)
@@ -114,8 +138,37 @@ def environment(paths, run_id, stage):
     env.pop('NXF_WORK', None)  # Both frozen entry points explicitly supply -w.
     for key, path in dirs.items():
         env[key] = str(owned_directory(project, path.relative_to(project)))
+    tmp = str(container_tmp(paths))
+    # Direct Apptainer calls in the frozen raw script do not use Nextflow's
+    # runOptions. Cover them too, preserving administrator-supplied bind paths.
+    bind_vars = ('APPTAINER_BIND', 'APPTAINER_BINDPATH', 'SINGULARITY_BIND', 'SINGULARITY_BINDPATH')
+    binds = list(dict.fromkeys(b for name in bind_vars for b in env.get(name, '').split(',') if b))
+    required = [f'{tmp}:{tmp}', f'{tmp}:/tmp', f'{tmp}:/var/tmp']
+    binds = [b for b in binds if b not in required] + required
+    for name in bind_vars:
+        env[name] = ','.join(binds)
+    for prefix in ('APPTAINERENV_', 'SINGULARITYENV_'):
+        for name in ('TMPDIR', 'TMP', 'TEMP'):
+            env[prefix+name] = tmp
     env['PYTHONDONTWRITEBYTECODE'] = '1'
     return cwd, env
+
+
+def container_tmp_probe(cfg, paths, marker, token):
+    """Fail before scoring if the container cannot see/write the host temp mount."""
+    path = container_tmp(paths)
+    script = ('set -eu\n'
+        'fail() { printf "[PRS] container temporary directory check failed: %s\\n" "$1" >&2; exit 72; }\n'
+        f'test "$TMPDIR" = {shlex.quote(str(path))} || fail "unexpected TMPDIR: $TMPDIR"\n'
+        f'for dir in {shlex.quote(str(path))} /tmp /var/tmp; do\n'
+        f'  test "$(cat "$dir/{marker.name}" 2>/dev/null)" = {shlex.quote(token)} || fail "mount unavailable: $dir"\n'
+        f'  probe="$dir/{marker.name}.write"\n'
+        '  (umask 077; printf "PRS tmp probe\\n" > "$probe") || fail "cannot write: $dir"\n'
+        '  rm "$probe" || fail "cannot remove probe: $dir"\n'
+        'done\n'
+        'printf "[PRS] CONTAINER_TMP_PASS: TMPDIR, /tmp, /var/tmp use case workspace\\n"\n')
+    return ['apptainer', 'exec', '--no-home', *container_tmp_options(paths),
+            cfg['plink_img'], '/bin/sh', '-c', script]
 
 
 def publish_files(sid, jid, kind, source, names):

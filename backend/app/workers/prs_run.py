@@ -5,8 +5,10 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
+import uuid
 
 from .. import config
 from ..services import prs, prs_jobs as jobs, prs_paths, nextflow_work
@@ -60,6 +62,16 @@ class Worker:
                 os.killpg(self.process.pid, signal.SIGKILL);self.process.wait(timeout=5)
         except ProcessLookupError:
             pass
+
+    def check_container_tmp(self):
+        paths = self.plan['path_layout']
+        project = Path(paths['project'])
+        directory = prs_paths.owned_directory(project, prs_paths.container_tmp(paths).relative_to(project))
+        token = uuid.uuid4().hex
+        with tempfile.NamedTemporaryFile(mode='w', prefix='.ngs-ui-prs-', dir=directory) as marker:
+            marker.write(token); marker.flush()
+            self.command(prs_paths.container_tmp_probe(self.cfg, paths, Path(marker.name), token),
+                         '容器暫存掛載與寫入檢查')
 
     def command(self, args, step):
         self.update(status='running', step=step)
@@ -146,6 +158,8 @@ class Worker:
                 self.verify_inputs()
                 print('[PRS] 個案工作目錄：'+self.cfg['project'], flush=True)
                 print('[PRS] 正式結果：'+str(prs.score_path(self.job['sample_id']).parent), flush=True)
+                print('[PRS] 容器暫存：'+str(prs_paths.container_tmp(self.plan['path_layout'])), flush=True)
+                self.check_container_tmp()
                 sid, run = self.job['source_sample_id'], self.job['pipeline_run_id']
                 config_path = str(self.directory/'config.json')
                 dest = Path(self.cfg['project'])/'integrated_runs'/run/sid

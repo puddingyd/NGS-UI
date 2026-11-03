@@ -1,4 +1,4 @@
-# CHD PRS 研究風險 UI — v9.80
+# CHD PRS 研究風險 UI — v9.81
 
 ## 本版範圍
 
@@ -102,6 +102,28 @@ In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF
 
 Nextflow 路徑設定依官方 [config include／優先序](https://docs.seqera.io/nextflow/config)、[runtime環境變數](https://docs.seqera.io/nextflow/reference/env-vars)及 [Singularity cacheDir](https://docs.seqera.io/nextflow/reference/config/singularity)；仍需由操作者於院內執行實際 WGS 驗收。
 
+### 容器暫存與根磁碟空間（v9.81）
+
+祖源 `INTERSECT_VARIANTS` 使用 Python `tempfile` 建立排序中間檔。v9.80只設定主機端TMPDIR時，Nextflow的 `env - ... singularity exec --no-home` 不保證容器能看到 `.runtime/tmp`；指定目錄不可用時，Python可能改用容器 `/tmp`，而它通常連到主機根磁碟。曾觀察到 `/home` 尚餘4.4TB、inode充足，但根磁碟97%使用率，祖源出現 `OSError: [Errno 28] No space left on device`。這不是 `APPTAINERENV… preferred` 提示本身造成失敗。
+
+v9.81固定主機暫存位置為：
+
+```text
+/home/n102968/NGS_UI/nf_work/prs/{個案ID}/.runtime/tmp/
+```
+
+如自訂PRS root則跟隨該案project。Nextflow raw／ancestry兩份衍生config會保留原 `singularity.runOptions`，追加以下掛載與 `--env`（含選用的singularity profile，避免重複追加）：
+
+- 主機個案 `.runtime/tmp` → 容器同一絕對路徑。
+- 主機個案 `.runtime/tmp` → 容器 `/tmp` 及 `/var/tmp`，讓未使用TMPDIR的工具也留在個案work。
+- 容器 `TMPDIR`／`TMP`／`TEMP` 明確設為該個案暫存絕對路徑；不依賴Nextflow是否轉送主機環境。
+
+原raw腳本直接呼叫Apptainer時，由worker的 `APPTAINER_BIND*`／`SINGULARITY_BIND*` 及相容的 `*ENV_TMP*` 設定套用相同掛載，保留管理者原有bind，不修改凍結腳本或原參考config。Apptainer支援的掛載與環境參數見 [bind paths](https://apptainer.org/docs/user/latest/bind_paths_and_mounts.html)、[runtime environment](https://apptainer.org/docs/user/latest/environment_and_metadata.html)。
+
+計分前新增「容器暫存掛載與寫入檢查」：使用已設定PLINK image，在主機暫存目錄建立隨機marker，進容器核對同一絕對路徑、`/tmp`、`/var/tmp` 都可讀到該marker，並逐一實際建立／刪除probe檔。失敗立即停止該PRS工作，不啟動計分，也不覆蓋既有結果。Log應先看到個案暫存路徑與 `CONTAINER_TMP_PASS`；Nextflow的 `.command.run` 應包含上述三個 `--bind`。真正院內掛載由此執行時檢查確認；本機沒有執行Linux容器WGS。
+
+本次衍生config的hash有變更；舊工作不原地改寫、不強制放寬guarded resume。部署後在PRS區「重新開始」，建立使用新設定的PRS run；可能重新執行raw，但不必重跑三級。舊run、已發布score與風險快照保留，失敗不覆蓋。程式不會自動清理主機 `/tmp` 或搬移舊暫存，避免影響其他工作。
+
 ## 固定參數與科學驗算
 
 - HR：INTERVENE 原研究 Estonian Biobank（EstBB）歐洲祖源，非跨 cohort meta-analysis。男性使用六個非參考 PRS 組各四個年齡組的 HR/SE/MedianAAO，按作者 `1/SE²` 加權線性回歸擬合 log-HR；外側年齡固定於最近組的**擬合值**。女性使用六組 sex-specific HR；參考組 HR=1。
@@ -201,11 +223,14 @@ python3 -m research.prs.absolute_risk.build_taiwan \
 - 未執行院內 fresh WGS、未測試院內部署、未進行台灣 clinical validation。
 - v9.79 路徑隔離／完整發布／重試／刪除及相關三級、risk 回歸：81項通過。測試以合成輸入與隔離假工具執行，不代表院內 Nextflow／WGS 已驗收；原 PRS 專案逐檔 bytes／mtime 不變、舊路徑不resume、祖源失敗保留score、缺完整artifact不覆蓋既有結果均已驗證。
 - v9.80 將PRS工作納入既有三級 `nf_work/prs/`；相關回歸與Nextflow清理測試共114項通過，涵蓋預設／自訂根目錄、執行中與已完成PRS均保留、其他閒置三級暫存可清、runner實際繼承lease。未在院內執行WGS。
+- v9.81 容器暫存／queue／worker／risk／三級與清理回歸共127項通過，原版計分27項離線測試通過，核心checksum未變。以真正Nextflow 24.10.4驗證空白／既有config及profile合併，並以模擬容器engine執行Nextflow產生的 `env -` launcher，確認Python暫存寫到個案目錄；這驗證指令產生與環境傳遞，不是實際Apptainer掛載或院內WGS驗收。
 
 可重複執行的測試入口：
 
 ```bash
 PYTHONPATH=backend python -m pytest tests/test_prs.py tests/test_prs_jobs.py research/prs/tests/test_absolute_risk.py tests/test_dragen_same_directory_batch.py tests/test_dragen_rerun.py tests/test_dragen_delete_output.py -q
+PYTHONPATH=backend python -m pytest tests/test_prs_container_tmp.py -q
+# 設定 NGS_UI_TEST_NEXTFLOW=/已安裝的nextflow 可另執行真實Nextflow設定／launcher測試；未設定時這5項略過。
 TMPDIR=/private/tmp python3 -m unittest discover -s research/prs/scoring_v211/tests -q
 node --test tests/frontend_*.test.cjs
 # 需可載入 Playwright；CHROME_EXECUTABLE_PATH 可指定已安裝 Chrome。

@@ -48,6 +48,7 @@ def env(tmp_path, monkeypatch):
     calls=[]
     def command(worker,args,step):
         calls.append(args)
+        if args[0] == 'apptainer': return  # Container preflight, no scientific output.
         run=args[args.index('--run-id')+1]
         dest=Path(worker.cfg['project'])/'integrated_runs'/run/'SOURCE'
         if '--gvcf' in args:
@@ -74,9 +75,10 @@ def test_tertiary_to_score_and_ancestry_without_clinical_metadata(env):
     assert record['summary']['scores']==env.summary['scores']
     assert jobs.read_job(jid)['status']=='done'
     assert not prs.assessment_dir('CASE').exists()  # No clinical risk automatically.
-    assert len(env.calls)==2 and '--resume' in env.calls[0]
-    assert '--with-legacy-ancestry' not in env.calls[0]
-    assert '--raw-source' in env.calls[1]
+    assert len(env.calls)==3 and '--resume' in env.calls[1]
+    assert env.calls[0][0] == 'apptainer'
+    assert '--with-legacy-ancestry' not in env.calls[1]
+    assert '--raw-source' in env.calls[2]
     run=record['pipeline_run_id']
     original=Path(record['path_layout']['project'])/'integrated_runs'/run/'SOURCE/method2/summary.json'
     assert json.loads(original.read_text())['ancestry_status']=={'status':'NOT_ASSESSED'}
@@ -320,6 +322,7 @@ def test_incomplete_publish_preserves_previous_score(env, monkeypatch):
     original = prs_run.Worker.command
     def incomplete(worker, args, step):
         original(worker, args, step)
+        if args[0] == 'apptainer': return
         run = args[args.index('--run-id')+1]
         (Path(worker.cfg['project'])/'integrated_runs'/run/'SOURCE/method2/scores.tsv').unlink()
     monkeypatch.setattr(prs_run.Worker, 'command', incomplete)
@@ -357,3 +360,18 @@ def test_prs_runner_inherits_tertiary_cleanup_lease(env, monkeypatch):
     assert json.loads(path.read_text()) == dict(NGS_UI_NF_GUARD_ROOT=str(config.TERTIARY_NF_WORK_ROOT),
                                                 NGS_UI_NF_GUARD_SCOPE='prs')
     assert worker.work_lease is None
+
+
+def test_container_probe_failure_stops_before_scoring_and_preserves_previous_result(env, monkeypatch):
+    jid = jobs.start('CASE')['job_id']; prs_run.Worker(jid).run()
+    previous = prs.score_path('CASE').read_bytes()
+    env.calls.clear()
+    def fail_probe(worker, args, step):
+        assert args[0] == 'apptainer'
+        raise RuntimeError('container temporary mount unavailable')
+    monkeypatch.setattr(prs_run.Worker, 'command', fail_probe)
+    second = jobs.start('CASE', new_run=True)['job_id']
+    with pytest.raises(RuntimeError, match='temporary mount unavailable'):
+        prs_run.Worker(second).run()
+    assert not env.calls and prs.score_path('CASE').read_bytes() == previous
+    assert not list((config.PRS_WORK_ROOT/'CASE/.runtime/tmp').glob('.ngs-ui-prs-*'))
