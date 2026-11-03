@@ -34,7 +34,7 @@ DISEASE_FIELDS = tuple(
     f"Disease{idx}" for idx in range(1, DISEASE_SLOT_COUNT + 1)
 )
 _OMIM_URL_RE = re.compile(r"/entry/(\d+)\b")
-_INHERITANCE_CODES = r"(?:AD|AR|XLD|XLR|XL|YL|MT|DD|IC)"
+_INHERITANCE_CODES = r"(?:AD|AR|XLD|XLR|XL|YL|MT|MI|DR|DD|SMU|MU|ISOL|IC)"
 _INHERITANCE_TAG_RE = re.compile(
     rf"\({_INHERITANCE_CODES}(?:\s*[/,;]\s*{_INHERITANCE_CODES})*\)",
     re.IGNORECASE,
@@ -59,14 +59,17 @@ def _empty_row() -> dict:
 
 
 def compact_disease_label(value: str) -> str:
-    """Keep a disease label through its first inheritance tag.
+    """Keep the first disease-label line through its inheritance tag.
 
     Curated Disease1..16 cells may append a prose OMIM description after
     the label, e.g. ``Name (AD) Name is characterized by ...``. Match a
     known inheritance tag instead of the first closing parenthesis so a
     phenotype acronym inside the name is not accidentally truncated.
+    Without a recognized tag (including empty ``()``), keep only the
+    first line so the clinical description never enters the case list.
     """
     text = str(value or "").strip()
+    text = text.splitlines()[0].strip() if text else ""
     match = _INHERITANCE_TAG_RE.search(text)
     return text[:match.end()].strip() if match else text
 

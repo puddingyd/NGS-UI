@@ -1,3 +1,7 @@
+import json
+
+import pytest
+
 from app.services import (
     docx_export,
     gene_disease_store,
@@ -5,6 +9,55 @@ from app.services import (
     omim_store,
     sample_loader,
 )
+
+
+@pytest.mark.parametrize("code", [
+    "AD", "AR", "XLD", "XLR", "XL", "YL", "MT", "Mi", "DR", "DD",
+    "SMu", "Mu", "Isol", "IC", "AR, DD", "AD/AR", "SMu; Mu", "", "Unknown",
+])
+def test_case_selected_disease_keeps_only_label_line(monkeypatch, code):
+    label = (
+        "RAS-associated autoimmune lymphoproliferative syndrome type 1, "
+        f"somatic (614470)({code})"
+    )
+    rich_text = label + "\n\nClinical description with another disorder (AD)."
+    monkeypatch.setattr(
+        omim_store, "lookup_cached", lambda **kwargs: {"Disease1": rich_text}
+    )
+
+    assert sample_loader._case_selected_diseases(
+        {"gene_symbol": "NRAS"}, {"report_diseases": {"1": True}}
+    ) == [label]
+    assert sample_loader._case_selected_diseases(
+        {"gene_symbol": "NRAS"}, {"report_diseases": {"1": False}}
+    ) == []
+
+
+@pytest.mark.parametrize("code", ["AD", "SMu", "Mi", "Mu", "Isol", "AR, DD"])
+def test_compact_disease_label_removes_inline_description(code):
+    label = f"Disorder (acronym) (614470)({code})"
+    assert omim_store.compact_disease_label(label + " Clinical description.") == label
+
+
+@pytest.mark.parametrize("value", [None, "", " \n "])
+def test_compact_disease_label_accepts_empty_values(value):
+    assert omim_store.compact_disease_label(value) == ""
+
+
+def test_case_list_rejects_pre_fix_caches(tmp_path, monkeypatch):
+    summary_path = tmp_path / "case_summary.json"
+    signature = [["case_summary_version", sample_loader.CASE_SUMMARY_VERSION]]
+    summary_path.write_text(json.dumps({
+        "signature": [["case_summary_version", 4]],
+        "summary": {"diseases": "Stale full description"},
+    }))
+    monkeypatch.setattr(sample_loader, "_case_summary_cache_path", lambda _: summary_path)
+    assert sample_loader._read_case_summary_disk(tmp_path, signature) is None
+
+    table_path = tmp_path / "_case_table.json"
+    table_path.write_text(json.dumps({"version": 5, "rows": [{"diseases": "Stale"}]}))
+    monkeypatch.setattr(sample_loader, "_case_table_path", lambda: table_path)
+    assert sample_loader._read_case_table_payload() == {}
 
 
 def _omim_row_with_disease16() -> dict:

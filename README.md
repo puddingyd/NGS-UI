@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+**個案清單 Disease 欄修正（v9.83）**：疾病摘要支援 `SMu`、`Mi`、`Mu`、`Isol`、`DR` 等代碼；即使遺傳模式為空白或未知，也只保留首行疾病標題，不混入 OMIM 臨床說明。既有摘要與清單快取自動失效重建，更新服務後重新開啟清單即可，不需重跑三級分析；卡片完整說明及報告疾病選取維持原樣。
+
 **三級工作區可整包搬至 NVMe（v9.82）**：DRAGEN／NCKUH Nextflow、PRS、三級 staging／post-processing 與工具暫存統一使用 `nf_work`；以 bind mount 保留既有絕對路徑與續跑紀錄。計算完成後先將全批結果複製到正式儲存位置、逐檔SHA256核對，再依既有可回復流程發布，保留判讀狀態。提供唯讀檢查／停機搬遷工具，操作者自行在伺服器執行；工具保留HDD備份並設定開機掛載、服務掛載檢查，不自行啟停服務。[搬遷、驗收與回復步驟](docs/ops/TERTIARY_SCRATCH_MIGRATION.md)。
 
 INTERVENE PRS 已接成兩階段流程：三級分析勾選 PRS 後，由原始 WGS gVCF 自動產生 score／percentile 與祖源 QC；在 **Secondary findings → PRS** 的疾病表格上方輸入年齡、性別、CHD病史，再按「風險計算」顯示10年／至80歲風險與比較曲線。目前僅CHD研究模型，未完成台灣臨床驗證；執行環境與風險參數須另安裝。見 [安裝與操作](docs/ops/PRS_CHD_RESEARCH.md)及[計分程式](research/prs/README.md)。

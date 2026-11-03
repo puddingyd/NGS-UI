@@ -83,8 +83,8 @@ _case_summary_cache: OrderedDict[tuple, dict[str, str]] = OrderedDict()
 _case_summary_cache_lock = threading.Lock()
 CASE_SUMMARY_CACHE_NAME = "case_summary.json"
 CASE_TABLE_CACHE_NAME = "_case_table.json"
-CASE_SUMMARY_VERSION = 4
-CASE_TABLE_VERSION = 5
+CASE_SUMMARY_VERSION = 5
+CASE_TABLE_VERSION = 6
 _case_table_lock = threading.Lock()
 
 

@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**個案清單疾病摘要（v9.83，2026-11-03）**：`omim_store.compact_disease_label()` 先取 Disease 欄首行，再依遺傳模式標記截斷同一行後續說明；支援 AD/AR/XL/YL/MT、Mi、DR、DD、SMu、Mu、Isol、IC 與複合代碼，不從描述內其他疾病借用模式。空白 `()` 或未知代碼保留首行，不帶入後續 OMIM 段落。`CASE_SUMMARY_VERSION=5`、`CASE_TABLE_VERSION=6` 同步使舊摘要與總表自動重建；部署後重新開啟個案清單即可，不需重跑三級，完整卡片說明與 reviewer 選取不變。
+
 成大醫院基因醫學部 **NGS 分析平台**（repo `puddingyd/NGS-UI`）。這份文件記錄整個系統的流程、結構、慣例與踩雷點，讓新的 session / auto-compact 後也能完全接續工作。
 
 醫院內部的 NGS 三級分析判讀工具：FastAPI 後端 + 原生 JS 前端（無 build step），部署在內網 `192.168.84.91:8765`。Nextflow 與 UI state 統一放在 `/home/datalake_Intermediate/pipeline/tertiary_output/{LIS_ID}/`：pipeline 使用 00-07，UI 衍生/判讀狀態使用 `08_postprocessing/`。reviewer 在 UI 裡看 SNV/Indel + CNV/SV + Mitochondria + STR + PGx、標記與匯出報告；另有 `/phenotype/` 與個案清單工具。
