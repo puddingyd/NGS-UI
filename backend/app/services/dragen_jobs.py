@@ -793,7 +793,12 @@ def delete_pipeline_output(sample_id: str) -> dict:
         job_id = job.get("job_id", "")
         if job.get("state") in ("queued", "running") and is_running(job_id):
             raise RuntimeError(f"pipeline output is still in use: {sample_id}")
+    from . import prs_paths
+    prs_workspace = prs_paths.workspace_for_deletion(ui_sample_id)
     deleted: list[str] = []
+    if prs_workspace is not None:
+        shutil.rmtree(prs_workspace)
+        deleted.append(str(prs_workspace))
     for path in sorted(sample_dirs | ui_dirs, key=str):
         if path.is_dir():
             shutil.rmtree(path)

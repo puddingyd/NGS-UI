@@ -8,6 +8,7 @@ node_modules/
 # Patient data and runtime state live OUTSIDE the repo (in NGS_UI/).
 # These entries also catch a dev checkout that leaves them inside.
 tertiary_output/
+prs_work/
 data/
 patient_list/
 patient_documents/

@@ -488,3 +488,5 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 v9.76 修正三級與web的Python環境不一致所造成的GPN-Star缺套件略過：三級明確使用平台Python。正常載入保留GPN資料庫／套件版本變動時刷新，三級完成且版本相同則直接沿用結果；同案寫入鎖避免重複更新。未勾Research-only不計算／顯示GPN-Star，三級補分失敗有明確提醒。詳見[載入效能診斷](docs/ops/CASE_LOADING.md)。
 
 PRS 的 DRAGEN 原始 gVCF 預設支援同 run 的 `other/{source}/germline_seq/{source}.hard-filtered.gvcf.gz`（v9.78）；已有個案可直接在 PRS 區補跑。自訂 `gvcf_templates` 仍優先，細節見[PRS 操作說明](docs/ops/PRS_CHD_RESEARCH.md)。
+
+v9.79 起，PRS 原專案僅提供唯讀模型／參考資源，平台不再使用原 config 的 `project`／`raw_work` 存放個案。大型重建檔、Nextflow與工具快取集中在 `/home/datalake_Intermediate/pipeline/prs_work/{個案ID}/`（`NGS_UI_PRS_WORK_ROOT` 可覆寫；預設與三級 root 同層）。完整計分／QC與風險快照保存於該個案 `08_postprocessing/{個案ID}.prs/`，UI入口為 `{個案ID}.prs.summary.json`。新工作不接續舊專案 run；已啟動工作需先取消、等停止後更新並重新開始，歷史資料不自動搬移。詳見[路徑與舊工作處理](docs/ops/PRS_CHD_RESEARCH.md#已啟動的舊路徑工作)。

@@ -1,4 +1,4 @@
-# CHD PRS 研究風險 UI — v9.72
+# CHD PRS 研究風險 UI — v9.79
 
 ## 本版範圍
 
@@ -18,8 +18,10 @@
 程式本身已接上 queue／worker；**Git pull 不會安裝大型計分 reference，也不會自動複製原伺服器的 config**。使用原 v2.1.1 已驗證的設定檔，讓服務讀取：
 
 - `NGS_UI_PRS_CONFIG`：既有完整 config.json 的絕對路徑；未設定時讀 `$NGS_UI_HOME/data/prs_config.json`。欄位見 `research/prs/scoring_v211/config.example.json`，勿直接沿用不存在的示範路徑。
-- `project`：PRS 原始工作／結果 root。保留 `raw_work`、scorefile、model lock、Model A/B reference、FASTA、dbSNP、containers、兩份 Nextflow config 與 ancestry reference 的有效路徑。model lock 的絕對路徑鎖不可為換位置重新 freeze。
-- 平台 worker 的 PATH 需可執行 `nextflow, apptainer, bcftools, samtools`，並具有原工作目錄讀寫權限。`raw_script` bytes 必須等於 repo 中已驗證的 vendor 腳本；既有十檔核心 checksum 仍由 pipeline_v21 驗證。
+- 原 config 的 `project`／`raw_work` 保留作來源紀錄，**新平台工作不使用它們作輸出位置**。平台產生獨立 config snapshot，覆寫這兩欄；不要修改原專案 config 或重新 freeze model lock。
+- `NGS_UI_PRS_WORK_ROOT`：大型 raw／Nextflow 工作根目錄，預設為 `NGS_UI_TERTIARY_ROOT` 同層的 `prs_work/`，一般部署為 `/home/datalake_Intermediate/pipeline/prs_work/`。服務帳號需有建立個案目錄的權限。不能指到原 PRS 專案內或包含參考資源的目錄。
+- scorefile、model lock、Model A/B reference、FASTA、dbSNP、containers、兩份 Nextflow config 與 ancestry reference 維持既有有效路徑，僅讀取；不搬動 model lock 綁定的 model/source 絕對路徑。
+- 平台 worker 的 PATH 需可執行 `nextflow, apptainer, bcftools, samtools`。`raw_script` bytes 必須等於 repo 中已驗證的 vendor 腳本；既有十檔核心 checksum 仍由 pipeline_v21 驗證。
 - `NGS_UI_PRS_BUNDLE`：第二階段的風險參數包，安裝方式見下節；第一階段不依賴它。
 
 在服務相同使用者／環境中檢查（只讀，不執行個案分析）：
@@ -55,13 +57,47 @@ In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF
 
 ### 排程、重試與保存
 
-- 工作狀態／Log：`$NGS_UI_HOME/data/jobs/prs/{UUID}/`；保存該次 config snapshot、source／gVCF／resource fingerprints、操作者與 parent tertiary job。
-- raw／Method2：原 `project/integrated_runs/ui_prs_{UUID}/{source}/`；大型中間檔保留在原 PRS project，不複製到08。
+- 工作狀態／Log：`$NGS_UI_HOME/data/jobs/prs/{jobUUID}/`；保存平台衍生 config snapshot、source／gVCF／resource fingerprints、路徑版本、操作者與 parent tertiary job。`NGS_UI_DATA_ROOT` 自訂時跟隨該位置。
+- raw／Method2：`{NGS_UI_PRS_WORK_ROOT}/{個案ID}/integrated_runs/{runID}/{source}/`；個案ID與UI一致，例如 `26T00970-dragen`。這裡的 raw 包含重建 VCF、roundtrip、稽核、計分 results，**不只是 Nextflow 暫存**；真正 task 暫存為其下 `raw/nextflow_work/`。
 - ancestry：相同 raw 完成後，以原 pipeline.py 的 reuse 模式執行於 `ui_prs_{UUID}_ancestry/`。**不使用它的 normalized percentile 覆蓋 Method2 percentile**。原始 Method2 summary 不改寫；平台 envelope 另記 QC hash 並附上同源 ancestry evidence。
+- 正式結果：原子複製完整 Method2 六檔至 `08_postprocessing/{個案ID}.prs/runs/{jobUUID}/score/`，祖源 QC 四檔至同 run 的 `ancestry/`；各自保存 SHA256 manifest。UI入口 `{個案ID}.prs.summary.json` 記錄 artifact paths、hash、工作路徑版本與衍生 config hash。缺檔或驗證失敗不替換上一份有效結果。
+- Nextflow repository／plugin／container cache、工具臨時檔放在個案工作目錄的 `.runtime/`；runner 的工作目錄在 `launch/{runID}/`。平台產生的 Nextflow wrapper 先讀原 config，再覆寫 cache／report 等執行路徑（包含 singularity profile），原設定檔不改寫。模型、篩選、計分及祖源參數不變。
 - 每次先原子發布已完成 score／percentile，再跑祖源。祖源失敗時顯示「計分完成，祖源檢查未完成」；score 保留，risk 不啟用。非 EAS／低信心亦不啟用風險。
 - 全站同時只跑一個 PRS 計分工作，其他排隊。與三級／Somatic共用 UI及source sample locks，防止同個案來源替換。三級完成不代表其獨立 PRS 子工作已完成；在 PRS 區看進度／Log。
-- 「重新分析／重試」在輸入 fingerprints 完全相同時沿用原 run ID，交給 v2.1.1 guarded resume；不刪除 raw audit。原 pipeline 不能恢復的 early partial run 可用「重新開始」建立新 run ID，原檔保留。
-- 取消由 worker 收到 cancel flag 後終止自己啟動的工具 process group；原有 score／快照保留。完整刪除個案 pipeline 時，active PRS 阻擋刪除，完成工作狀態與08結果一起移除；原 project 的大型 raw audit 不在此刪除範圍。
+- 「重新分析／重試」在輸入、資源與平台路徑 fingerprints 完全相同時沿用原 run ID，交給 v2.1.1 guarded resume；不刪除 raw audit。原 pipeline 不能恢復的 early partial run 可用「重新開始」建立新 run ID，原檔保留。jobUUID 每次不同，retry 可沿用 runID。
+- 取消由 worker 收到 cancel flag 後終止自己啟動的工具 process group；原有 score／快照保留。完整刪除個案 pipeline 時，active PRS 阻擋刪除；完成工作狀態、08結果及有平台 ownership marker 的該個案 `prs_work` 一起移除。取消登錄不刪這些分析產物。原專案舊資料不自動清除。
+
+預設佈局（以 `26T00970-dragen` 為例）：
+
+```text
+/home/datalake_Intermediate/pipeline/
+  tertiary_output/26T00970-dragen/08_postprocessing/
+    26T00970-dragen.prs.summary.json          UI讀取入口
+    26T00970-dragen.prs/
+      runs/{jobUUID}/score/                  A/B score、percentile、缺失清單、狀態及報告
+      runs/{jobUUID}/ancestry/               QC JSON/TSV、報告與高權重缺失清單
+      assessments/{assessmentUUID}.json     臨床輸入、風險與比較曲線快照
+  prs_work/26T00970-dragen/
+    .ngs-ui-prs.json                         平台個案 ownership marker
+    .runtime/                               config wrappers、Nextflow及container caches、tmp
+    launch/{runID}/{score,ancestry}/         runner工作目錄
+    integrated_runs/{runID}/26T00970/
+      raw/                                  重建與audit/results；nextflow_work/為task暫存
+      method2/                              上游完整原始計分結果
+    integrated_runs/{runID}_ancestry/26T00970/
+      ancestry/{inputs,results,work}/
+      qc/
+```
+
+正式 artifacts 以一般檔案複製，不留指向 work 的 symlink；風險計算只需08已發布結果與固定風險 bundle。工作目錄保留供稽核與 guarded resume，**不併入三級既有的「Nextflow暫存清理」**；本版未新增 PRS 暫存清理按鈕。
+
+### 已啟動的舊路徑工作
+
+部署不會搬移或改寫正在執行的工作，舊 worker 已讀取舊 config，仍會沿舊位置完成。若要立即停止該個案繼續寫原專案，先在 PRS 頁面取消並等狀態變成「已取消」，再更新／重啟平台、選「重新開始」。**不要只在它執行途中改 config 或搬目錄**。新路徑版本不接續舊 project 的 run；現存 score／風險快照仍可讀，原專案歷史資料保留，不自動刪除或遷移。
+
+啟動新工作後，Log 應先列平台的「個案工作目錄」「正式結果」；raw 指令的 `--work` 與 `--out` 均應位於 `prs_work/{個案ID}/`。指令中的 scorefile／model／FASTA 等唯讀資源仍可指向原專案，這不是個案輸出。
+
+Nextflow 路徑設定依官方 [config include／優先序](https://docs.seqera.io/nextflow/config)、[runtime環境變數](https://docs.seqera.io/nextflow/reference/env-vars)及 [Singularity cacheDir](https://docs.seqera.io/nextflow/reference/config/singularity)；仍需由操作者於院內執行實際 WGS 驗收。
 
 ## 固定參數與科學驗算
 
@@ -126,6 +162,8 @@ PYTHONPATH=backend python3 scripts/import_prs_summary.py \
 
 ```
 {LIS_ID}.prs.summary.json
+{LIS_ID}.prs/runs/{jobUUID}/score/{summary.json,scores.tsv,report.md,status.json,inputs.lock.json,missing_loci.tsv.gz,manifest.json}
+{LIS_ID}.prs/runs/{jobUUID}/ancestry/{qc.json,qc.tsv,report.md,missing_high_weight.tsv,manifest.json}
 {LIS_ID}.prs/assessments/{UUID}.json
 ```
 
@@ -158,6 +196,7 @@ python3 -m research.prs.absolute_risk.build_taiwan \
 - 既有 frontend Node 回歸：93項通過。
 - 獨立瀏覽器：桌面單行輸入／疾病表格、390px手機表格捲動、待計算文案、兩曲線、API數值、修改輸入清除舊值、>70歲、祖源不合格仍顯示score、開始／Log／取消、切換個案晚到回應，全部通過。預覽使用明示的合成個案，不是實際病人結果。
 - 未執行院內 fresh WGS、未測試院內部署、未進行台灣 clinical validation。
+- v9.79 路徑隔離／完整發布／重試／刪除及相關三級、risk 回歸：81項通過。測試以合成輸入與隔離假工具執行，不代表院內 Nextflow／WGS 已驗收；原 PRS 專案逐檔 bytes／mtime 不變、舊路徑不resume、祖源失敗保留score、缺完整artifact不覆蓋既有結果均已驗證。
 
 可重複執行的測試入口：
 

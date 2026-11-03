@@ -11,13 +11,14 @@ from types import SimpleNamespace
 import pytest
 
 from app import config
-from app.services import prs, prs_jobs as jobs, sample_layout, dragen_jobs
+from app.services import prs, prs_jobs as jobs, prs_paths, sample_layout, dragen_jobs
 from app.workers import prs_run, dragen_run
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, 'DATA_ROOT', tmp_path/'data')
+    monkeypatch.setattr(config, 'PRS_WORK_ROOT', tmp_path/'prs_work')
     monkeypatch.setattr(dragen_run, 'TERTIARY_JOBS_DIR', tmp_path/'tertiary_jobs')
     monkeypatch.setattr(sample_layout, 'state_dir', lambda sid, **kw: tmp_path/'cases'/sid)
     monkeypatch.setattr(sample_layout, 'state_file', lambda sid,name,**kw: tmp_path/'cases'/sid/f'{sid}.{name}')
@@ -32,9 +33,12 @@ def env(tmp_path, monkeypatch):
     Path(str(gvcf)+'.tbi').write_bytes(b'synthetic-index')
     marker=dict(source_sample_id='SOURCE',source_vcf_path=str(anchor),pipeline_type='dragen',seq_type='WGS')
     prs.atomic_json(sample_layout.state_file('CASE','pipeline_source.json'),marker)
-    cfg=dict(project=str(tmp_path/'project'))
+    legacy=tmp_path/'legacy_prs'
+    (legacy/'resources').mkdir(parents=True)
+    (legacy/'original_run.txt').write_text('keep existing research results')
+    cfg=dict(project=str(legacy), raw_work=str(legacy), method2_model_dir=str(legacy/'model'))
     for key in ('raw_script','original_scorefile','fasta','dbsnp','plink_img','raw_nextflow_config','ancestry_nextflow_config','reference_panel','method2_lock'):
-        p=tmp_path/key;p.write_text('synthetic');cfg[key]=str(p)
+        p=legacy/'resources'/key;p.write_text('synthetic');cfg[key]=str(p)
     monkeypatch.setattr(jobs,'settings',lambda:(cfg,'cfg-hash'))
     summary=json.loads((jobs.SCORING.parent/'examples/synthetic_summary.json').read_text())
     summary['sample']='SOURCE';summary['ancestry_status']={'status':'NOT_ASSESSED'}
@@ -42,11 +46,15 @@ def env(tmp_path, monkeypatch):
     def command(worker,args,step):
         calls.append(args)
         run=args[args.index('--run-id')+1]
-        dest=Path(cfg['project'])/'integrated_runs'/run/'SOURCE'
+        dest=Path(worker.cfg['project'])/'integrated_runs'/run/'SOURCE'
         if '--gvcf' in args:
             prs.atomic_json(dest/'method2/summary.json',summary)
+            for name in prs_paths.SCORE_FILES:
+                if name != 'summary.json': (dest/'method2'/name).write_bytes(b'synthetic-score-artifact')
         else:
             prs.atomic_json(dest/'qc/qc.json',dict(sample='SOURCE',qc_status='PASS',ancestry='EAS',ancestry_low_confidence=False))
+            for name in prs_paths.QC_FILES:
+                if name != 'qc.json': (dest/'qc'/name).write_bytes(b'synthetic-qc-artifact')
     monkeypatch.setattr(prs_run.Worker,'command',command)
     return SimpleNamespace(root=tmp_path,anchor=anchor,gvcf=gvcf,cfg=cfg,summary=summary,calls=calls,marker=marker)
 
@@ -67,7 +75,7 @@ def test_tertiary_to_score_and_ancestry_without_clinical_metadata(env):
     assert '--with-legacy-ancestry' not in env.calls[0]
     assert '--raw-source' in env.calls[1]
     run=record['pipeline_run_id']
-    original=Path(env.cfg['project'])/'integrated_runs'/run/'SOURCE/method2/summary.json'
+    original=Path(record['path_layout']['project'])/'integrated_runs'/run/'SOURCE/method2/summary.json'
     assert json.loads(original.read_text())['ancestry_status']=={'status':'NOT_ASSESSED'}
 
 
@@ -219,3 +227,111 @@ def test_new_dragen_layout_does_not_silently_override_another_candidate(env):
 def test_explicit_gvcf_templates_still_replace_defaults(env):
     cfg={**env.cfg,'gvcf_templates':{'dragen':['{run_dir}/custom/{source}.gvcf.gz']}}
     assert jobs.candidates(jobs.source('CASE'),cfg)==[]
+
+
+def test_all_writable_paths_and_final_artifacts_are_platform_owned(env, monkeypatch):
+    legacy = Path(env.cfg['project'])
+    before = {str(p.relative_to(legacy)): (p.read_bytes(), p.stat().st_mtime_ns)
+              for p in legacy.rglob('*') if p.is_file()}
+    # Inherited cache settings must not send new case files to the old project.
+    for name in ('NXF_HOME', 'NXF_ASSETS', 'NXF_CACHE_DIR', 'NXF_WORK', 'TMPDIR', 'APPTAINER_CACHEDIR'):
+        monkeypatch.setenv(name, str(legacy/'unwanted_writes'))
+    jid = jobs.start('CASE')['job_id']
+    worker = prs_run.Worker(jid)
+    assert worker.cfg['project'] == worker.cfg['raw_work'] == str(config.PRS_WORK_ROOT/'CASE')
+    for key in ('raw_script', 'original_scorefile', 'method2_lock', 'method2_model_dir'):
+        assert worker.cfg[key] == env.cfg[key]  # Model absolute path locks preserved.
+    for key in ('raw_nextflow_config', 'ancestry_nextflow_config'):
+        text = Path(worker.cfg[key]).read_text()
+        assert f"includeConfig '{env.cfg[key]}'" in text
+        assert f"singularity.cacheDir = '{config.PRS_WORK_ROOT}/CASE/.runtime/containers'" in text
+        assert 'profiles {' in text
+    captured = []
+    def spawn(args, **kw):
+        captured.append(kw)
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+    monkeypatch.setattr(prs_run.subprocess, 'Popen', spawn)
+    REAL_COMMAND(worker, ['fake-tool'], 'score')
+    runtime = captured[0]
+    assert runtime['cwd'].is_relative_to(config.PRS_WORK_ROOT/'CASE')
+    for name in ('NXF_HOME', 'NXF_ASSETS', 'NXF_PLUGINS_DIR', 'TMPDIR', 'NXF_SINGULARITY_CACHEDIR', 'APPTAINER_CACHEDIR'):
+        assert Path(runtime['env'][name]).is_relative_to(config.PRS_WORK_ROOT/'CASE')
+    assert 'NXF_CACHE_DIR' not in runtime['env'] and 'NXF_WORK' not in runtime['env']
+    worker.run()
+    record, _ = prs.read_json(prs.score_path('CASE'))
+    assert set(record['artifacts']) == {'score', 'ancestry'}
+    for kind, names in (('score', prs_paths.SCORE_FILES), ('ancestry', prs_paths.QC_FILES)):
+        artifact = record['artifacts'][kind]
+        dest = Path(artifact['path'])
+        assert dest == sample_layout.state_dir('CASE')/f'CASE.prs/runs/{jid}/{kind}'
+        assert set(artifact['files']) == set(names)
+        assert all(prs_paths.file_hash(dest/n) == h for n, h in artifact['files'].items())
+    after = {str(p.relative_to(legacy)): (p.read_bytes(), p.stat().st_mtime_ns)
+             for p in legacy.rglob('*') if p.is_file()}
+    assert after == before
+    assert not list(legacy.glob('integrated_runs/**'))
+    assert not list(sample_layout.state_dir('CASE').glob('CASE.prs/runs/*/.*-*'))
+
+
+@pytest.mark.parametrize('location', ['legacy', 'legacy_child', 'ancestor', 'alias'])
+def test_reject_work_root_that_can_write_into_original_project(env, monkeypatch, location):
+    legacy = Path(env.cfg['project'])
+    root = {'legacy': legacy, 'legacy_child': legacy/'cases', 'ancestor': env.root, 'alias': env.root/'alias'}[location]
+    if location == 'alias': root.symlink_to(legacy, target_is_directory=True)
+    monkeypatch.setattr(config, 'PRS_WORK_ROOT', root)
+    with pytest.raises(ValueError, match='原 PRS'):
+        jobs.start('CASE')
+    assert not jobs.jobs()
+
+
+def test_old_layout_is_not_resumed_or_executed(env):
+    jid = jobs.start('CASE')['job_id']
+    old = prs_run.Worker(jid)
+    old.plan.pop('path_layout')
+    old.plan.pop('runtime_config_sha256')
+    old.update(status='failed')
+    with pytest.raises(ValueError, match='設定已變更'):
+        old.run()
+    old.update(status='failed')
+    retry = jobs.start('CASE')['job_id']
+    assert jobs.read_job(retry)['pipeline_run_id'] != old.job['pipeline_run_id']
+    assert not env.calls
+
+
+def test_changed_runtime_root_and_wrapper_reject_before_running(env, monkeypatch):
+    jid = jobs.start('CASE')['job_id']
+    worker = prs_run.Worker(jid)
+    original_root = config.PRS_WORK_ROOT
+    monkeypatch.setattr(config, 'PRS_WORK_ROOT', env.root/'another_work_root')
+    with pytest.raises(ValueError, match='設定已變更'): worker.run()
+    monkeypatch.setattr(config, 'PRS_WORK_ROOT', original_root)
+    Path(worker.cfg['raw_nextflow_config']).write_text('tampered')
+    with pytest.raises(ValueError, match='Nextflow 設定已變更'): worker.run()
+    assert not env.calls
+
+
+def test_incomplete_publish_preserves_previous_score(env, monkeypatch):
+    jid = jobs.start('CASE')['job_id']; prs_run.Worker(jid).run()
+    previous = prs.score_path('CASE').read_bytes()
+    original = prs_run.Worker.command
+    def incomplete(worker, args, step):
+        original(worker, args, step)
+        run = args[args.index('--run-id')+1]
+        (Path(worker.cfg['project'])/'integrated_runs'/run/'SOURCE/method2/scores.tsv').unlink()
+    monkeypatch.setattr(prs_run.Worker, 'command', incomplete)
+    second = jobs.start('CASE', new_run=True)['job_id']
+    with pytest.raises(ValueError, match='完整結果缺少'): prs_run.Worker(second).run()
+    assert prs.score_path('CASE').read_bytes() == previous
+    assert not (sample_layout.state_dir('CASE')/f'CASE.prs/runs/{second}/score').exists()
+
+
+def test_workspace_cleanup_requires_platform_marker(env):
+    path = config.PRS_WORK_ROOT/'CASE'
+    assert prs_paths.workspace_for_deletion('CASE') is None
+    jobs.start('CASE')
+    assert prs_paths.workspace_for_deletion('CASE') == path
+    (path/'.ngs-ui-prs.json').unlink()
+    with pytest.raises(FileNotFoundError): prs_paths.workspace_for_deletion('CASE')
+    path.rename(path.with_name('saved'))
+    path.symlink_to(env.cfg['project'], target_is_directory=True)
+    with pytest.raises(ValueError, match='拒絕刪除'): prs_paths.workspace_for_deletion('CASE')

@@ -8,7 +8,7 @@ import sys
 import time
 import traceback
 
-from ..services import prs, prs_jobs as jobs
+from ..services import prs, prs_jobs as jobs, prs_paths
 from .dragen_run import _acquire_sample_locks, _release_sample_locks, _load_secrets
 
 
@@ -39,9 +39,15 @@ class Worker:
         if jobs.validate_gvcf(self.plan['gvcf'], self.job['source_sample_id']) != self.plan['gvcf_signature']:
             raise ValueError('原始 gVCF 或 index 已變更，請重新啟動 PRS')
         current_config, current_hash = jobs.settings()
+        effective, paths, wrappers = prs_paths.execution_config(self.job['sample_id'], current_config)
         if (current_hash != self.plan['config_sha256']
-                or jobs.resource_signature(current_config) != self.plan['resources']):
+                or jobs.resource_signature(current_config) != self.plan['resources']
+                or paths != self.plan.get('path_layout')
+                or prs_paths.digest_json(effective) != self.plan.get('runtime_config_sha256')
+                or effective != self.cfg):
             raise ValueError('PRS 執行設定已變更，請重新啟動')
+        if any(not p.is_file() or p.is_symlink() or p.read_text() != content for p, content in wrappers.items()):
+            raise ValueError('PRS 平台 Nextflow 設定已變更，請重新啟動')
 
     def stop_process(self):
         if self.process is None or self.process.poll() is not None: return
@@ -56,7 +62,9 @@ class Worker:
     def command(self, args, step):
         self.update(status='running', step=step)
         print('[PRS] '+step, flush=True)
-        self.process = subprocess.Popen(args, cwd=jobs.SCORING, start_new_session=True)
+        cwd, env = prs_paths.environment(self.plan['path_layout'], self.job['pipeline_run_id'],
+                                         'ancestry' if '--raw-source' in args else 'score')
+        self.process = subprocess.Popen(args, cwd=cwd, env=env, start_new_session=True)
         try:
             while self.process.poll() is None:
                 self.check_cancel()
@@ -81,12 +89,24 @@ class Worker:
                 raise ValueError('祖源 QC 未通過')
             # Derived envelope only; never edit the frozen upstream summary.
             summary = {**summary, 'ancestry_status': evidence}
+        artifacts = dict(score=prs_paths.publish_files(
+            self.job['sample_id'], self.job['job_id'], 'score', original.parent, prs_paths.SCORE_FILES))
+        if artifacts['score']['files']['summary.json'] != digest:
+            raise ValueError('計分結果在發布期間已變更')
+        if qc:
+            artifacts['ancestry'] = prs_paths.publish_files(
+                self.job['sample_id'], self.job['job_id'], 'ancestry', qc.parent, prs_paths.QC_FILES)
+            if artifacts['ancestry']['files']['qc.json'] != qc_hash:
+                raise ValueError('祖源結果在發布期間已變更')
+        self.verify_inputs()
         record = dict(schema='PRS_SCORE_LINK_V1', sample_id=self.job['sample_id'],
                       source_sample_id=summary['sample'], original_sha256=digest,
                       pipeline_source_sha256=self.plan['pipeline_source_sha256'],
                       imported_at=prs.dt.datetime.now(prs.dt.timezone.utc).isoformat(),
                       job_id=self.job['job_id'], pipeline_run_id=self.job['pipeline_run_id'],
                       gvcf_signature=self.plan['gvcf_signature'], ancestry_qc_sha256=qc_hash,
+                      path_layout=self.plan['path_layout'], artifacts=artifacts,
+                      runtime_config_sha256=self.plan['runtime_config_sha256'],
                       summary=summary)
         prs.atomic_json(prs.score_path(self.job['sample_id']), record)
 
@@ -109,6 +129,8 @@ class Worker:
                     except RuntimeError:
                         self.update();time.sleep(1)
                 self.verify_inputs()
+                print('[PRS] 個案工作目錄：'+self.cfg['project'], flush=True)
+                print('[PRS] 正式結果：'+str(prs.score_path(self.job['sample_id']).parent), flush=True)
                 sid, run = self.job['source_sample_id'], self.job['pipeline_run_id']
                 config_path = str(self.directory/'config.json')
                 dest = Path(self.cfg['project'])/'integrated_runs'/run/sid

@@ -15,7 +15,7 @@
 
 原 v2.1.1 已有三案 fresh、兩案並行等伺服器驗證紀錄，見 `scoring_v211/VALIDATION_REPORT_v211_2026-11-02.md`。這些是歷史證據，不代表本次重跑 WGS。大型 `canonical_v0` 模型、gVCF、Nextflow work、實測 outputs 均未納入 repo。
 
-歷史 SOP 內的伺服器路徑、舊套件名稱及安裝指令保留作追溯，**不要整段照抄到 repo checkout 執行**。現行 scoring 入口是 `scoring_v211/pipeline_v21.py`。在院內另設 runtime config，把 `raw_script`、`method2_lock` 指到實際安裝位置；`raw_work` 仍為 PRS project root。model lock 內的絕對 model/source 路徑有嚴格核對，不能為換目錄任意重新 freeze。未匯入實際 manifest；新 manifest 用 `sample, mode, gvcf, raw_source` 四欄 TAB 格式，fresh 的 raw_source 必須空白。測試用 golden IDs 保留在原始程式，不能當作新個案設定。
+歷史 SOP 內的伺服器路徑、舊套件名稱及安裝指令保留作追溯，**不要整段照抄到 repo checkout 執行**。現行 scoring 入口是 `scoring_v211/pipeline_v21.py`。在院內另設 runtime config，把 `raw_script`、`method2_lock` 指到實際安裝位置。**v9.79平台入口會覆寫 `project`／`raw_work`，個案產物一律放平台的 `prs_work/{個案ID}/`，完整計分／QC另發布至08；原專案只供唯讀資源。**直接手動執行科學 CLI 仍遵循它收到的 config，須自行確認輸出位置。model lock 內的絕對 model/source 路徑有嚴格核對，不能為換目錄任意重新 freeze。未匯入實際 manifest；新 manifest 用 `sample, mode, gvcf, raw_source` 四欄 TAB 格式，fresh 的 raw_source 必須空白。測試用 golden IDs 保留在原始程式，不能當作新個案設定。
 
 ## 離線驗證
 

@@ -17,7 +17,7 @@ import time
 import uuid
 
 from .. import config
-from . import prs, sample_layout
+from . import prs, prs_paths, sample_layout
 
 ACTIVE = {'queued', 'running', 'cancelling'}
 SCORING = config.REPO_ROOT / 'research/prs/scoring_v211'
@@ -57,7 +57,7 @@ def settings():
                 'method2_model_dir', 'method2_lock'):
         if not isinstance(cfg.get(key), str) or not Path(cfg[key]).is_absolute():
             raise ValueError(f'PRS 設定需要絕對路徑：{key}')
-        if key != 'project' and not Path(cfg[key]).exists():
+        if key not in ('project', 'raw_work') and not Path(cfg[key]).exists():
             raise ValueError(f'PRS 資源不存在：{key}')
     if hashlib.sha256(Path(cfg['method2_lock']).read_bytes()).hexdigest() != prs.SCORE_DEFINITION['model_lock_sha256']:
         raise ValueError('PRS model lock 與固定版本不符')
@@ -214,7 +214,10 @@ def start(sid, candidate_id=None, username='', parent_job_id=None, new_run=False
     selected = next((c for c in choices if c['id'] == candidate_id), None)
     if not selected: raise ValueError('請在 PRS 頁面確認原始 gVCF（無候選或有多筆來源）')
     stamps = validate_gvcf(selected['path'], info['source_sample_id'])
-    plan = dict(**info, gvcf=selected['path'], gvcf_signature=stamps, config_sha256=cfg_hash, resources=resource_signature(cfg))
+    effective, paths, wrappers = prs_paths.execution_config(sid, cfg)
+    plan = dict(**info, gvcf=selected['path'], gvcf_signature=stamps,
+                config_sha256=cfg_hash, resources=resource_signature(cfg),
+                path_layout=paths, runtime_config_sha256=prs_paths.digest_json(effective))
     with submission_lock():
         from . import dragen_jobs
         if not parent_job_id and {sid, info['source_sample_id']} & dragen_jobs.active_sample_ids():
@@ -222,6 +225,7 @@ def start(sid, candidate_id=None, username='', parent_job_id=None, new_run=False
         if {sid, info['source_sample_id']} & active_ids():
             raise ValueError('此個案 PRS 已在排程或執行中')
         prior = None if new_run else next((j for j in jobs(sid) if j.get('plan') == plan and j['status'] not in ACTIVE), None)
+        prs_paths.prepare(paths, wrappers)
         jid = uuid.uuid4().hex
         directory = job_dir(jid); directory.mkdir()
         record = dict(job_id=jid, sample_id=sid, source_sample_id=info['source_sample_id'],
@@ -229,7 +233,7 @@ def start(sid, candidate_id=None, username='', parent_job_id=None, new_run=False
                       requested_by=username, parent_job_id=parent_job_id, plan=plan,
                       pipeline_run_id=prior['pipeline_run_id'] if prior else 'ui_prs_'+jid)
         prs.atomic_json(directory/'state.json', record)
-        prs.atomic_json(directory/'config.json', cfg)
+        prs.atomic_json(directory/'config.json', effective)
         try:
             with (directory/'log.txt').open('a') as log:
                 proc = subprocess.Popen([sys.executable, '-m', 'app.workers.prs_run', jid],

@@ -80,6 +80,12 @@ PIPELINE_OUT_ROOT = Path(os.environ.get(
     ),
 ))
 
+# PRS reconstruction/Nextflow work is separate from published tertiary results.
+# Never inherit the original research project's output root from its config.
+PRS_WORK_ROOT = Path(os.environ.get(
+    "NGS_UI_PRS_WORK_ROOT", PIPELINE_OUT_ROOT.parent / "prs_work",
+))
+
 # Previous Nextflow output root, read-only during migration.
 LEGACY_PIPELINE_OUT_ROOT = Path(os.environ.get(
     "NGS_UI_LEGACY_PIPELINE_OUT_ROOT",
