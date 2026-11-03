@@ -186,3 +186,36 @@ def test_cancel_stops_owned_process_group(env,monkeypatch):
 
 
 REAL_COMMAND = prs_run.Worker.command
+
+
+def test_dragen_other_germline_layout_auto_selects_matching_run_and_source(env):
+    target=env.anchor.parent.parent/'other/SOURCE/germline_seq/SOURCE.hard-filtered.gvcf.gz'
+    target.parent.mkdir(parents=True)
+    env.gvcf.rename(target)
+    Path(str(env.gvcf)+'.tbi').rename(Path(str(target)+'.tbi'))
+    # Same filename under a different source/run must not become a candidate.
+    for wrong in (env.anchor.parent.parent/'other/OTHER/germline_seq'/target.name,
+                  env.root/'another-run/other/SOURCE/germline_seq'/target.name):
+        wrong.parent.mkdir(parents=True);wrong.write_bytes(target.read_bytes())
+    choices=jobs.candidates(jobs.source('CASE'),env.cfg)
+    assert [c['path'] for c in choices]==[str(target.resolve())]
+    jid=jobs.start('CASE')['job_id']
+    assert jobs.read_job(jid)['plan']['gvcf']==str(target.resolve())
+
+
+def test_new_dragen_layout_does_not_silently_override_another_candidate(env):
+    target=env.anchor.parent.parent/'other/SOURCE/germline_seq/SOURCE.hard-filtered.gvcf.gz'
+    target.parent.mkdir(parents=True);target.write_bytes(env.gvcf.read_bytes())
+    Path(str(target)+'.tbi').write_bytes(b'index')
+    choices=jobs.candidates(jobs.source('CASE'),env.cfg)
+    assert len(choices)==2
+    with pytest.raises(ValueError,match='確認原始 gVCF'):
+        jobs.start('CASE')
+    chosen=next(c for c in choices if c['path']==str(target.resolve()))
+    jid=jobs.start('CASE',chosen['id'])['job_id']
+    assert jobs.read_job(jid)['plan']['gvcf']==str(target.resolve())
+
+
+def test_explicit_gvcf_templates_still_replace_defaults(env):
+    cfg={**env.cfg,'gvcf_templates':{'dragen':['{run_dir}/custom/{source}.gvcf.gz']}}
+    assert jobs.candidates(jobs.source('CASE'),cfg)==[]

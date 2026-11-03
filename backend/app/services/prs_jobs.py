@@ -24,6 +24,7 @@ SCORING = config.REPO_ROOT / 'research/prs/scoring_v211'
 DEFAULT_TEMPLATES = {
     'dragen': ['{anchor_dir}/{source}.hard-filtered.gvcf.gz',
                '{run_dir}/gvcf.gz/{source}.hard-filtered.gvcf.gz',
+               '{run_dir}/other/{source}/germline_seq/{source}.hard-filtered.gvcf.gz',
                '{anchor_dir}/{source}.gvcf.gz', '{run_dir}/gvcf.gz/{source}.gvcf.gz'],
     # In-house callers/layouts must be explicitly configured and validated.
     'inhouse': [],

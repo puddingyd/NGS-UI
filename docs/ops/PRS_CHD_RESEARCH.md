@@ -34,16 +34,17 @@ PYTHONPATH=backend python3 -c 'from app.services.prs_jobs import settings; c,h=s
 
 綁定 `pipeline_source.json` 中的 source sample、原 VCF anchor、來源類型與新保存的 `seq_type`，不從 UI 顯示姓名或 LIS 字串猜檔案。僅WGS；舊 marker 缺類型時可讀已登錄 metadata 的 test_type，仍不明則拒絕。
 
-DRAGEN 預設精確搜尋同一 anchor 目錄或同 run 的 `gvcf.gz/` 中 `{source}.hard-filtered.gvcf.gz`／`{source}.gvcf.gz`。不同實體檔案不自動選最新；多候選由操作者在 UI 下拉確認。單候選自動使用。
+DRAGEN 預設精確搜尋同一 anchor 目錄或同 run 的 `gvcf.gz/` 中 `{source}.hard-filtered.gvcf.gz`／`{source}.gvcf.gz`，以及同 run 的 `other/{source}/germline_seq/{source}.hard-filtered.gvcf.gz`（v9.78新增院內DRAGEN實際佈局）。不同實體檔案不自動選最新；多候選由操作者在 UI 下拉確認。單候選自動使用。
 
-In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF後，在同一 config 加入 `gvcf_templates`。這個欄位會取代預設 mapping，需保留所需的 DRAGEN templates。只支援精確模板，不接受 glob 或 browser 提供任意檔案路徑：
+In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF後，在同一 config 加入 `gvcf_templates`。這個欄位會取代預設 mapping，需保留所需的 DRAGEN templates；若已自訂，新增預設路徑不會自動合併進自訂值，須自行加入所需模板。只支援精確模板，不接受 glob 或 browser 提供任意檔案路徑：
 
 ```json
 {
   "gvcf_templates": {
     "dragen": [
       "{anchor_dir}/{source}.hard-filtered.gvcf.gz",
-      "{run_dir}/gvcf.gz/{source}.hard-filtered.gvcf.gz"
+      "{run_dir}/gvcf.gz/{source}.hard-filtered.gvcf.gz",
+      "{run_dir}/other/{source}/germline_seq/{source}.hard-filtered.gvcf.gz"
     ],
     "inhouse": []
   }

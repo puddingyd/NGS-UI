@@ -486,3 +486,5 @@ Session cookie 8 小時、`SameSite=Lax`、`https_only=False`（內網可能還�
 個案載入異常久時，依 [載入效能診斷](docs/ops/CASE_LOADING.md) 區分登錄、索引與個案資料讀取。v9.73 避免既有 WGS review 僅因 TITAN-WGS 標籤變更而重建，並在真正重建前記錄原因。
 
 v9.76 修正三級與web的Python環境不一致所造成的GPN-Star缺套件略過：三級明確使用平台Python。正常載入保留GPN資料庫／套件版本變動時刷新，三級完成且版本相同則直接沿用結果；同案寫入鎖避免重複更新。未勾Research-only不計算／顯示GPN-Star，三級補分失敗有明確提醒。詳見[載入效能診斷](docs/ops/CASE_LOADING.md)。
+
+PRS 的 DRAGEN 原始 gVCF 預設支援同 run 的 `other/{source}/germline_seq/{source}.hard-filtered.gvcf.gz`（v9.78）；已有個案可直接在 PRS 區補跑。自訂 `gvcf_templates` 仍優先，細節見[PRS 操作說明](docs/ops/PRS_CHD_RESEARCH.md)。
