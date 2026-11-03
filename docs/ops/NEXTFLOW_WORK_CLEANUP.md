@@ -1,5 +1,7 @@
 # Nextflow 暫存安全清理（v9.77）
 
+v9.82三級staging、post-processing及工具runtime已移入同一scope的`.runtime/`，既有lifetime lease一併保護計算、全批驗證複製、發布與清理。整包work可bind mount至NVMe，保留原路徑與父目錄guard鎖；不可用symlink替代根目錄。見 [SSD搬遷操作](TERTIARY_SCRATCH_MIGRATION.md)。
+
 二級、三級都採「跳過使用中的範圍，清理其他確認安全的暫存」。清理不終止任何工作。
 
 ## 二級：在 DGX2 執行

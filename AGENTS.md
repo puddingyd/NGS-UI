@@ -28,6 +28,8 @@
 
 ## 2. 目錄佈局 / env var
 
+**三級 NVMe 工作區（v9.82，2026-11-03）**：整包 `~/NGS_UI/nf_work/`（DRAGEN／NCKUH launch/session/work、PRS audit/runtime及舊式子目錄）可由操作者用 `scripts/migrate_nf_work_to_scratch.py` 複製／checksum核對後，將 `/scratch/n102968/nf_work` bind mount 回原絕對路徑；不改 work root／PRS fingerprint，不使用 symlink，HDD副本只作搬遷備份。工具預設唯讀、先核對執行中服務的三級／PRS／DATA root；`--apply` 要求服務已停、狀態無active、無Nextflow及可取得exclusive leases，持admission鎖完成rsync/bind/fstab與systemd掛載依賴，不自行啟停服務。由使用者部署及搬遷，Codex不得執行。三級 `tertiary_workspace.py` 將staging及post-processing移至 `contexts/shared-{dragen,nckuh}/.runtime/jobs/{job}/`，host/container tmp、Nextflow/Apptainer/Conda可寫入快取亦在scope內；source院內env後重新套用路徑、保留PATH/reference binds，原config＋dgm profile只覆寫執行路徑與temp binds。全批完成後逐檔SHA256複製／實體化symlink到正式磁碟`.staging/{job}`，再重定位SQL/JSON signature並沿原promotion/rollback發布、layout marker最後寫；失敗回復不完整時保留`.rollback`及publication staging，不刪舊資料唯一副本。job tmp/staging用完刪除，既有scope lease涵蓋整個流程，PRS保留政策不變。正式00–08、reference、VCF/BAM、platform state位置不變。操作／回復見 `docs/ops/TERTIARY_SCRATCH_MIGRATION.md`；尚未在院內完成實際掛載／WGS驗收。
+
 `config.py` 裡所有路徑都從 `NGS_UI_HOME` 推導（env `NGS_UI_HOME` 優先；未設定時，只有典型 production checkout `NGS_UI/NGS-UI` 會用 `REPO_ROOT.parent`，一般 standalone checkout 會用 `REPO_ROOT`）。每個都有自己的 env override。在 sandbox/桌面 checkout 裡 `NGS_UI_HOME` = repo root，在 dev 機 `NGS_UI_HOME` = `~/NGS_UI`。
 
 | 內容 | 預設路徑 | env override |

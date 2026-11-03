@@ -57,7 +57,7 @@ from pathlib import Path
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
 from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, gba, specialized
-from ..services import nextflow_work
+from ..services import nextflow_work, tertiary_workspace
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -836,20 +836,25 @@ def _release_sample_locks(handles: list[object]) -> None:
             pass
 
 
-def _prepare_job_staging(job_id: str) -> tuple[Path, Path]:
-    staging_parent = PIPELINE_OUT_ROOT / ".staging"
-    rollback_parent = PIPELINE_OUT_ROOT / ".rollback"
-    staging_root = staging_parent / job_id
-    rollback_root = rollback_parent / job_id
-    if staging_root.exists() or rollback_root.exists():
+def _prepare_job_staging(job_id: str, scope: str) -> tuple[Path, Path, Path]:
+    # Compute on the work disk. Publication and rollback must stay together
+    # on the destination disk, where os.replace remains atomic.
+    staging_root = tertiary_workspace.runtime_paths(TERTIARY_NF_WORK_ROOT, scope, job_id)['stage']
+    publication_root = PIPELINE_OUT_ROOT / '.staging' / job_id
+    rollback_root = PIPELINE_OUT_ROOT / '.rollback' / job_id
+    paths = (staging_root, publication_root, rollback_root)
+    if any(_path_exists(path) for path in paths):
         raise RuntimeError(f"job staging already exists: {job_id}")
-    staging_root.mkdir(parents=True, exist_ok=False)
+    created = []
     try:
-        rollback_root.mkdir(parents=True, exist_ok=False)
+        for path in paths:
+            path.mkdir(parents=True, exist_ok=False)
+            created.append(path)
     except BaseException:
-        shutil.rmtree(staging_root, ignore_errors=True)
+        for path in reversed(created):
+            shutil.rmtree(path, ignore_errors=True)
         raise
-    return staging_root, rollback_root
+    return paths
 
 
 def _validate_staged_sample(
@@ -901,6 +906,7 @@ def _rebase_staged_derived_paths(
     stage_post_dir: Path,
     final_raw_tsv: Path,
     final_post_dir: Path,
+    source_sample_dir: Path | None = None,
 ) -> None:
     """Make staged SQLite/JSON signatures valid after live promotion."""
     final_raw = str(final_raw_tsv.absolute())
@@ -933,7 +939,8 @@ def _rebase_staged_derived_paths(
         payload = json.loads(rescue_manifest.read_text(encoding="utf-8"))
         baseline = payload.get("inputs", {}).get("base_tsv")
         if baseline:
-            relative = Path(baseline["path"]).relative_to(stage_post_dir.parent.resolve())
+            origin = source_sample_dir or stage_post_dir.parent
+            relative = Path(baseline["path"]).relative_to(origin.resolve())
             baseline["path"] = str((final_post_dir.parent / relative).absolute())
             tmp = rescue_manifest.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -1021,6 +1028,7 @@ def _promote_staged_generation(
 def _rollback_promotion_operations(
     operations: list[tuple[Path | None, Path, Path]],
 ) -> None:
+    failures = []
     for new_path, live_path, backup_path in reversed(operations):
         try:
             if _path_exists(live_path):
@@ -1034,8 +1042,10 @@ def _rollback_promotion_operations(
             if _path_exists(backup_path):
                 live_path.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(backup_path, live_path)
-        except OSError:
-            pass
+        except OSError as error:
+            failures.append(f'{live_path}: {error}')
+    if failures:
+        raise RuntimeError('Publication rollback incomplete; keep backup files: ' + '; '.join(failures))
 
 
 def _pipeline_input_dir(vcf: Path, mode: str) -> Path:
@@ -1594,7 +1604,11 @@ def main() -> int:
     lock_handles: list[object] = []
     nextflow_cache_lock: object | None = None
     staging_root: Path | None = None
+    publication_root: Path | None = None
     rollback_root: Path | None = None
+    runtime_job: Path | None = None
+    previous_environment: dict[str, str | None] = {}
+    job_succeeded = False
     seeded_resume_session: str | None = None
     previous_main_sigterm = signal.getsignal(signal.SIGTERM)
 
@@ -1609,12 +1623,22 @@ def main() -> int:
         lock_handles = _acquire_sample_locks(
             sample_ids + [sample["source_sample_id"] for sample in samples]
         )
-        staging_root, rollback_root = _prepare_job_staging(job_id)
+        staging_root, publication_root, rollback_root = _prepare_job_staging(job_id, pipeline_type)
+        runtime_job = staging_root.parent
+        runtime_env = tertiary_workspace.environment(TERTIARY_NF_WORK_ROOT, pipeline_type, job_id)
+        previous_environment = {key: os.environ.get(key) for key in runtime_env}
+        os.environ.update(runtime_env)
+        nf_config = tertiary_workspace.nextflow_config(
+            TERTIARY_NEXTFLOW_CONFIG, TERTIARY_NF_WORK_ROOT, pipeline_type, job_id,
+        )
+        _log(f'[workspace] staging={staging_root}; tmp={runtime_env["TMPDIR"]}; publication={publication_root}')
         nf_launch.mkdir(parents=True, exist_ok=True)
         nf_work.mkdir(parents=True, exist_ok=True)
         _update(
             job_id,
             staging_root=str(staging_root),
+            publication_staging_root=str(publication_root),
+            temporary_dir=runtime_env['TMPDIR'],
             nextflow_launch_dir=str(nf_launch),
             nextflow_work_dir=str(nf_work),
             nextflow_cache_scope=pipeline_type,
@@ -1845,7 +1869,7 @@ def main() -> int:
                     sid = sample["sample_id"]
                     nextflow_cmd = [
                         "nextflow",
-                        "-c", str(TERTIARY_NEXTFLOW_CONFIG),
+                        "-c", str(nf_config),
                         "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
                         "-profile", "dgm",
                         "-work-dir", str(nf_work),
@@ -1867,7 +1891,7 @@ def main() -> int:
                     samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
                     nextflow_cmd = [
                         "nextflow",
-                        "-c", str(TERTIARY_NEXTFLOW_CONFIG),
+                        "-c", str(nf_config),
                         "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
                         "-profile", "dgm",
                         "-work-dir", str(nf_work),
@@ -1882,23 +1906,14 @@ def main() -> int:
                     nextflow_cmd.append("-resume")
                     if seeded_resume_session:
                         nextflow_cmd.append(seeded_resume_session)
-                    inner = " ".join(shlex.quote(part) for part in nextflow_cmd)
-                    env_script = os.environ.get(
-                        "NGS_UI_TERTIARY_ENV_SCRIPT",
-                        "/home/pipeline/pipeline_code/NGS2ndAnalysis_env.sh",
-                    )
-                    shell_cmd = (
-                        f"if [ -f {shlex.quote(env_script)} ]; then "
-                        f"source {shlex.quote(env_script)}; "
-                        "else echo '[nextflow] env script not found; using current environment'; fi; "
-                        f"{inner}"
-                    )
-                    nextflow_run_cmd = [
-                        "bash",
-                        "-lc",
-                        shell_cmd,
-                    ]
                     nextflow_run_label = "2b/4 nextflow v3.x"
+
+                nextflow_run_cmd = tertiary_workspace.nextflow_command(
+                    nextflow_cmd, TERTIARY_NF_WORK_ROOT, pipeline_type, job_id,
+                    os.environ.get('NGS_UI_TERTIARY_ENV_SCRIPT',
+                                   '/home/pipeline/pipeline_code/NGS2ndAnalysis_env.sh'),
+                    sys.executable, REPO_ROOT / 'backend',
+                )
 
                 previous_nextflow_log_signature = (
                     dragen_jobs.nextflow_log_signature(nf_launch)
@@ -2184,12 +2199,6 @@ def main() -> int:
                     mode=mode, sample=sample, base_tsv=pipeline_cnv_by_sid[sid],
                     post_dir=post_dir, scripts=scripts, on_line=track_post_processing,
                 )
-                _rebase_staged_derived_paths(
-                    sample_id=sid,
-                    stage_post_dir=post_dir,
-                    final_raw_tsv=final_raw_tsv_by_sid[sid],
-                    final_post_dir=sample_layout.unified_postprocessing_dir(sid),
-                )
                 sample_layout.write_layout_marker_in_sample_dir(
                     staged_sample_dir,
                     sid,
@@ -2204,13 +2213,29 @@ def main() -> int:
         # the whole batch has switched so a later sample failure can roll back
         # earlier samples from the same job.
         _set_step(job_id, "promote-output")
+        publication_samples: dict[str, Path] = {}
+        # Transfer and verify the entire batch before replacing any live data.
+        for sample in samples:
+            sid = sample['sample_id']
+            source = staged_sample_dir_by_sid[sid]
+            destination = publication_root / sid
+            stats = tertiary_workspace.verified_copytree(source, destination)
+            _rebase_staged_derived_paths(
+                sample_id=sid,
+                stage_post_dir=destination / sample_layout.POSTPROCESSING_DIRNAME,
+                final_raw_tsv=final_raw_tsv_by_sid[sid],
+                final_post_dir=sample_layout.unified_postprocessing_dir(sid),
+                source_sample_dir=source,
+            )
+            publication_samples[sid] = destination
+            _log(f'[publish-copy] {sid}: verified {stats["files"]} files, {stats["bytes"]} bytes')
         promoted_batches: list[list[tuple[Path | None, Path, Path]]] = []
         try:
             for sample in samples:
                 sid = sample["sample_id"]
                 operations = _promote_staged_generation(
                     sample_id=sid,
-                    staged_sample_dir=staged_sample_dir_by_sid[sid],
+                    staged_sample_dir=publication_samples[sid],
                     live_sample_dir=sample_layout.unified_sample_dir(sid),
                     rollback_sample_dir=rollback_root / sid,
                 )
@@ -2220,8 +2245,14 @@ def main() -> int:
                     stale_work.unlink(missing_ok=True)
                 _log(f"[promote] {sid}: staged generation activated")
         except BaseException:
+            rollback_errors = []
             for operations in reversed(promoted_batches):
-                _rollback_promotion_operations(operations)
+                try:
+                    _rollback_promotion_operations(operations)
+                except RuntimeError as error:
+                    rollback_errors.append(str(error))
+            if rollback_errors:
+                _log('[rollback] ' + '; '.join(rollback_errors))
             raise
 
         from ..services import sample_loader
@@ -2245,6 +2276,7 @@ def main() -> int:
         from ..services import unregistered_samples
         unregistered_samples.refresh_samples(sample_ids)
         _log(f"[tertiary_run] DONE. samples={','.join(sample_ids)}")
+        job_succeeded = True
         return 0
 
     except Exception as e:
@@ -2259,9 +2291,25 @@ def main() -> int:
         signal.signal(signal.SIGTERM, previous_main_sigterm)
         _release_nextflow_cache_lock(nextflow_cache_lock)
         _release_sample_locks(lock_handles)
-        for path in (staging_root, rollback_root):
+        # Keep the work lease through transfer, rollback and temp removal.
+        keep_backups = False
+        if rollback_root is not None and rollback_root.is_dir():
+            # A failed restoration must never be followed by deleting the
+            # only remaining copy of the previous generation.
+            keep_backups = not job_succeeded and any(
+                files or any((Path(parent)/d).is_symlink() for d in dirs)
+                for parent, dirs, files in os.walk(rollback_root))
+        for path in (runtime_job, publication_root, rollback_root):
+            if keep_backups and path in (publication_root, rollback_root):
+                _log(f'[rollback] retained recovery files: {path}')
+                continue
             if path is not None and path.is_dir():
                 shutil.rmtree(path, ignore_errors=True)
+        for key, value in previous_environment.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         work_lease.close()
 
 
