@@ -8,7 +8,7 @@ def test_delete_unified_pipeline_output_invalidates_original_state_dir(tmp_path,
     unified_root = tmp_path / "unified"
     legacy_pipeline_root = tmp_path / "legacy_pipeline"
     legacy_ui_root = tmp_path / "legacy_ui"
-    work_root = tmp_path / "prs_work"
+    work_root = tmp_path / "nf_work/prs"
     monkeypatch.setattr(config, "PRS_WORK_ROOT", work_root)
     monkeypatch.setattr(config, "PIPELINE_OUT_ROOT", unified_root)
     monkeypatch.setattr(config, "LEGACY_PIPELINE_OUT_ROOT", legacy_pipeline_root)
@@ -29,6 +29,8 @@ def test_delete_unified_pipeline_output_invalidates_original_state_dir(tmp_path,
     legacy.mkdir(); (legacy/'old_results.txt').write_text('keep')
     neighbor = work_root / 'S2'
     neighbor.mkdir(); (neighbor/'raw.txt').write_text('keep')
+    tertiary_cache = work_root.parent/'contexts/shared-dragen/work'
+    tertiary_cache.mkdir(parents=True); (tertiary_cache/'task.txt').write_text('keep')
 
     invalidated = []
     removed_rows = []
@@ -41,6 +43,7 @@ def test_delete_unified_pipeline_output_invalidates_original_state_dir(tmp_path,
     assert not work.exists()
     assert (legacy/'old_results.txt').read_text() == 'keep'
     assert (neighbor/'raw.txt').read_text() == 'keep'
+    assert (tertiary_cache/'task.txt').read_text() == 'keep'
     assert result == {
         "sample_id": "S1",
         "source_sample_id": "S1",

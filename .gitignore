@@ -9,6 +9,7 @@ node_modules/
 # These entries also catch a dev checkout that leaves them inside.
 tertiary_output/
 prs_work/
+nf_work/prs/
 data/
 patient_list/
 patient_documents/

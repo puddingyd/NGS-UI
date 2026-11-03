@@ -201,7 +201,7 @@ def _units(root, tertiary):
     return units
 
 
-def cleanup(root, *, tertiary=False, busy_scopes=(), output_roots=()):
+def cleanup(root, *, tertiary=False, busy_scopes=(), output_roots=(), preserve_paths=()):
     root = work_root(root)
     result = dict(path=str(root), deleted_count=0, freed_bytes=0,
                   skipped_count=0, failed_count=0, deleted=[], skipped=[], failed=[],
@@ -225,16 +225,24 @@ def cleanup(root, *, tertiary=False, busy_scopes=(), output_roots=()):
             busy.update(process_scopes)
             reason_all = f"無法確認 Nextflow 程序歸屬（PID {', '.join(unknown)}）" if unknown else ''
             if tertiary and any(not (root / 'contexts' / f'shared-{scope}' / 'work-dir.txt').is_file()
-                                for scope in busy):
+                                for scope in busy & {'dragen', 'nckuh'}):
                 reason_all = '使用中的共用暫存尚在初始化，保留可能承接的舊暫存'
             protected = {}
+            # PRS raw audits/recovery inputs are retained even after completion.
+            # Reserve the default subtree across config changes; also protect an
+            # administrator's custom PRS root when it lies within this work tree.
+            retained = [Path(p).resolve() for p in preserve_paths]
+            if tertiary:
+                retained.append(root / 'prs')
             # Pointer dependencies are undirected for deletion: keep both the
             # lineage and its adopted work, including any ancestor unit.
             edges = []
             for path in units:
                 scope = path.name.removeprefix('shared-') if tertiary else path.name
+                if any(_overlap(path, p) for p in retained):
+                    protected[path] = 'PRS 重建／稽核與接續分析資料，保留不作一般暫存清理'
                 if scope in busy:
-                    protected[path] = '執行中或等待中的工作正在使用此暫存'
+                    protected.setdefault(path, '執行中或等待中的工作正在使用此暫存')
                 if path.is_symlink():
                     protected[path] = '暫存入口為符號連結，保留待確認'
                 if tertiary and path.name in {'shared-dragen', 'shared-nckuh'}:

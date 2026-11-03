@@ -16,6 +16,7 @@ guard 直接內嵌在指令中，DGX2 只需 Python 3.9+ 標準函式庫與原�
 
 ## 三級：從三級分析清單清理
 
+- v9.80起PRS重建／raw audit／Nextflow暫存集中於同一work root下的`prs/{個案ID}/`（一般為`~/NGS_UI/nf_work/prs/`）。清理明確保留整個`prs/`及目前自訂PRS root所在單位，即使PRS已完成也保留稽核與接續分析資料；不會把它當閒置DRAGEN／NCKUH task清除。完整刪除個案才依ownership marker清除該案PRS work。PRS worker與直接runner使用同一guard root、`prs` scope的lease；沒有DRAGEN／NCKUH的work-dir pointer不表示PRS尚未初始化。
 - DRAGEN、NCKUH 各自以整組共用 lineage 為單位；不在執行中的同一組內挑選已完成 task 刪除。
 - `start_job()` 在寫 queued 前取得 lifetime lease，透過檔案描述元交給 detached worker。
   Worker 及其子程序保留 lease，直到 post-processing、promotion、staging 清除完成。

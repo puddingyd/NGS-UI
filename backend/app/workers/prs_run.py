@@ -8,7 +8,8 @@ import sys
 import time
 import traceback
 
-from ..services import prs, prs_jobs as jobs, prs_paths
+from .. import config
+from ..services import prs, prs_jobs as jobs, prs_paths, nextflow_work
 from .dragen_run import _acquire_sample_locks, _release_sample_locks, _load_secrets
 
 
@@ -23,6 +24,7 @@ class Worker:
         self.cfg, _ = prs.read_json(self.directory/'config.json')
         self.plan = self.job['plan']
         self.process = None
+        self.work_lease = None
 
     def update(self, **values):
         self.job.update(values, updated=time.time(), pid=os.getpid())
@@ -64,7 +66,11 @@ class Worker:
         print('[PRS] '+step, flush=True)
         cwd, env = prs_paths.environment(self.plan['path_layout'], self.job['pipeline_run_id'],
                                          'ancestry' if '--raw-source' in args else 'score')
-        self.process = subprocess.Popen(args, cwd=cwd, env=env, start_new_session=True)
+        fds = ()
+        if self.work_lease is not None:
+            env.update(nextflow_work.lease_env(config.TERTIARY_NF_WORK_ROOT, 'prs', self.work_lease))
+            fds = (self.work_lease.fileno(),)
+        self.process = subprocess.Popen(args, cwd=cwd, env=env, pass_fds=fds, start_new_session=True)
         try:
             while self.process.poll() is None:
                 self.check_cancel()
@@ -111,6 +117,15 @@ class Worker:
         prs.atomic_json(prs.score_path(self.job['sample_id']), record)
 
     def run(self):
+        # Use the same cleanup admission/lease protocol as tertiary Nextflow.
+        with nextflow_work.acquire_lease(config.TERTIARY_NF_WORK_ROOT, 'prs') as lease:
+            self.work_lease = lease
+            try:
+                self._run()
+            finally:
+                self.work_lease = None
+
+    def _run(self):
         self.update(status='queued', step='等待 PRS 執行名額')
         locks = []
         with (jobs.root()/'.execution.lock').open('a') as slot:

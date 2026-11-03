@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v9.80 — 2026-11-03
+
+- PRS 大型重建檔、raw audit 與 Nextflow／工具暫存改放既有三級暫存根目錄下的 `prs/{個案ID}/`，預設 `~/NGS_UI/nf_work/prs/`；不再於 pipeline 根目錄新增 prs_work。
+- 三級暫存清理會保留 PRS 稽核／接續分析資料，並沿用執行中的保護機制；正式 PRS 結果仍保存於個案 postprocessing。
+
 ### v9.79 — 2026-11-03
 
 - PRS 個案產物改由平台管理：完整計分／QC與風險快照存於個案 postprocessing，大型重建檔、Nextflow與工具暫存放獨立 prs_work；原 PRS 專案只讀取模型與參考資源。

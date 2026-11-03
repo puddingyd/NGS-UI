@@ -1,4 +1,4 @@
-# CHD PRS 研究風險 UI — v9.79
+# CHD PRS 研究風險 UI — v9.80
 
 ## 本版範圍
 
@@ -19,7 +19,7 @@
 
 - `NGS_UI_PRS_CONFIG`：既有完整 config.json 的絕對路徑；未設定時讀 `$NGS_UI_HOME/data/prs_config.json`。欄位見 `research/prs/scoring_v211/config.example.json`，勿直接沿用不存在的示範路徑。
 - 原 config 的 `project`／`raw_work` 保留作來源紀錄，**新平台工作不使用它們作輸出位置**。平台產生獨立 config snapshot，覆寫這兩欄；不要修改原專案 config 或重新 freeze model lock。
-- `NGS_UI_PRS_WORK_ROOT`：大型 raw／Nextflow 工作根目錄，預設為 `NGS_UI_TERTIARY_ROOT` 同層的 `prs_work/`，一般部署為 `/home/datalake_Intermediate/pipeline/prs_work/`。服務帳號需有建立個案目錄的權限。不能指到原 PRS 專案內或包含參考資源的目錄。
+- `NGS_UI_PRS_WORK_ROOT`：大型 raw／Nextflow 工作根目錄，預設為既有 `NGS_UI_TERTIARY_NF_WORK_ROOT` 下的 `prs/`，一般部署為 `/home/n102968/NGS_UI/nf_work/prs/`。三級 work root 未覆寫時是 `$NGS_UI_HOME/nf_work/`；PRS會跟隨其設定，不在 `/home/datalake_Intermediate/pipeline/` 下新增資料夾。服務帳號需有建立個案目錄的權限。不能指到原 PRS 專案內或包含參考資源的目錄。若先前已明寫 `NGS_UI_PRS_WORK_ROOT`，需移除或改成新位置才會採用此預設。
 - scorefile、model lock、Model A/B reference、FASTA、dbSNP、containers、兩份 Nextflow config 與 ancestry reference 維持既有有效路徑，僅讀取；不搬動 model lock 綁定的 model/source 絕對路徑。
 - 平台 worker 的 PATH 需可執行 `nextflow, apptainer, bcftools, samtools`。`raw_script` bytes 必須等於 repo 中已驗證的 vendor 腳本；既有十檔核心 checksum 仍由 pipeline_v21 驗證。
 - `NGS_UI_PRS_BUNDLE`：第二階段的風險參數包，安裝方式見下節；第一階段不依賴它。
@@ -65,19 +65,22 @@ In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF
 - 每次先原子發布已完成 score／percentile，再跑祖源。祖源失敗時顯示「計分完成，祖源檢查未完成」；score 保留，risk 不啟用。非 EAS／低信心亦不啟用風險。
 - 全站同時只跑一個 PRS 計分工作，其他排隊。與三級／Somatic共用 UI及source sample locks，防止同個案來源替換。三級完成不代表其獨立 PRS 子工作已完成；在 PRS 區看進度／Log。
 - 「重新分析／重試」在輸入、資源與平台路徑 fingerprints 完全相同時沿用原 run ID，交給 v2.1.1 guarded resume；不刪除 raw audit。原 pipeline 不能恢復的 early partial run 可用「重新開始」建立新 run ID，原檔保留。jobUUID 每次不同，retry 可沿用 runID。
-- 取消由 worker 收到 cancel flag 後終止自己啟動的工具 process group；原有 score／快照保留。完整刪除個案 pipeline 時，active PRS 阻擋刪除；完成工作狀態、08結果及有平台 ownership marker 的該個案 `prs_work` 一起移除。取消登錄不刪這些分析產物。原專案舊資料不自動清除。
+- 取消由 worker 收到 cancel flag 後終止自己啟動的工具 process group；原有 score／快照保留。完整刪除個案 pipeline 時，active PRS 阻擋刪除；完成工作狀態、08結果及有平台 ownership marker 的該個案 `nf_work/prs/{個案ID}/` 一起移除。取消登錄不刪這些分析產物。舊位置資料不自動清除。
 
 預設佈局（以 `26T00970-dragen` 為例）：
 
 ```text
-/home/datalake_Intermediate/pipeline/
-  tertiary_output/26T00970-dragen/08_postprocessing/
-    26T00970-dragen.prs.summary.json          UI讀取入口
-    26T00970-dragen.prs/
-      runs/{jobUUID}/score/                  A/B score、percentile、缺失清單、狀態及報告
-      runs/{jobUUID}/ancestry/               QC JSON/TSV、報告與高權重缺失清單
-      assessments/{assessmentUUID}.json     臨床輸入、風險與比較曲線快照
-  prs_work/26T00970-dragen/
+/home/datalake_Intermediate/pipeline/tertiary_output/26T00970-dragen/08_postprocessing/
+  26T00970-dragen.prs.summary.json            UI讀取入口
+  26T00970-dragen.prs/
+    runs/{jobUUID}/score/                    A/B score、percentile、缺失清單、狀態及報告
+    runs/{jobUUID}/ancestry/                 QC JSON/TSV、報告與高權重缺失清單
+    assessments/{assessmentUUID}.json       臨床輸入、風險與比較曲線快照
+
+/home/n102968/NGS_UI/nf_work/                 沿用三級Nextflow暫存根目錄
+  contexts/shared-dragen/{launch,work}/      既有DRAGEN三級暫存
+  contexts/shared-nckuh/{launch,work}/       既有NCKUH三級暫存
+  prs/26T00970-dragen/
     .ngs-ui-prs.json                         平台個案 ownership marker
     .runtime/                               config wrappers、Nextflow及container caches、tmp
     launch/{runID}/{score,ancestry}/         runner工作目錄
@@ -89,13 +92,13 @@ In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF
       qc/
 ```
 
-正式 artifacts 以一般檔案複製，不留指向 work 的 symlink；風險計算只需08已發布結果與固定風險 bundle。工作目錄保留供稽核與 guarded resume，**不併入三級既有的「Nextflow暫存清理」**；本版未新增 PRS 暫存清理按鈕。
+正式 artifacts 以一般檔案複製，不留指向 work 的 symlink；風險計算只需08已發布結果與固定風險 bundle。工作目錄保留供稽核與 guarded resume。三級既有「Nextflow暫存清理」會**明確跳過 `nf_work/prs/`**，並保護自訂PRS根目錄所在單位；PRS即使完成也不把 raw audit／接續分析資料當一般task暫存刪除。PRS worker與直接runner沿用三級清理保護lease（scope=prs）；可辨識的PRS執行不會因缺少DRAGEN／NCKUH的lineage pointer而讓全部閒置三級暫存被保留，仍維持未納管程序一律保守保留。本版未新增 PRS 暫存清理按鈕。
 
 ### 已啟動的舊路徑工作
 
-部署不會搬移或改寫正在執行的工作，舊 worker 已讀取舊 config，仍會沿舊位置完成。若要立即停止該個案繼續寫原專案，先在 PRS 頁面取消並等狀態變成「已取消」，再更新／重啟平台、選「重新開始」。**不要只在它執行途中改 config 或搬目錄**。新路徑版本不接續舊 project 的 run；現存 score／風險快照仍可讀，原專案歷史資料保留，不自動刪除或遷移。
+部署不會搬移或改寫正在執行的工作，舊 worker 已讀取舊 config，仍會沿舊位置完成。若要立即停止該個案繼續寫舊位置，先在 PRS 頁面取消並等狀態變成「已取消」，再更新／重啟平台、選「重新開始」。**不要只在它執行途中改 config 或搬目錄**。新工作不接續舊 project 或v9.79預設 `pipeline/prs_work/` 的 run；現存 score／風險快照仍可讀，舊位置歷史資料保留，不自動刪除或遷移。完整刪除個案僅管理目前設定的PRS工作根目錄，舊位置須另行確認處理。
 
-啟動新工作後，Log 應先列平台的「個案工作目錄」「正式結果」；raw 指令的 `--work` 與 `--out` 均應位於 `prs_work/{個案ID}/`。指令中的 scorefile／model／FASTA 等唯讀資源仍可指向原專案，這不是個案輸出。
+啟動新工作後，Log 應先列平台的「個案工作目錄」「正式結果」；raw 指令的 `--work` 與 `--out` 均應位於 `nf_work/prs/{個案ID}/`（未自訂根目錄時）。指令中的 scorefile／model／FASTA 等唯讀資源仍可指向原專案，這不是個案輸出。
 
 Nextflow 路徑設定依官方 [config include／優先序](https://docs.seqera.io/nextflow/config)、[runtime環境變數](https://docs.seqera.io/nextflow/reference/env-vars)及 [Singularity cacheDir](https://docs.seqera.io/nextflow/reference/config/singularity)；仍需由操作者於院內執行實際 WGS 驗收。
 
@@ -197,6 +200,7 @@ python3 -m research.prs.absolute_risk.build_taiwan \
 - 獨立瀏覽器：桌面單行輸入／疾病表格、390px手機表格捲動、待計算文案、兩曲線、API數值、修改輸入清除舊值、>70歲、祖源不合格仍顯示score、開始／Log／取消、切換個案晚到回應，全部通過。預覽使用明示的合成個案，不是實際病人結果。
 - 未執行院內 fresh WGS、未測試院內部署、未進行台灣 clinical validation。
 - v9.79 路徑隔離／完整發布／重試／刪除及相關三級、risk 回歸：81項通過。測試以合成輸入與隔離假工具執行，不代表院內 Nextflow／WGS 已驗收；原 PRS 專案逐檔 bytes／mtime 不變、舊路徑不resume、祖源失敗保留score、缺完整artifact不覆蓋既有結果均已驗證。
+- v9.80 將PRS工作納入既有三級 `nf_work/prs/`；相關回歸與Nextflow清理測試共114項通過，涵蓋預設／自訂根目錄、執行中與已完成PRS均保留、其他閒置三級暫存可清、runner實際繼承lease。未在院內執行WGS。
 
 可重複執行的測試入口：
 

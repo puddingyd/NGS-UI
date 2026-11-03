@@ -1,4 +1,6 @@
 import subprocess
+import os
+import json
 import sys
 import threading
 from pathlib import Path
@@ -6,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app import config
 from app.services import dragen_jobs, nextflow_work as work
 
 
@@ -332,3 +335,48 @@ def test_managed_process_maps_to_live_lease(monkeypatch, tmp_path):
         data = b'\0'.join(f'{k}={v}'.encode() for k, v in work.lease_env(root, 'batch', lease).items())
         monkeypatch.setattr(Path, 'read_bytes', lambda path: data)
         assert scanner.nextflow_process_scopes(root) == ({'batch'}, [])
+
+
+@pytest.mark.parametrize('active', [False, True])
+def test_tertiary_cleanup_retains_prs_audit_and_still_cleans_idle_lineages(monkeypatch, tmp_path, active):
+    root = tmp_path/'nf_work'
+    audit = task(root/'prs/CASE/integrated_runs/run/raw/audit')
+    idle = context(root, 'dragen')
+    if active:
+        monkeypatch.setattr(work, 'nextflow_process_scopes', lambda root: ({'prs'}, []))
+    result = work.cleanup(root, tertiary=True)
+    assert audit.is_dir() and not idle.exists()
+    assert result['skipped_count'] == result['deleted_count'] == 1
+    assert result['skipped'][0]['path'] == str(root/'prs')
+    assert 'PRS' in result['skipped'][0]['reason']
+
+
+def test_tertiary_cleanup_wrapper_preserves_custom_and_previous_default_prs_root(monkeypatch, tmp_path):
+    root = tmp_path/'nf_work'
+    old = task(root/'prs/CASE/raw')
+    custom = task(root/'contexts/custom-prs/CASE/raw')
+    idle = context(root, 'dragen')
+    monkeypatch.setattr(config, 'PRS_WORK_ROOT', root/'contexts/custom-prs')
+    monkeypatch.setattr(dragen_jobs, 'TERTIARY_NF_WORK_ROOT', root)
+    monkeypatch.setattr(dragen_jobs, 'TERTIARY_JOBS_DIR', tmp_path/'jobs')
+    monkeypatch.setattr(dragen_jobs, '_active_tertiary_jobs', lambda: [])
+    monkeypatch.setattr(dragen_jobs, 'PIPELINE_OUT_ROOT', tmp_path/'output')
+    monkeypatch.setattr(dragen_jobs, 'LEGACY_PIPELINE_OUT_ROOT', tmp_path/'old-output')
+    result = dragen_jobs.cleanup_nf_work()
+    assert old.exists() and custom.exists() and not idle.exists()
+    assert result['skipped_count'] == 2 and result['deleted_count'] == 1
+
+
+@pytest.mark.parametrize('nf_override,prs_override', [(False, False), (True, False), (True, True)])
+def test_prs_default_follows_tertiary_work_root_not_pipeline_output(tmp_path, nf_override, prs_override):
+    env = {k: v for k, v in os.environ.items() if k not in ('NGS_UI_TERTIARY_NF_WORK_ROOT', 'NGS_UI_PRS_WORK_ROOT')}
+    env['NGS_UI_HOME'] = str(tmp_path/'platform')
+    env['NGS_UI_TERTIARY_ROOT'] = str(tmp_path/'pipeline/tertiary_output')
+    nf_root = tmp_path/'custom_nf' if nf_override else tmp_path/'platform/nf_work'
+    if nf_override: env['NGS_UI_TERTIARY_NF_WORK_ROOT'] = str(nf_root)
+    if prs_override: env['NGS_UI_PRS_WORK_ROOT'] = str(tmp_path/'explicit_prs')
+    result = subprocess.run([sys.executable, '-c',
+        'import json; from app import config; print(json.dumps(str(config.PRS_WORK_ROOT)))'],
+        env=env, check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == str(tmp_path/'explicit_prs' if prs_override else nf_root/'prs')
+    assert not (tmp_path/'pipeline/prs_work').exists()

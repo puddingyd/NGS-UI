@@ -5,6 +5,8 @@ Actual WGS/scoring resources are never used or made available by these tests.
 import gzip
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,7 +20,8 @@ from app.workers import prs_run, dragen_run
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, 'DATA_ROOT', tmp_path/'data')
-    monkeypatch.setattr(config, 'PRS_WORK_ROOT', tmp_path/'prs_work')
+    monkeypatch.setattr(config, 'TERTIARY_NF_WORK_ROOT', tmp_path/'nf_work')
+    monkeypatch.setattr(config, 'PRS_WORK_ROOT', config.TERTIARY_NF_WORK_ROOT/'prs')
     monkeypatch.setattr(dragen_run, 'TERTIARY_JOBS_DIR', tmp_path/'tertiary_jobs')
     monkeypatch.setattr(sample_layout, 'state_dir', lambda sid, **kw: tmp_path/'cases'/sid)
     monkeypatch.setattr(sample_layout, 'state_file', lambda sid,name,**kw: tmp_path/'cases'/sid/f'{sid}.{name}')
@@ -194,6 +197,7 @@ def test_cancel_stops_owned_process_group(env,monkeypatch):
 
 
 REAL_COMMAND = prs_run.Worker.command
+REAL_POPEN = subprocess.Popen
 
 
 def test_dragen_other_germline_layout_auto_selects_matching_run_and_source(env):
@@ -335,3 +339,21 @@ def test_workspace_cleanup_requires_platform_marker(env):
     path.rename(path.with_name('saved'))
     path.symlink_to(env.cfg['project'], target_is_directory=True)
     with pytest.raises(ValueError, match='拒絕刪除'): prs_paths.workspace_for_deletion('CASE')
+
+
+def test_prs_runner_inherits_tertiary_cleanup_lease(env, monkeypatch):
+    jid = jobs.start('CASE')['job_id']
+    worker = prs_run.Worker(jid)
+    def run_probe(worker):
+        REAL_COMMAND(worker, [sys.executable, '-c',
+            'import os,json; from pathlib import Path; '
+            'os.fstat(int(os.environ["NGS_UI_NF_GUARD_FD"])); '
+            'Path("lease.json").write_text(json.dumps({k:os.environ[k] for k in '
+            '("NGS_UI_NF_GUARD_ROOT","NGS_UI_NF_GUARD_SCOPE")}))'], 'lease probe')
+    monkeypatch.setattr(prs_run.Worker, '_run', run_probe)
+    monkeypatch.setattr(prs_run.subprocess, 'Popen', REAL_POPEN)
+    worker.run()
+    path = config.PRS_WORK_ROOT/'CASE/launch'/worker.job['pipeline_run_id']/'score/lease.json'
+    assert json.loads(path.read_text()) == dict(NGS_UI_NF_GUARD_ROOT=str(config.TERTIARY_NF_WORK_ROOT),
+                                                NGS_UI_NF_GUARD_SCOPE='prs')
+    assert worker.work_lease is None

@@ -27,6 +27,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .. import config
 from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
                        LEGACY_DRAGEN_JOBS_DIR, TERTIARY_JOBS_DIR,
                        PIPELINE_VCF_INDEX_PATH,
@@ -590,7 +591,8 @@ def cleanup_nf_work() -> dict:
                 busy.add(scope)
         return nextflow_work.cleanup(
             TERTIARY_NF_WORK_ROOT, tertiary=True, busy_scopes=busy,
-            output_roots=(PIPELINE_OUT_ROOT, LEGACY_PIPELINE_OUT_ROOT))
+            output_roots=(PIPELINE_OUT_ROOT, LEGACY_PIPELINE_OUT_ROOT),
+            preserve_paths=(config.PRS_WORK_ROOT,))
     finally:
         for handle in handles:
             handle.close()
