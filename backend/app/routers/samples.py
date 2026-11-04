@@ -79,7 +79,8 @@ def get_report_docx(sample_id: str, gene_list_mode: str = "grouped"):
 @router.get("/samples/{sample_id}/health-report.docx")
 def get_health_report_docx(sample_id: str, sections: str = "acmg_sf,pgx"):
     """Render the health-screening DOCX with selected secondary findings
-    sections. `sections` is a comma-separated list of panel keys plus pgx.
+    sections. `sections` is a comma-separated list of panel keys plus prs/pgx.
+    PRS requires a current, complete saved risk assessment.
     """
     selected = [s.strip() for s in (sections or "").split(",") if s.strip()]
     try:

@@ -1954,6 +1954,8 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .health-report-option input {
   margin: 0;
 }
+.health-report-option.is-disabled { color: #8a929d; background: #f1f2f4; cursor: not-allowed; }
+.health-report-option small { display: block; margin-top: 3px; font-size: 12px; }
 .sample-loading-modal { z-index: 140; }
 .sample-loading-card {
   width: min(360px, 86vw);

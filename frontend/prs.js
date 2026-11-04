@@ -5,6 +5,9 @@ const byId = id => document.getElementById(id);
 const pending = '請輸入臨床資訊後計算';
 const active = job => ['queued','running','cancelling'].includes(job?.status);
 const today = () => {const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+export function prsClinicalInformationPending(sid) {
+  return sampleId===sid && dirtyClinical;
+}
 export function formatRisk(value) {
   return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=1 ? `${(value*100).toFixed(2)}%` : '無法估算';
 }

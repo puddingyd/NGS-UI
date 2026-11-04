@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import io
 import html
+import json
 import re
 import unicodedata
+from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from typing import Iterable
 
 from docx import Document
@@ -36,6 +39,7 @@ from . import (
     panel_deadzone,
     phenotype_scorer,
     ploidy,
+    prs,
     report_store,
     sample_loader,
     test_types,
@@ -1674,7 +1678,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
 
 # ── §四 方法、§五 注釋 ───────────────────────────────────────────
 
-def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: bool = True, specialized_genes: str = "") -> None:
+def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: bool = True, include_prs: bool = False, specialized_genes: str = "") -> None:
     is_wgs = test_types.is_wgs_type(test_type)
     seq    = "Illumina NovaSeq X Plus" if is_wgs else "Illumina NextSeq 2000"
     depth  = "27X" if is_wgs and health else ("30X" if is_wgs else "50X")
@@ -1699,13 +1703,18 @@ def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: 
                 "序列比對品質、基因體重複或高同源區域、變異類型等因素，而產生變異位點偵測疏漏。",
             )
             next_note_number += 1
-            if include_pgx:
-                _add_paragraph(
-                    doc,
-                    f"  {next_note_number}. 本檢驗方法並非長片段定序，某些藥物基因之變異組合無法完全決定相位 "
-                    "(phasing) 及其單套體資訊 (haplotype)，因此可能存在不確定性。",
-                )
-                next_note_number += 1
+        if include_prs:
+            content = _health_prs_content()
+            _health_prs_labeled_paragraph(doc, f'  {next_note_number}. ' + content['method_prefix'],
+                                          content['model_name'], content['method_suffix'])
+            next_note_number += 1
+        if is_wgs and include_pgx:
+            _add_paragraph(
+                doc,
+                f"  {next_note_number}. 本檢驗方法並非長片段定序，某些藥物基因之變異組合無法完全決定相位 "
+                "(phasing) 及其單套體資訊 (haplotype)，因此可能存在不確定性。",
+            )
+            next_note_number += 1
         if include_pgx:
             _add_paragraph(
                 doc,
@@ -1909,6 +1918,7 @@ _HEALTH_RISK_SECTION_TITLE = "第一類：與疾病風險相關之致病性或�
 _HEALTH_DISEASE_SECTIONS = tuple(sample_loader.SECONDARY_SNV_PANELS)
 _HEALTH_SECTION_ORDER = [
     ("acmg_sf", _HEALTH_RISK_SECTION_TITLE),
+    ("prs", "多基因風險評估"),
     ("pgx", "藥物基因體學"),
 ]
 
@@ -3772,6 +3782,15 @@ def _health_panel_gene_sections(requested_set: set[str]) -> list[tuple[str, list
 
 
 def _health_test_bundle_name(requested_set: set[str]) -> str:
+    if 'prs' in requested_set:
+        parts = []
+        disease = requested_set.intersection(_HEALTH_DISEASE_SECTIONS)
+        if disease:
+            parts.append(_health_test_bundle_name(disease))
+        parts.append('多基因風險評估')
+        if 'pgx' in requested_set:
+            parts.append('藥物基因體學基因篩檢')
+        return parts[0] if len(parts) == 1 else '、'.join(parts[:-1]) + '及' + parts[-1]
     labels = [
         label
         for key, label in (
@@ -3789,6 +3808,73 @@ def _health_test_bundle_name(requested_set: set[str]) -> str:
     return f"{joined}篩檢"
 
 
+def _health_prs_content():
+    path = Path(__file__).resolve().parents[1]/'report_content/prs_chd_v1.json'
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def _health_prs_labeled_paragraph(doc, prefix, bold_text, text=''):
+    paragraph = _add_paragraph(doc, prefix)
+    for value, bold in ((bold_text, True), (text, False)):
+        run = paragraph.add_run(value)
+        run.bold = bold; run.font.size = BODY_FONT_SIZE; _set_run_font(run)
+    return paragraph
+
+
+def _health_prs_number(value, *, risk=False):
+    number = Decimal(str(value)) * (100 if risk else 1)
+    return str(number.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))
+
+
+def _render_health_prs_section(doc, snapshot):
+    content = _health_prs_content()
+    result = snapshot['result']; person = result['person']
+    _add_paragraph(doc, content['title'], bold=True).paragraph_format.keep_with_next = True
+    _add_paragraph(doc, content['intro'])
+    sex = '男性' if person['sex'] == 'male' else '女性'
+    _add_paragraph(doc, f'評估日期：{person["assessment_date"]}；評估時年齡：{person["age"]:g} 歲；性別：{sex}；確認尚未罹患 CHD。')
+    _add_paragraph(doc, content['result_title'], bold=True).paragraph_format.keep_with_next = True
+    ten = result['risk_10_year']
+    values = [
+        '冠狀動脈心臟病', f'第{_health_prs_number(result["percentile"])}百分位',
+        _health_prs_number(ten['risk'], risk=True)+'%' if ten else '不適用',
+        _health_prs_number(result['risk_to_80']['risk'], risk=True)+'%',
+    ]
+    table = doc.add_table(rows=2, cols=4)
+    table.autofit = False
+    for column, width in zip(table.columns, (4.4, 4.2, 4.2, 5.2)):
+        column.width = Cm(width)
+    for index, row_values in enumerate((['疾病', 'PRS 百分位', '未來10年風險', '至80歲累積風險'], values)):
+        row = table.rows[index]
+        row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
+        if index == 0:
+            row._tr.get_or_add_trPr().append(OxmlElement('w:tblHeader'))
+        for column, (cell, value, width) in enumerate(zip(row.cells, row_values, (4.4, 4.2, 4.2, 5.2))):
+            cell.width = Cm(width)
+            cell.vertical_alignment = 1
+            paragraph = cell.paragraphs[0]; paragraph.alignment = 0 if column == 0 else 1
+            paragraph.paragraph_format.space_before = Pt(5); paragraph.paragraph_format.space_after = Pt(5)
+            paragraph.paragraph_format.keep_with_next = index == 0
+            run = paragraph.add_run(value); run.bold = index == 0; run.font.size = BODY_FONT_SIZE; _set_run_font(run)
+            if index == 0:
+                shade = OxmlElement('w:shd'); shade.set(qn('w:fill'), 'F2F2F2'); cell._tc.get_or_add_tcPr().append(shade)
+    borders = OxmlElement('w:tblBorders')
+    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        border = OxmlElement('w:'+edge)
+        for key, value in (('val','single'), ('sz','4'), ('color','D9D9D9')): border.set(qn('w:'+key),value)
+        borders.append(border)
+    table._tbl.tblPr.append(borders)
+    if ten is None:
+        _add_paragraph(doc, '未來10年風險不適用：評估年齡超過70歲，完整十年期間超出本模型80歲的估算終點。')
+    _add_paragraph(doc, '結果說明', bold=True)
+    for label, text in content['definitions']:
+        _health_prs_labeled_paragraph(doc, '', label, text)
+    _add_paragraph(doc, '注意事項', bold=True)
+    for label, text in content['cautions']:
+        _health_prs_labeled_paragraph(doc, '', label, text)
+    _blank(doc)
+
+
 def _pgx_report_genes(pgx: dict) -> list[str]:
     return list(_PGX_CPIC_LEVEL_A_GENES)
 
@@ -3804,7 +3890,8 @@ def _section_health_annotations(doc, requested_set: set[str], pgx: dict | None =
     _add_paragraph(doc, "  3. 本次檢測基因包括")
     sections = _health_panel_gene_sections(requested_set)
     if not sections and "pgx" not in requested_set:
-        _add_paragraph(doc, "    （未選擇檢測基因項目）")
+        _add_paragraph(doc, '    多基因風險評估使用 PGS004879 常見變異模型，不屬於單一疾病基因清單。'
+                       if 'prs' in requested_set else "    （未選擇檢測基因項目）")
         return
     for idx, (name, genes) in enumerate(sections):
         if idx:
@@ -3854,7 +3941,7 @@ def _start_health_appendix(doc) -> None:
 
 
 def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) -> bytes:
-    allowed_sections = set(_HEALTH_DISEASE_SECTIONS) | {"pgx"}
+    allowed_sections = set(_HEALTH_DISEASE_SECTIONS) | {"prs", "pgx"}
     # Omitted options retain the API defaults; an explicitly empty selection
     # must never silently add ACMG SF or PGx back to the report.
     requested_set = {
@@ -3869,6 +3956,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     include_disease_findings = bool(requested_set.intersection(_HEALTH_DISEASE_SECTIONS))
     include_acmg_education = "acmg_sf" in requested_set
     include_pgx = "pgx" in requested_set
+    prs_assessment = prs.report_assessment(sample_id) if 'prs' in requested_set else None
 
     sample = sample_loader.load_sample(sample_id, include_aux=False)
     if sample is None:
@@ -3914,6 +4002,8 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     referenced: list[dict] = []
     pgx_drug_groups: list[dict] = []
     if include_disease_findings:
+        if include_acmg_education:
+            _add_paragraph(doc, 'ACMG疾病風險基因', bold=True)
         ids = _health_combined_selected_ids(
             requested_set,
             report,
@@ -3941,6 +4031,8 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             show_acmg_caution=include_acmg_education,
         )
 
+    if prs_assessment:
+        _render_health_prs_section(doc, prs_assessment)
     if include_pgx:
         pgx_drug_groups = _render_health_pgx_section(
             doc,
@@ -3949,7 +4041,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
         )
 
     specialized_genes = "、".join(dict.fromkeys(v.get("gene_symbol", "") for v in referenced if v.get("specialized") or v.get("gba")))
-    _section_methods(doc, test_type, health=True, include_pgx=include_pgx, specialized_genes=specialized_genes)
+    _section_methods(doc, test_type, health=True, include_pgx=include_pgx, include_prs=bool(prs_assessment), specialized_genes=specialized_genes)
     _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
 
     if referenced or include_acmg_education or pgx_drug_groups:
@@ -3977,6 +4069,8 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
         )
 
     buf = io.BytesIO()
+    if prs_assessment and prs.report_assessment(sample_id) != prs_assessment:
+        raise ValueError('PRS 風險評估在匯出期間已變更，請重新匯出')
     doc.save(buf)
     return buf.getvalue()
 

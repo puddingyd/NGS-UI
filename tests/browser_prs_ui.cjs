@@ -22,9 +22,15 @@ print(json.dumps({'results':{str(age):{'result':evaluate(b,s,{**a,'age':age,'sex
 const results=fixture.results;
 const html=fs.readFileSync(path.join(repo,'frontend/index.html'),'utf8');
 const start=html.indexOf('<section id="prs-card"'),end=html.indexOf('</section>',start)+10;
-const preview=`<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/frontend/style.css"><link rel="stylesheet" href="/frontend/prs.css"><style>body{margin:20px;display:block}.container{margin:auto;max-width:1100px}.preview-note{text-align:center;color:#8a4b00;margin:14px}</style><p class="preview-note">UI 測試預覽：合成個案，非病人結果</p><main class="container">${html.slice(start,end)}</main><script type="module">import {resetPrsSample} from '/frontend/prs.js';window.resetPrsSample=resetPrsSample;resetPrsSample('SYNTHETIC_CASE');</script></html>`;
+assert(html.indexOf('id="prs-card"') < html.indexOf('id="cat-pharmcat-c"'));
+assert(html.indexOf('data-target="prs-card"') < html.indexOf('data-target="cat-pharmcat-c"'));
+const appSource=fs.readFileSync(path.join(repo,'frontend/app.js'),'utf8');
+const pickerSource=appSource.slice(appSource.indexOf('function _pickHealthReportSections('),appSource.indexOf('async function exportHealthDocx('));
+const pickerScript=`const escapeHtml=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const escapeAttr=escapeHtml;${pickerSource};window.testReportPicker=_pickHealthReportSections;`;
+const preview=`<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/frontend/style.css"><link rel="stylesheet" href="/frontend/prs.css"><style>body{margin:20px;display:block}.container{margin:auto;max-width:1100px}.preview-note{text-align:center;color:#8a4b00;margin:14px}</style><p class="preview-note">UI 測試預覽：合成個案，非病人結果</p><main class="container">${html.slice(start,end)}<div id="cat-pharmcat-c" class="cat-block"><div class="block-header"><span class="title">PGx / PharmCAT</span></div><div class="block-body open">PGx 樣式比較</div></div></main><script src="/report-picker.js"></script><script type="module">import {resetPrsSample} from '/frontend/prs.js';window.resetPrsSample=resetPrsSample;resetPrsSample('SYNTHETIC_CASE');</script></html>`;
 const server=http.createServer((req,res)=>{
  if(req.url==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(preview);return;}
+ if(req.url==='/report-picker.js'){res.setHeader('Content-Type','text/javascript');res.end(pickerScript);return;}
  const types={'/frontend/prs.js':'text/javascript','/frontend/prs.css':'text/css','/frontend/style.css':'text/css'};
  if(!types[req.url]){res.writeHead(404);res.end();return;}
  res.setHeader('Content-Type',types[req.url]);res.end(fs.readFileSync(path.join(repo,req.url)));
@@ -47,6 +53,21 @@ const server=http.createServer((req,res)=>{
   if(delay)await new Promise(r=>setTimeout(r,delay));await route.fulfill({json:response}).catch(()=>{});
  });
  await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.locator('#prs-details>summary').click();await page.waitForFunction(()=>!document.querySelector('#prs-submit').disabled);
+ assert.match(await page.locator('#prs-details>summary').innerText(),/Polygenic risk rcore \(PRS\)/);
+ assert.equal(await page.locator('#prs-card').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');
+ await page.mouse.move(0,0);
+ assert.equal(await page.locator('#prs-details>summary').evaluate(e=>getComputedStyle(e).backgroundColor),await page.locator('#cat-pharmcat-c .block-header').evaluate(e=>getComputedStyle(e).backgroundColor));
+ await page.evaluate(()=>{window.pickerResult=window.testReportPicker({available:false,reason:'尚未完成風險計算'});});
+ const prsOption=page.locator('.health-report-options input[value="prs"]');
+ assert.equal(await prsOption.isDisabled(),true);assert.equal(await prsOption.isChecked(),false);
+ assert.match(await prsOption.locator('..').getAttribute('class'),/is-disabled/);
+ assert.deepEqual(await page.locator('.health-report-options input').evaluateAll(es=>es.map(e=>e.value)),['acmg_sf','hereditary_cancer','stroke','carrier','prs','pgx']);
+ await screenshot('report-unavailable.png');await page.locator('[data-act="ok"]').click();
+ assert.deepEqual(await page.evaluate(()=>window.pickerResult),['acmg_sf','pgx']);
+ await page.evaluate(()=>{window.pickerResult=window.testReportPicker({available:true});});
+ assert.equal(await prsOption.isDisabled(),false);assert.equal(await prsOption.isChecked(),true);
+ await screenshot('report-ready.png');await page.locator('[data-act="ok"]').click();
+ assert.deepEqual(await page.evaluate(()=>window.pickerResult),['acmg_sf','prs','pgx']);
  assert.equal(await page.locator('#prs-disease-rows tr').count(),1);
  assert.match(await page.locator('#prs-disease-rows').innerText(),/1.234568/);
  assert.deepEqual(await page.locator('[data-risk]').allTextContents(),['請輸入臨床資訊後計算','請輸入臨床資訊後計算']);

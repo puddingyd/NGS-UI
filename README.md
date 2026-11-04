@@ -6,6 +6,8 @@
 
 INTERVENE PRS 已接成兩階段流程：三級分析勾選 PRS 後，由原始 WGS gVCF 自動產生 score／percentile 與祖源 QC；在 **Secondary findings → PRS** 的疾病表格上方輸入年齡、性別、CHD病史，再按「風險計算」顯示10年／至80歲風險與比較曲線。目前僅CHD研究模型，未完成台灣臨床驗證；執行環境與風險參數須另安裝。見 [安裝與操作](docs/ops/PRS_CHD_RESEARCH.md)及[計分程式](research/prs/README.md)。
 
+v9.86：平台PRS與左側目錄均排在PGx之前，標題依指定字樣為「Polygenic risk rcore (PRS)」，改用其他Secondary findings的白底樣式。健檢匯出在PGx前提供「多基因風險評估（PRS）」：已分析並保存有效風險時預設勾選，缺資料／尚未計算／資料過期則反灰且不能勾選；修改臨床資訊後須重新計算。勾選時於PGx前輸出PRS結果、說明及研究限制，百分位與風險四捨五入到小數一位，套組與檢測方法同步加入PRS；未勾選不輸出。綜合說明首行加入「ACMG疾病風險基因」標題（有選ACMG時）。後端再次核對評估來源，避免手動要求或匯出途中資料改變造成過期結果。更新重載即可，不需重跑三級／PRS；院內Word排版仍待驗收。
+
 GBA1、CYP21A2、SMN、HBA specialized caller 已整合進既有卡片與報告。三級 post-processing 會先把 targeted JSON 快照、相關 VCF 證據、正規化結果與 checksum manifest 存到 `08_postprocessing/`；平台不再回原始 JSON／VCF 補 GBA1 證據，亦不複製大型 VCF（資料包須小於 100 MB）。SMN 顯示各基因 CN 與 silent-carrier marker，HBA 保留完整 genotype；未知或定位不明的結果保留待複核狀態，不自動標為致病。健檢及診斷沿用原表格、列點及附錄；HBA 複合結果須依完整 locus 指定健檢分類，既有帶因篩檢清單補入 HBA1／HBA2。部署後舊個案可用 `python3 scripts/rebuild_specialized.py --sample 26T00054-dragen --from-source --apply` 補建，不必重跑 Nextflow/VEP；已有資料包可離線重解析。也可用 `python3 scripts/rebuild_specialized.py --all-dragen --from-source --apply` 批次處理；`python3 scripts/scan_targeted_callers.py` 可唯讀盤點 CYP21A2／SMN／HBA 候選個案。省略 `--apply` 先驗證，既有判讀／選取保留。[資料結構、判讀規則與補建操作](docs/ops/SPECIALIZED_CALLERS.md)；[GBA1 細節](docs/ops/GBA1_SPECIALIZED_CALLER.md)。
 
 主畫面 SNV/Indel 頂部只顯示需要處理的 GBA1 caller 警示；來源未提供 GBA1 specialized 結果時，不顯示全域黃色警示。Specialized caller 結果摘要只在 DRAGEN 個案顯示，院內流程不顯示；DRAGEN 摘要仍保留各 locus 的未提供狀態，供需要判讀該 locus 時查閱。

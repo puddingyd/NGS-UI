@@ -260,3 +260,34 @@ def assess(sid, payload, username):
                   input_sha256=hashes, inputs=dict(person=person, summary=summary, bundle=bundle), result=result)
     atomic_json(assessment_dir(sid)/f"{record['assessment_id']}.json", record)
     return record
+
+
+def report_assessment(sid):
+    """Require a current saved assessment; never create one during export."""
+    _, meta_hash = case_metadata(sid)
+    bundle, bundle_hash = load_bundle()
+    summary, score_hash = load_score(sid)
+    if not source_identity_matches(sid, summary['sample']):
+        raise NotReady('PRS 來源與目前個案來源不符，請重新分析')
+    saved = latest_snapshot(sid)
+    if not saved:
+        raise NotReady('尚未計算並保存 PRS 風險，請先至 PRS 頁面完成風險計算')
+    if saved.get('input_sha256') != dict(bundle=bundle_hash, score=score_hash, case_metadata=meta_hash):
+        raise NotReady('PRS 計分、模型或個案資料已更新，請重新計算風險後再匯出')
+    try:
+        original = saved['inputs']['person']
+        person = person_for(summary, {key: original[key] for key in ('age', 'sex', 'assessment_date', 'prior_chd')})
+        expected = calculator.evaluate(bundle, summary, person)
+        if expected != saved['result']:
+            raise ValueError('Saved assessment differs from validated inputs')
+    except (ValueError, KeyError, TypeError) as exc:
+        raise NotReady('PRS 風險評估未通過完整性或品質檢查，請重新計算風險') from exc
+    return saved
+
+
+def report_readiness(sid):
+    try:
+        saved = report_assessment(sid)
+        return dict(available=True, reason='', assessment_id=saved['assessment_id'])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return dict(available=False, reason=str(exc))

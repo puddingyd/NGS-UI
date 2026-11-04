@@ -27,6 +27,12 @@ def status(sample_id: str):
     return checked(prs.status, sample_id)
 
 
+@router.get('/report-readiness')
+def report_readiness(sample_id: str):
+    checked(prs.case_metadata, sample_id)
+    return prs.report_readiness(sample_id)
+
+
 @router.post('/assessments')
 def assess(sample_id: str, payload: dict, user=Depends(current_user)):
     return checked(prs.assess, sample_id, payload, user.get('username', ''))

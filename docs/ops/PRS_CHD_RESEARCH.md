@@ -1,4 +1,4 @@
-# CHD PRS 研究風險 UI — v9.85
+# CHD PRS 研究風險 UI — v9.86
 
 ## 本版範圍
 
@@ -10,6 +10,20 @@
 主表每列一個疾病，固定欄位為「疾病／原始 PRS score／PRS percentile／未來10年風險／目前至80歲累積風險」。未計算的兩個風險欄顯示「請輸入臨床資訊後計算」；曲線放表格下方。未安裝 risk bundle 或祖源尚未通過時，合格 score／percentile 仍可獨立顯示，風險按鈕停用並說明原因。
 
 表格的原始 score 指 **Model A total_sum（含固定模型缺失補值）**，與該列 EAS735 ECDF percentile 使用同一定義；不是先前610,677 loci的 observed-only SUM，也不是 pgsc_calc ancestry 的 normalized score。A/B完整結果仍保留於計分 output，B 暫不作UI風險主分析。
+
+### 健檢報告與平台順序（v9.86）
+
+PRS本體及左側目錄都移到PGx之前，標題依使用者提供字樣為`Polygenic risk rcore (PRS)`；使用共用Secondary findings白色內容與標題列。此處保留`rcore`原字，不自行更正為`score`。
+
+「匯出健檢報告」modal在PGx前加入「多基因風險評估（PRS）」。每次開啟都查詢`GET /api/samples/{sid}/prs/report-readiness`（需登入），不依賴PRS頁面是否曾展開或舊的前端cache。具有效且已保存的風險評估才預設勾選；僅有score、QC尚未符合要求、無risk、bundle或score過期、person/result不一致都反灰且不可勾。若PRS臨床表單有未重新計算的修改，即使伺服器保留舊評估，前端仍停用PRS。未選PRS時其他報告項目照常匯出。
+
+後端`prs.report_assessment()`沿用目前bundle與score驗證，核對sample及case metadata／score／bundle hashes，從保存的person作純函數驗算比對，不建立新assessment、不從request接受risk數字；在DOCX生成完畢後再次核對，資料若變動就拒絕下載與archive。直接要求`sections=prs`也不能繞過。省略sections的舊API預設維持acmg_sf/pgx；UI一律傳明確選項。
+
+報告文案來自使用者2026-11-04的PRS報告規劃，追蹤於`backend/app/report_content/prs_chd_v1.json`；規劃中的示例數字由該案已驗證評估取代，至80歲說明末尾孤立的「上」不輸出。主要內容依序為介紹、評估日期／年齡／性別、四欄結果表、結果說明及研究注意事項，置於藥物基因體學之前；不輸出原始score。PRS表使用固定欄寬的原生Word表格，避免依字型空白寬度對齊。百分位與風險採Decimal ROUND_HALF_UP至小數一位（例如60.5442→第60.5百分位，0.0674→6.7%）。>70歲合法評估可輸出至80風險，十年欄顯示不適用並說明超出80歲終點，不能截短冒稱十年。
+
+只有選取PRS才在「二、檢驗套組」及「四、檢測方法說明」加入多基因風險評估；方法列在第一段PGx專屬方法（含phasing限制）之前，後續號次順延。選取ACMG時，「三、檢測結果／綜合說明」首行新增粗體「ACMG疾病風險基因」，與PRS／藥物基因體學標題同層。不改診斷DOCX、計分科學核心、風險bundle或既有評估快照。
+
+驗證：139項相關Python與98項前端測試、合成個案桌機／390px手機檢查通過。涵蓋無risk反灰、預設選取、API強制要求拒絕、過期與匯出中更新、選取／取消PRS的主文與方法、病例切換及臨床表單dirty。以套件內LibreOffice渲染並逐頁檢查主文五頁；本機無MingLiU，僅在獨立Fontconfig預覽設定中替代為等寬中文字型，正式DOCX仍用原細明體，院內Word字型與分頁待部署驗收。更新重載即可，不需重跑分析。
 
 ### 為何 Nextflow 還在跑，表格已經有數字？（v9.85）
 

@@ -2,6 +2,7 @@ import copy
 import datetime
 import hashlib
 import json
+import io
 from pathlib import Path
 
 import pytest
@@ -203,3 +204,94 @@ def test_explicit_failed_ancestry_qc_rejects_risk(setup):
     result=client.get('/api/samples/S1/prs').json()
     assert result['score'] and not result['available']
     assert client.post('/api/samples/S1/prs/assessments',json=payload).status_code==400
+
+
+def test_health_readiness_requires_current_verified_saved_assessment(setup):
+    client, app, root, _, score, payload = setup
+    url='/api/samples/S1/prs/report-readiness'
+    assert client.get(url).status_code == 401
+    login(app)
+    assert client.get('/api/samples/S2/prs/report-readiness').status_code == 404
+    assert not client.get(url).json()['available']  # Score alone is insufficient.
+    snapshot=client.post('/api/samples/S1/prs/assessments',json=payload).json()
+    assert client.get(url).json()['assessment_id'] == snapshot['assessment_id']
+    path=prs.assessment_dir('S1')/f"{snapshot['assessment_id']}.json"
+    before=path.read_bytes()
+    assert prs.report_assessment('S1') == snapshot and path.read_bytes() == before
+    altered=copy.deepcopy(snapshot); altered['result']['risk_10_year']['risk']=.999
+    prs.atomic_json(path,altered)
+    assert not client.get(url).json()['available']
+    path.write_bytes(before)
+    prs.atomic_json(root/'S1/S1.sample_metadata.json',{'lis_id':'S1','Test':'WGS'})
+    assert not client.get(url).json()['available']
+
+
+@pytest.fixture
+def health_report(setup, monkeypatch):
+    from app.services import docx_export
+    from app.routers import samples
+    client, app, root, bundle, score, payload = setup
+    login(app); app.include_router(samples.router)
+    (root/'archive').mkdir(); monkeypatch.setattr(config,'REPORT_OUTPUT_DIR',root/'archive')
+    monkeypatch.setattr(docx_export.sample_loader,'load_sample',lambda *a,**k: {'meta':{'LIS_ID':'S1','Test':'WGS'},'variants':{}})
+    monkeypatch.setattr(docx_export.sample_loader,'load_sample_secondary_snv',lambda *a,**k: {'variants':{},'categories':{}})
+    monkeypatch.setattr(docx_export.sample_loader,'load_sample_pgx',lambda *a,**k: {})
+    monkeypatch.setattr(docx_export.sample_loader,'_secondary_panel_genes',lambda: {})
+    monkeypatch.setattr(docx_export.report_store,'load',lambda sid: {})
+    monkeypatch.setattr(docx_export,'_health_panel_gene_sections',lambda requested: [])
+    monkeypatch.setattr(docx_export.acmg_sf_education,'render_acmg_sf_education',lambda *a,**k: None)
+    return setup
+
+
+def test_health_docx_prs_selection_order_methods_rounding_and_omission(health_report):
+    from docx import Document
+    from app.services import docx_export
+    client, app, root, _, _, payload = health_report
+    url='/api/samples/S1/health-report.docx?sections=acmg_sf,prs,pgx'
+    assert client.get(url).status_code == 400  # Cannot force an unavailable checkbox through the API.
+    assert not list((root/'archive').iterdir())
+    snapshot=client.post('/api/samples/S1/prs/assessments',json=payload).json()
+    response=client.get(url); assert response.status_code == 200, response.text
+    doc=Document(io.BytesIO(response.content)); paragraphs=[p.text for p in doc.paragraphs]
+    summary=paragraphs.index('  綜合說明:')
+    assert paragraphs[summary+1] == 'ACMG疾病風險基因'
+    assert paragraphs.index('ACMG疾病風險基因') < paragraphs.index('多基因風險評估') < paragraphs.index('藥物基因體學')
+    assert '多基因風險評估' in next(p for p in paragraphs if p.startswith('二、檢驗套組'))
+    methods=paragraphs[paragraphs.index('四、檢測方法說明'):]
+    assert next(i for i,p in enumerate(methods) if 'PGS004879' in p) < next(i for i,p in enumerate(methods) if '某些藥物基因' in p)
+    text='\n'.join(paragraphs+[cell.text for table in doc.tables for row in table.rows for cell in row.cells])
+    assert [cell.text for cell in doc.tables[0].rows[0].cells] == ['疾病','PRS 百分位','未來10年風險','至80歲累積風險']
+    assert '第97.0百分位' in text
+    expected=docx_export._health_prs_number(snapshot['result']['risk_10_year']['risk'],risk=True)+'%'
+    assert expected in text and '不應單獨作為疾病診斷' in text
+    assert 'Model A' not in text and '原始 PRS score' not in text
+    omitted=Document(io.BytesIO(client.get(url.replace('acmg_sf,prs,pgx','acmg_sf,pgx')).content))
+    omitted_text='\n'.join(p.text for p in omitted.paragraphs)
+    assert '多基因風險評估' not in omitted_text and 'PGS004879' not in omitted_text
+    assert docx_export._health_prs_number(60.55) == '60.6'
+    assert docx_export._health_prs_number(.0675,risk=True) == '6.8'
+
+
+def test_health_report_over_70_has_explicit_unavailable_ten_year_horizon(health_report):
+    from docx import Document
+    client, _, _, _, _, payload = health_report
+    client.post('/api/samples/S1/prs/assessments',json={**payload,'age':75}).raise_for_status()
+    assert client.get('/api/samples/S1/prs/report-readiness').json()['available']
+    response=client.get('/api/samples/S1/health-report.docx?sections=prs')
+    assert response.status_code == 200
+    text='\n'.join(p.text for p in Document(io.BytesIO(response.content)).paragraphs)
+    assert '不適用' in text and '完整十年期間超出' in text
+    assert '二、檢驗套組: 多基因風險評估' in text
+    assert '藥物基因體學' not in text and 'ACMG疾病風險基因' not in text
+
+
+def test_changed_prs_inputs_during_docx_export_never_archive_a_stale_report(health_report, monkeypatch):
+    from app.services import docx_export
+    client, _, root, _, _, payload = health_report
+    client.post('/api/samples/S1/prs/assessments',json=payload).raise_for_status()
+    def change(*a,**k):
+        prs.atomic_json(root/'S1/S1.sample_metadata.json',{'lis_id':'S1','changed':True})
+    monkeypatch.setattr(docx_export,'_section_health_annotations',change)
+    response=client.get('/api/samples/S1/health-report.docx?sections=prs')
+    assert response.status_code == 400
+    assert not list((root/'archive').iterdir())

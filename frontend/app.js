@@ -3,7 +3,7 @@
 // Reads tertiary-output TSV/JSON from this server (no GitHub access).
 // ------------------------------------------------------------------
 
-import { resetPrsSample } from './prs.js';
+import { resetPrsSample, prsClinicalInformationPending } from './prs.js';
 
 const API_BASE = "/api";
 const OMIM_DISEASE_SLOT_COUNT = 16;
@@ -3940,12 +3940,14 @@ async function exportDiagnosticDocx() {
   }
 }
 
-function _pickHealthReportSections() {
+function _pickHealthReportSections(prsReadiness = {}) {
   const options = [
     { key: "acmg_sf", title: "ACMG 疾病風險基因（ACMG SF）", checked: true },
     { key: "hereditary_cancer", title: "遺傳癌症 v2.0", checked: false },
     { key: "stroke", title: "中風相關基因", checked: false },
     { key: "carrier", title: "帶因者篩查", checked: false },
+    { key: "prs", title: "多基因風險評估（PRS）", checked: prsReadiness.available === true,
+      disabled: prsReadiness.available !== true, reason: prsReadiness.reason || "需先完成 PRS 分析與風險計算" },
     { key: "pgx", title: "藥物基因體學（PGx）", checked: true },
   ];
   return new Promise((resolve) => {
@@ -3957,9 +3959,9 @@ function _pickHealthReportSections() {
         <p class="health-report-hint">選擇這次要放入報告的項目；未勾選的項目不會輸出至主文或附錄。</p>
         <div class="health-report-options">
           ${options.map(opt => `
-            <label class="health-report-option">
-              <input type="checkbox" value="${escapeAttr(opt.key)}"${opt.checked ? " checked" : ""} />
-              <span>${escapeHtml(opt.title)}</span>
+            <label class="health-report-option${opt.disabled ? " is-disabled" : ""}">
+              <input type="checkbox" value="${escapeAttr(opt.key)}"${opt.checked ? " checked" : ""}${opt.disabled ? " disabled" : ""} />
+              <span>${escapeHtml(opt.title)}${opt.disabled ? `<small>${escapeHtml(opt.reason)}</small>` : ""}</span>
             </label>
           `).join("")}
         </div>
@@ -3975,7 +3977,7 @@ function _pickHealthReportSections() {
       const act = ev.target?.dataset?.act;
       if (act === "cancel") finish(null);
       if (act === "ok") {
-        const selected = Array.from(wrap.querySelectorAll('input[type="checkbox"]:checked'))
+        const selected = Array.from(wrap.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)'))
           .map(input => input.value);
         if (!selected.length) {
           alert("請至少選擇一個報告項目。");
@@ -3991,8 +3993,18 @@ async function exportHealthDocx() {
   if (!state.currentLIS) return;
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sid = row?.sample_id || state.currentLIS;
-  const sections = await _pickHealthReportSections();
+  const originalLIS = state.currentLIS;
+  let prsReadiness = { available: false, reason: "暫時無法確認 PRS 資料完整性" };
+  try { prsReadiness = await apiFetch(`/samples/${encodeURIComponent(sid)}/prs/report-readiness`) || prsReadiness; }
+  catch (_e) { /* Other report sections remain available. */ }
+  if (state.currentLIS !== originalLIS) return;
+  if (prsClinicalInformationPending(sid)) prsReadiness = { available: false, reason: "PRS 臨床資訊已變更，請先重新計算風險" };
+  const sections = await _pickHealthReportSections(prsReadiness);
   if (!sections) return;
+  if (state.currentLIS !== originalLIS) return;
+  if (sections.includes("prs") && prsClinicalInformationPending(sid)) {
+    alert("PRS 臨床資訊已變更，請先重新計算風險。"); return;
+  }
 
   const btns = document.querySelectorAll(".btn-export-health");
   const setBusy = b => btns.forEach(x => { x.disabled = b; });
@@ -4007,7 +4019,10 @@ async function exportHealthDocx() {
     const url = `${API_BASE}/samples/${encodeURIComponent(sid)}/health-report.docx?sections=${qs}`;
     const resp = await fetch(url, { credentials: "same-origin" });
     if (resp.status === 401) { showLoginModal(); return; }
-    if (!resp.ok) throw new Error(`匯出失敗 (${resp.status})`);
+    if (!resp.ok) {
+      const error = await resp.json().catch(() => ({}));
+      throw new Error(typeof error.detail === "string" ? error.detail : `匯出失敗 (${resp.status})`);
+    }
     const blob = await resp.blob();
     downloadBlob(blob, `${sid}_health.docx`);
     hint("健檢報告已下載");
