@@ -12978,11 +12978,6 @@ function _dragenSetJob(state) {
     if (stateEl && state.prs_children?.length) {
       stateEl.textContent += '；PRS：' + state.prs_children.map(c => `${c.sample_id} ${c.status}`).join('、');
     }
-    const toolsLog = document.getElementById('dragen-postprocessing-log');
-    if (toolsLog) {
-      toolsLog.hidden = !state.postprocessing_log_available;
-      toolsLog.href = `${API_BASE}/dragen/jobs/${encodeURIComponent(state.job_id)}/postprocessing-log`;
-    }
     if (progressBar) progressBar.style.width = `${pct}%`;
     if (progressText) progressText.textContent = `${pct}%`;
     if (progressBar) progressBar.classList.toggle("failed", state.state === "failed");

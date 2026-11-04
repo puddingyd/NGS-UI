@@ -4142,6 +4142,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .dragen-cancel-btn + .dragen-log-toggle {
   margin-left: 0;
 }
+#dragen-job-cancel-btn[hidden] + #dragen-job-log-toggle {
+  margin-left: auto;
+}
 .dragen-progress-row {
   display: flex;
   align-items: center;
