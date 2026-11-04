@@ -139,8 +139,9 @@ def test_overlay_and_rescue_signatures_remain_current_after_verified_transfer(tm
     assert json.loads((final_post/'CASE.cnv_rescue.json').read_text())['inputs']['base_tsv']['path'] == str(live/baseline.relative_to(source))
 
 
-@pytest.mark.parametrize('failure', [None, 'second_copy', 'second_promotion', 'rollback_failure'])
-def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize('failure', [None, 'second_copy', 'second_promotion', 'rollback_failure', 'prs_cancel'])
+@pytest.mark.parametrize('with_prs', [False, True])
+def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monkeypatch, failure, with_prs):
     root = tmp_path.resolve()
     work, live, jobs = root/'ssd-work', root/'hdd-live', root/'jobs'
     for name, value in (('TERTIARY_NF_WORK_ROOT', work), ('PIPELINE_OUT_ROOT', live),
@@ -148,7 +149,7 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
         monkeypatch.setattr(dragen_run, name, value)
     monkeypatch.setattr(sample_layout.config, 'PIPELINE_OUT_ROOT', live)
     monkeypatch.setenv('NXF_HOME', str(root/'empty-nextflow'))
-    monkeypatch.setattr(sys, 'argv', ['worker', '--job-id', 'job', '--mode', 'inhouse', '--without-pgx'])
+    monkeypatch.setattr(sys, 'argv', ['worker', '--job-id', 'job', '--mode', 'inhouse', '--without-pgx']+(['--with-prs'] if with_prs else []))
     samples = [dict(mode='inhouse', sample_id=f'S{i}-nckuh', source_sample_id=f'S{i}',
                     seq_type='WGS', vcf_path=str(root/f'S{i}.vcf.gz'), cnv_vcf='', sv_vcf='') for i in (1, 2)]
     monkeypatch.setattr(dragen_run, '_load_samples', lambda args: samples)
@@ -164,6 +165,14 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
     state = {}
     monkeypatch.setattr(dragen_run, '_update', lambda jid, **kw: state.update(kw))
     monkeypatch.setattr(dragen_run, '_set_step', lambda jid, step, **kw: state.update(step=step, **kw))
+    prs_calls=[]
+    def prs_postprocessing(samples,jid):
+        assert state['state']=='running' and state['step']=='promote-output'
+        assert len(markers)==2
+        with pytest.raises(RuntimeError): dragen_run._acquire_sample_locks([samples[0]['sample_id']])
+        prs_calls.append(jid)
+        if failure=='prs_cancel': raise SystemExit(143)
+    monkeypatch.setattr(dragen_run,'_run_prs_postprocessing',prs_postprocessing)
     from app.services import sample_loader, unregistered_samples
     monkeypatch.setattr(sample_loader, 'invalidate_sample_cache', lambda p: None)
     monkeypatch.setattr(sample_loader, 'update_case_table_row', lambda sid: None)
@@ -214,20 +223,24 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
             if dst.name.endswith('.layout.json'): markers.append(dst)
         return replace(src, dst)
     monkeypatch.setattr(os, 'replace', replace_on_hdd)
-    assert dragen_run.main() == (0 if failure is None else 1)
+    publication_completed = failure in (None, 'prs_cancel')
+    cancelled = with_prs and failure=='prs_cancel'
+    assert dragen_run.main() == (143 if cancelled else (0 if publication_completed else 1))
+    assert prs_calls == (['job'] if with_prs and publication_completed else [])
+    if cancelled: assert state['state']=='cancelled'
     for sample in samples:
         directory = live/sample['sample_id']
         assert json.loads((directory/'08_postprocessing'/f'{sample["sample_id"]}.sample_metadata.json').read_text()) == {'reviewer': 'keep'}
-        if failure is None:
+        if publication_completed:
             assert (directory/'03_acmg'/f'{sample["source_sample_id"]}.snv_indel.acmg.tsv').exists()
         elif failure == 'rollback_failure' and sample['sample_id'] == 'S2-nckuh':
             assert (live/'.rollback/job/S2-nckuh/03_acmg/old').read_text() == 'old'
             assert 'rollback incomplete' in state['error']
         else:
             assert (directory/'03_acmg/old').read_text() == 'old'
-    assert len(markers) == (2 if failure is None else (1 if failure in {'second_promotion', 'rollback_failure'} else 0))
-    assert (live/'.staging/job').exists() == (failure == 'rollback_failure')
-    assert (live/'.rollback/job').exists() == (failure == 'rollback_failure')
+    assert len(markers) == (2 if publication_completed else (1 if failure in {'second_promotion', 'rollback_failure'} else 0))
+    assert (live/'.staging/job').exists() == (failure == 'rollback_failure' or cancelled)
+    assert (live/'.rollback/job').exists() == (failure == 'rollback_failure' or cancelled)
     assert not workspace.runtime_paths(work, 'nckuh', 'job')['job'].exists()
 
 

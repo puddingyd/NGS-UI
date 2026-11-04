@@ -990,7 +990,7 @@
             <input id="dragen-pgx" type="checkbox" checked />
             <span>PGx</span>
           </label>
-          <label class="filter-toggle dragen-extra-toggle" title="三級完成後排入原始 gVCF → PRS score／percentile／祖源檢查；臨床風險另在個案 PRS 頁面計算">
+          <label class="filter-toggle dragen-extra-toggle" title="三級後處理執行原始 gVCF → PRS score／percentile／祖源檢查，結束後才完成三級；臨床風險另在個案 PRS 頁面計算">
             <input id="dragen-prs" type="checkbox" />
             <span>PRS</span>
           </label>
@@ -1049,8 +1049,10 @@
           <strong>進度</strong>
           <span id="dragen-job-step" class="muted"></span>
           <span id="dragen-job-state" class="muted"></span>
-          <button id="dragen-job-cancel-btn" class="btn btn-danger dragen-cancel-btn" type="button" hidden>終止</button>
-          <button id="dragen-job-log-toggle" class="dragen-log-toggle" type="button" aria-expanded="false">▶ Log</button>
+          <span class="dragen-job-actions">
+            <button id="dragen-job-cancel-btn" class="btn btn-danger dragen-cancel-btn" type="button" hidden>終止</button>
+            <button id="dragen-job-log-toggle" class="dragen-log-toggle" type="button" aria-expanded="false">▶ Log</button>
+          </span>
         </div>
         <div class="dragen-progress-row">
           <div class="dragen-progress-track">

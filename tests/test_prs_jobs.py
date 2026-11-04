@@ -468,3 +468,132 @@ def test_raw_prs_log_download_auth_identity_and_exact_bytes(env):
     assert response.content == data and 'attachment;' in response.headers['content-disposition']
     assert client.get(url.replace('/CASE/', '/OTHER/')).status_code == 404
     assert client.get(url.replace(jid, '..')).status_code in (400, 404)
+
+
+@pytest.fixture
+def tertiary_parent(env, monkeypatch):
+    monkeypatch.setattr(dragen_jobs, 'TERTIARY_JOBS_DIR', dragen_run.TERTIARY_JOBS_DIR)
+    dragen_jobs.save_state('parent',dict(job_id='parent',state='running',with_prs=True))
+    return env
+
+
+def test_inline_tertiary_prs_finishes_while_parent_keeps_sample_locks(tertiary_parent, monkeypatch):
+    env=tertiary_parent
+    original=prs_run.Worker.command
+    phases=[]
+    def command(worker,args,step):
+        worker.update(status='running',step=step)
+        state=dragen_jobs.load_state('parent')
+        assert state['state']=='running' and state['step']=='post-processing:prs'
+        assert state['prs_progress_pct'] < 100
+        with pytest.raises(RuntimeError): dragen_run._acquire_sample_locks(['CASE'])
+        phases.append(step); original(worker,args,step)
+    monkeypatch.setattr(prs_run.Worker,'command',command)
+    monkeypatch.setattr(jobs.subprocess,'Popen',lambda *a,**kw: pytest.fail('inline PRS must not detach a worker'))
+    locks=dragen_run._acquire_sample_locks(['CASE','SOURCE'])
+    try:
+        children=dragen_run._run_prs_postprocessing([{'sample_id':'CASE'}],'parent')
+        assert children['CASE']['status']=='done' and len(phases)==3
+        assert dragen_jobs.load_state('parent')['state']=='running'
+        assert prs.read_json(prs.score_path('CASE'))[0]['ancestry_qc_sha256']
+        jid=children['CASE']['job_id']
+        assert jobs.read_job(jid)['execution']=='tertiary_postprocessing'
+        assert '[PRS] 個案工作目錄' in (jobs.job_dir(jid)/'log.txt').read_text()
+        assert not jobs.active_ids()
+        with pytest.raises(RuntimeError): dragen_run._acquire_sample_locks(['SOURCE'])
+    finally: dragen_run._release_sample_locks(locks)
+    # Completed inline runs remain resumable through the existing card entry.
+    dragen_jobs.save_state('parent',dict(job_id='parent',state='done'))
+    monkeypatch.setattr(jobs.subprocess,'Popen',lambda *a,**kw: SimpleNamespace(pid=os.getpid()))
+    retry=jobs.start('CASE')
+    assert jobs.read_job(retry['job_id'])['pipeline_run_id']==jobs.read_job(jid)['pipeline_run_id']
+
+
+@pytest.mark.parametrize('failure',['raw','ancestry','blocked','init'])
+def test_inline_prs_failures_are_terminal_visible_and_retryable(tertiary_parent, monkeypatch, failure):
+    original=prs_run.Worker.command
+    def command(worker,args,step):
+        if (failure=='raw' and '--gvcf' in args) or (failure=='ancestry' and '--raw-source' in args):
+            raise RuntimeError('synthetic PRS failure')
+        original(worker,args,step)
+    monkeypatch.setattr(prs_run.Worker,'command',command)
+    if failure=='blocked':
+        monkeypatch.setattr(jobs,'candidates',lambda *a: [])
+    if failure=='init':
+        monkeypatch.setattr(prs_run.Worker,'__init__',lambda *a,**k: (_ for _ in ()).throw(ValueError('bad worker config')))
+    children=dragen_run._run_prs_postprocessing([{'sample_id':'CASE'}],'parent')
+    assert children['CASE']['status']=={'raw':'failed','ancestry':'done_with_warnings','blocked':'blocked','init':'failed'}[failure]
+    state=dragen_jobs.load_state('parent')
+    assert state['state']=='running' and '可至個案PRS卡片補跑' in state['annotation_warnings'][0]
+    assert not jobs.active_ids()
+
+
+def test_parent_cancel_stops_real_prs_tool_and_marks_child_cancelled(tertiary_parent, monkeypatch):
+    ready=tertiary_parent.root/'tool-started'
+    processes=[]
+    def spawn(*args,**kwargs):
+        proc=REAL_POPEN(*args,**kwargs); processes.append(proc); return proc
+    monkeypatch.setattr(prs_run.subprocess,'Popen',spawn)
+    update=dragen_run._update
+    def interrupt(jid,**fields):
+        update(jid,**fields)
+        if ready.exists() and any(p.poll() is None for p in processes): raise SystemExit(143)
+    monkeypatch.setattr(dragen_run,'_update',interrupt)
+    def command(worker,args,step):
+        REAL_COMMAND(worker,[sys.executable,'-c',
+            'from pathlib import Path; import time; Path('+repr(str(ready))+').touch(); print("running",flush=True); time.sleep(60)'],step)
+    monkeypatch.setattr(prs_run.Worker,'command',command)
+    with pytest.raises(SystemExit):
+        dragen_run._run_prs_postprocessing([{'sample_id':'CASE'}],'parent')
+    assert processes and all(p.poll() is not None for p in processes)
+    assert jobs.jobs('CASE')[0]['status']=='cancelled'
+    assert not jobs.active_ids()
+
+
+def test_waiting_manual_prs_does_not_hold_global_slot(tertiary_parent, monkeypatch):
+    import fcntl
+    jid=jobs.start('CASE',parent_job_id='parent',launch=False)['job_id']
+    locks=dragen_run._acquire_sample_locks(['CASE','SOURCE'])
+    def waiting(_seconds):
+        with (jobs.root()/'.execution.lock').open('a') as slot:
+            fcntl.flock(slot,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        raise prs_run.Cancelled('stop waiting')
+    monkeypatch.setattr(prs_run.time,'sleep',waiting)
+    try:
+        with pytest.raises(prs_run.Cancelled): prs_run.Worker(jid).run()
+        with pytest.raises(RuntimeError): dragen_run._acquire_sample_locks(['CASE'])
+    finally: dragen_run._release_sample_locks(locks)
+
+
+def test_inline_batch_continues_after_one_prs_failure(tertiary_parent, monkeypatch):
+    prs.atomic_json(sample_layout.state_file('CASE2','pipeline_source.json'),tertiary_parent.marker)
+    original=prs_run.Worker.command
+    def command(worker,args,step):
+        if worker.job['sample_id']=='CASE': raise RuntimeError('first sample failed')
+        original(worker,args,step)
+    monkeypatch.setattr(prs_run.Worker,'command',command)
+    children=dragen_run._run_prs_postprocessing([{'sample_id':'CASE'},{'sample_id':'CASE2'}],'parent')
+    assert children['CASE']['status']=='failed' and children['CASE2']['status']=='done'
+    assert prs.score_path('CASE2').is_file() and not jobs.active_ids()
+
+
+def test_parent_cancel_before_worker_initialization_finalizes_prepared_job(tertiary_parent, monkeypatch):
+    monkeypatch.setattr(prs_run.Worker,'__init__',lambda *a,**k: (_ for _ in ()).throw(SystemExit(143)))
+    with pytest.raises(SystemExit):
+        dragen_run._run_prs_postprocessing([{'sample_id':'CASE'}],'parent')
+    assert jobs.jobs('CASE')[0]['status']=='cancelled'
+    assert not jobs.active_ids()
+
+
+def test_prs_resource_slot_is_held_until_tool_cleanup_finishes(tertiary_parent, monkeypatch):
+    import fcntl
+    jid=jobs.start('CASE',parent_job_id='parent',launch=False)['job_id']
+    cleaned=[]
+    def cleanup(worker):
+        with (jobs.root()/'.execution.lock').open('a') as other:
+            with pytest.raises(BlockingIOError): fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        cleaned.append(True)
+    monkeypatch.setattr(prs_run.Worker,'stop_process',cleanup)
+    prs_run.Worker(jid).run()
+    assert cleaned
+    with (jobs.root()/'.execution.lock').open('a') as other: fcntl.flock(other,fcntl.LOCK_EX|fcntl.LOCK_NB)

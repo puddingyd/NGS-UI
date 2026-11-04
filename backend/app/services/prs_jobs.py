@@ -204,9 +204,11 @@ def submission_lock():
         yield
 
 
-def start(sid, candidate_id=None, username='', parent_job_id=None, new_run=False):
+def start(sid, candidate_id=None, username='', parent_job_id=None, new_run=False, *, launch=True):
     # Called after tertiary promotion; metadata is intentionally NOT required.
     prs.validate_sid(sid)
+    if not launch and not parent_job_id:
+        raise ValueError('同步 PRS 必須由三級後處理啟動')
     cfg, cfg_hash = settings()
     info = source(sid)
     choices = candidates(info, cfg)
@@ -234,6 +236,11 @@ def start(sid, candidate_id=None, username='', parent_job_id=None, new_run=False
                       pipeline_run_id=prior['pipeline_run_id'] if prior else 'ui_prs_'+jid)
         prs.atomic_json(directory/'state.json', record)
         prs.atomic_json(directory/'config.json', effective)
+        if not launch:
+            record.update(pid=os.getpid(), execution='tertiary_postprocessing')
+            prs.atomic_json(directory/'state.json', record)
+            (directory/'log.txt').touch()
+            return public_job(record)
         try:
             _, worker_env = prs_paths.environment(paths, record['pipeline_run_id'], 'worker')
             worker_env['PYTHONPATH'] = str(config.REPO_ROOT/'backend')

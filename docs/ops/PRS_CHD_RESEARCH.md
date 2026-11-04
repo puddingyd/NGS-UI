@@ -1,15 +1,27 @@
-# CHD PRS 研究風險 UI — v9.86
+# CHD PRS 研究風險 UI — v9.88
 
 ## 本版範圍
 
 平台採兩階段；第一個疾病為 CHD，未建立 DM／cancer 的空白模型。
 
-1. **三級分析**勾選「PRS」：00–08 發布完成後，自動排入原始 gVCF → 固定 v2.1.1 Model A/B score／percentile → 祖源 QC 的背景任務。不需要病人年齡或病史，不計算 absolute risk。PRS 啟動或執行失敗不回滾已完成三級結果。
+1. **三級分析**勾選「PRS」：在後處理內完成原始 gVCF → 固定 v2.1.1 score／percentile → 祖源 QC，結束後才標記三級done／100%。不需要病人年齡或病史，不計算absolute risk。PRS啟動或執行失敗會明示提醒、保留00–08其他結果，之後可由卡片補跑。
 2. **Secondary findings → PRS**：上方單行輸入「評估時年齡、性別、已有 CHD？」後按「風險計算」。日期自動記為當日；每次保存獨立評估快照。改臨床輸入只重算 risk，不重跑 gVCF。
 
 主表每列一個疾病，固定欄位為「疾病／原始 PRS score／PRS percentile／未來10年風險／目前至80歲累積風險」。未計算的兩個風險欄顯示「請輸入臨床資訊後計算」；曲線放表格下方。未安裝 risk bundle 或祖源尚未通過時，合格 score／percentile 仍可獨立顯示，風險按鈕停用並說明原因。
 
 表格的原始 score 指 **Model A total_sum（含固定模型缺失補值）**，與該列 EAS735 ECDF percentile 使用同一定義；不是先前610,677 loci的 observed-only SUM，也不是 pgsc_calc ancestry 的 normalized score。A/B完整結果仍保留於計分 output，B 暫不作UI風險主分析。
+
+### 三級PRS後處理與終止（v9.88）
+
+三級保留個案與來源的sample locks，在00–08基礎發布後同步執行PRS，整段保持running。先發布來源marker是為了核對原始gVCF；不代表整個三級工作已完成。前端的一般postprocessing使用82–94%、基礎發布95%、PRS95–99%，只有父工作done才100%。PRS顯示目前個案、等待名額／容器預檢／計分／祖源檢查等階段，主Log顯示狀態、耗時及原因，詳細工具Log仍在個案PRS卡片。
+
+同步PRS仍保存獨立的jobUUID、config snapshot、log與結果manifest，便於稽核和卡片重試，但不建立detached worker。內部`launch=False`建立job後，由父工作呼叫Worker，使用已持有的sample ownership，不重取同一把鎖；另外取得prs清理保護lease。全站PRS仍限一個計分slot，手動執行先取得sample locks才等待slot，避免手動工作占住slot又等待父批次鎖。PRS環境隔離及tmp掛載規則不變。
+
+計分／祖源失敗、無唯一gVCF候選或取消子PRS時，先記錄該模組終態與annotation_warnings，再繼續其餘個案，最後三級完成但帶提醒；不能把模組失敗當成成功。已完成00–08不因PRS失敗回滾，已完成的PRS score依原政策保留；可在載入個案後補跑／更新，不需重跑三級。使用三級「終止」會打斷整個工作，finally停止PRS工具群組並記父／子cancelled；取消發生於基礎發布之後時，沿原安全政策保留備份及publication staging供回復。臨床risk仍由卡片輸入資訊後另算。
+
+按鈕以同一靠右群組排列「終止　▼ Log」，兩者之間固定8px；完成後明確隱藏終止按鈕。後處理工具Log下載仍只在三級清單提供。舊版本已啟動或已done的非同步PRS不改寫、不自動接管；新整合行為適用更新後新啟動的三級工作，既有score／風險與guarded resume不變。
+
+驗證包含父鎖持有下同步計分、批次單案失敗不中止其餘PRS、手動補跑、手動等待不占slot、初始化前取消及真正長程序被終止，並核對主三級不提前done、取消後已發布成果保留、前端只有parent done才100%。實際院內Nextflow／WGS待部署後驗收。
 
 ### 健檢報告與平台順序（v9.86）
 
@@ -99,7 +111,7 @@ In-house 沒有猜測的預設 caller／目錄；院內管理者確認原始gVCF
 - 正式結果：原子複製完整 Method2 六檔至 `08_postprocessing/{個案ID}.prs/runs/{jobUUID}/score/`，祖源 QC 四檔至同 run 的 `ancestry/`；各自保存 SHA256 manifest。UI入口 `{個案ID}.prs.summary.json` 記錄 artifact paths、hash、工作路徑版本與衍生 config hash。缺檔或驗證失敗不替換上一份有效結果。
 - Nextflow repository／plugin／container cache、工具臨時檔放在個案工作目錄的 `.runtime/`；runner 的工作目錄在 `launch/{runID}/`。平台產生的 Nextflow wrapper 先讀原 config，再覆寫 cache／report 等執行路徑（包含 singularity profile），原設定檔不改寫。模型、篩選、計分及祖源參數不變。
 - 每次先原子發布已完成 score／percentile，再跑祖源。祖源失敗時顯示「計分完成，祖源檢查未完成」；score 保留，risk 不啟用。非 EAS／低信心亦不啟用風險。
-- 全站同時只跑一個 PRS 計分工作，其他排隊。與三級／Somatic共用 UI及source sample locks，防止同個案來源替換。三級完成不代表其獨立 PRS 子工作已完成；在 PRS 區看進度／Log。
+- 全站同時只跑一個PRS計分工作，其他排隊。與三級／Somatic共用UI及source sample locks。v9.88起三級會等待已勾選的PRS後處理到終態才完成；卡片獨立補跑則在PRS區看進度／Log。
 - 「重新分析／重試」在輸入、資源與平台路徑 fingerprints 完全相同時沿用原 run ID，交給 v2.1.1 guarded resume；不刪除 raw audit。原 pipeline 不能恢復的 early partial run 可用「重新開始」建立新 run ID，原檔保留。jobUUID 每次不同，retry 可沿用 runID。
 - 取消由 worker 收到 cancel flag 後終止自己啟動的工具 process group；原有 score／快照保留。完整刪除個案 pipeline 時，active PRS 阻擋刪除；完成工作狀態、08結果及有平台 ownership marker 的該個案 `nf_work/prs/{個案ID}/` 一起移除。取消登錄不刪這些分析產物。舊位置資料不自動清除。
 
@@ -175,9 +187,9 @@ v9.81固定主機暫存位置為：
 [2026-11-04 10:01:00] [postprocessing] sample=S1 step=genebe status=done elapsed=60.0s
 ```
 
-AnnotSV配置、欄位清單、GPN signature差異與完整第三方輸出保留在 `$NGS_UI_HOME/data/jobs/tertiary/{三級job}/postprocessing.log`，主Log顯示狀態、耗時、必要數量與警告。三級進度視窗及分析清單的「查看Log」均可下載這份工具Log；新增登入保護的 `GET /api/dragen/jobs/{job}/postprocessing-log` 只提供該job固定檔案的當下快照。舊工作的原始log不重新改寫。
+AnnotSV配置、欄位清單、GPN signature差異與完整第三方輸出保留在 `$NGS_UI_HOME/data/jobs/tertiary/{三級job}/postprocessing.log`，主Log顯示狀態、耗時、必要數量與警告。三級分析清單的「查看Log」可下載這份工具Log（v9.87起移除modal重複入口）；登入保護的 `GET /api/dragen/jobs/{job}/postprocessing-log` 只提供該job固定檔案的當下快照。舊工作的原始log不重新改寫。
 
-三級done代表00–08已發布，PRS仍為獨立背景工作。前端持續輪詢其狀態，API／三級Log會依parent job與sample識別核對子工作，顯示實際step、失敗／警告及FATAL等原因；PRS失敗不將三級改成failed，也不回滾已發布結果。手動補跑是另一個工作，不把舊子工作紀錄改成成功。PRS詳細工具Log仍由個案PRS頁面查看。
+v9.84–v9.87的舊工作可能在三級done後繼續獨立PRS；前端仍可追蹤這些歷史工作。v9.88的新工作已改成等待PRS後處理，見前述章節。API／三級Log依parent與sample核對PRS狀態、失敗／警告及FATAL根因；手動補跑是另一個工作，不把舊失敗紀錄改成成功。PRS詳細工具Log仍由個案PRS頁面查看。
 
 ## 固定參數與科學驗算
 

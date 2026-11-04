@@ -4142,9 +4142,10 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .dragen-cancel-btn + .dragen-log-toggle {
   margin-left: 0;
 }
-#dragen-job-cancel-btn[hidden] + #dragen-job-log-toggle {
-  margin-left: auto;
-}
+.dragen-job-actions { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+#dragen-job-panel .dragen-job-head > strong { flex-shrink: 0; }
+.dragen-job-actions > button { margin-left: 0; }
+.dragen-job-actions > [hidden] { display: none; }
 .dragen-progress-row {
   display: flex;
   align-items: center;

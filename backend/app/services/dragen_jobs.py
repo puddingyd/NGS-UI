@@ -451,7 +451,7 @@ def read_log(job_id: str) -> str:
 
 
 def prs_followup(job):
-    """Read independent child state without rewriting a finished tertiary job."""
+    """Read linked PRS state, including historical background jobs."""
     from . import prs_jobs
     children = []
     for sid, submitted in (job.get('prs_jobs') or {}).items():
@@ -483,7 +483,7 @@ def prs_followup_log(job, children=None):
         if child.get('error') or child.get('warning'):
             lines.append(timestamped(event(child['sample_id'], 'prs', 'error' if child.get('error') else 'warning',
                                detail=child.get('error') or child['warning']), child.get('updated')))
-    return '\n\n[PRS 後續工作目前狀態；詳細Log請至個案PRS頁面查看]\n'+'\n'.join(lines)+'\n' if lines else ''
+    return '\n\n[PRS 工作目前狀態；詳細Log請至個案PRS頁面查看]\n'+'\n'.join(lines)+'\n' if lines else ''
 
 
 def postprocessing_log_path(job_id):

@@ -12999,6 +12999,7 @@ function _dragenSetJob(state) {
 
 function _dragenJobStepLabel(state) {
   const step = String(state?.step || "");
+  if (step === "post-processing:prs") return `PRS 後處理 · ${state.prs_sample || ''} · ${state.prs_phase || '準備中'}`;
   if (step === "post-processing:cnv-rescue") return "DRAGEN CNV 整合註解";
   if (step !== "nextflow" && !step.startsWith("nextflow:")) return step;
   const current = state?.nextflow_current;
@@ -13018,6 +13019,9 @@ function _dragenProgressPercent(state) {
   if (state.state === "cancelled") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
   if (state.state === "failed") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
   const step = String(state.step || "");
+  if (step === "post-processing:prs" && state.prs_execution === "postprocessing") {
+    return _clampPct(Math.min(99, Number(state.prs_progress_pct) || 95));
+  }
   if (step.startsWith("post-processing") || step.startsWith("sample-step")) {
     return _dragenStopgapProgressPercent(state);
   }
@@ -13043,7 +13047,7 @@ function _dragenProgressPercent(state) {
     "copy-pipeline-tsv": 82,
     "prepare-postprocessing": 82,
     "post-processing": 82,
-    "promote-output": 99,
+    "promote-output": state.with_prs ? 95 : 99,
     done: 100,
   };
   return byStep[state.step] ?? 0;
@@ -13072,7 +13076,7 @@ function _dragenStopgapProgressPercent(state) {
     "post-processing:cnv-rescue": 0.96,
   };
   const within = sub[state.step] ?? 0;
-  return _clampPct(82 + ((idx + within) / total) * 17);
+  return _clampPct(82 + ((idx + within) / total) * (state.with_prs ? 12 : 17));
 }
 
 function _toggleDragenLog() {

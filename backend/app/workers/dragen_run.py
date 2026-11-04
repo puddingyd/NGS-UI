@@ -1586,6 +1586,76 @@ def _record_gpn_completion(job_id: str, sample_id: str, post_dir: Path, research
         _log('[gpn-warning] '+warning)
 
 
+def _run_prs_postprocessing(samples, job_id):
+    """Run to terminal status inside the parent job, retaining sample locks."""
+    from ..services import prs, prs_jobs
+    from . import prs_run
+    children, warnings = {}, []
+    _set_step(job_id, 'post-processing:prs', prs_execution='postprocessing', prs_progress_pct=95)
+    for index, sample in enumerate(samples):
+        sid = sample['sample_id']
+        started = time.monotonic()
+        last_phase = None
+        def changed(child):
+            nonlocal last_phase
+            children[sid] = prs_jobs.public_job(child)
+            phase = child.get('step', '')
+            fraction = 0.05
+            if '容器暫存' in phase: fraction = .15
+            elif 'gVCF' in phase: fraction = .3
+            elif '祖源與品質' in phase: fraction = .75
+            if child['status'] not in prs_jobs.ACTIVE: fraction = 1
+            fields = dict(prs_jobs=dict(children), prs_sample=sid, prs_phase=phase,
+                          prs_progress_pct=95+4*(index+fraction)/len(samples))
+            _update(job_id, **fields)
+            if (phase, child['status']) != last_phase:
+                _log(postprocessing_log.event(sid, 'prs', child['status'], detail=phase))
+                last_phase = phase, child['status']
+        worker = submitted = None
+        _log(postprocessing_log.event(sid, 'prs', 'start', detail='三級後處理'))
+        try:
+            submitted = prs_jobs.start(sid, parent_job_id=job_id, launch=False)
+            children[sid] = submitted
+            _update(job_id, prs_jobs=dict(children), prs_sample=sid)
+            with (prs_jobs.job_dir(submitted['job_id'])/'log.txt').open('a', buffering=1) as log:
+                worker = prs_run.Worker(submitted['job_id'], log_stream=log, on_update=changed)
+                try:
+                    worker.run(sample_locks_held=True)
+                except BaseException as exc:
+                    cancelled = isinstance(exc, (SystemExit, KeyboardInterrupt, prs_run.Cancelled))
+                    traceback.print_exc(file=log)
+                    worker.update(status='cancelled' if cancelled else 'failed',
+                                  step='已取消' if cancelled else '失敗', error=str(exc))
+                    if isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                        raise
+            child = worker.job
+            detail = child.get('error') or child.get('warning') or ''
+            if child['status'] != 'done':
+                warnings.append(f'PRS {sid} 未完整完成：{detail or child["status"]}；可至個案PRS卡片補跑')
+            _log(postprocessing_log.event(sid, 'prs', child['status'], elapsed=time.monotonic()-started, detail=detail))
+        except BaseException as exc:
+            interrupted = isinstance(exc, (SystemExit, KeyboardInterrupt))
+            terminal = 'cancelled' if interrupted else 'failed'
+            if worker is not None:
+                worker.update(status=terminal, step='已取消' if interrupted else '失敗', error=str(exc))
+            elif submitted:
+                record = prs_jobs.read_job(submitted['job_id'])
+                record.update(status=terminal, step='已取消' if interrupted else '失敗', error=str(exc), updated=time.time())
+                prs.atomic_json(prs_jobs.job_dir(submitted['job_id'])/'state.json', record)
+                children[sid] = prs_jobs.public_job(record)
+                _update(job_id, prs_jobs=dict(children))
+            else:
+                children[sid] = dict(status='blocked', error=str(exc))
+            if interrupted:
+                raise
+            warnings.append(f'PRS {sid} 未完成：{exc}；可至個案PRS卡片補跑')
+            _log(postprocessing_log.event(sid, 'prs', 'failed', elapsed=time.monotonic()-started, detail=str(exc)))
+        _update(job_id, prs_jobs=dict(children), prs_progress_pct=95+4*(index+1)/len(samples))
+    existing = (dragen_jobs.load_state(job_id) or {}).get('annotation_warnings') or []
+    _update(job_id, annotation_warnings=list(dict.fromkeys(existing+warnings)))
+    return children
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--job-id", required=True)
@@ -2295,11 +2365,9 @@ def main() -> int:
                 _log(f"[cache] {sid}: refresh failed: {cache_error}")
 
         if args.with_prs:
-            from ..services import prs_jobs
-            # Published source marker now binds the PRS input. Child workers
-            # wait for the shared sample locks released in our finally block.
-            prs_children = prs_jobs.enqueue_tertiary(samples, job_id, _log)
-            _update(job_id, prs_jobs=prs_children)
+            # Publish source identity first, but remain running through PRS.
+            # The inline worker shares our sample ownership, never waits for it.
+            _run_prs_postprocessing(samples, job_id)
         finished_at = _now()
         _set_step(job_id, "done", state="done", finished_at=finished_at)
         from ..services import unregistered_samples
@@ -2308,6 +2376,10 @@ def main() -> int:
         job_succeeded = True
         return 0
 
+    except (SystemExit, KeyboardInterrupt):
+        _update(job_id, state='cancelled', finished_at=_now())
+        _log('[tertiary_run] CANCELLED')
+        return 143
     except Exception as e:
         traceback.print_exc()
         _update(job_id,

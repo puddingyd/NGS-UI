@@ -24,3 +24,15 @@ test('tertiary terminal state keeps polling PRS and refreshes index only once', 
   assert.equal(refreshed, 1);
   assert.equal(seen.length, 2);
 });
+
+test('selected PRS reserves postprocessing progress and reaches 100 only at parent done',()=>{
+  const code=source.slice(source.indexOf('function _dragenJobStepLabel('),source.indexOf('function _toggleDragenLog('));
+  const context={};vm.runInNewContext(code,context);
+  const steps=['post-processing:clinvar-latest','sample-step:review-tsv','post-processing:cnv-rescue','promote-output'];
+  const values=steps.map(step=>context._dragenProgressPercent({state:'running',step,with_prs:true}));
+  for(const pct of [95,96,98,99])values.push(context._dragenProgressPercent({state:'running',step:'post-processing:prs',prs_execution:'postprocessing',prs_progress_pct:pct}));
+  assert(values.every(p=>p<100));assert(values.every((p,i)=>i===0 || p>=values[i-1]));
+  assert.equal(context._dragenProgressPercent({state:'done',step:'done',with_prs:true}),100);
+  assert.equal(context._dragenProgressPercent({state:'running',step:'promote-output',with_prs:false}),99);
+  assert.match(context._dragenJobStepLabel({step:'post-processing:prs',prs_sample:'S1',prs_phase:'祖源與品質檢查'}),/PRS 後處理 · S1 · 祖源與品質檢查/);
+});
