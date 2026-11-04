@@ -6,6 +6,7 @@ import gzip
 import json
 import os
 import subprocess
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -263,6 +264,10 @@ def test_all_writable_paths_and_final_artifacts_are_platform_owned(env, monkeypa
     for name in ('NXF_HOME', 'NXF_ASSETS', 'NXF_PLUGINS_DIR', 'TMPDIR', 'NXF_SINGULARITY_CACHEDIR', 'APPTAINER_CACHEDIR'):
         assert Path(runtime['env'][name]).is_relative_to(config.PRS_WORK_ROOT/'CASE')
     assert 'NXF_CACHE_DIR' not in runtime['env'] and 'NXF_WORK' not in runtime['env']
+    REAL_COMMAND(worker, ['apptainer', 'exec'], 'probe')
+    probe_env = captured[-1]['env']
+    assert str(config.PRS_WORK_ROOT/'CASE/.runtime/tmp') not in probe_env['APPTAINER_BINDPATH']
+    assert ':/tmp' not in probe_env['APPTAINER_BINDPATH'] and ':/var/tmp' not in probe_env['APPTAINER_BINDPATH']
     worker.run()
     record, _ = prs.read_json(prs.score_path('CASE'))
     assert set(record['artifacts']) == {'score', 'ancestry'}
@@ -375,3 +380,32 @@ def test_container_probe_failure_stops_before_scoring_and_preserves_previous_res
         prs_run.Worker(second).run()
     assert not env.calls and prs.score_path('CASE').read_bytes() == previous
     assert not list((config.PRS_WORK_ROOT/'CASE/.runtime/tmp').glob('.ngs-ui-prs-*'))
+
+
+def test_automatic_prs_survives_parent_runtime_cleanup_and_matches_manual_environment(env, monkeypatch):
+    from app.services import tertiary_workspace, nextflow_work
+    monkeypatch.setenv('NXF_HOME', str(env.root/'empty-nextflow'))
+    reference = env.root/'reference'; reference.mkdir()
+    monkeypatch.setenv('APPTAINER_BIND', f'{reference}:{reference}:ro')
+    parent_env = tertiary_workspace.environment(config.TERTIARY_NF_WORK_ROOT, 'dragen', 'parent-job')
+    for key, value in parent_env.items(): monkeypatch.setenv(key, value)
+    monkeypatch.setenv(nextflow_work.SCOPE_ENV, 'dragen')
+    monkeypatch.setenv(nextflow_work.FD_ENV, '99')
+    launches = []
+    def spawn(args, **kwargs):
+        launches.append(kwargs['env']); return SimpleNamespace(pid=os.getpid())
+    monkeypatch.setattr(jobs.subprocess, 'Popen', spawn)
+    automatic = jobs.enqueue_tertiary([dict(sample_id='CASE')], 'parent-job', lambda text: None)['CASE']['job_id']
+    parent = tertiary_workspace.runtime_paths(config.TERTIARY_NF_WORK_ROOT, 'dragen', 'parent-job')['job']
+    shutil.rmtree(parent)
+    inherited = launches[0]
+    assert all(str(parent) not in inherited[k] for k in ('APPTAINER_BINDPATH', 'SINGULARITY_BINDPATH', 'TMPDIR', 'NXF_HOME'))
+    assert str(reference) in inherited['APPTAINER_BINDPATH']
+    assert nextflow_work.FD_ENV not in inherited
+    # The detached worker can now acquire its own lease and finish after cleanup.
+    for key, value in inherited.items(): monkeypatch.setenv(key, value)
+    prs_run.Worker(automatic).run()
+    assert jobs.read_job(automatic)['status'] == 'done'
+    jobs.start('CASE', new_run=True)
+    for key in ('APPTAINER_BINDPATH', 'SINGULARITY_BINDPATH', 'TMPDIR', 'NXF_HOME'):
+        assert launches[0][key] == launches[1][key]

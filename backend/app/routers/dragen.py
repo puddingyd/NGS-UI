@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from ..auth import current_user
 from ..services import dragen_jobs, litvar2_jobs
@@ -172,8 +172,24 @@ def get_dragen_job(job_id: str):
         raise HTTPException(404, f"job not found: {job_id}")
     state = dict(state)
     state["running"]  = dragen_jobs.is_running(job_id)
-    state["log_tail"] = dragen_jobs.tail_log(job_id, n=80)
+    state['prs_children'] = dragen_jobs.prs_followup(state)
+    state['prs_active'] = any(c.get('status') in ('queued', 'running', 'cancelling') for c in state['prs_children'])
+    state["log_tail"] = dragen_jobs.tail_log(job_id, n=80) + dragen_jobs.prs_followup_log(state, state['prs_children'])
+    state['postprocessing_log_available'] = (dragen_jobs._job_dir(job_id)/'postprocessing.log').is_file()
     return state
+
+
+@router.get('/jobs/{job_id}/postprocessing-log')
+def download_postprocessing_log(job_id: str):
+    try:
+        path = dragen_jobs.postprocessing_log_path(job_id)
+        # Snapshot the bytes: the worker can still be appending to this file.
+        return Response(path.read_bytes(), media_type='text/plain; charset=utf-8',
+                        headers={'Content-Disposition': f'attachment; filename="{job_id}.postprocessing.log"'})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @router.post("/jobs/{job_id}/cancel")

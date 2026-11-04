@@ -12960,6 +12960,14 @@ function _dragenSetJob(state) {
     if (stateEl) stateEl.textContent = state.error
       ? `failed — ${state.error}`
       : [state.state, ...(state.annotation_warnings || [])].join("；");
+    if (stateEl && state.prs_children?.length) {
+      stateEl.textContent += '；PRS：' + state.prs_children.map(c => `${c.sample_id} ${c.status}`).join('、');
+    }
+    const toolsLog = document.getElementById('dragen-postprocessing-log');
+    if (toolsLog) {
+      toolsLog.hidden = !state.postprocessing_log_available;
+      toolsLog.href = `${API_BASE}/dragen/jobs/${encodeURIComponent(state.job_id)}/postprocessing-log`;
+    }
     if (progressBar) progressBar.style.width = `${pct}%`;
     if (progressText) progressText.textContent = `${pct}%`;
     if (progressBar) progressBar.classList.toggle("failed", state.state === "failed");
@@ -13069,16 +13077,22 @@ function _toggleDragenLog() {
 
 function _dragenStartPolling(jobId) {
   if (_DRAGEN_STATE.pollTimer) clearInterval(_DRAGEN_STATE.pollTimer);
+  let refreshed = false;
   const tick = async () => {
     try {
       const s = await apiFetch(`/dragen/jobs/${encodeURIComponent(jobId)}`);
       if (!s) return;
       _dragenSetJob(s);
       if (s.state === "done" || s.state === "failed" || s.state === "cancelled") {
-        clearInterval(_DRAGEN_STATE.pollTimer);
-        _DRAGEN_STATE.pollTimer = null;
-        // Refresh sample list so the new SID appears in the combobox.
-        try { await loadIndex?.(); } catch (_e) {}
+        if (!refreshed) {
+          refreshed = true;
+          // Tertiary publication is usable while the independent PRS job runs.
+          try { await loadIndex?.(); } catch (_e) {}
+        }
+        if (!s.prs_active) {
+          clearInterval(_DRAGEN_STATE.pollTimer);
+          _DRAGEN_STATE.pollTimer = null;
+        }
       }
     } catch (_e) {}
   };
@@ -13091,7 +13105,7 @@ async function _dragenRecoverActiveJob() {
   // it in the topbar (so the user sees their previous run continuing).
   try {
     const jobs = await apiFetch("/dragen/jobs") || [];
-    const active = jobs.find(j => j.running || j.state === "queued" || j.state === "running");
+    const active = jobs.find(j => j.running || j.state === "queued" || j.state === "running" || j.prs_active);
     if (
       active?.job_id
       && (active.job_id !== _DRAGEN_STATE.job?.job_id || !_DRAGEN_STATE.pollTimer)
@@ -13442,10 +13456,16 @@ function setupPipelineList() {
       const log = document.getElementById("pipeline-list-log");
       if (title) title.textContent = `${sid} Log`;
       if (log) log.textContent = "載入中…";
+      const toolsLog = document.getElementById('pipeline-list-postprocessing-log');
+      if (toolsLog) toolsLog.hidden = true;
       if (logPanel) logPanel.hidden = false;
       try {
         const data = await apiFetch(`/dragen/outputs/${encodeURIComponent(sid)}/log`);
         if (log) log.textContent = data?.log || "（沒有可用的 NGS-UI 三級分析 Log）";
+        if (toolsLog && data?.postprocessing_log_available) {
+          toolsLog.href = `${API_BASE}/dragen/jobs/${encodeURIComponent(data.job_id)}/postprocessing-log`;
+          toolsLog.hidden = false;
+        }
         if (log) log.scrollTop = 0;
       } catch (e) {
         if (log) log.textContent = `讀取失敗：${e.message || e}`;

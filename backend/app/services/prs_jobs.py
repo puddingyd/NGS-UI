@@ -17,7 +17,7 @@ import time
 import uuid
 
 from .. import config
-from . import prs, prs_paths, sample_layout
+from . import prs, prs_paths, sample_layout, postprocessing_log
 
 ACTIVE = {'queued', 'running', 'cancelling'}
 SCORING = config.REPO_ROOT / 'research/prs/scoring_v211'
@@ -235,9 +235,11 @@ def start(sid, candidate_id=None, username='', parent_job_id=None, new_run=False
         prs.atomic_json(directory/'state.json', record)
         prs.atomic_json(directory/'config.json', effective)
         try:
+            _, worker_env = prs_paths.environment(paths, record['pipeline_run_id'], 'worker')
+            worker_env['PYTHONPATH'] = str(config.REPO_ROOT/'backend')
             with (directory/'log.txt').open('a') as log:
                 proc = subprocess.Popen([sys.executable, '-m', 'app.workers.prs_run', jid],
-                    cwd=config.REPO_ROOT, env=dict(os.environ, PYTHONPATH=str(config.REPO_ROOT/'backend')),
+                    cwd=config.REPO_ROOT, env=worker_env,
                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             # Worker owns state.json after spawn. Separate PID file avoids races.
             (directory/'pid').write_text(str(proc.pid))
@@ -266,14 +268,20 @@ def log(sid, jid):
     return dict(job=public_job(job), log=tail)
 
 
+def failure_message(jid, fallback):
+    return postprocessing_log.failure_detail(postprocessing_log.read_tail(job_dir(jid)/'log.txt'), fallback)
+
+
 def enqueue_tertiary(samples, parent_job_id, logger=print):
     results = {}
     for sample in samples:
         sid = sample['sample_id']
+        logger(postprocessing_log.event(sid, 'prs', 'start', detail='排入獨立背景工作'))
         try:
             results[sid] = start(sid, parent_job_id=parent_job_id)
-            logger(f'[PRS] {sid}: 已排入計分工作 {results[sid]["job_id"]}')
+            logger(postprocessing_log.event(sid, 'prs', 'queued',
+                detail=f'job={results[sid]["job_id"]}；等待三級釋放個案鎖，計分結果另行發布'))
         except Exception as exc:
             results[sid] = dict(status='blocked', error=str(exc))
-            logger(f'[PRS] {sid}: 未啟動，{exc}；可由個案 PRS 區補跑')
+            logger(postprocessing_log.event(sid, 'prs', 'blocked', detail=f'{exc}；可由個案PRS區補跑'))
     return results

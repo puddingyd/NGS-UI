@@ -37,7 +37,7 @@ def test_runtime_is_under_the_leased_mode_and_preserves_installed_nextflow(isola
     for name in ('framework', 'plugins', 'assets'):
         assert (Path(first['NXF_HOME'])/name/'installed').read_text() == name
     assert first['NXF_CACHE_DIR'] == str(isolated/'contexts/shared-dragen/launch/.nextflow/cache')
-    assert '/reference:/reference:ro' in first['APPTAINER_BIND']
+    assert '/reference:/reference:ro' in first['APPTAINER_BINDPATH']
     assert first['APPTAINERENV_TMPDIR'] == first['TMPDIR']
     paths = workspace.runtime_paths(isolated, 'dragen', 'job1')
     paths['stage'].mkdir()
@@ -67,7 +67,7 @@ def test_site_script_cannot_redirect_temp_and_cache_but_keeps_tool_paths_and_bin
         assert env[key] == str(expected)
     assert env['NXF_CACHE_DIR'] != '/wrong'
     assert env['PATH'].startswith('/site-tools:')
-    assert '/site-reference:/site-reference:ro' in env['APPTAINER_BIND']
+    assert '/site-reference:/site-reference:ro' in env['APPTAINER_BINDPATH']
 
 
 def test_verified_copy_materializes_links_and_preserves_nanosecond_times(tmp_path):

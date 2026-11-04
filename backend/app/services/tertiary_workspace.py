@@ -17,7 +17,7 @@ import stat
 import sys
 import tempfile
 
-from . import nextflow_work
+from . import nextflow_work, container_runtime
 
 
 def runtime_paths(root: Path, scope: str, job_id: str) -> dict[str, Path]:
@@ -80,11 +80,8 @@ def environment(root: Path, scope: str, job_id: str) -> dict[str, str]:
                NXF_PLUGINS_DIR=str(paths['nextflow']/'plugins'),
                NXF_CACHE_DIR=str(paths['cache']))
     tmp = str(paths['tmp'])
-    names = ('APPTAINER_BIND', 'APPTAINER_BINDPATH', 'SINGULARITY_BIND', 'SINGULARITY_BINDPATH')
     required = [f'{paths["root"]}:{paths["root"]}', f'{tmp}:{tmp}', f'{tmp}:/tmp', f'{tmp}:/var/tmp']
-    binds = list(dict.fromkeys(b for name in names for b in os.environ.get(name, '').split(',') if b))
-    for name in names:
-        env[name] = ','.join([b for b in binds if b not in required] + required)
+    env.update(container_runtime.job_bind_environment(os.environ, paths['root'], required))
     for prefix in ('APPTAINERENV_', 'SINGULARITYENV_'):
         for name in ('TMPDIR', 'TMP', 'TEMP'):
             env[prefix+name] = tmp

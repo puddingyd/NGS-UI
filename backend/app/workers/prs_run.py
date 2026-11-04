@@ -11,7 +11,7 @@ import traceback
 import uuid
 
 from .. import config
-from ..services import prs, prs_jobs as jobs, prs_paths, nextflow_work
+from ..services import prs, prs_jobs as jobs, prs_paths, nextflow_work, postprocessing_log, container_runtime
 from .dragen_run import _acquire_sample_locks, _release_sample_locks, _load_secrets
 
 
@@ -75,9 +75,13 @@ class Worker:
 
     def command(self, args, step):
         self.update(status='running', step=step)
-        print('[PRS] '+step, flush=True)
+        started = time.monotonic()
+        postprocessing_log.print_event(postprocessing_log.event(self.job['sample_id'], 'prs', 'start', detail=step))
         cwd, env = prs_paths.environment(self.plan['path_layout'], self.job['pipeline_run_id'],
                                          'ancestry' if '--raw-source' in args else 'score')
+        if args[0] == 'apptainer':
+            env = container_runtime.without_bind_destinations(env,
+                {str(prs_paths.container_tmp(self.plan['path_layout'])), '/tmp', '/var/tmp'})
         fds = ()
         if self.work_lease is not None:
             env.update(nextflow_work.lease_env(config.TERTIARY_NF_WORK_ROOT, 'prs', self.work_lease))
@@ -89,7 +93,12 @@ class Worker:
                 self.update()
                 time.sleep(1)
             if self.process.returncode:
-                raise RuntimeError(f'{step}失敗（exit {self.process.returncode}），請查看 Log')
+                reason = jobs.failure_message(self.job['job_id'], f'exit={self.process.returncode}')
+                postprocessing_log.print_event(postprocessing_log.event(self.job['sample_id'], 'prs', 'failed',
+                    elapsed=time.monotonic()-started, detail=f'{step}；{reason}'))
+                raise RuntimeError(f'{step}失敗（exit {self.process.returncode}）：{reason}')
+            postprocessing_log.print_event(postprocessing_log.event(self.job['sample_id'], 'prs', 'done',
+                elapsed=time.monotonic()-started, detail=step))
         finally:
             self.stop_process()
             self.process = None

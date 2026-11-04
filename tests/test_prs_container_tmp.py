@@ -42,7 +42,8 @@ def test_direct_container_calls_preserve_admin_binds_and_redirect_all_temp(runti
             monkeypatch.setenv(prefix+key, '/tmp/unwanted')
     _, env = prs_paths.environment(paths, 'run1', 'score')
     tmp = str(prs_paths.container_tmp(paths))
-    for key in ('APPTAINER_BIND', 'APPTAINER_BINDPATH', 'SINGULARITY_BIND', 'SINGULARITY_BINDPATH'):
+    assert env['APPTAINER_BIND'] == env['SINGULARITY_BIND'] == ''
+    for key in ('APPTAINER_BINDPATH', 'SINGULARITY_BINDPATH'):
         assert '/data:/data:ro' in env[key] and '/reference:/reference:ro' in env[key]
         assert env[key].endswith(f'{tmp}:{tmp},{tmp}:/tmp,{tmp}:/var/tmp')
     for prefix in ('APPTAINERENV_', 'SINGULARITYENV_'):

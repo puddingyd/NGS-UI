@@ -57,7 +57,7 @@ from pathlib import Path
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
 from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, gba, specialized
-from ..services import nextflow_work, tertiary_workspace
+from ..services import nextflow_work, tertiary_workspace, postprocessing_log
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -1363,12 +1363,11 @@ def _update(job_id: str, **kw) -> None:
 
 
 def _log(message: str = "") -> None:
-    """Write one worker-owned log line with a Taipei timestamp suffix."""
-    suffix = f"[{_now()}]"
-    print(f"{message} {suffix}" if message else suffix, flush=True)
+    """Write worker events with the same leading Taipei timestamp."""
+    print(f"[{_now()}] {message}".rstrip(), flush=True)
 
 
-def _set_step(job_id: str, step: str, **kw) -> None:
+def _set_step(job_id: str, step: str, *, log_transition=True, **kw) -> None:
     """Persist and log step transitions for post-run timing analysis."""
     now = _now()
     st = dragen_jobs.load_state(job_id) or {}
@@ -1382,7 +1381,8 @@ def _set_step(job_id: str, step: str, **kw) -> None:
     st.update(kw)
     st.update(step=step, step_started_at=now, step_history=history)
     dragen_jobs.save_state(job_id, st)
-    _log(f"[step] {step}")
+    if log_transition:
+        _log(f"[step] {step}")
 
 
 def _record_nextflow_step(
@@ -1487,43 +1487,66 @@ def _run(
     on_line=None,
     display_cmd: list[str] | None = None,
     cwd: Path | None = None,
+    post_sample: str | None = None,
+    post_step: str = 'postprocessing',
+    raw_log: Path | None = None,
 ) -> None:
     """Stream a subprocess's stdout/stderr into this worker's stdout
     (which is already redirected to log.txt by dragen_jobs.start_job).
     Raises on non-zero exit so the outer try/except records failure.
     """
     started = time.monotonic()
-    _log()
-    _log(f"========================= [{label}] =========================")
-    _log("$ " + " ".join(display_cmd or cmd))
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        errors="replace",
-        bufsize=1,
-        cwd=str(cwd) if cwd is not None else None,
-        pass_fds=nextflow_work.inherited_fds(),
-    )
+    summary = postprocessing_log.Summary(post_sample, post_step, _log) if post_sample else None
+    details = None
+    if raw_log is not None:
+        raw_log.parent.mkdir(parents=True, exist_ok=True)
+        details = raw_log.open('a', encoding='utf-8', buffering=1)
+        details.write(f'\n[{_now()}] {label}\n$ {shlex.join(display_cmd or cmd)}\n')
+    if summary:
+        summary.start(detail=f'tool_log={raw_log.name}' if raw_log else '')
+    else:
+        _log()
+        _log(f"========================= [{label}] =========================")
+        _log("$ " + " ".join(display_cmd or cmd))
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            bufsize=1,
+            cwd=str(cwd) if cwd is not None else None,
+            pass_fds=nextflow_work.inherited_fds(),
+        )
+    except BaseException:
+        if details: details.close()
+        if summary: summary.finish(127)
+        raise
     assert proc.stdout is not None
-    for line in proc.stdout:
-        suffix = ""
-        if on_line is not None:
-            suffix = on_line(line) or ""
-        if suffix:
-            print(line.rstrip("\n") + suffix, flush=True)
-        else:
-            print(line, end="", flush=True)
-    proc.wait()
+    try:
+        for line in proc.stdout:
+            if details: details.write(line)
+            suffix = (on_line(line) or '') if on_line is not None else ''
+            if summary:
+                summary.feed(line)
+            elif suffix:
+                print(line.rstrip("\n") + suffix, flush=True)
+            else:
+                print(line, end="", flush=True)
+        proc.wait()
+    finally:
+        if details: details.close()
     elapsed = time.monotonic() - started
-    _log(f"[command] {label} finished exit={proc.returncode} elapsed={elapsed:.1f}s")
+    failure = summary.finish(proc.returncode) if summary else ''
+    if not summary:
+        _log(f"[command] {label} finished exit={proc.returncode} elapsed={elapsed:.1f}s")
     if proc.returncode != 0:
-        raise RuntimeError(f"{label} failed (exit {proc.returncode})")
+        raise RuntimeError(f"{label} failed (exit {proc.returncode})" + (f': {failure}' if failure else ''))
 
 
 def _run_cnv_rescue_for_sample(*, mode: str, sample: dict, base_tsv: Path,
-                               post_dir: Path, scripts: Path, on_line=None) -> None:
+                               post_dir: Path, scripts: Path, on_line=None, job_id=None) -> None:
     if mode != "dragen":
         return
     # Independent of --skip-cnv: reannotate integrated PASS + Rule B CNVs.
@@ -1534,6 +1557,8 @@ def _run_cnv_rescue_for_sample(*, mode: str, sample: dict, base_tsv: Path,
          "--post-dir", str(post_dir), "--sample", sample["sample_id"],
          "--source-sample", sample["source_sample_id"]],
         label=f"DRAGEN integrated CNV annotation {sample['sample_id']}", on_line=on_line,
+        post_sample=sample['sample_id'], post_step='cnv-rescue',
+        raw_log=TERTIARY_JOBS_DIR/job_id/'postprocessing.log' if job_id else None,
     )
 
 
@@ -1967,6 +1992,8 @@ def main() -> int:
         final_raw_tsv_by_sid: dict[str, Path] = {}
         for sample in samples:
             sid = sample["sample_id"]
+            prepare_started = time.monotonic()
+            _log(postprocessing_log.event(sid, 'prepare', 'start'))
             source_sid = sample["source_sample_id"]
             source_vcf = sample["vcf_path"]
             staged_pipeline_id = sid if legacy_staging else source_sid
@@ -2112,6 +2139,7 @@ def main() -> int:
                 if kind == "cnv":
                     pipeline_cnv_by_sid[sid] = annotsv_src
                 _log(f"[source] {sid}: use pipeline {kind.upper()} TSV directly ({annotsv_src})")
+            _log(postprocessing_log.event(sid, 'prepare', 'done', elapsed=time.monotonic()-prepare_started))
 
         # 5. Post-processing chain. ClinVar is compared against the weekly UI
         # snapshot here; the fixed pipeline annotation remains immutable.
@@ -2120,7 +2148,7 @@ def main() -> int:
             match = re.search(r"\[(post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+start", line)
             if match:
                 group = "post-processing" if match.group(1) == "post-processing-step" else "sample-step"
-                _set_step(job_id, f"{group}:{match.group(2)}")
+                _set_step(job_id, f"{group}:{match.group(2)}", log_transition=False)
 
         post_processing_count = len(samples)
         for post_processing_index, sample in enumerate(samples):
@@ -2193,11 +2221,12 @@ def main() -> int:
                     label=f"post-processing {sid}",
                     on_line=track_post_processing,
                     display_cmd=display_stop_args,
+                    post_sample=sid, raw_log=TERTIARY_JOBS_DIR/job_id/'postprocessing.log',
                 )
                 _record_gpn_completion(job_id, sid, post_dir, bool(args.research_only))
                 _run_cnv_rescue_for_sample(
                     mode=mode, sample=sample, base_tsv=pipeline_cnv_by_sid[sid],
-                    post_dir=post_dir, scripts=scripts, on_line=track_post_processing,
+                    post_dir=post_dir, scripts=scripts, on_line=track_post_processing, job_id=job_id,
                 )
                 sample_layout.write_layout_marker_in_sample_dir(
                     staged_sample_dir,

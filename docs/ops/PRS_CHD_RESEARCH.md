@@ -1,4 +1,4 @@
-# CHD PRS 研究風險 UI — v9.81
+# CHD PRS 研究風險 UI — v9.84
 
 ## 本版範圍
 
@@ -124,6 +124,25 @@ v9.81固定主機暫存位置為：
 
 本次衍生config的hash有變更；舊工作不原地改寫、不強制放寬guarded resume。部署後在PRS區「重新開始」，建立使用新設定的PRS run；可能重新執行raw，但不必重跑三級。舊run、已發布score與風險快照保留，失敗不覆蓋。程式不會自動清理主機 `/tmp` 或搬移舊暫存，避免影響其他工作。
 
+### 三級自動 PRS 的環境交接與 Log（v9.84）
+
+曾觀察到三級自動PRS的容器預檢失敗，但個案PRS頁面手動重試成功：三級worker設定的一次性 `contexts/shared-dragen/.runtime/jobs/{三級job}/tmp` 掛載，被傳入detached PRS。PRS等待個案鎖釋放後才執行，此時三級finally已清除該tmp，Apptainer因此以 `mount source ... doesn't exist` 結束。這與PRS自己的暫存目錄及模型資料無關。
+
+平台現於建立PRS worker前就套用獨立個案環境，每個PRS stage再次核對同樣的掛載：保留reference與工具bind，移除所有屬於三級一次性jobs樹的source（無論它當時是否還存在），替換舊 `/tmp`、`/var/tmp`，依容器destination去重。使用BINDPATH相容變數，清空會重複添加的BIND變數；容器預檢已透過argv明寫的三個tmp掛載，不再由env加第二次。三級本身也使用相同的bind整理規則，避免site script與多次環境套用累積相同掛載。
+
+不保留／重建已清理的父tmp，不放寬輸入或model lock檢查。這次只改環境交接，未改PRS科學config及既有run fingerprint；更新後可在個案PRS頁面重試失敗工作，原guarded resume規則照常生效，不需重跑三級。手動已成功的PRS結果可以沿用。
+
+後處理主Log使用下列格式，stopgaps、GPN、CNV整合註解及PRS排程／執行共用步驟摘要：
+
+```text
+[2026-11-04 10:00:00] [postprocessing] sample=S1 step=genebe status=start
+[2026-11-04 10:01:00] [postprocessing] sample=S1 step=genebe status=done elapsed=60.0s
+```
+
+AnnotSV配置、欄位清單、GPN signature差異與完整第三方輸出保留在 `$NGS_UI_HOME/data/jobs/tertiary/{三級job}/postprocessing.log`，主Log顯示狀態、耗時、必要數量與警告。三級進度視窗及分析清單的「查看Log」均可下載這份工具Log；新增登入保護的 `GET /api/dragen/jobs/{job}/postprocessing-log` 只提供該job固定檔案的當下快照。舊工作的原始log不重新改寫。
+
+三級done代表00–08已發布，PRS仍為獨立背景工作。前端持續輪詢其狀態，API／三級Log會依parent job與sample識別核對子工作，顯示實際step、失敗／警告及FATAL等原因；PRS失敗不將三級改成failed，也不回滾已發布結果。手動補跑是另一個工作，不把舊子工作紀錄改成成功。PRS詳細工具Log仍由個案PRS頁面查看。
+
 ## 固定參數與科學驗算
 
 - HR：INTERVENE 原研究 Estonian Biobank（EstBB）歐洲祖源，非跨 cohort meta-analysis。男性使用六個非參考 PRS 組各四個年齡組的 HR/SE/MedianAAO，按作者 `1/SE²` 加權線性回歸擬合 log-HR；外側年齡固定於最近組的**擬合值**。女性使用六組 sex-specific HR；參考組 HR=1。
@@ -224,6 +243,7 @@ python3 -m research.prs.absolute_risk.build_taiwan \
 - v9.79 路徑隔離／完整發布／重試／刪除及相關三級、risk 回歸：81項通過。測試以合成輸入與隔離假工具執行，不代表院內 Nextflow／WGS 已驗收；原 PRS 專案逐檔 bytes／mtime 不變、舊路徑不resume、祖源失敗保留score、缺完整artifact不覆蓋既有結果均已驗證。
 - v9.80 將PRS工作納入既有三級 `nf_work/prs/`；相關回歸與Nextflow清理測試共114項通過，涵蓋預設／自訂根目錄、執行中與已完成PRS均保留、其他閒置三級暫存可清、runner實際繼承lease。未在院內執行WGS。
 - v9.81 容器暫存／queue／worker／risk／三級與清理回歸共127項通過，原版計分27項離線測試通過，核心checksum未變。以真正Nextflow 24.10.4驗證空白／既有config及profile合併，並以模擬容器engine執行Nextflow產生的 `env -` launcher，確認Python暫存寫到個案目錄；這驗證指令產生與環境傳遞，不是實際Apptainer掛載或院內WGS驗收。
+- v9.84 相關198項Python與94項前端測試通過，含父tmp清除後自動PRS完成、與手動環境一致、reference保留、目的地去重、AnnotSV raw保留與摘要、失敗根因、下載權限及PRS持續輪詢。實際Nextflow24.10.4的設定／resume／launcher測試仍以模擬engine執行，院內Linux容器與WGS待部署後驗收。
 
 可重複執行的測試入口：
 

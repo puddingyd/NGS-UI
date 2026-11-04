@@ -8,7 +8,7 @@ import shlex
 import tempfile
 
 from .. import config
-from . import prs, sample_layout
+from . import prs, sample_layout, container_runtime, nextflow_work
 
 VERSION = 'NGS_UI_PRS_PATHS_V1'
 SCORE_FILES = ('summary.json', 'scores.tsv', 'report.md', 'status.json',
@@ -141,12 +141,12 @@ def environment(paths, run_id, stage):
     tmp = str(container_tmp(paths))
     # Direct Apptainer calls in the frozen raw script do not use Nextflow's
     # runOptions. Cover them too, preserving administrator-supplied bind paths.
-    bind_vars = ('APPTAINER_BIND', 'APPTAINER_BINDPATH', 'SINGULARITY_BIND', 'SINGULARITY_BINDPATH')
-    binds = list(dict.fromkeys(b for name in bind_vars for b in env.get(name, '').split(',') if b))
     required = [f'{tmp}:{tmp}', f'{tmp}:/tmp', f'{tmp}:/var/tmp']
-    binds = [b for b in binds if b not in required] + required
-    for name in bind_vars:
-        env[name] = ','.join(binds)
+    env.update(container_runtime.job_bind_environment(env, config.TERTIARY_NF_WORK_ROOT, required))
+    # This is a new job boundary, not an inherited tertiary lease. The PRS
+    # worker acquires and explicitly passes its own lease to each command.
+    for name in (nextflow_work.ROOT_ENV, nextflow_work.SCOPE_ENV, nextflow_work.FD_ENV):
+        env.pop(name, None)
     for prefix in ('APPTAINERENV_', 'SINGULARITYENV_'):
         for name in ('TMPDIR', 'TMP', 'TEMP'):
             env[prefix+name] = tmp

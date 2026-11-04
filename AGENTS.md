@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**三級自動PRS／後處理Log（v9.84，2026-11-04）**：`container_runtime.job_bind_environment()`依容器destination去重bind，移除三級`contexts/shared-{dragen,nckuh}/.runtime/jobs/*`的一次性來源及舊/tmp、/var/tmp，保留reference與工具bind，以BINDPATH單一通道套用當前工作掛載。PRS在spawn及每個stage都使用個案環境，清掉父lease marker並另取prs lease；不能靠保留／重建已清理的父tmp解決。三級亦共用此helper避免site script重複累積bind。`postprocessing_log.Summary`將stopgaps／GPN／CNV-rescue轉為統一sample/step/status/elapsed摘要，完整子程序stdout/stderr另存`data/jobs/tertiary/{job}/postprocessing.log`；原步驟marker仍用於進度。`GET /api/dragen/jobs/{job}/postprocessing-log`需登入、嚴格job ID，只下載固定檔案的當下快照；前端進度與分析清單提供下載連結。三級Log/API動態連結PRS子狀態，核對parent/sample，提取FATAL等根因；PRS失敗不改三級done、不覆蓋已發布結果。前端三級done後持續輪詢prs_active，sample index只刷新一次；恢復頁面可找回僅PRS仍active的工作。舊資料不遷移，新增Log格式僅適用新版工作。相關198項Python（含真實Nextflow24.10.4配模擬engine）及94項前端測試通過；尚未院內WGS驗收，部署仍由使用者執行。
+
 **個案清單疾病摘要（v9.83，2026-11-03）**：`omim_store.compact_disease_label()` 先取 Disease 欄首行，再依遺傳模式標記截斷同一行後續說明；支援 AD/AR/XL/YL/MT、Mi、DR、DD、SMu、Mu、Isol、IC 與複合代碼，不從描述內其他疾病借用模式。空白 `()` 或未知代碼保留首行，不帶入後續 OMIM 段落。`CASE_SUMMARY_VERSION=5`、`CASE_TABLE_VERSION=6` 同步使舊摘要與總表自動重建；部署後重新開啟個案清單即可，不需重跑三級，完整卡片說明與 reviewer 選取不變。
 
 成大醫院基因醫學部 **NGS 分析平台**（repo `puddingyd/NGS-UI`）。這份文件記錄整個系統的流程、結構、慣例與踩雷點，讓新的 session / auto-compact 後也能完全接續工作。

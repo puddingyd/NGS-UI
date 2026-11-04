@@ -445,9 +445,54 @@ def read_log(job_id: str) -> str:
     if not p.is_file():
         return ""
     try:
-        return p.read_text(encoding="utf-8", errors="replace")
+        return p.read_text(encoding="utf-8", errors="replace") + prs_followup_log(load_state(job_id) or {})
     except OSError:
         return ""
+
+
+def prs_followup(job):
+    """Read independent child state without rewriting a finished tertiary job."""
+    from . import prs_jobs
+    children = []
+    for sid, submitted in (job.get('prs_jobs') or {}).items():
+        current = dict(submitted, sample_id=sid)
+        if current.get('job_id'):
+            try:
+                child = prs_jobs.read_job(current['job_id'])
+                if child.get('sample_id') != sid or child.get('parent_job_id') != job.get('job_id'):
+                    raise ValueError('PRS 子工作來源不符')
+                current.update(prs_jobs.public_job(child))
+                if current.get('error') or current.get('warning'):
+                    field = 'error' if current.get('error') else 'warning'
+                    cause = prs_jobs.failure_message(current['job_id'], current[field])
+                    if cause not in current[field]:
+                        current[field] += f'；{cause}'
+            except (OSError, ValueError, KeyError) as exc:
+                current.update(status='unavailable', error=f'無法讀取PRS工作：{exc}')
+        children.append(current)
+    return children
+
+
+def prs_followup_log(job, children=None):
+    from .postprocessing_log import event, timestamped
+    children = prs_followup(job) if children is None else children
+    lines = []
+    for child in children:
+        detail = f'job={child.get("job_id", "—")}；{child.get("step") or "未啟動"}'
+        lines.append(timestamped(event(child['sample_id'], 'prs', child.get('status', 'unknown'), detail=detail), child.get('updated')))
+        if child.get('error') or child.get('warning'):
+            lines.append(timestamped(event(child['sample_id'], 'prs', 'error' if child.get('error') else 'warning',
+                               detail=child.get('error') or child['warning']), child.get('updated')))
+    return '\n\n[PRS 後續工作目前狀態；詳細Log請至個案PRS頁面查看]\n'+'\n'.join(lines)+'\n' if lines else ''
+
+
+def postprocessing_log_path(job_id):
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', job_id):
+        raise ValueError('工作識別碼格式不正確')
+    path = _job_dir(job_id)/'postprocessing.log'
+    if not path.is_file():
+        raise FileNotFoundError('此工作尚無獨立後處理工具Log')
+    return path
 
 
 def nextflow_log_signature(launch_dir: Path) -> tuple[int, int, int, int] | None:
@@ -506,6 +551,8 @@ def list_jobs(limit: int = 50) -> list[dict]:
             if st:
                 st = dict(st)
                 st["running"] = is_running(child.name)
+                if st.get('prs_jobs'):
+                    st['prs_active'] = any(c.get('status') in ('queued', 'running', 'cancelling') for c in prs_followup(st))
                 jobs.append(st)
     jobs.sort(key=lambda j: j.get("created_at", ""), reverse=True)
     return jobs[:limit]
@@ -714,6 +761,7 @@ def get_pipeline_output_log(sample_id: str) -> dict:
         "job_id": job_id,
         "job_state": job.get("state", ""),
         "log": read_log(job_id),
+        "postprocessing_log_available": (_job_dir(job_id)/'postprocessing.log').is_file(),
     }
 
 
