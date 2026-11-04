@@ -31,9 +31,10 @@ export function resetPrsSample(sid) {
   byId('prs-card').classList.toggle('hidden',!sampleId);
   byId('prs-details').open=false;byId('prs-form').reset();
   byId('prs-result').hidden=true;byId('prs-message').textContent='';
+  byId('prs-score-status').textContent='';renderExplanation();byId('prs-explanation').open=false;
   byId('prs-pipeline-message').textContent='';byId('prs-submit').disabled=true;
   byId('prs-source-label').hidden=true;byId('prs-run').disabled=true;byId('prs-cancel').hidden=true;byId('prs-new-run').hidden=true;
-  byId('prs-log-details').open=false;byId('prs-log').textContent='尚無分析紀錄';renderRows();
+  byId('prs-log-details').open=false;byId('prs-log').textContent='尚無分析紀錄';byId('prs-raw-log').hidden=true;renderRows();
 }
 async function request(path='', body, signal=controller?.signal) {
   const response=await fetch(`/api/samples/${encodeURIComponent(sampleId)}/prs${path}`,{
@@ -98,9 +99,29 @@ function renderResult(snapshot) {
   row.querySelector('[data-risk="ten"]').textContent=result.risk_10_year ? formatRisk(result.risk_10_year.risk) : '超出模型年齡範圍';
   row.querySelector('[data-risk="eighty"]').textContent=formatRisk(result.risk_to_80.risk);
   byId('prs-result-context').textContent=`CHD · ${result.person.assessment_date} 評估 · ${result.person.age}歲 · ${result.person.sex==='male'?'男性':'女性'} · 參考組：10年 ${formatRisk(result.reference.risk_10_year?.risk)}／至80歲 ${formatRisk(result.reference.risk_to_80.risk)}`;
-  byId('prs-model').textContent=`台灣 GBD2019 · INTERVENE EstBB · ${result.model_id}`;
-  renderCurve(result);byId('prs-limitations').replaceChildren();
-  for(const text of result.limitations||[]) {const li=document.createElement('li');li.textContent=text;byId('prs-limitations').append(li);}
+  renderCurve(result);
+}
+function renderExplanation(explanation={}) {
+  for(const [id,texts] of [['prs-method',explanation.method],['prs-limitations',explanation.limitations]]) {
+    byId(id).replaceChildren();
+    for(const text of texts||[]) {const li=document.createElement('li');li.textContent=text;byId(id).append(li);}
+  }
+  const sources=byId('prs-sources');sources.replaceChildren();
+  for(const source of explanation.sources||[]) {
+    if(sources.childNodes.length)sources.append(document.createTextNode(' · '));
+    const link=document.createElement('a');link.href=source.url;link.textContent=source.label;link.target='_blank';link.rel='noopener';sources.append(link);
+  }
+}
+function renderScoreStatus(score) {
+  let text='';
+  if(score) {
+    if(active(currentJob) && score.job_id!==currentJob.job_id)text='正在重新分析；表格目前保留上一次已發布的計分結果。';
+    else if(!score.qc_ready)text=active(currentJob)
+      ? 'PRS 計分已完成；祖源與品質檢查進行中，完成並符合要求後才能計算風險。'
+      : 'PRS 計分已完成；祖源或品質檢查尚未符合要求，目前只能查看分數與百分位。';
+    else text='PRS 計分與祖源／品質檢查已完成。';
+  }
+  byId('prs-score-status').textContent=text;
 }
 function renderPipeline(pipeline={}) {
   currentJob=pipeline.job||null;
@@ -126,7 +147,7 @@ async function load(restore=true) {
   ready=false;byId('prs-submit').disabled=true;
   try {
     const data=await request();if(token!==generation)return;
-    ready=data.available;renderRows(data.diseases);resetRisks();renderPipeline(data.pipeline);
+    ready=data.available;renderRows(data.diseases);resetRisks();renderPipeline(data.pipeline);renderExplanation(data.explanation);renderScoreStatus(data.score);
     byId('prs-submit').disabled=!ready;
     byId('prs-message').textContent=data.issues.join('；') || (data.stale?'資料已更新，請重新計算風險。':'請輸入臨床資訊後計算風險。');
     if(data.latest && !dirtyClinical) {
@@ -140,7 +161,11 @@ async function load(restore=true) {
 }
 async function loadLog(token=generation) {
   if(!currentJob)return;
-  try {const result=await request(`/jobs/${currentJob.job_id}/log`);if(token===generation)byId('prs-log').textContent=result.log||'等待執行…';}
+  try {const result=await request(`/jobs/${currentJob.job_id}/log`);if(token===generation) {
+    byId('prs-log').textContent=result.log||'等待執行…';
+    const link=byId('prs-raw-log');link.hidden=!result.raw_log_available;
+    link.href=`/api/samples/${encodeURIComponent(sampleId)}/prs/jobs/${encodeURIComponent(currentJob.job_id)}/raw-log`;
+  }}
   catch(error){if(token===generation && error.name!=='AbortError')byId('prs-log').textContent=error.message;}
 }
 byId('prs-details')?.addEventListener('toggle',()=>{if(byId('prs-details').open)load();else clearTimeout(timer);});

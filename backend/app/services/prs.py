@@ -111,7 +111,7 @@ def load_bundle():
     return bundle, digest
 
 
-def load_score(sid):
+def load_score_record(sid):
     path = score_path(sid)
     if not path.is_file():
         raise NotReady('尚未匯入此個案的 PRS 計分結果')
@@ -130,7 +130,12 @@ def load_score(sid):
                 raise NotReady('原始 gVCF 已變更，請重新分析 PRS')
         except OSError as exc:
             raise NotReady('原始 gVCF 已移動或不存在，請重新確認來源') from exc
-    return summary, digest
+    return record, digest
+
+
+def load_score(sid):
+    record, digest = load_score_record(sid)
+    return record['summary'], digest
 
 
 def pipeline_source_hash(sid):
@@ -195,12 +200,19 @@ def status(sid):
     issues, bundle, summary, score = [], None, None, None
     bundle_hash = score_hash = None
     try:
-        summary, score_hash = load_score(sid)
+        record, score_hash = load_score_record(sid)
+        summary = record['summary']
         if not source_identity_matches(sid, summary['sample']):
             raise NotReady('PRS 來源與目前個案來源不符，請重新分析')
         row = calculator.score_row(summary, SCORE_DEFINITION, require_ancestry=False)
+        try:
+            calculator.score_row(summary, SCORE_DEFINITION)
+            qc_ready = True
+        except (ValueError, KeyError, TypeError):
+            qc_ready = False
         score = dict(raw_score=row['total_sum'], percentile=row['eas_percentile'],
-                     group=row['intervene_group'], model='A',
+                     group=row['intervene_group'], model='A', job_id=record.get('job_id'),
+                     qc_ready=qc_ready,
                      ancestry=summary.get('ancestry_status', {}),
                      observed_loci=row['observed_loci'], missing_loci=row['missing_loci'])
     except (OSError, ValueError, KeyError, TypeError):
@@ -218,10 +230,10 @@ def status(sid):
     current = dict(bundle=bundle_hash, score=score_hash, case_metadata=meta_hash)
     latest = latest_snapshot(sid)
     stale = bool(latest and latest.get('input_sha256') != current)
-    from . import prs_jobs
+    from . import prs_jobs, prs_presentation
     return dict(available=not issues, issues=issues, score=score, research_only=True,
                 diseases=[dict(id='CHD', name='冠心病（CHD）', score=score)],
-                pipeline=prs_jobs.overview(sid),
+                pipeline=prs_jobs.overview(sid), explanation=prs_presentation.explanation(),
                 age_min=20, age_max_exclusive=80,
                 model_id=bundle['model_id'] if bundle else None,
                 latest=latest if not stale and not issues else None, stale=stale)

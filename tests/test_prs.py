@@ -188,6 +188,11 @@ def test_score_visible_without_bundle_or_ancestry(setup):
     assert result['score']['raw_score']==data['scores'][0]['total_sum']
     assert not result['available'] and result['latest'] is None
     assert result['diseases'][0]['id']=='CHD'
+    assert result['score']['qc_ready'] is False
+    text=json.dumps(result['explanation'],ensure_ascii=False)
+    assert 'PGS004879' in text and '610,305' in text and '735' in text
+    assert '不穩定心絞痛' in text and '穩定心絞痛' in text and '心跳停止' in text
+    assert 'Model A' not in text and 'outcome validation' not in text
 
 
 def test_explicit_failed_ancestry_qc_rejects_risk(setup):

@@ -1,5 +1,6 @@
 """Authenticated CHD research estimates for an already registered sample."""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from ..auth import current_user
 from ..services import prs
@@ -54,3 +55,12 @@ def score_log(sample_id: str, job_id: str):
     from ..services import prs_jobs
     checked(prs.case_metadata, sample_id)
     return checked(prs_jobs.log, sample_id, job_id)
+
+
+@router.get('/jobs/{job_id}/raw-log')
+def raw_score_log(sample_id: str, job_id: str):
+    from ..services import prs_jobs
+    checked(prs.case_metadata, sample_id)
+    path = checked(prs_jobs.raw_log_path, sample_id, job_id)
+    return Response(checked(path.read_bytes), media_type='text/plain; charset=utf-8',
+                    headers={'Content-Disposition': f'attachment; filename="prs-{job_id}.log"'})

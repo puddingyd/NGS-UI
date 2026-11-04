@@ -1,4 +1,4 @@
-# CHD PRS 研究風險 UI — v9.84
+# CHD PRS 研究風險 UI — v9.85
 
 ## 本版範圍
 
@@ -10,6 +10,28 @@
 主表每列一個疾病，固定欄位為「疾病／原始 PRS score／PRS percentile／未來10年風險／目前至80歲累積風險」。未計算的兩個風險欄顯示「請輸入臨床資訊後計算」；曲線放表格下方。未安裝 risk bundle 或祖源尚未通過時，合格 score／percentile 仍可獨立顯示，風險按鈕停用並說明原因。
 
 表格的原始 score 指 **Model A total_sum（含固定模型缺失補值）**，與該列 EAS735 ECDF percentile 使用同一定義；不是先前610,677 loci的 observed-only SUM，也不是 pgsc_calc ancestry 的 normalized score。A/B完整結果仍保留於計分 output，B 暫不作UI風險主分析。
+
+### 為何 Nextflow 還在跑，表格已經有數字？（v9.85）
+
+平台先執行 raw gVCF 重建與固定610,305位點計分，將完成的分數／固定735名東亞參考者百分位發布至08；接著才執行另一個祖源／品質檢查Nextflow。第二階段不取代表格分數，完成後只是補上檢查證據。第一階段完成就能查看score與percentile；祖源未確認符合東亞比較或QC未符合要求，仍不能計算風險。重跑期間已有舊結果時，明示「上一次已發布」，不把它當成新run的結果。
+
+以26T00969的既有驗證紀錄及使用者Log為例：
+
+| 數值 | 定義與用途 |
+|---|---|
+| 0.474838562769280／60.5442176871 | 固定位點加總（包含參考平均基因型補值）及固定EAS ECDF；表格顯示0.474839／第60.54百分位，風險分組使用這個未四捨五入的百分位 |
+| raw_sum 0.471545 | raw重建中實際可用位點的加總，不是固定計分補值後總分 |
+| normalized_sum 0.475192／percentile 60.6802721088 | 祖源pgsc_calc依該案匹配後的位點集合，另算target與reference分數／百分位；欄名normalized_sum不代表表格總分的換算，不用於UI風險 |
+
+v9.85的PRS主Log保留Nextflow進度、完成時間、警告與錯誤，僅從同job的有效發布summary顯示「表格採用的結果」，並保留補值、分組邊界與QC提醒。原工具的JSON及COMPLETED SUM/PCT不再混入摘要；原始stdout/stderr逐byte保留，可由「下載完整工具Log」取得。新API `GET /api/samples/{sid}/prs/jobs/{job}/raw-log`沿用登入保護並核對case/job，只提供固定log.txt快照。舊Log也可讀取摘要，不重寫原檔。舊job若已被另一run取代，不能把新score貼到舊job下。
+
+### 畫面上的方法與限制（v9.85）
+
+`prs_presentation.explanation()`提供純顯示文字，獨立於已鎖定bundle及歷史評估；UI不再展示內部Model A／model_id，也不從舊snapshot載入難懂的limitations。說明區位於曲線下、分析工具區上方，即使尚未輸入臨床資訊也可閱讀；Log下的重複註腳已移除。科學算法、builder、bundle checksum、score／risk快照完全不變，部署重載即可。
+
+方法分三步：PGS004879（INTERVENE_MegaPRS_CHD）固定610,305位點加權及缺值補值 → HGDP／1000 Genomes固定735名東亞參考排名 → INTERVENE EstBB七組相對風險搭配台灣GBD2019年齡／性別率及競爭死亡，估算首次CHD。未納入血壓、血脂、吸菸、糖尿病與治療效果，也未估計不確定性範圍。
+
+疾病定義具體依據：原研究Supplementary Data 8（`MOESM11`，第9列）CHD ICD10為`I200|I21|I22|I23|I24|I25|I46`，含不穩定心絞痛、心肌梗塞及心跳停止等；ICD9亦含`413`。Data 9（`MOESM12`）另列`I20.1/I20.8/I20.9/I46`等不完全重疊的碼，UKB的重疊指標82%不能當成台灣準確率。[GBD2019的IHD定義](https://pubmed.ncbi.nlm.nih.gov/34922374/)則包含急性MI與慢性IHD（穩定心絞痛、MI後無症狀IHD）。因此不能將這個首次CHD研究估計宣稱為單獨MI、心跳停止或心血管死亡的預測。畫面提供[PGS004879](https://www.pgscatalog.org/score/PGS004879/)、[原研究與附件](https://pmc.ncbi.nlm.nih.gov/articles/PMC11169548/)及GBD定義連結。
 
 風險適用20至79歲、確認尚未有 CHD、具備合格 EAS 祖源證據與相符 model lock 的個案。>70歲不將截短期間冒稱10年風險，仍可計算至80歲。以「評估時存活且無 CHD」為條件，不是出生累積率相減。TWB／BBJ未納入；目前不收血壓、血脂、吸菸或家族史，因為本模型不使用這些欄位。結果不加入診斷／健檢 DOCX 或列印報告。
 
@@ -244,6 +266,7 @@ python3 -m research.prs.absolute_risk.build_taiwan \
 - v9.80 將PRS工作納入既有三級 `nf_work/prs/`；相關回歸與Nextflow清理測試共114項通過，涵蓋預設／自訂根目錄、執行中與已完成PRS均保留、其他閒置三級暫存可清、runner實際繼承lease。未在院內執行WGS。
 - v9.81 容器暫存／queue／worker／risk／三級與清理回歸共127項通過，原版計分27項離線測試通過，核心checksum未變。以真正Nextflow 24.10.4驗證空白／既有config及profile合併，並以模擬容器engine執行Nextflow產生的 `env -` launcher，確認Python暫存寫到個案目錄；這驗證指令產生與環境傳遞，不是實際Apptainer掛載或院內WGS驗收。
 - v9.84 相關198項Python與94項前端測試通過，含父tmp清除後自動PRS完成、與手動環境一致、reference保留、目的地去重、AnnotSV raw保留與摘要、失敗根因、下載權限及PRS持續輪詢。實際Nextflow24.10.4的設定／resume／launcher測試仍以模擬engine執行，院內Linux容器與WGS待部署後驗收。
+- v9.85 相關78項Python測試通過（5項未啟用的Nextflow外部工具測試略過），原版27項離線測試及94項前端單元測試通過；Playwright以合成資料驗證桌機／390px手機、計分已發布但QC未完成仍停用風險、重跑保留上次結果提示、方法與限制在評估前可見、無Model A用語、下載連結及既有曲線／輸入失效／切案競態。科學核心、bundle及快照未更動，未跑院內WGS。
 
 可重複執行的測試入口：
 

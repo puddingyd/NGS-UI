@@ -409,3 +409,62 @@ def test_automatic_prs_survives_parent_runtime_cleanup_and_matches_manual_enviro
     jobs.start('CASE', new_run=True)
     for key in ('APPTAINER_BINDPATH', 'SINGULARITY_BINDPATH', 'TMPDIR', 'NXF_HOME'):
         assert launches[0][key] == launches[1][key]
+
+
+def test_score_published_before_ancestry_and_log_only_uses_same_table_definition(env, monkeypatch):
+    prs.atomic_json(sample_layout.state_file('CASE', 'sample_metadata.json'), {'lis_id':'CASE'})
+    env.summary['scores'][0].update(total_sum=.474838562769280, eas_percentile=60.5442176871,
+                                   intervene_group='60-80', boundary_review_2pp=True)
+    normal = prs_run.Worker.command
+    observed = []
+    def check_ancestry(worker, args, step):
+        if '--raw-source' in args:
+            before = prs.status('CASE')
+            assert before['score']['job_id'] == worker.job['job_id']
+            assert before['score']['raw_score'] == .474838562769280
+            assert not before['score']['qc_ready'] and not before['available']
+            observed.append(before['score'])
+        normal(worker, args, step)
+    monkeypatch.setattr(prs_run.Worker, 'command', check_ancestry)
+    jid = jobs.start('CASE')['job_id']
+    raw = ('executor > local (106)\n[67/bbf5cb] PGS:SCORING | 22 of 22 ✔\n'
+           '{"normalized_sum": 0.475192, "percentile": 60.680272108843546}\n'
+           'COMPLETED: SOURCE SUM= 0.475192 PCT= 60.680272108843546\n'
+           '-[pgscatalog/pgsc_calc] Pipeline completed successfully-\nWARNING: inspect missing loci\n')
+    (jobs.job_dir(jid)/'log.txt').write_text(raw)
+    prs_run.Worker(jid).run()
+    assert len(observed) == 1
+    after = prs.status('CASE')['score']
+    assert after['qc_ready'] and after['raw_score'] == observed[0]['raw_score']
+    view = jobs.log('CASE', jid)['log']
+    assert '0.474839' in view and '60.54 百分位' in view
+    assert '0.475192' not in view and '60.680272' not in view
+    assert '22 of 22' in view and 'inspect missing loci' in view
+    assert '不超過 2 個百分點' in view
+    assert jobs.raw_log_path('CASE', jid).read_text() == raw
+    with pytest.raises(FileNotFoundError): jobs.raw_log_path('OTHER', jid)
+    new_id = jobs.start('CASE', new_run=True)['job_id']
+    prs_run.Worker(new_id).run()
+    assert '不是目前表格' in jobs.log('CASE', jid)['log']
+
+
+def test_raw_prs_log_download_auth_identity_and_exact_bytes(env):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from starlette.middleware.sessions import SessionMiddleware
+    from app.auth import current_user
+    from app.routers import prs as router
+    for sid in ('CASE', 'OTHER'):
+        prs.atomic_json(sample_layout.state_file(sid, 'sample_metadata.json'), {'lis_id':sid})
+    jid = jobs.start('CASE')['job_id']
+    data = b'COMPLETED: SOURCE SUM= 0.475192 PCT= 60.680272\n'
+    (jobs.job_dir(jid)/'log.txt').write_bytes(data)
+    app = FastAPI(); app.add_middleware(SessionMiddleware, secret_key='test')
+    app.include_router(router.router); client = TestClient(app)
+    url = f'/api/samples/CASE/prs/jobs/{jid}/raw-log'
+    assert client.get(url).status_code == 401
+    app.dependency_overrides[current_user] = lambda: {'username':'tester'}
+    response = client.get(url)
+    assert response.content == data and 'attachment;' in response.headers['content-disposition']
+    assert client.get(url.replace('/CASE/', '/OTHER/')).status_code == 404
+    assert client.get(url.replace(jid, '..')).status_code in (400, 404)

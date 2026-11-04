@@ -17,7 +17,7 @@ import time
 import uuid
 
 from .. import config
-from . import prs, prs_paths, sample_layout, postprocessing_log
+from . import prs, prs_paths, sample_layout, postprocessing_log, prs_presentation
 
 ACTIVE = {'queued', 'running', 'cancelling'}
 SCORING = config.REPO_ROOT / 'research/prs/scoring_v211'
@@ -265,7 +265,31 @@ def log(sid, jid):
     with path.open('rb') as stream:
         stream.seek(max(0, path.stat().st_size-50000))
         tail = stream.read().decode('utf-8', errors='replace')
-    return dict(job=public_job(job), log=tail)
+    text = prs_presentation.log_summary(tail)
+    try:
+        record, _ = prs.load_score_record(sid)
+        if record.get('job_id') == jid:
+            row = prs.calculator.score_row(record['summary'], prs.SCORE_DEFINITION, require_ancestry=False)
+            text += (f'\n\n[表格採用的結果] 原始 PRS score={row["total_sum"]:.6f}；'
+                     f'PRS percentile=第 {row["eas_percentile"]:.2f} 百分位\n'
+                     '祖源／品質檢查的另外一組 SUM、PCT 僅供工具稽核，不用於表格或風險計算。')
+            text += '\n'+'\n'.join(prs_presentation.score_messages(record['summary'], row))
+        else:
+            text += '\n\n此工作不是目前表格所採用的計分來源。'
+    except (OSError, ValueError, KeyError, TypeError):
+        text += '\n\n此工作尚無可供表格使用的有效計分結果。'
+    text += f'\n[目前狀態] {job["status"]}；{job.get("step", "")} '
+    if job.get('error') or job.get('warning'):
+        text += '\n'+(job.get('error') or job['warning'])
+    return dict(job=public_job(job), log=text, raw_log_available=True)
+
+
+def raw_log_path(sid, jid):
+    job = read_job(jid)
+    if job['sample_id'] != sid: raise FileNotFoundError('找不到 PRS 工作')
+    path = job_dir(jid)/'log.txt'
+    if not path.is_file(): raise FileNotFoundError('找不到 PRS Log')
+    return path
 
 
 def failure_message(jid, fallback):

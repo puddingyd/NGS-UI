@@ -497,4 +497,6 @@ v9.81：PRS容器的 `/tmp`、`/var/tmp` 與TMPDIR明確掛載／指向個案 `n
 
 v9.84：三級自動PRS在建立worker前即套用個案環境，移除父工作一次性staging/tmp掛載，保留reference及工具設定；三級清理後仍可獨立執行，與PRS頁面手動執行一致。後處理主Log統一列開始／完成／警告／失敗與耗時，完整AnnotSV等工具輸出存`data/jobs/tertiary/{job}/postprocessing.log`，可在三級進度及分析清單下載。三級完成後繼續顯示PRS子工作的實際狀態與錯誤；PRS失敗不回滾已完成三級。更新後失敗PRS可由個案頁面重試，不需重跑三級；已完成PRS可保留。
 
+v9.85：PRS計分可先完成並顯示score／percentile，接著執行祖源Nextflow；通過祖源／品質要求才可算風險。表格明示檢查進度及重跑時保留的舊結果。PRS主Log以同job的固定計分summary為唯一表格數值來源；祖源流程另外計算的SUM／PCT只留在可下載完整Log，原檔不改寫。PGS004879計分、735名東亞參考比較及EstBB＋GBD2019風險方法改成白話說明，具體列出疾病範圍差異；未評估時也能閱讀，移除畫面Model A字眼與重複註腳。模型、風險數值與已保存評估不變，更新並重載即可，不需重跑。
+
 v9.80：PRS 原專案僅提供唯讀模型／參考資源，平台不再使用原 config 的 `project`／`raw_work` 存放個案。大型重建檔、raw audit、Nextflow與工具快取集中在既有三級暫存根目錄下的 `~/NGS_UI/nf_work/prs/{個案ID}/`（跟隨`NGS_UI_TERTIARY_NF_WORK_ROOT`，`NGS_UI_PRS_WORK_ROOT` 可另覆寫），不在 pipeline 根目錄新增資料夾。三級暫存清理保留PRS稽核／接續分析資料；完整刪除個案才清該案work。完整計分／QC與風險快照保存於該個案 `08_postprocessing/{個案ID}.prs/`，UI入口為 `{個案ID}.prs.summary.json`。新工作不接續舊專案 run；已啟動工作需先取消、等停止後更新並重新開始，歷史資料不自動搬移。詳見[路徑與舊工作處理](docs/ops/PRS_CHD_RESEARCH.md#已啟動的舊路徑工作)。
