@@ -72,7 +72,8 @@ def test_summary_reports_gpn_progress_without_large_signature_dump():
     assert 'BIG_DUMP' not in ''.join(events)
 
 
-def test_parent_log_and_api_surface_prs_failure_without_failing_tertiary(tmp_path, monkeypatch):
+@pytest.mark.parametrize('integrated', [False, True])
+def test_parent_log_and_api_surface_prs_failure_without_failing_tertiary(tmp_path, monkeypatch, integrated):
     jobs = tmp_path/'tertiary_jobs'
     monkeypatch.setattr(dragen_jobs, 'TERTIARY_JOBS_DIR', jobs)
     monkeypatch.setattr(dragen_jobs, 'LEGACY_DRAGEN_JOBS_DIR', tmp_path/'legacy')
@@ -80,8 +81,10 @@ def test_parent_log_and_api_surface_prs_failure_without_failing_tertiary(tmp_pat
     jid = 'a'*32
     parent = dict(job_id='parent-1', state='done', sample_id='S1',
                   prs_jobs=dict(S1=dict(job_id=jid, status='queued')))
+    if integrated: parent['prs_execution'] = 'postprocessing'
     dragen_jobs.save_state('parent-1', parent)
-    (jobs/'parent-1/log.txt').write_text('tertiary finished\n')
+    original = 'tertiary finished\n' + ('[postprocessing] sample=S1 step=prs status=failed | FATAL: parent tmp does not exist\n' if integrated else '')
+    (jobs/'parent-1/log.txt').write_text(original)
     raw = jobs/'parent-1/postprocessing.log'; raw.write_text('full AnnotSV output\n')
     child = dict(job_id=jid, sample_id='S1', parent_job_id='parent-1', status='failed',
                  created=time.time(), updated=time.time(), step='容器暫存檢查', error='exit 255')
@@ -89,6 +92,11 @@ def test_parent_log_and_api_surface_prs_failure_without_failing_tertiary(tmp_pat
     (prs_jobs.job_dir(jid)/'log.txt').write_text('FATAL: parent tmp does not exist\nTraceback:\nRuntimeError: exit 255\n')
     view = dragen_jobs.read_log('parent-1')
     assert 'status=failed' in view and 'parent tmp does not exist' in view
+    if integrated:
+        assert view == original
+        assert 'PRS 工作目前狀態' not in view
+    else:
+        assert 'PRS 工作目前狀態' in view
     assert dragen_jobs.load_state('parent-1')['state'] == 'done'
     app = FastAPI(); app.add_middleware(SessionMiddleware, secret_key='test')
     app.include_router(router.router); client = TestClient(app)
@@ -97,6 +105,8 @@ def test_parent_log_and_api_surface_prs_failure_without_failing_tertiary(tmp_pat
     state = client.get('/api/dragen/jobs/parent-1').json()
     assert state['state'] == 'done' and state['prs_active'] is False
     assert 'parent tmp does not exist' in state['log_tail']
+    if integrated: assert state['log_tail'] == original.rstrip('\n')
+    assert state['prs_children'][0]['status'] == 'failed'
     assert client.get('/api/dragen/jobs/parent-1/postprocessing-log').text == raw.read_text()
     child.update(status='running', error=None, pid=os.getpid(), updated=time.time())
     prs.atomic_json(prs_jobs.job_dir(jid)/'state.json', child)

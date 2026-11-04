@@ -474,6 +474,10 @@ def prs_followup(job):
 
 
 def prs_followup_log(job, children=None):
+    # Integrated runs already log every PRS transition in the parent log.
+    # Historical detached runs still need their live follow-up appended.
+    if job.get('prs_execution') == 'postprocessing':
+        return ''
     from .postprocessing_log import event, timestamped
     children = prs_followup(job) if children is None else children
     lines = []

@@ -1,6 +1,8 @@
-# CHD PRS 研究風險 UI — v9.88
+# CHD PRS 研究風險 UI — v9.89
 
 ## 本版範圍
+
+v9.89移除三級分析清單的後處理工具Log下載按鈕，保留「查看Log」；原始工具Log與下載API仍保留。整合PRS的父工作（`prs_execution=postprocessing`）不再在主Log或log_tail附加重複的「PRS工作目前狀態」段落，既有PRS開始／進度／完成／失敗行均保留。`prs_children`與`prs_active`照常回傳；舊非同步工作仍附加動態狀態以供追蹤。歷史版本的下載入口描述以此更新為準。
 
 平台採兩階段；第一個疾病為 CHD，未建立 DM／cancer 的空白模型。
 

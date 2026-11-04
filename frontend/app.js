@@ -13470,16 +13470,10 @@ function setupPipelineList() {
       const log = document.getElementById("pipeline-list-log");
       if (title) title.textContent = `${sid} Log`;
       if (log) log.textContent = "載入中…";
-      const toolsLog = document.getElementById('pipeline-list-postprocessing-log');
-      if (toolsLog) toolsLog.hidden = true;
       if (logPanel) logPanel.hidden = false;
       try {
         const data = await apiFetch(`/dragen/outputs/${encodeURIComponent(sid)}/log`);
         if (log) log.textContent = data?.log || "（沒有可用的 NGS-UI 三級分析 Log）";
-        if (toolsLog && data?.postprocessing_log_available) {
-          toolsLog.href = `${API_BASE}/dragen/jobs/${encodeURIComponent(data.job_id)}/postprocessing-log`;
-          toolsLog.hidden = false;
-        }
         if (log) log.scrollTop = 0;
       } catch (e) {
         if (log) log.textContent = `讀取失敗：${e.message || e}`;
