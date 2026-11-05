@@ -1,0 +1,4 @@
+sample	gvcf	raw_source
+26T00970	/home/datalake_Raw/Novaseq/20260923_LH00873_0036_B255WGJLT4/other/26T00970/germline_seq/26T00970.hard-filtered.gvcf.gz	/home/n102968/2026_INTERVENE_PRS/results/26T00970_PGS004879_FINAL_gVCF_to_raw_score
+26T00969	/home/datalake_Raw/Novaseq/20260923_LH00873_0036_B255WGJLT4/other/26T00969/germline_seq/26T00969.hard-filtered.gvcf.gz	/home/n102968/2026_INTERVENE_PRS/results/26T00969_PGS004879_FINAL_gVCF_to_raw_score
+26T00968	/home/datalake_Raw/Novaseq/20260923_LH00873_0036_B255WGJLT4/other/26T00968/germline_seq/26T00968.hard-filtered.gvcf.gz	/home/n102968/2026_INTERVENE_PRS/results/26T00968_PGS004879_FINAL_gVCF_to_raw_score

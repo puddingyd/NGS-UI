@@ -1,0 +1,4 @@
+PGS004879 integrated v2.0 (2026-10-31)
+Preserves integrated_v1 pipeline.py and vendor raw reconstruction unchanged.
+Adds target-independent Method2 canonical A/B scoring and model lock.
+Status: local synthetic tests only; clinical/server three-sample regression pending.
