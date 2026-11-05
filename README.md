@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+**檔案清單規劃／server 路徑驗證（2026-11-05）**：提供可整段貼到 server 的[唯讀盤點程式](scripts/paste_probe_sample_files.sh)及[路徑、驗證方式與單一每日更新規劃](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。以 FASTQ 建 sample，保留 lane／缺配對並列相關 BAM、VCF、CNV/SV、gVCF 及 index；不更新正式快取或服務。「檔案清單」modal 與二／三級排程整合尚未啟用，先由操作者驗證實際目錄。
+
 v9.91：PRS 新增未來20年風險，UI、參考組說明與健檢報告同步顯示；評估年齡超過60歲時20年顯示不適用，10年及至80歲仍依原規則。各疾病病史新表單預設「否」，保留已儲存病史。既有個案按一次「風險計算」即可產生新版評估，不需重跑基因分析。確認既有`nf_work` bind mount與PRS路徑相容，繼續使用原路徑存取SSD。[操作說明](docs/ops/PRS_MULTI_DISEASE.md)。
 
 v9.90：PRS 一次擴充第二型糖尿病、整體癌症、乳癌、心房顫動及癲癇，與 CHD 共用 gVCF 重建、六欄計分及祖源分析。UI 六列表格、各疾病病史、曲線切換及健檢報告已整合。部署後須執行一次共用參考模型準備，再由 PRS 卡片重跑個案；舊 CHD 仍可讀取。1,232 筆原研究風險結果已重現，本機合成流程已測，**完整院內參考資料／WGS 驗收尚待執行**，也尚無台灣臨床追蹤驗證。[啟用、資料限制與驗收](docs/ops/PRS_MULTI_DISEASE.md)。
