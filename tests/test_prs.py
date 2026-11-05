@@ -109,11 +109,33 @@ def test_invalid_inputs_do_not_publish(setup,change):
 def test_horizon_not_truncated(setup):
     client, app, *_, payload = setup
     login(app)
-    for age, available in [(70,True),(70.01,False),(79.99,False)]:
+    for age, available in [(20,True),(50.5,True),(60,True),(60.01,True),(70,True),(70.01,False),(79.99,False)]:
         result=client.post('/api/samples/S1/prs/assessments',json={**payload,'age':age}).json()['result']
         assert (result['risk_10_year'] is not None) == available
         assert (result['reference']['risk_10_year'] is not None) == available
+        assert (result['risk_20_year'] is not None) == (age <= 60)
+        assert (result['reference']['risk_20_year'] is not None) == (age <= 60)
+        if age <= 60:
+            assert result['risk_10_year']['risk'] <= result['risk_20_year']['risk'] <= result['risk_to_80']['risk']
+            assert result['risk_20_year']['curve'][-1]['age'] == age+20
+        if age == 60:
+            assert result['risk_20_year'] == result['risk_to_80']
         assert result['risk_to_80']['risk'] > 0
+
+
+def test_old_chd_assessment_keeps_values_and_requires_twenty_year_recalculation(setup):
+    client, app, *_, payload = setup
+    login(app)
+    saved=client.post('/api/samples/S1/prs/assessments',json=payload).json()
+    result=saved['result'];result.pop('risk_20_year');result.pop('risk_20_year_unavailable_reason')
+    result['reference'].pop('risk_20_year');result['risk_difference_pp'].pop('twenty_year')
+    path=prs.assessment_dir('S1')/(saved['assessment_id']+'.json');prs.atomic_json(path,saved)
+    original=path.read_bytes()
+    status=client.get('/api/samples/S1/prs').json()
+    assert status['latest']==saved and status['available']
+    readiness=client.get('/api/samples/S1/prs/report-readiness').json()
+    assert not readiness['available'] and '20年' in readiness['reason']
+    assert path.read_bytes()==original
 
 
 def test_missing_or_synthetic_bundle_never_uses_fallback(setup):
@@ -260,10 +282,12 @@ def test_health_docx_prs_selection_order_methods_rounding_and_omission(health_re
     methods=paragraphs[paragraphs.index('四、檢測方法說明'):]
     assert next(i for i,p in enumerate(methods) if 'PGS004879' in p) < next(i for i,p in enumerate(methods) if '某些藥物基因' in p)
     text='\n'.join(paragraphs+[cell.text for table in doc.tables for row in table.rows for cell in row.cells])
-    assert [cell.text for cell in doc.tables[0].rows[0].cells] == ['疾病','PRS 百分位','未來10年風險','至80歲累積風險']
+    assert [cell.text for cell in doc.tables[0].rows[0].cells] == ['疾病','PRS 百分位','未來10年風險','未來20年風險','至80歲累積風險']
     assert '第97.0百分位' in text
     expected=docx_export._health_prs_number(snapshot['result']['risk_10_year']['risk'],risk=True)+'%'
     assert expected in text and '不應單獨作為疾病診斷' in text
+    expected_twenty=docx_export._health_prs_number(snapshot['result']['risk_20_year']['risk'],risk=True)+'%'
+    assert doc.tables[0].rows[1].cells[3].text == expected_twenty
     assert 'Model A' not in text and '原始 PRS score' not in text
     omitted=Document(io.BytesIO(client.get(url.replace('acmg_sf,prs,pgx','acmg_sf,pgx')).content))
     omitted_text='\n'.join(p.text for p in omitted.paragraphs)
@@ -281,6 +305,7 @@ def test_health_report_over_70_has_explicit_unavailable_ten_year_horizon(health_
     assert response.status_code == 200
     text='\n'.join(p.text for p in Document(io.BytesIO(response.content)).paragraphs)
     assert '不適用' in text and '完整十年期間超出' in text
+    assert '完整二十年期間超出' in text
     assert '二、檢驗套組: 多基因風險評估' in text
     assert '藥物基因體學' not in text and 'ACMG疾病風險基因' not in text
 

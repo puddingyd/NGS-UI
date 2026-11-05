@@ -23,7 +23,7 @@
 .prs-table td,.prs-table th { padding:12px; border-bottom:1px solid #e2e8f0; text-align:right; }
 .prs-table th { color:#475569; background:#f5f8fb; font-weight:600; }
 .prs-table td:first-child,.prs-table th:first-child { text-align:left; }
-.prs-diseases { min-width:690px; }
+.prs-diseases { min-width:820px; }
 .prs-diseases td { font-variant-numeric:tabular-nums; }
 .prs-diseases [data-risk] { color:#135d7b; }
 .prs-chart { display:block; width:100%; max-width:900px; height:auto; min-height:170px; }

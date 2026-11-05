@@ -52,7 +52,23 @@ def test_all_parameters_reproduce_and_risks_are_conditional():
     person = multi.person_for(summary(), payload())
     result = multi.evaluate(pack, summary(), person)
     assert all(r['available'] for r in result['diseases'].values())
-    assert all(r['risk_10_year']['risk'] <= r['risk_to_80']['risk'] for r in result['diseases'].values())
+    assert all(r['risk_10_year']['risk'] <= r['risk_20_year']['risk'] <= r['risk_to_80']['risk'] for r in result['diseases'].values())
+
+
+@pytest.mark.parametrize('age', [20,50.5,60,60.001,70,70.001,79.99])
+def test_twenty_year_horizon_uses_full_competing_risk_interval(age):
+    pack=prs_multi.bundle()[0];s=summary();p=payload();p['age']=age
+    result=multi.evaluate(pack,s,multi.person_for(s,p))
+    for key,r in result['diseases'].items():
+        assert (r['risk_20_year'] is not None) == (age<=60)
+        assert (r['risk_10_year'] is not None) == (age<=70)
+        assert (r['reference']['risk_20_year'] is not None) == (age<=60)
+        if age<=60:
+            assert r['risk_20_year']==engine.integrate(pack['models'][key],'female',97,age,age+20)
+            assert r['risk_10_year']['risk']<=r['risk_20_year']['risk']<=r['risk_to_80']['risk']
+            assert r['risk_20_year']['curve'][0]['risk']==0
+            assert r['risk_20_year']['curve'][-1]['age']==age+20
+        if age==60:assert r['risk_20_year']==r['risk_to_80']
 
 
 def test_per_disease_history_sex_and_qc_do_not_block_others():
@@ -126,6 +142,28 @@ def test_multi_health_table_contains_only_available_rows(linked, monkeypatch):
     saved=prs.assess('SYNTHETIC',p,'test')
     doc=Document();docx_export._render_health_prs_section(doc,saved)
     assert len(doc.tables[0].rows) == 5
+    assert len(doc.tables[0].columns) == 5
     text='\n'.join(p.text for p in doc.paragraphs)
     assert '乳癌' in text and '僅適用女性' in text and '心房顫動' in text
     assert [r.cells[0].text for r in doc.tables[0].rows[1:]] == ['冠心病','第二型糖尿病','整體癌症','癲癇']
+
+
+def test_pre_twenty_year_snapshot_is_preserved_but_needs_reassessment_for_report(linked):
+    p=payload();p['history']['AF']=True
+    saved=prs.assess('SYNTHETIC',p,'test')
+    path=prs.assessment_dir('SYNTHETIC')/(saved['assessment_id']+'.json')
+    for r in saved['result']['diseases'].values():
+        if r['available']:
+            r.pop('risk_20_year');r['reference'].pop('risk_20_year')
+    prs.atomic_json(path,saved)
+    original=path.read_bytes()
+    status=prs.status('SYNTHETIC')
+    assert status['latest']==saved and status['available']
+    assert status['latest']['result']['person']['history']['AF'] is True
+    readiness=prs.report_readiness('SYNTHETIC')
+    assert not readiness['available'] and '20年' in readiness['reason']
+    assert path.read_bytes()==original
+    new=prs.assess('SYNTHETIC',p,'test')
+    assert new['assessment_id']!=saved['assessment_id']
+    assert prs.report_readiness('SYNTHETIC')['available']
+    assert path.read_bytes()==original

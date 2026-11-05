@@ -279,6 +279,14 @@ def assess(sid, payload, username):
     return record
 
 
+def require_twenty_year_assessment(saved):
+    result = saved['result']
+    rows = ([r for r in result['diseases'].values() if r['available']]
+            if result.get('schema') == 'PRS_MULTI_RESULT_V1' else [result])
+    if any('risk_20_year' not in r or 'risk_20_year' not in r.get('reference', {}) for r in rows):
+        raise NotReady('上次評估尚未包含20年風險；請重新按「風險計算」，不需重跑基因分析')
+
+
 def report_assessment(sid):
     """Require a current saved assessment; never create one during export."""
     candidate, _ = load_score(sid)
@@ -295,6 +303,7 @@ def report_assessment(sid):
         raise NotReady('尚未計算並保存 PRS 風險，請先至 PRS 頁面完成風險計算')
     if saved.get('input_sha256') != dict(bundle=bundle_hash, score=score_hash, case_metadata=meta_hash):
         raise NotReady('PRS 計分、模型或個案資料已更新，請重新計算風險後再匯出')
+    require_twenty_year_assessment(saved)
     try:
         original = saved['inputs']['person']
         person = person_for(summary, {key: original[key] for key in ('age', 'sex', 'assessment_date', 'prior_chd')})

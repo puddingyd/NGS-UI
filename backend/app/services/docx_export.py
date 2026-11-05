@@ -3840,17 +3840,19 @@ def _render_health_prs_section(doc, snapshot):
     _add_paragraph(doc, content['result_title'], bold=True).paragraph_format.keep_with_next = True
     values = [[r['name'].split('（')[0], f'第{_health_prs_number(r["percentile"])}百分位',
         _health_prs_number(r['risk_10_year']['risk'], risk=True)+'%' if r['risk_10_year'] else '不適用',
+        _health_prs_number(r['risk_20_year']['risk'], risk=True)+'%' if r['risk_20_year'] else '不適用',
         _health_prs_number(r['risk_to_80']['risk'], risk=True)+'%'] for r in assessment_rows]
-    table = doc.add_table(rows=1+len(values), cols=4)
+    table = doc.add_table(rows=1+len(values), cols=5)
     table.autofit = False
-    for column, width in zip(table.columns, (4.4, 4.2, 4.2, 5.2)):
+    widths = (3.4, 3.1, 3.5, 3.5, 4.5)
+    for column, width in zip(table.columns, widths):
         column.width = Cm(width)
-    for index, row_values in enumerate([['疾病', 'PRS 百分位', '未來10年風險', '至80歲累積風險'], *values]):
+    for index, row_values in enumerate([['疾病', 'PRS 百分位', '未來10年風險', '未來20年風險', '至80歲累積風險'], *values]):
         row = table.rows[index]
         row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
         if index == 0:
             row._tr.get_or_add_trPr().append(OxmlElement('w:tblHeader'))
-        for column, (cell, value, width) in enumerate(zip(row.cells, row_values, (4.4, 4.2, 4.2, 5.2))):
+        for column, (cell, value, width) in enumerate(zip(row.cells, row_values, widths)):
             cell.width = Cm(width)
             cell.vertical_alignment = 1
             paragraph = cell.paragraphs[0]; paragraph.alignment = 0 if column == 0 else 1
@@ -3867,6 +3869,8 @@ def _render_health_prs_section(doc, snapshot):
     table._tbl.tblPr.append(borders)
     if any(r['risk_10_year'] is None for r in assessment_rows):
         _add_paragraph(doc, '未來10年風險不適用：評估年齡超過70歲，完整十年期間超出本模型80歲的估算終點。')
+    if any(r['risk_20_year'] is None for r in assessment_rows):
+        _add_paragraph(doc, '未來20年風險不適用：評估年齡超過60歲，完整二十年期間超出本模型80歲的估算終點。')
     if multi:
         excluded = [r['name'].split('（')[0]+'：'+r['reason'] for r in result['diseases'].values() if not r['available']]
         if excluded: _add_paragraph(doc, '本次未提供的風險估計：'+'；'.join(excluded)+'。')

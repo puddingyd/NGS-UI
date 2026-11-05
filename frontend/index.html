@@ -479,13 +479,13 @@
             <form id="prs-form" class="prs-form">
               <label>評估時年齡：<input id="prs-age" type="number" min="20" max="79.99" step="0.01" required /> 歲</label>
               <label>性別：<select id="prs-sex" required><option value="">請選擇</option><option value="male">男性</option><option value="female">女性</option></select></label>
-              <details id="prs-history-menu" class="prs-history-menu"><summary>疾病病史 <span id="prs-history-count">尚未確認</span> ▾</summary><div id="prs-history-fields" class="prs-history-fields"></div></details>
+              <details id="prs-history-menu" class="prs-history-menu"><summary>疾病病史 <span id="prs-history-count">已填 6/6</span> ▾</summary><div id="prs-history-fields" class="prs-history-fields"></div></details>
               <button id="prs-submit" type="submit" class="btn btn-primary" disabled>風險計算</button>
             </form>
             <p id="prs-message" class="prs-message" role="status" aria-live="polite"></p>
             <div class="prs-table-scroll">
               <table class="prs-table prs-diseases">
-                <thead><tr><th scope="col">疾病</th><th scope="col" title="各疾病固定模型的加權總分，包含參考平均基因型補值；不同疾病的原始分數不能直接比較">原始 PRS score</th><th scope="col" title="與固定的 735 名東亞參考者比較排名；不是發病機率">PRS percentile</th><th scope="col">未來10年風險</th><th scope="col">目前至80歲累積風險</th></tr></thead>
+                <thead><tr><th scope="col">疾病</th><th scope="col" title="各疾病固定模型的加權總分，包含參考平均基因型補值；不同疾病的原始分數不能直接比較">原始 PRS score</th><th scope="col" title="與固定的 735 名東亞參考者比較排名；不是發病機率">PRS percentile</th><th scope="col">未來10年風險</th><th scope="col">未來20年風險</th><th scope="col">目前至80歲累積風險</th></tr></thead>
                 <tbody id="prs-disease-rows"></tbody>
               </table>
             </div>

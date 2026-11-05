@@ -1,6 +1,8 @@
 # INTERVENE PRS → 台灣多疾病研究流程
 
-**現行 v9.90（2026-11-05）**：CHD＋T2D＋All cancers＋Breast cancer＋AF＋Epilepsy 共六疾病已接上共用計分／風險／UI／報告。準備與驗收請先看 [六疾病操作文件](../../docs/ops/PRS_MULTI_DISEASE.md)；來源與 1,232 筆重現見 [參數發行說明](releases/tw_multi_v1/README.md)。`multidisease/` 為共用計分程式，`absolute_risk/registry.py` 為模型對應，`releases/tw_multi_v1/` 為固定研究參數。大型參考模型須在院內準備；完整 WGS 尚未在本次驗收。以下 CHD V1 文件保留供舊版本／凍結計分流程追溯，新增疾病以六疾病文件為準。
+v9.91 新增未來20年風險（年齡≤60），與10年及至80歲使用相同參數／競爭風險算法。UI新病史表單預設否，已保存病史保留。舊評估按風險計算產生新版快照即可，不重跑基因計分；nf_work維持原路徑並透過既有bind mount使用SSD。
+
+**六疾病基礎版 v9.90（2026-11-05）**：CHD＋T2D＋All cancers＋Breast cancer＋AF＋Epilepsy 共六疾病已接上共用計分／風險／UI／報告。準備與驗收請先看 [六疾病操作文件](../../docs/ops/PRS_MULTI_DISEASE.md)；來源與 1,232 筆重現見 [參數發行說明](releases/tw_multi_v1/README.md)。`multidisease/` 為共用計分程式，`absolute_risk/registry.py` 為模型對應，`releases/tw_multi_v1/` 為固定研究參數。大型參考模型須在院內準備；完整 WGS 尚未在本次驗收。以下 CHD V1 文件保留供舊版本／凍結計分流程追溯，新增疾病以六疾病文件為準。
 
 2026-11-02 v9.72：接上三級自動計分與兩階段 PRS 表格。先由原始 gVCF 產生 score／percentile／祖源，再由使用者輸入臨床資料並計算風險。採 INTERVENE 原研究 EstBB HR＋台灣 GBD2019，輸出未來10年、目前至80歲風險與 PRS 40–60% 比較曲線。原文224筆 Estonia CHD 結果驗算通過；**台灣 outcome validation 尚未完成，結果僅供研究**。TWB／BBJ 未納入本模型。
 
@@ -46,7 +48,7 @@ python3 -m research.prs.absolute_risk evaluate \
 - `intervene_discrete_v1`：每五年增量 `S_start * (1-exp(-5*hazard))`，存活比例乘 `exp(-5*(hazard+mortality))`。只接受完整五年區間。用於重現作者的離散近似；已以 EstBB HR＋Estonia baseline 重現 Data 4 的224筆 CHD 結果（含男女各七組）。
 - `competing_exact_v1`：區間長度 dt，增量 `S_start * hazard/(hazard+mortality) * (1-exp(-dt*(hazard+mortality)))`。零總 hazard 時增量為 0；可切分非五歲整數的評估年齡。這是不同數值方法，不能宣稱與前者逐值相同。
 
-未來風險從「目前仍存活且無 CHD」開始，初始 S=1，往指定年齡前進。不是出生累積率直接相減。10 年期間超過 80 歲時回傳 unavailable，不截短冒稱 10 年；仍可回傳目前至 80 歲風險。出生至80歲為另一種研究曲線，僅適用含完整年齡範圍的參數；本版台灣包從20歲起，不提供出生累積率。
+未來風險從「目前仍存活且無該疾病」開始，初始 S=1，往指定年齡前進。不是出生累積率直接相減。10／20 年期間超過 80 歲時回傳 unavailable，不截短冒稱完整期間；仍可回傳目前至 80 歲風險。出生至80歲為另一種研究曲線，僅適用含完整年齡範圍的參數；本版台灣包從20歲起，不提供出生累積率。
 
 ## 正式資料包規格
 

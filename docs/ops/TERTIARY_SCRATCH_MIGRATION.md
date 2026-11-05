@@ -2,6 +2,8 @@
 
 此流程由操作者在 `n102968@server` 執行；Codex 不連入伺服器部署。前置條件為已完成方案 A：`ubuntu-vg/ubuntu-lv` 與 ext4 擴充至約 951 GiB，`/scratch` 使用根檔案系統。2026-11-03 實際查詢：根目錄 `df` 936 GiB、可用856 GiB，`nf_work` 35 GiB，來源仍為 `/dev/sda` HDD。
 
+**搬遷已完成的紀錄（2026-11-05核對）**：操作者在「規劃磁碟重新配置方案 A」（`01a1a057-3959-7473-8c83-96bf63bcbfc8`）貼回11/3的`--apply`結果，HDD備份為`nf_work.hdd-backup-20261103-093439`；原nf_work已掛載`/dev/mapper/ubuntu--vg-ubuntu--lv[/scratch/n102968/nf_work]`，服務啟動前的mountpoint及device檢查皆成功。下文保留搬遷／回復SOP，不表示需要再次搬遷。PRS v9.90/9.91（含六疾病準備與容器tmp）使用既有nf_work/prs，與此掛載相容；此確認依貼回紀錄，非本次連入伺服器實測。
+
 ## 資料配置
 
 實際資料：`/scratch/n102968/nf_work/`。以 bind mount 掛回 `/home/n102968/NGS_UI/nf_work/`。程式、既有 session、work-dir pointer、PRS config snapshot 與工作檔仍使用原絕對路徑；不是兩套運算資料，也不建立符號連結。

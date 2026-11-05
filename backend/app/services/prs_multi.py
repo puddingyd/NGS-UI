@@ -92,6 +92,7 @@ def report_assessment(sid):
     saved = prs.latest_snapshot(sid)
     if not saved or saved.get('input_sha256') != dict(bundle=pack_hash, score=score_hash, case_metadata=meta_hash):
         raise prs.NotReady('請先完成並保存目前資料的 PRS 風險計算')
+    prs.require_twenty_year_assessment(saved)
     expected = calculator.evaluate(pack, summary, saved['inputs']['person'])
     if expected != saved['result'] or not any(r['available'] for r in expected['diseases'].values()):
         raise prs.NotReady('PRS 風險評估完整性檢查未通過')
@@ -107,7 +108,7 @@ def explanation():
         'percentile → risk：依 INTERVENE 愛沙尼亞資料庫的百分位分組相對風險，結合台灣 GBD 2019 年齡、性別別的發生率、盛行率與死亡率；估算首次發病，並考慮先因其他原因死亡的可能。',
     ], limitations=[
         common['limitations'][0], common['limitations'][1],
-        '只估算評估時仍存活、確認尚未罹患該疾病的 20 至未滿 80 歲個案；各疾病病史分別確認。超過 70 歲不提供完整十年風險。乳癌風險模型僅適用女性。',
+        '只估算評估時仍存活、確認尚未罹患該疾病的 20 至未滿 80 歲個案；各疾病病史分別確認。超過 60 歲不提供完整二十年風險，超過 70 歲不提供完整十年風險，仍可查看至 80 歲風險。乳癌風險模型僅適用女性。',
         *[d['name']+'：'+d['limitation'] for d in registry.values()],
         '整體癌症與乳癌的事件範圍重疊，兩個風險不能相加；此模型也不能用來預測特定癌別、腫瘤位置或癌症復發。',
         common['limitations'][4], common['limitations'][5],

@@ -69,8 +69,10 @@ def evaluate(bundle, summary, person, allow_synthetic=False):
     row = score_row(summary, definition)
     p = row['eas_percentile']
     ten = integrate(bundle, person['sex'], p, age, age + 10) if age <= 70 else None
+    twenty = integrate(bundle, person['sex'], p, age, age + 20) if age <= 60 else None
     remaining = integrate(bundle, person['sex'], p, age, 80)
     reference_ten = integrate(bundle, person['sex'], 50, age, age + 10) if age <= 70 else None
+    reference_twenty = integrate(bundle, person['sex'], 50, age, age + 20) if age <= 60 else None
     reference_remaining = integrate(bundle, person['sex'], 50, age, 80)
     return {'schema': 'CHD_RESEARCH_RESULT_V1', 'research_only': True,
             'clinical_validation': 'NOT_VALIDATED', 'parameter_status': bundle['status'],
@@ -78,11 +80,14 @@ def evaluate(bundle, summary, person, allow_synthetic=False):
             'population': bundle['population'], 'baseline_year': bundle['baseline_year'],
             'score_definition': definition, 'person': person, 'percentile': p,
             'risk_10_year': ten, 'risk_10_year_unavailable_reason': None if ten else 'Horizon exceeds age 80',
+            'risk_20_year': twenty, 'risk_20_year_unavailable_reason': None if twenty else 'Horizon exceeds age 80',
             'risk_to_80': remaining, 'uncertainty_interval': None,
             'reference': {'group': '40-60', 'risk_10_year': reference_ten,
+                          'risk_20_year': reference_twenty,
                           'risk_to_80': reference_remaining},
             'risk_difference_pp': {
                 'ten_year': 100 * (ten['risk'] - reference_ten['risk']) if ten else None,
+                'twenty_year': 100 * (twenty['risk'] - reference_twenty['risk']) if twenty else None,
                 'to_80': 100 * (remaining['risk'] - reference_remaining['risk'])},
             'conditioning': 'alive_and_CHD_free_at_assessment_age',
             'reproduction': bundle.get('reproduction'),

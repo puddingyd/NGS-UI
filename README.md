@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v9.91：PRS 新增未來20年風險，UI、參考組說明與健檢報告同步顯示；評估年齡超過60歲時20年顯示不適用，10年及至80歲仍依原規則。各疾病病史新表單預設「否」，保留已儲存病史。既有個案按一次「風險計算」即可產生新版評估，不需重跑基因分析。確認既有`nf_work` bind mount與PRS路徑相容，繼續使用原路徑存取SSD。[操作說明](docs/ops/PRS_MULTI_DISEASE.md)。
+
 v9.90：PRS 一次擴充第二型糖尿病、整體癌症、乳癌、心房顫動及癲癇，與 CHD 共用 gVCF 重建、六欄計分及祖源分析。UI 六列表格、各疾病病史、曲線切換及健檢報告已整合。部署後須執行一次共用參考模型準備，再由 PRS 卡片重跑個案；舊 CHD 仍可讀取。1,232 筆原研究風險結果已重現，本機合成流程已測，**完整院內參考資料／WGS 驗收尚待執行**，也尚無台灣臨床追蹤驗證。[啟用、資料限制與驗收](docs/ops/PRS_MULTI_DISEASE.md)。
 
 v9.89：三級分析清單移除後處理工具Log下載按鈕，直接使用「查看Log」。新版整合PRS的三級Log不再附加底部重複的「PRS工作目前狀態」段落；原始紀錄與舊背景工作的狀態追蹤保留。
@@ -12,7 +14,7 @@ v9.87：三級分析視窗僅保留靠右的Log展開／收合按鈕；完整後
 
 **三級工作區可整包搬至 NVMe（v9.82）**：DRAGEN／NCKUH Nextflow、PRS、三級 staging／post-processing 與工具暫存統一使用 `nf_work`；以 bind mount 保留既有絕對路徑與續跑紀錄。計算完成後先將全批結果複製到正式儲存位置、逐檔SHA256核對，再依既有可回復流程發布，保留判讀狀態。提供唯讀檢查／停機搬遷工具，操作者自行在伺服器執行；工具保留HDD備份並設定開機掛載、服務掛載檢查，不自行啟停服務。[搬遷、驗收與回復步驟](docs/ops/TERTIARY_SCRATCH_MIGRATION.md)。
 
-INTERVENE PRS 已接成兩階段流程：三級分析勾選 PRS 後，由原始 WGS gVCF 自動產生 score／percentile 與祖源 QC；在 **Secondary findings → PRS** 的疾病表格上方輸入年齡、性別、CHD病史，再按「風險計算」顯示10年／至80歲風險與比較曲線。目前僅CHD研究模型，未完成台灣臨床驗證；執行環境與風險參數須另安裝。見 [安裝與操作](docs/ops/PRS_CHD_RESEARCH.md)及[計分程式](research/prs/README.md)。
+INTERVENE PRS 已接成兩階段流程：三級分析勾選 PRS 後，由原始 WGS gVCF 自動產生 score／percentile 與祖源 QC；在 **Secondary findings → PRS** 的疾病表格上方輸入年齡、性別及各疾病病史，再按「風險計算」顯示10年／20年／至80歲風險與比較曲線。六疾病模型須先完成共用參考準備；未啟用者仍可使用舊CHD。尚未完成台灣臨床驗證，見 [六疾病操作](docs/ops/PRS_MULTI_DISEASE.md)、[原CHD設定](docs/ops/PRS_CHD_RESEARCH.md)及[計分程式](research/prs/README.md)。
 
 v9.86：平台PRS與左側目錄均排在PGx之前，標題依指定字樣為「Polygenic risk rcore (PRS)」，改用其他Secondary findings的白底樣式。健檢匯出在PGx前提供「多基因風險評估（PRS）」：已分析並保存有效風險時預設勾選，缺資料／尚未計算／資料過期則反灰且不能勾選；修改臨床資訊後須重新計算。勾選時於PGx前輸出PRS結果、說明及研究限制，百分位與風險四捨五入到小數一位，套組與檢測方法同步加入PRS；未勾選不輸出。綜合說明首行加入「ACMG疾病風險基因」標題（有選ACMG時）。後端再次核對評估來源，避免手動要求或匯出途中資料改變造成過期結果。更新重載即可，不需重跑三級／PRS；院內Word排版仍待驗收。
 

@@ -115,10 +115,12 @@ def evaluate(pack, summary, person):
         b = pack['models'][key]
         p = r['eas_percentile']
         ten = integrate(b, sex, p, age, age+10) if age <= 70 else None
+        twenty = integrate(b, sex, p, age, age+20) if age <= 60 else None
         remaining = integrate(b, sex, p, age, 80)
-        results[key] = dict(**base, person=person, risk_10_year=ten, risk_to_80=remaining,
+        results[key] = dict(**base, person=person, risk_10_year=ten, risk_20_year=twenty, risk_to_80=remaining,
             reference=dict(group='40-60',
                 risk_10_year=integrate(b, sex, 50, age, age+10) if age <= 70 else None,
+                risk_20_year=integrate(b, sex, 50, age, age+20) if age <= 60 else None,
                 risk_to_80=integrate(b, sex, 50, age, 80)),
             model_id=b['model_id'], limitations=b['limitations'],
             conditioning='alive_and_free_of_this_disease_at_assessment', uncertainty_interval=None)

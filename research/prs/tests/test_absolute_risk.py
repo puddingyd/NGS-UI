@@ -87,6 +87,7 @@ class RiskTests(unittest.TestCase):
     def test_horizon_and_research_status(self):
         result=evaluate(self.b,self.s,{**self.p,'age':75},True)
         self.assertIsNone(result['risk_10_year'])
+        self.assertIsNone(result['risk_20_year'])
         self.assertGreater(result['risk_to_80']['risk'],0)
         self.assertEqual(result['clinical_validation'],'NOT_VALIDATED')
         self.assertIsNone(result['uncertainty_interval'])
@@ -98,6 +99,9 @@ class RiskTests(unittest.TestCase):
         result = evaluate(self.b, self.s, {**self.p, 'age': 50.5}, True)
         self.assertEqual(result['risk_to_80'], result['reference']['risk_to_80'])
         self.assertEqual(result['risk_difference_pp']['ten_year'], 0)
+        self.assertEqual(result['risk_difference_pp']['twenty_year'], 0)
+        self.assertEqual(result['risk_20_year'],result['reference']['risk_20_year'])
+        self.assertNotAlmostEqual(result['risk_20_year']['risk'],2*result['risk_10_year']['risk'])
 
     def test_cli_and_refusal_to_overwrite(self):
         with tempfile.TemporaryDirectory() as d:

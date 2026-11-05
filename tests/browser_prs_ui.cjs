@@ -8,6 +8,7 @@ const repo=path.resolve(__dirname,'..');
 // Synthetic model and person only; scientific numerical tests live in Python.
 const fixture=JSON.parse(execFileSync(process.env.PYTHON||'python3',['-c',`
 import json
+from copy import deepcopy
 from pathlib import Path
 from research.prs.absolute_risk.__main__ import evaluate
 from backend.app.services.prs_presentation import explanation
@@ -23,9 +24,13 @@ from test_prs_multi import summary as multi_summary, payload as multi_payload
 from app.services import prs_multi
 ms=multi_summary();mp=multi_payload();pack=prs_multi.bundle()[0]
 female=prs_multi.calculator.evaluate(pack,ms,prs_multi.calculator.person_for(ms,mp))
-mp['sex']='male';mp['history']['AF']=None
+mp=deepcopy(mp);mp['sex']='male';mp['history']['AF']=None
 male=prs_multi.calculator.evaluate(pack,ms,prs_multi.calculator.person_for(ms,mp))
-print(json.dumps({'multi':{'female':{'result':female},'male':{'result':male},'explanation':prs_multi.explanation()}, 'results':{str(age):{'result':evaluate(b,s,{**a,'age':age,'sex':'male'},True)} for age in [50.5,75]}, 'explanation':explanation()}))
+mp=deepcopy(mp);mp['sex']='female';mp['history']['AF']=True
+old=prs_multi.calculator.evaluate(pack,ms,prs_multi.calculator.person_for(ms,mp))
+for r in old['diseases'].values():
+ if r['available']:r.pop('risk_20_year');r['reference'].pop('risk_20_year')
+print(json.dumps({'multi':{'female':{'result':female},'male':{'result':male},'old':{'result':old},'explanation':prs_multi.explanation()}, 'results':{str(age):{'result':evaluate(b,s,{**a,'age':age,'sex':'male'},True)} for age in [50.5,60,60.01,75]}, 'explanation':explanation()}))
 `],{cwd:repo,encoding:'utf8'}));
 const results=fixture.results;
 const html=fs.readFileSync(path.join(repo,'frontend/index.html'),'utf8');
@@ -81,6 +86,8 @@ const server=http.createServer((req,res)=>{
  await screenshot('report-ready.png');await page.locator('[data-act="ok"]').click();
  assert.deepEqual(await page.evaluate(()=>window.pickerResult),['acmg_sf','prs','pgx']);
  assert.equal(await page.locator('#prs-disease-rows tr').count(),6);
+ assert.equal(await page.locator('.prs-diseases thead th').count(),6);
+ assert.deepEqual(await page.locator('[data-history]').evaluateAll(es=>es.map(e=>e.value)),Array(6).fill('no'));
  assert.match(await page.locator('#prs-disease-rows').innerText(),/1.234568/);
  assert((await page.locator('[data-risk]').allTextContents()).every(s=>s==='請輸入臨床資訊後計算'));
  const boxes=await page.locator('#prs-form > label,#prs-history-menu>summary,#prs-submit').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().top));assert(Math.max(...boxes)-Math.min(...boxes)<12,'desktop clinical inputs must fit one row');
@@ -100,8 +107,14 @@ const server=http.createServer((req,res)=>{
  await page.locator('#prs-refresh').click();await page.waitForFunction(()=>!document.querySelector('#prs-submit').disabled);
  await page.locator('#prs-age').fill('50.5');await page.locator('#prs-sex').selectOption('male');await page.locator('#prs-history-menu>summary').click();await page.locator('#prs-history').selectOption('no');await page.locator('#prs-history-menu>summary').click();await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});
  const r=latest.result;assert.equal(await page.locator('[data-disease="CHD"] [data-risk="ten"]').innerText(),`${(r.risk_10_year.risk*100).toFixed(2)}%`);assert.equal(await page.locator('#prs-chart path').count(),2);
+ assert.equal(await page.locator('[data-disease="CHD"] [data-risk="twenty"]').innerText(),`${(r.risk_20_year.risk*100).toFixed(2)}%`);
  await screenshot('table-result.png');
  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(100);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow outside scrollable table');await screenshot('table-mobile.png');
+ await page.locator('#prs-age').fill('60');await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});
+ assert.equal(await page.locator('[data-disease="CHD"] [data-risk="twenty"]').innerText(),await page.locator('[data-disease="CHD"] [data-risk="eighty"]').innerText());
+ await page.locator('#prs-age').fill('60.01');await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});
+ assert.match(await page.locator('[data-disease="CHD"] [data-risk="twenty"]').innerText(),/超出/);
+ assert.match(await page.locator('[data-disease="CHD"] [data-risk="ten"]').innerText(),/%/);
  await page.locator('#prs-age').fill('75');assert.equal(await page.locator('#prs-result').isVisible(),false);assert.equal(await page.locator('[data-disease="CHD"] [data-risk="ten"]').innerText(),'請輸入臨床資訊後計算');await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});assert.match(await page.locator('[data-disease="CHD"] [data-risk="ten"]').innerText(),/超出/);
  await page.locator('#prs-history-menu>summary').click();await page.locator('#prs-history').selectOption('yes');await page.locator('#prs-history-menu>summary').click();const n=posts;await page.locator('#prs-submit').click();assert.equal(posts,n);
  ready=false;await page.locator('#prs-refresh').click();await page.waitForFunction(()=>document.querySelector('#prs-submit').disabled);assert.match(await page.locator('#prs-disease-rows').innerText(),/1.234568/);assert.equal(await page.locator('#prs-result').isVisible(),false);
@@ -118,20 +131,29 @@ const server=http.createServer((req,res)=>{
  await page.locator('#prs-history-menu>summary').click();await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});
  assert.equal(await page.locator('#prs-curve-disease option').count(),6);
  assert((await page.locator('[data-risk="eighty"]').allTextContents()).every(s=>/^\d+\.\d+%$/.test(s)));
+ assert((await page.locator('[data-risk="twenty"]').allTextContents()).every(s=>/^\d+\.\d+%$/.test(s)));
  await page.locator('#prs-curve-disease').selectOption('BREAST');assert.match(await page.locator('#prs-result-context').innerText(),/乳癌/);
  await screenshot('six-diseases-female.png');
+ latest=fixture.multi.old;await page.locator('#prs-refresh').click();
+ await page.waitForFunction(()=>document.querySelector('#prs-message').textContent.includes('補上20年'));
+ assert.equal(await page.locator('#prs-history-AF').inputValue(),'yes');
+ assert.equal(await page.locator('[data-disease="CHD"] [data-risk="twenty"]').innerText(),'請重新計算風險');
+ assert.match(await page.locator('[data-disease="CHD"] [data-risk="ten"]').innerText(),/%/);
  await page.locator('#prs-sex').selectOption('male');assert.equal(await page.locator('#prs-result').isVisible(),false);
  await page.locator('#prs-history-menu>summary').click();await page.locator('#prs-history-AF').selectOption('');await page.locator('#prs-history-menu>summary').click();
  await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});
  assert.equal(await page.locator('#prs-curve-disease option').count(),4);
  assert.match(await page.locator('[data-disease="BREAST"] [data-risk="ten"]').innerText(),/女性/);
  assert.match(await page.locator('[data-disease="AF"] [data-risk="ten"]').innerText(),/確認/);
+ await page.locator('#prs-refresh').click();await page.waitForFunction(()=>document.querySelector('#prs-message').textContent.includes('顯示上次評估'));
+ assert.equal(await page.locator('#prs-history-AF').inputValue(),'');
  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(100);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await screenshot('six-diseases-mobile.png');
  qcFailed='CHD';latest=null;await page.locator('#prs-refresh').click();
  await page.waitForFunction(()=>document.querySelector('#prs-score-status').textContent.includes('其他疾病可依臨床資訊計算'));
  assert.match(await page.locator('#prs-score-status').innerText(),/冠心病/);assert.equal(await page.locator('#prs-submit').isDisabled(),false);
  delay=200;await page.locator('#prs-refresh').click();await page.evaluate(()=>window.resetPrsSample('OTHER_CASE'));await page.waitForTimeout(350);assert.equal(await page.locator('#prs-message').innerText(),'');assert.equal(await page.locator('#prs-result').isVisible(),false);
- assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: six-disease rows/history/curves, per-disease QC, legacy CHD, report selection, mobile scroll, clinical invalidation, no ancestry keeps score, run/log/cancel, sample-switch race');
+ assert.deepEqual(await page.locator('[data-history]').evaluateAll(es=>es.map(e=>e.value)),Array(6).fill('no'));
+ assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: 20-year horizons, default-no/preserved history, legacy snapshots, six-disease rows/curves/QC, report selection, mobile scroll, clinical invalidation, run/log/cancel, sample-switch race');
  } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(e=>{console.error(e);process.exit(1)});
