@@ -1,0 +1,32 @@
+[
+  {
+    "pgs_id": "PGS004870",
+    "url": "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/PGS004870/ScoringFiles/Harmonized/PGS004870_hmPOS_GRCh38.txt.gz",
+    "sha256": "0a2b6b5c7c3a6b1ce858a9c61849fe2f052d7a730a719e7a48114a35b3988d1f",
+    "bytes": 19318635
+  },
+  {
+    "pgs_id": "PGS004875",
+    "url": "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/PGS004875/ScoringFiles/Harmonized/PGS004875_hmPOS_GRCh38.txt.gz",
+    "sha256": "8120064d4a58d1778551dcf227cf8d1b2a61dab11f56ff45d1ba1c0d1bf50349",
+    "bytes": 16648145
+  },
+  {
+    "pgs_id": "PGS004869",
+    "url": "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/PGS004869/ScoringFiles/Harmonized/PGS004869_hmPOS_GRCh38.txt.gz",
+    "sha256": "3436864dda31f36f3833b3f5ae98d03bf601d7db9bf2f5af7d43a77eb96c23a7",
+    "bytes": 18414186
+  },
+  {
+    "pgs_id": "PGS004878",
+    "url": "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/PGS004878/ScoringFiles/Harmonized/PGS004878_hmPOS_GRCh38.txt.gz",
+    "sha256": "2591549f15c520c2d0a24a8b81d08e5fa1ae476c22b9afa40b99f59b4adbebc0",
+    "bytes": 16574577
+  },
+  {
+    "pgs_id": "PGS004881",
+    "url": "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/PGS004881/ScoringFiles/Harmonized/PGS004881_hmPOS_GRCh38.txt.gz",
+    "sha256": "6e30cd35b90f389cb11775cce9c578e61103a6d7116da092fe4e92599a6ee9d5",
+    "bytes": 12918684
+  }
+]

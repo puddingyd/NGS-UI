@@ -1678,7 +1678,7 @@ def _cnv_reference_text(v: dict, edits: dict, omim_genes: list[dict],
 
 # ── §四 方法、§五 注釋 ───────────────────────────────────────────
 
-def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: bool = True, include_prs: bool = False, specialized_genes: str = "") -> None:
+def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: bool = True, include_prs: bool = False, specialized_genes: str = "", prs_models: str = "") -> None:
     is_wgs = test_types.is_wgs_type(test_type)
     seq    = "Illumina NovaSeq X Plus" if is_wgs else "Illumina NextSeq 2000"
     depth  = "27X" if is_wgs and health else ("30X" if is_wgs else "50X")
@@ -1706,7 +1706,7 @@ def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: 
         if include_prs:
             content = _health_prs_content()
             _health_prs_labeled_paragraph(doc, f'  {next_note_number}. ' + content['method_prefix'],
-                                          content['model_name'], content['method_suffix'])
+                                          prs_models or content['model_name'], content['method_suffix'])
             next_note_number += 1
         if is_wgs and include_pgx:
             _add_paragraph(
@@ -3832,19 +3832,20 @@ def _render_health_prs_section(doc, snapshot):
     _add_paragraph(doc, content['title'], bold=True).paragraph_format.keep_with_next = True
     _add_paragraph(doc, content['intro'])
     sex = '男性' if person['sex'] == 'male' else '女性'
-    _add_paragraph(doc, f'評估日期：{person["assessment_date"]}；評估時年齡：{person["age"]:g} 歲；性別：{sex}；確認尚未罹患 CHD。')
+    multi = result.get('schema') == 'PRS_MULTI_RESULT_V1'
+    assessment_rows = ([r for r in result['diseases'].values() if r['available']] if multi
+                       else [{**result, 'name': '冠狀動脈心臟病'}])
+    _add_paragraph(doc, f'評估日期：{person["assessment_date"]}；評估時年齡：{person["age"]:g} 歲；性別：{sex}；'
+                   + ('已確認尚未罹患下表所列疾病。' if multi else '確認尚未罹患 CHD。'))
     _add_paragraph(doc, content['result_title'], bold=True).paragraph_format.keep_with_next = True
-    ten = result['risk_10_year']
-    values = [
-        '冠狀動脈心臟病', f'第{_health_prs_number(result["percentile"])}百分位',
-        _health_prs_number(ten['risk'], risk=True)+'%' if ten else '不適用',
-        _health_prs_number(result['risk_to_80']['risk'], risk=True)+'%',
-    ]
-    table = doc.add_table(rows=2, cols=4)
+    values = [[r['name'].split('（')[0], f'第{_health_prs_number(r["percentile"])}百分位',
+        _health_prs_number(r['risk_10_year']['risk'], risk=True)+'%' if r['risk_10_year'] else '不適用',
+        _health_prs_number(r['risk_to_80']['risk'], risk=True)+'%'] for r in assessment_rows]
+    table = doc.add_table(rows=1+len(values), cols=4)
     table.autofit = False
     for column, width in zip(table.columns, (4.4, 4.2, 4.2, 5.2)):
         column.width = Cm(width)
-    for index, row_values in enumerate((['疾病', 'PRS 百分位', '未來10年風險', '至80歲累積風險'], values)):
+    for index, row_values in enumerate([['疾病', 'PRS 百分位', '未來10年風險', '至80歲累積風險'], *values]):
         row = table.rows[index]
         row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
         if index == 0:
@@ -3864,8 +3865,14 @@ def _render_health_prs_section(doc, snapshot):
         for key, value in (('val','single'), ('sz','4'), ('color','D9D9D9')): border.set(qn('w:'+key),value)
         borders.append(border)
     table._tbl.tblPr.append(borders)
-    if ten is None:
+    if any(r['risk_10_year'] is None for r in assessment_rows):
         _add_paragraph(doc, '未來10年風險不適用：評估年齡超過70歲，完整十年期間超出本模型80歲的估算終點。')
+    if multi:
+        excluded = [r['name'].split('（')[0]+'：'+r['reason'] for r in result['diseases'].values() if not r['available']]
+        if excluded: _add_paragraph(doc, '本次未提供的風險估計：'+'；'.join(excluded)+'。')
+        _add_paragraph(doc, '各疾病為獨立估計，數值不可相加；整體癌症與乳癌的事件範圍重疊。乳癌風險模型僅適用女性，不估算已患病者的復發風險。')
+        for r in assessment_rows:
+            _add_paragraph(doc, r['name'].split('（')[0]+'：'+r['limitations'][0])
     _add_paragraph(doc, '結果說明', bold=True)
     for label, text in content['definitions']:
         _health_prs_labeled_paragraph(doc, '', label, text)
@@ -3879,7 +3886,7 @@ def _pgx_report_genes(pgx: dict) -> list[str]:
     return list(_PGX_CPIC_LEVEL_A_GENES)
 
 
-def _section_health_annotations(doc, requested_set: set[str], pgx: dict | None = None) -> None:
+def _section_health_annotations(doc, requested_set: set[str], pgx: dict | None = None, *, prs_models: str = '') -> None:
     _add_paragraph(doc, "五、檢測結果注釋")
     _add_paragraph(doc, "  1. 本檢測結果比對參考序列為人類hg38版本。")
     _add_paragraph(doc, "  2. 參考資料:")
@@ -3890,7 +3897,7 @@ def _section_health_annotations(doc, requested_set: set[str], pgx: dict | None =
     _add_paragraph(doc, "  3. 本次檢測基因包括")
     sections = _health_panel_gene_sections(requested_set)
     if not sections and "pgx" not in requested_set:
-        _add_paragraph(doc, '    多基因風險評估使用 PGS004879 常見變異模型，不屬於單一疾病基因清單。'
+        _add_paragraph(doc, '    多基因風險評估使用 '+(prs_models or 'PGS004879')+' 常見變異模型，不屬於單一疾病基因清單。'
                        if 'prs' in requested_set else "    （未選擇檢測基因項目）")
         return
     for idx, (name, genes) in enumerate(sections):
@@ -4041,8 +4048,12 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
         )
 
     specialized_genes = "、".join(dict.fromkeys(v.get("gene_symbol", "") for v in referenced if v.get("specialized") or v.get("gba")))
-    _section_methods(doc, test_type, health=True, include_pgx=include_pgx, include_prs=bool(prs_assessment), specialized_genes=specialized_genes)
-    _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {})
+    prs_models = ''
+    if prs_assessment and prs_assessment['result'].get('schema') == 'PRS_MULTI_RESULT_V1':
+        prs_models = '、'.join(r['pgs_id']+'（'+r['name'].split('（')[0]+'）'
+                              for r in prs_assessment['result']['diseases'].values() if r['available'])
+    _section_methods(doc, test_type, health=True, include_pgx=include_pgx, include_prs=bool(prs_assessment), specialized_genes=specialized_genes, prs_models=prs_models)
+    _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {}, prs_models=prs_models)
 
     if referenced or include_acmg_education or pgx_drug_groups:
         _start_health_appendix(doc)

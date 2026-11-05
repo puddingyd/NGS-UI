@@ -87,7 +87,7 @@ class Worker:
         started = time.monotonic()
         self.event('start', detail=step)
         cwd, env = prs_paths.environment(self.plan['path_layout'], self.job['pipeline_run_id'],
-                                         'ancestry' if '--raw-source' in args else 'score')
+                                         'ancestry' if '--raw-source' in args or ('--stage' in args and args[args.index('--stage')+1] == 'ancestry') else 'score')
         if args[0] == 'apptainer':
             env = container_runtime.without_bind_destinations(env,
                 {str(prs_paths.container_tmp(self.plan['path_layout'])), '/tmp', '/var/tmp'})
@@ -116,7 +116,13 @@ class Worker:
         summary, digest = prs.read_json(original)
         if summary.get('sample') != self.job['source_sample_id']:
             raise ValueError('計分結果樣本識別碼不符')
-        prs.calculator.score_row(summary, prs.SCORE_DEFINITION, require_ancestry=False)
+        multi = summary.get('schema') == 'PRS_MULTI_SCORE_V1'
+        if multi:
+            from ..services import prs_multi
+            prs_multi.calculator.score_rows(summary)
+            prs_multi.check_model(summary)
+        else:
+            prs.calculator.score_row(summary, prs.SCORE_DEFINITION, require_ancestry=False)
         qc_hash = None
         if qc:
             evidence, qc_hash = prs.read_json(qc)
@@ -125,12 +131,14 @@ class Worker:
             # Derived envelope only; never edit the frozen upstream summary.
             summary = {**summary, 'ancestry_status': evidence}
         artifacts = dict(score=prs_paths.publish_files(
-            self.job['sample_id'], self.job['job_id'], 'score', original.parent, prs_paths.SCORE_FILES))
+            self.job['sample_id'], self.job['job_id'], 'score', original.parent,
+            ('summary.json', 'scores.tsv', 'inputs.lock.json', 'missing_loci.tsv.gz') if multi else prs_paths.SCORE_FILES))
         if artifacts['score']['files']['summary.json'] != digest:
             raise ValueError('計分結果在發布期間已變更')
         if qc:
             artifacts['ancestry'] = prs_paths.publish_files(
-                self.job['sample_id'], self.job['job_id'], 'ancestry', qc.parent, prs_paths.QC_FILES)
+                self.job['sample_id'], self.job['job_id'], 'ancestry', qc.parent,
+                ('qc.json',) if multi else prs_paths.QC_FILES)
             if artifacts['ancestry']['files']['qc.json'] != qc_hash:
                 raise ValueError('祖源結果在發布期間已變更')
         self.verify_inputs()
@@ -188,6 +196,9 @@ class Worker:
             sid, run = self.job['source_sample_id'], self.job['pipeline_run_id']
             config_path = str(self.directory/'config.json')
             dest = Path(self.cfg['project'])/'integrated_runs'/run/sid
+            if self.cfg.get('multi_model_dir'):
+                self.run_multi(sid, config_path, dest/'multi')
+                return
             self.command([sys.executable, str(jobs.SCORING/'pipeline_v21.py'), 'run',
                           '--config', config_path, '--sample', sid, '--run-id', run,
                           '--mode', 'fresh', '--gvcf', self.plan['gvcf'], '--resume'],
@@ -212,6 +223,24 @@ class Worker:
             self.stop_process()
             if slot is not None: slot.close()
             _release_sample_locks(locks)
+
+    def run_multi(self, sid, config_path, output):
+        args = [sys.executable, str(config.REPO_ROOT/'research/prs/multidisease_cli.py'),
+                '--config', config_path, '--sample', sid, '--gvcf', self.plan['gvcf'], '--output', str(output)]
+        self.command([*args, '--stage', 'score'], '六疾病共用 gVCF 重建 → 固定計分 → 百分位')
+        original = output/'summary.json'
+        self.publish(original)
+        try:
+            self.command([*args, '--stage', 'ancestry'], '六疾病共用祖源與品質檢查')
+            self.publish(original, output/'qc.json')
+        except RuntimeError as exc:
+            self.update(status='done_with_warnings', step='六疾病計分完成；祖源檢查未完成', warning=str(exc))
+            return
+        summary, _ = prs.read_json(original)
+        failed = [r['pgs_id'] for r in summary['diseases'].values() if not r['qc_ready']]
+        self.update(status='done_with_warnings' if failed else 'done',
+                    step='六疾病計分與祖源檢查完成；等待臨床資訊',
+                    warning='部分疾病未通過計分品質：'+', '.join(failed) if failed else None)
 
 
 def main(jid):

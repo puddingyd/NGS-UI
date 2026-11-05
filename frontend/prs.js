@@ -1,6 +1,11 @@
 // Separate genotype scoring from clinical risk assessment. Values are server-owned.
 let sampleId = null, generation = 0, controller = null, ready = false;
 let displayedResult = null, timer = null, currentJob = null, dirtyClinical = false, busy = false;
+let assessmentResults = {};
+const diseases = [
+  ['CHD','冠心病（CHD）'],['T2D','第二型糖尿病（T2D）'],['ALL_CANCERS','整體癌症（All cancers）'],
+  ['BREAST','乳癌（Breast cancer）'],['AF','心房顫動（AF）'],['EPILEPSY','癲癇（Epilepsy）'],
+];
 const byId = id => document.getElementById(id);
 const pending = '請輸入臨床資訊後計算';
 const active = job => ['queued','running','cancelling'].includes(job?.status);
@@ -12,12 +17,13 @@ export function formatRisk(value) {
   return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=1 ? `${(value*100).toFixed(2)}%` : '無法估算';
 }
 function resetRisks() {
-  displayedResult=null;byId('prs-result').hidden=true;
+  displayedResult=null;assessmentResults={};byId('prs-result').hidden=true;
   for (const cell of document.querySelectorAll('#prs-disease-rows [data-risk]'))cell.textContent=pending;
 }
-function renderRows(diseases=[{id:'CHD',name:'冠心病（CHD）',score:null}]) {
+function renderRows(records=[]) {
   const body=byId('prs-disease-rows');body.replaceChildren();
-  for(const disease of diseases) {
+  for(const [id,name] of diseases) {
+    const disease=records.find(r=>r.id===id)||{id,name,score:null};
     const row=document.createElement('tr');row.dataset.disease=disease.id;
     const score=disease.score;
     for(const value of [disease.name, score ? Number(score.raw_score).toFixed(6) : '尚未完成分析', score ? `第 ${Number(score.percentile).toFixed(2)} 百分位` : '尚未完成分析']) {
@@ -33,6 +39,7 @@ export function resetPrsSample(sid) {
   if(!byId('prs-card'))return;
   byId('prs-card').classList.toggle('hidden',!sampleId);
   byId('prs-details').open=false;byId('prs-form').reset();
+  buildHistory();byId('prs-history-menu').open=false;
   byId('prs-result').hidden=true;byId('prs-message').textContent='';
   byId('prs-score-status').textContent='';renderExplanation();byId('prs-explanation').open=false;
   byId('prs-pipeline-message').textContent='';byId('prs-submit').disabled=true;
@@ -69,7 +76,8 @@ function renderCurve(result) {
   const cap = Math.min(1, Math.max(.01, Math.ceil(maximum * 100 / 5) * .05));
   const x = age => left + (age-first)/(80-first)*(width-left-right);
   const y = risk => height-bottom-risk/cap*(height-top-bottom);
-  svg.append(svgNode('title', {}, '目前至80歲的 CHD 累積風險：此個案與 PRS 40–60% 參考組'));
+  const title=`目前至80歲的 ${result.name||'冠心病（CHD）'} 累積風險：此個案與 PRS 40–60% 參考組`;
+  svg.setAttribute('aria-label',title);svg.append(svgNode('title', {},title));
   for (let i=0; i<=4; i++) {
     const value = cap*i/4;
     svg.append(svgNode('line', {x1:left,x2:width-right,y1:y(value),y2:y(value),stroke:'#dfe5ed'}));
@@ -97,12 +105,42 @@ function renderCurve(result) {
   });
 }
 function renderResult(snapshot) {
-  const result=snapshot.result;displayedResult=result;byId('prs-result').hidden=false;
-  const row=document.querySelector('#prs-disease-rows [data-disease="CHD"]');
-  row.querySelector('[data-risk="ten"]').textContent=result.risk_10_year ? formatRisk(result.risk_10_year.risk) : '超出模型年齡範圍';
-  row.querySelector('[data-risk="eighty"]').textContent=formatRisk(result.risk_to_80.risk);
-  byId('prs-result-context').textContent=`CHD · ${result.person.assessment_date} 評估 · ${result.person.age}歲 · ${result.person.sex==='male'?'男性':'女性'} · 參考組：10年 ${formatRisk(result.reference.risk_10_year?.risk)}／至80歲 ${formatRisk(result.reference.risk_to_80.risk)}`;
-  renderCurve(result);
+  const result=snapshot.result;
+  assessmentResults=result.diseases||{CHD:{...result,available:true,name:'冠心病（CHD）'}};
+  const select=byId('prs-curve-disease'), previous=select.value;select.replaceChildren();
+  for(const [id,name] of diseases) {
+    const r=assessmentResults[id];if(!r)continue;
+    const row=document.querySelector(`#prs-disease-rows [data-disease="${id}"]`);if(!row)continue;
+    row.querySelector('[data-risk="ten"]').textContent=!r.available?r.reason:r.risk_10_year?formatRisk(r.risk_10_year.risk):'超出模型年齡範圍';
+    row.querySelector('[data-risk="eighty"]').textContent=r.available?formatRisk(r.risk_to_80.risk):r.reason;
+    if(r.available)select.append(new Option(name,id));
+  }
+  if(assessmentResults[previous]?.available)select.value=previous;
+  byId('prs-result').hidden=!select.options.length;
+  selectCurve();
+}
+function selectCurve() {
+  const r=assessmentResults[byId('prs-curve-disease').value];if(!r?.available)return;
+  displayedResult=r;
+  byId('prs-result-context').textContent=`${r.name} · ${r.person.assessment_date} 評估 · ${r.person.age}歲 · ${r.person.sex==='male'?'男性':'女性'} · 參考組：10年 ${r.reference.risk_10_year?formatRisk(r.reference.risk_10_year.risk):'不適用'}／至80歲 ${formatRisk(r.reference.risk_to_80.risk)}`;
+  renderCurve(r);
+}
+function buildHistory() {
+  const panel=byId('prs-history-fields');panel.replaceChildren();
+  for(const [id,name] of diseases) {
+    const label=document.createElement('label');label.append(document.createTextNode(name));
+    const select=document.createElement('select');select.id=id==='CHD'?'prs-history':`prs-history-${id}`;select.dataset.history=id;
+    for(const [text,value] of [['尚未確認',''],['確認沒有','no'],['曾經／目前患有','yes']])select.append(new Option(text,value));
+    label.append(select);panel.append(label);
+  }
+  updateHistoryCount();
+}
+function updateHistoryCount() {
+  const fields=[...document.querySelectorAll('[data-history]')];
+  const count=fields.filter(f=>f.value).length;byId('prs-history-count').textContent=count?`已確認 ${count}/6`:'尚未確認';
+}
+function clinicalHistory() {
+  return Object.fromEntries([...document.querySelectorAll('[data-history]')].map(f=>[f.dataset.history,f.value==='no'?false:f.value==='yes'?true:null]));
 }
 function renderExplanation(explanation={}) {
   for(const [id,texts] of [['prs-method',explanation.method],['prs-limitations',explanation.limitations]]) {
@@ -115,10 +153,12 @@ function renderExplanation(explanation={}) {
     const link=document.createElement('a');link.href=source.url;link.textContent=source.label;link.target='_blank';link.rel='noopener';sources.append(link);
   }
 }
-function renderScoreStatus(score) {
+function renderScoreStatus(score, records=[]) {
   let text='';
   if(score) {
     if(active(currentJob) && score.job_id!==currentJob.job_id)text='正在重新分析；表格目前保留上一次已發布的計分結果。';
+    else if(records.length>1 && records.some(r=>r.score?.qc_ready) && records.some(r=>!r.score?.qc_ready))
+      text='PRS 計分已完成；以下疾病尚未通過祖源或品質檢查，無法計算風險：'+records.filter(r=>!r.score?.qc_ready).map(r=>r.name).join('、')+'。其他疾病可依臨床資訊計算。';
     else if(!score.qc_ready)text=active(currentJob)
       ? 'PRS 計分已完成；祖源與品質檢查進行中，完成並符合要求後才能計算風險。'
       : 'PRS 計分已完成；祖源或品質檢查尚未符合要求，目前只能查看分數與百分位。';
@@ -150,12 +190,13 @@ async function load(restore=true) {
   ready=false;byId('prs-submit').disabled=true;
   try {
     const data=await request();if(token!==generation)return;
-    ready=data.available;renderRows(data.diseases);resetRisks();renderPipeline(data.pipeline);renderExplanation(data.explanation);renderScoreStatus(data.score);
+    ready=data.available;renderRows(data.diseases);resetRisks();renderPipeline(data.pipeline);renderExplanation(data.explanation);renderScoreStatus(data.score,data.diseases);
     byId('prs-submit').disabled=!ready;
-    byId('prs-message').textContent=data.issues.join('；') || (data.stale?'資料已更新，請重新計算風險。':'請輸入臨床資訊後計算風險。');
+    byId('prs-message').textContent=[data.scope_note,data.issues.join('；') || (data.stale?'資料已更新，請重新計算風險。':'請輸入臨床資訊後計算風險。')].filter(Boolean).join(' ');
     if(data.latest && !dirtyClinical) {
-      const p=data.latest.result.person;byId('prs-age').value=p.age;byId('prs-sex').value=p.sex;byId('prs-history').value=p.prior_chd===false?'no':'';
-      renderResult(data.latest);byId('prs-message').textContent='顯示上次評估；修改資料後請重新計算。';
+      const p=data.latest.result.person;byId('prs-age').value=p.age;byId('prs-sex').value=p.sex;
+      for(const field of document.querySelectorAll('[data-history]')) {const v=p.history?p.history[field.dataset.history]:field.dataset.history==='CHD'?p.prior_chd:null;field.value=v===false?'no':v===true?'yes':'';}updateHistoryCount();
+      renderResult(data.latest);byId('prs-message').textContent=[data.scope_note,'顯示上次評估；修改資料後請重新計算。'].filter(Boolean).join(' ');
     }
     if(byId('prs-log-details').open)await loadLog(token);
   } catch(error) {
@@ -175,23 +216,26 @@ byId('prs-details')?.addEventListener('toggle',()=>{if(byId('prs-details').open)
 byId('prs-refresh')?.addEventListener('click',()=>load());
 byId('prs-log-details')?.addEventListener('toggle',()=>{if(byId('prs-log-details').open)loadLog();});
 document.addEventListener('click',event=>{if(event.target.closest?.('[data-target="prs-card"]'))byId('prs-details').open=true;});
+document.addEventListener('click',event=>{const menu=byId('prs-history-menu');if(menu&&!menu.contains(event.target))menu.open=false;});
+byId('prs-history-menu')?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.currentTarget.open=false;event.currentTarget.querySelector('summary').focus();}});
 byId('prs-form')?.addEventListener('input',()=>{
-  dirtyClinical=true;resetRisks();
+  dirtyClinical=true;resetRisks();updateHistoryCount();
   if(busy) {generation++;controller?.abort();busy=false;}
   byId('prs-submit').disabled=!ready;byId('prs-message').textContent='臨床資訊已變更，請重新計算風險。';schedule();
 });
 window.addEventListener('resize',()=>{if(displayedResult && !byId('prs-result').hidden)renderCurve(displayedResult);});
 byId('prs-form')?.addEventListener('submit',async event=>{
   event.preventDefault();if(!sampleId || !ready || busy)return;resetRisks();
-  if(byId('prs-history').value!=='no') {byId('prs-message').textContent='僅適用確認尚未罹患 CHD 的個案。';return;}
+  if(!Object.values(clinicalHistory()).some(v=>v===false)) {byId('prs-message').textContent='請至少確認一個疾病目前尚未罹患，才能計算首次發病風險。';return;}
   const token=++generation;controller?.abort();controller=new AbortController();busy=true;
   byId('prs-submit').disabled=true;byId('prs-message').textContent='計算並保存風險…';
   try {
-    const result=await request('/assessments',{age:Number(byId('prs-age').value),sex:byId('prs-sex').value,assessment_date:today(),prior_chd:false});
+    const result=await request('/assessments',{age:Number(byId('prs-age').value),sex:byId('prs-sex').value,assessment_date:today(),history:clinicalHistory()});
     if(token!==generation)return;dirtyClinical=false;renderResult(result);byId('prs-message').textContent='已保存本次風險評估。';
   } catch(error){if(token===generation && error.name!=='AbortError')byId('prs-message').textContent=error.message;}
   finally {if(token===generation){busy=false;byId('prs-submit').disabled=!ready;schedule();}}
 });
+byId('prs-curve-disease')?.addEventListener('change',selectCurve);
 async function startScore(newRun=false) {
   if(busy)return;
   const token=++generation;controller?.abort();controller=new AbortController();busy=true;

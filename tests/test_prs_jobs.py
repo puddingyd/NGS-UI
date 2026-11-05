@@ -85,6 +85,43 @@ def test_tertiary_to_score_and_ancestry_without_clinical_metadata(env):
     assert json.loads(original.read_text())['ancestry_status']=={'status':'NOT_ASSESSED'}
 
 
+@pytest.mark.parametrize('ancestry_fails', [False, True])
+def test_six_disease_worker_publishes_score_then_shared_ancestry(env, monkeypatch, ancestry_fails):
+    from test_prs_multi import summary as synthetic_summary
+    from app.services import prs_multi
+    s = synthetic_summary(); s['sample'] = 'SOURCE'; s.pop('ancestry_status')
+    model_dir = env.root/'multi-models'
+    prs.atomic_json(model_dir/'manifest.json', dict(sha256={}, models={key:dict(pgs_id=r['pgs_id'], n_loci=r['n_loci'])
+                                                          for key,r in s['diseases'].items()}))
+    s['model_manifest_sha256'] = prs.read_json(model_dir/'manifest.json')[1]
+    env.cfg['multi_model_dir'] = str(model_dir)
+    cfg_path = env.root/'multi-config.json'; prs.atomic_json(cfg_path, env.cfg)
+    monkeypatch.setenv('NGS_UI_PRS_CONFIG', str(cfg_path))
+    stages = []
+    def command(worker, args, step):
+        if args[0] == 'apptainer': return
+        stage = args[args.index('--stage')+1]; stages.append(stage)
+        dest = Path(args[args.index('--output')+1])
+        if stage == 'score':
+            prs.atomic_json(dest/'summary.json', s)
+            for name in ('scores.tsv','inputs.lock.json','missing_loci.tsv.gz'):
+                (dest/name).write_bytes(b'synthetic')
+        else:
+            # Score is visible before PCA finishes, but risks remain blocked.
+            first, _ = prs.load_score('CASE')
+            assert len(first['diseases']) == 6 and not prs_multi.calculator.ancestry_ready(first)
+            if ancestry_fails: raise RuntimeError('synthetic PCA failure')
+            prs.atomic_json(dest/'qc.json', dict(sample='SOURCE', qc_status='PASS', ancestry='EAS',
+                ancestry_low_confidence='False', pca_ld_pruned_markers=20000))
+    monkeypatch.setattr(prs_run.Worker, 'command', command)
+    jid = jobs.start('CASE')['job_id']; prs_run.Worker(jid).run()
+    final, _ = prs.load_score('CASE')
+    assert stages == ['score', 'ancestry']
+    assert prs_multi.calculator.ancestry_ready(final) is not ancestry_fails
+    assert jobs.read_job(jid)['status'] == ('done_with_warnings' if ancestry_fails else 'done')
+    assert not prs.assessment_dir('CASE').exists()
+
+
 def test_ancestry_failure_keeps_percentile_and_retry_reuses_raw_run(env,monkeypatch):
     original=prs_run.Worker.command
     def fail_ancestry(worker,args,step):

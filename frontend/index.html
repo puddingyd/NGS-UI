@@ -479,22 +479,23 @@
             <form id="prs-form" class="prs-form">
               <label>評估時年齡：<input id="prs-age" type="number" min="20" max="79.99" step="0.01" required /> 歲</label>
               <label>性別：<select id="prs-sex" required><option value="">請選擇</option><option value="male">男性</option><option value="female">女性</option></select></label>
-              <label>已有 CHD？<select id="prs-history" required><option value="">尚未確認</option><option value="no">確認沒有</option><option value="yes">已有 CHD</option></select></label>
+              <details id="prs-history-menu" class="prs-history-menu"><summary>疾病病史 <span id="prs-history-count">尚未確認</span> ▾</summary><div id="prs-history-fields" class="prs-history-fields"></div></details>
               <button id="prs-submit" type="submit" class="btn btn-primary" disabled>風險計算</button>
             </form>
             <p id="prs-message" class="prs-message" role="status" aria-live="polite"></p>
             <div class="prs-table-scroll">
               <table class="prs-table prs-diseases">
-                <thead><tr><th scope="col">疾病</th><th scope="col" title="PGS004879 固定 610,305 位點的加權總分，包含參考平均基因型補值；與此列百分位使用同一計分方法">原始 PRS score</th><th scope="col" title="與固定的 735 名東亞參考者比較排名；不是發病機率">PRS percentile</th><th scope="col">未來10年風險</th><th scope="col">目前至80歲累積風險</th></tr></thead>
+                <thead><tr><th scope="col">疾病</th><th scope="col" title="各疾病固定模型的加權總分，包含參考平均基因型補值；不同疾病的原始分數不能直接比較">原始 PRS score</th><th scope="col" title="與固定的 735 名東亞參考者比較排名；不是發病機率">PRS percentile</th><th scope="col">未來10年風險</th><th scope="col">目前至80歲累積風險</th></tr></thead>
                 <tbody id="prs-disease-rows"></tbody>
               </table>
             </div>
             <p id="prs-score-status" class="prs-message" role="status"></p>
             <div id="prs-result" class="prs-results" hidden>
+              <label class="prs-curve-picker">比較曲線：<select id="prs-curve-disease" aria-label="選擇風險比較曲線的疾病"></select></label>
               <p id="prs-result-context" class="prs-footnote"></p>
               <div class="prs-legend"><span>此個案</span><span>PRS 40–60% 參考組</span></div>
-              <svg id="prs-chart" class="prs-chart" viewBox="0 0 720 280" role="img" aria-label="CHD：目前至80歲的累積風險比較"></svg>
-              <p class="prs-footnote">以評估時仍存活且尚未罹患 CHD 為條件；參考組採相同年齡、性別與期間。研究估計尚未完成台灣臨床驗證。</p>
+              <svg id="prs-chart" class="prs-chart" viewBox="0 0 720 280" role="img" aria-label="目前至80歲的累積風險比較"></svg>
+              <p class="prs-footnote">以評估時仍存活且尚未罹患所選疾病為條件；參考組採相同年齡、性別與期間。不同疾病風險不可相加，研究估計尚未完成台灣臨床驗證。</p>
               <details><summary>查看曲線數值</summary><table class="prs-table"><thead><tr><th>至年齡</th><th>此個案</th><th>參考組</th></tr></thead><tbody id="prs-curve-table"></tbody></table></details>
             </div>
             <details id="prs-explanation"><summary>計分方法、資料來源與限制</summary>

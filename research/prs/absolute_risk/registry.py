@@ -1,0 +1,28 @@
+"""Disease identities shared by the scorer, risk service, UI and report."""
+DISEASES = {
+    'CHD': dict(name='冠心病（CHD）', pgs_id='PGS004879', phenotype='I9_CHD', prs='CHD',
+                published='Coronary Heart Disease', cause='Ischemic heart disease', endpoint='first_CHD',
+                sexes=('male', 'female'), hr={'male':'age_sex','female':'sex'},
+                limitation='研究診斷碼包含不穩定心絞痛、心肌梗塞、其他急性或慢性缺血性心臟病及心跳停止；GBD 缺血性心臟病則依急性心肌梗塞及慢性缺血性心臟病估計，納入事件與統計方式不同。不是單獨心肌梗塞或死亡風險。'),
+    'T2D': dict(name='第二型糖尿病（T2D）', pgs_id='PGS004870', phenotype='T2D', prs='T2D',
+                published='Type 2 Diabetes', cause='Diabetes mellitus type 2', endpoint='first_T2D',
+                sexes=('male', 'female'), hr={'male':'age_sex','female':'age_sex'},
+                limitation='估算首次第二型糖尿病，不包括第一型或妊娠糖尿病；未納入血糖、BMI 或治療效果。'),
+    'ALL_CANCERS': dict(name='整體癌症（All cancers）', pgs_id='PGS004875', phenotype='C3_CANCER', prs='AllCancers',
+                published='All Cancers', cause='Total cancers', endpoint='first_CANCER',
+                sexes=('male', 'female'), hr={'male':'age','female':'age'},
+                limitation='使用原研究整體癌症模型，並非各癌症風險相加；原研究列舉的診斷碼未涵蓋所有血液惡性腫瘤，與 GBD Total cancers 範圍不完全相同。公開相對風險資料的分組標籤方向與論文結果相反，本版調整標籤對應並核對全部 224 筆發表值；此對應屬研究性重建。'),
+    'BREAST': dict(name='乳癌（Breast cancer）', pgs_id='PGS004869', phenotype='C3_BREAST', prs='Breast_Cancer',
+                published='Breast Cancer', cause='Breast cancer', endpoint='first_BREAST',
+                sexes=('female',), hr={'female':'full'},
+                limitation='風險模型僅適用女性首次乳癌，不估算復發；未整合 BRCA 等罕見致病變異、家族史或荷爾蒙因素。'),
+    'AF': dict(name='心房顫動（AF）', pgs_id='PGS004878', phenotype='I9_AF', prs='Atrial_Fibrillation',
+                published='Atrial Fibrillation', cause='Atrial fibrillation and flutter', endpoint='first_AF',
+                sexes=('male', 'female'), hr={'male':'age_sex','female':'age_sex'},
+                limitation='GBD 類別包含心房顫動與心房撲動；不是中風或復發風險。GBD 原檔對 20–29 歲發生率與盛行率設為零，作者另將缺少的同期死亡率補零；模型在此期間的零風險不代表不會發病。'),
+    'EPILEPSY': dict(name='癲癇（Epilepsy）', pgs_id='PGS004881', phenotype='G6_EPLEPSY', prs='Epilepsy',
+                published='Epilepsy', cause='Idiopathic epilepsy', endpoint='first_EPILEPSY',
+                sexes=('male', 'female'), hr={'male':'age','female':'age'},
+                limitation='原研究 G40 癲癇診斷搭配 GBD 特發性癲癇基準，疾病範圍不完全相同；此成人模型不估算兒童發病、再次發作或單基因癲癇。'),
+}
+NEW_DISEASES = tuple(k for k in DISEASES if k != 'CHD')

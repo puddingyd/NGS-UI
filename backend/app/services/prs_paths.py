@@ -30,7 +30,7 @@ def layout(sid, cfg):
     # Refuse aliases into another case or a resource/research tree.
     if project.is_symlink() or project.resolve().parent != root:
         raise ValueError('PRS 個案工作路徑不可連結至其他目錄')
-    protected = [Path(cfg[k]).resolve() for k in ('project', 'raw_work', 'method2_model_dir') if cfg.get(k)]
+    protected = [Path(cfg[k]).resolve() for k in ('project', 'raw_work', 'method2_model_dir', 'multi_model_dir') if cfg.get(k)]
     resources = [Path(cfg[k]).resolve() for k in (
         'raw_script', 'original_scorefile', 'fasta', 'dbsnp', 'plink_img',
         'raw_nextflow_config', 'ancestry_nextflow_config', 'reference_panel', 'method2_lock')]

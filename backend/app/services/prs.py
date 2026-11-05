@@ -196,6 +196,13 @@ def latest_snapshot(sid):
 
 
 def status(sid):
+    try:
+        candidate, candidate_hash = load_score_record(sid)
+        if candidate['summary'].get('schema') == 'PRS_MULTI_SCORE_V1':
+            from . import prs_multi
+            return prs_multi.status(sid, candidate, candidate_hash)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     _, meta_hash = case_metadata(sid)
     issues, bundle, summary, score = [], None, None, None
     bundle_hash = score_hash = None
@@ -232,6 +239,7 @@ def status(sid):
     stale = bool(latest and latest.get('input_sha256') != current)
     from . import prs_jobs, prs_presentation
     return dict(available=not issues, issues=issues, score=score, research_only=True,
+                scope_note='此個案目前僅有 CHD 計分；其他疾病需完成六疾病 PRS 分析。',
                 diseases=[dict(id='CHD', name='冠心病（CHD）', score=score)],
                 pipeline=prs_jobs.overview(sid), explanation=prs_presentation.explanation(),
                 age_min=20, age_max_exclusive=80,
@@ -240,6 +248,15 @@ def status(sid):
 
 
 def assess(sid, payload, username):
+    candidate, _ = load_score(sid)
+    if candidate.get('schema') == 'PRS_MULTI_SCORE_V1':
+        from . import prs_multi
+        return prs_multi.assess(sid, payload, username)
+    if isinstance(payload, dict) and 'history' in payload:
+        from . import prs_multi
+        person = prs_multi.calculator.person_for(candidate, payload)
+        payload = {k: person[k] for k in ('age', 'sex', 'assessment_date')}
+        payload['prior_chd'] = person['history']['CHD']
     _, meta_hash = case_metadata(sid)
     bundle, bundle_hash = load_bundle()
     summary, score_hash = load_score(sid)
@@ -264,6 +281,10 @@ def assess(sid, payload, username):
 
 def report_assessment(sid):
     """Require a current saved assessment; never create one during export."""
+    candidate, _ = load_score(sid)
+    if candidate.get('schema') == 'PRS_MULTI_SCORE_V1':
+        from . import prs_multi
+        return prs_multi.report_assessment(sid)
     _, meta_hash = case_metadata(sid)
     bundle, bundle_hash = load_bundle()
     summary, score_hash = load_score(sid)

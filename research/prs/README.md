@@ -1,4 +1,6 @@
-# INTERVENE PRS → 台灣 CHD 研究流程
+# INTERVENE PRS → 台灣多疾病研究流程
+
+**現行 v9.90（2026-11-05）**：CHD＋T2D＋All cancers＋Breast cancer＋AF＋Epilepsy 共六疾病已接上共用計分／風險／UI／報告。準備與驗收請先看 [六疾病操作文件](../../docs/ops/PRS_MULTI_DISEASE.md)；來源與 1,232 筆重現見 [參數發行說明](releases/tw_multi_v1/README.md)。`multidisease/` 為共用計分程式，`absolute_risk/registry.py` 為模型對應，`releases/tw_multi_v1/` 為固定研究參數。大型參考模型須在院內準備；完整 WGS 尚未在本次驗收。以下 CHD V1 文件保留供舊版本／凍結計分流程追溯，新增疾病以六疾病文件為準。
 
 2026-11-02 v9.72：接上三級自動計分與兩階段 PRS 表格。先由原始 gVCF 產生 score／percentile／祖源，再由使用者輸入臨床資料並計算風險。採 INTERVENE 原研究 EstBB HR＋台灣 GBD2019，輸出未來10年、目前至80歲風險與 PRS 40–60% 比較曲線。原文224筆 Estonia CHD 結果驗算通過；**台灣 outcome validation 尚未完成，結果僅供研究**。TWB／BBJ 未納入本模型。
 

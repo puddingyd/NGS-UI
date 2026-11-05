@@ -66,13 +66,28 @@ def settings():
     for tool in ('nextflow', 'apptainer', 'bcftools', 'samtools'):
         if not shutil.which(tool):
             raise ValueError(f'PRS 執行環境缺少 {tool}')
+    if cfg.get('multi_model_dir'):
+        path = Path(cfg['multi_model_dir'])
+        if not path.is_absolute() or not (path/'manifest.json').is_file():
+            raise ValueError('六疾病 PRS 參考模型尚未完成準備')
+        manifest, _ = prs.read_json(path/'manifest.json')
+        if manifest.get('schema') != 'PRS_MULTI_MODELS_V1' or manifest.get('chd_reference_regression') != 'PASS':
+            raise ValueError('六疾病 PRS 參考模型未通過 CHD 回歸檢查')
     return cfg, digest
 
 
 def resource_signature(cfg):
-    return {key: signature(cfg[key]) for key in (
+    result = {key: signature(cfg[key]) for key in (
         'raw_script', 'original_scorefile', 'fasta', 'dbsnp', 'plink_img',
         'raw_nextflow_config', 'ancestry_nextflow_config', 'reference_panel', 'method2_lock')}
+    if cfg.get('multi_model_dir'):
+        directory = Path(cfg['multi_model_dir'])
+        manifest, _ = prs.read_json(directory/'manifest.json')
+        for name in ('manifest.json', *manifest['sha256']):
+            if Path(name).is_absolute() or '..' in Path(name).parts:
+                raise ValueError('PRS 模型檔案路徑不正確')
+            result['multi/'+name] = signature(directory/name)
+    return result
 
 
 def source(sid):
@@ -276,11 +291,21 @@ def log(sid, jid):
     try:
         record, _ = prs.load_score_record(sid)
         if record.get('job_id') == jid:
-            row = prs.calculator.score_row(record['summary'], prs.SCORE_DEFINITION, require_ancestry=False)
-            text += (f'\n\n[表格採用的結果] 原始 PRS score={row["total_sum"]:.6f}；'
-                     f'PRS percentile=第 {row["eas_percentile"]:.2f} 百分位\n'
-                     '祖源／品質檢查的另外一組 SUM、PCT 僅供工具稽核，不用於表格或風險計算。')
-            text += '\n'+'\n'.join(prs_presentation.score_messages(record['summary'], row))
+            if record['summary'].get('schema') == 'PRS_MULTI_SCORE_V1':
+                from . import prs_multi
+                for key, row in prs_multi.calculator.score_rows(record['summary']).items():
+                    text += (f'\n[表格採用的結果] {prs_multi.registry[key]["name"]}：'
+                             f'score={row["total_sum"]:.6f}；percentile=第 {row["eas_percentile"]:.2f} 百分位；'
+                             f'可靠位點={row["observed_loci"]}/{row["n_loci"]}；補值={row["missing_loci"]}')
+                    if not row['qc_ready']: text += '；品質未通過，不能計算風險'
+                    if row.get('high_weight_missing'): text += f'；較高權重缺失位點={row["high_weight_missing"]}'
+                    if row.get('boundary_review_2pp'): text += '；接近風險分組邊界'
+            else:
+                row = prs.calculator.score_row(record['summary'], prs.SCORE_DEFINITION, require_ancestry=False)
+                text += (f'\n\n[表格採用的結果] 原始 PRS score={row["total_sum"]:.6f}；'
+                         f'PRS percentile=第 {row["eas_percentile"]:.2f} 百分位\n'
+                         '祖源／品質檢查的另外一組 SUM、PCT 僅供工具稽核，不用於表格或風險計算。')
+                text += '\n'+'\n'.join(prs_presentation.score_messages(record['summary'], row))
         else:
             text += '\n\n此工作不是目前表格所採用的計分來源。'
     except (OSError, ValueError, KeyError, TypeError):

@@ -27,13 +27,19 @@ def group(percentile):
 def validate(bundle):
     if not isinstance(bundle, dict):
         raise ValueError('Bundle must be a JSON object')
-    if bundle.get('schema') != 'CHD_RESEARCH_BUNDLE_V1':
+    multi = bundle.get('schema') == 'PRS_DISEASE_BUNDLE_V2'
+    if not multi and bundle.get('schema') != 'CHD_RESEARCH_BUNDLE_V1':
         raise ValueError('Unsupported bundle schema')
     for key in ('model_id', 'baseline_source', 'hr_source', 'baseline_year',
                 'baseline_release', 'population', 'limitations', 'score_definition'):
         if not bundle.get(key):
             raise ValueError(f'Missing provenance: {key}')
-    if bundle.get('endpoint') != 'first_CHD':
+    if multi:
+        from .registry import DISEASES
+        disease = DISEASES.get(bundle.get('disease_id'))
+        if not disease or bundle.get('endpoint') != disease['endpoint']:
+            raise ValueError('Unknown disease endpoint')
+    elif bundle.get('endpoint') != 'first_CHD':
         raise ValueError('Only first_CHD is supported')
     if bundle.get('status') not in ('synthetic', 'unvalidated_external'):
         raise ValueError('This implementation cannot declare clinical validation')
@@ -44,11 +50,13 @@ def validate(bundle):
     definition = bundle['score_definition']
     if not isinstance(definition, dict):
         raise ValueError('score_definition must be an object')
-    if definition.get('model') not in ('A', 'B') or not definition.get('reference_id'):
+    if not multi and (definition.get('model') not in ('A', 'B') or not definition.get('reference_id')):
         raise ValueError('Explicit A/B model and reference required')
     digest = definition.get('model_lock_sha256', '')
-    if len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+    if not multi and (len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest)):
         raise ValueError('Expected model-lock SHA256')
+    if multi and (definition.get('pgs_id') != disease['pgs_id'] or definition.get('reference_id') != 'unrelated3330_EAS735_v1'):
+        raise ValueError('Unrecognized score definition')
     if definition.get('ancestry') != 'EAS':
         raise ValueError('This adapter currently supports EAS only')
     bins = bundle.get('bins', [])
@@ -57,7 +65,8 @@ def validate(bundle):
         raise ValueError('bins must be a list of objects')
     for row in bins:
         number(row['age_start'], 'age_start', 0, 80)
-    for sex in ('male', 'female'):
+    sexes = disease['sexes'] if multi else ('male', 'female')
+    for sex in sexes:
         rows = sorted((r for r in bins if r.get('sex') == sex), key=lambda r: r['age_start'])
         end = age_min
         for r in rows:
@@ -73,7 +82,7 @@ def validate(bundle):
             if r['prevalence'] == 1:
                 raise ValueError('No disease-free risk set at prevalence=1')
             deaths = number(r['all_cause_mortality'], 'all_cause_mortality')
-            number(r['chd_mortality'], 'chd_mortality', 0, deaths)
+            number(r['disease_mortality' if multi else 'chd_mortality'], 'disease_mortality', 0, deaths)
             hr = r['hr']
             if set(hr) != set(GROUPS) or hr['40-60'] != 1:
                 raise ValueError('All seven HRs required; 40-60 reference HR must equal 1')
@@ -82,7 +91,7 @@ def validate(bundle):
                     raise ValueError('HR must be positive')
         if end != 80:
             raise ValueError(f'{sex}: complete coverage [{age_min},80) required')
-    if any(r.get('sex') not in ('male', 'female') for r in bins):
+    if any(r.get('sex') not in sexes for r in bins):
         raise ValueError('Unknown sex in model bins')
     return bundle
 
@@ -92,7 +101,7 @@ def integrate(bundle, sex, percentile, start_age, end_age):
     validate(bundle)
     start = number(start_age, 'start_age', bundle.get('age_min', 0), 80)
     end = number(end_age, 'end_age', start, 80)
-    if sex not in ('male', 'female'):
+    if sex not in {r['sex'] for r in bundle['bins']}:
         raise ValueError('Explicit male/female model sex required')
     selected = group(percentile)
     survival, risk = 1., 0.
@@ -107,7 +116,7 @@ def integrate(bundle, sex, percentile, start_age, end_age):
             raise ValueError('Partial bins require competing_exact_v1; do not silently change reproduction')
         weighted_hr = math.fsum(p * row['hr'][g] for p, g in zip(PROPORTIONS, GROUPS))
         hazard = row['incidence'] * row['hr'][selected] / weighted_hr / (1 - row['prevalence'])
-        mortality = row['all_cause_mortality'] - row['chd_mortality']
+        mortality = row['all_cause_mortality'] - row['disease_mortality' if bundle['schema'] == 'PRS_DISEASE_BUNDLE_V2' else 'chd_mortality']
         total = hazard + mortality
         if bundle['method'] == 'intervene_discrete_v1':
             increment = -math.expm1(-hazard * dt)
