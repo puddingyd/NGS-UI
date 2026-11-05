@@ -2840,6 +2840,10 @@ def _pgx_gene_result(pgx: dict, gene: str) -> tuple[str, str]:
             phenotype = tsv_phenotype
             raw_phenotype = phenotype
     allele_function = _pgx_allele_function(details)
+    if gene in {"DPYD", "RYR1"}:
+        unphased = _pgx_unphased_variants(pgx, gene)
+        if unphased:
+            diplotype = "；".join(unphased) + "（相位未定）"
     diplotype, _ = _pgx_display_genotype(gene, diplotype, raw_phenotype)
     if gene == "VKORC1" and allele_function:
         phenotype = allele_function
@@ -2993,21 +2997,23 @@ def _pgx_variant_zygosity(variant: dict) -> str:
     return "non-reference"
 
 
-def _pgx_dpyd_unphased_variants(pgx: dict) -> list[str]:
-    """Return every DPYD named variant when PharmCAT emits separate sources.
+def _pgx_unphased_variants(pgx: dict, gene: str) -> list[str]:
+    """Return every DPYD/RYR1 variant when PharmCAT emits separate sources.
 
     Multiple source diplotypes in the current short-read output are separate,
     unphased variant observations rather than two assigned chromosomal alleles.
     Keeping them in one result spanning both allele columns prevents data loss
     without inventing cis/trans phase.
     """
-    payload = (pgx.get("genes") or {}).get("DPYD") or {}
+    payload = (pgx.get("genes") or {}).get(gene) or {}
     details = payload.get("details") or {}
     sources = details.get("source_diplotypes") or []
-    if len(sources) <= 1 or details.get("effectively_phased"):
+    if len(sources) <= 1 or details.get("effectively_phased") or details.get("phased"):
+        return []
+    if any("/" in (source.get("label") or "") for source in sources):
         return []
 
-    variants = details.get("variants") or []
+    variants = details.get("comparison_variants", details.get("variants")) or []
 
     def key(value: str) -> str:
         return re.sub(r"\s+", "", str(value or "")).lower()
@@ -3029,6 +3035,10 @@ def _pgx_dpyd_unphased_variants(pgx: dict) -> list[str]:
                     break
             observed.append(f"{name} ({zygosity})" if zygosity else name)
     return observed
+
+
+def _pgx_dpyd_unphased_variants(pgx: dict) -> list[str]:
+    return _pgx_unphased_variants(pgx, "DPYD")
 
 
 def _pgx_hla_display_allele(gene: str, allele: str) -> str:
@@ -3144,11 +3154,11 @@ def _pgx_health_genotype_rows(pgx: dict) -> list[dict[str, str]]:
 
     rows: list[dict[str, str]] = []
     for gene in _PGX_CPIC_LEVEL_A_GENES:
-        if gene == "DPYD":
-            unphased_variants = _pgx_dpyd_unphased_variants(pgx)
+        if gene in {"DPYD", "RYR1"}:
+            unphased_variants = _pgx_unphased_variants(pgx, gene)
             if unphased_variants:
                 rows.append({
-                    "test": "DPYD（相位未定）",
+                    "test": f"{gene}（相位未定）",
                     "allele1": "",
                     "allele2": "",
                     "result_span": "檢出變異：" + "；".join(unphased_variants),

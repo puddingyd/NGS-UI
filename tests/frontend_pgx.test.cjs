@@ -33,6 +33,12 @@ test('same genes are silent; mismatch has explicit source selector and escaped e
   assert.match(context._pgxComparisonHtml({concordance:{genes:{CYP2C9:{...row,dragen_genotype:'<script>'}}}},'CYP2C9',true),/&lt;script&gt;/);
 });
 
+test('validated phase compatibility shows only the phase badge without a mismatch selector',()=>{
+  const {context}=setup();
+  const html=context._pgxComparisonHtml({concordance:{genes:{NUDT15:{status:'phase_compatible',badges:['相位未定']}}}},'NUDT15',true);
+  assert.match(html,/相位未定/);assert.doesNotMatch(html,/不一致|select|DRAGEN：/);
+});
+
 test('source selection is saved immediately and both views receive the server projection',async()=>{
   const {context,seen,change}=setup();await change('dragen:*1/*1');
   assert.equal(seen.requests[0].body.confirmed,true);

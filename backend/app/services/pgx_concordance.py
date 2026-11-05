@@ -11,12 +11,13 @@ import hashlib
 import json
 import re
 import tempfile
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 from . import sample_layout, specialized
 
-RULE_VERSION = "1"
+RULE_VERSION = "2"
 REVIEW_NAME = "pgx_review.json"  # reviewer-owned; deliberately not pipeline-managed
 GENES = (
     "ABCG2", "CACNA1S", "CFTR", "CYP2B6", "CYP2C19", "CYP2C9", "CYP2D6",
@@ -37,6 +38,9 @@ def _hash(value):
 def _token(gene, allele, legacy=False):
     value = re.sub(r"\s+", "", str(allele)).lower()
     value = re.sub(r"^" + re.escape(gene.lower()) + r"(?=\*)", "", value)
+    # An HGVS variant's star-name annotation does not change its identity.
+    if gene in {"DPYD", "RYR1"} and re.search(r"[cmng]\.", value):
+        value = re.sub(r"\(\*\d+[a-z0-9.]*\)", "", value)
     if gene == "NAT2" and legacy:
         value = _NAT2_LEGACY.get(value, value)
     if value in {"reference", "ref", "wildtype", "wild-type"}:
@@ -48,6 +52,15 @@ def _token(gene, allele, legacy=False):
     return value
 
 
+def _explicit_diploid(label):
+    """Expand an explicit het/hom suffix, never assume a bare variant is het."""
+    match = re.fullmatch(r"(.+)\((heterozygous|het|homozygous|hom)\)", label)
+    if match and "/" not in match[1]:
+        variant = match[1]
+        return variant + "/" + (variant if match[2] in {"homozygous", "hom"} else "reference")
+    return label
+
+
 def canonical(gene, label, *, legacy=False):
     """Order-insensitive within each chromosome, preserving dosage and grouping.
 
@@ -56,6 +69,8 @@ def canonical(gene, label, *, legacy=False):
     """
     label = re.sub(r"\s+", "", str(label or "")).lower()
     label = re.sub(re.escape(gene.lower()) + r"(?=\*)", "", label)
+    if gene in {"DPYD", "RYR1"}:
+        label = _explicit_diploid(_token(gene, label, legacy))
     if label in _NO_CALL:
         return None
     chromosomes = []
@@ -75,7 +90,106 @@ def canonical(gene, label, *, legacy=False):
             else:
                 expanded.append(_token(gene, allele, legacy))
         chromosomes.append(("copies", tuple(sorted(expanded))))
+    # Phase-2 validation: G6PD B/B versus B is a representational difference.
+    # Apply only to one-copy identical homozygotes; never collapse a het or CNV.
+    if gene == "G6PD" and len(chromosomes) == 2 and chromosomes[0] == chromosomes[1] and len(chromosomes[0][1]) == 1:
+        chromosomes = chromosomes[:1]
     return tuple(sorted(chromosomes))
+
+
+def _allele_observations(gene, allele):
+    value = _token(gene, allele).strip("[]")
+    if value == "reference":
+        return Counter()
+    parts = re.split(r"[+,](?=[cmng]\.)", value)
+    if not all(re.fullmatch(r"[cmng]\.[a-z0-9_*+>.-]+", part) for part in parts):
+        return None
+    return Counter(parts)
+
+
+def _diplotype_observations(gene, label):
+    label = _explicit_diploid(_token(gene, label))
+    if len(label.split("/")) != 2:
+        return None
+    observations = Counter()
+    for allele in label.split("/"):
+        values = _allele_observations(gene, allele)
+        if values is None:
+            return None
+        observations.update(values)
+    return observations
+
+
+def _source_observations(gene, labels, details):
+    """Separate DPYD/RYR1 observations require explicit zygosity or JSON calls.
+
+    Returning a dosage multiset does not assign the variants to chromosomes.
+    recommendationDiplotypes may encode assumptions and are not a phase source.
+    """
+    if not labels or any("/" in label for label in labels):
+        return None
+    variants = details.get("comparison_variants", details.get("variants", []))
+    observations = Counter()
+    seen = set()
+    for label in labels:
+        normalized = _token(gene, label)
+        explicit = _diplotype_observations(gene, normalized)
+        if explicit is not None:
+            observations.update(explicit)
+            continue
+        values = _allele_observations(gene, normalized)
+        if values is None or len(values) != 1:
+            return None
+        name = next(iter(values))
+        if name in seen:
+            continue  # the position-level genotype supplies the total dosage
+        matches = [v for v in variants if name in {_token(gene, a) for a in v.get("allele_names", [])}]
+        if len(matches) != 1 or matches[0].get("warnings"):
+            return None
+        v = matches[0]
+        copies = re.split(r"[/|]", v.get("call") or "")
+        ref = v.get("reference")
+        alt = {x for x in copies if x and x != ref and x not in {".", "?"}}
+        if len(copies) != 2 or not ref or len(alt) != 1 or any(x in {"", ".", "?"} for x in copies):
+            return None
+        observations[name] = sum(x != ref for x in copies)
+        seen.add(name)
+    return observations
+
+
+def _nudt15_phase_compatible(labels, candidates, details, dragen):
+    """Bounded, evidence-backed *1/*3 vs legacy *1/*2;*3/*6 ambiguity.
+
+    CPIC/ClinPGx: *2 is now a *3 suballele. Different phase solutions can have
+    different phenotypes; compatibility never rewrites a genotype/phenotype.
+    """
+    if details.get("definition_source") != "CLINPGX" or details.get("definition_version") != "2026-02-09-10-28":
+        return False
+    if dragen.get("starAlleleDatabaseSource") != "PharmGKB Database Version: Snapshot-2022.01.01":
+        return False
+    if details.get("phased") or details.get("effectively_phased"):
+        return False
+    ours = {canonical("NUDT15", label) for label in labels}
+    expected_ours = {canonical("NUDT15", x) for x in ("*1/*3", "*3/*6")}
+    theirs = {canonical("NUDT15", x) for x in candidates}
+    expected_theirs = {canonical("NUDT15", x) for x in ("*1/*2", "*3/*6")}
+    if not ours or not ours <= expected_ours or theirs != expected_theirs:
+        return False
+    variants = details.get("comparison_variants", [])
+    for rsid, position, ref, alleles in (
+        ("rs746071566", 48037782, "AGGAGTC", {"AGGAGTC", "AGGAGTCGGAGTC"}),
+        ("rs116855232", 48045719, "C", {"C", "T"}),
+    ):
+        rows = [v for v in variants if v.get("rsid") == rsid]
+        if len(rows) != 1:
+            return False
+        v = rows[0]
+        if (str(v.get("chr", "")).removeprefix("chr") != "13" or v.get("pos") != position
+                or v.get("reference") != ref or v.get("warnings") or v.get("phased") or v.get("phase_set")
+                or "|" in v.get("call", "") or set(v.get("call", "").split("/")) != alleles
+                or len(v.get("call", "").split("/")) != 2):
+            return False
+    return True
 
 
 def _labels(details, fallback=""):
@@ -108,17 +222,43 @@ def compare_gene(gene, payload, dragen):
     ours = {v for label in labels if (v := canonical(gene, label)) is not None}
     theirs = {canonical(gene, x, legacy=legacy) for x in candidates}
     status = "unavailable"
+    observation_phase = False
     if ours and theirs:
-        if gene in {"DPYD", "RYR1"} and len(labels) > 1 and not details.get("effectively_phased") and not details.get("phased"):
-            status = "uncomparable"
+        component_sources = gene in {"DPYD", "RYR1"} and all("/" not in label for label in labels)
+        if component_sources:
+            observed = _source_observations(gene, labels, details)
+            target_sets = [_diplotype_observations(gene, label) for label in candidates]
+            if observed is not None and target_sets and all(x is not None for x in target_sets):
+                if observed in target_sets:
+                    if len(observed) > 1:
+                        if details.get("effectively_phased") or details.get("phased"):
+                            # Position dosage alone cannot verify a known phase
+                            # that the component-style labels fail to preserve.
+                            status = "uncomparable"
+                        else:
+                            observation_phase = True
+                            status = "phase_compatible"
+                    else:
+                        status = "same"
+                else:
+                    status = "different"
+            elif ours & theirs:
+                status = "same"
+            else:
+                status = "uncomparable"
         elif ours & theirs:
             status = "same"
+        elif gene == "NUDT15" and _nudt15_phase_compatible(labels, candidates, details, dragen):
+            status = "phase_compatible"
+            observation_phase = True
         elif {_schema(s) for s in labels} != {_schema(s) for s in candidates}:
             status = "uncomparable"
         else:
             status = "different"
     low_gq = "lowgq" in json.dumps([dragen.get("missingVariantSites") or [], dragen.get("genotypeFilter") or ""]).lower()
-    phase = status == "same" and len(theirs) > 1
+    phase = observation_phase or (status == "same" and (
+        len(theirs) > 1 or (len(ours) > 1 and not details.get("phased") and not details.get("effectively_phased"))
+    ))
     badges = (["結果不一致"] if status == "different" else ["無法比對"] if status == "uncomparable" else [])
     if low_gq:
         badges.append("LowGQ")

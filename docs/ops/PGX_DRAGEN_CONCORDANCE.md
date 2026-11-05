@@ -1,4 +1,4 @@
-# PGx DRAGEN 比對與人工採用（v9.93）
+# PGx DRAGEN 比對與人工採用（v9.94；規則 v2）
 
 2026-11-05。畫面與報告沿用固定 21 個 PGx genes；既有個案更新服務、重新載入即可，不需重跑 PGx。未連線院內 server，真實路徑權限與院內 Word 仍由操作者驗收。
 
@@ -34,9 +34,33 @@ DRAGEN 優先讀已通過 specialized manifest／generation／checksum 校驗的
 - CFTR 的 Reference 與 non-responsive sequence、G6PD 的 B(reference)/B(wildtype) 使用 gene-specific 等價規則。
 - NAT2 僅對 DRAGEN `PharmGKB Database Version: Snapshot-2022.01.01` 且新版（2024-03 起）PharmCAT definition 套用限定對照：舊 *13/*13A→*4，*7A/*7B→*7。其他字尾不任意刪除。
 - DPYD／RYR1 多筆未定相 source variants 不當作多個完整 diplotype，也不自行推斷 cis/trans。
+- 明確 `(heterozygous)/(het)`、`(homozygous)/(hom)` 可展開成 variant/Reference 或 variant/variant；HGVS 後的 star 名稱註解（如 `c.1627A>G (*5)`）不改變同一 HGVS 位點的身分。裸變異不預設為 het。
+- G6PD 單一 allele 與相同 allele 的同型合子表示視為相同；不從這項比較推定個案核型，不修改原始 ploidy／allele 顯示，也不把真正異型合子壓成單倍體。
 - LowGQ 取自原始 missingVariantSites 的明確標記，不新增任意 GQ 門檻。
 
 NAT2 對照來源：[PharmVar change log v1.7](https://a.storyblok.com/f/70677/x/253c992c9f/change-log_nat2_v1-7.pdf)、[PharmVar GeneFocus](https://pmc.ncbi.nlm.nih.gov/articles/PMC12997514/)。`+` 順序忽略是使用者指定的本平台比對政策，不宣稱兩個 caller 已驗證實體排列相同。原始表示法仍保留。
+
+### 既有 Phase-2 多檢體報告的適用範圍
+
+依使用者提供的 `PHASE2_DIPLOTYPE_CONCORDANCE_REPORT.md` 檢視；附件未放入 repo。該附件 SHA256：`47a51de89199ffac3ddef0aca4ec09c5ebb2ca2dbbc6d96215485b9a67621e3a`。本次重建規則情境作合成回歸，沒有原始126案及報告引用的逐案裁決／gVCF檔，未獨立重算其一致率，也不將報告提出的pipeline修復或批次重產建議當成本次執行指令。
+
+| 報告情況 | 本版處理 |
+|---|---|
+| CYP2D6 `*36+*10` 順序 | 既有排序規則已處理，仍保留 copy number 及染色體分組 |
+| G6PD B/B vs B | 基因限定的表示正規化，相同時不顯示註記；B/Radlowo vs B 仍不同 |
+| DPYD 單一變異 het/hom 及 star 註解 | 明確表示可正規化，一致不加註記 |
+| DPYD／RYR1 多筆元件 | 從全部 source＋完整 comparison_variants 取變異劑量，吻合多變異未定相只標相位未定。呈現完整清單，不能拿第一筆或 recommendationDiplotypes 當作確定相位 |
+| NUDT15 `*1/*3` vs `*1/*2;*3/*6` | 只在下列定義／位點證據齊備時視為相位相容，僅標相位未定 |
+| RYR1 c.11266C>G vs Reference | 舊報告指出定義範圍差異，但沒有標明 DRAGEN 軟體／panel 版本，targeted.json 也未列完整陰性 panel。維持差異或無法比對，不把所有 Reference 自動當一致 |
+| CYP2D6 真實 CNV／分組不同、UGT1A1 *6、G6PD 真正 het | 不由舊群體報告覆蓋當前結果，保留警示與既有人工選擇 |
+
+NUDT15 限定平台 `CLINPGX` definition `2026-02-09-10-28`、DRAGEN `PharmGKB Database Version: Snapshot-2022.01.01`；平台 `*1/*3` 或 `*3/*6`、DRAGEN 列完整兩解 `*1/*2;*3/*6`；PharmCAT 必須保留 hg38 chr13:48037782 rs746071566 的 `AGGAGTC/AGGAGTCGGAGTC` 與 chr13:48045719 rs116855232 的 `C/T`，兩位點均無 phased／PS／warning，gene 亦未定相。缺資料、其他 allele 長度、不同版本、其他候選解均不套用特例。
+
+[ClinPGx／CPIC 2026更新](https://blog.clinpgx.org/cpic-guideline-for/)確認舊 *2 合併為 *3 子型，以及兩處 het 未定相可有 *1/*3、*3/*6。此二解表型可不同，故內部狀態為 `phase_compatible`，不是功能／表型等價；不因此改寫原始結果或產生新用藥建議。
+
+元件比對只核對變異與劑量 multiset，不能驗證已知 cis/trans；若來源宣稱已定相但元件標籤未保留分組，列無法比對。comparison_variants 保留所有位點（含ref），不使用已篩非ref／截短80筆的畫面清單作證據。畫面／健檢表共用 DPYD／RYR1 的完整元件呈現。完整 diplotype 形式的多個替代解則維持替代解性質，不串成假基因型。
+
+規則由v1改為v2，既有人工採用的來源fingerprint失效，須重新確認或恢復平台；不靜默沿用舊裁決。
 
 ## 人工選擇與一致性
 
@@ -53,7 +77,7 @@ fingerprint 包含比較規則版本、pipeline source、PharmCAT 內容hash／�
 使用合成個案驗證順序／dosage／分組、候選解、NAT2版本映射、LowGQ、MT fallback、來源衝突與快照損壞、API權限、執行中鎖、保存／回復／audit、來源更新失效、Word實際下載及匯出中變動拒絕。桌機／390px手機瀏覽器測試選擇、回復、保存失敗與安靜的相同結果。
 
 ```sh
-PYTHONPATH=backend python -m pytest tests/test_pgx_concordance.py tests/test_pgx_tsv.py tests/test_pgx_main_screen.py tests/test_health_report.py tests/test_sample_layout.py tests/test_specialized.py tests/test_prs.py -q
+PYTHONPATH=backend python -m pytest tests/test_pgx_phase2.py tests/test_pgx_concordance.py tests/test_pgx_tsv.py tests/test_pgx_main_screen.py tests/test_health_report.py tests/test_sample_layout.py tests/test_specialized.py tests/test_prs.py -q
 node --test tests/frontend_*.test.cjs
 PYTHONPATH=backend node tests/browser_pgx_ui.cjs
 ```

@@ -188,6 +188,14 @@ def test_corrupt_review_record_blocks_export_instead_of_being_treated_as_no_over
     assert loaded()["review_blocked"]
 
 
+def test_rule_version_change_requires_reconfirmation_of_previous_choice(case, monkeypatch):
+    choose()
+    monkeypatch.setattr(pc, "RULE_VERSION", "synthetic-next-version")
+    pgx = loaded()
+    assert pgx["review_blocked"] and pgx["concordance"]["genes"]["CYP2C9"]["stale"]
+    assert not choose(source="platform")["review_blocked"]
+
+
 def test_local_validated_snapshot_is_preferred_and_corruption_never_falls_back(case):
     post, _, target, data, _ = case
     specialized.write_bundle(result={"loci": {}}, payload=data, evidence=[], sources={}, build="hg38",

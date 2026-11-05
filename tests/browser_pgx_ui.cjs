@@ -9,11 +9,21 @@ from app.services import pgx_concordance as pc,docx_export
 calls={'CYP2C9':('*1/*33','*1/*1'),'CYP2D6':('*36+*10/*36+*10','*10+*36/*10+*36'),
        'CYP2B6':('*1/*6','*1/*6;*4/*9'),'NAT2':('*4/*7','*7A/*13A;*7B/*4'),
        'CFTR':('Reference/Reference','ivacaftornon-responsiveCFTRsequence/ivacaftornon-responsiveCFTRsequence'),
+       'G6PD':('B (reference)/B (reference)','B(wildtype)'),
+       'NUDT15':('*1/*3','*1/*2;*3/*6'),
+       'DPYD':('c.1627A>G (*5)','c.1627A>G/c.1896T>C'),
        'RYR1':('Reference/Reference','Reference/Reference')}
 p={'genes':{},'pharmcat_available':True,'recommendations_pending':[],'concordance':{'genes':{}},'guideline_annotations':[]}
 for g,(label,target) in calls.items():
  a=label.split('/')
- d={'label':label,'allele1_name':a[0],'allele2_name':a[1],'phenotypes':['Intermediate Metabolizer'] if g in ['CYP2C9','CYP2B6','CYP2D6','NAT2'] else [],'definition_version':'2026-02-09','source_diplotypes':[{'label':label}]}
+ d={'label':label,'allele1_name':a[0],'allele2_name':a[1] if len(a)>1 else '', 'phenotypes':['Intermediate Metabolizer'] if g in ['CYP2C9','CYP2B6','CYP2D6','NAT2','NUDT15'] else [],'definition_version':'2026-02-09','source_diplotypes':[{'label':label}]}
+ if g=='NUDT15':
+  d.update(definition_source='CLINPGX',definition_version='2026-02-09-10-28',comparison_variants=[
+   {'chr':'chr13','pos':48037782,'rsid':'rs746071566','reference':'AGGAGTC','call':'AGGAGTC/AGGAGTCGGAGTC'},
+   {'chr':'chr13','pos':48045719,'rsid':'rs116855232','reference':'C','call':'C/T'}])
+ if g=='DPYD':
+  d.update(source_diplotypes=[{'label':label,'allele1_name':label},{'label':'c.1896T>C','allele1_name':'c.1896T>C'}],comparison_variants=[
+   {'allele_names':[label],'call':'T/C','reference':'T'}, {'allele_names':['c.1896T>C'],'call':'A/G','reference':'A'}])
  payload={'gene':g,'diplotype':label,'details':d};p['genes'][g]=payload
  dr={'genotype':target,'starAlleleDatabaseSource':'PharmGKB Database Version: Snapshot-2022.01.01'}
  if g in ['CYP2C9','CFTR','RYR1']:dr['missingVariantSites']=[{'id':'synthetic:LowGQ'}]
@@ -51,7 +61,9 @@ const server=http.createServer((req,res)=>{
   const analysis=page.locator('#cat-pharmcat-c');
   const card=g=>analysis.locator('.pgx-analysis-gene').filter({has:page.locator('.pgx-gene-head strong',{hasText:new RegExp('^'+g+'$')})});
   assert.equal(await analysis.locator('.js-pgx-result-choice').count(),1);
-  for(const g of ['CYP2D6','NAT2'])assert.equal(await card(g).locator('.pgx-comparison-badge').count(),0);
+  for(const g of ['CYP2D6','NAT2','G6PD'])assert.equal(await card(g).locator('.pgx-comparison-badge').count(),0);
+  for(const g of ['NUDT15','DPYD'])assert.equal(await card(g).locator('.pgx-comparison').innerText(),'相位未定');
+  assert.match(await card('DPYD').locator('.pgx-gene-genotype').innerText(),/c\.1627A>G.*c\.1896T>C/);
   assert.equal(await card('CYP2B6').locator('.pgx-comparison').innerText(),'相位未定');
   assert.equal(await card('CFTR').locator('.pgx-comparison').innerText(),'LowGQ');
   await card('CYP2C9').locator('select').selectOption('dragen:*1/*1');

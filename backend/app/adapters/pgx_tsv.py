@@ -183,9 +183,17 @@ def _compact_report_json(path: Path) -> dict:
                 "inferred": bool(value.get("inferred")),
             })
         variants = []
+        comparison_variants = []
         for variant in payload.get("variants") or []:
             call = _clean(variant.get("call"))
             ref = _clean(variant.get("referenceAllele"))
+            comparison_variants.append({
+                "rsid": _clean(variant.get("dbSnpId")),
+                "chr": _clean(variant.get("chromosome")), "pos": variant.get("position"),
+                "call": call, "reference": ref, "allele_names": variant.get("alleles") or [],
+                "phased": bool(variant.get("phased")), "phase_set": _clean(variant.get("phaseSet")),
+                "warnings": variant.get("warnings") or [],
+            })
             if ref and call == f"{ref}/{ref}":
                 continue
             variants.append({
@@ -205,6 +213,7 @@ def _compact_report_json(path: Path) -> dict:
             })
         genes[gene] = {
             "definition_version": _clean(payload.get("alleleDefinitionVersion")),
+            "definition_source": _clean(payload.get("alleleDefinitionSource")),
             "call_source": _clean(payload.get("callSource")),
             "label": _clean(source.get("label")),
             "phenotypes": [
@@ -226,6 +235,7 @@ def _compact_report_json(path: Path) -> dict:
                 if (text := message_text(value))
             ],
             "variants": variants[:80],
+            "comparison_variants": comparison_variants,
         }
     return {
         "source_identity": {

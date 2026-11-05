@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v9.94：依既有多檢體確效報告調整 PGx 警示，補 G6PD 單倍體／同型合子、DPYD het／hom 與 HGVS 別名正規化；特定 NUDT15 相位歧義有位點與版本證據時只標「相位未定」。DPYD／RYR1 多筆元件於畫面與報告完整顯示，保留真正變異／劑量／結構差異。比對規則更新，舊人工選擇需重新確認；不需重跑 PGx。[規則與驗證限制](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。
+
 v9.93：PGx 與同來源 DRAGEN targeted.json 交叉比對，相同結果不加註記，只顯示不一致、LowGQ 或相位未定。不一致基因可在分析區「人工確認後採用」選擇平台／DRAGEN，立即保存並同步畫面、健檢 Word 與 PDF；來源更新後需重新確認。採用 DRAGEN 時停用受影響的原用藥建議，明示待重新註解。[使用方式與比對規則](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。
 
 v9.92：修復六疾病祖源輔助檔缺少`trait_reported`的格式錯誤；舊模型可直接使用，於個案工作區補完整表頭並用實際工具預檢，不重建參考校準。Nextflow確定失敗時停止相關程序、保留分數並顯示原因，不長時間停在執行中。更新後從PRS卡片重試即可；此次程式版本更新會自動使用新run並重做個案計分，不需重跑模型準備。[修復與操作](docs/ops/PRS_MULTI_DISEASE.md)。
