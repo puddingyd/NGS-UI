@@ -240,6 +240,84 @@ REAL_COMMAND = prs_run.Worker.command
 REAL_POPEN = subprocess.Popen
 
 
+def test_terminal_nextflow_failure_stops_live_process_and_keeps_root_cause(env, monkeypatch):
+    jid=jobs.start('CASE')['job_id']
+    monkeypatch.setattr(prs_run.subprocess, 'Popen', REAL_POPEN)
+    log=jobs.job_dir(jid)/'log.txt'
+    script=('import time\n'
+            'print("ERROR ~ Error executing process > FORMAT_SCOREFILES",flush=True)\n'
+            'print("ValidationError: ScoreHeader\\ntrait_reported\\n  Field required",flush=True)\n'
+            'time.sleep(60)\n')
+    with log.open('a') as stream:
+        worker=prs_run.Worker(jid,log_stream=stream)
+        with pytest.raises(RuntimeError,match='trait_reported'):
+            REAL_COMMAND(worker,[sys.executable,'-c',script],'祖源檢查')
+    state=jobs.read_job(jid)
+    assert state['status']=='cancelling' and '正在停止' in state['step']
+    assert '缺少必要' in state['warning']
+    assert worker.process is None
+    # An old failure in the same append-only log must not stop a later stage.
+    with log.open('a') as stream:
+        worker=prs_run.Worker(jid,log_stream=stream)
+        REAL_COMMAND(worker,[sys.executable,'-c','import time; time.sleep(.1)'],'new stage')
+
+
+def test_multi_runner_change_is_in_plan_and_starts_new_run(env, monkeypatch):
+    package=env.root/'runner/research/prs/multidisease';package.mkdir(parents=True)
+    code=package/'run.py';code.write_text('old code')
+    model=env.root/'model';prs.atomic_json(model/'manifest.json',dict(sha256={}))
+    env.cfg['multi_model_dir']=str(model)
+    monkeypatch.setattr(config,'REPO_ROOT',env.root/'runner')
+    first=jobs.start('CASE')['job_id']
+    prs_run.Worker(first).update(status='cancelled')
+    code.write_text('updated ancestry adapter')
+    second=jobs.start('CASE')['job_id']
+    assert jobs.read_job(first)['pipeline_run_id']!=jobs.read_job(second)['pipeline_run_id']
+    assert jobs.read_job(first)['plan']['resources']['multi_runner_sha256']!=jobs.read_job(second)['plan']['resources']['multi_runner_sha256']
+
+
+def test_real_nextflow_terminal_failure_is_bounded_and_stops_pending_task(env, monkeypatch):
+    import time
+    nf=os.environ.get('NGS_UI_TEST_NEXTFLOW')
+    if not nf: pytest.skip('Set NGS_UI_TEST_NEXTFLOW to exercise real Nextflow failure cleanup')
+    jid=jobs.start('CASE')['job_id']
+    monkeypatch.setattr(prs_run.subprocess,'Popen',REAL_POPEN)
+    pending=env.root/'pending.pid'
+    flow=env.root/'failure.nf'
+    flow.write_text('''process EXTRACT_DATABASE {
+      script:
+      """
+      echo \\$\\$ > PENDING
+      sleep 30
+      """
+    }
+    process FORMAT_SCOREFILES {
+      script:
+      """
+      while [ ! -s PENDING ]; do sleep .1; done
+      echo 'ValidationError: ScoreHeader' >&2
+      echo 'trait_reported' >&2
+      echo '  Field required' >&2
+      exit 1
+      """
+    }
+    workflow { EXTRACT_DATABASE(); FORMAT_SCOREFILES() }
+    '''.replace('PENDING',str(pending)))
+    started=time.monotonic()
+    with (jobs.job_dir(jid)/'log.txt').open('a') as stream:
+        worker=prs_run.Worker(jid,log_stream=stream)
+        with pytest.raises(RuntimeError,match='trait_reported'):
+            REAL_COMMAND(worker,[nf,'run',str(flow),'-ansi-log','false','-w',str(env.root/'work')],'祖源檢查')
+    assert time.monotonic()-started < 25
+    if pending.is_file():
+        pid=int(pending.read_text())
+        for _ in range(30):
+            try: os.kill(pid,0)
+            except ProcessLookupError: break
+            time.sleep(.1)
+        else: pytest.fail('Nextflow pending task survived workflow failure cleanup')
+
+
 def test_dragen_other_germline_layout_auto_selects_matching_run_and_source(env):
     target=env.anchor.parent.parent/'other/SOURCE/germline_seq/SOURCE.hard-filtered.gvcf.gz'
     target.parent.mkdir(parents=True)

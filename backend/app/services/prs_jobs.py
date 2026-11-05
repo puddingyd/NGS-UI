@@ -87,6 +87,14 @@ def resource_signature(cfg):
             if Path(name).is_absolute() or '..' in Path(name).parts:
                 raise ValueError('PRS 模型檔案路徑不正確')
             result['multi/'+name] = signature(directory/name)
+        # A changed runner must get a fresh run rather than collide with its
+        # immutable inputs.lock.json. Model artifacts and old scores stay put.
+        runner = config.REPO_ROOT/'research/prs/multidisease'
+        result['multi_runner_sha256'] = prs_paths.digest_json({p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                                                             for p in sorted(runner.glob('*.py'))})
+        formatter = Path(cfg.get('pgscatalog_utils_img', str(Path(cfg['plink_img']).parent/
+            'ghcr.io-pgscatalog-pygscatalog-pgscatalog-utils-2.0.4.img')))
+        result['multi_formatter_image'] = signature(formatter) if formatter.is_file() else None
     return result
 
 
@@ -325,7 +333,7 @@ def raw_log_path(sid, jid):
 
 
 def failure_message(jid, fallback):
-    return postprocessing_log.failure_detail(postprocessing_log.read_tail(job_dir(jid)/'log.txt'), fallback)
+    return prs_presentation.failure_reason(postprocessing_log.read_tail(job_dir(jid)/'log.txt'), fallback)
 
 
 def enqueue_tertiary(samples, parent_job_id, logger=print):

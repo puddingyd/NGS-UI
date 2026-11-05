@@ -103,6 +103,11 @@ const server=http.createServer((req,res)=>{
  await page.locator('#prs-refresh').click();await page.waitForFunction(()=>document.querySelector('#prs-score-status').textContent.includes('檢查進行中'));
  assert.equal(await page.locator('#prs-submit').isDisabled(),true);
  assert.match(await page.locator('#prs-disease-rows').innerText(),/1.234568/);
+ job={...job,status:'cancelling',step:'祖源檢查失敗；正在停止相關程序',warning:'缺少必要欄位 trait_reported'};
+ await page.locator('#prs-refresh').click();await page.waitForFunction(()=>document.querySelector('#prs-pipeline-message').textContent.includes('收尾中'));
+ assert.match(await page.locator('#prs-score-status').innerText(),/檢查失敗/);
+ assert.match(await page.locator('#prs-pipeline-message').innerText(),/trait_reported/);
+ assert.equal(await page.locator('#prs-submit').isDisabled(),true);
  ready=true;score.qc_ready=true;job={job_id:'published',status:'done',step:'完成'};
  await page.locator('#prs-refresh').click();await page.waitForFunction(()=>!document.querySelector('#prs-submit').disabled);
  await page.locator('#prs-age').fill('50.5');await page.locator('#prs-sex').selectOption('male');await page.locator('#prs-history-menu>summary').click();await page.locator('#prs-history').selectOption('no');await page.locator('#prs-history-menu>summary').click();await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});

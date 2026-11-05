@@ -17,6 +17,7 @@ import subprocess
 from ..absolute_risk.registry import DISEASES, NEW_DISEASES
 from .common import SCORING, command, plink, rows, score_values, sha, write_json
 from .reconstruction import rules
+from .ancestry_input import header, COLUMNS
 
 
 def legacy():
@@ -198,8 +199,7 @@ def prepare(cfg, score_dir, reference, output):
     # changing PCA markers. Scoring still uses all six models in one matrix.
     (output/'ancestry.ids').write_text(''.join(r[0]+'\n' for r in db.execute("SELECT id FROM model WHERE disease='CHD' ORDER BY id")))
     with gzip.open(output/'ancestry_score.txt.gz', 'wt') as f:
-        f.write('#pgs_id=PGS004879\n#genome_build=GRCh38\n#variants_number=610305\n')
-        f.write('chr_name\tchr_position\teffect_allele\tother_allele\teffect_weight\n')
+        f.write(header(610305)); f.write(COLUMNS)
         for r in db.execute("SELECT l.*,m.ea,m.weight FROM locus l JOIN model m USING(id) WHERE disease='CHD' ORDER BY chrom,pos"):
             f.write(f"{r['chrom']}\t{r['pos']}\t{r['ea']}\t{r['ref'] if r['ea']==r['alt'] else r['alt']}\t{r['weight']}\n")
     # Keep rejected/ambiguous records for a preparation audit, outside case data.

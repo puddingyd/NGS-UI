@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v9.92：修復六疾病祖源輔助檔缺少`trait_reported`的格式錯誤；舊模型可直接使用，於個案工作區補完整表頭並用實際工具預檢，不重建參考校準。Nextflow確定失敗時停止相關程序、保留分數並顯示原因，不長時間停在執行中。更新後從PRS卡片重試即可；此次程式版本更新會自動使用新run並重做個案計分，不需重跑模型準備。[修復與操作](docs/ops/PRS_MULTI_DISEASE.md)。
+
 **檔案清單規劃／server 路徑驗證（2026-11-05）**：提供可整段貼到 server 的[唯讀盤點程式](scripts/paste_probe_sample_files.sh)及[路徑、驗證方式與單一每日更新規劃](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。以 FASTQ 建 sample，保留 lane／缺配對並列相關 BAM、VCF、CNV/SV、gVCF 及 index；不更新正式快取或服務。「檔案清單」modal 與二／三級排程整合尚未啟用，先由操作者驗證實際目錄。
 
 v9.91：PRS 新增未來20年風險，UI、參考組說明與健檢報告同步顯示；評估年齡超過60歲時20年顯示不適用，10年及至80歲仍依原規則。各疾病病史新表單預設「否」，保留已儲存病史。既有個案按一次「風險計算」即可產生新版評估，不需重跑基因分析。確認既有`nf_work` bind mount與PRS路徑相容，繼續使用原路徑存取SSD。[操作說明](docs/ops/PRS_MULTI_DISEASE.md)。

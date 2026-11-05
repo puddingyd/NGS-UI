@@ -163,7 +163,9 @@ function renderScoreStatus(score, records=[]) {
     else if(records.length>1 && records.some(r=>r.score?.qc_ready) && records.some(r=>!r.score?.qc_ready))
       text='PRS 計分已完成；以下疾病尚未通過祖源或品質檢查，無法計算風險：'+records.filter(r=>!r.score?.qc_ready).map(r=>r.name).join('、')+'。其他疾病可依臨床資訊計算。';
     else if(!score.qc_ready)text=active(currentJob)
-      ? 'PRS 計分已完成；祖源與品質檢查進行中，完成並符合要求後才能計算風險。'
+      ? (currentJob.status==='cancelling' && currentJob.warning
+        ? 'PRS 計分已完成；祖源與品質檢查失敗，正在停止相關程序。分數與百分位保留，目前無法計算風險。'
+        : 'PRS 計分已完成；祖源與品質檢查進行中，完成並符合要求後才能計算風險。')
       : 'PRS 計分已完成；祖源或品質檢查尚未符合要求，目前只能查看分數與百分位。';
     else text='PRS 計分與祖源／品質檢查已完成。';
   }
@@ -171,7 +173,7 @@ function renderScoreStatus(score, records=[]) {
 }
 function renderPipeline(pipeline={}) {
   currentJob=pipeline.job||null;
-  const labels={queued:'排隊中',running:'執行中',done:'完成',done_with_warnings:'計分完成，請查看提醒',failed:'失敗',cancelled:'已取消'};
+  const labels={queued:'排隊中',running:'執行中',cancelling:'收尾中',done:'完成',done_with_warnings:'計分完成，請查看提醒',failed:'失敗',cancelled:'已取消'};
   byId('prs-pipeline-message').textContent=[currentJob ? `${labels[currentJob.status]||currentJob.status}：${currentJob.step}` : '尚無平台分析紀錄',currentJob?.error,currentJob?.warning,pipeline.setup_issue].filter(Boolean).join('；');
   byId('prs-run').disabled=!pipeline.can_start;byId('prs-run').textContent=currentJob?'重新分析／重試':'開始 PRS 分析';
   byId('prs-new-run').hidden=!pipeline.can_start || !['failed','cancelled','done_with_warnings'].includes(currentJob?.status);

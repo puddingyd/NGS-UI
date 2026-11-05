@@ -2,6 +2,23 @@
 import re
 
 
+def nextflow_failed(raw):
+    # A task can be retried by Nextflow; only its terminal workflow error is
+    # grounds for stopping the owned process group.
+    raw = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', raw)
+    return bool(re.search(r'^\s*ERROR\s*~\s*Error executing process\s*>', raw, re.MULTILINE))
+
+
+def failure_reason(raw, fallback):
+    if 'ScoreHeader' in raw and re.search(r'\btrait_reported\s*\n\s*Field required', raw):
+        return '祖源計分檔格式錯誤：缺少必要的疾病名稱欄位 trait_reported'
+    from . import postprocessing_log
+    detail = postprocessing_log.failure_detail(raw, fallback)
+    if detail != fallback: return detail
+    found = re.findall(r'^\s*(ERROR\s*~[^\n]+)', raw, re.MULTILINE)
+    return found[-1][:1500] if found else fallback
+
+
 def explanation():
     return dict(method=[
         'gVCF → PRS score：使用 PGS004879（INTERVENE_MegaPRS_CHD）的權重，固定計算 610,305 個已核對位點；無法可靠判讀的位點，以 3,330 名參考者的平均基因型補值後加總。',
@@ -30,12 +47,17 @@ def log_summary(raw):
     qc_report JSON and COMPLETED SUM/PCT must not look like the table result.
     """
     lines = ['流程摘要；表格計分與祖源／品質檢查分開執行。完整工具輸出可另行下載。']
+    error_context = False
     for line in raw.splitlines():
         text = re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', line).strip()
+        if re.match(r'(?:Traceback|.*ValidationError:)', text): error_context = True
+        if re.match(r'^(?:Work dir:|Container:|Tip:|executor >)', text): error_context = False
         if (re.search(r'\[postprocessing\]|\[PRS\]', text)
                 or re.match(r'(?:executor >|\[(?:[0-9a-f]{2}/[0-9a-f]{6}|-\s+)\])', text)
                 or re.search(r'Pipeline completed successfully|^(?:Completed at:|Duration\s*:|Succeeded\s*:)', text)
-                or re.search(r'\b(?:FATAL|ERROR|WARNING)\b|(?:Error|Exception):|Traceback', text)):
+                or re.search(r'\b(?:FATAL|ERROR|WARNING)\b|(?:Error|Exception):|Traceback', text)
+                or text == 'Execution cancelled -- Finishing pending tasks before exit'
+                or error_context):
             lines.append(text)
     return '\n'.join(lines)
 

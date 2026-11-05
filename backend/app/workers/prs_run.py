@@ -11,7 +11,7 @@ import traceback
 import uuid
 
 from .. import config
-from ..services import prs, prs_jobs as jobs, prs_paths, nextflow_work, postprocessing_log, container_runtime
+from ..services import prs, prs_jobs as jobs, prs_paths, nextflow_work, postprocessing_log, container_runtime, prs_presentation
 from .dragen_run import _acquire_sample_locks, _release_sample_locks, _load_secrets
 
 
@@ -96,10 +96,25 @@ class Worker:
             env.update(nextflow_work.lease_env(config.TERTIARY_NF_WORK_ROOT, 'prs', self.work_lease))
             fds = (self.work_lease.fileno(),)
         output = dict(stdout=self.log_stream, stderr=subprocess.STDOUT) if self.log_stream is not None else {}
+        log_path = self.directory/'log.txt'
+        cursor = log_path.stat().st_size if log_path.exists() else 0
+        recent = ''
         self.process = subprocess.Popen(args, cwd=cwd, env=env, pass_fds=fds, start_new_session=True, **output)
         try:
             while self.process.poll() is None:
                 self.check_cancel()
+                if log_path.exists():
+                    with log_path.open('rb') as log:
+                        log.seek(cursor)
+                        chunk = log.read(1024*1024)
+                        cursor = log.tell()
+                    recent = (recent + chunk.decode('utf-8', errors='replace'))[-50000:]
+                    if prs_presentation.nextflow_failed(recent):
+                        reason = prs_presentation.failure_reason(recent, 'Nextflow 流程失敗')
+                        self.update(status='cancelling', step=step+'失敗；正在停止相關程序', warning=reason)
+                        self.event('failed', elapsed=time.monotonic()-started, detail=reason)
+                        self.stop_process()
+                        raise RuntimeError(f'{step}失敗：{jobs.failure_message(self.job["job_id"], reason)}')
                 self.update()
                 time.sleep(1)
             if self.process.returncode:

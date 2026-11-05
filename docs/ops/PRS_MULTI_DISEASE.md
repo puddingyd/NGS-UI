@@ -1,6 +1,14 @@
-# 六疾病 PRS：準備、啟用與驗收（v9.91）
+# 六疾病 PRS：準備、啟用與驗收（v9.92）
 
-2026-11-05。CHD 與新增五疾病共用一次 gVCF 重建、一次六欄計分及一次祖源分析。五個新疾病一併啟用；沒有逐疾病開關。程式、台灣風險參數及 UI 已納入 repo；大型固定參考計分模型須在院內主機準備。**本次尚未在院內執行完整參考資料準備或真實 WGS 驗收，不能將本機測試視為院內流程已驗收。**
+2026-11-05。CHD 與新增五疾病共用一次 gVCF 重建、一次六欄計分及一次祖源分析。五個新疾病一併啟用；沒有逐疾病開關。程式、台灣風險參數及 UI 已納入 repo。依操作者11/5貼回Log，院內共用模型準備與CHD 3,330人回歸已通過，26T00970完成六疾病計分；祖源因輔助檔表頭缺欄位失敗並已取消。**v9.92修復此格式問題；完整院內祖源／風險／報告驗收仍待重試確認，不能將本機測試視為院內流程已驗收。**
+
+## v9.92 修復後如何重試
+
+已完成`setup_prs_multi.py --activate`者不需重下準備命令，也不用改已安裝的`ancestry_score.txt.gz`或manifest。由操作者更新程式、重啟平台後，在原個案PRS卡片按「重新分析／重試」。本次程式版本改變會自動選新run並重做個案計分；舊正式結果及audit保留，不需重跑整個三級，也不重新下載或做3,330人校準。同版本且同輸入的後續重試仍沿用checksum checkpoint。
+
+祖源開始前，程式在個案`multi/ancestry/`產生格式完整的輔助檔，變異列與已核對模型完全相同，只補metadata；留來源／輸出SHA256，通過`pgscatalog-format`預檢才啟動Nextflow。預設使用`plink_img`同層既有`ghcr.io-pgscatalog-pygscatalog-pgscatalog-utils-2.0.4.img`；若實際檔名／位置不同，在PRS設定加入絕對路徑`pgscatalog_utils_img`。容器與格式檢查暫存均沿用個案工作區。
+
+若Nextflow回報確定的workflow失敗，平台會顯示失敗原因及收尾狀態並停止該工作process group，再保留score／percentile、標記祖源未完成；不允許算risk。一般Nextflow task retry warning不會觸發停止。摘要Log保留ValidationError的欄位與原因；完整工具Log仍可下載。新祖源checkpoint另核對輔助檔、來源sidecar與格式檢查紀錄。
 
 ## 操作者先做什麼
 
@@ -105,7 +113,9 @@ v9.90 驗證紀錄：相關 Python 測試 111 passed／5 skipped（五項需真�
 
 v9.91 驗證紀錄：20年期間、60／70歲邊界、舊快照與報告相容性等相關 Python 測試 56 passed、前端單元測試 4 passed；Chrome 操作測試確認六疾病病史預設「否」、已儲存病史保留、新舊評估顯示及手機橫向捲動。男性／女性合成健檢 DOCX 共六頁逐頁檢查完成。
 
-尚待院內確認：完整參考模型準備、3330 人 CHD 回歸、實際 reference archive 格式／容器環境、真實 WGS 六模型位點匹配率、耗時／記憶體／磁碟、Nextflow 中斷恢復及三級整合。部署後以原三案核對 **CHD 表格正式值**，不是 Nextflow 輔助分數：
+v9.92 驗證紀錄：相關Python測試117 passed（含官方pgscatalog.core 1.0.2格式工具重現舊錯誤／新檔通過，以及真實Nextflow 24.10.4失敗／pending task清理）、前端單元4 passed及Chrome桌機／手機整合通過。驗證舊模型壓縮檔與變異列不變、來源／列數不符拒絕、格式錯誤不啟動Nextflow、程式變更自動新run與過往Log錯誤不誤殺新步驟；本機未執行院內Linux容器或完整WGS，院內啟動時仍須通過實際容器的格式預檢。
+
+11/5操作者紀錄：完整參考模型準備及3,330人CHD回歸已通過；26T00970 CHD表格0.366424／35.10百分位、609032可靠位點，與下列基準相符。尚待院內確認：修復後祖源與容器預檢、其餘真實WGS六模型匹配與完整耗時／記憶體／磁碟、Nextflow中斷恢復、風險／報告及三級整合。部署後以原三案核對 **CHD 表格正式值**，不是 Nextflow 輔助分數：
 
 | 個案 source ID | CHD score（含固定缺失補值） | EAS percentile | observed／missing |
 |---|---:|---:|---:|

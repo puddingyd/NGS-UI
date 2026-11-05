@@ -15,6 +15,7 @@ from ..absolute_risk.registry import DISEASES
 from ..absolute_risk.multi import score_rows
 from .common import command, load_models, plink, rows, score_values, sha, write_json
 from .reconstruction import rules, scan_chromosome
+from .ancestry_input import stage_score, preflight
 
 
 def fingerprint(path):
@@ -128,6 +129,10 @@ def summarize(db, root, manifest, model_dir, sample, model_hash):
 
 def ancestry(cfg, sample, root, model_dir):
     dest = root/'ancestry'; dest.mkdir(exist_ok=True)
+    # Old installed manifests remain valid. Never rewrite their auxiliary file
+    # or the calibrated scores just to complete required PGS header metadata.
+    score = stage_score(model_dir/'ancestry_score.txt.gz', dest/'ancestry_score.txt.gz', 610305)
+    preflight(cfg, score)
     command(plink(cfg, '--pfile', root/'union', '--extract', model_dir/'ancestry.ids', '--geno', '0',
                   '--make-pgen', '--out', dest/'target'))
     sheet = dest/'samplesheet.csv'
@@ -136,7 +141,7 @@ def ancestry(cfg, sample, root, model_dir):
         w.writerow(['case'+sample, str(dest/'target'), 'ALL', 'pfile'])
     command(['nextflow', 'run', 'pgscatalog/pgsc_calc', '-r', 'v2.3.0', '-profile', 'singularity',
         '-c', cfg['ancestry_nextflow_config'], '-resume', '-w', dest/'work', '--input', sheet,
-        '--target_build', 'GRCh38', '--scorefile', model_dir/'ancestry_score.txt.gz',
+        '--target_build', 'GRCh38', '--scorefile', score,
         '--run_ancestry', cfg['reference_panel'], '--projection_method', cfg['projection_method'],
         '--ref_label', cfg['reference_label'], '--pca_maf_target', str(cfg['pca_maf_target']),
         '--pca_geno_miss_target', str(cfg['pca_geno_miss_target']), '--max_cpus', str(cfg['max_cpus']),
@@ -152,7 +157,8 @@ def ancestry(cfg, sample, root, model_dir):
     if len(counts) != 1 or min(counts) <= 0: raise ValueError('Missing or inconsistent PCA marker count')
     qc = dict(sample=sample, qc_status='PASS', ancestry=r['MostSimilarPop'],
         ancestry_low_confidence=r['MostSimilarPop_LowConfidence'], pca_ld_pruned_markers=min(counts),
-        marker_policy='fixed_CHD_canonical_v0', flags=[])
+        marker_policy='fixed_CHD_canonical_v0', ancestry_input_sha256=sha(score),
+        formatter_preflight='PASS', flags=[])
     if qc['ancestry'] != 'EAS' or qc['ancestry_low_confidence'] != 'False':
         qc.update(qc_status='PASS_WITH_REVIEW_FLAGS', flags=['祖源不符合東亞風險估算條件'])
     write_json(root/'qc.json', qc)
@@ -190,7 +196,9 @@ def run(cfg, sample, gvcf, root, stage):
             if not checkpoint(root/'score.complete.json', expected): raise ValueError('Scoring has not completed')
             if checkpoint(root/'ancestry.complete.json', expected): return
             ancestry(cfg, sample, root, model_dir)
-            write_json(root/'ancestry.complete.json', dict(input=expected, files={'qc.json': sha(root/'qc.json')}))
+            artifacts = ('qc.json', 'ancestry/ancestry_score.txt.gz',
+                         'ancestry/ancestry_score.txt.source.json', 'ancestry/format_check.json')
+            write_json(root/'ancestry.complete.json', dict(input=expected, files={f: sha(root/f) for f in artifacts}))
     finally: db.close()
 
 
