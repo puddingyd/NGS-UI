@@ -13,8 +13,20 @@
 .prs-history-fields { position:absolute; z-index:5; background:var(--bg-card,white); border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 6px 18px #0002; padding:12px; min-width:310px; right:0; }
 .prs-history-fields label { justify-content:space-between; margin:5px 0; }
 .prs-history-fields select { max-width:135px; }
-.prs-curve-picker { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:13px; }
-.prs-curve-picker select { min-height:32px; max-width:100%; }
+.prs-curves-heading { font-size:14px; font-weight:600; margin:18px 0 8px; }
+.prs-curve-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:start; }
+.prs-curve-card { min-width:0; border:1px solid #e2e8f0; border-radius:6px; padding:12px 8px; background:white; }
+.prs-curve-card h4 { color:#243244; font-size:13px; margin:0 4px 8px; line-height:1.5; }
+.prs-curve-reference { margin:0 4px 4px; min-height:38px; }
+.prs-curve-unavailable { min-height:290px; margin:0 4px; display:flex; align-items:center; justify-content:center; text-align:center; }
+.prs-curve-card details { margin:8px 4px 0; }
+.prs-curve-card .prs-table { font-size:12px; }
+.prs-curve-card .prs-table td,.prs-curve-card .prs-table th { padding:8px 4px; }
+@media (max-width:1050px) { .prs-curve-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:640px) {
+  .prs-curve-grid { grid-template-columns:minmax(0,1fr); }
+  .prs-curve-unavailable { min-height:120px; }
+}
 @media (max-width:540px) { .prs-history-fields { left:0; right:auto; min-width:285px; } }
 .prs-message { font-size:13px; margin:8px 0; color:#475569; }
 .prs-results[hidden],.prs-card [hidden] { display:none !important; }
@@ -26,7 +38,7 @@
 .prs-diseases { min-width:820px; }
 .prs-diseases td { font-variant-numeric:tabular-nums; }
 .prs-diseases [data-risk] { color:#135d7b; }
-.prs-chart { display:block; width:100%; max-width:900px; height:auto; min-height:170px; }
+.prs-chart { display:block; width:100%; height:auto; }
 .prs-axis { font-size:12px; fill:#526174; }
 .prs-legend { display:flex; flex-wrap:wrap; gap:22px; font-size:13px; margin:12px 0; }
 .prs-legend span::before { content:''; display:inline-block; width:25px; margin-right:6px; vertical-align:middle; border-top:3px solid #126e92; }

@@ -1,6 +1,6 @@
 // Separate genotype scoring from clinical risk assessment. Values are server-owned.
 let sampleId = null, generation = 0, controller = null, ready = false;
-let displayedResult = null, timer = null, currentJob = null, dirtyClinical = false, busy = false;
+let timer = null, currentJob = null, dirtyClinical = false, busy = false;
 let assessmentResults = {}, scoredDiseases = [];
 const diseases = [
   ['CHD','冠心病（CHD）'],['T2D','第二型糖尿病（T2D）'],['ALL_CANCERS','整體癌症（All cancers）'],
@@ -17,7 +17,7 @@ export function formatRisk(value) {
   return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=1 ? `${(value*100).toFixed(2)}%` : '無法估算';
 }
 function resetRisks() {
-  displayedResult=null;assessmentResults={};byId('prs-result').hidden=true;
+  assessmentResults={};byId('prs-result').hidden=true;byId('prs-curve-grid').replaceChildren();
   for (const cell of document.querySelectorAll('#prs-disease-rows [data-risk]'))cell.textContent=pending;
 }
 function renderRows(records=[]) {
@@ -36,12 +36,12 @@ function renderRows(records=[]) {
 }
 export function resetPrsSample(sid) {
   sampleId=sid||null;generation++;controller?.abort();clearTimeout(timer);
-  ready=false;busy=false;displayedResult=null;currentJob=null;dirtyClinical=false;
+  ready=false;busy=false;assessmentResults={};currentJob=null;dirtyClinical=false;
   if(!byId('prs-card'))return;
   byId('prs-card').classList.toggle('hidden',!sampleId);
   byId('prs-details').open=false;byId('prs-form').reset();
   buildHistory();byId('prs-history-menu').open=false;
-  byId('prs-result').hidden=true;byId('prs-message').textContent='';
+  byId('prs-result').hidden=true;byId('prs-curve-grid').replaceChildren();byId('prs-message').textContent='';
   byId('prs-score-status').textContent='';renderExplanation();byId('prs-explanation').open=false;
   byId('prs-pipeline-message').textContent='';byId('prs-submit').disabled=true;
   byId('prs-source-label').hidden=true;byId('prs-run').disabled=true;byId('prs-cancel').hidden=true;byId('prs-new-run').hidden=true;
@@ -64,13 +64,12 @@ function svgNode(name, attrs, content) {
   return node;
 }
 
-function renderCurve(result) {
+function renderCurve(result, svg, body) {
   const own = result.risk_to_80.curve;
   const reference = result.reference.risk_to_80.curve;
-  const svg = byId('prs-chart');
   svg.replaceChildren();
-  const width = Math.max(300, Math.min(720, svg.clientWidth || 720));
-  const height = 280, left = 62, right = 22, top = 24, bottom = 44;
+  const width = Math.max(240, Math.min(720, svg.clientWidth || 320));
+  const height = 240, left = 51, right = 22, top = 18, bottom = 38;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   const first = result.person.age;
   const maximum = Math.max(...own.map(p => p.risk), ...reference.map(p => p.risk));
@@ -96,7 +95,7 @@ function renderCurve(result) {
       dot.append(svgNode('title',{},`${point.age}歲：${formatRisk(point.risk)}`));svg.append(dot);
     }
   }
-  const body=byId('prs-curve-table');body.replaceChildren();
+  body.replaceChildren();
   own.forEach((point,i)=>{
     const row=document.createElement('tr');
     for (const value of [`${point.age}歲`,formatRisk(point.risk),formatRisk(reference[i]?.risk)]) {
@@ -108,25 +107,41 @@ function renderCurve(result) {
 function renderResult(snapshot) {
   const result=snapshot.result;
   assessmentResults=result.diseases||{CHD:{...result,available:true,name:'冠心病（CHD）'}};
-  const select=byId('prs-curve-disease'), previous=select.value;select.replaceChildren();
   for(const [id,name] of diseases) {
     const r=assessmentResults[id];if(!r)continue;
     const row=document.querySelector(`#prs-disease-rows [data-disease="${id}"]`);if(!row)continue;
     row.querySelector('[data-risk="ten"]').textContent=!r.available?r.reason:r.risk_10_year?formatRisk(r.risk_10_year.risk):'超出模型年齡範圍';
     row.querySelector('[data-risk="twenty"]').textContent=!r.available?r.reason:!('risk_20_year' in r)?'請重新計算風險':r.risk_20_year?formatRisk(r.risk_20_year.risk):'超出模型年齡範圍';
     row.querySelector('[data-risk="eighty"]').textContent=r.available?formatRisk(r.risk_to_80.risk):r.reason;
-    if(r.available)select.append(new Option(name,id));
   }
-  if(assessmentResults[previous]?.available)select.value=previous;
-  byId('prs-result').hidden=!select.options.length;
-  selectCurve();
+  byId('prs-result').hidden=!Object.values(assessmentResults).some(r=>r.available);
+  const person=result.person;
+  byId('prs-result-context').textContent=`${person.assessment_date} 評估 · ${person.age}歲 · ${person.sex==='male'?'男性':'女性'} · 目前至80歲的累積風險`;
+  renderCurves();
 }
-function selectCurve() {
-  const r=assessmentResults[byId('prs-curve-disease').value];if(!r?.available)return;
-  displayedResult=r;
-  const twenty=!('risk_20_year' in r.reference)?'待重新計算':r.reference.risk_20_year?formatRisk(r.reference.risk_20_year.risk):'不適用';
-  byId('prs-result-context').textContent=`${r.name} · ${r.person.assessment_date} 評估 · ${r.person.age}歲 · ${r.person.sex==='male'?'男性':'女性'} · 參考組：10年 ${r.reference.risk_10_year?formatRisk(r.reference.risk_10_year.risk):'不適用'}／20年 ${twenty}／至80歲 ${formatRisk(r.reference.risk_to_80.risk)}`;
-  renderCurve(r);
+function renderCurves() {
+  const grid=byId('prs-curve-grid');grid.replaceChildren();
+  for(const [id,name] of diseases) {
+    const r=assessmentResults[id], card=document.createElement('section');
+    card.className='prs-curve-card';card.dataset.curveDisease=id;
+    const heading=document.createElement('h4');heading.id=`prs-curve-heading-${id}`;
+    heading.textContent=name;card.setAttribute('aria-labelledby',heading.id);card.append(heading);grid.append(card);
+    if(!r?.available) {
+      const message=document.createElement('p');message.className='prs-footnote prs-curve-unavailable';
+      message.textContent=r?.reason||(scoredDiseases.includes(id)?'尚未完成風險評估':'尚未完成分析');card.append(message);continue;
+    }
+    const reference=document.createElement('p');reference.className='prs-footnote prs-curve-reference';
+    const twenty=!('risk_20_year' in r.reference)?'待重新計算':r.reference.risk_20_year?formatRisk(r.reference.risk_20_year.risk):'不適用';
+    reference.textContent=`參考組：10年 ${r.reference.risk_10_year?formatRisk(r.reference.risk_10_year.risk):'不適用'}／20年 ${twenty}／至80歲 ${formatRisk(r.reference.risk_to_80.risk)}`;
+    const svg=svgNode('svg',{class:'prs-chart',role:'img'});
+    const details=document.createElement('details'), summary=document.createElement('summary');
+    summary.textContent='查看曲線數值';details.append(summary);
+    const table=document.createElement('table');table.className='prs-table';
+    const head=document.createElement('thead'), row=document.createElement('tr');
+    for(const label of ['至年齡','此個案','參考組']) {const cell=document.createElement('th');cell.scope='col';cell.textContent=label;row.append(cell);}
+    head.append(row);const body=document.createElement('tbody');table.append(head,body);details.append(table);
+    card.append(reference,svg,details);renderCurve(r,svg,body);
+  }
 }
 function buildHistory() {
   const panel=byId('prs-history-fields');panel.replaceChildren();
@@ -230,7 +245,13 @@ byId('prs-form')?.addEventListener('input',()=>{
   if(busy) {generation++;controller?.abort();busy=false;}
   byId('prs-submit').disabled=!ready;byId('prs-message').textContent='臨床資訊已變更，請重新計算風險。';schedule();
 });
-window.addEventListener('resize',()=>{if(displayedResult && !byId('prs-result').hidden)renderCurve(displayedResult);});
+window.addEventListener('resize',()=>{
+  if(byId('prs-result').hidden)return;
+  for(const card of byId('prs-curve-grid').children) {
+    const svg=card.querySelector('svg');
+    if(svg)renderCurve(assessmentResults[card.dataset.curveDisease],svg,card.querySelector('tbody'));
+  }
+});
 byId('prs-form')?.addEventListener('submit',async event=>{
   event.preventDefault();if(!sampleId || !ready || busy)return;resetRisks();
   if(!scoredDiseases.some(id=>clinicalHistory()[id]===false)) {byId('prs-message').textContent='請至少確認一個已完成分析的疾病目前尚未罹患，才能計算首次發病風險。';return;}
@@ -242,7 +263,6 @@ byId('prs-form')?.addEventListener('submit',async event=>{
   } catch(error){if(token===generation && error.name!=='AbortError')byId('prs-message').textContent=error.message;}
   finally {if(token===generation){busy=false;byId('prs-submit').disabled=!ready;schedule();}}
 });
-byId('prs-curve-disease')?.addEventListener('change',selectCurve);
 async function startScore(newRun=false) {
   if(busy)return;
   const token=++generation;controller?.abort();controller=new AbortController();busy=true;
