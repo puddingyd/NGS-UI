@@ -4598,3 +4598,10 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .specialized-summary-table th, .specialized-summary-table td { padding: 6px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border, #ddd); }
 #specialized-summary { padding: 12px; }
 @media print { #specialized-summary { display: none; } }
+.pgx-comparison:empty { display: none; }
+.pgx-comparison { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.pgx-comparison-badge { display: inline-block; color: #92400e; background: #fff4d6; border-radius: 4px; padding: 2px 6px; font-size: 12px; margin-right: 4px; }
+.pgx-comparison-values { flex-basis: 100%; overflow-wrap: anywhere; font-size: 13px; }
+.pgx-result-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
+.pgx-result-choice select { max-width: 100%; min-width: 0; padding: 5px; }
+.pgx-review-note { margin: 8px 0; font-size: 13px; }

@@ -1939,6 +1939,8 @@ def load_sample_pgx(sample_id: str, version: str | None = None) -> dict | None:
     pgx_path = sample_layout.pgx_tsv(sample_id)
     pharmcat_path = sample_layout.pharmcat_json(sample_id)
     pgx = load_pgx(pgx_path, pharmcat_path if pharmcat_path.exists() else None)
+    from . import pgx_concordance
+    pgx_concordance.attach(sample_id, pgx)
     # Lazily import the DOCX presenter to avoid a module-load cycle:
     # docx_export itself uses this staged loader when building health reports.
     # The resulting view is the single shared projection for DOCX + browser.

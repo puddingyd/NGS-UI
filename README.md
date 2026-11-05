@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v9.93：PGx 與同來源 DRAGEN targeted.json 交叉比對，相同結果不加註記，只顯示不一致、LowGQ 或相位未定。不一致基因可在分析區「人工確認後採用」選擇平台／DRAGEN，立即保存並同步畫面、健檢 Word 與 PDF；來源更新後需重新確認。採用 DRAGEN 時停用受影響的原用藥建議，明示待重新註解。[使用方式與比對規則](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。
+
 v9.92：修復六疾病祖源輔助檔缺少`trait_reported`的格式錯誤；舊模型可直接使用，於個案工作區補完整表頭並用實際工具預檢，不重建參考校準。Nextflow確定失敗時停止相關程序、保留分數並顯示原因，不長時間停在執行中。更新後從PRS卡片重試即可；此次程式版本更新會自動使用新run並重做個案計分，不需重跑模型準備。[修復與操作](docs/ops/PRS_MULTI_DISEASE.md)。
 
 **檔案清單規劃／server 路徑驗證（2026-11-05）**：提供可整段貼到 server 的[唯讀盤點程式](scripts/paste_probe_sample_files.sh)及[路徑、驗證方式與單一每日更新規劃](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。以 FASTQ 建 sample，保留 lane／缺配對並列相關 BAM、VCF、CNV/SV、gVCF 及 index；不更新正式快取或服務。「檔案清單」modal 與二／三級排程整合尚未啟用，先由操作者驗證實際目錄。

@@ -13,6 +13,7 @@ function setup(overrides={}) {
     apiFetch:async url=>{seen.readinessUrl=url;return {available:true};},
     _pickHealthReportSections:async options=>{seen.options.push(options);return ['prs','pgx'];},
     prsClinicalInformationPending:()=>false,
+    _pgxChoiceSaving:false, _refreshPgxForExport:async()=>{},
     document:{querySelectorAll:()=>[]}, flushPendingSave:async()=>true,
     fetch:async url=>{seen.urls.push(url);return {ok:true,blob:async()=>({})};},
     downloadBlob:(blob,name)=>seen.downloads.push(name),alert:text=>seen.alerts.push(text),

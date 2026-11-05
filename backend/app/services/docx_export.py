@@ -3595,6 +3595,7 @@ def build_pgx_report_view(pgx: dict) -> dict:
         for group in drug_groups
     ]
     related_drugs = _pgx_related_drugs_by_gene(payload)
+    pending = set(payload.get("recommendations_pending") or [])
     analysis_genes: list[dict] = []
     for genotype_row in genotype_rows:
         gene = genotype_row["gene"]
@@ -3617,7 +3618,9 @@ def build_pgx_report_view(pgx: dict) -> dict:
                 "recommendation": _pgx_recommendation_text({"recommendations": matching}),
                 "requires_adjustment": True,
             })
-        if requires_attention:
+        if gene in pending:
+            gene_rows = [{"drug": "—", "recommendation": "用藥建議待重新註解", "requires_adjustment": False}]
+        elif requires_attention:
             for drug in related_drugs.get(gene, []):
                 if drug.casefold() in actionable_drugs:
                     continue
@@ -3642,6 +3645,7 @@ def build_pgx_report_view(pgx: dict) -> dict:
         analysis_genes.append({
             **genotype_row,
             "requires_attention": requires_attention,
+            "comparison": (payload.get("concordance") or {}).get("genes", {}).get(gene, {}),
             "related_drugs": related_drugs.get(gene, []),
             "recommendation_rows": gene_rows,
         })
@@ -3677,6 +3681,12 @@ def build_pgx_report_view(pgx: dict) -> dict:
     ))
     return {
         "report_genes": list(_PGX_CPIC_LEVEL_A_GENES),
+        "review_notes": [
+            f"{gene}：已人工確認採用 DRAGEN 結果。"
+            for gene, row in (payload.get("concordance") or {}).get("genes", {}).items()
+            if row.get("selected_source") == "dragen"
+        ],
+        "recommendations_pending": sorted(pending),
         "action_categories": action_categories,
         "summary_rows": summary_rows,
         "genotype_rows": genotype_rows,
@@ -3712,7 +3722,11 @@ def _render_health_pgx_section(doc, title: str, pgx: dict) -> list[dict]:
     _blank(doc)
     report_view = (pgx or {}).get("report_view") or build_pgx_report_view(pgx or {})
     drug_groups = report_view["drug_groups"]
-    if not drug_groups:
+    for note in report_view.get("review_notes") or []:
+        _add_paragraph(doc, "  " + note)
+    if report_view.get("recommendations_pending"):
+        _add_paragraph(doc, "  " + "、".join(report_view["recommendations_pending"]) + "：用藥建議待重新註解。")
+    if not drug_groups and not report_view.get("recommendations_pending"):
         _add_paragraph(doc, "  本次檢測未發現符合目前回報規則之明確臨床可應用藥物基因體結果。")
         _add_paragraph(
             doc,
@@ -3979,6 +3993,9 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     secondary = dict(secondary)
     secondary["variants"] = _report_clinvar_variants(secondary.get("variants") or {})
     pgx_payload = (sample_loader.load_sample_pgx(sample_id) or {}) if include_pgx else {}
+    if include_pgx:
+        from . import pgx_concordance
+        pgx_concordance.assert_exportable(pgx_payload.get("pgx") or {})
     report = report_store.load(sample_id)
     variants = secondary.get("variants") or {}
     categories = secondary.get("categories") or {}
@@ -4086,6 +4103,11 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     buf = io.BytesIO()
     if prs_assessment and prs.report_assessment(sample_id) != prs_assessment:
         raise ValueError('PRS 風險評估在匯出期間已變更，請重新匯出')
+    if include_pgx:
+        fresh_pgx = (sample_loader.load_sample_pgx(sample_id) or {}).get("pgx") or {}
+        pgx_concordance.assert_exportable(fresh_pgx)
+        if fresh_pgx.get("review_fingerprint") != (pgx_payload.get("pgx") or {}).get("review_fingerprint"):
+            raise ValueError("PGx 結果在匯出期間已變更，請重新匯出")
     doc.save(buf)
     return buf.getvalue()
 

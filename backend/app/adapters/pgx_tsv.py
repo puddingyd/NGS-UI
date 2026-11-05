@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import html
+import hashlib
 import json
 import re
 from collections import Counter
@@ -141,8 +142,8 @@ def _compact_report_json(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        with path.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
+        content = path.read_bytes()
+        data = json.loads(content)
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -203,6 +204,8 @@ def _compact_report_json(path: Path) -> dict:
                 "phase_set": _clean(variant.get("phaseSet")),
             })
         genes[gene] = {
+            "definition_version": _clean(payload.get("alleleDefinitionVersion")),
+            "call_source": _clean(payload.get("callSource")),
             "label": _clean(source.get("label")),
             "phenotypes": [
                 _clean(value)
@@ -225,6 +228,11 @@ def _compact_report_json(path: Path) -> dict:
             "variants": variants[:80],
         }
     return {
+        "source_identity": {
+            "sample_id": (data.get("matcherMetadata") or {}).get("sampleId") or "",
+            "genome_build": (data.get("matcherMetadata") or {}).get("genomeBuild") or "",
+            "report_sha256": hashlib.sha256(content).hexdigest(),
+        },
         "pharmcat_version": _clean(data.get("pharmcatVersion")),
         "data_version": _clean(data.get("dataVersion")),
         "timestamp": _clean(data.get("timestamp")),
@@ -256,6 +264,7 @@ def load_pgx(pgx_tsv: Path, pharmcat_json: Path | None = None) -> dict:
         "data_version": report.get("data_version", ""),
         "timestamp": report.get("timestamp", ""),
         "pharmcat_available": bool(report),
+        "source_identity": report.get("source_identity", {}),
         "messages": report.get("messages", []),
         "guideline_annotations": report.get("guideline_annotations", []),
     }

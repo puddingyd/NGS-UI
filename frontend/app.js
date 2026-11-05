@@ -3991,6 +3991,7 @@ function _pickHealthReportSections(prsReadiness = {}) {
 
 async function exportHealthDocx() {
   if (!state.currentLIS) return;
+  if (_pgxChoiceSaving) { alert("PGx 選擇正在儲存，請稍後再匯出。"); return; }
   const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sid = row?.sample_id || state.currentLIS;
   const originalLIS = state.currentLIS;
@@ -4015,6 +4016,9 @@ async function exportHealthDocx() {
   hint("產生健檢報告…");
   try {
     if (!await flushPendingSave()) throw new Error(_saveError || "尚未完成儲存");
+    if (sections.includes("pgx")) await _refreshPgxForExport();
+    if (state.currentLIS !== originalLIS) throw new Error("個案已變更，請重新匯出。");
+    const pgxFingerprint = state.data?.pgx?.review_fingerprint;
     const qs = encodeURIComponent(sections.join(","));
     const url = `${API_BASE}/samples/${encodeURIComponent(sid)}/health-report.docx?sections=${qs}`;
     const resp = await fetch(url, { credentials: "same-origin" });
@@ -4024,6 +4028,9 @@ async function exportHealthDocx() {
       throw new Error(typeof error.detail === "string" ? error.detail : `匯出失敗 (${resp.status})`);
     }
     const blob = await resp.blob();
+    if (sections.includes("pgx") && (_pgxChoiceSaving || pgxFingerprint !== state.data?.pgx?.review_fingerprint)) {
+      throw new Error("PGx 選擇已變更，請重新匯出。");
+    }
     downloadBlob(blob, `${sid}_health.docx`);
     hint("健檢報告已下載");
   } catch (e) {
@@ -4135,8 +4142,12 @@ function _reportGeneListPrintBlock(mode, data = {}) {
 
 async function printReportCards() {
   if (!state.currentLIS || !state.data) return;
+  const pgxExportLIS = state.currentLIS;
+  try { await _refreshPgxForExport(); }
+  catch (error) { alert(error.message); return; }
   const mode = await _pickGeneListMode({ title: "輸出 PDF", okLabel: "輸出 PDF" });
   if (!mode) return;
+  if (state.currentLIS !== pgxExportLIS) return;
   const sampleRow = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
   const sampleId = sampleRow?.sample_id || state.currentLIS;
   let reportGeneList = {};
@@ -4146,6 +4157,8 @@ async function printReportCards() {
   }
   try {
     reportGeneList = await apiFetch(`/samples/${encodeURIComponent(sampleId)}/report-gene-list`) || {};
+    if (state.currentLIS !== pgxExportLIS) return;
+    await _refreshPgxForExport();
   } catch (e) {
     alert("讀取基因清單失敗：" + e.message);
     return;
@@ -8014,9 +8027,80 @@ function _pgxMetaHtml(pc) {
 }
 
 function _pgxSourceWarning(pc) {
-  return pc.pharmcat_available
+  const message = pc.concordance?.message || "";
+  const reviewNotes = pc.report_view?.review_notes || [];
+  const pending = pc.report_view?.recommendations_pending || [];
+  const extra = `${message ? `<div class="pgx-source-warning">${escapeHtml(message)}</div>` : ""}
+    ${pc.review_blocked ? '<div class="pgx-source-warning">PGx 人工選擇需重新確認後才能匯出。</div>' : ""}
+    ${reviewNotes.length ? `<div class="pgx-review-note">${reviewNotes.map(escapeHtml).join("<br>")}</div>` : ""}
+    ${pending.length ? `<div class="pgx-source-warning">${escapeHtml(pending.join("、"))}：用藥建議待重新註解。</div>` : ""}`;
+  return extra + (pc.pharmcat_available
     ? ""
-    : `<div class="pgx-source-warning">缺少 PharmCAT JSON；除 MT-RNR1 可由 TSV 補值外，其餘基因不會使用 TSV 代替。</div>`;
+    : `<div class="pgx-source-warning">缺少 PharmCAT JSON；除 MT-RNR1 可由 TSV 補值外，其餘基因不會使用 TSV 代替。</div>`);
+}
+
+let _pgxChoiceSaving = false;
+
+function _pgxComparisonHtml(pc, gene, controls = false) {
+  const row = pc.concordance?.genes?.[gene] || {};
+  const badges = (row.badges || []).map(value => `<span class="pgx-comparison-badge">${escapeHtml(value)}</span>`).join("");
+  if (!controls) return badges;
+  const choice = row.status === "different" || row.stale || row.selected_source === "dragen"
+    ? `<label class="pgx-result-choice">人工確認後採用
+        <select class="js-pgx-result-choice" data-gene="${escapeAttr(gene)}" ${_pgxChoiceSaving ? "disabled" : ""}>
+          ${row.stale ? '<option value="unconfirmed" disabled selected>請重新確認</option>' : ""}
+          <option value="platform" ${!row.stale && row.selected_source !== "dragen" ? "selected" : ""}>平台：${escapeHtml((row.platform_genotypes || []).join("；"))}</option>
+          ${(row.status === "different" ? row.candidates || [] : []).map(gt => `<option value="${escapeAttr("dragen:" + gt)}" ${row.selected_source === "dragen" && row.selected_genotype === gt ? "selected" : ""}>DRAGEN：${escapeHtml(gt)}</option>`).join("")}
+        </select>
+      </label>` : "";
+  const evidence = row.status === "different"
+    ? `<div class="pgx-comparison-values">平台：${escapeHtml((row.platform_genotypes || []).join("；"))}　DRAGEN：${escapeHtml(row.dragen_genotype || "")}</div>` : "";
+  const audit = row.selected_source === "dragen"
+    ? `<span class="muted">已人工確認採用 DRAGEN${row.reviewer ? ` · ${escapeHtml(row.reviewer)}` : ""}</span>` : "";
+  return `${badges}${evidence}${choice}${audit}`;
+}
+
+document.addEventListener("change", async event => {
+  const select = event.target;
+  if (!select.matches?.(".js-pgx-result-choice") || _pgxChoiceSaving) return;
+  const lis = state.currentLIS;
+  const token = state._auxLoadToken;
+  const sample = (state.index || []).find(row => row.LIS_ID === lis)?.sample_id || lis;
+  const gene = select.dataset.gene;
+  const comparison = state.data?.pgx?.concordance?.genes?.[gene];
+  if (!comparison) return;
+  const value = select.value;
+  _pgxChoiceSaving = true;
+  document.querySelectorAll(".js-pgx-result-choice").forEach(el => { el.disabled = true; });
+  try {
+    const response = await apiPut(`/samples/${encodeURIComponent(sample)}/pgx/choice`, {
+      gene, source: value === "platform" ? "platform" : "dragen",
+      genotype: value === "platform" ? "" : value.slice(7),
+      fingerprint: comparison.fingerprint, confirmed: true,
+    });
+    if (state.currentLIS === lis && state._auxLoadToken === token && state.data) Object.assign(state.data, response);
+  } catch (error) {
+    if (state.currentLIS === lis && state._auxLoadToken === token) alert("PGx 選擇未儲存，請重新載入後重試。");
+  } finally {
+    _pgxChoiceSaving = false;
+    if (state.data) {
+      renderPharmcatBlock("sec-pharmcat");
+      renderPharmcatBlock("cat-pharmcat-c");
+    }
+  }
+});
+
+async function _refreshPgxForExport() {
+  if (_pgxChoiceSaving) throw new Error("PGx 選擇正在儲存，請稍後再匯出。");
+  const lis = state.currentLIS;
+  const token = state._auxLoadToken;
+  const sample = (state.index || []).find(row => row.LIS_ID === lis)?.sample_id || lis;
+  const response = await apiFetch(`/samples/${encodeURIComponent(sample)}/pgx`);
+  if (lis !== state.currentLIS || token !== state._auxLoadToken || _pgxChoiceSaving) throw new Error("個案或 PGx 選擇已變更，請重新匯出。");
+  if (!response?.pgx || response.pgx.review_blocked) throw new Error("PGx 人工選擇需要重新確認，請重新載入個案。");
+  Object.assign(state.data, response);
+  renderPharmcatBlock("sec-pharmcat");
+  renderPharmcatBlock("cat-pharmcat-c");
 }
 
 function _pgxTable(headers, rows, className = "") {
@@ -8038,7 +8122,7 @@ function renderPharmcatReportBody(pc) {
           <strong>${escapeHtml(category.action || "")}</strong>
           <span>${escapeHtml((category.drugs || []).join("、"))}</span>
         </div>`).join("")
-    : `<div class="muted">本次檢測未發現符合目前回報規則之明確臨床可應用藥物基因體結果。</div>`;
+    : `<div class="muted">${view.recommendations_pending?.length ? "部分用藥建議待重新註解。" : "本次檢測未發現符合目前回報規則之明確臨床可應用藥物基因體結果。"}</div>`;
   const summaryTable = summaryRows.length
     ? _pgxTable(
         ["藥物", "基因", "建議處置", "建議依據及等級"],
@@ -8046,11 +8130,10 @@ function renderPharmcatReportBody(pc) {
         "pgx-summary-table",
       )
     : `<div class="muted">（無符合摘要回報規則的藥物）</div>`;
-  const genotypeTable = _pgxTable(
-    ["基因", "基因型", "表型"],
-    genotypeRows.map(row => [row.gene, row.genotype, row.phenotype]),
-    "pgx-genotype-table",
-  );
+  const genotypeTable = `<div class="pgx-table-wrap"><table class="pgx-report-table pgx-genotype-table">
+    <thead><tr><th>基因</th><th>基因型</th><th>表型</th></tr></thead><tbody>
+    ${genotypeRows.map(row => `<tr><td>${escapeHtml(row.gene)} ${_pgxComparisonHtml(pc, row.gene)}</td><td>${escapeHtml(row.genotype)}</td><td>${escapeHtml(row.phenotype)}</td></tr>`).join("")}
+    </tbody></table></div>`;
   const drugCount = Number(summary.actionable_drugs || 0);
   const summaryDrugCount = Number(summary.summary_drugs || 0);
   const appendixOnly = Number(summary.appendix_only_drugs || 0);
@@ -8062,7 +8145,7 @@ function renderPharmcatReportBody(pc) {
     <div class="pgx-section">
       <h4 class="pgx-heading">用藥建議概覽</h4>
       <div class="pgx-overview">${overview}</div>
-      <div class="pgx-residual-note">其餘未列之藥物，未發現符合本報告回報規則之明確處方調整建議。</div>
+      <div class="pgx-residual-note">${view.recommendations_pending?.length ? "待重新註解項目不代表無須調整用藥。" : "其餘未列之藥物，未發現符合本報告回報規則之明確處方調整建議。"}</div>
     </div>
     <div class="pgx-section">
       <h4 class="pgx-heading">藥物建議摘要</h4>
@@ -8093,9 +8176,6 @@ function _hasPharmcatGeneDetails(g) {
 function renderPharmcatAnalysisGene(pc, row) {
   const gene = row.gene || "";
   const payload = pc.genes?.[gene] || { gene, details: {} };
-  const mtRnr1Supplement = gene === "MT-RNR1"
-    ? [payload.mtrn1_risk, payload.outside_caller, payload.notes].filter(Boolean).join(" · ")
-    : "";
   const detail = renderPharmcatGeneDetails(payload, row);
   const attentionClass = row.requires_attention ? " pgx-gene-head-attention" : "";
   return `<div class="pgx-analysis-gene">
@@ -8103,8 +8183,8 @@ function renderPharmcatAnalysisGene(pc, row) {
       <strong>${escapeHtml(gene)}</strong>
       <span class="pgx-gene-genotype">${escapeHtml(row.genotype || "—")}</span>
       <span class="pgx-gene-phenotype">${escapeHtml(row.phenotype || "No phenotype assigned")}</span>
-      ${mtRnr1Supplement ? `<span class="pgx-evidence-badge">${escapeHtml(mtRnr1Supplement)}</span>` : ""}
     </div>
+    <div class="pgx-comparison">${_pgxComparisonHtml(pc, gene, true)}</div>
     ${detail}
   </div>`;
 }
@@ -10452,81 +10532,30 @@ function pdfWriteSection(w, title, ids, dataVariants, panelKey) {
 // no per-gene details (mirrors the toggle the user keeps closed in the UI).
 function pdfWritePharmacogenomics(w, pc) {
   w.heading("藥物基因體學", 2);
-  if (!pc || !pc.genes || !Object.keys(pc.genes).length) {
-    w.para("（無 PharmCAT 結果）", { indent: 4 });
-    w.gap(4);
-    return;
+  const view = pc?.report_view || {};
+  for (const note of view.review_notes || []) w.para(note, { size: 10 });
+  if (view.recommendations_pending?.length) {
+    w.para(`${view.recommendations_pending.join("、")}：用藥建議待重新註解。`, { size: 10 });
   }
-  const actionable = (pc.actionable || []).map(gene => pc.genes?.[gene]).filter(Boolean);
-  const routine = (pc.routine || []).map(gene => pc.genes?.[gene]).filter(Boolean);
-
-  // Actionable
-  w.doc.setFont(PDF_FONT_NAME, "bold");
-  w.doc.setFontSize(12);
-  w.doc.setTextColor(180, 50, 50);
-  if (w.y + 14 > w.pageH - w.margin) { w.doc.addPage(); w.y = w.margin; }
-  w.doc.text("與用藥相關", w.margin, w.y + 12 * 0.7);
-  w.y += 12 * 0.7 + 4;
-  w.doc.setTextColor(20, 20, 20);
-
-  for (const g of actionable) {
-    w.para(`${g.gene} — ${_pgxGeneSubtitle(g)}`, { size: 10 });
-    const drugs = g.drugs || [];
-    if (!drugs.length) {
-      w.para("（PharmCAT 報告中尚無藥物層級建議）", { size: 9, indent: 6 });
-    } else {
-      for (const drug of drugs) {
-        w.doc.setFont(PDF_FONT_NAME, "normal");
-        w.doc.setFontSize(10);
-        const dh = 10 * 0.55 + 2;
-        if (w.y + dh > w.pageH - w.margin) { w.doc.addPage(); w.y = w.margin; }
-        w.doc.setTextColor(70, 70, 70);
-        w.doc.text("• " + (drug.drug || "general"), w.margin + 6, w.y + dh * 0.7);
-        w.doc.setTextColor(20, 20, 20);
-        w.y += dh;
-        for (const rec of (drug.recommendations || [])) {
-          const txt = String(rec.recommendation || "").replace(/\s+/g, " ").trim();
-          if (!txt) continue;
-          const label = [rec.source, rec.evidence].filter(Boolean).join(" / ");
-          w.para(`(${label || "PGx"}) ${txt}`, { size: 9, indent: 14 });
-        }
-      }
-    }
-    w.gap(2);
+  for (const row of view.genotype_rows || []) {
+    w.para(`${row.gene}：${row.genotype}；${row.phenotype}`, { size: 10 });
   }
-  if (!actionable.length) w.para("（無）", { size: 9, indent: 6 });
-  w.gap(4);
-
-  // Routine.
-  w.doc.setFont(PDF_FONT_NAME, "bold");
-  w.doc.setFontSize(12);
-  w.doc.setTextColor(60, 90, 60);
-  if (w.y + 14 > w.pageH - w.margin) { w.doc.addPage(); w.y = w.margin; }
-  w.doc.text("標準處方", w.margin, w.y + 12 * 0.7);
-  w.y += 12 * 0.7 + 4;
-  w.doc.setTextColor(20, 20, 20);
-
-  const groups = new Map();
-  for (const g of routine) {
-    const sym = String(g.gene || "");
-    const label = g.phenotype || "Other";
-    const key = label.toLowerCase();
-    if (!groups.has(key)) groups.set(key, { label, items: [] });
-    groups.get(key).items.push({ gene: sym, subtitle: _pgxGeneSubtitle(g) });
+  for (const row of view.full_recommendations || []) {
+    w.para(`${row.drug} — ${row.gene_phenotype}`, { size: 10 });
+    w.para(row.recommendation, { size: 9, indent: 6 });
   }
-  const sortedKeys = [...groups.keys()].sort();
-  for (const key of sortedKeys) {
-    const { label, items } = groups.get(key);
-    const list = items.map(it => it.subtitle ? `${it.gene} (${it.subtitle})` : it.gene).join(", ");
-    w.para(`${label}: ${list}`, { size: 10, indent: 4 });
-  }
-  if (!groups.size) w.para("（無）", { size: 9, indent: 6 });
   w.gap(4);
 }
 
 async function buildScreeningPDF() {
+  await _refreshPgxForExport();
+  const pgxExportLIS = state.currentLIS;
+  const pgxFingerprint = state.data?.pgx?.review_fingerprint;
   const fonts  = await loadPdfFonts();
   const panels = await loadGenePanels();
+  if (_pgxChoiceSaving || state.currentLIS !== pgxExportLIS || pgxFingerprint !== state.data?.pgx?.review_fingerprint) {
+    throw new Error("個案或 PGx 選擇已變更，請重新匯出。");
+  }
 
   if (!window.jspdf || !window.jspdf.jsPDF) {
     throw new Error("jsPDF library not loaded");
