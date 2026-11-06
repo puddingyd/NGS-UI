@@ -10,7 +10,6 @@ import fcntl
 import hashlib
 import json
 import re
-import tempfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -368,14 +367,13 @@ def attach(sample_id, pgx):
                     row["badges"].append("來源已更新，請重新確認")
                     blocked.append(gene)
                 elif choice.get("source") == "dragen":
-                    row.update(selected_source="dragen", selected_genotype=choice["genotype"])
-                    # An aggregate phenotype for several candidates cannot be
-                    # attributed to the one candidate selected by a reviewer.
-                    phenotype = row["dragen_phenotype"] if len(row["candidates"]) == 1 else ""
-                    _apply(pgx, gene, choice["genotype"], phenotype)
+                    # The request becomes clinical only with its verified report.
+                    row.update(requested_source="dragen", requested_genotype=choice["genotype"])
             pgx["concordance"]["genes"][gene] = row
         pgx["review_blocked"] = bool(blocked)
         pgx["review_fingerprint"] = _hash([digest, identity, choices, [r["fingerprint"] for r in pgx["concordance"]["genes"].values()]])
+        from . import pgx_reannotation
+        pgx_reannotation.project(sample_id, pgx, review)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         pgx["concordance"]["message"] = str(exc)
         # A lost source must not silently undo a previously selected call.
@@ -390,31 +388,6 @@ def attach(sample_id, pgx):
     return pgx
 
 
-def _apply(pgx, gene, genotype, phenotype):
-    payload = pgx["genes"][gene]
-    payload["original_details"] = copy.deepcopy(payload.get("details") or {})
-    alleles = genotype.split("/")
-    details = {"label": genotype, "phenotypes": [phenotype] if phenotype else [],
-               "allele1_name": alleles[0], "allele2_name": alleles[1] if len(alleles) == 2 else "",
-               "allele1_function": "", "allele2_function": "", "source_diplotypes": [],
-               "variants": [], "messages": [], "uncalled": []}
-    details["source_diplotypes"] = [{"label": genotype, "allele1_name": details["allele1_name"],
-                                     "allele2_name": details["allele2_name"], "phenotypes": details["phenotypes"]}]
-    payload.update(details=details, diplotype=genotype, phenotype=phenotype, activity_score="", drugs=[], actionable=False)
-    # These recommendations were computed for the original genotype. Suppress
-    # the whole joint annotation, including other genes, rather than relabel it.
-    removed = [x for x in pgx.get("guideline_annotations", []) if gene in (x.get("genes") or [])]
-    pending = set(pgx["recommendations_pending"]) | {gene}
-    for annotation in removed:
-        pending.update(g for g in annotation.get("genes", []) if g in GENES)
-    pgx["recommendations_pending"] = sorted(pending)
-    pgx["guideline_annotations"] = [x for x in pgx.get("guideline_annotations", []) if x not in removed]
-    # Legacy PDF consumers use TSV drug lists rather than the presenter.
-    for affected in pending:
-        if affected in pgx["genes"]:
-            pgx["genes"][affected]["drugs"] = []
-
-
 def save_choice(sample_id, gene, source, genotype, fingerprint, user):
     """The browser submits a choice, never an arbitrary genotype or phenotype."""
     if gene not in GENES or source not in {"platform", "dragen"}:
@@ -426,6 +399,9 @@ def save_choice(sample_id, gene, source, genotype, fingerprint, user):
         raise ValueError("無效的樣本 ID")
     from ..workers.dragen_run import _acquire_sample_locks, _release_sample_locks
     from .sample_loader import load_sample_pgx
+    from . import pgx_reannotation as annotations
+    if sample_id in annotations.active_ids() or source_id in annotations.active_ids():
+        raise ValueError("PGx 更新中，請稍後再修改，或恢復原結果")
     handles = _acquire_sample_locks([sample_id, source_id])
     try:
         path = sample_layout.state_file(sample_id, REVIEW_NAME, for_write=True)
@@ -435,6 +411,8 @@ def save_choice(sample_id, gene, source, genotype, fingerprint, user):
         with lock_path.open("a+") as lock:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
             current = load_sample_pgx(sample_id)["pgx"]
+            if current.get("reannotation", {}).get("busy"):
+                raise ValueError("PGx 更新中，請稍後再修改，或恢復原結果")
             row = current["concordance"]["genes"].get(gene)
             if source == "dragen":
                 if not row or row["status"] != "different" or row["fingerprint"] != fingerprint or genotype not in row["candidates"]:
@@ -456,15 +434,7 @@ def save_choice(sample_id, gene, source, genotype, fingerprint, user):
                 review["choices"].pop(gene, None)
             else:
                 review["choices"][gene] = choice
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=".pgx-review-", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-                try:
-                    json.dump(review, tmp, ensure_ascii=False, indent=2)
-                    tmp.flush()
-                    tmp_path.replace(path)
-                finally:
-                    tmp_path.unlink(missing_ok=True)
+            annotations.schedule(sample_id, current, review)
             return load_sample_pgx(sample_id)
     finally:
         _release_sample_locks(handles)
@@ -472,4 +442,6 @@ def save_choice(sample_id, gene, source, genotype, fingerprint, user):
 
 def assert_exportable(pgx):
     if pgx.get("review_blocked"):
+        if pgx.get("reannotation", {}).get("status") not in {None, "original", "complete"}:
+            raise ValueError("PGx 更新尚未完成，請完成更新或恢復原結果後匯出；來源有變更時需重新確認")
         raise ValueError("PGx 比對來源或人工選擇需要重新確認，請重新載入個案")

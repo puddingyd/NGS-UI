@@ -1,7 +1,11 @@
 """Synthetic calls only: comparison, reviewer persistence and report consistency."""
 import io
+import copy
 import json
 import re
+import sys
+import threading
+import time
 
 import pytest
 from docx import Document
@@ -13,6 +17,7 @@ from app.auth import current_user
 from app.adapters.pgx_tsv import load_pgx
 from app.routers import samples
 from app.services import docx_export, pgx_concordance as pc, sample_layout, sample_loader, specialized
+from app.services import pgx_reannotation as annotations
 
 
 def gene(label, **extra):
@@ -74,6 +79,25 @@ def test_unphased_dpyd_variants_are_not_mistaken_for_alternative_diplotypes():
 
 @pytest.fixture
 def case(tmp_path, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "DATA_ROOT", tmp_path / "data")
+    monkeypatch.setattr(annotations, "_launch", lambda jid: None)
+    monkeypatch.setattr(annotations, "runtime", lambda: {"jar": "synthetic-pinned-engine", "image": ""})
+    def synthetic_engine(raw, choices, directory, run):
+        out = copy.deepcopy(raw)
+        for g, choice in choices.items():
+            a = choice["genotype"].split("/")
+            out["genes"][g]["sourceDiplotypes"] = [{"label": choice["genotype"],
+                "allele1": {"name": a[0]}, "allele2": {"name": a[1]},
+                "phenotypes": ["Normal Metabolizer"], "activityScore": "2.0"}]
+        for drugs in out["drugs"].values():
+            for payload in drugs.values():
+                for guideline in payload["guidelines"]:
+                    for row in guideline["annotations"]:
+                        row["drugRecommendation"] = "Use the recommended starting dose."
+                        row["lookupKey"][0]["CYP2C9"] = "Normal Metabolizer"
+        return out
+    monkeypatch.setattr(annotations, "reannotate", synthetic_engine)
     post = tmp_path / "post"
     post.mkdir()
     monkeypatch.setattr(sample_layout, "state_dir", lambda sid, **kw: post)
@@ -115,11 +139,16 @@ def loaded():
     return sample_loader.load_sample_pgx("SYNTHETIC")["pgx"]
 
 
-def choose(pgx=None, source="dragen", genotype="*1/*1"):
+def choose(pgx=None, source="dragen", genotype="*1/*1", complete=True):
     pgx = pgx or loaded()
-    return pc.save_choice("SYNTHETIC", "CYP2C9", source, genotype,
-                          pgx["concordance"]["genes"]["CYP2C9"]["fingerprint"],
-                          {"id": 7, "username": "synthetic-reviewer"})["pgx"]
+    result = pc.save_choice("SYNTHETIC", "CYP2C9", source, genotype,
+                           pgx["concordance"]["genes"]["CYP2C9"]["fingerprint"],
+                           {"id": 7, "username": "synthetic-reviewer"})["pgx"]
+    if complete and result.get("reannotation", {}).get("busy"):
+        from app.workers.pgx_reannotate import Worker
+        Worker(pc._review("SYNTHETIC")["annotation_job"]).run()
+        return loaded()
+    return result
 
 
 def test_select_restore_and_docx_share_results_without_rewriting_inputs(case):
@@ -130,22 +159,25 @@ def test_select_restore_and_docx_share_results_without_rewriting_inputs(case):
     assert baseline["report_view"]["drug_groups"]
     selected = choose(baseline)
     assert docx_export._pgx_gene_result(selected, "CYP2C9") == ("*1/*1", "Normal Metabolizer")
-    assert not selected["report_view"]["drug_groups"]
-    assert set(selected["recommendations_pending"]) == {"CYP2C9", "VKORC1"}
+    assert selected["report_view"]["drug_groups"]
+    assert not selected["recommendations_pending"]
+    assert selected["genes"]["CYP2C9"]["activity_score"] == "2.0"
     row = next(x for x in selected["report_view"]["health_genotype_rows"] if x["test"] == "CYP2C9")
     assert (row["allele1"], row["allele2"]) == ("*1", "*1")
     doc = Document()
-    docx_export._render_health_pgx_section(doc, "PGx", selected)
+    groups = docx_export._render_health_pgx_section(doc, "PGx", selected)
+    docx_export._render_health_pgx_appendix(doc, "完整用藥建議", groups)
     stream = io.BytesIO(); doc.save(stream)
     roundtrip = Document(io.BytesIO(stream.getvalue()))
-    text = "\n".join(p.text for p in roundtrip.paragraphs)
-    assert "用藥建議待重新註解" in text and "未發現符合" not in text
+    text = "\n".join(roundtrip.element.xpath(".//w:t/text()"))
+    assert "用藥建議待重新註解" not in text
+    assert "recommended starting dose" in text
     assert "Use a lower dose" not in text
     restored = choose(source="platform")
     assert docx_export._pgx_gene_result(restored, "CYP2C9")[0] == "*1/*33"
     assert restored["report_view"]["drug_groups"]
     review = json.loads((post / "SYNTHETIC.pgx_review.json").read_text())
-    assert review["choices"] == {} and len(review["audit"]) == 2
+    assert review["choices"] == {} and len(review["audit"]) == 3
     assert review["audit"][0]["reviewer_username"] == "synthetic-reviewer"
     assert originals == (report.read_bytes(), target.read_bytes())
 
@@ -175,12 +207,12 @@ def test_missing_target_after_selection_does_not_silently_restore_export(case):
     assert not choose(source="platform")["review_blocked"]
 
 
-def test_null_dragen_phenotype_never_inherits_original_phenotype(case):
+def test_null_dragen_phenotype_is_recomputed_by_pharmcat(case):
     _, _, target, data, _ = case
     data["locusAnnotations"][0]["phenotypeDatabaseAnnotation"] = None
     target.write_text(json.dumps(data))
     pgx = choose()
-    assert docx_export._pgx_gene_result(pgx, "CYP2C9") == ("*1/*1", "")
+    assert docx_export._pgx_gene_result(pgx, "CYP2C9") == ("*1/*1", "Normal Metabolizer")
 
 
 def test_corrupt_review_record_blocks_export_instead_of_being_treated_as_no_override(case):
@@ -243,7 +275,18 @@ def test_choice_endpoint_requires_login_confirmation_and_fresh_server_candidate(
     assert client.put(endpoint, json={**body, "fingerprint": "outdated"}).status_code == 409
     response = client.put(endpoint, json=body)
     assert response.status_code == 200
-    assert response.json()["pgx"]["report_view"]["genotype_rows"][5]["genotype"] == "*1/*1"
+    assert response.json()["pgx"]["reannotation"]["busy"]
+    assert response.json()["pgx"]["report_view"]["genotype_rows"][5]["genotype"] == "*1/*33"
+
+
+def test_reannotation_endpoint_requires_login_and_only_accepts_bounded_actions(case):
+    app = FastAPI(); app.add_middleware(SessionMiddleware, secret_key="synthetic-only"); app.include_router(samples.router)
+    client = TestClient(app); endpoint = "/api/samples/SYNTHETIC/pgx/reannotation"
+    assert client.post(endpoint, json={"action": "restore"}).status_code == 401
+    app.dependency_overrides[current_user] = lambda: {"id": 7, "username": "test"}
+    assert client.post(endpoint, json={"action": "execute", "command": "anything"}).status_code == 409
+    assert client.post(endpoint, json={"action": "retry"}).status_code == 409
+    assert client.post(endpoint, json={"action": "restore"}).status_code == 200
 
 
 def test_health_download_uses_saved_alleles_and_rejects_change_before_archive(case, monkeypatch):
@@ -272,3 +315,158 @@ def test_health_download_uses_saved_alleles_and_rejects_change_before_archive(ca
     response = client.get(url)
     assert response.status_code == 400 and "重新確認" in response.json()["detail"]
     assert len(list(archive.iterdir())) == count
+
+
+def test_pending_keeps_complete_baseline_and_blocks_export(case):
+    before = loaded()
+    waiting = choose(complete=False)
+    assert waiting["reannotation"]["busy"]
+    assert waiting["report_view"]["drug_groups"] == before["report_view"]["drug_groups"]
+    assert docx_export._pgx_gene_result(waiting, "CYP2C9") == docx_export._pgx_gene_result(before, "CYP2C9")
+    assert waiting["concordance"]["genes"]["CYP2C9"]["requested_source"] == "dragen"
+    assert "SYNTHETIC_SOURCE" in annotations.active_ids()
+    with pytest.raises(ValueError, match="更新尚未完成"):
+        pc.assert_exportable(waiting)
+    with pytest.raises(ValueError, match="更新中"):
+        choose(source="platform")
+
+
+def test_failed_update_retains_baseline_then_retry_publishes(case, monkeypatch):
+    from app.workers.pgx_reannotate import Worker
+    engine = annotations.reannotate
+    def fail(*args):
+        raise ValueError("synthetic failure")
+    monkeypatch.setattr(annotations, "reannotate", fail)
+    pgx = choose()
+    assert pgx["reannotation"]["status"] == "failed" and pgx["review_blocked"]
+    assert docx_export._pgx_gene_result(pgx, "CYP2C9")[0] == "*1/*33"
+    assert pgx["report_view"]["drug_groups"]
+    monkeypatch.setattr(annotations, "reannotate", engine)
+    annotations.action("SYNTHETIC", "retry", {"username": "retry-reviewer"})
+    Worker(pc._review("SYNTHETIC")["annotation_job"]).run()
+    assert not loaded()["review_blocked"]
+    assert docx_export._pgx_gene_result(loaded(), "CYP2C9")[0] == "*1/*1"
+
+
+def test_restore_cancels_pending_work_without_publishing(case):
+    from app.workers.pgx_reannotate import Worker
+    choose(complete=False)
+    jid = pc._review("SYNTHETIC")["annotation_job"]
+    annotations.action("SYNTHETIC", "restore", {"username": "restore-reviewer"})
+    Worker(jid).run()
+    assert annotations.job_status(jid)["status"] == "cancelled"
+    assert not loaded()["review_blocked"]
+    assert not pc._review("SYNTHETIC")["choices"]
+
+
+def test_source_changed_during_work_cannot_publish(case, monkeypatch):
+    engine = annotations.reannotate
+    def change(*args):
+        result = engine(*args)
+        raw = json.loads(case[1].read_text()); raw["timestamp"] = "new-source"
+        case[1].write_text(json.dumps(raw))
+        return result
+    monkeypatch.setattr(annotations, "reannotate", change)
+    pgx = choose()
+    assert pgx["review_blocked"] and pgx["reannotation"]["status"] == "failed"
+    assert not pc._review("SYNTHETIC").get("published")
+
+
+def test_cached_revision_reused_and_corruption_rejected(case):
+    first = choose()
+    pointer = pc._review("SYNTHETIC")["published"]
+    choose(source="platform")
+    second = choose(complete=False)
+    assert second["reannotation"]["status"] == "complete"
+    assert pc._review("SYNTHETIC")["published"] == pointer
+    assert second["guideline_annotations"] == first["guideline_annotations"]
+    (annotations.revision_dir("SYNTHETIC", pointer["job_id"]) / "report.json").write_text("{}")
+    assert loaded()["review_blocked"]
+    assert not annotations.action("SYNTHETIC", "restore", {})["pgx"]["review_blocked"]
+
+
+def test_old_manual_choices_require_update_without_mixed_advice(case):
+    choose()
+    path = case[0] / "SYNTHETIC.pgx_review.json"
+    review = json.loads(path.read_text()); review.pop("published"); review.pop("annotation_job")
+    path.write_text(json.dumps(review))
+    pgx = loaded()
+    assert pgx["reannotation"]["status"] == "needs_update" and pgx["review_blocked"]
+    assert docx_export._pgx_gene_result(pgx, "CYP2C9")[0] == "*1/*33"
+
+
+def test_second_gene_failure_keeps_previous_published_set_then_reuses_it(case, monkeypatch):
+    from app.workers.pgx_reannotate import Worker
+    raw = json.loads(case[1].read_text())
+    raw["genes"]["HLA-B"] = {"sourceDiplotypes": [{"label": "*40:01/*51:01",
+        "allele1": {"name": "*40:01"}, "allele2": {"name": "*51:01"}, "phenotypes": ["*15:02 negative"]}]}
+    case[1].write_text(json.dumps(raw))
+    target = json.loads(case[2].read_text()); target["locusAnnotations"].append({"gene": "HLA-B", "genotype": "*15:02/*40:01"})
+    case[2].write_text(json.dumps(target))
+    published = choose()
+    row = published["concordance"]["genes"]["HLA-B"]
+    pending = pc.save_choice("SYNTHETIC", "HLA-B", "dragen", "*15:02/*40:01", row["fingerprint"], {})["pgx"]
+    assert pending["reannotation"]["busy"] and pending["review_blocked"]
+    for g in ("CYP2C9", "HLA-B"):
+        assert docx_export._pgx_gene_result(pending, g) == docx_export._pgx_gene_result(published, g)
+    assert pending["guideline_annotations"] == published["guideline_annotations"]
+    def fail(*args):
+        raise ValueError("synthetic second revision failure")
+    monkeypatch.setattr(annotations, "reannotate", fail)
+    Worker(pc._review("SYNTHETIC")["annotation_job"]).run()
+    assert loaded()["reannotation"]["status"] == "failed"
+    back = pc.save_choice("SYNTHETIC", "HLA-B", "platform", "", row["fingerprint"], {})["pgx"]
+    assert not back["review_blocked"]
+    assert docx_export._pgx_gene_result(back, "CYP2C9")[0] == "*1/*1"
+
+
+def test_queued_pgx_blocks_both_unregister_and_output_deletion(case):
+    from app.services import patient_store, dragen_jobs
+    choose(complete=False)
+    for remove in (patient_store.delete, dragen_jobs.delete_pipeline_output):
+        with pytest.raises(RuntimeError, match="PGx 更新"):
+            remove("SYNTHETIC")
+    assert (case[0] / "SYNTHETIC.sample_metadata.json").exists()
+
+
+def test_dead_worker_is_not_treated_as_forever_running(case):
+    choose(complete=False)
+    jid = pc._review("SYNTHETIC")["annotation_job"]
+    path = annotations.job_dir(jid) / "state.json"
+    job = annotations.read(path); job.update(status="running", created=0); annotations.atomic(path, job)
+    assert not annotations.active_ids()
+    pgx = loaded()
+    assert pgx["review_blocked"] and not pgx["reannotation"]["busy"]
+    assert pgx["reannotation"]["status"] == "failed"
+
+
+def test_restore_stops_owned_tool_process_group(case, monkeypatch):
+    from app.workers.pgx_reannotate import Worker
+    marker = case[0] / "owned-child.ready"
+    stopped = case[0] / "owned-child.stopped"
+    child = ("import signal,sys,time; from pathlib import Path; "
+             f"signal.signal(signal.SIGTERM,lambda *args:(Path({str(stopped)!r}).write_text('stopped'),sys.exit(0))); "
+             f"Path({str(marker)!r}).write_text('ready'); time.sleep(60)")
+    program = ("import subprocess,sys,time; from pathlib import Path; "
+               f"p=subprocess.Popen([sys.executable,'-c',{child!r}]); time.sleep(60)")
+    monkeypatch.setattr(annotations, "command", lambda *args: [sys.executable, "-c", program])
+    monkeypatch.setattr(annotations, "reannotate", lambda raw, choices, directory, run: run(["synthetic"]))
+    choose(complete=False)
+    jid = pc._review("SYNTHETIC")["annotation_job"]
+    errors = []
+    def restore():
+        try:
+            for _ in range(100):
+                if marker.exists():
+                    annotations.action("SYNTHETIC", "restore", {"username": "cancel-reviewer"})
+                    return
+                time.sleep(.05)
+            raise AssertionError("tool never started")
+        except Exception as exc:
+            errors.append(exc)
+    thread = threading.Thread(target=restore); thread.start()
+    Worker(jid).run(); thread.join(timeout=10)
+    assert not errors and not thread.is_alive()
+    assert annotations.job_status(jid)["status"] == "cancelled"
+    assert not loaded()["review_blocked"]
+    assert stopped.read_text() == "stopped"

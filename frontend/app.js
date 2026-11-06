@@ -3952,7 +3952,8 @@ function _pickHealthReportSections(prsReadiness = {}) {
     { key: "carrier", title: "帶因者篩查", checked: false },
     { key: "prs", title: "多基因風險評估（PRS）", checked: prsReadiness.available === true,
       disabled: prsReadiness.available !== true, reason: prsReadiness.reason || "需先完成 PRS 分析與風險計算" },
-    { key: "pgx", title: "藥物基因體學（PGx）", checked: true },
+    { key: "pgx", title: "藥物基因體學（PGx）", checked: !state.data?.pgx?.review_blocked,
+      disabled: !!state.data?.pgx?.review_blocked, reason: "需先完成 PGx 更新或恢復原結果" },
   ];
   return new Promise((resolve) => {
     const wrap = document.createElement("div");
@@ -8031,33 +8032,64 @@ function _pgxMetaHtml(pc) {
 }
 
 function _pgxSourceWarning(pc) {
+  _pgxWatch(pc);
   const message = pc.concordance?.message || "";
   const reviewNotes = pc.report_view?.review_notes || [];
-  const pending = pc.report_view?.recommendations_pending || [];
+  const update = pc.reannotation || {};
+  const waiting = ![undefined, "original", "complete"].includes(update.status);
+  const updateHtml = waiting ? `<div class="pgx-source-warning">${update.busy ? "PGx 更新中，暫時顯示上一份完整結果；完成後可匯出。" : `PGx 尚未更新：${escapeHtml(update.error || "請完成更新或恢復原結果後匯出。")}`}
+    ${!update.busy ? '<button type="button" class="js-pgx-annotation-action" data-action="retry">重試更新</button>' : ""}
+    <button type="button" class="js-pgx-annotation-action" data-action="restore">恢復原結果</button></div>` : "";
   const extra = `${message ? `<div class="pgx-source-warning">${escapeHtml(message)}</div>` : ""}
-    ${pc.review_blocked ? '<div class="pgx-source-warning">PGx 人工選擇需重新確認後才能匯出。</div>' : ""}
+    ${pc.review_blocked && !waiting ? '<div class="pgx-source-warning">PGx 人工選擇需重新確認後才能匯出。</div>' : ""}
     ${reviewNotes.length ? `<div class="pgx-review-note">${reviewNotes.map(escapeHtml).join("<br>")}</div>` : ""}
-    ${pending.length ? `<div class="pgx-source-warning">${escapeHtml(pending.join("、"))}：用藥建議待重新註解。</div>` : ""}`;
+    ${updateHtml}`;
   return extra + (pc.pharmcat_available
     ? ""
     : `<div class="pgx-source-warning">缺少 PharmCAT JSON；除 MT-RNR1 可由 TSV 補值外，其餘基因不會使用 TSV 代替。</div>`);
 }
 
 let _pgxChoiceSaving = false;
+let _pgxPollTimer = null;
+
+function _pgxWatch(pc) {
+  if (_pgxPollTimer || !pc.reannotation?.busy) return;
+  const lis = state.currentLIS, token = state._auxLoadToken;
+  const sample = (state.index || []).find(row => row.LIS_ID === lis)?.sample_id || lis;
+  _pgxPollTimer = setTimeout(async () => {
+    _pgxPollTimer = null;
+    if (lis !== state.currentLIS || token !== state._auxLoadToken || !state.data) {
+      if (state.data?.pgx) _pgxWatch(state.data.pgx);
+      return;
+    }
+    try {
+      const response = await apiFetch(`/samples/${encodeURIComponent(sample)}/pgx`);
+      if (lis !== state.currentLIS || token !== state._auxLoadToken || _pgxChoiceSaving || !state.data) return;
+      Object.assign(state.data, response);
+      renderPharmcatBlock("sec-pharmcat");
+      renderPharmcatBlock("cat-pharmcat-c");
+    } catch (_) { /* Keep the complete result and retry after a temporary outage. */ }
+    if (state.data?.pgx) _pgxWatch(state.data.pgx);
+  }, 2000);
+}
 
 function _pgxComparisonHtml(pc, gene, controls = false) {
   const row = pc.concordance?.genes?.[gene] || {};
-  const badges = (row.badges || []).map(value => `<span class="pgx-comparison-badge${value === "結果不一致" ? " pgx-comparison-badge-danger" : ""}">${escapeHtml(value)}</span>`).join("");
-  if (!controls) return badges;
+  const badge = value => `<span class="pgx-comparison-badge${value === "結果不一致" ? " pgx-comparison-badge-danger" : ""}">${escapeHtml(value)}</span>`;
+  const mismatch = (row.badges || []).filter(value => value === "結果不一致").map(badge).join("");
+  const warnings = (row.badges || []).filter(value => value !== "結果不一致").map(badge).join("");
+  if (!controls) return mismatch + warnings;
+  const selectedSource = row.requested_source || row.selected_source;
+  const selectedGenotype = row.requested_genotype || row.selected_genotype;
   const choice = row.status === "different" || row.stale || row.selected_source === "dragen"
     ? `<label class="pgx-result-choice">人工確認後採用
-        <select class="js-pgx-result-choice" data-gene="${escapeAttr(gene)}" ${_pgxChoiceSaving ? "disabled" : ""}>
+        <select class="js-pgx-result-choice" data-gene="${escapeAttr(gene)}" ${_pgxChoiceSaving || pc.reannotation?.busy ? "disabled" : ""}>
           ${row.stale ? '<option value="unconfirmed" disabled selected>請重新確認</option>' : ""}
-          <option value="platform" ${!row.stale && row.selected_source !== "dragen" ? "selected" : ""}>平台：${escapeHtml((row.platform_genotypes || []).join("；"))}</option>
-          ${(row.status === "different" ? row.candidates || [] : []).map(gt => `<option value="${escapeAttr("dragen:" + gt)}" ${row.selected_source === "dragen" && row.selected_genotype === gt ? "selected" : ""}>DRAGEN：${escapeHtml(gt)}</option>`).join("")}
+          <option value="platform" ${!row.stale && selectedSource !== "dragen" ? "selected" : ""}>平台：${escapeHtml((row.platform_genotypes || []).join("；"))}</option>
+          ${(row.status === "different" ? row.candidates || [] : []).map(gt => `<option value="${escapeAttr("dragen:" + gt)}" ${!row.stale && selectedSource === "dragen" && selectedGenotype === gt ? "selected" : ""}>DRAGEN：${escapeHtml(gt)}</option>`).join("")}
         </select>
       </label>` : "";
-  return `${badges}${choice}`;
+  return `${mismatch}${choice}${warnings}`;
 }
 
 function _pgxComparisonDetailsHtml(pc, gene) {
@@ -8068,6 +8100,25 @@ function _pgxComparisonDetailsHtml(pc, gene) {
     ? `<div class="pgx-comparison-audit muted">已人工確認採用 DRAGEN${row.reviewer ? ` · ${escapeHtml(row.reviewer)}` : ""}</div>` : "";
   return `${evidence}${audit}`;
 }
+
+document.addEventListener("click", async event => {
+  const button = event.target.closest?.(".js-pgx-annotation-action");
+  if (!button || _pgxChoiceSaving) return;
+  const lis = state.currentLIS, token = state._auxLoadToken;
+  const sample = (state.index || []).find(row => row.LIS_ID === lis)?.sample_id || lis;
+  _pgxChoiceSaving = true;
+  button.disabled = true;
+  try {
+    const response = await apiPost(`/samples/${encodeURIComponent(sample)}/pgx/reannotation`, {action: button.dataset.action});
+    if (lis === state.currentLIS && token === state._auxLoadToken && state.data) Object.assign(state.data, response);
+  } catch (error) {
+    if (lis === state.currentLIS && token === state._auxLoadToken) alert("PGx 更新操作失敗，請重新載入後重試。");
+  } finally {
+    _pgxChoiceSaving = false;
+    renderPharmcatBlock("sec-pharmcat");
+    renderPharmcatBlock("cat-pharmcat-c");
+  }
+});
 
 document.addEventListener("change", async event => {
   const select = event.target;
@@ -8106,10 +8157,13 @@ async function _refreshPgxForExport() {
   const sample = (state.index || []).find(row => row.LIS_ID === lis)?.sample_id || lis;
   const response = await apiFetch(`/samples/${encodeURIComponent(sample)}/pgx`);
   if (lis !== state.currentLIS || token !== state._auxLoadToken || _pgxChoiceSaving) throw new Error("個案或 PGx 選擇已變更，請重新匯出。");
-  if (!response?.pgx || response.pgx.review_blocked) throw new Error("PGx 人工選擇需要重新確認，請重新載入個案。");
-  Object.assign(state.data, response);
-  renderPharmcatBlock("sec-pharmcat");
-  renderPharmcatBlock("cat-pharmcat-c");
+  if (response?.pgx) {
+    Object.assign(state.data, response);
+    renderPharmcatBlock("sec-pharmcat");
+    renderPharmcatBlock("cat-pharmcat-c");
+  }
+  if (!response?.pgx || response.pgx.review_blocked) throw new Error(response?.pgx?.reannotation && !["original", "complete"].includes(response.pgx.reannotation.status)
+    ? "PGx 更新尚未完成，請完成更新或恢復原結果後匯出。" : "PGx 人工選擇需要重新確認，請重新載入個案。");
 }
 
 function _pgxTable(headers, rows, className = "") {

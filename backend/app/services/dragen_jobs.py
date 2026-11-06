@@ -555,7 +555,8 @@ def active_sample_ids() -> set[str]:
     """Return UI/source sample IDs currently owned by active tertiary jobs."""
     from . import somatic
     from . import prs_jobs
-    active: set[str] = somatic.active_ids() | prs_jobs.active_ids()
+    from . import pgx_reannotation
+    active: set[str] = somatic.active_ids() | prs_jobs.active_ids() | pgx_reannotation.active_ids()
     for job in list_jobs(limit=1000):
         job_id = job.get("job_id", "")
         if not (job.get("running") or job.get("state") in ("queued", "running")):
@@ -780,6 +781,19 @@ def get_pipeline_nextflow_log(sample_id: str) -> tuple[Path, str]:
 
 
 def delete_pipeline_output(sample_id: str) -> dict:
+    _validate_sample_id(sample_id)
+    from ..workers.dragen_run import _acquire_sample_locks, _release_sample_locks
+    handles = _acquire_sample_locks([sample_id, sample_layout.source_sample_id(sample_id)])
+    try:
+        from . import pgx_reannotation
+        if {sample_id, sample_layout.source_sample_id(sample_id)} & pgx_reannotation.active_ids():
+            raise RuntimeError("此個案的 PGx 更新仍在執行中，請先恢復原結果")
+        return _delete_pipeline_output(sample_id)
+    finally:
+        _release_sample_locks(handles)
+
+
+def _delete_pipeline_output(sample_id: str) -> dict:
     """Delete UI/pipeline output and all NGS-UI job logs unless one is active."""
     _validate_sample_id(sample_id)
     from . import somatic

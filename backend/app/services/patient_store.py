@@ -67,6 +67,18 @@ def is_registered(lis_id: str) -> bool:
 
 
 def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
+    _validate_lis_id(lis_id)
+    if delete_pipeline_output:
+        return _delete(lis_id, delete_pipeline_output=True)  # output deletion takes the same locks
+    from ..workers.dragen_run import _acquire_sample_locks, _release_sample_locks
+    handles = _acquire_sample_locks([lis_id, sample_layout.source_sample_id(lis_id)])
+    try:
+        return _delete(lis_id)
+    finally:
+        _release_sample_locks(handles)
+
+
+def _delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     """Delete or unregister one sample.
 
     By default this only removes reviewer-side registration/report state,
@@ -78,6 +90,9 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     from . import somatic
     if lis_id in somatic.active_ids():
         raise RuntimeError("此個案的 Somatic 分析仍在執行中")
+    from . import pgx_reannotation
+    if lis_id in pgx_reannotation.active_ids():
+        raise RuntimeError("此個案的 PGx 更新仍在執行中，請先恢復原結果")
     ui_dir = sample_layout.state_dir(lis_id)
     if not ui_dir.is_dir():
         raise FileNotFoundError(f"sample not found: {lis_id}")

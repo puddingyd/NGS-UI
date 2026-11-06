@@ -30,10 +30,14 @@ for g,(label,target) in calls.items():
  row=pc.compare_gene(g,payload,dr);row.update(fingerprint='synthetic',selected_source='platform',stale=False)
  p['concordance']['genes'][g]=row
 p['report_view']=docx_export.build_pgx_report_view(p)
-chosen=copy.deepcopy(p);pc._apply(chosen,'CYP2C9','*1/*1','Normal Metabolizer')
+chosen=copy.deepcopy(p)
+chosen['genes']['CYP2C9']['details'].update(label='*1/*1',allele1_name='*1',allele2_name='*1',phenotypes=['Normal Metabolizer'],source_diplotypes=[{'label':'*1/*1'}])
 chosen['concordance']['genes']['CYP2C9'].update(selected_source='dragen',selected_genotype='*1/*1',reviewer='reviewer')
 chosen['report_view']=docx_export.build_pgx_report_view(chosen)
-print(json.dumps({'platform':p,'dragen':chosen}))
+pending=copy.deepcopy(p);pending.update(review_blocked=True,reannotation={'status':'running','busy':True})
+pending['concordance']['genes']['CYP2C9'].update(requested_source='dragen',requested_genotype='*1/*1')
+chosen['reannotation']={'status':'complete','busy':False}
+print(json.dumps({'platform':p,'dragen':chosen,'pending':pending}))
 `],{cwd:repo,encoding:'utf8',env:{...process.env,PYTHONPATH:path.join(repo,'backend')}}));
 const app=fs.readFileSync(path.join(repo,'frontend/app.js'),'utf8');
 const code=app.slice(app.indexOf('function renderPharmcatBlock('),app.indexOf('const ROH_GRCH38_CHROM_LENGTHS'));
@@ -44,13 +48,13 @@ const apiPut=async(url,body)=>{const r=await fetch('/api'+url,{method:'PUT',body
 const apiFetch=async url=>(await fetch('/api'+url)).json();
 ${code}
 renderPharmcatBlock('sec-pharmcat');renderPharmcatBlock('cat-pharmcat-c');`;
-let chosen='platform',rejectNext=false;
+let chosen='platform',rejectNext=false,pendingUntil=0;
 const server=http.createServer((req,res)=>{
  if(req.url==='/'){res.setHeader('Content-Type','text/html;charset=utf-8');res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><style>html,body{height:auto;overflow:visible}body{display:block;margin:16px}.case{max-width:1050px;margin:auto}</style><main class="case"><p>合成個案 UI 測試</p><section id="cat-pharmcat-c" class="cat-block"></section><section id="sec-pharmcat" class="cat-block"></section></main><script src="/harness.js"></script>`);return;}
  if(req.url==='/style.css'){res.setHeader('Content-Type','text/css');res.end(fs.readFileSync(path.join(repo,'frontend/style.css')));return;}
  if(req.url==='/harness.js'){res.setHeader('Content-Type','text/javascript');res.end(harness);return;}
- if(req.url.endsWith('/choice')){let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{if(rejectNext){rejectNext=false;res.writeHead(409);res.end('{}');return;}const p=JSON.parse(body);assert(p.confirmed);chosen=p.source;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({pgx:fixture[chosen],pharmcat:fixture[chosen]}));});return;}
- res.setHeader('Content-Type','application/json');res.end(JSON.stringify({pgx:fixture[chosen]}));
+ if(req.url.endsWith('/choice')){let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{if(rejectNext){rejectNext=false;res.writeHead(409);res.end('{}');return;}const p=JSON.parse(body);assert(p.confirmed);chosen=p.source;pendingUntil=chosen==='dragen'?Date.now()+1500:0;const data=fixture[pendingUntil?'pending':chosen];res.setHeader('Content-Type','application/json');res.end(JSON.stringify({pgx:data,pharmcat:data}));});return;}
+ res.setHeader('Content-Type','application/json');res.end(JSON.stringify({pgx:fixture[Date.now()<pendingUntil?'pending':chosen]}));
 });
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -79,6 +83,7 @@ const server=http.createServer((req,res)=>{
   assert.equal(await card('CFTR').locator('.pgx-comparison').innerText(),'LowGQ');
   for(const gene of ['CYP2C9','CYP2B6','CFTR'])await checkHeader(gene);
   assert.equal(await card('CYP2C9').locator('.pgx-comparison-badge-danger').innerText(),'結果不一致');
+  assert.deepEqual(await card('CYP2C9').locator('.pgx-comparison').evaluate(el=>[...el.children].map(c=>c.classList.contains('pgx-result-choice')?'choice':c.textContent)),['結果不一致','choice','LowGQ']);
   const red=await card('CYP2C9').locator('.pgx-comparison-badge-danger').evaluate(e=>getComputedStyle(e).backgroundColor);
   const yellow=await card('CFTR').locator('.pgx-comparison-badge').evaluate(e=>getComputedStyle(e).backgroundColor);
   assert.equal(red,'rgb(254, 226, 226)');assert.equal(yellow,'rgb(255, 244, 214)');
@@ -88,10 +93,14 @@ const server=http.createServer((req,res)=>{
   assert.match(await card('CYP2C9').locator('.pgx-comparison-values').innerText(),/平台：.*DRAGEN：/);
   await card('CYP2C9').locator('.pgx-detail>summary').click();
   await card('CYP2C9').locator('select').selectOption('dragen:*1/*1');
+  await page.waitForFunction(()=>document.querySelector('#cat-pharmcat-c .pgx-source-warning')?.textContent.includes('上一份完整結果'));
+  assert(await card('CYP2C9').locator('select').isDisabled());
+  assert.equal(await card('CYP2C9').locator('.pgx-gene-genotype').innerText(),'*1/*33');
+  assert.match(await analysis.innerText(),/上一份完整結果/);
   await page.waitForFunction(()=>document.querySelector('#cat-pharmcat-c .js-pgx-result-choice')?.value==='dragen:*1/*1'&&!document.querySelector('#cat-pharmcat-c .js-pgx-result-choice').disabled);
   assert.equal(await card('CYP2C9').locator('.pgx-gene-genotype').innerText(),'*1/*1');
   assert.match(await page.locator('#sec-pharmcat').innerText(),/已人工確認採用 DRAGEN/);
-  assert.match(await analysis.innerText(),/用藥建議待重新註解/);
+  assert.doesNotMatch(await analysis.innerText(),/待重新註解|更新中/);
   await checkHeader('CYP2C9');
   if(process.env.PGX_SCREENSHOT_DIR){fs.mkdirSync(process.env.PGX_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PGX_SCREENSHOT_DIR,'pgx-desktop.png'),fullPage:true});await card('CYP2C9').screenshot({path:path.join(process.env.PGX_SCREENSHOT_DIR,'pgx-desktop-gene.png')});}
   await page.setViewportSize({width:390,height:844});

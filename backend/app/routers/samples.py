@@ -644,6 +644,17 @@ def put_pgx_choice(sample_id: str, payload: dict, user: dict = Depends(current_u
         raise HTTPException(500, "PGx 選擇未能儲存，請重試") from exc
 
 
+@router.post("/samples/{sample_id}/pgx/reannotation")
+def post_pgx_reannotation(sample_id: str, payload: dict, user: dict = Depends(current_user)):
+    from ..services import pgx_reannotation
+    try:
+        return pgx_reannotation.action(sample_id, str(payload.get("action") or ""), user)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, "PGx 更新操作失敗，請重試") from exc
+
+
 # Canonical category list — drives both the load-new-case modal
 # dropdown AND the editable Category select on the sample card so the
 # values stay in sync. Order matches the reviewer-requested ordering.

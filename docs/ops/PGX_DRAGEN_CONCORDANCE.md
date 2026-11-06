@@ -1,17 +1,53 @@
-# PGx DRAGEN 比對與人工採用（v9.97；規則 v2）
+# PGx DRAGEN 比對與人工採用（v9.98；規則 v2）
 
-2026-11-05。畫面與報告沿用固定 21 個 PGx genes；既有個案更新服務、重新載入即可，不需重跑 PGx。未連線院內 server，真實路徑權限與院內 Word 仍由操作者驗收。
+2026-11-06。畫面與報告沿用固定 21 個 PGx genes；不需重跑 PGx pipeline。未連線院內 server，工具環境、真實路徑權限與院內 Word 仍由操作者驗收。
 
 ## 操作
 
 - v9.97（2026-11-06）僅改呈現：警示及人工採用選單在基因標題同排靠右，窄螢幕局部橫向捲動；不一致紅色，其他警示維持黃色。兩邊基因型與確認紀錄收進原本「詳細」，報告預覽基因欄警示亦同排靠右。不改規則或保存結果，不使既有選擇失效。
+- v9.98 順序固定為「結果不一致 → 人工確認後採用 → LowGQ 等其他警示」。
 - 相同結果不顯示額外註記。順序不同但組成相同、已確認的新舊命名相容，皆視為相同。
 - CYP2B6 結果落在多個 DRAGEN 候選之一時只顯示「相位未定」。
 - DRAGEN 明列 LowGQ 位點時只加「LowGQ」；真的不同才另加「結果不一致」。不另標 MT-RNR1 TSV 補值來源。
 - 不一致的基因在分析區顯示兩邊基因型及「人工確認後採用」下拉選單。選擇平台或某個 DRAGEN 候選即立即保存，不需再按主畫面的儲存。
-- 畫面、健檢 Word 的 allele 表、報告預覽／PDF 都使用已保存選擇。可隨時切回平台；原始檔不修改。
-- 採用 DRAGEN 後，只用其明列表型；沒有表型就顯示未指派，不套原 PharmCAT 的舊表型／activity score。
-- 現有 PharmCAT 用藥建議是以原基因型產生。採用 DRAGEN 後暫停受影響的原 annotation，連同包含該 gene 的多基因建議，並顯示「用藥建議待重新註解」。這不代表無須調整用藥。此版不重新執行 PharmCAT、不自行生成新指引建議；切回平台即恢復原有建議。
+- 人工採用保存後在背景重新執行固定版本 PharmCAT 的 phenotyper／reporter；基因型、表型、activity score、共同用藥建議與報告一起切換。表型與分數由目前固定版本 PharmCAT 計算，不採用舊 DRAGEN snapshot 的表型覆寫。
+- 更新中保留上一份**完整**結果，暫停 PGx 匯出；成功後畫面自動更新。失敗顯示原因，可「重試更新」或「恢復原結果」；不把新基因型配上舊建議，也不把缺失建議說成無需調整用藥。健檢選項停用 PGx 時，其他項目仍可匯出。
+- 更新中「恢復原結果」會取消背景工具並恢復全部原平台結果；更新完成後可逐基因切回平台。相同來源及選取組合可重用校驗通過的已完成版本。原始資料不修改。
+- 舊版已保存的人工選擇仍保留，但先顯示原平台完整結果並暫停 PGx 匯出，按「重試更新」完成後才能採用。不改比對規則 v2，不要求重跑 pipeline。
+
+## 固定工具準備（由部署者執行一次）
+
+使用 PharmCAT **3.2.0**，資料版本 **2026-02-09-10-28**。官方 JAR SHA256 固定為 `a1ceda4c4f8e2c53ed17ff4d104df82360c04d4b15226d09cb7f854bc585a0e7`。不從最新資料庫臨時抓指引、不在個案工作中下載程式。
+
+預設依序使用 `biotools/pharmcat/pharmcat-3.2.0-all.jar`（host Java 17以上），否則使用既有 `/home/datalake_Intermediate/pipeline/nextflow_containers/pharmcat_3.2.0.sif`，舊 `/home/pipeline/nextflow_containers` 為 fallback。SIF 內 `/pharmcat/pharmcat.jar` 亦須通過相同 SHA256，不僅看檔名。若要讓既有容器提供 Java、JAR 另外固定，可同時設定下列兩個環境變數。
+
+| 設定 | 用途 |
+|---|---|
+| `NGS_UI_PGX_PHARMCAT_JAR` | 管理者指定官方固定 JAR 的絕對路徑 |
+| `NGS_UI_PGX_PHARMCAT_IMAGE` | 管理者指定提供 Java 的既有 Apptainer SIF；指定時 JAR 唯讀掛入 |
+| `JAVA_BIN` | 未使用 SIF 時的 Java 可執行檔；沿用平台設定 |
+
+```sh
+# 使用與服務相同的帳號及路徑環境；預設只讀，不改樣本或服務
+python scripts/check_pgx_pharmcat.py
+
+# 僅當需要準備官方 JAR 時，由部署者明示下載；先驗 SHA 才寫入，不覆寫不同版本
+python scripts/check_pgx_pharmcat.py --install
+```
+
+工具缺失、Java／容器無法啟動、版本不符、原建議無法零修改重現或選取 allele 無法辨識時，保留完整舊結果並拒絕 PGx 匯出，需修復環境重試或恢復原結果。安裝工具不會啟停服務。Codex 未在院內執行上述準備／部署。
+
+## 重新註解與發布
+
+原 full report 的 `genes` 是 PharmCAT 原生 `GeneReport`。原樣放入 native phenotype snapshot 的 `geneReports`，連同 `matcherMetadata`、`unannotatedGeneCalls` 跑 reporter；先逐一核對完整 gene 資料與所有正規化用藥註解 multiset。不是從簡化 TSV 重建全部 outside calls，也不偽造 matcher JSON，因此保留 CYP2D6 組合／原 activity score、HLA、DPYD／RYR1 多筆元件、缺失位點與相位資訊。
+
+僅把人工修改基因的候選 genotype 寫入 outside-call TSV，phenotype／activity score 留空，由 phenotyper 依固定資料重新註解。把這些新的 GeneReports 合併回原 snapshot，對整份跑 reporter（CPIC／DPWG／FDA，須先通過原來源重播）。包含 CYP2C9 的 phenytoin／fosphenytoin、fluvastatin 等多基因 annotation 整筆重算；其他 gene 的 call、變異、相位、表型、AS 不得改動。reporter 的 `relatedDrugs` 由新建議重建。未辨識 allele／Indeterminate 不套舊表型猜測。
+
+執行紀錄、輸入快照與中間結果保留在 `data/jobs/pgx_reannotation/{job}/`，不使用 Nextflow 工作區，也不重跑 WGS／StellarPGx／HLA。每工作獨立 tmp，工具 process group 有逾時與取消收尾，全站同時只跑一個 PharmCAT。worker 先持 sample/source locks 再取 PGx slot，與三級／PRS 保持相同鎖順序。queued 也擋取消登錄／刪除；刪除操作持相同 sample/source locks 避免競爭。
+
+完成 report 與 manifest 存在 `08_postprocessing/{ID}.pgx_annotations/{job}/`。manifest 綁定原 report hash、全部比對 fingerprint、人工選取組合、引擎 SHA、零改重播驗證與新 report SHA。發布前重驗來源、當前請求與工具，僅以 `{ID}.pgx_review.json.published` 原子切換整份臨床結果；原比較仍以原平台來源計算。衍生目錄、review／append audit 都是 reviewer-owned，正常 pipeline 重跑保留但來源改變即失效。暫存／歷史紀錄含檢體資料，不放 Git。
+
+GET PGx 不啟動工作。背景 job 用獨立 lease 判斷存活，不把被重用的 PID 當成原 worker；服務重新載入可從 job/review 找回狀態，worker 死亡顯示失敗可重試。登入保護 `POST /api/samples/{sid}/pgx/reannotation` 只接受 `action=retry` 或 `restore`，不接受路徑、命令或自填判型。舊的 choice API 同樣只接受當前不一致候選。前端輪詢與遲到回應均核對切案 token。
 
 ## 來源
 
@@ -67,20 +103,24 @@ NUDT15 限定平台 `CLINPGX` definition `2026-02-09-10-28`、DRAGEN `PharmGKB D
 
 新增登入保護 `PUT /api/samples/{sid}/pgx/choice`。傳 gene、source、當前候選 genotype、fingerprint、confirmed=true；後端不接受自填 allele／phenotype，也不接受過期來源。執行中三級／PRS持有sample/source鎖時拒絕修改，避免跨代發布。
 
-reviewer-owned `{ID}.pgx_review.json` 不在 pipeline managed 清單內，正常重跑保留。選擇與 audit 以獨立 flock + 原子 replace 寫入，記確認者、時間、兩邊結果、品質及來源 fingerprint。主畫面一般 report PUT 不會覆蓋它；回復平台清除 active choice、保留 audit。
+reviewer-owned `{ID}.pgx_review.json` 不在 pipeline managed 清單內，正常重跑保留。選擇與 audit 以獨立 flock + 原子 replace 寫入，記確認者、時間、兩邊結果、品質及來源 fingerprint；另保存請求、背景 job、published revision 與歷史 manifest pointer。主畫面一般 report PUT 不會覆蓋它；回復平台清除請求及 published pointer、保留 audit／歷史結果。
 
 fingerprint 包含比較規則版本、pipeline source、PharmCAT 內容hash／身分／版本／該gene資料及 DRAGEN 內容。來源改變後舊選擇失效，提示重新確認，PGx 匯出暫停；可明確重新採用 DRAGEN 或恢復平台。遺失來源不會靜默把舊選擇當作平台結果匯出。
 
-選擇保存中不允許前端匯出。切個案後遲到的回應不套用。Word 建立前後核對 fingerprint；來源或選擇在建立期間變更則不下載、不歸檔。未選 PGx 的健檢報告不受這項檢查影響。
+選擇保存或重新註解未完成時不允許 PGx 匯出。切個案後遲到的回應不套用。Word 建立前後核對包含 published revision 的 fingerprint；來源、選擇或版本在建立期間變更則不下載、不歸檔。未選 PGx 的健檢報告不受這項檢查影響。
 
 ## 驗證
 
 使用合成個案驗證順序／dosage／分組、候選解、NAT2版本映射、LowGQ、MT fallback、來源衝突與快照損壞、API權限、執行中鎖、保存／回復／audit、來源更新失效、Word實際下載及匯出中變動拒絕。桌機／390px手機瀏覽器測試選擇、回復、保存失敗與安靜的相同結果。
 
+v9.98 另驗 pending 保留完整基線、後續修改失敗保留已發布完整版本、重試、取消 owned 工具與子程序、死亡 worker、queued 刪除保護、cache hash 與來源改變拒絕發布。使用官方固定 JAR 與合成 CYP2C9／HLA-B／SLCO1B1 實跑重算，驗共同建議改變及未知 allele 拒絕。本機對使用者提供的 26T01086 實跑 detached worker：零改 184 筆註解一致，修改 CYP2C9 後其餘 20 個顯示基因結果維持、共同建議重算、Word 使用新結果、恢復原結果、原始三檔 byte 不變；檢體資料／輸出均不入 Git。未重跑 Phase2 的126案，院內 Apptainer、完整服務部署與正式 Word 仍待操作者驗收。
+
 ```sh
 PYTHONPATH=backend python -m pytest tests/test_pgx_phase2.py tests/test_pgx_concordance.py tests/test_pgx_tsv.py tests/test_pgx_main_screen.py tests/test_health_report.py tests/test_sample_layout.py tests/test_specialized.py tests/test_prs.py -q
 node --test tests/frontend_*.test.cjs
 PYTHONPATH=backend node tests/browser_pgx_ui.cjs
+# 選用：官方固定 JAR 實跑合成資料（其餘測試不需 Java）
+NGS_UI_TEST_PHARMCAT_JAR=/absolute/path/pharmcat-3.2.0-all.jar PYTHONPATH=backend python -m pytest tests/test_pgx_reannotation_engine.py -q
 ```
 
 瀏覽器測試需可解析 Playwright 及本機 Chrome；可設定 PYTHON、CHROME_EXECUTABLE_PATH、PGX_SCREENSHOT_DIR。使用者附件只在本機唯讀核對，未放入 repo。

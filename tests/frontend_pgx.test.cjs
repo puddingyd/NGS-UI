@@ -29,6 +29,8 @@ test('same genes are silent; mismatch has explicit source selector and escaped e
   assert.equal(context._pgxComparisonHtml({concordance:{genes:{NAT2:{status:'same',badges:[]}}}},'NAT2',true),'');
   const html=context._pgxComparisonHtml(pgx,'CYP2C9',true);
   assert.match(html,/人工確認後採用/);assert.match(html,/DRAGEN：\*1\/\*1/);
+  assert(html.indexOf('結果不一致') < html.indexOf('人工確認後採用'));
+  assert(html.indexOf('</label>') < html.indexOf('LowGQ'));
   assert.doesNotMatch(context._pgxComparisonHtml(pgx,'CYP2C9'),/<select/);
   assert.match(context._pgxComparisonDetailsHtml({concordance:{genes:{CYP2C9:{...row,dragen_genotype:'<script>'}}}},'CYP2C9'),/&lt;script&gt;/);
 });
@@ -65,6 +67,8 @@ test('stale choices have a re-confirmation placeholder and can restore platform'
   const {context}=setup();
   const html=context._pgxComparisonHtml({concordance:{genes:{CYP2C9:{...row,stale:true,status:'same'}}}},'CYP2C9',true);
   assert.match(html,/value="unconfirmed" disabled selected/);assert.match(html,/value="platform"/);
+  const requested=context._pgxComparisonHtml({concordance:{genes:{CYP2C9:{...row,stale:true,requested_source:'dragen',requested_genotype:'*1/*1'}}}},'CYP2C9',true);
+  assert.doesNotMatch(requested,/value="dragen:\*1\/\*1" selected/);
 });
 
 test('exports refuse in-flight saves and refresh saved choices before output',async()=>{
@@ -74,4 +78,26 @@ test('exports refuse in-flight saves and refresh saved choices before output',as
   vm.runInContext('_pgxChoiceSaving = false',context);
   context.apiFetch=async()=>({pgx:{review_blocked:true}});
   await assert.rejects(context._refreshPgxForExport(),/重新確認/);
+});
+
+test('background update shows the requested selection, disables editing and offers restore',()=>{
+  const {context}=setup();
+  const updating={...pgx,review_blocked:true,reannotation:{status:'running',busy:true},
+    concordance:{genes:{CYP2C9:{...row,requested_source:'dragen',requested_genotype:'*1/*1'}}}};
+  const html=context._pgxComparisonHtml(updating,'CYP2C9',true);
+  assert.match(html,/<select[^>]+disabled/);
+  assert.match(html,/value="dragen:\*1\/\*1" selected/);
+  context.setTimeout=()=>1;
+  const warning=context._pgxSourceWarning(updating);
+  assert.match(warning,/上一份完整結果/);assert.match(warning,/恢復原結果/);
+  assert.doesNotMatch(warning,/待重新註解|重試更新/);
+});
+
+test('background failure offers retry and remains unavailable for export',async()=>{
+  const {context}=setup();
+  const failed={...pgx,review_blocked:true,reannotation:{status:'failed',error:'synthetic failure'}};
+  const html=context._pgxSourceWarning(failed);
+  assert.match(html,/重試更新/);assert.match(html,/恢復原結果/);
+  context.apiFetch=async()=>({pgx:failed});
+  await assert.rejects(context._refreshPgxForExport(),/更新尚未完成/);
 });
