@@ -1,10 +1,10 @@
 # 檔案清單、三級資料瀏覽與共用每日索引
 
-v9.96，2026-11-06。已完成本機實作與合成驗證；院內部署、全量檔名與實際下載由操作者驗收。Codex 不 SSH、不重啟服務、不安裝 server timer。
+v9.99，2026-11-06。已完成本機實作與合成驗證；院內部署、全量檔名與實際下載由操作者驗收。Codex 不 SSH、不重啟服務、不安裝 server timer。
 
 ## 使用方式
 
-主畫面登入後，右上角排列為「三級分析 → 檔案清單 → 上傳個案清單」。清單支援 sample ID 搜尋、每頁50筆、上一頁／下一頁及手動更新。
+主畫面登入後，右上角排列為「三級分析 → 檔案清單 → 上傳個案清單」。清單每次開啟先清空搜尋及結果，輸入非空白 sample ID 後才顯示符合項目；支援每頁50筆、上一頁／下一頁及手動更新。清除／純空白搜尋立即清空，遲到回應不重新填回；空搜尋按更新會刷新索引，但不列出全部 sample。
 
 六欄固定為 sample ID、fastq、bam、SNV/indel VCF、其他檔案、三級資料。檔案欄只列含副檔名的檔名，點擊下載；旁邊沿用 SNV 卡片的 Copy 圖示，複製 server 完整路徑。沒有提供的檔案留白，不輸出缺檔或不適用字樣。
 
@@ -12,7 +12,11 @@ v9.96，2026-11-06。已完成本機實作與合成驗證；院內部署、全�
 - BAM：主 BAM、`.bam.bai` 或 `.bai`；排除 repeats BAM 及其 index。
 - SNV/indel VCF：原始 DRAGEN hard-filtered 或 in-house ensemble fixed VCF。
 - 其他檔案：只列 CNV VCF、SV VCF、合併 CNV/SV VCF、DRAGEN gVCF 與 targeted JSON。In-house 不列 gVCF／合併 CNV/SV／targeted JSON；不列 `.tbi`／`.csi`、CNVkit、mito、ploidy、三級衍生 TSV 等其他項目。
-- 三級資料：沿用 SNV ClinVar/LitVar 外部連結圖示，另開資料夾瀏覽頁。多個三級個案目錄各有一個圖示，title 顯示目錄名。
+- 三級資料：以資料夾建立日期（台北時間，YYYY-MM-DD）作為連結文字，另開原本的資料夾瀏覽頁；旁邊Copy圖示複製完整三級目錄路徑。hover顯示完整路徑與建立時間；移除外部連結圖示。
+
+多個三級入口代表索引在不同root找到多個實際資料夾，可能是DRAGEN／in-house或新舊儲存位置各有一份，不是按job執行紀錄建立的按鈕。重跑仍發布在同一個目錄時，不會因此增加一個入口；同日不同目錄仍各列一個日期連結，藉hover或Copy區分。
+
+建立時間在搜尋時只讀當頁目錄補入回應，舊SQLite快照立即可用，無需全量重掃。macOS用`st_birthtime`；Linux用單次批次GNU `stat --printf=%n\0%W\0`讀真正birthtime。GNU `%W`為0代表未提供建立時間，此時保留資料夾名稱，不拿ctime／mtime代替。依據：[GNU stat文件](https://www.gnu.org/software/coreutils/manual/html_node/stat-invocation.html)。日期是目前檔案系統對這個目錄的建立紀錄，搬遷或重新複製可能改變，不等同原始分析日期。此修改更新服務與重載即可，不需重新安裝timer。
 
 同 source ID 的不同 run／batch 都保留，檔名相同者可由 hover title 或複製路徑區分。這是檔案候選彙整，不能據此宣稱某 BAM/VCF 必然來自哪一組 FASTQ；分析仍沿用既有來源驗證規則。
 
@@ -80,7 +84,7 @@ ClinVar／LitVar／HPO等資料庫更新排程維持原本頻率，不混入檔�
 
 新API均沿用平台登入保護：
 
-- `GET /api/files`：sample ID搜尋及分頁，只讀已發布索引；冷啟動才建立，過期背景更新。
+- `GET /api/files`：sample ID搜尋及分頁；空q直接回空結果，不觸發首次掃描。非空q讀已發布索引，冷啟動才建立，過期背景更新；當頁三級目錄即時補建立時間及完整路徑。
 - `POST /api/files/refresh`：強制共用更新。
 - `GET/HEAD /api/files/download/{id}`：只接受索引registry中的檔案ID，下載時重新核對配置root。
 - `GET /api/files/browse?root=...&path=...`：三級root內逐層瀏覽，含路徑導覽及上一層；上層到三級root為止。
@@ -92,7 +96,7 @@ ClinVar／LitVar／HPO等資料庫更新排程維持原本頻率，不混入檔�
 
 - Python合成檔案樹涵蓋8lane16檔、BAI兩種命名、限定其他類型、空欄、in-house排除、raw-only／單邊配對、多run、重分析source、VCF-only三級相容、root變更、重疊／舊timer去重、失敗保留generation。
 - API驗證登入、搜尋／分頁、下載內容、HEAD／Range、刪除後404、越界／外部symlink、資料夾路徑導覽與惡意檔名escaping。
-- Chrome合成前端驗證按鈕位置、六欄、16檔展開／收合、Copy、下載、三級連結、空格、搜尋／分頁／更新、Escape，以及桌機／手機版面。手機可在表格內橫向捲動，不擴張整個頁面。
+- Chrome合成前端驗證按鈕位置、六欄、16檔展開／收合、Copy、下載、三級日期連結與路徑複製、空格、空白開啟／重開／清除／遲到回應、搜尋／分頁／更新、Escape，以及桌機／手機版面。手機可在表格內橫向捲動，不擴張整個頁面。
 - 現有二／三級與前端回歸一併執行；實際院內全量命名、各root權限及大型檔下載仍待部署驗收，不能以合成測試宣稱已完成。
 
 ## 歷史唯讀探測工具

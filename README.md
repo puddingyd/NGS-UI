@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v9.99：檔案清單預設留白，輸入sample ID後才顯示結果，清除搜尋即清空。三級資料改為可點擊的資料夾建立日期，旁邊Copy圖示複製完整路徑；多個連結代表多個實際資料夾，不是執行次數。檔案系統未提供建立時間時保留資料夾名稱。更新服務與重新載入即可，不需重掃索引或重裝排程。[使用與日期說明](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。
+
 v9.98：人工採用 DRAGEN 後，背景以固定版本 PharmCAT 重新計算表型、activity score 與整份用藥建議，包含 CYP2C9／HLA-B／SLCO1B1 等共同建議。完成後畫面與報告一起更新；更新中或失敗保留上一份完整結果並暫停 PGx 匯出，可重試或恢復原結果。標題列依序為「結果不一致 → 人工確認後採用 → LowGQ 等其他警示」。管理者先執行 `python scripts/check_pgx_pharmcat.py` 檢查工具；不需重跑 WGS／PGx pipeline，舊人工選擇按「重試更新」。[環境準備與操作](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。
 
 v9.97：PGx 警示與人工採用選單移到基因標題同一排、靠右；不一致用紅色，LowGQ／相位未定等維持黃色。兩邊結果與確認紀錄收進「詳細」，窄螢幕標題列可橫向捲動。更新後重新載入即可。

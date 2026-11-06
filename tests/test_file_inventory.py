@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import threading
 import time
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -224,3 +225,48 @@ def test_merged_and_simple_fastq_names_are_inventory_only(tree):
     assert {s["sample_id"] for s in rows} == {"MERGED","PLAIN"}
     assert all(len(s["fastq"])==2 for s in rows)
     assert views["secondary"]["wgs"] == []
+
+
+def test_blank_query_never_builds_index_or_returns_all_samples(tree, monkeypatch):
+    def unexpected(*args, **kwargs):
+        raise AssertionError("empty query must not enumerate or build")
+    monkeypatch.setattr(file_index, "refresh", unexpected)
+    monkeypatch.setattr(file_index, "list_samples", unexpected)
+    with client() as c:
+        for query in ('', '   '):
+            response=c.get('/api/files', params={'q':query})
+            assert response.status_code == 200
+            assert response.json()['samples'] == [] and response.json()['total'] == 0
+    assert not config.FILE_INDEX_PATH.exists()
+
+
+def test_existing_snapshot_gets_both_folder_dates_and_copy_paths_without_rebuild(tree, monkeypatch):
+    raw, _, _, published = tree
+    wgs(raw, lanes=1)
+    folders=[published/'S1-dragen', config.LEGACY_PIPELINE_OUT_ROOT/'S1-nckuh']
+    for folder in folders:
+        touch(folder/'08_postprocessing'/f'{folder.name}.pipeline_source.json',json.dumps({'source_sample_id':'S1'}).encode())
+    file_index.refresh()
+    generation=file_index.metadata()['generation']
+    monkeypatch.setattr(file_index,'_native_birth_time',lambda p:1762362000 if p==folders[0] else 1762189200)
+    with client() as c:
+        entries=c.get('/api/files',params={'q':'S1'}).json()['samples'][0]['tertiary']
+    assert {e['absolute_path'] for e in entries} == {str(p) for p in folders}
+    assert {e['created_date'] for e in entries} == {'2025-11-06','2025-11-04'}
+    assert all(e['created_at'].endswith('+08:00') for e in entries)
+    assert file_index.metadata()['generation'] == generation
+
+
+def test_linux_birth_time_is_batched_and_unsupported_time_is_not_guessed(tmp_path,monkeypatch):
+    a,b=tmp_path/'a',tmp_path/'b'
+    a.mkdir();b.mkdir()
+    monkeypatch.setattr(file_index,'_native_birth_time',lambda p:None)
+    monkeypatch.setattr(file_index.sys,'platform','linux')
+    calls=[]
+    def run(args,**kwargs):
+        calls.append(args)
+        return SimpleNamespace(stdout=b'\0'.join((bytes(a),'1762362000'.encode(),bytes(b),b'0'))+b'\0',returncode=0)
+    monkeypatch.setattr(file_index.subprocess,'run',run)
+    assert file_index._birth_times([a,b]) == {a:1762362000}
+    assert len(calls)==1 and calls[0][-2:] == [str(a),str(b)]
+    assert r'--printf=%n\0%W\0' in calls[0]

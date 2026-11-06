@@ -25,13 +25,23 @@ test('empty cells stay blank and single/paired FASTQ has no more control',async(
   assert.match(html,/<td><\/td><td><\/td><td><\/td>/);
 });
 
-test('filenames and copy paths are escaped; directory links open the bounded browser',async()=>{
+test('filenames and copy paths are escaped; dated directory links retain target and copy path',async()=>{
   const {renderFileRows}=await modulePromise;
-  const html=renderFileRows([{sample_id:'<S>',fastq:[{id:'a/b',name:'<img>.fastq.gz',path:'" onclick="alert(1)'}],tertiary:[{root:'hash',path:'S-dragen',name:'S-dragen'}]}],icons);
+  const html=renderFileRows([{sample_id:'<S>',fastq:[{id:'a/b',name:'<img>.fastq.gz',path:'" onclick="alert(1)'}],tertiary:[{root:'hash',path:'S-dragen',name:'S-dragen',created_date:'2026-11-06',created_at:'2026-11-06T00:00:00+08:00',absolute_path:'/tertiary/S-dragen'}]}],icons);
   assert.doesNotMatch(html,/<img>| onclick="/);
   assert.match(html,/&lt;img&gt;/);
   assert.match(html,/download\/a%2Fb/);
   assert.match(html,/browse\?root=hash&amp;path=S-dragen/);
   assert.match(html,/target="_blank" rel="noopener"/);
-  assert.match(html,/data-link-icon/);
+  assert.doesNotMatch(html,/data-link-icon|clinvar-external-link/);
+  assert.match(html,/>2026-11-06<\/a>/);
+  assert.match(html,/data-copy="\/tertiary\/S-dragen"/);
+});
+
+test('unavailable birth time keeps a usable folder name and path copy',async()=>{
+  const {renderFileRows}=await modulePromise;
+  const html=renderFileRows([{sample_id:'S',tertiary:[{root:'h',path:'S-dragen',name:'S-dragen',created_date:null,absolute_path:'/tertiary/S-dragen'}]}],icons);
+  assert.match(html,/>S-dragen<\/a>/);
+  assert.match(html,/data-copy="\/tertiary\/S-dragen"/);
+  assert.doesNotMatch(html,/1970|undefined|缺/);
 });

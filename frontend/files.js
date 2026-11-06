@@ -15,7 +15,10 @@ export function renderFileRows(samples, icons) {
     const columns = ['bam','vcf','other'].map(key => `<td>${(sample[key] || []).map(f => fileEntry(f, icons)).join('')}</td>`).join('');
     const folders = (sample.tertiary || []).map(folder => {
       const query = new URLSearchParams({root:folder.root, path:folder.path});
-      return `<a class="clinvar-external-link file-tertiary-link" href="/api/files/browse?${esc(query)}" target="_blank" rel="noopener" title="瀏覽 ${esc(folder.name)}" aria-label="瀏覽 ${esc(folder.name)} 三級資料">${icons.external}</a>`;
+      const label = folder.created_date || folder.name;
+      const title = `${folder.absolute_path || folder.name}${folder.created_at ? `\n建立時間：${folder.created_at}` : ''}`;
+      const copy = folder.absolute_path ? `<button class="btn-copy" type="button" data-copy="${esc(folder.absolute_path)}" title="複製三級資料夾路徑" aria-label="複製 ${esc(folder.name)} 三級資料夾路徑">${icons.copy}</button>` : '';
+      return `<div class="file-entry file-tertiary-entry"><a class="file-tertiary-link" href="/api/files/browse?${esc(query)}" target="_blank" rel="noopener" title="${esc(title)}" aria-label="瀏覽 ${esc(folder.name)} 三級資料">${esc(label)}</a>${copy}</div>`;
     }).join('');
     return `<tr><th scope="row">${esc(sample.sample_id)}</th><td>${fastq}</td>${columns}<td class="file-tertiary-cell">${folders}</td></tr>`;
   }).join('');
@@ -34,22 +37,32 @@ export function setupFileInventory({apiFetch, showModal, icons}) {
   const count = document.getElementById('file-inventory-count');
   let token = 0, offset = 0, total = 0, timer, controller;
   const limit = 50;
+  const busy = value => { refresh.disabled = value; previous.disabled = value || offset === 0; next.disabled = value || offset+limit >= total; };
+  const clearResults = () => {
+    offset = 0; total = 0; rows.innerHTML = ''; count.textContent = '';
+    status.textContent = input.value.trim() ? '' : '請輸入 sample ID'; busy(false);
+  };
   invalidate = () => {
     token++; clearTimeout(timer); controller?.abort();
     input.value = ''; offset = 0; total = 0;
     rows.innerHTML = ''; meta.textContent = ''; status.textContent = ''; count.textContent = '';
     modal.classList.add('hidden');
   };
-  const busy = value => { refresh.disabled = value; previous.disabled = value || offset === 0; next.disabled = value || offset+limit >= total; };
   async function load(force = false) {
     const version = ++token;
     controller?.abort(); controller = new AbortController();
     const init = {signal:controller.signal};
+    const term = input.value.trim();
+    if (!term && !force) { clearResults(); return; }
     busy(true); status.textContent = force ? '正在更新檔案清單…' : '正在讀取…';
     try {
-      if (force) await apiFetch('/files/refresh', {...init, method:'POST'});
+      if (force) {
+        const updated = await apiFetch('/files/refresh', {...init, method:'POST'});
+        if (version === token && updated?.updated_at) meta.textContent = `更新時間：${updated.updated_at}`;
+      }
       if (version !== token) return;
-      const query = new URLSearchParams({q:input.value.trim(),offset,limit});
+      if (!term) { clearResults(); return; }
+      const query = new URLSearchParams({q:term,offset,limit});
       const data = await apiFetch(`/files?${query}`, init);
       if (version !== token || modal.classList.contains('hidden')) return;
       if (!data) throw new Error('無法讀取檔案清單');
@@ -66,10 +79,13 @@ export function setupFileInventory({apiFetch, showModal, icons}) {
     }
   }
   document.getElementById('btn-file-inventory')?.addEventListener('click', () => {
-    showModal('file-inventory-modal'); offset = 0; void load();
+    token++; controller?.abort(); clearTimeout(timer);
+    input.value = ''; meta.textContent = ''; clearResults();
+    showModal('file-inventory-modal');
   });
   input.addEventListener('input', () => {
-    token++; controller?.abort(); clearTimeout(timer); offset = 0;
+    token++; controller?.abort(); clearTimeout(timer); clearResults();
+    if (!input.value.trim()) return;
     timer = setTimeout(() => void load(), 250);
   });
   refresh.addEventListener('click', () => { offset = 0; void load(true); });

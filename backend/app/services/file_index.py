@@ -17,6 +17,8 @@ from pathlib import Path
 import re
 import sqlite3
 import stat
+import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -313,7 +315,78 @@ def list_samples(query="", offset=0, limit=50):
         rows = db.execute("SELECT payload FROM samples WHERE sample_id LIKE ? ESCAPE '\\' ORDER BY sample_id DESC LIMIT ? OFFSET ?",
                           (pattern, limit, offset)).fetchall()
         meta = json.loads(db.execute("SELECT payload FROM views WHERE name='meta'").fetchone()[0])
-        return dict(meta=meta, total=count, offset=offset, limit=limit, samples=[json.loads(row[0]) for row in rows])
+        samples = [json.loads(row[0]) for row in rows]
+    _tertiary_details(samples)
+    return dict(meta=meta, total=count, offset=offset, limit=limit, samples=samples)
+
+
+def _native_birth_time(path):
+    return getattr(path.stat(), "st_birthtime", None)
+
+
+def _birth_times(paths):
+    """True filesystem birth time only; ctime/mtime are never substitutes.
+
+    Python exposes st_birthtime on macOS. GNU stat uses statx on Linux;
+    batch only the requested page's folders, so existing snapshots work
+    immediately and no complete raw-data rescan is needed.
+    """
+    result, pending = {}, []
+    for path in paths:
+        try:
+            stamp = _native_birth_time(path)
+            if stamp is not None and stamp > 0:
+                result[path] = stamp
+            else:
+                pending.append(path)
+        except OSError:
+            continue
+    if pending and sys.platform.startswith("linux"):
+        try:
+            proc = subprocess.run(
+                ["stat", "--dereference", r"--printf=%n\0%W\0", "--", *map(str, pending)],
+                capture_output=True, check=False, timeout=5,
+            )
+            fields = proc.stdout.split(b"\0")
+            allowed = set(pending)
+            for i in range(0, len(fields)-1, 2):
+                path = Path(os.fsdecode(fields[i]))
+                try:
+                    stamp = float(fields[i+1])
+                    if path in allowed and stamp > 0:
+                        result[path] = stamp
+                except ValueError:
+                    continue
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return result
+
+
+def _tertiary_details(samples):
+    roots = {identity(root): root for root in tertiary_roots()}
+    folders = defaultdict(list)
+    for sample in samples:
+        for folder in sample.get("tertiary", []):
+            base = roots.get(folder.get("root"))
+            relative = Path(folder.get("path", ""))
+            if base is None or relative.is_absolute() or any(p.startswith(".") for p in relative.parts):
+                continue
+            absolute = base / relative
+            try:
+                resolved = absolute.resolve()
+                if not resolved.is_relative_to(base):
+                    continue
+            except OSError:
+                continue
+            folder.update(absolute_path=str(absolute), created_date=None, created_at=None)
+            folders[resolved].append(folder)
+    for path, stamp in _birth_times(folders).items():
+        try:
+            created = datetime.fromtimestamp(stamp, TAIPEI)
+        except (ValueError, OverflowError, OSError):
+            continue
+        for folder in folders[path]:
+            folder.update(created_date=created.strftime("%Y-%m-%d"), created_at=created.isoformat(timespec="seconds"))
 
 
 def download_path(file_id):

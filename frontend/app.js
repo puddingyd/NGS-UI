@@ -13600,7 +13600,7 @@ function setupPipelineList() {
 
 // Wire it up at boot — sits alongside setupCombobox / setupGeneSearch.
 document.addEventListener("DOMContentLoaded", () => {
-  setupFileInventory({apiFetch, showModal, icons: {copy: COPY_ICON_SVG, external: EXTERNAL_LINK_ICON_SVG}});
+  setupFileInventory({apiFetch, showModal, icons: {copy: COPY_ICON_SVG}});
   try { setupSecondaryButton(); } catch (_e) {}
   try { setupDragenButton(); } catch (_e) {}
   try { setupPipelineList(); } catch (_e) {}

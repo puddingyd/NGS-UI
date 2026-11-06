@@ -34,6 +34,8 @@ async def ensure_index(background):
 @router.get("")
 async def inventory(background: BackgroundTasks, q: str = Query("", max_length=128),
                     offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100)):
+    if not q.strip():
+        return dict(meta=file_index.metadata(), total=0, offset=0, limit=limit, samples=[])
     await ensure_index(background)
     return await asyncio.to_thread(file_index.list_samples, q.strip(), offset, limit)
 
