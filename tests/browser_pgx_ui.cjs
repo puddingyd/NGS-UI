@@ -60,19 +60,42 @@ const server=http.createServer((req,res)=>{
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   const analysis=page.locator('#cat-pharmcat-c');
   const card=g=>analysis.locator('.pgx-analysis-gene').filter({has:page.locator('.pgx-gene-head strong',{hasText:new RegExp('^'+g+'$')})});
+  const checkHeader=async gene=>{
+    const layout=await card(gene).locator('.pgx-gene-head').evaluate(head=>{
+      const group=head.querySelector('.pgx-comparison'),label=head.querySelector('strong');
+      const h=head.getBoundingClientRect(),g=group.getBoundingClientRect(),l=label.getBoundingClientRect();
+      return {centerDifference:Math.abs((g.top+g.bottom-l.top-l.bottom)/2),rightGap:h.right-g.right,
+        width:head.clientWidth,contentWidth:head.scrollWidth,height:h.height};
+    });
+    assert(layout.centerDifference<1,`${gene} alert group must share the title line`);
+    assert(layout.height<40,`${gene} title must remain one row`);
+    if(layout.contentWidth<=layout.width+1)assert(Math.abs(layout.rightGap)<2,`${gene} alerts must be right aligned`);
+  };
   assert.equal(await analysis.locator('.js-pgx-result-choice').count(),1);
   for(const g of ['CYP2D6','NAT2','G6PD'])assert.equal(await card(g).locator('.pgx-comparison-badge').count(),0);
   for(const g of ['NUDT15','DPYD'])assert.equal(await card(g).locator('.pgx-comparison').innerText(),'相位未定');
   assert.match(await card('DPYD').locator('.pgx-gene-genotype').innerText(),/c\.1627A>G.*c\.1896T>C/);
   assert.equal(await card('CYP2B6').locator('.pgx-comparison').innerText(),'相位未定');
   assert.equal(await card('CFTR').locator('.pgx-comparison').innerText(),'LowGQ');
+  for(const gene of ['CYP2C9','CYP2B6','CFTR'])await checkHeader(gene);
+  assert.equal(await card('CYP2C9').locator('.pgx-comparison-badge-danger').innerText(),'結果不一致');
+  const red=await card('CYP2C9').locator('.pgx-comparison-badge-danger').evaluate(e=>getComputedStyle(e).backgroundColor);
+  const yellow=await card('CFTR').locator('.pgx-comparison-badge').evaluate(e=>getComputedStyle(e).backgroundColor);
+  assert.equal(red,'rgb(254, 226, 226)');assert.equal(yellow,'rgb(255, 244, 214)');
+  assert.equal(await card('CYP2B6').locator('.pgx-comparison-badge').evaluate(e=>getComputedStyle(e).backgroundColor),yellow);
+  assert.equal(await card('CYP2C9').locator('.pgx-comparison-values').isVisible(),false);
+  await card('CYP2C9').locator('.pgx-detail>summary').click();
+  assert.match(await card('CYP2C9').locator('.pgx-comparison-values').innerText(),/平台：.*DRAGEN：/);
+  await card('CYP2C9').locator('.pgx-detail>summary').click();
   await card('CYP2C9').locator('select').selectOption('dragen:*1/*1');
   await page.waitForFunction(()=>document.querySelector('#cat-pharmcat-c .js-pgx-result-choice')?.value==='dragen:*1/*1'&&!document.querySelector('#cat-pharmcat-c .js-pgx-result-choice').disabled);
   assert.equal(await card('CYP2C9').locator('.pgx-gene-genotype').innerText(),'*1/*1');
   assert.match(await page.locator('#sec-pharmcat').innerText(),/已人工確認採用 DRAGEN/);
   assert.match(await analysis.innerText(),/用藥建議待重新註解/);
-  if(process.env.PGX_SCREENSHOT_DIR){fs.mkdirSync(process.env.PGX_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PGX_SCREENSHOT_DIR,'pgx-desktop.png'),fullPage:true});}
+  await checkHeader('CYP2C9');
+  if(process.env.PGX_SCREENSHOT_DIR){fs.mkdirSync(process.env.PGX_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PGX_SCREENSHOT_DIR,'pgx-desktop.png'),fullPage:true});await card('CYP2C9').screenshot({path:path.join(process.env.PGX_SCREENSHOT_DIR,'pgx-desktop-gene.png')});}
   await page.setViewportSize({width:390,height:844});
+  for(const gene of ['CYP2C9','CYP2B6','CFTR'])await checkHeader(gene);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   if(process.env.PGX_SCREENSHOT_DIR)await card('CYP2C9').screenshot({path:path.join(process.env.PGX_SCREENSHOT_DIR,'pgx-mobile.png')});
   await card('CYP2C9').locator('select').selectOption('platform');

@@ -4599,9 +4599,14 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 #specialized-summary { padding: 12px; }
 @media print { #specialized-summary { display: none; } }
 .pgx-comparison:empty { display: none; }
-.pgx-comparison { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
-.pgx-comparison-badge { display: inline-block; color: #92400e; background: #fff4d6; border-radius: 4px; padding: 2px 6px; font-size: 12px; margin-right: 4px; }
-.pgx-comparison-values { flex-basis: 100%; overflow-wrap: anywhere; font-size: 13px; }
-.pgx-result-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
-.pgx-result-choice select { max-width: 100%; min-width: 0; padding: 5px; }
+.pgx-analysis-gene .pgx-gene-head { flex-wrap: nowrap; align-items: center; overflow-x: auto; }
+.pgx-analysis-gene .pgx-gene-head > * { flex-shrink: 0; white-space: nowrap; }
+.pgx-comparison { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin-left: auto; }
+.pgx-comparison-badge { display: inline-block; color: #92400e; background: #fff4d6; border-radius: 4px; padding: 2px 6px; font-size: 12px; white-space: nowrap; font-weight: 400; }
+.pgx-comparison-badge-danger { color: #b42318; background: #fee2e2; }
+.pgx-comparison-values, .pgx-comparison-audit { margin: 6px 0; overflow-wrap: anywhere; font-size: 13px; }
+.pgx-result-choice { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 6px; font-size: 13px; font-weight: 400; white-space: nowrap; }
+.pgx-result-choice select { max-width: 240px; min-width: 0; padding: 5px; }
+.pgx-report-gene { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pgx-report-gene-alerts { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 4px; margin-left: auto; }
 .pgx-review-note { margin: 8px 0; font-size: 13px; }

@@ -30,7 +30,7 @@ test('same genes are silent; mismatch has explicit source selector and escaped e
   const html=context._pgxComparisonHtml(pgx,'CYP2C9',true);
   assert.match(html,/人工確認後採用/);assert.match(html,/DRAGEN：\*1\/\*1/);
   assert.doesNotMatch(context._pgxComparisonHtml(pgx,'CYP2C9'),/<select/);
-  assert.match(context._pgxComparisonHtml({concordance:{genes:{CYP2C9:{...row,dragen_genotype:'<script>'}}}},'CYP2C9',true),/&lt;script&gt;/);
+  assert.match(context._pgxComparisonDetailsHtml({concordance:{genes:{CYP2C9:{...row,dragen_genotype:'<script>'}}}},'CYP2C9'),/&lt;script&gt;/);
 });
 
 test('validated phase compatibility shows only the phase badge without a mismatch selector',()=>{

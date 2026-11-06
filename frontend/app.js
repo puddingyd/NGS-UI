@@ -8047,7 +8047,7 @@ let _pgxChoiceSaving = false;
 
 function _pgxComparisonHtml(pc, gene, controls = false) {
   const row = pc.concordance?.genes?.[gene] || {};
-  const badges = (row.badges || []).map(value => `<span class="pgx-comparison-badge">${escapeHtml(value)}</span>`).join("");
+  const badges = (row.badges || []).map(value => `<span class="pgx-comparison-badge${value === "結果不一致" ? " pgx-comparison-badge-danger" : ""}">${escapeHtml(value)}</span>`).join("");
   if (!controls) return badges;
   const choice = row.status === "different" || row.stale || row.selected_source === "dragen"
     ? `<label class="pgx-result-choice">人工確認後採用
@@ -8057,11 +8057,16 @@ function _pgxComparisonHtml(pc, gene, controls = false) {
           ${(row.status === "different" ? row.candidates || [] : []).map(gt => `<option value="${escapeAttr("dragen:" + gt)}" ${row.selected_source === "dragen" && row.selected_genotype === gt ? "selected" : ""}>DRAGEN：${escapeHtml(gt)}</option>`).join("")}
         </select>
       </label>` : "";
+  return `${badges}${choice}`;
+}
+
+function _pgxComparisonDetailsHtml(pc, gene) {
+  const row = pc.concordance?.genes?.[gene] || {};
   const evidence = row.status === "different"
     ? `<div class="pgx-comparison-values">平台：${escapeHtml((row.platform_genotypes || []).join("；"))}　DRAGEN：${escapeHtml(row.dragen_genotype || "")}</div>` : "";
   const audit = row.selected_source === "dragen"
-    ? `<span class="muted">已人工確認採用 DRAGEN${row.reviewer ? ` · ${escapeHtml(row.reviewer)}` : ""}</span>` : "";
-  return `${badges}${evidence}${choice}${audit}`;
+    ? `<div class="pgx-comparison-audit muted">已人工確認採用 DRAGEN${row.reviewer ? ` · ${escapeHtml(row.reviewer)}` : ""}</div>` : "";
+  return `${evidence}${audit}`;
 }
 
 document.addEventListener("change", async event => {
@@ -8136,7 +8141,7 @@ function renderPharmcatReportBody(pc) {
     : `<div class="muted">（無符合摘要回報規則的藥物）</div>`;
   const genotypeTable = `<div class="pgx-table-wrap"><table class="pgx-report-table pgx-genotype-table">
     <thead><tr><th>基因</th><th>基因型</th><th>表型</th></tr></thead><tbody>
-    ${genotypeRows.map(row => `<tr><td>${escapeHtml(row.gene)} ${_pgxComparisonHtml(pc, row.gene)}</td><td>${escapeHtml(row.genotype)}</td><td>${escapeHtml(row.phenotype)}</td></tr>`).join("")}
+    ${genotypeRows.map(row => `<tr><td><span class="pgx-report-gene">${escapeHtml(row.gene)}<span class="pgx-report-gene-alerts">${_pgxComparisonHtml(pc, row.gene)}</span></span></td><td>${escapeHtml(row.genotype)}</td><td>${escapeHtml(row.phenotype)}</td></tr>`).join("")}
     </tbody></table></div>`;
   const drugCount = Number(summary.actionable_drugs || 0);
   const summaryDrugCount = Number(summary.summary_drugs || 0);
@@ -8180,15 +8185,15 @@ function _hasPharmcatGeneDetails(g) {
 function renderPharmcatAnalysisGene(pc, row) {
   const gene = row.gene || "";
   const payload = pc.genes?.[gene] || { gene, details: {} };
-  const detail = renderPharmcatGeneDetails(payload, row);
+  const detail = renderPharmcatGeneDetails(payload, row, _pgxComparisonDetailsHtml(pc, gene));
   const attentionClass = row.requires_attention ? " pgx-gene-head-attention" : "";
   return `<div class="pgx-analysis-gene">
     <div class="pgx-gene-head${attentionClass}">
       <strong>${escapeHtml(gene)}</strong>
-      <span class="pgx-gene-genotype">${escapeHtml(row.genotype || "—")}</span>
+      <span class="pgx-gene-genotype" title="${escapeAttr(row.genotype || "—")}">${escapeHtml(row.genotype || "—")}</span>
       <span class="pgx-gene-phenotype">${escapeHtml(row.phenotype || "No phenotype assigned")}</span>
+      <div class="pgx-comparison">${_pgxComparisonHtml(pc, gene, true)}</div>
     </div>
-    <div class="pgx-comparison">${_pgxComparisonHtml(pc, gene, true)}</div>
     ${detail}
   </div>`;
 }
@@ -8252,7 +8257,7 @@ function _pharmcatStarAllelesCell(value) {
   return `<details class="pgx-star-alleles"><summary>${alleles.length} 個可能的 star allele 定義</summary><div>${escapeHtml(alleles.join(", "))}</div></details>`;
 }
 
-function renderPharmcatGeneDetails(g, analysisRow = {}) {
+function renderPharmcatGeneDetails(g, analysisRow = {}, comparisonDetails = "") {
   const fnLine = (name, fn) => {
     name = _pharmcatMeaningfulDetail(name);
     fn = _pharmcatMeaningfulDetail(fn);
@@ -8300,6 +8305,7 @@ function renderPharmcatGeneDetails(g, analysisRow = {}) {
        </div>${uncalled}${messages}${variants}`
     : `<div class="muted pgx-allele-placeholder">（無其他 PharmCAT allele 證據）</div>`;
   return `<details class="pgx-detail"><summary>詳細</summary>
+            ${comparisonDetails}
             <div class="pgx-gene-recommendations">${recommendations}</div>
             ${alleleEvidence}
           </details>`;

@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PGx標題列警示（v9.97，2026-11-06）**：analysis的`pgx-comparison`移入`pgx-gene-head`，警示／人工採用選單同排靠右；header與群組nowrap，窄螢幕僅header橫向scroll不撐開全頁。兩邊原始值與確認者收進原本pgx-detail，由`_pgxComparisonDetailsHtml()`輸出；報告預覽基因欄以flex同排靠右。僅`結果不一致` badge新增danger紅色，LowGQ／相位未定／其他既有警示維持黃色。原本actionable表型顏色保留，不改比對規則v2、人工選擇fingerprint／儲存或DOCX/PDF結果。更新重載即可，無需重跑或重新確認。Chrome驗證標題與警示中心同高、群組靠右、紅／黃區分、手機單排與局部捲動、詳細內原始值及切換／回復／保存失敗。
+
 **PRS六圖並列（v9.95，2026-11-05）**：移除疾病曲線下拉選單，風險評估後固定CHD／T2D／All cancers、Breast／AF／Epilepsy六張卡，桌機3欄2排、≤1050px為2欄、≤640px為1欄。各圖獨立此案／40–60參考組曲線及可展開數值表，共用評估資訊與圖例，保留參考組10／20／至80數值；縱軸各自依疾病調整並有說明。病史／性別／品質不符或舊CHD未分析疾病保留原位置與原因，不畫推測曲線。修改臨床資料或切案清空所有圖，resize重畫且保留數值表展開狀態。僅frontend顯示改動，不改計分、祖源、風險、快照或報告，不需重新分析／計算；更新後重新載入即可。Chrome涵蓋3×2、2欄／手機單欄、逐疾病曲線數值／不適用／舊CHD及切案回歸。
 
 **PGx確效報告調和（v9.94，2026-11-05）**：依使用者提供的PHASE2_DIPLOTYPE_CONCORDANCE_REPORT補規則v2。G6PD只在相同單copy allele的同型合子／單倍體表示間視為相同，不合併異型合子或CNV；DPYD／RYR1以明確het/hom展開及HGVS附帶star別名正規化，裸變異不擅自當het。adapter保留全部comparison_variants（含ref、phase、warnings）獨立於UI非ref80筆上限；元件式source以完整位點call計算variant dosage multiset與DRAGEN比較，吻合且多變異未定相只標相位未定，不把觀察集合當cis/trans。完整diplotype替代解與元件分開處理；缺位點／劑量不同保留不同，已知相位卻未保留分組則無法比對。`_pgx_unphased_variants()`共用DPYD／RYR1，畫面及健檢表列出全部元件，不讀recommendationDiplotypes推定相位。NUDT15只限CLINPGX定義2026-02-09-10-28、DRAGEN2022.01.01，平台*1/*3或*3/*6、DRAGEN兩解*1/*2及*3/*6，且hg38 rs746071566(48037782)的7/13bp與rs116855232(48045719)C/T皆het、無phase/PS/warning，才標phase_compatible／相位未定；缺資料／版本不同保留差異，不泛化*2=*3、不等同功能或表型。舊報告未綁明確DRAGEN版本，RYR1 c.11266C>G的panel未涵蓋結論不直接豁免目前case；CYP2D6真實拷貝數／分組差、G6PD異型合子及UGT1A1 *6差異保留。規則v2使舊人工選擇需重新確認；不改pipeline／原始call或批次重產報告。僅重建合成情境回歸，未重跑報告126案或院內gVCF真值查證，附件不入Git；詳見ops文件。
