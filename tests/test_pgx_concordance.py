@@ -385,6 +385,70 @@ def test_cached_revision_reused_and_corruption_rejected(case):
     assert not annotations.action("SYNTHETIC", "restore", {})["pgx"]["review_blocked"]
 
 
+def test_hospital_build_is_recorded_and_never_reuses_other_build_cache(case, monkeypatch):
+    choose()
+    official = pc._review("SYNTHETIC")["published"]
+    choose(source="platform")
+    monkeypatch.setattr(annotations, "runtime", lambda: {"jar": "synthetic-hospital-jar", "image": "synthetic.sif",
+                                                        "sha256": annotations.HOSPITAL_JAR_SHA256})
+    result = choose()
+    hospital = pc._review("SYNTHETIC")["published"]
+    assert hospital != official and not result["review_blocked"]
+    manifest = annotations.read(annotations.revision_dir("SYNTHETIC", hospital["job_id"]) / "manifest.json")
+    assert manifest["engine_sha256"] == annotations.HOSPITAL_JAR_SHA256
+    choose(source="platform")
+    assert choose(complete=False)["reannotation"]["status"] == "complete"
+    assert pc._review("SYNTHETIC")["published"] == hospital
+
+
+def test_same_choice_with_new_build_stays_blocked_until_new_revision_complete(case, monkeypatch):
+    from app.workers.pgx_reannotate import Worker
+    before = choose()
+    old = pc._review("SYNTHETIC")["published"]
+    monkeypatch.setattr(annotations, "runtime", lambda: {"jar": "synthetic-hospital-jar", "image": "synthetic.sif",
+                                                        "sha256": annotations.HOSPITAL_JAR_SHA256})
+    waiting = choose(complete=False)
+    assert waiting["review_blocked"] and waiting["reannotation"]["busy"]
+    assert waiting["guideline_annotations"] == before["guideline_annotations"]
+    assert pc._review("SYNTHETIC")["published"] == old
+    Worker(pc._review("SYNTHETIC")["annotation_job"]).run()
+    assert not loaded()["review_blocked"]
+    assert pc._review("SYNTHETIC")["published"] != old
+
+
+def test_unavailable_runtime_keeps_request_and_complete_previous_result_then_recovers(case, monkeypatch):
+    before = choose()
+    pointer = pc._review("SYNTHETIC")["published"]
+    runtime = annotations.runtime
+    def unavailable():
+        raise ValueError("PharmCAT 程式校驗不符")
+    def must_not_launch(jid):
+        pytest.fail("unregistered engine must not launch")
+    monkeypatch.setattr(annotations, "runtime", unavailable)
+    monkeypatch.setattr(annotations, "_launch", must_not_launch)
+    failed = choose(complete=False)
+    assert failed["review_blocked"] and failed["reannotation"]["status"] == "failed"
+    assert pc._review("SYNTHETIC")["choices"]["CYP2C9"]["genotype"] == "*1/*1"
+    assert pc._review("SYNTHETIC")["published"] == pointer
+    assert failed["guideline_annotations"] == before["guideline_annotations"]
+    monkeypatch.setattr(annotations, "runtime", runtime)
+    recovered = annotations.action("SYNTHETIC", "retry", {})["pgx"]
+    assert not recovered["review_blocked"]
+    assert pc._review("SYNTHETIC")["published"] == pointer
+
+
+def test_build_changed_after_queue_cannot_silently_publish(case, monkeypatch):
+    from app.workers.pgx_reannotate import Worker
+    choose(complete=False)
+    jid = pc._review("SYNTHETIC")["annotation_job"]
+    monkeypatch.setattr(annotations, "runtime", lambda: {"jar": "synthetic-hospital-jar", "image": "synthetic.sif",
+                                                        "sha256": annotations.HOSPITAL_JAR_SHA256})
+    Worker(jid).run()
+    result = loaded()
+    assert result["review_blocked"] and result["reannotation"]["status"] == "failed"
+    assert not pc._review("SYNTHETIC").get("published")
+
+
 def test_old_manual_choices_require_update_without_mixed_advice(case):
     choose()
     path = case[0] / "SYNTHETIC.pgx_review.json"

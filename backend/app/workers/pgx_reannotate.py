@@ -53,14 +53,8 @@ class Worker:
     def command(self, args):
         self.check()
         with (self.directory / "pharmcat.log").open("ab") as log:
-            env = os.environ.copy()
-            # No inherited site binds or Java options can substitute the pinned tool.
-            for name in list(env):
-                if name.startswith(("APPTAINER_", "SINGULARITY_")) or name in {"JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS"}:
-                    env.pop(name, None)
-            env["TMPDIR"] = str(self.directory / "tmp")
             self.process = subprocess.Popen(jobs.command(self.engine, self.directory, args),
-                cwd=self.directory, env=env, stdout=log, stderr=subprocess.STDOUT,
+                cwd=self.directory, env=jobs.execution_env(self.directory), stdout=log, stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL, start_new_session=True)
             started = time.monotonic()
             try:
@@ -81,7 +75,7 @@ class Worker:
         review = pc._review(self.sid)
         pgx = load_sample_pgx(self.sid)["pgx"]
         if (review.get("annotation_job") != self.job["job_id"]
-                or jobs.request_key(pgx, review["choices"]) != self.job["request_key"]
+                or jobs.request_key(pgx, review["choices"], self.job.get("engine_sha256", jobs.JAR_SHA256)) != self.job["request_key"]
                 or any(pgx["concordance"]["genes"].get(g, {}).get("stale", True) for g in self.job["choices"])):
             raise ValueError("比對來源或人工選擇已更新，請重新確認")
         return review, pgx
@@ -120,6 +114,8 @@ class Worker:
                         raise ValueError("PharmCAT 原報告已變更")
                     raw = json.loads(original)
                     self.engine = jobs.runtime()
+                    if self.engine.get("sha256", jobs.JAR_SHA256) != self.job.get("engine_sha256", jobs.JAR_SHA256):
+                        raise ValueError("PharmCAT 程式已變更，請重試更新")
                     (self.directory / "tmp").mkdir(exist_ok=True)
                     jobs.atomic(self.directory / "original.report.json", raw)
                     result = jobs.reannotate(raw, self.job["choices"], self.directory, self.command)
@@ -132,7 +128,8 @@ class Worker:
                         revision.mkdir(parents=True, exist_ok=False)
                         jobs.atomic(revision / "report.json", result)
                         jobs.atomic(revision / "manifest.json", {
-                            "schema": jobs.SCHEMA, "sample_id": self.sid, "engine_sha256": jobs.JAR_SHA256,
+                            "schema": jobs.SCHEMA, "sample_id": self.sid,
+                            "engine_sha256": self.engine.get("sha256", jobs.JAR_SHA256),
                             "request_key": self.job["request_key"], "choices": self.job["choices"],
                             "baseline_replay_verified": True,
                             "report_sha256": hashlib.sha256((revision / "report.json").read_bytes()).hexdigest(),

@@ -1,9 +1,10 @@
 """Pinned real-tool integration uses generated calls, never patient fixtures."""
 import copy
-import json
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -32,6 +33,82 @@ def test_runtime_rejects_substituted_jar(tmp_path, monkeypatch):
     monkeypatch.setenv("NGS_UI_PGX_PHARMCAT_JAR", str(fake))
     with pytest.raises(ValueError, match="校驗不符"):
         r.runtime()
+
+
+def test_hospital_container_uses_actual_registered_hash_and_checks_version(tmp_path, monkeypatch):
+    image = "/home/datalake_Intermediate/pipeline/nextflow_containers/pharmcat_3.2.0.sif"
+    monkeypatch.setenv("NGS_UI_PGX_PHARMCAT_JAR", str(tmp_path / "missing.jar"))
+    monkeypatch.delenv("NGS_UI_PGX_PHARMCAT_IMAGE", raising=False)
+    monkeypatch.setenv("APPTAINER_BINDPATH", "/unrelated:/pharmcat")
+    original_is_file = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda path: str(path) == image or original_is_file(path))
+    calls = []
+    def execute(args, **kwargs):
+        calls.append(args)
+        assert "APPTAINER_BINDPATH" not in kwargs["env"]
+        if "sha256sum" in args:
+            return subprocess.CompletedProcess(args, 0, r.HOSPITAL_JAR_SHA256 + "  /pharmcat/pharmcat.jar\n", "")
+        return subprocess.CompletedProcess(args, 0, "PharmCAT 3.2.0\n", "")
+    monkeypatch.setattr(subprocess, "run", execute)
+    engine = r.runtime()
+    assert engine == {"jar": "/pharmcat/pharmcat.jar", "image": image, "sha256": r.HOSPITAL_JAR_SHA256, "jar_on_host": False}
+    assert image in calls[0] and image in calls[1]
+    assert "-version" in calls[1]
+
+
+def test_container_jar_is_not_shadowed_by_an_unrelated_host_file(tmp_path):
+    jar = tmp_path / "pharmcat.jar"; jar.write_text("unrelated host copy")
+    work = tmp_path / "work"; work.mkdir()
+    engine = {"jar": str(jar), "image": "synthetic.sif", "jar_on_host": False}
+    args = r.command(engine, work, ["-version"])
+    assert args[args.index("--bind") + 1] == str(work)
+    engine["jar_on_host"] = True
+    args = r.command(engine, work, ["-version"])
+    assert str(jar) + ":" + str(jar) + ":ro" in args[args.index("--bind") + 1]
+
+
+@pytest.mark.parametrize("sha,version", [("0" * 64, "PharmCAT 3.2.0"), (r.HOSPITAL_JAR_SHA256, "PharmCAT 3.1.0")])
+def test_matching_version_alone_or_matching_hash_alone_cannot_pass(tmp_path, monkeypatch, sha, version):
+    monkeypatch.setenv("NGS_UI_PGX_PHARMCAT_JAR", str(tmp_path / "missing.jar"))
+    monkeypatch.setenv("NGS_UI_PGX_PHARMCAT_IMAGE", "/synthetic/pharmcat.sif")
+    def execute(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, sha + "  /pharmcat/pharmcat.jar" if "sha256sum" in args else version, "")
+    monkeypatch.setattr(subprocess, "run", execute)
+    with pytest.raises(ValueError, match="校驗不符|版本不符"):
+        r.runtime()
+
+
+def test_baseline_with_different_data_version_cannot_publish(tmp_path):
+    raw = {"pharmcatVersion": r.VERSION, "dataVersion": r.DATA_VERSION,
+           "genes": {"CYP2C9": {"sourceDiplotypes": [{"label": "*1/*1"}]}}}
+    def different_database(args):
+        r.atomic(tmp_path / "baseline.report.json", {**raw, "dataVersion": "different-database"})
+    with pytest.raises(ValueError, match="版本不相容"):
+        r.reannotate(raw, {}, tmp_path, different_database)
+
+
+@pytest.mark.parametrize("data_version", [r.DATA_VERSION, "old-database"])
+def test_preflight_prints_actual_hospital_identity_and_rejects_other_data_version(monkeypatch, capsys, data_version):
+    path = Path(__file__).resolve().parents[1] / "scripts/check_pgx_pharmcat.py"
+    spec = importlib.util.spec_from_file_location("pgx_preflight", path)
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    engine = {"image": "/synthetic/hospital.sif", "jar": "/pharmcat/pharmcat.jar", "sha256": r.HOSPITAL_JAR_SHA256}
+    monkeypatch.setattr(r, "runtime", lambda: engine)
+    monkeypatch.setattr(sys, "argv", [str(path)])
+    def execute(args, cwd, **kwargs):
+        if "-reporter" in args:
+            r.atomic(cwd / "probe.report.json", {"pharmcatVersion": r.VERSION, "dataVersion": data_version,
+                "genes": {"CYP2C9": {"sourceDiplotypes": [{"label": "*1/*1", "phenotypes": ["Normal Metabolizer"], "activityScore": "2.0"}]}}})
+        return subprocess.CompletedProcess(args, 0, "", "")
+    monkeypatch.setattr(subprocess, "run", execute)
+    if data_version != r.DATA_VERSION:
+        with pytest.raises(ValueError, match="data version mismatch"):
+            module.main()
+        assert "PASS" not in capsys.readouterr().out
+    else:
+        module.main()
+        output = capsys.readouterr().out
+        assert "PASS" in output and r.HOSPITAL_JAR_SHA256 in output and engine["image"] in output
 
 
 @pytest.mark.skipif(not os.environ.get("NGS_UI_TEST_PHARMCAT_JAR"), reason="requires official pinned PharmCAT JAR")

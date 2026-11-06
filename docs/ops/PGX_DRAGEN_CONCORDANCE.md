@@ -1,4 +1,4 @@
-# PGx DRAGEN 比對與人工採用（v9.98；規則 v2）
+# PGx DRAGEN 比對與人工採用（v10.00；規則 v2）
 
 2026-11-06。畫面與報告沿用固定 21 個 PGx genes；不需重跑 PGx pipeline。未連線院內 server，工具環境、真實路徑權限與院內 Word 仍由操作者驗收。
 
@@ -17,13 +17,20 @@
 
 ## 固定工具準備（由部署者執行一次）
 
-使用 PharmCAT **3.2.0**，資料版本 **2026-02-09-10-28**。官方 JAR SHA256 固定為 `a1ceda4c4f8e2c53ed17ff4d104df82360c04d4b15226d09cb7f854bc585a0e7`。不從最新資料庫臨時抓指引、不在個案工作中下載程式。
+使用 PharmCAT **3.2.0**，資料版本 **2026-02-09-10-28**。僅接受下列明確登錄的 JAR；不依版本字樣任意放行其他檔案，不在個案工作中下載程式或新指引。
 
-預設依序使用 `biotools/pharmcat/pharmcat-3.2.0-all.jar`（host Java 17以上），否則使用既有 `/home/datalake_Intermediate/pipeline/nextflow_containers/pharmcat_3.2.0.sif`，舊 `/home/pipeline/nextflow_containers` 為 fallback。SIF 內 `/pharmcat/pharmcat.jar` 亦須通過相同 SHA256，不僅看檔名。若要讓既有容器提供 Java、JAR 另外固定，可同時設定下列兩個環境變數。
+| JAR 來源 | SHA256 |
+|---|---|
+| 官方 release，本機實跑過 | `a1ceda4c4f8e2c53ed17ff4d104df82360c04d4b15226d09cb7f854bc585a0e7` |
+| 院內 SIF，由操作者2026-11-06貼回版本與校驗碼 | `ff3e16f4c2819a5bf315f2c2852e420836944e82548f364758fab39cfe711835` |
+
+v9.98 曾限定與本機官方 JAR byte 完全相同，因此院內檔案即使回報3.2.0仍被拒絕。v10.00 登錄這份院內 JAR，保留既有容器；這是明確的程式身分登錄，**不是已完成院內功能確效**。尚未取得院內 JAR 本體，需由下面 preflight 核對內含資料及合成輸出；每個檢體再通過零改重播與發布檢查。
+
+預設依序使用 `biotools/pharmcat/pharmcat-3.2.0-all.jar`（host Java 17以上），否則使用既有 `/home/datalake_Intermediate/pipeline/nextflow_containers/pharmcat_3.2.0.sif`，舊 `/home/pipeline/nextflow_containers` 為 fallback。SIF 內 `/pharmcat/pharmcat.jar` 亦須符合上表，runtime 再核對精確版本。若要讓既有容器提供 Java、JAR 另外固定，可同時設定下列兩個環境變數。
 
 | 設定 | 用途 |
 |---|---|
-| `NGS_UI_PGX_PHARMCAT_JAR` | 管理者指定官方固定 JAR 的絕對路徑 |
+| `NGS_UI_PGX_PHARMCAT_JAR` | 管理者指定已登錄 JAR 的絕對路徑；若檔案存在會優先於 SIF 內 JAR |
 | `NGS_UI_PGX_PHARMCAT_IMAGE` | 管理者指定提供 Java 的既有 Apptainer SIF；指定時 JAR 唯讀掛入 |
 | `JAVA_BIN` | 未使用 SIF 時的 Java 可執行檔；沿用平台設定 |
 
@@ -36,6 +43,10 @@ python scripts/check_pgx_pharmcat.py --install
 ```
 
 工具缺失、Java／容器無法啟動、版本不符、原建議無法零修改重現或選取 allele 無法辨識時，保留完整舊結果並拒絕 PGx 匯出，需修復環境重試或恢復原結果。安裝工具不會啟停服務。Codex 未在院內執行上述準備／部署。
+
+preflight 不需 `--install` 即可使用上表院內 SIF。會先驗實際 JAR hash／3.2.0，再在獨立暫存實跑合成 CYP2C9 `*1/*1` 的 phenotyper／reporter，須輸出 data `2026-02-09-10-28`、Normal Metabolizer、AS2.0；成功印 `PASS`、實際 image／jar／SHA。不讀改任何檢體；暫存測完移除。若資料版本不符會列出實際及預期版本，不能只因 `-version` 是3.2.0就發布。
+
+job、manifest及request key使用**實際** JAR SHA，兩個build不共用快取；原schema1官方結果按原SHA仍可核對。排程後程式改變會停止並提示重試；重新確認相同選擇但改用不同build，更新期間亦暫停PGx匯出。版本／hash及工具呼叫使用相同清理後的環境，避免繼承其他工作的bind或Java options。baseline及新report都須核對資料版本，既有逐案重播／原子發布門檻保留。
 
 ## 重新註解與發布
 

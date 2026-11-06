@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.00：PGx 工具校驗支援操作者回報的院內 PharmCAT 3.2.0 JAR（`ff3e16…`），保留現有 SIF。記錄實際程式 SHA，不同 build 不共用重新註解快取；資料版本與逐案零修改重播檢查維持。更新後直接執行 `python scripts/check_pgx_pharmcat.py`，會檢查內含資料及合成註解並列出實際容器／SHA；通過後可在平台重試更新，無需下載替代容器。[檢查方式與限制](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。
+
 v9.99：檔案清單預設留白，輸入sample ID後才顯示結果，清除搜尋即清空。三級資料改為可點擊的資料夾建立日期，旁邊Copy圖示複製完整路徑；多個連結代表多個實際資料夾，不是執行次數。檔案系統未提供建立時間時保留資料夾名稱。更新服務與重新載入即可，不需重掃索引或重裝排程。[使用與日期說明](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。
 
 v9.98：人工採用 DRAGEN 後，背景以固定版本 PharmCAT 重新計算表型、activity score 與整份用藥建議，包含 CYP2C9／HLA-B／SLCO1B1 等共同建議。完成後畫面與報告一起更新；更新中或失敗保留上一份完整結果並暫停 PGx 匯出，可重試或恢復原結果。標題列依序為「結果不一致 → 人工確認後採用 → LowGQ 等其他警示」。管理者先執行 `python scripts/check_pgx_pharmcat.py` 檢查工具；不需重跑 WGS／PGx pipeline，舊人工選擇按「重試更新」。[環境準備與操作](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。

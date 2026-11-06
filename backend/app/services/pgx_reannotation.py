@@ -27,6 +27,10 @@ from . import sample_layout
 VERSION = "3.2.0"
 DATA_VERSION = "2026-02-09-10-28"
 JAR_SHA256 = "a1ceda4c4f8e2c53ed17ff4d104df82360c04d4b15226d09cb7f854bc585a0e7"
+# Hospital operator reported `-version` and sha256sum on 2026-11-06.
+# Registration identifies a build; per-case replay still proves compatibility.
+HOSPITAL_JAR_SHA256 = "ff3e16f4c2819a5bf315f2c2852e420836944e82548f364758fab39cfe711835"
+APPROVED_JARS = {JAR_SHA256: "official-release", HOSPITAL_JAR_SHA256: "hospital-3.2.0"}
 SCHEMA = 1
 ACTIVE = {"queued", "running", "cancelling"}
 
@@ -77,8 +81,8 @@ def key(choices):
     return digest({g: {k: c.get(k) for k in ("source", "genotype", "fingerprint")} for g, c in choices.items()})
 
 
-def request_key(pgx, choices):
-    return digest([SCHEMA, JAR_SHA256, pgx.get("source_identity"), key(choices),
+def request_key(pgx, choices, engine_sha256=JAR_SHA256):
+    return digest([SCHEMA, engine_sha256, pgx.get("source_identity"), key(choices),
                    {g: r.get("fingerprint") for g, r in pgx["concordance"]["genes"].items()}])
 
 
@@ -96,6 +100,8 @@ def _alive(job):
 def job_status(jid):
     try:
         job = read(job_dir(jid) / "state.json")
+        if not isinstance(job, dict):
+            raise ValueError("invalid PGx job")
         if job.get("status") in ACTIVE and not _alive(job):
             job = {**job, "status": "failed", "error": "更新中斷，請重試"}
         return job
@@ -125,11 +131,11 @@ def _validated_revision(sid, pointer, pgx):
     directory = revision_dir(sid, pointer["job_id"])
     manifest = read(directory / "manifest.json")
     report_path = directory / "report.json"
-    if (manifest.get("schema") != SCHEMA or manifest.get("engine_sha256") != JAR_SHA256
+    if (manifest.get("schema") != SCHEMA or manifest.get("engine_sha256") not in APPROVED_JARS
             or manifest.get("baseline_replay_verified") is not True
             or manifest.get("sample_id") != sid
             or manifest.get("request_key") != pointer.get("request_key")
-            or manifest.get("request_key") != request_key(pgx, manifest["choices"])
+            or manifest.get("request_key") != request_key(pgx, manifest["choices"], manifest["engine_sha256"])
             or hashlib.sha256(report_path.read_bytes()).hexdigest() != manifest.get("report_sha256")):
         raise ValueError("PGx 更新結果與目前來源不符")
     return manifest, report_path
@@ -182,10 +188,12 @@ def project(sid, pgx, review):
                 active = requested
             row.update(selected_source="dragen", selected_genotype=active["genotype"],
                        reviewer=active.get("reviewer_username", ""), reviewed_at=active.get("updated_at", ""))
-    matches = key(choices) == key(published_choices)
+    job = job_status(review["annotation_job"]) if review.get("annotation_job") else {}
+    published_key = pointer.get("request_key") if isinstance(pointer, dict) else None
+    awaiting_job = bool(review.get("annotation_job")) and job.get("request_key") != published_key
+    matches = key(choices) == key(published_choices) and not awaiting_job
     if not matches or status["status"] == "failed":
         pgx["review_blocked"] = True
-        job = job_status(review["annotation_job"]) if review.get("annotation_job") else {}
         status.update(status=job.get("status", "needs_update"), error=job.get("error") or status["error"])
         if status["status"] == "complete":
             status["status"] = "needs_update"
@@ -216,10 +224,16 @@ def schedule(sid, pgx, review):
         review.pop("annotation_job", None)
         atomic(path, review)
         return
-    wanted = request_key(pgx, choices)
+    engine_error = ""
+    try:
+        engine_sha256 = runtime().get("sha256", JAR_SHA256)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        engine_sha256 = None
+        engine_error = str(exc) if isinstance(exc, ValueError) else "PharmCAT 執行環境無法啟動，請管理者檢查"
+    wanted = request_key(pgx, choices, engine_sha256)
     # Reuse only immutable revisions that still validate against current inputs.
     for cached in reversed(review.get("revisions") or []):
-        if cached.get("request_key") == wanted:
+        if not engine_error and cached.get("request_key") == wanted:
             try:
                 _validated_revision(sid, cached, pgx)
                 review.update(published=cached)
@@ -233,10 +247,14 @@ def schedule(sid, pgx, review):
     directory = job_dir(jid)
     directory.mkdir(parents=True)
     job = {"job_id": jid, "sample_id": sid, "source_sample_id": sample_layout.source_sample_id(sid),
-           "status": "queued", "created": time.time(), "request_key": wanted, "choices": copy.deepcopy(choices)}
+           "status": "failed" if engine_error else "queued", "error": engine_error,
+           "created": time.time(), "request_key": wanted, "engine_sha256": engine_sha256,
+           "choices": copy.deepcopy(choices)}
     atomic(directory / "state.json", job)
     review["annotation_job"] = jid
     atomic(path, review)
+    if engine_error:
+        return
     try:
         _launch(jid)
     except OSError:
@@ -282,7 +300,7 @@ def action(sid, operation, user):
 
 
 def runtime():
-    """Operator-owned paths only. Pin the actual JAR, including inside SIF."""
+    """Only registered builds; identify the actual JAR, including inside SIF."""
     jar = Path(os.environ.get("NGS_UI_PGX_PHARMCAT_JAR", config.BIOTOOLS_DIR / "pharmcat" / f"pharmcat-{VERSION}-all.jar"))
     image = os.environ.get("NGS_UI_PGX_PHARMCAT_IMAGE", "")
     if not jar.is_file() and not image:
@@ -292,17 +310,37 @@ def runtime():
                 image = str(candidate)
                 break
     if jar.is_file():
-        if hashlib.sha256(jar.read_bytes()).hexdigest() != JAR_SHA256:
-            raise ValueError("PharmCAT 程式校驗不符，請管理者檢查")
-        return {"jar": str(jar.resolve()), "image": image}
-    if image:
+        sha256 = hashlib.sha256(jar.read_bytes()).hexdigest()
+        engine = {"jar": str(jar.resolve()), "image": image, "sha256": sha256, "jar_on_host": True}
+    elif image:
         jar_inside = "/pharmcat/pharmcat.jar"
         result = subprocess.run(["apptainer", "exec", "--cleanenv", image, "sha256sum", jar_inside],
-                                capture_output=True, text=True, timeout=30, check=True)
-        if result.stdout.split()[0] != JAR_SHA256:
-            raise ValueError("PharmCAT 容器程式校驗不符，請管理者檢查")
-        return {"jar": jar_inside, "image": image}
-    raise ValueError("尚未準備固定版本 PharmCAT，請管理者完成設定後重試")
+                                capture_output=True, text=True, timeout=30, check=True, env=execution_env())
+        words = result.stdout.split()
+        sha256 = words[0] if words else ""
+        engine = {"jar": jar_inside, "image": image, "sha256": sha256, "jar_on_host": False}
+    else:
+        raise ValueError("尚未準備固定版本 PharmCAT，請管理者完成設定後重試")
+    if sha256 not in APPROVED_JARS:
+        raise ValueError(f"PharmCAT {'容器' if image else ''}程式校驗不符：未登錄的 JAR SHA256 {sha256 or '（無輸出）'}")
+    with tempfile.TemporaryDirectory(prefix="pgx-version-") as name:
+        directory = Path(name)
+        (directory / "tmp").mkdir()
+        result = subprocess.run(command(engine, directory, ["-version"]), cwd=directory,
+                                capture_output=True, text=True, timeout=30, check=True, env=execution_env(directory))
+    if f"PharmCAT {VERSION}" not in [line.strip() for line in (result.stdout + "\n" + result.stderr).splitlines()]:
+        raise ValueError("PharmCAT 版本不符，必須為 3.2.0")
+    return engine
+
+
+def execution_env(directory=None):
+    env = os.environ.copy()
+    for name in list(env):
+        if name.startswith(("APPTAINER_", "SINGULARITY_")) or name in {"JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS"}:
+            env.pop(name, None)
+    if directory is not None:
+        env["TMPDIR"] = str(Path(directory) / "tmp")
+    return env
 
 
 def command(engine, directory, arguments):
@@ -310,7 +348,7 @@ def command(engine, directory, arguments):
             f"-Djava.io.tmpdir={directory / 'tmp'}", "-jar", engine["jar"], *arguments]
     if engine["image"]:
         binds = [str(directory)]
-        if Path(engine["jar"]).is_file():
+        if engine.get("jar_on_host"):
             binds.append(engine["jar"] + ":" + engine["jar"] + ":ro")
         args = ["apptainer", "exec", "--cleanenv", "--bind", ",".join(binds), engine["image"], *args]
     return args
@@ -338,6 +376,7 @@ def reannotate(raw, choices, directory, run):
                             "-reporterJson", "-rt", str(raw.get("title") or "PGx"), "-o", str(directory), "-bf", name]
     run(reporter("baseline"))
     baseline = read(directory / "baseline.report.json")
+    check_original(baseline)
     if semantic(baseline) != semantic(raw):
         raise ValueError("原用藥建議無法完整重現，暫不更新")
     with (directory / "override.tsv").open("w") as f:

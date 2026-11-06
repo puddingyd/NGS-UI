@@ -41,11 +41,27 @@ def main():
     engine = pgx.runtime()
     with tempfile.TemporaryDirectory(prefix="pgx-preflight-") as name:
         directory = Path(name); (directory / "tmp").mkdir()
-        result = subprocess.run(pgx.command(engine, directory, ["-version"]), cwd=directory,
-                                capture_output=True, text=True, timeout=45)
-        if result.returncode or pgx.VERSION not in result.stdout + result.stderr:
-            raise ValueError("PharmCAT could not start with the expected version: " + result.stderr)
-    print(f"PASS: PharmCAT {pgx.VERSION}; official JAR SHA256 verified. No sample data changed.")
+        outside = directory / "probe.tsv"
+        outside.write_text("CYP2C9\t*1/*1\t\t\n")
+        commands = [
+            ["-phenotyper", "-po", str(outside), "-o", str(directory), "-bf", "probe"],
+            ["-reporter", "-ri", str(directory / "probe.phenotype.json"), "-reporterJson",
+             "-rt", "PGx preflight", "-o", str(directory), "-bf", "probe"],
+        ]
+        for arguments in commands:
+            result = subprocess.run(pgx.command(engine, directory, arguments), cwd=directory,
+                                    capture_output=True, text=True, timeout=45, env=pgx.execution_env(directory))
+            if result.returncode:
+                raise ValueError("PharmCAT synthetic preflight failed: " + result.stderr)
+        report = pgx.read(directory / "probe.report.json")
+        if report.get("pharmcatVersion") != pgx.VERSION or report.get("dataVersion") != pgx.DATA_VERSION:
+            raise ValueError(f"PharmCAT data version mismatch: {report.get('dataVersion')}; expected {pgx.DATA_VERSION}")
+        source = report["genes"]["CYP2C9"]["sourceDiplotypes"][0]
+        if source.get("label") != "*1/*1" or source.get("phenotypes") != ["Normal Metabolizer"] or source.get("activityScore") != "2.0":
+            raise ValueError("PharmCAT synthetic CYP2C9 result mismatch")
+    print(f"PASS: PharmCAT {pgx.VERSION}; data {pgx.DATA_VERSION}; registered JAR and synthetic preflight verified.")
+    print(f"Image: {engine['image'] or '(host Java)'}\nJAR: {engine['jar']}\nSHA256: {engine['sha256']}")
+    print("No sample data changed. Each sample must still pass exact baseline replay before publication.")
 
 
 if __name__ == "__main__":
