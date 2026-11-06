@@ -112,7 +112,7 @@ def download(request: Request, file_id: str):
         path = file_index.download_path(file_id)
     except (FileNotFoundError, sqlite3.Error):
         raise HTTPException(404, "找不到檔案")
-    return _download(request, path, [p for roots in file_index.data_roots().values() for p in roots])
+    return _download(request, path, [p for roots in file_index.data_roots().values() for p in roots] + file_index.tertiary_roots())
 
 
 def _tertiary_path(root_id, relative):

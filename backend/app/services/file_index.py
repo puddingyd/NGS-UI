@@ -57,9 +57,9 @@ def data_roots():
 
 
 def tertiary_roots():
-    return list(dict.fromkeys(Path(p).resolve() for p in (
-        config.PIPELINE_OUT_ROOT, config.LEGACY_PIPELINE_OUT_ROOT, config.LEGACY_TERTIARY_OUTPUT_ROOT
-    )))
+    # Inventory/browsing deliberately excludes both legacy roots. Other
+    # clinical consumers keep their existing layout compatibility rules.
+    return [config.PIPELINE_OUT_ROOT.resolve()]
 
 
 @contextmanager
@@ -254,6 +254,10 @@ def build(previous=None):
                         targets.update(aliases.get(original, ()))
             for target in targets:
                 samples[target]["tertiary"].append(dict(name=sid, root=identity(root), path=sid))
+                annotation = _annotation_entry(root, folder, source)
+                if annotation and not any(f["id"] == annotation["id"] for f in samples[target]["vcf"]):
+                    samples[target]["vcf"].append(annotation)
+                    registry[annotation["id"]] = annotation["path"]
 
     for row in samples.values():
         for column in ("fastq", "bam", "vcf", "other"):
@@ -324,6 +328,49 @@ def _native_birth_time(path):
     return getattr(path.stat(), "st_birthtime", None)
 
 
+def _source_record(folder):
+    post = folder / "08_postprocessing"
+    path = post / f"{folder.name}.pipeline_source.json"
+    if not path.exists():
+        path = post / "pipeline_source.json"
+    try:
+        if not path.resolve().is_relative_to(folder.resolve()) or path.stat().st_size > 2_000_000:
+            return {}
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _annotation_entry(root, folder, source=None):
+    # Exact source filename first. No wildcard or sample-prefix matching.
+    candidates = [source] if source else []
+    candidates += [folder.name.removesuffix(s) for s in ("-dragen", "-nckuh", "-inhouse")]
+    for sid in dict.fromkeys(s for s in candidates if isinstance(s, str)):
+        if sid in {"", ".", ".."} or Path(sid).name != sid:
+            continue
+        path = folder / "03_acmg" / f"{sid}.snv_indel.acmg.tsv"
+        try:
+            if path.is_file() and path.resolve().is_relative_to(root):
+                return dict(id=identity(path), name=path.name, path=str(path),
+                            tertiary_root=identity(root), relative_path=str(path.relative_to(root)))
+        except OSError:
+            continue
+    return None
+
+
+def _recorded_annotation_time(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=TAIPEI)
+        return stamp.astimezone(TAIPEI)
+    except (ValueError, OverflowError):
+        return None
+
+
 def _birth_times(paths):
     """True filesystem birth time only; ctime/mtime are never substitutes.
 
@@ -366,6 +413,10 @@ def _tertiary_details(samples):
     roots = {identity(root): root for root in tertiary_roots()}
     folders = defaultdict(list)
     for sample in samples:
+        # Drop old cached annotation links and re-add exact, currently present
+        # files from the allowed primary folder. No full index rebuild needed.
+        sample["vcf"] = [f for f in sample.get("vcf", []) if not f.get("tertiary_root")]
+        valid_folders = []
         for folder in sample.get("tertiary", []):
             base = roots.get(folder.get("root"))
             relative = Path(folder.get("path", ""))
@@ -378,15 +429,29 @@ def _tertiary_details(samples):
                     continue
             except OSError:
                 continue
-            folder.update(absolute_path=str(absolute), created_date=None, created_at=None)
+            folder.update(absolute_path=str(absolute), created_date=None, created_at=None,
+                          display_date=None, date_at=None, date_source=None)
+            record = _source_record(absolute)
+            annotated = _recorded_annotation_time(record.get("annotated_at"))
+            if annotated:
+                folder.update(display_date=annotated.strftime("%Y-%m-%d"),
+                              date_at=annotated.isoformat(timespec="seconds"), date_source="tertiary_annotation")
+            annotation = _annotation_entry(base, absolute, record.get("source_sample_id"))
+            if annotation and not any(f["id"] == annotation["id"] for f in sample["vcf"]):
+                sample["vcf"].append(annotation)
             folders[resolved].append(folder)
+            valid_folders.append(folder)
+        # This also removes legacy links already present in an older DB.
+        sample["tertiary"] = valid_folders
     for path, stamp in _birth_times(folders).items():
         try:
             created = datetime.fromtimestamp(stamp, TAIPEI)
         except (ValueError, OverflowError, OSError):
             continue
         for folder in folders[path]:
-            folder.update(created_date=created.strftime("%Y-%m-%d"), created_at=created.isoformat(timespec="seconds"))
+            folder.update(created_date=created.strftime("%Y-%m-%d"), created_at=created.isoformat(timespec="seconds"),
+                          display_date=created.strftime("%Y-%m-%d"), date_at=created.isoformat(timespec="seconds"),
+                          date_source="filesystem_birth")
 
 
 def download_path(file_id):

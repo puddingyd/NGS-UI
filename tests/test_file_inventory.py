@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import json
+import sqlite3
 from pathlib import Path
 import threading
 import time
@@ -243,7 +244,7 @@ def test_blank_query_never_builds_index_or_returns_all_samples(tree, monkeypatch
 def test_existing_snapshot_gets_both_folder_dates_and_copy_paths_without_rebuild(tree, monkeypatch):
     raw, _, _, published = tree
     wgs(raw, lanes=1)
-    folders=[published/'S1-dragen', config.LEGACY_PIPELINE_OUT_ROOT/'S1-nckuh']
+    folders=[published/'S1-dragen', published/'S1-nckuh']
     for folder in folders:
         touch(folder/'08_postprocessing'/f'{folder.name}.pipeline_source.json',json.dumps({'source_sample_id':'S1'}).encode())
     file_index.refresh()
@@ -270,3 +271,63 @@ def test_linux_birth_time_is_batched_and_unsupported_time_is_not_guessed(tmp_pat
     assert file_index._birth_times([a,b]) == {a:1762362000}
     assert len(calls)==1 and calls[0][-2:] == [str(a),str(b)]
     assert r'--printf=%n\0%W\0' in calls[0]
+
+
+def test_annotation_record_date_and_new_annotation_file_work_with_existing_snapshot(tree,monkeypatch):
+    raw, _, _, published = tree
+    wgs(raw,'26WE0142',lanes=1)
+    folder=published/'26WE0142-nckuh'
+    touch(folder/'08_postprocessing/26WE0142-nckuh.pipeline_source.json',json.dumps({
+        'source_sample_id':'26WE0142','annotated_at':'2026-11-06 13:24:00'
+    }).encode())
+    file_index.refresh()
+    generation=file_index.metadata()['generation']
+    annotation=touch(folder/'03_acmg/26WE0142.snv_indel.acmg.tsv',b'CHROM\tPOS\nchr1\t123\n')
+    monkeypatch.setattr(file_index,'_birth_times',lambda paths:{})
+    with client() as c:
+        data=c.get('/api/files',params={'q':'26WE0142'}).json()['samples'][0]
+        entry=data['tertiary'][0]
+        assert entry['created_date'] is None
+        assert entry['display_date']=='2026-11-06' and entry['date_source']=='tertiary_annotation'
+        assert entry['date_at']=='2026-11-06T13:24:00+08:00'
+        result=data['vcf'][0]
+        assert result['name']==annotation.name and result['path']==str(annotation)
+        response=c.get('/api/files/tertiary-download',params={'root':result['tertiary_root'],'path':result['relative_path']})
+        assert response.status_code==200 and response.content==annotation.read_bytes()
+    assert file_index.metadata()['generation']==generation
+
+
+def test_primary_root_only_hides_legacy_links_even_in_old_snapshot(tree):
+    raw, _, _, published = tree
+    wgs(raw,lanes=1)
+    folders=[published/'S1-dragen',config.LEGACY_PIPELINE_OUT_ROOT/'S1-nckuh',config.LEGACY_TERTIARY_OUTPUT_ROOT/'S1-dragen']
+    for folder in folders:
+        touch(folder/'08_postprocessing'/f'{folder.name}.pipeline_source.json',json.dumps({'source_sample_id':'S1'}).encode())
+        touch(folder/'03_acmg/S1.snv_indel.acmg.tsv')
+    file_index.refresh()
+    data=file_index.list_samples()['samples'][0]
+    assert len(data['tertiary'])==1 and len(data['vcf'])==1
+    assert data['vcf'][0]['path'].startswith(str(published))
+    # Simulate a v9.99 generation with cached links to both retired roots.
+    with sqlite3.connect(config.FILE_INDEX_PATH) as db:
+        stored=json.loads(db.execute('SELECT payload FROM samples').fetchone()[0])
+        for folder in folders[1:]:
+            stored['tertiary'].append(dict(name=folder.name,path=folder.name,root=file_index.identity(folder.parent)))
+        db.execute('UPDATE samples SET payload=?',(json.dumps(stored),));db.commit()
+    with client() as c:
+        data=c.get('/api/files',params={'q':'S1'}).json()['samples'][0]
+        assert len(data['tertiary'])==1
+        assert data['tertiary'][0]['absolute_path']==str(folders[0])
+        for folder in folders[1:]:
+            assert c.get('/api/files/browse',params={'root':file_index.identity(folder.parent),'path':folder.name}).status_code==403
+            assert c.get('/api/files/tertiary-download',params={'root':file_index.identity(folder.parent),'path':folder.name+'/03_acmg/S1.snv_indel.acmg.tsv'}).status_code==403
+
+
+def test_annotation_filename_is_exact_and_outside_symlinks_are_rejected(tree,tmp_path):
+    _,_,_,published=tree
+    folder=published/'26WE0142-nckuh';folder.mkdir()
+    touch(folder/'03_acmg/26WE01420.snv_indel.acmg.tsv')
+    assert file_index._annotation_entry(published,folder,'26WE0142') is None
+    secret=touch(tmp_path/'secret.tsv')
+    (folder/'03_acmg/26WE0142.snv_indel.acmg.tsv').symlink_to(secret)
+    assert file_index._annotation_entry(published,folder,'26WE0142') is None

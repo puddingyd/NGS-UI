@@ -1,6 +1,6 @@
 # 檔案清單、三級資料瀏覽與共用每日索引
 
-v9.99，2026-11-06。已完成本機實作與合成驗證；院內部署、全量檔名與實際下載由操作者驗收。Codex 不 SSH、不重啟服務、不安裝 server timer。
+v10.01，2026-11-06。已完成本機實作與合成驗證；院內部署、全量檔名與實際下載由操作者驗收。Codex 不 SSH、不重啟服務、不安裝 server timer。
 
 ## 使用方式
 
@@ -10,13 +10,15 @@ v9.99，2026-11-06。已完成本機實作與合成驗證；院內部署、全�
 
 - FASTQ：每個 sample 先顯示兩檔，超過時以 `more` 展開、`less` 收合。保留全部 run／lane，依資料夾及檔名排序，使開頭兩檔維持同資料夾的 R1／R2 順序。lane 數不寫死；11/5使用者貼回的26T01345實際為L001–L008、16檔。
 - BAM：主 BAM、`.bam.bai` 或 `.bai`；排除 repeats BAM 及其 index。
-- SNV/indel VCF：原始 DRAGEN hard-filtered 或 in-house ensemble fixed VCF。
+- SNV/indel VCF：原始 DRAGEN hard-filtered 或 in-house ensemble fixed VCF，並列主root個案`03_acmg/{source}.snv_indel.acmg.tsv`。例如`/home/datalake_Intermediate/pipeline/tertiary_output/26WE0142-nckuh/03_acmg/26WE0142.snv_indel.acmg.tsv`。顯示副檔名，TSV不改稱VCF；同樣可下載與Copy。
 - 其他檔案：只列 CNV VCF、SV VCF、合併 CNV/SV VCF、DRAGEN gVCF 與 targeted JSON。In-house 不列 gVCF／合併 CNV/SV／targeted JSON；不列 `.tbi`／`.csi`、CNVkit、mito、ploidy、三級衍生 TSV 等其他項目。
 - 三級資料：以資料夾建立日期（台北時間，YYYY-MM-DD）作為連結文字，另開原本的資料夾瀏覽頁；旁邊Copy圖示複製完整三級目錄路徑。hover顯示完整路徑與建立時間；移除外部連結圖示。
 
-多個三級入口代表索引在不同root找到多個實際資料夾，可能是DRAGEN／in-house或新舊儲存位置各有一份，不是按job執行紀錄建立的按鈕。重跑仍發布在同一個目錄時，不會因此增加一個入口；同日不同目錄仍各列一個日期連結，藉hover或Copy區分。
+多個三級入口代表索引在不同root找到多個實際資料夾，在v10.01後只限主root下的目錄（例如DRAGEN／in-house各有一份），不是按job執行紀錄建立的按鈕。舊版會讀新舊roots，現在明確排除`/home/pipeline/tertiary_output`與舊UI root，連舊快照中的入口都立即剔除。重跑仍發布在同一個目錄時，不會因此增加一個入口；同日不同目錄仍各列一個日期連結，藉hover或Copy區分。
 
-建立時間在搜尋時只讀當頁目錄補入回應，舊SQLite快照立即可用，無需全量重掃。macOS用`st_birthtime`；Linux用單次批次GNU `stat --printf=%n\0%W\0`讀真正birthtime。GNU `%W`為0代表未提供建立時間，此時保留資料夾名稱，不拿ctime／mtime代替。依據：[GNU stat文件](https://www.gnu.org/software/coreutils/manual/html_node/stat-invocation.html)。日期是目前檔案系統對這個目錄的建立紀錄，搬遷或重新複製可能改變，不等同原始分析日期。此修改更新服務與重載即可，不需重新安裝timer。
+建立時間在搜尋時只讀當頁目錄補入回應，舊SQLite快照立即可用，無需全量重掃。macOS用`st_birthtime`；Linux用單次批次GNU `stat --printf=%n\0%W\0`讀真正birthtime。GNU `%W`為0代表未提供建立時間；依使用者確認，此時改用精確`08_postprocessing/{C}.pipeline_source.json`（legacy filename fallback）的`annotated_at`，無時區值依原worker規則解讀為台北時間，其他時區轉台北。連結仍顯示YYYY-MM-DD，hover標明「三級註解紀錄日期」；只有birthtime與有效註解日期都沒有才保留名稱。`created_at/created_date`只記真birthtime，註解替代值存`display_date/date_at/date_source`，不拿ctime／mtime代替。依據：[GNU stat文件](https://www.gnu.org/software/coreutils/manual/html_node/stat-invocation.html)。birthtime分支是目前檔案系統對這個目錄的建立紀錄，搬遷或重新複製可能改變，不等同原始分析日期；註解日期分支則明確使用來源marker記錄的三級註解時間。此修改更新服務與重載即可，不需重新安裝timer。
+
+annotation TSV在當頁讀取時，以source marker及known suffix的精確檔名查驗並補入，無broad prefix／wildcard。只接受主root內檔案，外部symlink不加入；使用既有登入保護的tertiary-download，故舊snapshot即使尚未註冊新TSV也能立即下載。下一次正常重建會一併寫入registry。主root政策變動會使共用索引過期並正常刷新，但當頁已先剔除舊root；不需為這次加檔案而先全量重掃。
 
 同 source ID 的不同 run／batch 都保留，檔名相同者可由 hover title 或複製路徑區分。這是檔案候選彙整，不能據此宣稱某 BAM/VCF 必然來自哪一組 FASTQ；分析仍沿用既有來源驗證規則。
 
@@ -35,7 +37,7 @@ v9.99，2026-11-06。已完成本機實作與合成驗證；院內部署、全�
 | In-house VCF | `nextflow_output/**/{S}/04_snv_indel/{S}.ensemble.fixed.vcf.gz`；`05_cnv_sv/{S}.gcnv.vcf.gz`、`{S}.delly.vcf.gz` |
 | DRAGEN gVCF | 同DRAGEN roots 下原有PRS路徑：`vcf.gz/` 或 `gvcf.gz/` 的 `{S}.hard-filtered.gvcf.gz`／`{S}.gvcf.gz`，以及 `other/{S}/germline_seq/{S}.hard-filtered.gvcf.gz` |
 | targeted JSON | 同DRAGEN roots 下 `{S}.targeted.json`，包含 `other/{S}/germline_seq/` |
-| 三級資料 | `NGS_UI_TERTIARY_ROOT`，並保留 legacy pipeline／UI root；依精確 source marker 連回 sample |
+| 三級資料／annotation TSV | 僅`NGS_UI_TERTIARY_ROOT`，預設`/home/datalake_Intermediate/pipeline/tertiary_output`；依精確 source marker 連回sample，不讀legacy pipeline／UI roots |
 
 索引的 FASTQ 名稱解析另外兼容 `_R1/2`、`.R1/2`、`.fq.gz`、有無 `_S數字`／lane 及 `_merged`。**二級分析的可執行輸入仍由原 parser 決定**：WGS維持lane成對規則、忽略merged；不完整R1/R2只出現在檔案清單，不能因此變成可執行samplesheet。沒有符合命名的FASTQ不猜sample；數量與前30個範例存於索引meta供院內補驗收。
 
@@ -87,14 +89,14 @@ ClinVar／LitVar／HPO等資料庫更新排程維持原本頻率，不混入檔�
 - `GET /api/files`：sample ID搜尋及分頁；空q直接回空結果，不觸發首次掃描。非空q讀已發布索引，冷啟動才建立，過期背景更新；當頁三級目錄即時補建立時間及完整路徑。
 - `POST /api/files/refresh`：強制共用更新。
 - `GET/HEAD /api/files/download/{id}`：只接受索引registry中的檔案ID，下載時重新核對配置root。
-- `GET /api/files/browse?root=...&path=...`：三級root內逐層瀏覽，含路徑導覽及上一層；上層到三級root為止。
-- `GET/HEAD /api/files/tertiary-download?root=...&path=...`：下載三級root內檔案。
+- `GET /api/files/browse?root=...&path=...`：單一主三級root內逐層瀏覽，含路徑導覽及上一層；上層到主三級root為止，legacy root ID不再接受。
+- `GET/HEAD /api/files/tertiary-download?root=...&path=...`：下載主三級root內檔案，亦供當頁補入的annotation TSV使用。
 
 下載逐元件以no-follow開啟，確認regular file後串流，不將整個BAM/FASTQ載進記憶體；支援HEAD、單段Range及suffix range。越界／外部symlink／特殊檔案不讀取；關閉或中斷時關閉descriptor。資料夾頁以HTML escape處理檔名，任意檔案都以attachment下載，不直接執行其中HTML；不提供上傳、改名或刪除。dot目錄（包含`.staging`／`.rollback`）不開放瀏覽。院內的特殊symlink layout需個別驗收。
 
 ## 驗證
 
-- Python合成檔案樹涵蓋8lane16檔、BAI兩種命名、限定其他類型、空欄、in-house排除、raw-only／單邊配對、多run、重分析source、VCF-only三級相容、root變更、重疊／舊timer去重、失敗保留generation。
+- Python合成檔案樹涵蓋8lane16檔、BAI兩種命名、限定其他類型、空欄、in-house排除、raw-only／單邊配對、多run、重分析source、VCF-only三級相容、root變更、重疊／舊timer去重、失敗保留generation；另驗主root限定、舊快照legacy剔除、26WE0142 annotation exact filename及即時下載、birthtime缺失時註解紀錄日期fallback。
 - API驗證登入、搜尋／分頁、下載內容、HEAD／Range、刪除後404、越界／外部symlink、資料夾路徑導覽與惡意檔名escaping。
 - Chrome合成前端驗證按鈕位置、六欄、16檔展開／收合、Copy、下載、三級日期連結與路徑複製、空格、空白開啟／重開／清除／遲到回應、搜尋／分頁／更新、Escape，以及桌機／手機版面。手機可在表格內橫向捲動，不擴張整個頁面。
 - 現有二／三級與前端回歸一併執行；實際院內全量命名、各root權限及大型檔下載仍待部署驗收，不能以合成測試宣稱已完成。

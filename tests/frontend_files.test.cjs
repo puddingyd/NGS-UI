@@ -45,3 +45,14 @@ test('unavailable birth time keeps a usable folder name and path copy',async()=>
   assert.match(html,/data-copy="\/tertiary\/S-dragen"/);
   assert.doesNotMatch(html,/1970|undefined|缺/);
 });
+
+test('annotation date fallback is labeled by provenance and annotation TSV downloads from primary folder',async()=>{
+  const {renderFileRows}=await modulePromise;
+  const html=renderFileRows([{sample_id:'26WE0142',vcf:[{id:'a',name:'26WE0142.snv_indel.acmg.tsv',path:'/primary/26WE0142-nckuh/03_acmg/26WE0142.snv_indel.acmg.tsv',tertiary_root:'primary',relative_path:'26WE0142-nckuh/03_acmg/26WE0142.snv_indel.acmg.tsv'}],tertiary:[{root:'primary',path:'26WE0142-nckuh',name:'26WE0142-nckuh',created_date:null,display_date:'2026-11-06',date_source:'tertiary_annotation',date_at:'2026-11-06T13:24:00+08:00',absolute_path:'/primary/26WE0142-nckuh'}]}],icons);
+  assert.match(html,/>2026-11-06<\/a>/);
+  assert.match(html,/三級註解紀錄日期/);
+  assert.doesNotMatch(html,/建立時間/);
+  assert.match(html,/tertiary-download\?root=primary&amp;path=26WE0142-nckuh%2F03_acmg%2F26WE0142.snv_indel.acmg.tsv/);
+  assert.match(html,/>26WE0142.snv_indel.acmg.tsv<\/a>/);
+  assert.match(html,/data-copy="\/primary\/26WE0142-nckuh\/03_acmg\/26WE0142.snv_indel.acmg.tsv"/);
+});

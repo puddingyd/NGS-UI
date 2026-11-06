@@ -5,7 +5,7 @@ const repo=path.resolve(__dirname,'..');
 const file=(name,folder='raw')=>({id:Buffer.from(name).toString('hex'),name,path:`/synthetic/${folder}/${name}`});
 const fastqs=[];
 for(let lane=1;lane<=8;lane++)for(let read=1;read<=2;read++)fastqs.push(file(`S1_S50_L00${lane}_R${read}_001.fastq.gz`));
-const samples=[{sample_id:'S1',fastq:fastqs,bam:[file('S1.bam'),file('S1.bam.bai')],vcf:[file('S1.hard-filtered.vcf.gz')],other:['cnv.vcf.gz','sv.vcf.gz','cnv_sv.vcf.gz','hard-filtered.gvcf.gz','targeted.json'].map(s=>file('S1.'+s)),tertiary:[{name:'S1-dragen',root:'root',path:'S1-dragen',created_date:'2026-11-06',created_at:'2026-11-06T00:00:00+08:00',absolute_path:'/synthetic/tertiary/S1-dragen'},{name:'S1-nckuh',root:'legacy',path:'S1-nckuh',created_date:'2026-11-04',absolute_path:'/synthetic/legacy/S1-nckuh'}]},
+const samples=[{sample_id:'S1',fastq:fastqs,bam:[file('S1.bam'),file('S1.bam.bai')],vcf:[file('S1.hard-filtered.vcf.gz'),{...file('S1.snv_indel.acmg.tsv','tertiary/S1-dragen/03_acmg'),tertiary_root:'root',relative_path:'S1-dragen/03_acmg/S1.snv_indel.acmg.tsv'}],other:['cnv.vcf.gz','sv.vcf.gz','cnv_sv.vcf.gz','hard-filtered.gvcf.gz','targeted.json'].map(s=>file('S1.'+s)),tertiary:[{name:'S1-dragen',root:'root',path:'S1-dragen',created_date:null,display_date:'2026-11-06',date_source:'tertiary_annotation',date_at:'2026-11-06T00:00:00+08:00',absolute_path:'/synthetic/tertiary/S1-dragen'},{name:'S1-nckuh',root:'root',path:'S1-nckuh',created_date:'2026-11-04',absolute_path:'/synthetic/tertiary/S1-nckuh'}]},
 {sample_id:'RAW_ONLY',fastq:[file('RAW_ONLY_R1.fastq.gz'),file('RAW_ONLY_R2.fastq.gz')],bam:[],vcf:[],other:[],tertiary:[]},
 ...Array.from({length:53},(_,i)=>({sample_id:`WES${i}`,fastq:[],bam:[],vcf:[],other:[],tertiary:[]}))];
 const server=http.createServer((req,res)=>{
@@ -26,6 +26,7 @@ const server=http.createServer((req,res)=>{
   await context.route('**/api/**',async route=>{
     const url=new URL(route.request().url()),p=url.pathname;
     if(p.startsWith('/api/files/download/'))return route.fulfill({status:200,headers:{'content-disposition':'attachment; filename="synthetic.fastq.gz"'},body:'SYNTHETIC DOWNLOAD'});
+    if(p==='/api/files/tertiary-download')return route.fulfill({status:200,headers:{'content-disposition':'attachment; filename="S1.snv_indel.acmg.tsv"'},body:'CHROM\tPOS\nchr1\t123'});
     if(p==='/api/files/browse')return route.fulfill({contentType:'text/html',body:'<html><body><h1>三級資料</h1><a href="?root=root&path=S1-dragen/03_acmg">03_acmg/</a></body></html>'});
     if(p==='/api/files/refresh'){refreshes++;return route.fulfill({json:{}});}
     if(p==='/api/files'){
@@ -73,6 +74,13 @@ const server=http.createServer((req,res)=>{
     assert.equal(await row.locator('.file-tertiary-link svg').count(),0);
     await row.locator('.file-tertiary-entry .btn-copy').first().click();
     assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'/synthetic/tertiary/S1-dragen');
+    const annotation=row.locator('a').filter({hasText:'S1.snv_indel.acmg.tsv'});
+    assert.equal(await annotation.count(),1);
+    const annotationDownload=page.waitForEvent('download');await annotation.click();
+    assert.equal((await annotationDownload).suggestedFilename(),'S1.snv_indel.acmg.tsv');
+    await row.locator('.btn-copy[data-copy$="S1.snv_indel.acmg.tsv"]').click();
+    assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'/synthetic/tertiary/S1-dragen/03_acmg/S1.snv_indel.acmg.tsv');
+    assert.match(await row.locator('.file-tertiary-link').first().getAttribute('title'),/三級註解紀錄日期/);
     const popupPromise=page.waitForEvent('popup');await row.locator('.file-tertiary-link').first().click();
     const popup=await popupPromise;await popup.waitForLoadState();assert.match(await popup.locator('body').innerText(),/03_acmg/);await popup.close();
     const out=process.env.FILE_SCREENSHOT_DIR||'/private/tmp/ngs-file-ui-preview';fs.mkdirSync(out,{recursive:true});

@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.01：檔案清單的三級資料只讀主root `/home/datalake_Intermediate/pipeline/tertiary_output`，排除舊pipeline／UI位置，舊快照入口也立即過濾。SNV/indel VCF欄並列原始VCF與對應`03_acmg/*.snv_indel.acmg.tsv`，皆可下載及Copy。檔案系統未提供建立時間時，日期改用三級註解紀錄並在hover標明；既有索引可即時補上註解檔。更新服務與重載即可，不需重跑分析／重裝timer。[操作與來源](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。
+
 v10.00：PGx 工具校驗支援操作者回報的院內 PharmCAT 3.2.0 JAR（`ff3e16…`），保留現有 SIF。記錄實際程式 SHA，不同 build 不共用重新註解快取；資料版本與逐案零修改重播檢查維持。更新後直接執行 `python scripts/check_pgx_pharmcat.py`，會檢查內含資料及合成註解並列出實際容器／SHA；通過後可在平台重試更新，無需下載替代容器。[檢查方式與限制](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。
 
 v9.99：檔案清單預設留白，輸入sample ID後才顯示結果，清除搜尋即清空。三級資料改為可點擊的資料夾建立日期，旁邊Copy圖示複製完整路徑；多個連結代表多個實際資料夾，不是執行次數。檔案系統未提供建立時間時保留資料夾名稱。更新服務與重新載入即可，不需重掃索引或重裝排程。[使用與日期說明](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。

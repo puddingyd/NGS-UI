@@ -4,7 +4,10 @@ let invalidate = () => {};
 export function resetFileInventory() { invalidate(); }
 
 function fileEntry(file, icons) {
-  return `<div class="file-entry"><a href="/api/files/download/${encodeURIComponent(file.id)}" title="${esc(file.path)}">${esc(file.name)}</a><button class="btn-copy" type="button" data-copy="${esc(file.path)}" title="複製路徑" aria-label="複製 ${esc(file.name)} 路徑">${icons.copy}</button></div>`;
+  const href = file.tertiary_root
+    ? `/api/files/tertiary-download?${new URLSearchParams({root:file.tertiary_root, path:file.relative_path})}`
+    : `/api/files/download/${encodeURIComponent(file.id)}`;
+  return `<div class="file-entry"><a href="${esc(href)}" title="${esc(file.path)}">${esc(file.name)}</a><button class="btn-copy" type="button" data-copy="${esc(file.path)}" title="複製路徑" aria-label="複製 ${esc(file.name)} 路徑">${icons.copy}</button></div>`;
 }
 
 export function renderFileRows(samples, icons) {
@@ -15,8 +18,10 @@ export function renderFileRows(samples, icons) {
     const columns = ['bam','vcf','other'].map(key => `<td>${(sample[key] || []).map(f => fileEntry(f, icons)).join('')}</td>`).join('');
     const folders = (sample.tertiary || []).map(folder => {
       const query = new URLSearchParams({root:folder.root, path:folder.path});
-      const label = folder.created_date || folder.name;
-      const title = `${folder.absolute_path || folder.name}${folder.created_at ? `\n建立時間：${folder.created_at}` : ''}`;
+      const label = folder.display_date || folder.created_date || folder.name;
+      const date = folder.date_at || folder.created_at;
+      const dateLabel = folder.date_source === 'tertiary_annotation' ? '三級註解紀錄日期' : '建立時間';
+      const title = `${folder.absolute_path || folder.name}${date ? `\n${dateLabel}：${date}` : ''}`;
       const copy = folder.absolute_path ? `<button class="btn-copy" type="button" data-copy="${esc(folder.absolute_path)}" title="複製三級資料夾路徑" aria-label="複製 ${esc(folder.name)} 三級資料夾路徑">${icons.copy}</button>` : '';
       return `<div class="file-entry file-tertiary-entry"><a class="file-tertiary-link" href="/api/files/browse?${esc(query)}" target="_blank" rel="noopener" title="${esc(title)}" aria-label="瀏覽 ${esc(folder.name)} 三級資料">${esc(label)}</a>${copy}</div>`;
     }).join('');
