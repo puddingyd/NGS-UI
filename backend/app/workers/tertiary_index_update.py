@@ -1,20 +1,14 @@
-"""Refresh the tertiary-analysis VCF discovery index for systemd."""
-from __future__ import annotations
-
-from ..services import dragen_jobs
+"""Legacy entry point for the single shared daily file index."""
 
 
-def main() -> int:
-    idx = dragen_jobs.refresh_index()
-    print(
-        "tertiary index refreshed: "
-        f"dragen={len(idx.get('dragen', []))} "
-        f"inhouse={len(idx.get('inhouse', []))} "
-        f"duration={idx.get('scan_duration_sec')}s "
-        f"updated_at={idx.get('updated_at')}"
-    )
-    return 0
+def main():
+    from .file_index_update import main as update
+    return update()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Old installed systemd units still invoke this module. Read the running
+    # web service's path environment before importing application config.
+    import runpy
+    from pathlib import Path
+    runpy.run_path(str(Path(__file__).resolve().parents[3] / "scripts/update_file_index.py"), run_name="__main__")

@@ -4,6 +4,7 @@
 // ------------------------------------------------------------------
 
 import { resetPrsSample, prsClinicalInformationPending } from './prs.js';
+import { setupFileInventory, resetFileInventory } from './files.js';
 
 const API_BASE = "/api";
 const OMIM_DISEASE_SLOT_COUNT = 16;
@@ -3880,6 +3881,9 @@ function setLoggedInUser(username) {
   if (secondary) secondary.hidden = !username;
   const dr = document.getElementById("btn-dragen-launch");
   if (dr) dr.hidden = !username;
+  const files = document.getElementById("btn-file-inventory");
+  if (files) files.hidden = !username;
+  if (!username) resetFileInventory();
   const pipelineList = document.getElementById("btn-pipeline-list");
   if (pipelineList) pipelineList.hidden = !username;
   // #btn-phenotype-tool is intentionally always visible — the HPO/panel
@@ -13536,6 +13540,7 @@ function setupPipelineList() {
 
 // Wire it up at boot — sits alongside setupCombobox / setupGeneSearch.
 document.addEventListener("DOMContentLoaded", () => {
+  setupFileInventory({apiFetch, showModal, icons: {copy: COPY_ICON_SVG, external: EXTERNAL_LINK_ICON_SVG}});
   try { setupSecondaryButton(); } catch (_e) {}
   try { setupDragenButton(); } catch (_e) {}
   try { setupPipelineList(); } catch (_e) {}

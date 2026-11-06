@@ -1,0 +1,58 @@
+#file-inventory-modal { z-index: 120; }
+#file-inventory-modal .file-inventory-card {
+  width: calc(100vw - 32px);
+  max-width: 1720px;
+  max-height: calc(100dvh - 110px);
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+.file-inventory-head, .file-inventory-toolbar, .file-inventory-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.file-inventory-head { justify-content: space-between; margin-bottom: 12px; }
+.file-inventory-head h2 { margin: 0; }
+.file-inventory-toolbar { margin-bottom: 12px; }
+.file-inventory-toolbar input[type="search"] {
+  width: 260px; max-width: 100%; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 5px; font: inherit;
+}
+.file-inventory-toolbar .file-index-meta { margin-left: auto; }
+.file-table-scroll { overflow: auto; min-height: 0; }
+.file-inventory-table { width: 100%; min-width: 1200px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.file-inventory-table th, .file-inventory-table td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+.file-inventory-table thead th { position: sticky; top: 0; z-index: 1; background: #f5f5f5; font-weight: 600; }
+.file-inventory-table th:first-child { width: 115px; overflow-wrap: anywhere; }
+.file-inventory-table th:last-child { width: 76px; }
+.file-inventory-table tbody th { font-weight: 500; }
+.file-entry { display: flex; align-items: baseline; gap: 3px; margin-bottom: 4px; }
+.file-entry a { color: #0969da; overflow-wrap: anywhere; text-decoration: none; min-width: 0; }
+.file-entry a:hover { text-decoration: underline; }
+.file-entry .btn-copy { flex: 0 0 auto; margin: 0; }
+.file-fastq-more > summary { cursor: pointer; color: #737373; list-style: none; font-size: 11px; width: fit-content; }
+.file-fastq-more > summary::-webkit-details-marker { display: none; }
+.file-fastq-more .when-open, .file-fastq-more[open] .when-closed { display: none; }
+.file-fastq-more[open] .when-open { display: inline; }
+.file-fastq-more[open] > summary { margin-bottom: 5px; }
+.file-tertiary-link { padding: 4px; margin: 0 3px 0 0; }
+.file-tertiary-link svg { width: 15px; height: 15px; }
+.file-inventory-footer { justify-content: flex-end; padding-top: 12px; }
+.file-inventory-footer #file-inventory-status { margin-right: auto; }
+.file-browser main { max-width: 1250px; margin: 28px auto; padding: 0 20px; }
+.file-browser h1 { font-size: 21px; }
+.file-browser nav { margin-bottom: 18px; overflow-wrap: anywhere; }
+.file-browser a { color: #0969da; text-decoration: none; }
+.file-browser a:hover { text-decoration: underline; }
+.file-browser-table { width: 100%; border-collapse: collapse; background: white; }
+.file-browser-table td, .file-browser-table th { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+.file-browser-table td:first-child { overflow-wrap: anywhere; }
+.file-browser-table td:nth-child(n+2) { white-space: nowrap; }
+@media(max-width: 640px) {
+  #file-inventory-modal .file-inventory-card { width: calc(100vw - 16px); max-height: calc(100dvh - 32px); padding: 12px; }
+  .file-inventory-toolbar { gap: 8px; }
+  .file-inventory-toolbar .file-index-meta { width: 100%; margin-left: 0; }
+}

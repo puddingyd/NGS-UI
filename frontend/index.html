@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="./style.css" />
   <link rel="stylesheet" href="./documents.css" />
   <link rel="stylesheet" href="./prs.css" />
+  <link rel="stylesheet" href="./files.css" />
 </head>
 <body>
   <header class="topbar">
@@ -22,6 +23,7 @@
       <a id="btn-phenotype-tool" class="btn btn-ghost" href="/phenotype/" target="_blank" rel="noopener" title="輸入 HPO / panel，輸出存到伺服器讓載入新個案自動讀取">輸入臨床表徵 (HPO/panel)</a>
       <button id="btn-secondary-launch" class="btn btn-ghost" type="button" hidden title="搜尋 FASTQ、建立二級分析 samplesheet，並產生 DGX2 tmux 執行指令">二級分析</button>
       <button id="btn-dragen-launch" class="btn btn-ghost" type="button" hidden title="從 DRAGEN VCF 或 in-house ensemble Nextflow 輸出啟動三級分析（mito + SNV/Indel + CNV/SV）">三級分析</button>
+      <button id="btn-file-inventory" class="btn btn-ghost" type="button" hidden>檔案清單</button>
       <button id="btn-upload-list" class="btn btn-ghost" type="button" hidden title="上傳未完成報告清單 xlsx（建立 LIS_ID ↔ MRN ↔ 姓名 對應）">上傳個案清單</button>
       <input id="upload-list-file" type="file" accept=".xlsx,.xlsm" multiple hidden />
     </div>
@@ -965,6 +967,32 @@
         <div class="secondary-tmux-help muted">
           進入進度畫面：<code id="secondary-help-attach"></code>；離開但不中斷：先按 <code>Ctrl-b</code> 再按 <code>d</code>；查看所有 session：<code>tmux ls</code>。
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="file-inventory-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="file-inventory-title">
+    <div class="modal-card file-inventory-card">
+      <div class="file-inventory-head">
+        <h2 id="file-inventory-title">檔案清單</h2>
+        <button type="button" class="btn btn-ghost" data-close="file-inventory-modal">關閉</button>
+      </div>
+      <div class="file-inventory-toolbar">
+        <input id="file-inventory-search" type="search" placeholder="搜尋 sample ID" aria-label="搜尋 sample ID" autocomplete="off" />
+        <button id="file-inventory-refresh" type="button" class="btn btn-ghost">↻ 更新</button>
+        <span id="file-inventory-meta" class="muted file-index-meta"></span>
+      </div>
+      <div class="file-table-scroll">
+        <table class="file-inventory-table">
+          <thead><tr><th scope="col">sample ID</th><th scope="col">fastq</th><th scope="col">bam</th><th scope="col">SNV/indel VCF</th><th scope="col">其他檔案</th><th scope="col">三級資料</th></tr></thead>
+          <tbody id="file-inventory-rows"></tbody>
+        </table>
+      </div>
+      <div class="file-inventory-footer">
+        <span id="file-inventory-status" class="muted" role="status"></span>
+        <span id="file-inventory-count" class="muted"></span>
+        <button id="file-inventory-prev" type="button" class="btn btn-ghost" disabled>上一頁</button>
+        <button id="file-inventory-next" type="button" class="btn btn-ghost" disabled>下一頁</button>
       </div>
     </div>
   </div>

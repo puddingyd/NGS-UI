@@ -17,12 +17,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 
 from ..auth import current_user
-from ..services import dragen_jobs, litvar2_jobs
+from ..services import dragen_jobs, litvar2_jobs, file_index
 
 router = APIRouter(
     prefix="/api/dragen",
@@ -75,7 +76,11 @@ async def get_pipeline_vcfs(background: BackgroundTasks):
 @router.post("/index/refresh")
 async def post_refresh_index():
     """Force a rescan now (manual 🔄 button). Synchronous; returns new meta."""
-    idx = await asyncio.to_thread(dragen_jobs.refresh_index)
+    try:
+        views = await asyncio.to_thread(file_index.refresh, force=True, requested_at_ns=time.time_ns())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, str(exc))
+    idx = views["tertiary"]
     return {
         "meta":    _meta(idx),
         "dragen":  idx.get("dragen", []),

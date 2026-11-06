@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the shared NGS-UI FASTQ/BAM/VCF file index
+After=ngs-ui.service
+
+[Service]
+Type=oneshot
+User=n102968
+WorkingDirectory=/home/n102968/NGS_UI/NGS-UI
+ExecStart=/usr/bin/env python3 /home/n102968/NGS_UI/NGS-UI/scripts/update_file_index.py
+TimeoutStartSec=1h
+Nice=10
+IOSchedulingClass=idle

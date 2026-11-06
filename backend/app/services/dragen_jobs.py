@@ -14,7 +14,6 @@ seconds.
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
@@ -101,7 +100,7 @@ _DRAGEN_VCF_GLOBS = [
 _SUFFIX_RE = re.compile(r"\.hard-filtered\.vcf\.gz$", re.IGNORECASE)
 
 
-def list_dragen_vcfs() -> list[dict]:
+def list_dragen_vcfs(*, paths=None) -> list[dict]:
     """Scan every configured DRAGEN_VCF_ROOTS for hard-filtered VCFs.
 
     Returns most-recent-first rows containing path, sample_id, run,
@@ -117,7 +116,12 @@ def list_dragen_vcfs() -> list[dict]:
         if not root.exists():
             continue
         for pat in _DRAGEN_VCF_GLOBS:
-            for p in root.glob(pat):
+            candidates = root.glob(pat) if paths is None else (
+                p for p in paths if p.parent.name == "vcf.gz"
+                and p.parent.parent.parent == root.resolve()
+                and p.name.endswith("hard-filtered.vcf.gz")
+            )
+            for p in candidates:
                 if not p.is_file():
                     continue
                 sp = str(p)
@@ -193,7 +197,7 @@ def _normalize_seq_type(value: str | None, *, default: str) -> str:
     return default
 
 
-def list_inhouse_vcfs() -> list[dict]:
+def list_inhouse_vcfs(*, paths=None) -> list[dict]:
     """Scan INHOUSE_VCF_ROOTS for in-house ensemble Nextflow outputs.
 
     Anchor on the SNV/Indel VCF, then discover three siblings under the
@@ -204,7 +208,11 @@ def list_inhouse_vcfs() -> list[dict]:
     seen: set[str] = set()
     out: list[dict] = []
     for root in INHOUSE_VCF_ROOTS:
-        for snv in _find_inhouse_snv_vcfs(root):
+        candidates = _find_inhouse_snv_vcfs(root) if paths is None else (
+            p for p in paths if p.is_relative_to(root.resolve())
+            and p.parent.name == _INHOUSE_SNV_REL and p.name.endswith(".ensemble.fixed.vcf.gz")
+        )
+        for snv in candidates:
             sp = str(snv)
             if sp in seen or not snv.is_file():
                 continue
@@ -250,6 +258,10 @@ def list_inhouse_vcfs() -> list[dict]:
 # ── Pipeline VCF index ─────────────────────────────────────────────
 
 def load_index() -> dict | None:
+    from . import file_index
+    shared = file_index.load_view("tertiary")
+    if shared is not None:
+        return shared
     p = PIPELINE_VCF_INDEX_PATH
     if not p.is_file():
         return None
@@ -269,40 +281,17 @@ def save_index(idx: dict) -> None:
 
 
 def refresh_index() -> dict:
-    """Run both scans, persist results, and return the new index.
-
-    The daily systemd timer and the manual UI refresh can overlap.  A
-    cross-process lock keeps both callers from writing the same atomic
-    temporary file at once.
-    """
-    lock_path = PIPELINE_VCF_INDEX_PATH.with_suffix(".refresh.lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        t0 = time.time()
-        dragen = list_dragen_vcfs()
-        inhouse = list_inhouse_vcfs()
-        idx = {
-            "updated_at":        _now(),
-            "scan_duration_sec": round(time.time() - t0, 2),
-            "dragen":            dragen,
-            "inhouse":           inhouse,
-        }
-        save_index(idx)
-        return idx
+    """Compatibility entry point for the shared file discovery coordinator."""
+    from . import file_index
+    return file_index.refresh()["tertiary"]
 
 
 def index_is_stale(idx: dict | None) -> bool:
-    if not idx or not idx.get("updated_at"):
+    # Legacy JSON is displayable while the first shared generation is built.
+    if not idx or "generation" not in idx:
         return True
-    try:
-        ts = datetime.fromisoformat(idx["updated_at"].replace("Z", "+00:00"))
-    except ValueError:
-        return True
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=TAIPEI_TZ)
-    age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-    return age_h >= PIPELINE_VCF_INDEX_TTL_HOURS
+    from . import file_index
+    return file_index.stale(idx)
 
 
 # ── Job state I/O ──────────────────────────────────────────────────

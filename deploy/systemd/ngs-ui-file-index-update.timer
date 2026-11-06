@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the shared NGS-UI file index daily at 02:00 Taipei
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Taipei
+Persistent=true
+Unit=ngs-ui-file-index-update.service
+
+[Install]
+WantedBy=timers.target

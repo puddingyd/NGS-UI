@@ -388,7 +388,7 @@ INHOUSE_VCF_ROOTS = [
 # across the datalake can take 1–30 s; the modal reads this file
 # directly so it opens instantly. A 🔄 button POSTs to
 # /api/dragen/index/refresh to rescan on demand. Production also runs
-# deploy/systemd/ngs-ui-tertiary-index-update.timer every day at 02:00
+# deploy/systemd/ngs-ui-file-index-update.timer every day at 02:00
 # Asia/Taipei. The stale-on-open refresh remains as a fallback.
 PIPELINE_VCF_INDEX_PATH = DATA_ROOT / "pipeline_vcf_index.json"
 PIPELINE_VCF_INDEX_TTL_HOURS = 24
@@ -444,9 +444,10 @@ SECONDARY_DGX_ENV_SCRIPT = os.environ.get(
 )
 # Cached WES/WGS FASTQ discovery results. Production refreshes this
 # every day at 02:00 Asia/Taipei via
-# deploy/systemd/ngs-ui-secondary-index-update.timer; manual refresh,
+# deploy/systemd/ngs-ui-file-index-update.timer; manual refresh,
 # cold-start creation, and stale-on-open fallback remain available.
 SECONDARY_FASTQ_INDEX_PATH = DATA_ROOT / "secondary_fastq_index.json"
+FILE_INDEX_PATH = DATA_ROOT / "sample_file_index.sqlite"
 SECONDARY_FASTQ_INDEX_TTL_HOURS = int(os.environ.get(
     "NGS_UI_SECONDARY_FASTQ_INDEX_TTL_HOURS",
     "24",

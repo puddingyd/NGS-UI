@@ -1,83 +1,100 @@
-# 檔案清單：路徑驗證與共用索引規劃
+# 檔案清單、三級資料瀏覽與共用每日索引
 
-2026-11-05。**目前只有唯讀盤點工具；modal、正式索引與排程整合尚未實作。**
+v9.96，2026-11-06。已完成本機實作與合成驗證；院內部署、全量檔名與實際下載由操作者驗收。Codex 不 SSH、不重啟服務、不安裝 server timer。
 
-先由操作者在 server 驗證，再接右上角「三級分析 → 檔案清單 → 上傳個案清單」。
+## 使用方式
 
-## 1. 搜尋位置
+主畫面登入後，右上角排列為「三級分析 → 檔案清單 → 上傳個案清單」。清單支援 sample ID 搜尋、每頁50筆、上一頁／下一頁及手動更新。
 
-以下是現有程式的預設值；server 的環境設定可能覆寫。`S` 是原始 sequencing sample ID，`C` 是 UI 個案 ID，`R` 是定序 run，`B` 是 in-house 分析 batch。不把 `C` 的後綴任意剪掉當作 `S`。
+六欄固定為 sample ID、fastq、bam、SNV/indel VCF、其他檔案、三級資料。檔案欄只列含副檔名的檔名，點擊下載；旁邊沿用 SNV 卡片的 Copy 圖示，複製 server 完整路徑。沒有提供的檔案留白，不輸出缺檔或不適用字樣。
 
-| 類型 | 搜尋根與相對位置 | 依據 |
-|---|---|---|
-| WES FASTQ | `/home/datalake_Raw/NextSeq2000/**/{S}_S數字_R{1,2}_001.fastq.gz`；包含 run 下 `Analysis/...` | `secondary_analysis.list_wes_fastqs()` |
-| 重分析 FASTQ | `/home/datalake_Raw/Other/Reanalysis/**/{資料夾sample}/{來源S}.R{1,2}.clean.fastq.gz`；也查 `/datalake_Raw/Other/Reanalysis/` | 同上；sample 採父資料夾，保留原始檔名的 source ID |
-| WGS FASTQ | `/home/datalake_Raw/Novaseq/{R}/fastq.gz/{S}_S數字_L00{1..4}_R{1,2}_001.fastq.gz`；現有搜尋其實遞迴找 lane 格式 | `secondary_analysis.list_wgs_fastqs()`；四 lane 共八檔，不拿第一對代替全部，也不拿 merged 當 lane |
-| In-house BAM | `/home/datalake_Intermediate/pipeline/nextflow_output/{B}/{S}/02_alignment/{S}.aligned.sorted.bam` | `routers/igv.py`；額外深層 batch 由實際目錄驗證 |
-| DRAGEN BAM | `/home/datalake_Raw/Novaseq/{R}/bam/{S}.bam`；另查 `/home/datalake_Intermediate/n102968/{R}/bam/` | 同上；`*.repeats.bam` 分類為其他 BAM，不能誤當主 BAM |
-| BAM index | 同目錄 `{name}.bam.bai` 或 `{name}.bai`；另列存在的 CSI | `igv._bam_index_for()` 支援兩種 BAI |
-| In-house SNV/Indel VCF | `/home/datalake_Intermediate/pipeline/nextflow_output/**/{S}/04_snv_indel/{S}.ensemble.fixed.vcf.gz` | `dragen_jobs.list_inhouse_vcfs()` |
-| DRAGEN SNV/Indel VCF | `/home/datalake_Raw/Novaseq/{R}/vcf.gz/{S}.hard-filtered.vcf.gz`；另查 `/home/datalake_Intermediate/n102968/{R}/vcf.gz/` | `dragen_jobs.list_dragen_vcfs()` |
-| In-house CNV / SV | 同一 sample 的 `05_cnv_sv/{S}.gcnv.vcf.gz`、`{S}.delly.vcf.gz`；WGS CNV 另查 `{S}.call.cns` / `*.cnr`（不是 VCF，實際輸出待驗證） | 現有三級 siblings／`annotate_inhouse_cnv_sv_annotsv.sh`；CNVkit 路徑依三級 pipeline 文件補查 |
-| DRAGEN CNV / SV | 同一 run 的 `vcf.gz/{S}.cnv.vcf.gz`、`{S}.sv.vcf.gz`、`{S}.cnv_sv.vcf.gz` | `annotate_dragen_cnv_annotsv.sh` 用獨立 CNV/SV；CNV rescue 用合併檔，三者不可混稱同一檔 |
-| Mito VCF | In-house `07_mitochondria/{S}.mito.vcf.gz`；其他實際出現 VCF 保留待分類 | 三級輸入 siblings |
-| 三級衍生 CNV / SV | `/home/datalake_Intermediate/pipeline/tertiary_output/{C}/06_cnv_sv/{S}.{cnv,sv}.annotated.tsv`；`08_postprocessing/{C}.cnv.review.tsv`、舊 `cnv.rescued.annotated.tsv` | 這些是 TSV；不當作原始 VCF。08 的 UI ID 用 exact `pipeline_source.json` 連回 source |
-| 其他衍生 VCF | 同一個案 `08_postprocessing/{C}.ploidy.vcf.gz`、`{C}.vcf_from_tsv.vcf.gz` | 標示衍生用途，不當作三級輸入或 PRS gVCF |
-| DRAGEN gVCF | 見下面五個 PRS 模板 | `prs_jobs.DEFAULT_TEMPLATES` |
-| In-house gVCF | 無預設路徑；由 PRS config 的 `gvcf_templates.inhouse` 決定 | 不猜 caller、不把一般 VCF 當 gVCF |
-| VCF / gVCF index | 對應檔案後的 `.tbi` / `.csi` | 只列存在；存在不代表索引有效 |
+- FASTQ：每個 sample 先顯示兩檔，超過時以 `more` 展開、`less` 收合。保留全部 run／lane，依資料夾及檔名排序，使開頭兩檔維持同資料夾的 R1／R2 順序。lane 數不寫死；11/5使用者貼回的26T01345實際為L001–L008、16檔。
+- BAM：主 BAM、`.bam.bai` 或 `.bai`；排除 repeats BAM 及其 index。
+- SNV/indel VCF：原始 DRAGEN hard-filtered 或 in-house ensemble fixed VCF。
+- 其他檔案：只列 CNV VCF、SV VCF、合併 CNV/SV VCF、DRAGEN gVCF 與 targeted JSON。In-house 不列 gVCF／合併 CNV/SV／targeted JSON；不列 `.tbi`／`.csi`、CNVkit、mito、ploidy、三級衍生 TSV 等其他項目。
+- 三級資料：沿用 SNV ClinVar/LitVar 外部連結圖示，另開資料夾瀏覽頁。多個三級個案目錄各有一個圖示，title 顯示目錄名。
 
-DRAGEN gVCF 五個現有模板（`anchor_dir` 為上述 SNV VCF 的 `vcf.gz`，`run_dir` 為其上層）：
+同 source ID 的不同 run／batch 都保留，檔名相同者可由 hover title 或複製路徑區分。這是檔案候選彙整，不能據此宣稱某 BAM/VCF 必然來自哪一組 FASTQ；分析仍沿用既有來源驗證規則。
 
-```text
-{anchor_dir}/{S}.hard-filtered.gvcf.gz
-{run_dir}/gvcf.gz/{S}.hard-filtered.gvcf.gz
-{run_dir}/other/{S}/germline_seq/{S}.hard-filtered.gvcf.gz
-{anchor_dir}/{S}.gvcf.gz
-{run_dir}/gvcf.gz/{S}.gvcf.gz
-```
+## 搜尋來源
 
-有自訂 `gvcf_templates` 時，PRS 實際候選只用自訂 mapping；盤點仍列出目錄內發現的全部 gVCF，**盤點存在不等於 PRS 允許使用**。若需查舊三級資料根，額外以 `--root` 指定既有 legacy root，不掃 `nf_work` 或容器暫存。
+`S` 為原始 sequencing ID，`C` 為 UI 個案 ID。所有 root 沿用執行中服務的既有環境覆寫。
 
-## 2. Server 驗證方式
+| 類型 | 預設搜尋位置 |
+|---|---|
+| WES FASTQ | `/home/datalake_Raw/NextSeq2000/`，遞迴辨識 `_S數字_R1/2_001.fastq.gz` 等配對檔名 |
+| 重分析 FASTQ | `/home/datalake_Raw/Other/Reanalysis/`；兼容 `/datalake_Raw/Other/Reanalysis/`。`{source}.R1/2.clean.fastq.gz` 採父資料夾為 sample，保留原始 source 別名 |
+| WGS FASTQ | `/home/datalake_Raw/Novaseq/{run}/fastq.gz/{S}_S數字_L數字_R1/2_001.fastq.gz` |
+| DRAGEN BAM | `/home/datalake_Raw/Novaseq/{run}/bam/{S}.bam`；另查 `/home/datalake_Intermediate/n102968/` |
+| In-house BAM | `/home/datalake_Intermediate/pipeline/nextflow_output/{batch}/{S}/02_alignment/{S}.aligned.sorted.bam` |
+| DRAGEN VCF | 上述 DRAGEN roots 的 `{run}/vcf.gz/{S}.hard-filtered.vcf.gz`、`.cnv.vcf.gz`、`.sv.vcf.gz`、`.cnv_sv.vcf.gz` |
+| In-house VCF | `nextflow_output/**/{S}/04_snv_indel/{S}.ensemble.fixed.vcf.gz`；`05_cnv_sv/{S}.gcnv.vcf.gz`、`{S}.delly.vcf.gz` |
+| DRAGEN gVCF | 同DRAGEN roots 下原有PRS路徑：`vcf.gz/` 或 `gvcf.gz/` 的 `{S}.hard-filtered.gvcf.gz`／`{S}.gvcf.gz`，以及 `other/{S}/germline_seq/{S}.hard-filtered.gvcf.gz` |
+| targeted JSON | 同DRAGEN roots 下 `{S}.targeted.json`，包含 `other/{S}/germline_seq/` |
+| 三級資料 | `NGS_UI_TERTIARY_ROOT`，並保留 legacy pipeline／UI root；依精確 source marker 連回 sample |
 
-開啟 `scripts/paste_probe_sample_files.sh`，全選內容貼到 server shell。它使用 Python 標準函式庫，不必先更新 repo，也不需要 sudo。程式本體由 `scripts/probe_sample_files.py` 產生，兩份內容須同步。
+索引的 FASTQ 名稱解析另外兼容 `_R1/2`、`.R1/2`、`.fq.gz`、有無 `_S數字`／lane 及 `_merged`。**二級分析的可執行輸入仍由原 parser 決定**：WGS維持lane成對規則、忽略merged；不完整R1/R2只出現在檔案清單，不能因此變成可執行samplesheet。沒有符合命名的FASTQ不猜sample；數量與前30個範例存於索引meta供院內補驗收。
 
-貼上後會建立一個新的 `/tmp/ngs-file-probe.XXXXXX/`，只將 JSON 報告及進度 Log 寫在這裡。讀來源目錄、stat、少量 source marker／PRS config，不解壓 FASTQ/BAM/VCF、不更新平台快取、不啟停服務。
+`n102968` 的 PGx GetRM 驗證 FASTQ 不建立臨床清單 sample，因為 FASTQ 僅從二級設定的 raw roots 收集。11/5貼回的140筆壞FASTQ link均位於該驗證目錄，正式掃描不將它們當臨床缺檔。其他相關檔案的權限／來源錯誤仍會阻止新generation發布。
 
-工具使用**目前 shell** 的路徑環境變數，未設定則用上表預設；不假設 shell 與 `ngs-ui.service` 的設定相同。貼上程式會列出 service 設定檔位置供操作者核對，只需將相關 `NGS_UI_*ROOT*`／`NGS_UI_PRS_CONFIG` 路徑設定到 shell。不要貼回包含其他機密的完整 service 環境。
+只有 `/datalake_Raw/Other/Reanalysis` 這個已驗證不存在的替代路徑允許首次跳過；若先前已成功掃描，後來消失仍報錯。必要root離線／權限不足會保留舊索引。目錄symlink不遞迴跟隨，需將核對過的實際目標設定為對應root；跳過的目錄link與未辨識檔名均留meta。自訂DRAGEN gVCF若在既有roots之外，需把其資料根加入既有DRAGEN roots後重新更新。檔案清單不修改PRS候選模板或分析設定。
 
-也可直接將 Python 檔複製到 server 執行：
+## 共用索引與更新
+
+`backend/app/services/file_index.py` 是唯一正式掃描協調器，資料位於 `NGS_UI_DATA_ROOT/sample_file_index.sqlite`。
+
+1. 正規化既有 FASTQ、VCF、BAM roots，重疊的實體目錄只走訪一次，將同一份檔案發現結果餵給既有二／三級 parser。
+2. SQLite 存同一generation的sample清單、可下載檔案registry、二級FASTQ視圖及三級VCF視圖。檔案清單以FASTQ建sample；三級視圖保留沒有FASTQ的VCF候選。
+3. 共用跨程序flock，鎖內重查generation、請求時間、root設定及過期時間；重疊手動更新／冷啟動／背景更新合併。同一每日02:00窗口的舊worker也去重，不因舊timer暫未遷移而再掃一次。
+4. 先建立完整新SQLite，commit／fsync後原子replace；更新期間讀舊完整generation。掃描失敗不發布部分資料、不抹除既有索引。root設定變動不等24小時，下一次查詢／更新即視為過期。
+5. 二級及三級 `load_index()` 優先讀共用視圖；尚無共用DB時可先讀舊JSON並排背景建立。舊JSON不再是新generation的寫入來源。
+6. 三級資料夾只枚舉sample目錄與小型source marker，prefixed exact name優先、legacy exact name fallback。任意子目錄內容由資料夾頁即時讀取一層，不做每日深掃。
+
+既有 `/api/secondary/index/refresh`、`/api/dragen/index/refresh` 與新 `/api/files/refresh` 都更新同一generation。舊 `secondary_index_update`／`tertiary_index_update` worker保留相容入口，皆轉至共用worker；舊installer亦轉至新installer。
+
+### Server 排程遷移（操作者執行）
+
+先更新程式並重啟web，再執行一次安裝腳本：
 
 ```bash
-python3 /tmp/probe_sample_files.py --sample 26T01345 > /tmp/sample-files.json
-# --sample 只篩選報告內 sample，仍掃描全部 root；省略可列全部。
-# --root /額外資料根 可重複；--prs-config /實際/config.json 指定 PRS mapping。
+cd ~/NGS_UI/NGS-UI
+git pull
+sudo systemctl restart ngs-ui
+bash scripts/install_file_index_timer.sh
 ```
 
-報告要確認：
+腳本安裝 `ngs-ui-file-index-update.service/.timer`，先成功核對／建立當日完整generation，啟用每日 **02:00 Asia/Taipei** 的新timer，再停用兩個舊timer。若首次更新失敗，腳本停止，舊timer不會被關掉。腳本只啟動索引更新unit，不重啟web。
 
-- `samples` 以 FASTQ 建立；有 raw 但沒有任何分析結果者仍存在。四 lane 正常為八檔，但不把八當硬性篩選條件。
-- `incomplete_pairs` 保留缺 R1/R2 的 sample；`unrecognized_fastqs` 保留未辨識檔名，不悄悄捨棄。正式上線前須補齊這些命名對應。
-- `files` 保存每個匹配 source ID 的候選路徑、類型、大小與時間；相同 sample 不同 run/batch 全留。這是檔名候選配對，不能證明 BAM/VCF 是某個 FASTQ run 產物。
-- 重分析保留資料夾 sample 與原始 source ID；08 的 prefixed source marker 優先於 legacy marker。
-- `unmatched_files` 列出沒有 FASTQ 對應的結果；可能是 raw 已搬走／刪除，也可能是命名需要補對應。
-- `scan_errors` 列 root 不存在、權限不足、壞 symlink、未跟隨的目錄 symlink。發生時 exit code 為 2，仍輸出已找到的報告；不能宣稱已完整掃描。
-- 目錄 symlink 不自動跟隨；確認目標後以 `--root TARGET` 加入。來源只讀，檔案存在／大小不是完整性或單樣本 header 驗證。
+新unit的 `scripts/update_file_index.py` 讀執行中 `ngs-ui.service` 的MainPID及 `/proc/{PID}/environ`，只擷取程式列出的路徑／TTL設定，不輸出或複製其他環境值。這讓每日worker與web使用相同roots；無法讀取、服務未執行時明確失敗，不偷偷使用另一組預設。以相同帳號執行，仍需在院內確認 `/proc` 讀取政策。
 
-建議先核對 `26T01345` 是否對到使用者提供的 `20261028_LH00873_0043_B25FKFHLT4/bam/26T01345.bam` 及同 run 八個 FASTQ，再看一個 in-house WES、一個 in-house WGS、一個重分析及一個尚無 BAM/VCF 的 sample。
+檢查：
 
-## 3. 正式共用索引與每日更新（待實作）
+```bash
+systemctl list-timers --all --no-pager 'ngs-ui-*index*'
+journalctl -u ngs-ui-file-index-update.service -n 30 --no-pager
+```
 
-現況：`ngs-ui-secondary-index-update.timer` 與 `ngs-ui-tertiary-index-update.timer` **各自每天 02:00 Asia/Taipei** 執行。各服務有各自 flock，但開窗遇過期仍可能重複排入完整掃描。只是把兩個 worker 放到一個 timer 不足以消除這個問題。
+ClinVar／LitVar／HPO等資料庫更新排程維持原本頻率，不混入檔案索引。
 
-預計改為：
+## 下載與資料夾頁
 
-1. 一個 canonical 檔案索引（建議 `data/sample_file_index.sqlite`），一個掃描器。以正規化後的 root 聯集走訪一次，辨識 FASTQ/BAM/VCF/CNV/SV/gVCF 與其 index；記 source、run/batch、lane/read、檔案角色及掃描 generation。索引的 sample 清單來自 FASTQ，檔案表也保留找不到 FASTQ 的結果。
-2. 二級讀相同 generation 的 FASTQ 配對視圖，維持完整 R1/R2、lane samplesheet 規則；「檔案清單」讀完整 sample 視圖，含不完整 raw。三級讀相同檔案表的合法 VCF anchor 視圖，**保留目前無 FASTQ 但可分析的 VCF 候選**，避免 raw 已移走的舊樣本失去三級功能。
-3. 一個 `ngs-ui-file-index-update.timer`，每天 02:00 台北時間。手動更新、過期 fallback 與每日更新共用一把跨程序鎖及同一個更新協調器；同時請求合併到同一工作，鎖內重新檢查 generation/請求時間，避免等待前一輪後又重掃。
-4. 新 generation 完整掃描成功後才在 transaction 中啟用；更新期間讀上一份完整 generation。必要 root 無法讀取時保留舊資料並標示失敗／過期，不拿部分掃描覆蓋造成大量「檔案消失」。掃描成功但舊檔確已刪除才移除該紀錄；已驗證為選用的不存在 root 明確記錄為選用。
-5. modal 預設讀索引，提供 sample 搜尋、FASTQ/BAM/VCF/其他分類、各檔完整路徑、run/batch、大小、更新時間與缺配對狀態；四 lane 可展開八檔。同 source 多 run 保留所有候選，未驗證的產物來源關係不自動宣稱。
-6. 由操作者安裝新排程並驗證一次完整 generation，再停用兩個舊 timer；現有 API/舊 worker 亦須改走同一協調器，避免舊入口偷偷繼續掃描。既有分析完成後可更新相關 sample 的輸出狀態；每日全掃處理外部新上機及移動／刪除。安裝與服務操作仍由使用者執行。
+新API均沿用平台登入保護：
 
-這份規劃不把 ClinVar/LitVar/HPO 等資料庫更新排程混入檔案索引；它們的資料來源與更新頻率不同。
+- `GET /api/files`：sample ID搜尋及分頁，只讀已發布索引；冷啟動才建立，過期背景更新。
+- `POST /api/files/refresh`：強制共用更新。
+- `GET/HEAD /api/files/download/{id}`：只接受索引registry中的檔案ID，下載時重新核對配置root。
+- `GET /api/files/browse?root=...&path=...`：三級root內逐層瀏覽，含路徑導覽及上一層；上層到三級root為止。
+- `GET/HEAD /api/files/tertiary-download?root=...&path=...`：下載三級root內檔案。
+
+下載逐元件以no-follow開啟，確認regular file後串流，不將整個BAM/FASTQ載進記憶體；支援HEAD、單段Range及suffix range。越界／外部symlink／特殊檔案不讀取；關閉或中斷時關閉descriptor。資料夾頁以HTML escape處理檔名，任意檔案都以attachment下載，不直接執行其中HTML；不提供上傳、改名或刪除。dot目錄（包含`.staging`／`.rollback`）不開放瀏覽。院內的特殊symlink layout需個別驗收。
+
+## 驗證
+
+- Python合成檔案樹涵蓋8lane16檔、BAI兩種命名、限定其他類型、空欄、in-house排除、raw-only／單邊配對、多run、重分析source、VCF-only三級相容、root變更、重疊／舊timer去重、失敗保留generation。
+- API驗證登入、搜尋／分頁、下載內容、HEAD／Range、刪除後404、越界／外部symlink、資料夾路徑導覽與惡意檔名escaping。
+- Chrome合成前端驗證按鈕位置、六欄、16檔展開／收合、Copy、下載、三級連結、空格、搜尋／分頁／更新、Escape，以及桌機／手機版面。手機可在表格內橫向捲動，不擴張整個頁面。
+- 現有二／三級與前端回歸一併執行；實際院內全量命名、各root權限及大型檔下載仍待部署驗收，不能以合成測試宣稱已完成。
+
+## 歷史唯讀探測工具
+
+`scripts/probe_sample_files.py`／`scripts/paste_probe_sample_files.sh` 是11/5前置盤點版本，為保留可重現性不改寫其歷史行為。它列的類型比正式表格多，且可選讀PRS templates；不維護正式索引，也不代表目前六欄篩選規則。已取得的 `/tmp/ngs-file-probe.2hnBhH/inventory.json` 在server上；附件／病患明細不入Git。

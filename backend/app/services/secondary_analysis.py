@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import csv
-import fcntl
 import json
 import re
 import shlex
 import subprocess
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -141,11 +139,16 @@ def _entry(
     }
 
 
-def list_wes_fastqs(*, strict_prefixes: tuple[str, ...] = ()) -> list[dict]:
+def _paths_under(root: Path, paths: list[Path]) -> list[Path]:
+    resolved = root.resolve()
+    return [p for p in paths if p.is_relative_to(resolved)]
+
+
+def list_wes_fastqs(*, strict_prefixes: tuple[str, ...] = (), paths=None) -> list[dict]:
     grouped: dict[tuple[str, str, str], dict[str, Path]] = {}
     reanalysis_grouped: dict[Path, dict[str, Path]] = {}
     for root in SECONDARY_WES_FASTQ_ROOTS:
-        for p in _find_fastqs(root):
+        for p in (_find_fastqs(root) if paths is None else _paths_under(root, paths)):
             name = p.name
             m_re = _REANALYSIS_RE.match(name)
             if "Reanalysis" in str(root) or m_re:
@@ -197,10 +200,10 @@ def list_wes_fastqs(*, strict_prefixes: tuple[str, ...] = ()) -> list[dict]:
     return out
 
 
-def list_wgs_fastqs() -> list[dict]:
+def list_wgs_fastqs(*, paths=None) -> list[dict]:
     lanes: dict[tuple[str, str, str, str], dict[str, Path]] = {}
     for root in SECONDARY_WGS_FASTQ_ROOTS:
-        for p in _find_fastqs(root):
+        for p in (_find_fastqs(root) if paths is None else _paths_under(root, paths)):
             if p.name.endswith(".md5"):
                 continue
             run = p.parent.parent.name if p.parent.name == "fastq.gz" else p.parent.name
@@ -253,6 +256,10 @@ def list_wgs_fastqs() -> list[dict]:
 
 
 def load_index() -> dict | None:
+    from . import file_index
+    shared = file_index.load_view("secondary")
+    if shared is not None:
+        return shared
     p = SECONDARY_FASTQ_INDEX_PATH
     if not p.is_file():
         return None
@@ -274,41 +281,17 @@ def save_index(idx: dict) -> None:
 
 
 def refresh_index() -> dict:
-    """Rescan WES/WGS FASTQs and atomically persist the shared index.
-
-    The daily systemd timer and the manual UI refresh can overlap. A
-    cross-process lock prevents both callers from writing the same
-    temporary file concurrently.
-    """
-    lock_path = SECONDARY_FASTQ_INDEX_PATH.with_suffix(".refresh.lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        t0 = time.time()
-        wes = list_wes_fastqs()
-        wgs = list_wgs_fastqs()
-        idx = {
-            "schema_version": _FASTQ_INDEX_SCHEMA_VERSION,
-            "updated_at": _now(),
-            "scan_duration_sec": round(time.time() - t0, 2),
-            "wes": wes,
-            "wgs": wgs,
-        }
-        save_index(idx)
-        return idx
+    """Compatibility entry point; all discovery now shares one generation."""
+    from . import file_index
+    return file_index.refresh()["secondary"]
 
 
 def index_is_stale(idx: dict | None) -> bool:
-    if not idx or not idx.get("updated_at"):
+    # Legacy JSON is displayable while the first shared generation is built.
+    if not idx or "generation" not in idx:
         return True
-    try:
-        ts = datetime.fromisoformat(str(idx["updated_at"]).replace("Z", "+00:00"))
-    except ValueError:
-        return True
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=TAIPEI_TZ)
-    age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-    return age_h >= SECONDARY_FASTQ_INDEX_TTL_HOURS
+    from . import file_index
+    return file_index.stale(idx)
 
 
 def _server_path_to_dgx(path: str) -> str:

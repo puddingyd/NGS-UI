@@ -1,57 +1,35 @@
 from pathlib import Path
 
-from app.services import dragen_jobs
+from app.services import dragen_jobs, file_index
 from app.workers import tertiary_index_update
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_scheduled_worker_refreshes_the_tertiary_index(monkeypatch, capsys):
-    monkeypatch.setattr(
-        tertiary_index_update.dragen_jobs,
-        "refresh_index",
-        lambda: {
-            "updated_at": "2026-07-31 02:00:00",
-            "scan_duration_sec": 12.5,
-            "dragen": [{}, {}],
-            "inhouse": [{}],
-        },
-    )
-
+def test_legacy_worker_uses_shared_daily_update(monkeypatch, capsys):
+    calls = []
+    def refresh(**kwargs):
+        calls.append(kwargs)
+        return {"meta":{"sample_count":3,"generation":"shared","updated_at":"2026-11-06 02:00:00"}}
+    monkeypatch.setattr(file_index, "refresh", refresh)
     assert tertiary_index_update.main() == 0
-    output = capsys.readouterr().out
-    assert "dragen=2" in output
-    assert "inhouse=1" in output
-    assert "updated_at=2026-07-31 02:00:00" in output
+    assert calls[0]["force"] is True
+    assert "shared file index" in capsys.readouterr().out
 
 
-def test_refresh_index_persists_results_under_a_process_lock(tmp_path, monkeypatch):
-    index_path = tmp_path / "pipeline_vcf_index.json"
-    monkeypatch.setattr(dragen_jobs, "PIPELINE_VCF_INDEX_PATH", index_path)
-    monkeypatch.setattr(dragen_jobs, "list_dragen_vcfs", lambda: [{"sample_id": "D1"}])
-    monkeypatch.setattr(dragen_jobs, "list_inhouse_vcfs", lambda: [{"sample_id": "N1"}])
-
-    idx = dragen_jobs.refresh_index()
-
-    assert idx["dragen"] == [{"sample_id": "D1"}]
-    assert idx["inhouse"] == [{"sample_id": "N1"}]
-    assert dragen_jobs.load_index() == idx
-    assert (tmp_path / "pipeline_vcf_index.refresh.lock").is_file()
+def test_legacy_refresh_returns_shared_view_without_writing_old_cache(tmp_path, monkeypatch):
+    old = tmp_path / "old-index.json"
+    monkeypatch.setattr(dragen_jobs, "PIPELINE_VCF_INDEX_PATH", old)
+    expected = {'dragen': [{'sample_id': 'D1'}], 'inhouse': [{'sample_id': 'N1'}]}
+    monkeypatch.setattr(file_index, "refresh", lambda:{"tertiary":expected})
+    assert dragen_jobs.refresh_index() == expected
+    assert not old.exists()
 
 
-def test_systemd_timer_runs_daily_at_0200_taipei():
-    timer = (
-        REPO_ROOT / "deploy/systemd/ngs-ui-tertiary-index-update.timer"
-    ).read_text(encoding="utf-8")
-    service = (
-        REPO_ROOT / "deploy/systemd/ngs-ui-tertiary-index-update.service"
-    ).read_text(encoding="utf-8")
-
+def test_installer_migrates_to_single_taipei_timer():
+    installer=(REPO_ROOT/"scripts/install_tertiary_index_timer.sh").read_text()
+    assert 'install_file_index_timer.sh' in installer
+    timer=(REPO_ROOT/"deploy/systemd/ngs-ui-file-index-update.timer").read_text()
     assert "OnCalendar=*-*-* 02:00:00 Asia/Taipei" in timer
     assert "Persistent=true" in timer
-    assert "Unit=ngs-ui-tertiary-index-update.service" in timer
-    assert (
-        "ExecStart=/usr/bin/env python3 -m app.workers.tertiary_index_update"
-        in service
-    )
+    assert "Unit=ngs-ui-file-index-update.service" in timer

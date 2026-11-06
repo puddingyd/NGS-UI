@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
 from ..auth import current_user
-from ..services import secondary_analysis
+from ..services import secondary_analysis, file_index
 
 router = APIRouter(
     prefix="/api/secondary",
@@ -56,7 +57,11 @@ async def get_fastqs(background: BackgroundTasks):
 
 @router.post("/index/refresh")
 async def post_refresh_index():
-    idx = await asyncio.to_thread(secondary_analysis.refresh_index)
+    try:
+        views = await asyncio.to_thread(file_index.refresh, force=True, requested_at_ns=time.time_ns())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, str(exc))
+    idx = views["secondary"]
     return {
         "meta": _meta(idx),
         "wes": idx.get("wes", []),
