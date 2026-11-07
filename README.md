@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.02：依健檢Word的20則註解更新PRS報告文字與排版，改用對齊的`====`文字表格，已患病疾病仍列百分位並於風險欄說明；評估資訊精簡、補官方來源連結並移除指定段落。健檢主文／附錄移除Word段落方點設定，保留分頁；更新後重新匯出即可，不需重跑分析或風險計算。[逐則註解對照](docs/ops/PRS_HEALTH_REPORT_COPY_REVIEW.md)。
+
 v10.01：檔案清單的三級資料只讀主root `/home/datalake_Intermediate/pipeline/tertiary_output`，排除舊pipeline／UI位置，舊快照入口也立即過濾。SNV/indel VCF欄並列原始VCF與對應`03_acmg/*.snv_indel.acmg.tsv`，皆可下載及Copy。檔案系統未提供建立時間時，日期改用三級註解紀錄並在hover標明；既有索引可即時補上註解檔。更新服務與重載即可，不需重跑分析／重裝timer。[操作與來源](docs/ops/SAMPLE_FILE_INVENTORY_PLAN.md)。
 
 v10.00：PGx 工具校驗支援操作者回報的院內 PharmCAT 3.2.0 JAR（`ff3e16…`），保留現有 SIF。記錄實際程式 SHA，不同 build 不共用重新註解快取；資料版本與逐案零修改重播檢查維持。更新後直接執行 `python scripts/check_pgx_pharmcat.py`，會檢查內含資料及合成註解並列出實際容器／SHA；通過後可在平台重試更新，無需下載替代容器。[檢查方式與限制](docs/ops/PGX_DRAGEN_CONCORDANCE.md)。

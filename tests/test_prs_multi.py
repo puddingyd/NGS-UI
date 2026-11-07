@@ -135,17 +135,24 @@ def test_saved_multi_assessment_report_integrity_and_staleness(linked):
     assert not prs.status('SYNTHETIC')['available']
 
 
-def test_multi_health_table_contains_only_available_rows(linked, monkeypatch):
+def test_multi_health_text_table_keeps_all_percentiles_and_unavailable_reasons(linked, monkeypatch):
     from docx import Document
     from app.services import docx_export
-    p=payload();p['sex']='male';p['history']['AF']=None
+    p=payload();p['sex']='male';p['history']['AF']=None;p['history']['T2D']=True
     saved=prs.assess('SYNTHETIC',p,'test')
     doc=Document();docx_export._render_health_prs_section(doc,saved)
-    assert len(doc.tables[0].rows) == 5
-    assert len(doc.tables[0].columns) == 5
+    assert not doc.tables
     text='\n'.join(p.text for p in doc.paragraphs)
     assert '乳癌' in text and '僅適用女性' in text and '心房顫動' in text
-    assert [r.cells[0].text for r in doc.tables[0].rows[1:]] == ['冠心病','第二型糖尿病','整體癌症','癲癇']
+    table_rows=[p.text for p in doc.paragraphs if p.text.startswith('     ') and not p.text.strip().startswith('=')]
+    assert len(table_rows)==6
+    assert [r.strip().split()[0] for r in table_rows]==['冠狀動脈心臟病','第二型糖尿病','整體癌症','乳癌','心房顫動','癲癇']
+    assert '已有此疾病，不估算風險' in table_rows[1]
+    assert f'第{docx_export._health_prs_number(saved["result"]["diseases"]["T2D"]["percentile"])}百分位' in table_rows[1]
+    lines=[line for r in table_rows for line in r.splitlines()]
+    assert len({docx_export._str_width(line) for line in lines})==1
+    assert '本次未提供的風險估計' not in text and '各疾病為獨立估計' not in text
+    assert not any('：'+r['limitations'][0] in text for r in saved['result']['diseases'].values() if r['available'])
 
 
 def test_pre_twenty_year_snapshot_is_preserved_but_needs_reassessment_for_report(linked):

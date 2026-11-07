@@ -1705,8 +1705,11 @@ def _section_methods(doc, test_type: str, *, health: bool = False, include_pgx: 
             next_note_number += 1
         if include_prs:
             content = _health_prs_content()
-            _health_prs_labeled_paragraph(doc, f'  {next_note_number}. ' + content['method_prefix'],
-                                          prs_models or content['model_name'], content['method_suffix'])
+            paragraph = _add_paragraph(doc, f'  {next_note_number}. ' + content['method_prefix'])
+            _add_hyperlink(paragraph, content['catalog_url'], content['catalog_url'])
+            run = paragraph.add_run(content['method_catalog_suffix'] + (prs_models or content['model_name'])
+                                    + content['method_suffix'])
+            run.bold = False; run.font.size = BODY_FONT_SIZE; _set_run_font(run)
             next_note_number += 1
         if is_wgs and include_pgx:
             _add_paragraph(
@@ -3853,61 +3856,94 @@ def _health_prs_number(value, *, risk=False):
 def _render_health_prs_section(doc, snapshot):
     content = _health_prs_content()
     result = snapshot['result']; person = result['person']
-    _add_paragraph(doc, content['title'], bold=True).paragraph_format.keep_with_next = True
+    _add_paragraph(doc, content['title'], bold=True)
     _add_paragraph(doc, content['intro'])
     sex = '男性' if person['sex'] == 'male' else '女性'
     multi = result.get('schema') == 'PRS_MULTI_RESULT_V1'
-    assessment_rows = ([r for r in result['diseases'].values() if r['available']] if multi
-                       else [{**result, 'name': '冠狀動脈心臟病'}])
-    _add_paragraph(doc, f'評估日期：{person["assessment_date"]}；評估時年齡：{person["age"]:g} 歲；性別：{sex}；'
-                   + ('已確認尚未罹患下表所列疾病。' if multi else '確認尚未罹患 CHD。'))
-    _add_paragraph(doc, content['result_title'], bold=True).paragraph_format.keep_with_next = True
-    values = [[r['name'].split('（')[0], f'第{_health_prs_number(r["percentile"])}百分位',
-        _health_prs_number(r['risk_10_year']['risk'], risk=True)+'%' if r['risk_10_year'] else '不適用',
-        _health_prs_number(r['risk_20_year']['risk'], risk=True)+'%' if r['risk_20_year'] else '不適用',
-        _health_prs_number(r['risk_to_80']['risk'], risk=True)+'%'] for r in assessment_rows]
-    table = doc.add_table(rows=1+len(values), cols=5)
-    table.autofit = False
-    widths = (3.4, 3.1, 3.5, 3.5, 4.5)
-    for column, width in zip(table.columns, widths):
-        column.width = Cm(width)
-    for index, row_values in enumerate([['疾病', 'PRS 百分位', '未來10年風險', '未來20年風險', '至80歲累積風險'], *values]):
-        row = table.rows[index]
-        row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
-        if index == 0:
-            row._tr.get_or_add_trPr().append(OxmlElement('w:tblHeader'))
-        for column, (cell, value, width) in enumerate(zip(row.cells, row_values, widths)):
-            cell.width = Cm(width)
-            cell.vertical_alignment = 1
-            paragraph = cell.paragraphs[0]; paragraph.alignment = 0 if column == 0 else 1
-            paragraph.paragraph_format.space_before = Pt(5); paragraph.paragraph_format.space_after = Pt(5)
-            paragraph.paragraph_format.keep_with_next = index == 0
-            run = paragraph.add_run(value); run.bold = index == 0; run.font.size = BODY_FONT_SIZE; _set_run_font(run)
-            if index == 0:
-                shade = OxmlElement('w:shd'); shade.set(qn('w:fill'), 'F2F2F2'); cell._tc.get_or_add_tcPr().append(shade)
-    borders = OxmlElement('w:tblBorders')
-    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
-        border = OxmlElement('w:'+edge)
-        for key, value in (('val','single'), ('sz','4'), ('color','D9D9D9')): border.set(qn('w:'+key),value)
-        borders.append(border)
-    table._tbl.tblPr.append(borders)
+    assessment_rows = (list(result['diseases'].values()) if multi
+                       else [{**result, 'id': 'CHD', 'name': '冠狀動脈心臟病', 'available': True}])
+    _add_paragraph(doc, content['result_title'], bold=True)
+    _add_paragraph(doc, f'評估時年齡：{person["age"]:g} 歲；性別：{sex}')
+    columns = [('疾病', 18), ('多基因風險分數百分位', 22),
+               ('未來10年風險', 13), ('未來20年風險', 13), ('至80歲累積風險', 17)]
+    values = []
+    for r in assessment_rows:
+        name = '冠狀動脈心臟病' if r['id'] == 'CHD' else r['name'].split('（')[0]
+        prefix = [name, f'第{_health_prs_number(r["percentile"])}百分位']
+        if r['available']:
+            values.append([*prefix, *[_health_prs_number(r[key]['risk'], risk=True)+'%' if r[key]
+                                     else '不適用' for key in ('risk_10_year', 'risk_20_year', 'risk_to_80')]])
+        else:
+            reason = ('已有此疾病，不估算風險' if person['history'].get(r['id']) is True else r['reason'])
+            # One explanation spans the three risk columns without repeating or
+            # wrapping it independently in each narrow horizon column.
+            values.append(dict(cells=[*prefix, reason], widths=[18, 22, 43], modes=['char']*3))
+    _ascii_table(doc, columns=columns, rows=values)
+    assessment_rows = [r for r in assessment_rows if r['available']]
     if any(r['risk_10_year'] is None for r in assessment_rows):
         _add_paragraph(doc, '未來10年風險不適用：評估年齡超過70歲，完整十年期間超出本模型80歲的估算終點。')
     if any(r['risk_20_year'] is None for r in assessment_rows):
         _add_paragraph(doc, '未來20年風險不適用：評估年齡超過60歲，完整二十年期間超出本模型80歲的估算終點。')
-    if multi:
-        excluded = [r['name'].split('（')[0]+'：'+r['reason'] for r in result['diseases'].values() if not r['available']]
-        if excluded: _add_paragraph(doc, '本次未提供的風險估計：'+'；'.join(excluded)+'。')
-        _add_paragraph(doc, '各疾病為獨立估計，數值不可相加；整體癌症與乳癌的事件範圍重疊。乳癌風險模型僅適用女性，不估算已患病者的復發風險。')
-        for r in assessment_rows:
-            _add_paragraph(doc, r['name'].split('（')[0]+'：'+r['limitations'][0])
+    _blank(doc)
     _add_paragraph(doc, '結果說明', bold=True)
     for label, text in content['definitions']:
         _health_prs_labeled_paragraph(doc, '', label, text)
+    _blank(doc)
     _add_paragraph(doc, '注意事項', bold=True)
     for label, text in content['cautions']:
         _health_prs_labeled_paragraph(doc, '', label, text)
     _blank(doc)
+
+
+def _health_clear_pagination_markers(doc):
+    """Remove Word's nonprinting paragraph squares across this health report.
+
+    Imported appendices also carry these flags. Keep their deliberate page
+    starts as ordinary page-break runs; do not change diagnostic generators or
+    the source appendix files.
+    """
+    # The fixed education index has a long preface on its first page. Give its
+    # third category an explicit page start rather than strand its heading at
+    # the foot of page one after removing keepNext.
+    in_index = False; index_categories = 0
+    for paragraph in list(doc.element.body):
+        if paragraph.tag != qn('w:p'): continue
+        text = ''.join(node.text or '' for node in paragraph.iter(qn('w:t')))
+        if text == '疾病索引': in_index = True
+        elif text == '疾病介紹': in_index = False
+        if in_index and paragraph.getnext() is not None and paragraph.getnext().tag == qn('w:tbl'):
+            index_categories += 1
+            if index_categories == 3:
+                run=OxmlElement('w:r');br=OxmlElement('w:br');br.set(qn('w:type'),'page');run.append(br)
+                properties=paragraph.find(qn('w:pPr'))
+                paragraph.insert(1 if properties is not None else 0,run)
+        # Keep bibliography display text and its URL in one normal paragraph.
+        # Default widow/orphan control then prevents the two-line entry splitting
+        # across pages without any keepNext / keepLines paragraph flags.
+        names=paragraph.xpath('.//w:bookmarkStart/@w:name')
+        following=paragraph.getnext()
+        if (any(name.startswith('acmgsf_source_') for name in names)
+                and following is not None and following.tag == qn('w:p')
+                and ''.join(n.text or '' for n in following.iter(qn('w:t'))).startswith('https://')):
+            run=OxmlElement('w:r');run.append(OxmlElement('w:br'));paragraph.append(run)
+            for node in list(following):
+                if node.tag != qn('w:pPr'): paragraph.append(node)
+            following.getparent().remove(following)
+    for paragraph in list(doc.element.iter(qn('w:p'))):
+        properties = paragraph.find(qn('w:pPr'))
+        if properties is None: continue
+        for name in ('keepNext', 'keepLines', 'pageBreakBefore'):
+            node = properties.find(qn('w:'+name))
+            if node is None: continue
+            if name == 'pageBreakBefore' and node.get(qn('w:val'), '1') not in ('0', 'false', 'off'):
+                run = OxmlElement('w:r'); br = OxmlElement('w:br'); br.set(qn('w:type'), 'page');run.append(br)
+                paragraph.insert(paragraph.index(properties)+1, run)
+            properties.remove(node)
+    for style in doc.styles:
+        properties = style.element.find(qn('w:pPr'))
+        if properties is not None:
+            for name in ('keepNext', 'keepLines', 'pageBreakBefore'):
+                for node in properties.findall(qn('w:'+name)): properties.remove(node)
 
 
 def _pgx_report_genes(pgx: dict) -> list[str]:
@@ -4082,7 +4118,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     prs_models = ''
     if prs_assessment and prs_assessment['result'].get('schema') == 'PRS_MULTI_RESULT_V1':
         prs_models = '、'.join(r['pgs_id']+'（'+r['name'].split('（')[0]+'）'
-                              for r in prs_assessment['result']['diseases'].values() if r['available'])
+                              for r in prs_assessment['result']['diseases'].values())
     _section_methods(doc, test_type, health=True, include_pgx=include_pgx, include_prs=bool(prs_assessment), specialized_genes=specialized_genes, prs_models=prs_models)
     _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {}, prs_models=prs_models)
 
@@ -4110,6 +4146,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
             pgx_drug_groups,
         )
 
+    _health_clear_pagination_markers(doc)
     buf = io.BytesIO()
     if prs_assessment and prs.report_assessment(sample_id) != prs_assessment:
         raise ValueError('PRS 風險評估在匯出期間已變更，請重新匯出')

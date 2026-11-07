@@ -282,12 +282,22 @@ def test_health_docx_prs_selection_order_methods_rounding_and_omission(health_re
     methods=paragraphs[paragraphs.index('四、檢測方法說明'):]
     assert next(i for i,p in enumerate(methods) if 'PGS004879' in p) < next(i for i,p in enumerate(methods) if '某些藥物基因' in p)
     text='\n'.join(paragraphs+[cell.text for table in doc.tables for row in table.rows for cell in row.cells])
-    assert [cell.text for cell in doc.tables[0].rows[0].cells] == ['疾病','PRS 百分位','未來10年風險','未來20年風險','至80歲累積風險']
+    assert all(label in text for label in ('疾病','多基因風險分數百分位','未來10年風險','未來20年風險','至80歲累積風險'))
+    assert '====' in text and '冠狀動脈心臟病' in text
     assert '第97.0百分位' in text
     expected=docx_export._health_prs_number(snapshot['result']['risk_10_year']['risk'],risk=True)+'%'
     assert expected in text and '不應單獨作為疾病診斷' in text
     expected_twenty=docx_export._health_prs_number(snapshot['result']['risk_20_year']['risk'],risk=True)+'%'
-    assert doc.tables[0].rows[1].cells[3].text == expected_twenty
+    assert expected_twenty in text
+    result_heading=paragraphs.index('多基因風險評估結果')
+    assert paragraphs[result_heading+1]=='評估時年齡：50.5 歲；性別：男性'
+    assert '評估日期：' not in text and '確認尚未罹患' not in text
+    assert paragraphs[paragraphs.index('結果說明')-1]==''
+    assert paragraphs[paragraphs.index('注意事項')-1]==''
+    assert 'keepNext' not in doc.element.xml and 'keepLines' not in doc.element.xml
+    assert 'https://www.pgscatalog.org/' in {r.target_ref for r in doc.part.rels.values() if r.is_external}
+    method=next(p for p in doc.paragraphs if '本次多基因風險評估採用' in p.text)
+    assert all(not r.bold for r in method.runs)
     assert 'Model A' not in text and '原始 PRS score' not in text
     omitted=Document(io.BytesIO(client.get(url.replace('acmg_sf,prs,pgx','acmg_sf,pgx')).content))
     omitted_text='\n'.join(p.text for p in omitted.paragraphs)

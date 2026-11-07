@@ -1860,3 +1860,34 @@ def test_health_ascii_tables_do_not_emit_keep_next_markers():
     docx_export._render_health_pgx_section(doc, "藥物基因體學", {})
 
     assert "keepNext" not in doc.element.xml
+
+
+def test_health_prs_comment_replacements_are_scoped_to_the_selected_text():
+    content=docx_export._health_prs_content()
+    assert 'Polygenic Risk Score, PRS）' in content['intro']
+    assert '計算多基因風險分數' in content['intro']
+    assert '受檢者的風險分數百分位' in content['intro']
+    assert content['definitions'][0][0]=='PRS 百分位：'
+    assert '受檢者的多基因風險分數高於' in content['definitions'][0][1]
+    assert '性別、多基因風險分數及' in content['definitions'][1][1]
+    assert content['definitions'][2][1]=='從同一評估年齡起，推估未來20年內發生該疾病的累積機率。'
+    assert '不確定性區間' not in ''.join(''.join(row) for row in content['cautions'])
+    assert '計算多基因風險分數 (PRS)。PRS 百分位' in content['method_suffix']
+    assert '尚未經台灣族群' in content['cautions'][0][1]
+
+
+def test_health_pagination_cleanup_preserves_deliberate_page_start():
+    from docx.oxml.ns import qn
+    doc=Document()
+    paragraph=doc.add_paragraph('附錄小節')
+    paragraph.paragraph_format.keep_with_next=True
+    paragraph.paragraph_format.keep_together=True
+    paragraph.paragraph_format.page_break_before=True
+    doc.styles['Normal'].paragraph_format.keep_with_next=True
+    before=paragraph.text
+    docx_export._health_clear_pagination_markers(doc)
+    assert paragraph.text.endswith(before)
+    for name in ('keepNext','keepLines','pageBreakBefore'):
+        assert not list(doc.element.iter(qn('w:'+name)))
+        assert not list(doc.styles.element.iter(qn('w:'+name)))
+    assert any(node.get(qn('w:type'))=='page' for node in doc.element.iter(qn('w:br')))
