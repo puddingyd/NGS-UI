@@ -2,6 +2,11 @@
 import re
 
 
+def disease_name(key, source_name):
+    """Current display label without rewriting reproducible assessment inputs."""
+    return '全部癌症（All cancers）' if key == 'ALL_CANCERS' else source_name
+
+
 def nextflow_failed(raw):
     # A task can be retried by Nextflow; only its terminal workflow error is
     # grounds for stopping the owned process group.

@@ -52,7 +52,7 @@ def status(sid, record, score_hash):
         score = dict(raw_score=r['total_sum'], percentile=r['eas_percentile'], group=r['intervene_group'],
             job_id=record.get('job_id'), qc_ready=ancestry and r['qc_ready'],
             observed_loci=r['observed_loci'], missing_loci=r['missing_loci'])
-        diseases.append(dict(id=key, name=disease['name'], pgs_id=disease['pgs_id'], score=score))
+        diseases.append(dict(id=key, name=prs_presentation.disease_name(key, disease['name']), pgs_id=disease['pgs_id'], score=score))
     current = dict(bundle=pack_hash, score=score_hash, case_metadata=meta_hash)
     latest = prs.latest_snapshot(sid)
     stale = bool(latest and latest.get('input_sha256') != current)
@@ -103,14 +103,14 @@ def explanation():
     common = prs_presentation.explanation()
     return dict(method=[
         'gVCF → PRS score：共用一次基因型重建，依各疾病模型的固定變異位點與權重加總。無法可靠判讀的位點，以固定 3,330 名參考者的平均基因型補值；品質不足的疾病不估算風險。',
-        '使用的模型：'+ '；'.join(d['name']+' '+d['pgs_id'] for d in registry.values())+'。',
+        '使用的模型：'+ '；'.join(prs_presentation.disease_name(k, d['name'])+' '+d['pgs_id'] for k,d in registry.items())+'。',
         'score → percentile：各疾病分別與相同 735 名東亞參考者的該疾病分數比較；百分位是相對排名，不是發病機率，也不能跨疾病比較原始分數。',
         'percentile → risk：依 INTERVENE 愛沙尼亞資料庫的百分位分組相對風險，結合台灣 GBD 2019 年齡、性別別的發生率、盛行率與死亡率；估算首次發病，並考慮先因其他原因死亡的可能。',
     ], limitations=[
         common['limitations'][0], common['limitations'][1],
         '只估算評估時仍存活、確認尚未罹患該疾病的 20 至未滿 80 歲個案；各疾病病史分別確認。超過 60 歲不提供完整二十年風險，超過 70 歲不提供完整十年風險，仍可查看至 80 歲風險。乳癌風險模型僅適用女性。',
-        *[d['name']+'：'+d['limitation'] for d in registry.values()],
-        '整體癌症與乳癌的事件範圍重疊，兩個風險不能相加；此模型也不能用來預測特定癌別、腫瘤位置或癌症復發。',
+        *[prs_presentation.disease_name(k, d['name'])+'：'+d['limitation'].replace('整體癌症', '全部癌症') for k,d in registry.items()],
+        '全部癌症與乳癌的事件範圍重疊，兩個風險不能相加；此模型也不能用來預測特定癌別、腫瘤位置或癌症復發。',
         common['limitations'][4], common['limitations'][5],
         '尚未納入血壓、血脂、血糖、BMI、吸菸、家族史或治療效果，也沒有個人風險誤差範圍；相同百分位分組、年齡及性別會得到相同估計。',
     ], sources=[dict(label=d['pgs_id'], url='https://www.pgscatalog.org/score/'+d['pgs_id']+'/') for d in registry.values()]

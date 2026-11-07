@@ -3,9 +3,10 @@ let sampleId = null, generation = 0, controller = null, ready = false;
 let timer = null, currentJob = null, dirtyClinical = false, busy = false;
 let assessmentResults = {}, scoredDiseases = [];
 const diseases = [
-  ['CHD','冠心病（CHD）'],['T2D','第二型糖尿病（T2D）'],['ALL_CANCERS','整體癌症（All cancers）'],
+  ['CHD','冠心病（CHD）'],['T2D','第二型糖尿病（T2D）'],['ALL_CANCERS','全部癌症（All cancers）'],
   ['BREAST','乳癌（Breast cancer）'],['AF','心房顫動（AF）'],['EPILEPSY','癲癇（Epilepsy）'],
 ];
+const diseaseName = id => diseases.find(([key])=>key===id)?.[1];
 const byId = id => document.getElementById(id);
 const pending = '請輸入臨床資訊後計算';
 const active = job => ['queued','running','cancelling'].includes(job?.status);
@@ -27,7 +28,7 @@ function renderRows(records=[]) {
     const disease=records.find(r=>r.id===id)||{id,name,score:null};
     const row=document.createElement('tr');row.dataset.disease=disease.id;
     const score=disease.score;
-    for(const value of [disease.name, score ? Number(score.raw_score).toFixed(6) : '尚未完成分析', score ? `第 ${Number(score.percentile).toFixed(2)} 百分位` : '尚未完成分析']) {
+    for(const value of [name, score ? Number(score.raw_score).toFixed(6) : '尚未完成分析', score ? `第 ${Number(score.percentile).toFixed(2)} 百分位` : '尚未完成分析']) {
       const cell=document.createElement('td');cell.textContent=value;row.append(cell);
     }
     for(const key of ['ten','twenty','eighty']) {const cell=document.createElement('td');cell.dataset.risk=key;cell.textContent=pending;row.append(cell);}
@@ -54,7 +55,7 @@ async function request(path='', body, signal=controller?.signal) {
     ...(body?{body:JSON.stringify(body)}:{}),
   });
   const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(response.status===401?'請先登入。':(typeof data.detail==='string'?data.detail:'無法取得 PRS 資料'));
+  if(!response.ok)throw new Error(response.status===401?'請先登入。':(typeof data.detail==='string'?data.detail.replaceAll('整體癌症','全部癌症'):'無法取得 PRS 資料'));
   return data;
 }
 function svgNode(name, attrs, content) {
@@ -76,7 +77,7 @@ function renderCurve(result, svg, body) {
   const cap = Math.min(1, Math.max(.01, Math.ceil(maximum * 100 / 5) * .05));
   const x = age => left + (age-first)/(80-first)*(width-left-right);
   const y = risk => height-bottom-risk/cap*(height-top-bottom);
-  const title=`目前至80歲的 ${result.name||'冠心病（CHD）'} 累積風險：此個案與 PRS 40–60% 參考組`;
+  const title=`目前至80歲的 ${diseaseName(result.id||'CHD')} 累積風險：此個案與 PRS 40–60% 參考組`;
   svg.setAttribute('aria-label',title);svg.append(svgNode('title', {},title));
   for (let i=0; i<=4; i++) {
     const value = cap*i/4;
@@ -176,7 +177,7 @@ function renderScoreStatus(score, records=[]) {
   if(score) {
     if(active(currentJob) && score.job_id!==currentJob.job_id)text='正在重新分析；表格目前保留上一次已發布的計分結果。';
     else if(records.length>1 && records.some(r=>r.score?.qc_ready) && records.some(r=>!r.score?.qc_ready))
-      text='PRS 計分已完成；以下疾病尚未通過祖源或品質檢查，無法計算風險：'+records.filter(r=>!r.score?.qc_ready).map(r=>r.name).join('、')+'。其他疾病可依臨床資訊計算。';
+      text='PRS 計分已完成；以下疾病尚未通過祖源或品質檢查，無法計算風險：'+records.filter(r=>!r.score?.qc_ready).map(r=>diseaseName(r.id)||r.name).join('、')+'。其他疾病可依臨床資訊計算。';
     else if(!score.qc_ready)text=active(currentJob)
       ? (currentJob.status==='cancelling' && currentJob.warning
         ? 'PRS 計分已完成；祖源與品質檢查失敗，正在停止相關程序。分數與百分位保留，目前無法計算風險。'

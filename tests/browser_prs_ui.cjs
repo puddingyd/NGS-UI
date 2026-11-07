@@ -39,7 +39,7 @@ assert(html.indexOf('id="prs-card"') < html.indexOf('id="cat-pharmcat-c"'));
 assert(html.indexOf('data-target="prs-card"') < html.indexOf('data-target="cat-pharmcat-c"'));
 const appSource=fs.readFileSync(path.join(repo,'frontend/app.js'),'utf8');
 const pickerSource=appSource.slice(appSource.indexOf('function _pickHealthReportSections('),appSource.indexOf('async function exportHealthDocx('));
-const pickerScript=`const escapeHtml=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const escapeAttr=escapeHtml;${pickerSource};window.testReportPicker=_pickHealthReportSections;`;
+const pickerScript=`const state={data:{}};const escapeHtml=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const escapeAttr=escapeHtml;${pickerSource};window.testReportPicker=_pickHealthReportSections;`;
 const preview=`<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/frontend/style.css"><link rel="stylesheet" href="/frontend/prs.css"><style>body{margin:20px;display:block}.container{margin:auto;max-width:1100px}.preview-note{text-align:center;color:#8a4b00;margin:14px}</style><p class="preview-note">UI 測試預覽：合成個案，非病人結果</p><main class="container">${html.slice(start,end)}<div id="cat-pharmcat-c" class="cat-block"><div class="block-header"><span class="title">PGx / PharmCAT</span></div><div class="block-body open">PGx 樣式比較</div></div></main><script src="/report-picker.js"></script><script type="module">import {resetPrsSample} from '/frontend/prs.js';window.resetPrsSample=resetPrsSample;resetPrsSample('SYNTHETIC_CASE');</script></html>`;
 const server=http.createServer((req,res)=>{
  if(req.url==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(preview);return;}
@@ -132,6 +132,9 @@ const server=http.createServer((req,res)=>{
  await page.locator('#prs-cancel').click();await page.waitForTimeout(100);assert.equal(cancelled,1);
  multiMode=true;ready=true;latest=null;job=null;await page.setViewportSize({width:1240,height:1000});
  await page.locator('#prs-refresh').click();await page.waitForFunction(()=>!document.querySelector('#prs-submit').disabled);
+ assert.equal(await page.locator('[data-disease="ALL_CANCERS"] td:first-child').innerText(),'全部癌症（All cancers）');
+ assert.match(await page.locator('#prs-history-ALL_CANCERS').locator('..').textContent(),/全部癌症/);
+ assert.doesNotMatch(await page.locator('#prs-method,#prs-limitations').allTextContents().then(v=>v.join(' ')),/整體癌症/);
  await page.locator('#prs-age').fill('50.5');await page.locator('#prs-sex').selectOption('female');
  await page.locator('#prs-history-menu>summary').click();
  for(const field of await page.locator('[data-history]').all())await field.selectOption('no');
@@ -146,7 +149,8 @@ const server=http.createServer((req,res)=>{
  assert(gridPositions[3].top>gridPositions[0].top);assert.equal(gridPositions[0].left,gridPositions[3].left);
  for(const [id,r] of Object.entries(latest.result.diseases)) {
    const card=page.locator(`[data-curve-disease="${id}"]`);
-   assert.match(await card.locator('svg').getAttribute('aria-label'),new RegExp(r.name.replace(/[()]/g,'\\$&')));
+   const displayName=id==='ALL_CANCERS'?'全部癌症（All cancers）':r.name;
+   assert.match(await card.locator('svg').getAttribute('aria-label'),new RegExp(displayName.replace(/[()]/g,'\\$&')));
    await card.locator('summary').click();
    const cells=await card.locator('tbody tr:last-child td').allTextContents();
    assert.equal(cells[1],`${(r.risk_to_80.risk*100).toFixed(2)}%`);
@@ -179,10 +183,14 @@ const server=http.createServer((req,res)=>{
  assert.equal(await page.locator('#prs-curve-grid').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length),1);
  const phoneTops=await page.locator('.prs-curve-card').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().top));
  assert.equal(new Set(phoneTops).size,6);
+ assert.match(await page.locator('[data-curve-disease="ALL_CANCERS"] svg').getAttribute('aria-label'),/全部癌症/);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await screenshot('six-diseases-mobile.png');
  qcFailed='CHD';latest=null;await page.locator('#prs-refresh').click();
  await page.waitForFunction(()=>document.querySelector('#prs-score-status').textContent.includes('其他疾病可依臨床資訊計算'));
  assert.match(await page.locator('#prs-score-status').innerText(),/冠心病/);assert.equal(await page.locator('#prs-submit').isDisabled(),false);
+ qcFailed='ALL_CANCERS';await page.locator('#prs-refresh').click();
+ await page.waitForFunction(()=>document.querySelector('#prs-score-status').textContent.includes('全部癌症'));
+ assert.doesNotMatch(await page.locator('#prs-score-status').innerText(),/整體癌症/);
  delay=200;await page.locator('#prs-refresh').click();await page.evaluate(()=>window.resetPrsSample('OTHER_CASE'));await page.waitForTimeout(350);assert.equal(await page.locator('#prs-message').innerText(),'');assert.equal(await page.locator('#prs-result').isVisible(),false);
  assert.deepEqual(await page.locator('[data-history]').evaluateAll(es=>es.map(e=>e.value)),Array(6).fill('no'));
  assert.equal(errors.length,0,errors.join('\n'));console.log('PASS: 20-year horizons, default-no/preserved history, legacy snapshots, six-disease rows/curves/QC, report selection, mobile scroll, clinical invalidation, run/log/cancel, sample-switch race');

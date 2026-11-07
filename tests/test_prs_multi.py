@@ -126,6 +126,13 @@ def test_saved_multi_assessment_report_integrity_and_staleness(linked):
     assert prs.report_assessment('SYNTHETIC') == saved
     assert prs.report_readiness('SYNTHETIC')['available']
     path = prs.assessment_dir('SYNTHETIC')/(saved['assessment_id']+'.json')
+    original = path.read_bytes()
+    # Older immutable results keep their source name and remain reproducible;
+    # current presentation is supplied independently of that saved string.
+    assert saved['result']['diseases']['ALL_CANCERS']['name']=='整體癌症（All cancers）'
+    assert next(r for r in prs.status('SYNTHETIC')['diseases'] if r['id']=='ALL_CANCERS')['name']=='全部癌症（All cancers）'
+    assert '整體癌症' not in json.dumps(prs_multi.explanation(),ensure_ascii=False)
+    assert path.read_bytes()==original
     corrupted=copy.deepcopy(saved);corrupted['result']['diseases']['CHD']['risk_10_year']['risk']=.99
     prs.atomic_json(path,corrupted)
     assert not prs.report_readiness('SYNTHETIC')['available']
@@ -146,11 +153,19 @@ def test_multi_health_text_table_keeps_all_percentiles_and_unavailable_reasons(l
     assert '乳癌' in text and '僅適用女性' in text and '心房顫動' in text
     table_rows=[p.text for p in doc.paragraphs if p.text.startswith('     ') and not p.text.strip().startswith('=')]
     assert len(table_rows)==6
-    assert [r.strip().split()[0] for r in table_rows]==['冠狀動脈心臟病','第二型糖尿病','整體癌症','乳癌','心房顫動','癲癇']
+    assert [r.strip().split()[0] for r in table_rows]==['冠狀動脈心臟病','第二型糖尿病','全部癌症','乳癌','心房顫動','癲癇']
     assert '已有此疾病，不估算風險' in table_rows[1]
     assert f'第{docx_export._health_prs_number(saved["result"]["diseases"]["T2D"]["percentile"])}百分位' in table_rows[1]
-    lines=[line for r in table_rows for line in r.splitlines()]
-    assert len({docx_export._str_width(line) for line in lines})==1
+    header=next(p for p in doc.paragraphs if '多基因風險分數百分位' in p.text)
+    assert header.text.splitlines()[1].split('\t')==[
+        '     疾病','多基因風險分數百分位','未來10年風險','未來20年風險','至80歲累積風險']
+    table_paragraphs=[header]+[p for p in doc.paragraphs if p.text in table_rows]
+    for paragraph in table_paragraphs:
+        assert [(stop.position.pt,stop.alignment) for stop in paragraph.paragraph_format.tab_stops]==[
+            (126.5,0),(247.5,0),(324.5,0),(401.5,0)]
+        assert paragraph._p.xpath('./w:pPr/w:autoSpaceDN/@w:val')==['0']
+    assert len(table_rows[0].splitlines()[0].split('\t'))==5
+    assert len(table_rows[1].splitlines()[0].split('\t'))==3
     assert '本次未提供的風險估計' not in text and '各疾病為獨立估計' not in text
     assert not any('：'+r['limitations'][0] in text for r in saved['result']['diseases'].values() if r['available'])
 

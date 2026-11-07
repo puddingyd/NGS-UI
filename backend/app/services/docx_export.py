@@ -40,6 +40,7 @@ from . import (
     phenotype_scorer,
     ploidy,
     prs,
+    prs_presentation,
     report_store,
     sample_loader,
     test_types,
@@ -496,7 +497,7 @@ def _wrap_to_cols(text: str, width: int, mode: str = "char") -> list[str]:
 def _ascii_table(doc,
                  columns: list[tuple],  # (header, width) or (header, width, mode)
                  rows: list[list[str] | dict],
-                 indent: str = "    ") -> None:
+                 indent: str = "    ", *, fixed_tabs: bool = False) -> None:
     """Render a ==== bounded table where each column has a fixed display
     width; over-long cells wrap per the column's `mode` ("char" default
     / "token" for clinical sigs). Columns are packed without inter-
@@ -506,6 +507,9 @@ def _ascii_table(doc,
 
     With column widths summing to N and (k) columns, the data line is
     N+2 chars wide (1-space pad each side) and the sep is `=`*(N+2).
+    fixed_tabs uses the same geometry with physical tab stops (half the
+    MingLiU font size per display column), so mixed-script auto spacing
+    cannot move the start of the next cell. Other callers retain spaces.
     """
     # Normalize each column spec to (header, width, mode).
     cols = [(c[0], c[1], (c[2] if len(c) > 2 else "char")) for c in columns]
@@ -513,6 +517,25 @@ def _ascii_table(doc,
     modes  = [m for _, _, m in cols]
     total  = sum(widths) + 2   # +1 pad on each side
     sep    = "=" * total
+
+    def format_line(parts, row_widths):
+        if fixed_tabs:
+            return f"{indent} " + '\t'.join(parts)
+        return f"{indent} {''.join(_pad_right(p, w) for p, w in zip(parts, row_widths))} "
+
+    def add_lines(lines):
+        paragraph = _add_paragraph(doc, "\n".join(lines))
+        if fixed_tabs:
+            # Word/LibreOffice add spacing at Chinese/digit boundaries (e.g.
+            # 第35.1百分位 and 未來10年). Spaces alone therefore drift between
+            # header and data. Explicit stops reset each column independently.
+            offset = _str_width(indent) + 1
+            for width in widths[:-1]:
+                offset += width
+                paragraph.paragraph_format.tab_stops.add_tab_stop(Pt(offset * BODY_FONT_SIZE.pt / 2))
+            for tag in ('autoSpaceDE', 'autoSpaceDN'):
+                node = OxmlElement('w:'+tag); node.set(qn('w:val'), '0')
+                paragraph._p.get_or_add_pPr().append(node)
 
     def row_lines(cells: list[str] | dict, header: bool = False) -> list[str]:
         row_widths = widths
@@ -529,8 +552,7 @@ def _ascii_table(doc,
                 raise ValueError("ASCII table custom row geometry does not match header")
         # Headers don't wrap (kept short by design).
         if header:
-            parts = [_pad_right(str(c or ""), w) for c, w in zip(cells, row_widths)]
-            return [f"{indent} {''.join(parts)} "]
+            return [format_line([str(c or "") for c in cells], row_widths)]
         wrapped = [
             _wrap_to_cols(str(c or ""), w, mode=m)
             for c, w, m in zip(cells, row_widths, row_modes)
@@ -539,10 +561,10 @@ def _ascii_table(doc,
         lines = []
         for i in range(n):
             parts = [
-                _pad_right(cell_lines[i] if i < len(cell_lines) else "", w)
-                for cell_lines, w in zip(wrapped, row_widths)
+                cell_lines[i] if i < len(cell_lines) else ""
+                for cell_lines in wrapped
             ]
-            lines.append(f"{indent} {''.join(parts)} ")
+            lines.append(format_line(parts, row_widths))
         return lines
 
     header_lines = [
@@ -550,12 +572,12 @@ def _ascii_table(doc,
         *row_lines([h for h, _, _ in cols], header=True),
         f"{indent}{sep}",
     ]
-    _add_paragraph(doc, "\n".join(header_lines))
+    add_lines(header_lines)
     for row_index, row in enumerate(rows):
         lines = row_lines(row)
         if row_index == len(rows) - 1:
             lines.append(f"{indent}{sep}")
-        _add_paragraph(doc, "\n".join(lines))
+        add_lines(lines)
 
 
 # ── Variant-bucketing helpers ─────────────────────────────────────
@@ -3865,10 +3887,11 @@ def _render_health_prs_section(doc, snapshot):
     _add_paragraph(doc, content['result_title'], bold=True)
     _add_paragraph(doc, f'評估時年齡：{person["age"]:g} 歲；性別：{sex}')
     columns = [('疾病', 18), ('多基因風險分數百分位', 22),
-               ('未來10年風險', 13), ('未來20年風險', 13), ('至80歲累積風險', 17)]
+               ('未來10年風險', 14), ('未來20年風險', 14), ('至80歲累積風險', 15)]
     values = []
     for r in assessment_rows:
-        name = '冠狀動脈心臟病' if r['id'] == 'CHD' else r['name'].split('（')[0]
+        name = ('冠狀動脈心臟病' if r['id'] == 'CHD'
+                else prs_presentation.disease_name(r['id'], r['name']).split('（')[0])
         prefix = [name, f'第{_health_prs_number(r["percentile"])}百分位']
         if r['available']:
             values.append([*prefix, *[_health_prs_number(r[key]['risk'], risk=True)+'%' if r[key]
@@ -3878,7 +3901,7 @@ def _render_health_prs_section(doc, snapshot):
             # One explanation spans the three risk columns without repeating or
             # wrapping it independently in each narrow horizon column.
             values.append(dict(cells=[*prefix, reason], widths=[18, 22, 43], modes=['char']*3))
-    _ascii_table(doc, columns=columns, rows=values)
+    _ascii_table(doc, columns=columns, rows=values, fixed_tabs=True)
     assessment_rows = [r for r in assessment_rows if r['available']]
     if any(r['risk_10_year'] is None for r in assessment_rows):
         _add_paragraph(doc, '未來10年風險不適用：評估年齡超過70歲，完整十年期間超出本模型80歲的估算終點。')
@@ -4117,7 +4140,7 @@ def build_health_docx(sample_id: str, *, sections: Iterable[str] | None = None) 
     specialized_genes = "、".join(dict.fromkeys(v.get("gene_symbol", "") for v in referenced if v.get("specialized") or v.get("gba")))
     prs_models = ''
     if prs_assessment and prs_assessment['result'].get('schema') == 'PRS_MULTI_RESULT_V1':
-        prs_models = '、'.join(r['pgs_id']+'（'+r['name'].split('（')[0]+'）'
+        prs_models = '、'.join(r['pgs_id']+'（'+prs_presentation.disease_name(r['id'], r['name']).split('（')[0]+'）'
                               for r in prs_assessment['result']['diseases'].values())
     _section_methods(doc, test_type, health=True, include_pgx=include_pgx, include_prs=bool(prs_assessment), specialized_genes=specialized_genes, prs_models=prs_models)
     _section_health_annotations(doc, requested_set, pgx_payload.get("pgx") or pgx_payload.get("pharmcat") or {}, prs_models=prs_models)
