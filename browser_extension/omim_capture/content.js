@@ -150,32 +150,133 @@
     return SYNOPSIS_CATEGORIES.some(cat => new RegExp(`\\n\\s*${cat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\n`).test(slice));
   }
 
+  // True when following this element's link would leave the current page
+  // (e.g. the orange "Clinical Synopsis" label links to /clinicalSynopsis/MIM).
+  function navigates(el) {
+    const a = el && el.closest ? el.closest("a[href]") : null;
+    if (!a) return false;
+    const raw = (a.getAttribute("href") || "").trim();
+    if (!raw || raw.startsWith("#") || /^javascript:/i.test(raw)) return false;
+    try {
+      const url = new URL(a.href, location.href);
+      return url.origin !== location.origin || url.pathname !== location.pathname
+        || url.search !== location.search;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  // Safety net while we click: cancel any synthetic click that would
+  // navigate away (that would kill this script before the capture is sent).
+  // Real user clicks (isTrusted) are never touched.
+  function blockSyntheticNavigation(ev) {
+    if (ev.isTrusted) return;
+    const target = ev.target && ev.target.closest ? ev.target.closest("a[href]") : null;
+    if (target && navigates(target)) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+    }
+  }
+
+  const TRIANGLE_RE = /^[►▼▶▸▾▴◀◂▲+\-−]$/;
+  const TOGGLE_HINT_RE = /triangle|toggle|caret|collapse|fold|expand|chevron|arrow/i;
+
+  // The same-page expander next to the "Clinical Synopsis" label: the small
+  // triangle the reviewer normally clicks. Never the label link itself.
   function synopsisToggles() {
-    const out = [];
-    document.querySelectorAll("a, button, span, div, h3, h4, h5, strong").forEach(el => {
-      if (host.contains(el) || el.children.length > 2) return;
+    const found = new Set();
+    const add = el => {
+      if (!el || host.contains(el) || navigates(el)) return;
+      // Table-of-contents links only scroll the page.
+      if (el.closest("[id*='toc' i], [class*='toc' i]")) return;
+      found.add(el);
+    };
+    // 1. Explicit collapse controls that point at a synopsis fold.
+    document.querySelectorAll([
+      "[id*='ClinicalSynopsisToggle' i]",
+      "[id*='ClinicalSynopsisTriangle' i]",
+      "[data-toggle][href*='linicalSynopsis' i]",
+      "[data-bs-toggle][href*='linicalSynopsis' i]",
+      "[data-target*='linicalSynopsis' i]",
+      "[data-bs-target*='linicalSynopsis' i]",
+      "[aria-controls*='linicalSynopsis' i]",
+      "a[href^='#'][href*='linicalSynopsis' i]",
+    ].join(",")).forEach(add);
+    // 2. Triangle / toggle-looking elements around a "Clinical Synopsis" label.
+    const labels = [];
+    document.querySelectorAll("a, span, div, h2, h3, h4, h5, strong, b").forEach(el => {
+      if (host.contains(el) || el.children.length > 3) return;
       const label = (el.textContent || "").replace(/\s+/g, " ").trim();
-      if (!/^[^A-Za-z0-9]{0,4}\s*Clinical Synopsis\s*$/i.test(label)) return;
-      if (!el.getClientRects().length) return;
-      out.push(el);
+      if (/^[^A-Za-z0-9]{0,4}\s*Clinical Synopsis\s*$/i.test(label)) labels.push(el);
     });
-    // Prefer clickable elements outside the table of contents (TOC links
-    // only scroll the page).
-    const rank = el => (el.closest("[id*='toc' i], [class*='toc' i]") ? 2 : 0)
-      + (el.matches("a, button, [onclick], [role='button'], [data-toggle]") ? 0 : 1);
-    return out.sort((a, b) => rank(a) - rank(b));
+    for (const label of labels) {
+      if (label.closest("[id*='toc' i], [class*='toc' i]")) continue;
+      let scope = label;
+      for (let depth = 0; depth < 3 && scope.parentElement; depth += 1) {
+        scope = scope.parentElement;
+        scope.querySelectorAll("*").forEach(el => {
+          if (el === label || el.contains(label)) return;
+          const text = (el.textContent || "").trim();
+          const hint = `${el.id || ""} ${typeof el.className === "string" ? el.className : ""}`;
+          if (TRIANGLE_RE.test(text) || (TOGGLE_HINT_RE.test(hint) && text.length <= 3)) add(el);
+        });
+        if (found.size) break;
+      }
+      // A label that is itself a same-page toggle (e.g. "► Clinical Synopsis").
+      if (!navigates(label)) add(label);
+    }
+    const rank = el => (el.matches("[data-toggle], [data-bs-toggle], [aria-controls], a[href^='#']") ? 0 : 1)
+      + (el.getClientRects().length ? 0 : 2);
+    return [...found].sort((x, y) => rank(x) - rank(y)).slice(0, 6);
   }
 
   async function expandSynopsis() {
     if (synopsisVisible(pageText())) return "already_visible";
-    for (const el of synopsisToggles()) {
-      el.click();
-      for (let i = 0; i < 20; i += 1) {
-        await sleep(250);
-        if (synopsisVisible(pageText())) return "expanded";
+    document.addEventListener("click", blockSyntheticNavigation, true);
+    try {
+      for (const el of synopsisToggles()) {
+        const target = el.closest("a, button, [role='button'], [onclick], [data-toggle], [data-bs-toggle]") || el;
+        if (navigates(target)) continue;
+        target.click();
+        for (let i = 0; i < 12; i += 1) {
+          await sleep(250);
+          if (synopsisVisible(pageText())) return "expanded";
+        }
       }
+    } finally {
+      document.removeEventListener("click", blockSyntheticNavigation, true);
     }
     return "";
+  }
+
+  // The synopsis is often already in the page but collapsed (display:none).
+  // Copy the smallest hidden block holding several synopsis categories into
+  // an off-screen box to read it with its line structure.
+  function hiddenSynopsisText() {
+    let best = null;
+    document.querySelectorAll("div, section, td, table").forEach(el => {
+      if (host.contains(el) || el.getClientRects().length) return;
+      const text = el.textContent || "";
+      const hits = SYNOPSIS_CATEGORIES.filter(cat => text.includes(cat)).length;
+      if (hits < 2) return;
+      if (!best || text.length < (best.textContent || "").length) best = el;
+    });
+    if (!best) return "";
+    const box = document.createElement("div");
+    box.style.cssText = "position:absolute;left:-100000px;top:0;width:900px;";
+    const clone = best.cloneNode(true);
+    clone.style.display = "block";
+    clone.querySelectorAll("*").forEach(n => {
+      if (n.style && n.style.display === "none") n.style.display = "";
+    });
+    clone.classList.remove("collapse");
+    box.appendChild(clone);
+    document.body.appendChild(box);
+    try {
+      return box.innerText || "";
+    } finally {
+      box.remove();
+    }
   }
 
   async function synopsisPageText() {
@@ -300,6 +401,11 @@
       if (prefix !== "*") {
         synopsisMethod = await expandSynopsis();
         if (!synopsisMethod) {
+          synopsisText = hiddenSynopsisText();
+          synopsisMethod = synopsisText ? "hidden_fold" : "";
+        }
+        if (!synopsisMethod) {
+          // Background fetch only — the page itself never navigates.
           synopsisText = await synopsisPageText();
           synopsisMethod = synopsisText ? "synopsis_page" : "not_found";
         }

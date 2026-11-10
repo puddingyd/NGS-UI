@@ -55,6 +55,7 @@ _FOOTER_STARTS = (
     "Edit History:",
     "NOTE: OMIM is intended",
 )
+_SYNOPSIS_LABEL_RE = re.compile(r"^[^A-Za-z0-9]{0,4}\s*Clinical Synopsis\s*$", re.IGNORECASE)
 _SYNOPSIS_TRAILERS = (
     "▲ Close",
     "▲Close",
@@ -280,7 +281,11 @@ def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = N
         if last_row >= 0:
             close_idx = index_of(lambda s: s in _SYNOPSIS_TRAILERS, last_row + 1)
             if 0 <= close_idx <= end:
-                synopsis = _strip_block(body[last_row + 1:close_idx])
+                block = body[last_row + 1:close_idx]
+                # Drop the expander label ("► Clinical Synopsis") if present.
+                while block and (not block[0].strip() or _SYNOPSIS_LABEL_RE.match(block[0].strip())):
+                    block = block[1:]
+                synopsis = _strip_block(block)
                 synopsis_source = "entry_page"
     if not relationships and extracted.get("relationship_rows"):
         relationships = _parse_rows_from_cells(extracted.get("relationship_rows"))

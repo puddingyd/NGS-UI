@@ -303,3 +303,12 @@ def test_status_uses_page_edit_date(client):
     assert c.get("/api/omim/status?mim=600001&edit_date=2026-01-01", headers=headers).json()[
         "comparison"]["status"] == "outdated"
     assert c.get("/api/omim/status?mim=600001&edit_date=bad", headers=headers).status_code == 400
+
+
+def test_synopsis_drops_expander_label_line():
+    text = phenotype_page().replace(
+        "   \nINHERITANCE\n", "► Clinical Synopsis\n   \nINHERITANCE\n"
+    )
+    p = omim_capture.parse_entry_text(text, url_mim="600001")
+    assert p["synopsis"].splitlines()[0] == "INHERITANCE"
+    assert p["synopsis_status"] == "present"
