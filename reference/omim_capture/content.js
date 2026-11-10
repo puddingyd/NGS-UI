@@ -146,13 +146,22 @@
     return dates.sort().pop() || "";
   }
 
-  // Synopsis is visible when a category line sits between the relationships
-  // table and the TEXT section.
-  function synopsisVisible(text) {
+  // Text between the relationships table and the TEXT section, where an
+  // expanded synopsis shows up.
+  function synopsisSlice(text) {
     const start = text.search(/(Phenotype|Gene)-(Gene|Phenotype) Relationships/);
+    if (start < 0) return "";
     const textIdx = text.search(/\n\s*▼\s*TEXT\b/);
-    if (start < 0) return false;
-    const slice = text.slice(start, textIdx > start ? textIdx : undefined);
+    return text.slice(start, textIdx > start ? textIdx : undefined);
+  }
+
+  // Synopsis is visible when the fold's "▲ Close" link is shown (only there
+  // when expanded; works for old-style headings such as "Neuro" / "Misc")
+  // or a current-style category line sits in that slice.
+  function synopsisVisible(text) {
+    const slice = synopsisSlice(text);
+    if (!slice) return false;
+    if (/\n\s*▲\s*Close\s*(\n|$)/.test(slice)) return true;
     return SYNOPSIS_CATEGORIES.some(cat => new RegExp(`\\n\\s*${cat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\n`).test(slice));
   }
 
@@ -243,10 +252,15 @@
       for (const el of synopsisToggles()) {
         const target = el.closest("a, button, [role='button'], [onclick], [data-toggle], [data-bs-toggle]") || el;
         if (navigates(target)) continue;
+        const before = synopsisSlice(pageText()).length;
         target.click();
         for (let i = 0; i < 12; i += 1) {
-          await sleep(250);
-          if (synopsisVisible(pageText())) return "expanded";
+          await sleep(i < 4 ? 100 : 250);
+          const text = pageText();
+          if (synopsisVisible(text)) return "expanded";
+          // Something opened even if we do not recognise its headings: stop
+          // here instead of clicking another toggle (that could close it).
+          if (synopsisSlice(text).length > before + 30) return "expanded";
         }
       }
     } finally {
