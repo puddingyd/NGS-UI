@@ -63,9 +63,11 @@
 
     <section class="card" id="lookup-card">
       <h2 class="section-title">查詢基因的 OMIM 資料</h2>
-      <form id="lookup-form" class="lookup-form" autocomplete="off">
-        <input id="lookup-q" list="lookup-suggest" placeholder="基因名稱（可用舊名稱）、基因 MIM 或 phenotype MIM，例如 GAA、606800、232300">
-        <datalist id="lookup-suggest"></datalist>
+      <form id="lookup-form" class="lookup-row" autocomplete="off">
+        <div class="combobox-wrap">
+          <input id="lookup-q" type="text" autocomplete="off" placeholder="輸入基因名稱（可用舊名稱）/ 基因 MIM / phenotype MIM 以查詢…" />
+          <ul id="lookup-dropdown" class="combobox-dropdown hidden" role="listbox"></ul>
+        </div>
         <button class="btn btn-primary" type="submit">查詢</button>
       </form>
       <div id="lookup-result" class="lookup-result" hidden></div>

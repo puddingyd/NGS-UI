@@ -52,8 +52,54 @@
 .review-list { margin: 0 0 0 16px; padding: 0; }
 .review-list li { margin: 2px 0 6px; }
 .review-list .review-actions { display: inline-block; margin-left: 4px; }
-.lookup-form { display: flex; gap: 8px; }
-.lookup-form input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+/* Same look as the main page's sample search box (.search-row + combobox). */
+.lookup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.lookup-row input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--fg);
+  background: #fff;
+}
+.lookup-row input:focus { outline: none; border-color: #0969da; box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15); }
+.combobox-wrap { position: relative; }
+.combobox-dropdown {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 20;
+}
+.combobox-dropdown.hidden { display: none; }
+.combobox-option {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 0.8fr;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.combobox-option:hover, .combobox-option.active { background: #eaeef2; }
+.combobox-option .opt-symbol { font-family: ui-monospace, monospace; font-weight: 600; }
+.combobox-option .opt-name { color: var(--fg); }
+.combobox-option .opt-mim { color: var(--muted); font-family: ui-monospace, monospace; }
 .lookup-result { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
 .lookup-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .lookup-head h3 { font-size: 16px; margin: 0; }

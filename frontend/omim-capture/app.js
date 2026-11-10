@@ -213,12 +213,41 @@
   };
   let lookupTimer = null;
 
+  let lookupItems = [];
+  let lookupActive = -1;
+
+  function hideLookupDropdown() {
+    $("#lookup-dropdown").classList.add("hidden");
+    lookupActive = -1;
+  }
+
+  function renderLookupDropdown() {
+    const list = $("#lookup-dropdown");
+    if (!lookupItems.length) { hideLookupDropdown(); return; }
+    list.innerHTML = lookupItems.map((i, n) => `
+      <li class="combobox-option${n === lookupActive ? " active" : ""}" role="option" data-index="${n}">
+        <span class="opt-symbol">${esc(i.symbol)}</span>
+        <span class="opt-name">${i.symbol !== i.gene ? `舊名稱／別名，現為 ${esc(i.gene)}` : ""}</span>
+        <span class="opt-mim">${esc(i.gene_mim)}</span>
+      </li>`).join("");
+    list.classList.remove("hidden");
+  }
+
   async function lookupSuggest() {
     const q = $("#lookup-q").value.trim();
-    if (q.length < 2 || /^\d+$/.test(q)) return;
+    if (q.length < 1 || /^\d+$/.test(q)) { lookupItems = []; hideLookupDropdown(); return; }
     const { items } = await api(`/api/omim/genes/search?q=${encodeURIComponent(q)}&limit=15`);
-    $("#lookup-suggest").innerHTML = items.map(i =>
-      `<option value="${esc(i.symbol)}">${esc(i.symbol !== i.gene ? `${i.gene}（別名 ${i.symbol}）` : i.gene)} ${esc(i.gene_mim)}</option>`).join("");
+    if ($("#lookup-q").value.trim() !== q) return;  // typed on meanwhile
+    lookupItems = items;
+    lookupActive = -1;
+    renderLookupDropdown();
+  }
+
+  function pickLookup(index) {
+    const item = lookupItems[index];
+    if (!item) return;
+    hideLookupDropdown();
+    runLookup(item.symbol);
   }
 
   function geneButton(g) {
@@ -264,6 +293,8 @@
     q = String(q || "").trim();
     if (!q) return;
     $("#lookup-q").value = q;
+    lookupItems = [];
+    hideLookupDropdown();
     const box = $("#lookup-result");
     box.hidden = false;
     box.innerHTML = "查詢中…";
@@ -364,10 +395,38 @@
     }
   });
   $("#queue-status").addEventListener("change", () => loadQueue());
-  $("#lookup-form").addEventListener("submit", ev => { ev.preventDefault(); runLookup($("#lookup-q").value); });
+  $("#lookup-form").addEventListener("submit", ev => {
+    ev.preventDefault();
+    if (lookupActive >= 0) { pickLookup(lookupActive); return; }
+    hideLookupDropdown();
+    runLookup($("#lookup-q").value);
+  });
   $("#lookup-q").addEventListener("input", () => {
     clearTimeout(lookupTimer);
-    lookupTimer = setTimeout(() => lookupSuggest().catch(() => {}), 200);
+    lookupTimer = setTimeout(() => lookupSuggest().catch(() => {}), 150);
+  });
+  $("#lookup-q").addEventListener("keydown", ev => {
+    const open = !$("#lookup-dropdown").classList.contains("hidden");
+    if (ev.key === "ArrowDown" && lookupItems.length) {
+      ev.preventDefault();
+      lookupActive = Math.min(lookupActive + 1, lookupItems.length - 1);
+      renderLookupDropdown();
+    } else if (ev.key === "ArrowUp" && open) {
+      ev.preventDefault();
+      lookupActive = Math.max(lookupActive - 1, 0);
+      renderLookupDropdown();
+    } else if (ev.key === "Escape" && open) {
+      ev.preventDefault();
+      hideLookupDropdown();
+    }
+  });
+  $("#lookup-q").addEventListener("focus", () => { if (lookupItems.length) renderLookupDropdown(); });
+  $("#lookup-q").addEventListener("blur", () => setTimeout(hideLookupDropdown, 150));
+  $("#lookup-dropdown").addEventListener("mousedown", ev => {
+    const li = ev.target.closest("[data-index]");
+    if (!li) return;
+    ev.preventDefault();
+    pickLookup(Number(li.dataset.index));
   });
   document.addEventListener("click", ev => {
     const target = ev.target.closest("[data-lookup]");
