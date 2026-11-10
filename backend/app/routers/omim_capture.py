@@ -102,6 +102,14 @@ def get_capture(mim: str, name: str, user: dict = Depends(current_user)):
     if not data:
         raise HTTPException(404, "capture not found")
     parsed = data.get("parsed") or {}
+    payload = data.get("payload") or {}
+    if parsed.get("parser_version") != omim_capture.PARSER_VERSION and payload.get("text"):
+        # Older captures are re-read with the current parser rules.
+        parsed = omim_capture.parse_entry_text(
+            payload["text"],
+            url_mim=str(payload.get("mim") or mim),
+            extracted=payload.get("extracted") if isinstance(payload.get("extracted"), dict) else {},
+        )
     comparison = omim_capture.compare_with_workbook(
         parsed.get("mim") or mim,
         entry_type=parsed.get("entry_type") or "",

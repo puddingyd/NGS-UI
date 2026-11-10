@@ -312,3 +312,54 @@ def test_synopsis_drops_expander_label_line():
     p = omim_capture.parse_entry_text(text, url_mim="600001")
     assert p["synopsis"].splitlines()[0] == "INHERITANCE"
     assert p["synopsis_status"] == "present"
+
+
+def test_synopsis_drops_page_widgets_and_blank_lines():
+    noisy = (
+        "   \nToggle Dropdown\n\nPhenotypic Series\nToggle Dropdown\n\nPheneGene Graphics\n\n"
+        "INHERITANCE\n- Autosomal recessive \n\nHEAD & NECK\nFace\n- Long face\n\n"
+        "MOLECULAR BASIS\n- Caused by mutation in GENE1 (GENE1, 100001.0001)\n▲ Close\n"
+    )
+    clean = (
+        "   \nINHERITANCE\n- Autosomal recessive\nHEAD & NECK\nFace\n- Long face\n"
+        "MOLECULAR BASIS\n- Caused by mutation in GENE1 (GENE1, 100001.0001)\n▲ Close\n"
+    )
+    base = phenotype_page()
+    assert clean in base
+    p = omim_capture.parse_entry_text(base.replace(clean, noisy), url_mim="600001")
+    assert p["synopsis"] == (
+        "INHERITANCE\n- Autosomal recessive\nHEAD & NECK\nFace\n- Long face\n"
+        "MOLECULAR BASIS\n- Caused by mutation in GENE1 (GENE1, 100001.0001)"
+    )
+    cell = omim_capture.disease_cell(p, p["relationships"][0])
+    assert "\n\n\n" not in cell and "Toggle" not in cell
+    assert "\n\n" not in p["synopsis"]
+    assert cell.endswith("\n\n" + p["synopsis"])
+
+
+def test_synopsis_page_fallback_drops_widgets():
+    extracted = {"synopsis_text": (
+        "Clinical Synopsis\nToggle Dropdown\nPhenotypic Series\nINHERITANCE\n\n- Autosomal recessive\n"
+        "\nMISCELLANEOUS\n- Onset in infancy\nNOTE: OMIM is intended\n"
+    )}
+    p = omim_capture.parse_entry_text(
+        phenotype_page(synopsis=False), url_mim="600001", extracted=extracted
+    )
+    assert p["synopsis"] == "INHERITANCE\n- Autosomal recessive\nMISCELLANEOUS\n- Onset in infancy"
+
+
+def test_old_captures_are_reparsed_with_current_rules(client):
+    c, user, tmp_path = client
+    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
+    noisy = phenotype_page().replace("   \nINHERITANCE\n", "Toggle Dropdown\n\nPheneGene Graphics\n\nINHERITANCE\n")
+    created = c.post("/api/omim/captures", json={"mim": "600001", "text": noisy}, headers=headers).json()
+    path = next((tmp_path / "captures" / "600001").glob("*.json.gz"))
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        data = json.load(fh)
+    data["parsed"]["parser_version"] = 1
+    data["parsed"]["synopsis"] = "Toggle Dropdown\nINHERITANCE"
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        json.dump(data, fh)
+    mim, name = created["capture"]["id"].split("/")
+    cell = c.get(f"/api/omim/captures/{mim}/{name}").json()["summary"]["disease_cells"][0]["cell"]
+    assert "Toggle" not in cell and "\nINHERITANCE\n- Autosomal recessive\n" in cell

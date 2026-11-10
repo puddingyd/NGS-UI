@@ -28,7 +28,7 @@ from pathlib import Path
 from ..config import OMIM_CAPTURE_DIR
 from . import disease_picks, omim_store
 
-PARSER_VERSION = 1
+PARSER_VERSION = 2
 MAX_TEXT_CHARS = 3_000_000
 
 ENTRY_TYPES = {
@@ -190,6 +190,46 @@ SYNOPSIS_CATEGORIES = {
 }
 
 
+# OMIM page widgets rendered inside / above the synopsis block.
+SYNOPSIS_NOISE = {
+    "toggle dropdown",
+    "phenotypic series",
+    "phenegene graphics",
+    "clinical synopsis",
+    "close",
+}
+_CATEGORY_LIKE_RE = re.compile(r"^[A-Z][A-Z ,&/()-]{2,}$")
+
+
+def _clean_synopsis(lines: list[str]) -> str:
+    """Normalize a synopsis block to the workbook format.
+
+    Starts at the first category heading (dropping widget text such as
+    "Toggle Dropdown" / "Phenotypic Series" / "PheneGene Graphics"), drops
+    blank lines and widget lines, strips each line, and stops at "▲ Close"
+    or the page footer — matching the manually pasted cells already in
+    OMIM.xlsx (no blank lines between categories).
+    """
+    stripped = [str(line).strip() for line in lines]
+    start = next((i for i, s in enumerate(stripped) if s in SYNOPSIS_CATEGORIES), None)
+    if start is None:
+        start = next(
+            (i for i, s in enumerate(stripped)
+             if _CATEGORY_LIKE_RE.match(s) and s.lower() not in SYNOPSIS_NOISE),
+            None,
+        )
+    if start is None:
+        return ""
+    out = []
+    for s in stripped[start:]:
+        if s in _SYNOPSIS_TRAILERS or s.startswith(_FOOTER_STARTS):
+            break
+        if not s or s.lower() in SYNOPSIS_NOISE or _SYNOPSIS_LABEL_RE.match(s):
+            continue
+        out.append(s)
+    return "\n".join(out)
+
+
 def _synopsis_from_page(text: str) -> str:
     """Clinical Synopsis block from a /clinicalSynopsis/{mim} page's text."""
     lines = _lines(text)
@@ -197,15 +237,7 @@ def _synopsis_from_page(text: str) -> str:
         (i for i, line in enumerate(lines) if line.strip() in SYNOPSIS_CATEGORIES),
         None,
     )
-    if start is None:
-        return ""
-    block = []
-    for line in lines[start:]:
-        s = line.strip()
-        if s in _SYNOPSIS_TRAILERS or s.startswith(_FOOTER_STARTS):
-            break
-        block.append(line)
-    return _strip_block(block)
+    return _clean_synopsis(lines[start:]) if start is not None else ""
 
 
 def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = None) -> dict:
@@ -281,12 +313,8 @@ def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = N
         if last_row >= 0:
             close_idx = index_of(lambda s: s in _SYNOPSIS_TRAILERS, last_row + 1)
             if 0 <= close_idx <= end:
-                block = body[last_row + 1:close_idx]
-                # Drop the expander label ("► Clinical Synopsis") if present.
-                while block and (not block[0].strip() or _SYNOPSIS_LABEL_RE.match(block[0].strip())):
-                    block = block[1:]
-                synopsis = _strip_block(block)
-                synopsis_source = "entry_page"
+                synopsis = _clean_synopsis(body[last_row + 1:close_idx])
+                synopsis_source = "entry_page" if synopsis else ""
     if not relationships and extracted.get("relationship_rows"):
         relationships = _parse_rows_from_cells(extracted.get("relationship_rows"))
         if relationships:
