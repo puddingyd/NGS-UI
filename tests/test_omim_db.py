@@ -487,3 +487,21 @@ def test_preview_reports_mim_filled_for_old_label(db):
     preview = omim_db.preview_adoption(_gene_page("100004", "ATXNX", [("Mystery", "620002", "AR")]))
     row = preview["genes"][0]
     assert row["current_labels"] == [] and row["fills_mim_for"] == "Mystery"
+
+
+def test_shared_mim_adoption_does_not_hide_other_stale_text(db):
+    """Adopting a disease shared by two genes moves both genes' Done date,
+    but the other gene's untouched curated text is still judged by the
+    workbook Done (here: none → no date, not "up to date")."""
+    import sqlite3
+    con = sqlite3.connect(db["path"])
+    con.execute("UPDATE genes SET legacy_done = '2020-01-01', done = '2020-01-01' WHERE gene_symbol = 'GENE1'")
+    con.commit()
+    con.close()
+    # 600002 is linked to GENE1; adopting it moves GENE1's Done to today.
+    omim_db.adopt_capture(_phenotype_capture(), user="rev", capture_id="600002/x")
+    omim_store._state.update(mtime=None)
+    status = omim_capture.compare_with_workbook("600001", edit_date="2025-06-01")
+    link = status["phenotype_links"][0]
+    assert link["done"] == omim_db._today()
+    assert link["status"] == "outdated"

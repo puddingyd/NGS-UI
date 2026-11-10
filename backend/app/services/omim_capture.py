@@ -501,6 +501,9 @@ def _workbook_index() -> tuple[dict, dict]:
                     "gene": gene,
                     "gene_mim": gene_mim,
                     "done": row.get("Done") or "",
+                    # Curated workbook text is judged by the workbook's own Done
+                    # (adoption moves Done for every gene linked to the MIM).
+                    "curated_done": row.get("Legacy_done", row.get("Done")) or "",
                     "in_omim_disease": any(disease_picks.phenotype_mim(ln) == pm for ln in lines),
                     "slots": [s for s, _t in slot_hits],
                     "labels": [disease_picks.first_line(t) for _s, t in slot_hits]
@@ -518,9 +521,10 @@ def _status_for_link(link: dict, edit_date: str) -> str:
         return "outdated" if edit_date and edit_date > adopted else "up_to_date"
     if not link["has_detail"]:
         return "missing_detail"
-    if edit_date and link["done"] and edit_date > link["done"][:10]:
+    done = link.get("curated_done", link["done"])
+    if edit_date and done and edit_date > done[:10]:
         return "outdated"
-    if not link["done"]:
+    if not done:
         return "no_done_date"
     return "up_to_date"
 
