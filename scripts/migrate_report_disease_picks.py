@@ -103,7 +103,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--apply", action="store_true", help="write changes")
     args = ap.parse_args(argv)
     sample_ids = args.samples or list(sample_layout.iter_sample_ids())
+    print(f"scanning {len(sample_ids)} sample(s) for legacy disease ticks")
     total_conv = total_skip = 0
+    with_legacy = 0
     for sample_id in sample_ids:
         try:
             conv, skip, messages = migrate_sample(sample_id, apply=args.apply)
@@ -111,13 +113,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{sample_id}: ERROR {exc}")
             continue
         if conv or skip:
+            with_legacy += 1
             print(f"{sample_id}: {conv} converted, {skip} skipped")
             for line in messages:
                 print(line)
         total_conv += conv
         total_skip += skip
     mode = "applied" if args.apply else "dry run (use --apply to write)"
-    print(f"\n{total_conv} variant(s) converted, {total_skip} skipped — {mode}")
+    print(f"\nscanned {len(sample_ids)} sample(s); {with_legacy} had legacy ticks; "
+          f"{total_conv} variant(s) converted, {total_skip} skipped — {mode}")
     return 0
 
 
