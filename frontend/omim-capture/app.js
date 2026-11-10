@@ -44,19 +44,57 @@
       : `<tr><td colspan="4" class="muted-text">尚未產生 token。</td></tr>`;
   }
 
+  let currentView = "pending";
+  let pendingIds = [];
+
   async function loadCaptures() {
-    const { captures } = await api("/api/omim/captures?limit=100");
-    $("#capture-table tbody").innerHTML = captures.length ? captures.map(c => `
+    if (currentView === "adopted") return loadAdoptions();
+    const data = await api("/api/omim/captures?view=pending&limit=500");
+    const captures = data.captures || [];
+    pendingIds = captures.filter(c => !(c.blockers || []).length).map(c => c.id);
+    $("#pending-count").textContent = `（${data.total || 0}）`;
+    const adoptAll = $("#btn-adopt-all");
+    adoptAll.hidden = !data.db_enabled || !captures.length;
+    adoptAll.disabled = !pendingIds.length;
+    adoptAll.textContent = pendingIds.length === captures.length
+      ? `全部採用（${pendingIds.length}）` : `全部採用（${pendingIds.length}／${captures.length}）`;
+    $("#capture-table tbody").innerHTML = captures.length ? captures.map(c => {
+      const notes = (c.blockers || []).length ? c.blockers : (c.warnings || []);
+      return `
       <tr class="clickable" data-capture="${esc(c.id)}">
         <td>${esc(c.prefix || "")}${esc(c.mim)}</td>
         <td>${esc(c.title)}</td>
         <td>${esc(c.description_source || "—")}</td>
         <td>${badge(SYNOPSIS[c.synopsis_status] || [c.synopsis_status || "—", "info"])}</td>
         <td>${esc(c.omim_edit_date || "—")}</td>
-        <td>${esc(fmtTime(c.captured_at))}<br><span class="muted-text">${esc(c.user)}${c.duplicate_of ? "（內容相同）" : ""}</span></td>
-        <td>${(c.warnings || []).length ? badge([`${c.warnings.length} 項`, "warn"]) : ""}</td>
-      </tr>`).join("")
-      : `<tr><td colspan="7" class="muted-text">還沒有擷取紀錄。</td></tr>`;
+        <td>${esc(fmtTime(c.captured_at))}<br><span class="muted-text">${esc(c.user)}</span></td>
+        <td>${(c.blockers || []).length ? badge(["需確認", "warn"]) : ""}${notes.length ? `<div class="muted-text">${notes.map(esc).join("<br>")}</div>` : ""}</td>
+      </tr>`;
+    }).join("") : `<tr><td colspan="7" class="muted-text">沒有待採用的擷取。</td></tr>`;
+  }
+
+  async function loadAdoptions() {
+    const { adoptions } = await api("/api/omim/adoptions?limit=500");
+    $("#adoption-table tbody").innerHTML = adoptions.length ? adoptions.map(a => `
+      <tr class="clickable" data-capture="${esc(a.capture_id)}">
+        <td>${esc(fmtTime(a.adopted_at))}</td>
+        <td>${esc(a.mim)}</td>
+        <td>${esc(a.title || "—")}</td>
+        <td>${esc((a.genes || []).join("、") || "—")}${a.reviews ? `<br><span class="muted-text">新增 ${a.reviews} 項待確認</span>` : ""}</td>
+        <td>${esc(a.adopted_by)}</td>
+      </tr>`).join("") : `<tr><td colspan="5" class="muted-text">還沒有採用紀錄。</td></tr>`;
+  }
+
+  function setView(view) {
+    currentView = view;
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
+    $("#capture-table").hidden = view !== "pending";
+    $("#adoption-table").hidden = view !== "adopted";
+    $("#pending-hint").hidden = view !== "pending";
+    $("#btn-adopt-all").style.display = view === "pending" ? "" : "none";
+    $("#capture-detail").hidden = true;
+    $("#bulk-result").hidden = true;
+    loadCaptures();
   }
 
   async function showCapture(id) {
@@ -187,7 +225,34 @@
     const id = ev.target.closest("[data-capture]")?.dataset.capture;
     if (id) showCapture(id).catch(err => { $("#capture-detail").textContent = String(err); });
   });
-  $("#btn-refresh").addEventListener("click", () => loadCaptures());
+  $("#btn-refresh").addEventListener("click", () => { loadCaptures(); loadDbStatus(); });
+  document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => setView(t.dataset.view)));
+  $("#adoption-table").addEventListener("click", ev => {
+    const id = ev.target.closest("[data-capture]")?.dataset.capture;
+    if (id) showCapture(id).catch(err => { $("#capture-detail").textContent = String(err); });
+  });
+  $("#btn-adopt-all").addEventListener("click", async () => {
+    if (!pendingIds.length) return;
+    if (!confirm(`採用 ${pendingIds.length} 筆擷取？有「需確認」標記的會被跳過。`)) return;
+    const btn = $("#btn-adopt-all");
+    btn.disabled = true;
+    btn.textContent = "採用中…";
+    const box = $("#bulk-result");
+    try {
+      const res = await api("/api/omim/captures/adopt-pending", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: pendingIds }),
+      });
+      const reviews = res.adopted.reduce((n, a) => n + (a.reviews || 0), 0);
+      box.innerHTML = `已採用 ${res.adopted.length} 筆${reviews ? `，新增 ${reviews} 項待確認` : ""}。`
+        + (res.skipped.length ? `<br>跳過 ${res.skipped.length} 筆：<ul>${res.skipped.map(sk =>
+          `<li>${esc(sk.mim || sk.id)} ${esc(sk.title || "")}：${esc((sk.reasons || []).join("、"))}</li>`).join("")}</ul>` : "");
+    } catch (err) {
+      box.textContent = `全部採用失敗：${err.message}`;
+    }
+    box.hidden = false;
+    $("#capture-detail").hidden = true;
+    await Promise.all([loadCaptures(), loadDbStatus()]);
+  });
   $("#capture-detail").addEventListener("click", async ev => {
     const btn = ev.target.closest("[data-adopt]");
     if (!btn) return;
@@ -196,8 +261,9 @@
     try {
       const res = await api(`/api/omim/captures/${encodeURIComponent(mim)}/${encodeURIComponent(name)}/adopt`, { method: "POST" });
       const genes = (res.result.genes || []).map(g => g.gene).filter(Boolean).join("、");
-      $("#adopt-result").textContent = `已採用${genes ? `：${genes}` : ""}${res.result.reviews ? `；新增 ${res.result.reviews} 項待確認` : ""}`;
+      $("#adopt-result").textContent = `已採用${genes ? `：${genes}` : ""}${res.result.reviews ? `；新增 ${res.result.reviews} 項待確認` : ""}${res.result.kept_previous_synopsis ? "；這次沒擷取到 Synopsis，保留原本的" : ""}`;
       loadDbStatus();
+      loadCaptures();
     } catch (err) {
       btn.disabled = false;
       $("#adopt-result").textContent = `採用失敗：${err.message}`;

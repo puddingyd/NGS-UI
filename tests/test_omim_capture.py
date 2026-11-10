@@ -258,8 +258,10 @@ def test_capture_api_stores_parses_and_dedupes(client):
     assert again["capture"]["duplicate"] is True
     assert len(list((tmp_path / "captures" / "600001").glob("*.json.gz"))) == 1
 
-    listing = c.get("/api/omim/captures").json()["captures"]
+    listing = c.get("/api/omim/captures?view=all").json()["captures"]
     assert len(listing) == 2 and listing[0]["mim"] == "600001"
+    pending = c.get("/api/omim/captures").json()
+    assert pending["total"] == 1 and pending["captures"][0]["id"] == first["capture"]["id"]
     mim, name = first["capture"]["id"].split("/")
     detail = c.get(f"/api/omim/captures/{mim}/{name}").json()
     assert detail["summary"]["title"] == "TESTOSIS, INFANTILE-ONSET"

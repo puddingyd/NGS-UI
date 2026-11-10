@@ -303,3 +303,50 @@ def test_api_adopt_requires_database(client, monkeypatch, tmp_path):
     mim, name = created["capture"]["id"].split("/")
     assert c.post(f"/api/omim/captures/{mim}/{name}/adopt", headers=headers).status_code == 409
     assert c.get("/api/omim/reviews").json() == {"items": [], "open_counts": {}, "db_enabled": False}
+
+
+def test_pending_list_hides_adopted_and_bulk_adopt_skips_blocked(client):
+    c, user = client
+    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
+    ok = c.post("/api/omim/captures", json={"mim": "600002", "text": PAGE}, headers=headers).json()
+    collapsed = PAGE.replace("600002", "600001").replace("Disease B renamed", "Disease A").replace(
+        "Toggle Dropdown\n\nINHERITANCE\n- Autosomal recessive\n▲ Close\n", "")
+    blocked = c.post("/api/omim/captures", json={"mim": "600001", "text": collapsed}, headers=headers).json()
+    pending = c.get("/api/omim/captures").json()
+    assert pending["total"] == 2
+    by_id = {e["id"]: e for e in pending["captures"]}
+    assert by_id[blocked["capture"]["id"]]["blockers"] == ["Clinical Synopsis 沒有擷取到"]
+    assert by_id[ok["capture"]["id"]]["blockers"] == []
+
+    result = c.post("/api/omim/captures/adopt-pending", json={"ids": list(by_id)}).json()
+    assert [a["id"] for a in result["adopted"]] == [ok["capture"]["id"]]
+    assert result["skipped"][0]["reasons"] == ["Clinical Synopsis 沒有擷取到"]
+
+    pending = c.get("/api/omim/captures").json()
+    assert [e["id"] for e in pending["captures"]] == [blocked["capture"]["id"]]
+    adoptions = c.get("/api/omim/adoptions").json()["adoptions"]
+    assert adoptions[0]["capture_id"] == ok["capture"]["id"] and adoptions[0]["genes"] == ["GENE1"]
+    again = c.post("/api/omim/captures/adopt-pending", json={"ids": [ok["capture"]["id"]]}).json()
+    assert again["adopted"] == [] and again["skipped"][0]["reasons"] == ["已採用或已有較新的擷取"]
+
+
+def test_single_adopt_keeps_synopsis_when_new_capture_missed_it(db):
+    omim_db.adopt_capture(_phenotype_capture(), user="rev", capture_id="600002/a")
+    collapsed = _phenotype_capture(desc="Updated.", synopsis="")
+    collapsed["synopsis_status"] = "not_loaded"
+    result = omim_db.adopt_capture(collapsed, user="rev", capture_id="600002/b")
+    assert result["kept_previous_synopsis"] is True
+    _by_id, by_gene = omim_db.load_rows(db["path"])
+    assert cells(by_gene["GENE1"])[1].endswith("Updated.\n\nINHERITANCE\n- Autosomal recessive")
+
+
+def test_old_database_gets_adoptions_table_backfilled(db):
+    import sqlite3
+    con = sqlite3.connect(db["path"])
+    con.execute("DROP TABLE adoptions")
+    con.execute("INSERT INTO change_log(at, user, action, phenotype_mim, capture_id) "
+                "VALUES ('2026-11-10T00:00:00+00:00', 'rev', 'adopt_text', '600002', '600002/old')")
+    con.commit()
+    con.close()
+    omim_db._schema_checked.clear()
+    assert omim_db.adopted_capture_ids(db["path"]) == {"600002/old"}

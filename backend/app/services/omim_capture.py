@@ -656,6 +656,36 @@ def recent_captures(limit: int = 50) -> list[dict]:
     return out
 
 
+def capture_events() -> list[dict]:
+    """Every index.jsonl event, newest first."""
+    path = OMIM_CAPTURE_DIR / "index.jsonl"
+    if not path.is_file():
+        return []
+    out = []
+    for line in reversed(path.read_text(encoding="utf-8").splitlines()):
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def pending_captures(adopted_ids: set[str], limit: int = 500) -> dict:
+    """Latest capture per MIM that has not been adopted yet.
+
+    Older captures of the same MIM and re-sends of identical content are
+    folded into the newest one, so each MIM appears at most once.
+    """
+    latest: dict[str, dict] = {}
+    for event in capture_events():
+        mim = event.get("mim") or ""
+        if mim and mim not in latest:
+            latest[mim] = event
+    pending = [e for e in latest.values() if e.get("id") not in adopted_ids]
+    pending.sort(key=lambda e: e.get("captured_at") or "", reverse=True)
+    return {"captures": pending[:limit], "total": len(pending), "mims": len(latest)}
+
+
 def load_capture(capture_id: str) -> dict | None:
     mim, _, name = str(capture_id or "").partition("/")
     if not _MIM6_RE.match(mim) or not re.match(r"^[0-9TZ]+_[0-9a-f]{12}$", name):

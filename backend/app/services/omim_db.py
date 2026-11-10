@@ -115,6 +115,17 @@ CREATE TABLE IF NOT EXISTS review_items (
     resolution   TEXT
 );
 CREATE INDEX IF NOT EXISTS review_open ON review_items(status, kind);
+CREATE TABLE IF NOT EXISTS adoptions (
+    id          INTEGER PRIMARY KEY,
+    capture_id  TEXT NOT NULL,
+    mim         TEXT NOT NULL,
+    entry_type  TEXT NOT NULL DEFAULT '',
+    title       TEXT NOT NULL DEFAULT '',
+    adopted_at  TEXT NOT NULL,
+    adopted_by  TEXT NOT NULL DEFAULT '',
+    summary     TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS adoptions_capture ON adoptions(capture_id);
 CREATE TABLE IF NOT EXISTS change_log (
     id          INTEGER PRIMARY KEY,
     at          TEXT NOT NULL,
@@ -154,9 +165,34 @@ def exists(path: Path | None = None) -> bool:
     return (path or db_path()).is_file()
 
 
+_schema_checked: set[str] = set()
+
+
+def _ensure_schema(path: Path) -> None:
+    """Add tables introduced after a database was built (idempotent)."""
+    key = str(path)
+    if key in _schema_checked or not path.is_file():
+        return
+    con = sqlite3.connect(key, timeout=30)
+    try:
+        con.executescript(SCHEMA)
+        if not con.execute("SELECT 1 FROM adoptions LIMIT 1").fetchone():
+            # Back-fill adoptions recorded only in change_log (pre-v10.08).
+            con.execute(
+                "INSERT INTO adoptions(capture_id, mim, entry_type, adopted_at, adopted_by, summary) "
+                "SELECT capture_id, CASE WHEN phenotype_mim != '' THEN phenotype_mim ELSE gene_mim END, "
+                "'', MIN(at), user, '{}' FROM change_log WHERE capture_id != '' GROUP BY capture_id"
+            )
+        con.commit()
+    finally:
+        con.close()
+    _schema_checked.add(key)
+
+
 @contextmanager
 def connect(path: Path | None = None, *, write: bool = False):
     path = path or db_path()
+    _ensure_schema(Path(path))
     con = sqlite3.connect(str(path), timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
@@ -751,12 +787,19 @@ def adopt_capture(parsed: dict, *, user: str, capture_id: str, path: Path | None
                     _refresh_gene(con, row["gene_mim"], done=True)
                     summary["genes"].append({"gene_mim": row["gene_mim"], "gene": row["gene_symbol"], "changes": []})
             before = con.execute("SELECT * FROM phenotype_texts WHERE phenotype_mim = ?", (mim,)).fetchone()
+            synopsis = parsed.get("synopsis") or ""
+            synopsis_status = parsed.get("synopsis_status") or ""
+            if not synopsis and synopsis_status == "not_loaded" and before and before["synopsis"]:
+                # The synopsis was not expanded in this capture: keep the one
+                # already adopted instead of wiping it.
+                synopsis, synopsis_status = before["synopsis"], before["synopsis_status"]
+                summary["kept_previous_synopsis"] = True
             values = {
                 "title": parsed.get("title") or "",
                 "description": parsed.get("description") or "",
                 "description_source": parsed.get("description_source") or "",
-                "synopsis": parsed.get("synopsis") or "",
-                "synopsis_status": parsed.get("synopsis_status") or "",
+                "synopsis": synopsis,
+                "synopsis_status": synopsis_status,
                 "omim_edit_date": parsed.get("omim_edit_date") or "",
                 "content_hash": parsed.get("content_hash") or "",
             }
@@ -782,7 +825,61 @@ def adopt_capture(parsed: dict, *, user: str, capture_id: str, path: Path | None
                 "(SELECT id FROM gene_diseases WHERE phenotype_mim = ?)",
                 (_now(), user, mim),
             )
+        con.execute(
+            "INSERT INTO adoptions(capture_id, mim, entry_type, title, adopted_at, adopted_by, summary) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (capture_id, mim, entry_type, parsed.get("title") or "", _now(), user,
+             json.dumps(summary, ensure_ascii=False)),
+        )
     return summary
+
+
+def adopted_capture_ids(path: Path | None = None) -> set[str]:
+    if not exists(path):
+        return set()
+    with connect(path) as con:
+        return {r["capture_id"] for r in con.execute("SELECT DISTINCT capture_id FROM adoptions")}
+
+
+def list_adoptions(limit: int = 200, path: Path | None = None) -> list[dict]:
+    if not exists(path):
+        return []
+    with connect(path) as con:
+        rows = con.execute(
+            "SELECT * FROM adoptions ORDER BY adopted_at DESC, id DESC LIMIT ?", (int(limit),)
+        ).fetchall()
+    out = []
+    for r in rows:
+        item = dict(r)
+        try:
+            summary = json.loads(item.get("summary") or "{}")
+        except json.JSONDecodeError:
+            summary = {}
+        item["genes"] = [g.get("gene") for g in summary.get("genes") or [] if g.get("gene")]
+        item["text"] = summary.get("text")
+        item["reviews"] = summary.get("reviews") or 0
+        item.pop("summary", None)
+        out.append(item)
+    return out
+
+
+def adoption_blockers(parsed: dict) -> list[str]:
+    """Reasons a capture should not be adopted in bulk (single adopt still allowed)."""
+    reasons = []
+    entry_type = parsed.get("entry_type") or ""
+    if not parsed.get("mim") or entry_type == "moved_removed":
+        reasons.append("已移除或搬移的 entry")
+    if any("找不到 entry" in w or "不一致" in w for w in parsed.get("warnings") or []):
+        reasons.append("頁面與 MIM 對不上")
+    if entry_type in {"gene", "gene_phenotype"}:
+        if not parsed.get("relationships"):
+            reasons.append("基因頁沒有解析到疾病清單")
+    else:
+        if parsed.get("synopsis_status") == "not_loaded":
+            reasons.append("Clinical Synopsis 沒有擷取到")
+        if not parsed.get("description"):
+            reasons.append("沒有 Description／Clinical Features")
+    return reasons
 
 
 def preview_adoption(parsed: dict, path: Path | None = None) -> dict:

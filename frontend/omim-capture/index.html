@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>OMIM 擷取（擴充功能 PoC）</h1>
+    <h1>OMIM 擷取與維護</h1>
     <div class="topbar-actions">
       <span id="whoami" class="topbar-user"></span>
       <a href="/" class="btn btn-secondary">← 回分析系統</a>
@@ -21,38 +21,37 @@
       <p>請先在<a href="/">分析系統</a>登入，再重新整理這一頁。</p>
     </section>
 
-    <section class="card">
-      <h2 class="section-title">1. 安裝擴充功能（Chrome / Edge）</h2>
-      <p class="muted-text">擴充功能原始碼在 repo 的 <code>reference/omim_capture/</code>。</p>
-      <ol class="steps">
-        <li>開啟 <code>chrome://extensions</code>（Edge 為 <code>edge://extensions</code>），打開「開發人員模式」。</li>
-        <li>按「載入未封裝項目」，選本機 repo 裡的 <code>reference/omim_capture</code> 資料夾（裡面直接看得到 <code>manifest.json</code> 的那一層）。</li>
-        <li>更新：在 repo <code>git pull</code> 後，到擴充功能頁的 NGS OMIM Capture 卡片按「重新載入」。</li>
-        <li>沒有本機 repo 時：<a class="btn btn-secondary" href="/api/omim/extension.zip">下載 ngs-omim-capture.zip</a>，解壓縮到固定位置後同樣用「載入未封裝項目」載入。</li>
-      </ol>
-    </section>
+    <details class="card setup-card" id="setup-card">
+      <summary class="setup-summary">安裝擴充功能與 token 設定</summary>
+      <div class="setup-body">
+        <h2 class="section-title">1. 安裝擴充功能（Chrome / Edge）</h2>
+        <p class="muted-text">擴充功能原始碼在 repo 的 <code>reference/omim_capture/</code>。</p>
+        <ol class="steps">
+          <li>開啟 <code>chrome://extensions</code>（Edge 為 <code>edge://extensions</code>），打開「開發人員模式」。</li>
+          <li>按「載入未封裝項目」，選本機 repo 裡的 <code>reference/omim_capture</code> 資料夾（裡面直接看得到 <code>manifest.json</code> 的那一層）。</li>
+          <li>更新：在 repo <code>git pull</code> 後，到擴充功能頁的 NGS OMIM Capture 卡片按「重新載入」。</li>
+          <li>沒有本機 repo 時：<a class="btn btn-secondary" href="/api/omim/extension.zip">下載 ngs-omim-capture.zip</a>，解壓縮到固定位置後同樣用「載入未封裝項目」載入。</li>
+        </ol>
 
-    <section class="card">
-      <h2 class="section-title">2. 產生 capture token，貼到擴充功能設定</h2>
-      <div class="token-create">
-        <input id="token-label" type="text" maxlength="60" placeholder="名稱，例如：辦公室電腦">
-        <button id="btn-token-create" class="btn btn-primary" type="button">產生 token</button>
-      </div>
-      <div id="token-new" class="token-new" hidden>
-        <p>這個 token 只會顯示一次，請複製後貼到擴充功能的「設定」頁：</p>
-        <div class="token-value"><code id="token-value"></code>
-          <button id="btn-token-copy" class="btn btn-secondary" type="button">複製</button></div>
-      </div>
-      <table class="data-table" id="token-table">
-        <thead><tr><th>名稱</th><th>建立時間</th><th>最後使用</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
+        <h2 class="section-title">2. 產生 capture token，貼到擴充功能設定</h2>
+        <div class="token-create">
+          <input id="token-label" type="text" maxlength="60" placeholder="名稱，例如：辦公室電腦">
+          <button id="btn-token-create" class="btn btn-primary" type="button">產生 token</button>
+        </div>
+        <div id="token-new" class="token-new" hidden>
+          <p>這個 token 只會顯示一次，請複製後貼到擴充功能的「設定」頁：</p>
+          <div class="token-value"><code id="token-value"></code>
+            <button id="btn-token-copy" class="btn btn-secondary" type="button">複製</button></div>
+        </div>
+        <table class="data-table" id="token-table">
+          <thead><tr><th>名稱</th><th>建立時間</th><th>最後使用</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
 
-    <section class="card">
-      <h2 class="section-title">3. 在 OMIM 頁面按 Capture</h2>
-      <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台。平台 OMIM 資料庫啟用後，面板會出現「採用到平台」按鈕，採用後卡片與報告即改用新內容；也可以在下方擷取詳情裡採用。</p>
-    </section>
+        <h2 class="section-title">3. 在 OMIM 頁面按 Capture</h2>
+        <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台；接著可在面板按「採用到平台」，或回到這一頁的「待採用」清單逐筆或全部採用。</p>
+      </div>
+    </details>
 
     <section class="card" id="db-card">
       <div class="section-head">
@@ -60,6 +59,30 @@
         <a id="btn-export" class="btn btn-secondary" href="/api/omim/export.xlsx" hidden>匯出 OMIM.xlsx</a>
       </div>
       <div id="db-status" class="muted-text">讀取中…</div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <div class="tab-bar" role="tablist">
+          <button class="tab active" type="button" data-view="pending" role="tab">待採用 <span id="pending-count"></span></button>
+          <button class="tab" type="button" data-view="adopted" role="tab">已採用紀錄</button>
+        </div>
+        <div class="head-actions">
+          <button id="btn-adopt-all" class="btn btn-primary" type="button" hidden>全部採用</button>
+          <button id="btn-refresh" class="btn btn-secondary" type="button">重新整理</button>
+        </div>
+      </div>
+      <p id="pending-hint" class="muted-text">每個 MIM 只列最新一次擷取；採用後就會移到「已採用紀錄」。「全部採用」會跳過有「注意」標記的擷取（例如 Clinical Synopsis 沒擷取到），這些請點開確認後個別採用或重新擷取。</p>
+      <div id="bulk-result" class="bulk-result" hidden></div>
+      <table class="data-table" id="capture-table">
+        <thead><tr><th>MIM</th><th>標題</th><th>Description</th><th>Synopsis</th><th>OMIM 編輯</th><th>擷取</th><th>注意</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <table class="data-table" id="adoption-table" hidden>
+        <thead><tr><th>採用時間</th><th>MIM</th><th>標題</th><th>更新的基因</th><th>採用者</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="capture-detail" class="capture-detail" hidden></div>
     </section>
 
     <section class="card" id="review-card" hidden>
@@ -72,18 +95,6 @@
         <thead><tr><th>基因</th><th>類型</th><th>內容</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
-    </section>
-
-    <section class="card">
-      <div class="section-head">
-        <h2 class="section-title">最近的擷取</h2>
-        <button id="btn-refresh" class="btn btn-secondary" type="button">重新整理</button>
-      </div>
-      <table class="data-table" id="capture-table">
-        <thead><tr><th>MIM</th><th>標題</th><th>Description</th><th>Synopsis</th><th>OMIM 編輯</th><th>擷取</th><th>注意</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <div id="capture-detail" class="capture-detail" hidden></div>
     </section>
   </main>
 

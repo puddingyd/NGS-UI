@@ -94,9 +94,69 @@ async def create_capture(request: Request, user: dict = Depends(capture_user)):
     return {"capture": stored, "summary": summary}
 
 
+def _index_blockers(event: dict) -> list[str]:
+    """Bulk-adopt blockers estimated from an index.jsonl event."""
+    return omim_db.adoption_blockers({
+        "mim": event.get("mim"),
+        "entry_type": omim_capture.ENTRY_TYPES.get(event.get("prefix") or "", "other"),
+        "warnings": event.get("warnings") or [],
+        "synopsis_status": event.get("synopsis_status") or "",
+        "description": event.get("description_source") or "",
+        "relationships": [None] * int(event.get("relationship_count") or 0),
+    })
+
+
 @router.get("/captures")
-def list_captures(limit: int = 50, user: dict = Depends(current_user)):
-    return {"captures": omim_capture.recent_captures(max(1, min(int(limit), 500)))}
+def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(current_user)):
+    """``view=pending``: newest capture per MIM not yet adopted; ``all``: raw log."""
+    limit = max(1, min(int(limit), 1000))
+    if view == "all":
+        return {"captures": omim_capture.recent_captures(limit)}
+    adopted = omim_db.adopted_capture_ids()
+    data = omim_capture.pending_captures(adopted, limit)
+    for event in data["captures"]:
+        event["blockers"] = _index_blockers(event) if omim_db.exists() else []
+    data["db_enabled"] = omim_db.exists()
+    return data
+
+
+@router.get("/adoptions")
+def list_adoptions(limit: int = 200, user: dict = Depends(current_user)):
+    return {"adoptions": omim_db.list_adoptions(max(1, min(int(limit), 2000)))}
+
+
+@router.post("/captures/adopt-pending")
+def adopt_pending(payload: dict | None = None, user: dict = Depends(current_user)):
+    """Adopt many pending captures; ones with blockers are skipped, not forced."""
+    if not omim_db.exists():
+        raise HTTPException(409, "平台 OMIM 資料庫尚未建立（請先執行 scripts/omim_db.py init）")
+    ids = [str(i) for i in (payload or {}).get("ids") or []]
+    pending = {e["id"] for e in omim_capture.pending_captures(omim_db.adopted_capture_ids(), 100000)["captures"]}
+    adopted, skipped = [], []
+    for capture_id in ids[:500]:
+        mim, _, name = capture_id.partition("/")
+        if capture_id not in pending:
+            skipped.append({"id": capture_id, "reasons": ["已採用或已有較新的擷取"]})
+            continue
+        try:
+            _data, parsed = _load_parsed(mim, name)
+        except HTTPException:
+            skipped.append({"id": capture_id, "reasons": ["找不到擷取檔"]})
+            continue
+        reasons = omim_db.adoption_blockers(parsed)
+        if reasons:
+            skipped.append({"id": capture_id, "mim": mim, "title": parsed.get("title"), "reasons": reasons})
+            continue
+        try:
+            result = omim_db.adopt_capture(parsed, user=user.get("username") or "", capture_id=capture_id)
+        except ValueError as exc:
+            skipped.append({"id": capture_id, "mim": mim, "reasons": [str(exc)]})
+            continue
+        adopted.append({"id": capture_id, "mim": mim, "title": parsed.get("title"),
+                        "genes": [g.get("gene") for g in result.get("genes") or []],
+                        "reviews": result.get("reviews") or 0})
+    omim_store.ensure_loaded()
+    return {"adopted": adopted, "skipped": skipped}
 
 
 def _load_parsed(mim: str, name: str) -> tuple[dict, dict]:
