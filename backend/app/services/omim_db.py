@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS genes (
     alias_symbols TEXT NOT NULL DEFAULT '',
     inheritance  TEXT NOT NULL DEFAULT '',
     done         TEXT NOT NULL DEFAULT '',
+    legacy_done  TEXT NOT NULL DEFAULT '',
     row_order    INTEGER NOT NULL DEFAULT 0,
     updated_at   TEXT
 );
@@ -176,6 +177,12 @@ def _ensure_schema(path: Path) -> None:
     con = sqlite3.connect(key, timeout=30)
     try:
         con.executescript(SCHEMA)
+        gene_cols = {r[1] for r in con.execute("PRAGMA table_info(genes)")}
+        if "legacy_done" not in gene_cols:
+            # Workbook Done date, kept apart from Done (which adoption updates)
+            # so stale curated text is judged by when it was really curated.
+            con.execute("ALTER TABLE genes ADD COLUMN legacy_done TEXT NOT NULL DEFAULT ''")
+            con.execute("UPDATE genes SET legacy_done = done")
         if not con.execute("SELECT 1 FROM adoptions LIMIT 1").fetchone():
             # Back-fill adoptions recorded only in change_log (pre-v10.08).
             con.execute(
@@ -408,10 +415,10 @@ def build_from_xlsx(xlsx_path: Path, out_path: Path) -> dict:
             seen.add(gene_mim)
             stats["genes"] += 1
             con.execute(
-                "INSERT INTO genes(gene_mim, gene_symbol, alias_symbols, inheritance, done, row_order, updated_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO genes(gene_mim, gene_symbol, alias_symbols, inheritance, done, legacy_done, "
+                "row_order, updated_at) VALUES (?,?,?,?,?,?,?,?)",
                 (gene_mim, row["gene_symbol"], ",".join(row["aliases"]), row["inheritance"],
-                 row["done"], row["order"], now),
+                 row["done"], row["done"], row["order"], now),
             )
             for slot, text in row["slots"]:
                 con.execute(
@@ -528,6 +535,7 @@ def _render_gene(gene: dict, diseases: list[dict], legacy: dict[int, str],
         "gene_symbol": gene["gene_symbol"],
         "Inheritance": gene["inheritance"],
         "Done": gene["done"],
+        "Legacy_done": gene.get("legacy_done", gene["done"]),
         "OMIM_disease": "\n".join(d["label"] for d in diseases),
     }
     meta = []
@@ -749,6 +757,15 @@ def adopt_capture(parsed: dict, *, user: str, capture_id: str, path: Path | None
                     if row["id"] in listed:
                         continue
                     kind = "not_in_omim" if row["phenotype_mim"] else "unmatched_label"
+                    # Best guess of which OMIM-listed disease an old label meant.
+                    guesses = sorted(
+                        ((difflib.SequenceMatcher(None, disease_picks.name_key(row["label"]),
+                                                  disease_picks.name_key(r.get("phenotype") or "")).ratio(),
+                          format_label(r.get("phenotype"), r.get("phenotype_mim"), r.get("inheritance")))
+                         for r in relationships),
+                        reverse=True,
+                    )
+                    suggestion = guesses[0][1] if guesses and guesses[0][0] >= 0.6 else ""
                     exists_open = con.execute(
                         "SELECT 1 FROM review_items WHERE disease_id = ? AND kind = ? AND status = 'open'",
                         (row["id"], kind),
@@ -758,9 +775,30 @@ def adopt_capture(parsed: dict, *, user: str, capture_id: str, path: Path | None
                             "INSERT INTO review_items(kind, gene_mim, disease_id, detail, created_at) VALUES (?,?,?,?,?)",
                             (kind, gene["gene_mim"], row["id"], json.dumps({
                                 "gene": gene["gene_symbol"], "label": row["label"], "capture_id": capture_id,
+                                "suggestion": suggestion,
                             }, ensure_ascii=False), _now()),
                         )
-                        summary["reviews"] += 1
+                # The gene page is now the reference: migration-time questions
+                # about this gene are settled (OMIM-listed rows are confirmed;
+                # unlisted rows carry the not_in_omim / unmatched_label item).
+                con.execute(
+                    "UPDATE review_items SET status='resolved', resolved_at=?, resolved_by=?, "
+                    "resolution='gene_page_synced' WHERE status='open' AND gene_mim = ? AND kind IN "
+                    "('renamed_match','missing_mim','slot_not_in_omim_disease')",
+                    (_now(), user, gene["gene_mim"]),
+                )
+                if listed:
+                    marks = ",".join("?" * len(listed))
+                    con.execute(
+                        "UPDATE review_items SET status='resolved', resolved_at=?, resolved_by=?, "
+                        f"resolution='listed_by_omim' WHERE status='open' AND disease_id IN ({marks}) "
+                        "AND kind IN ('not_in_omim','unmatched_label')",
+                        (_now(), user, *listed),
+                    )
+                summary["reviews"] = con.execute(
+                    "SELECT COUNT(*) FROM review_items WHERE status='open' AND gene_mim = ?",
+                    (gene["gene_mim"],),
+                ).fetchone()[0]
             _refresh_gene(con, gene["gene_mim"], done=True)
             summary["genes"].append({"gene_mim": gene["gene_mim"], "gene": gene["gene_symbol"], "changes": changes})
         if entry_type != "gene":
@@ -841,6 +879,37 @@ def adopted_capture_ids(path: Path | None = None) -> set[str]:
         return {r["capture_id"] for r in con.execute("SELECT DISTINCT capture_id FROM adoptions")}
 
 
+def gene_sync_map(path: Path | None = None) -> dict[str, str]:
+    """gene MIM -> last time its OMIM gene page was adopted."""
+    if not exists(path):
+        return {}
+    with connect(path) as con:
+        return {r["mim"]: r["at"] for r in con.execute(
+            "SELECT mim, MAX(adopted_at) AS at FROM adoptions "
+            "WHERE entry_type IN ('gene','gene_phenotype') GROUP BY mim"
+        )}
+
+
+def open_reviews_by_gene(path: Path | None = None) -> dict[str, list[dict]]:
+    if not exists(path):
+        return {}
+    out: dict[str, list[dict]] = {}
+    with connect(path) as con:
+        for r in con.execute(
+            "SELECT r.id, r.kind, r.gene_mim, r.disease_id, r.detail, d.label AS current_label, "
+            "d.active AS disease_active FROM review_items r LEFT JOIN gene_diseases d ON d.id = r.disease_id "
+            "WHERE r.status = 'open' ORDER BY r.id"
+        ):
+            item = dict(r)
+            try:
+                item["detail"] = json.loads(item.get("detail") or "{}")
+            except json.JSONDecodeError:
+                item["detail"] = {}
+            item["kind_label"] = REVIEW_KINDS.get(item["kind"], item["kind"])
+            out.setdefault(item["gene_mim"], []).append(item)
+    return out
+
+
 def recently_adopted_mims(days: int = 7, path: Path | None = None) -> set[str]:
     """MIMs adopted within ``days`` (kept out of the "next page" suggestion)."""
     if not exists(path):
@@ -908,14 +977,24 @@ def preview_adoption(parsed: dict, path: Path | None = None) -> dict:
             if parsed.get("entry_type") not in {"gene", "gene_phenotype"} and rel.get("phenotype_mim") != mim:
                 continue
             gene_mim = rel.get("gene_mim") or mim
+            label = format_label(rel.get("phenotype"), rel.get("phenotype_mim"), rel.get("inheritance"))
             rows = con.execute(
                 "SELECT label FROM gene_diseases WHERE gene_mim = ? AND active = 1 AND phenotype_mim = ?",
                 (gene_mim, rel.get("phenotype_mim") or ""),
-            ).fetchall()
+            ).fetchall() if rel.get("phenotype_mim") else []
+            fills = ""
+            if not rows:
+                # An old MIM-less line with the same name gets this MIM.
+                for r in con.execute(
+                    "SELECT label FROM gene_diseases WHERE gene_mim = ? AND active = 1 AND phenotype_mim = ''",
+                    (gene_mim,),
+                ):
+                    if disease_picks.name_key(r["label"]) == disease_picks.name_key(label):
+                        fills = r["label"]
+                        break
             out["genes"].append({
-                "gene": rel.get("gene") or "", "gene_mim": gene_mim,
-                "label": format_label(rel.get("phenotype"), rel.get("phenotype_mim"), rel.get("inheritance")),
-                "current_labels": [r["label"] for r in rows],
+                "gene": rel.get("gene") or "", "gene_mim": gene_mim, "label": label,
+                "current_labels": [r["label"] for r in rows], "fills_mim_for": fills,
             })
     return out
 

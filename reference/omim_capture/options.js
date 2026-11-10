@@ -12,15 +12,13 @@ function originPattern(url) {
   return `${u.protocol}//${u.hostname}/*`;
 }
 
-chrome.storage.local.get(["platformUrl", "token", "queueKind", "queueScope", "queueSkip"], s => {
+chrome.storage.local.get(["platformUrl", "token", "queueScope", "queueSkip"], s => {
   $("platformUrl").value = s.platformUrl || DEFAULT_PLATFORM;
   $("token").value = s.token || "";
-  $("queueKind").value = s.queueKind || "";
   $("queueScope").value = s.queueScope || "all";
   $("skipCount").textContent = Array.isArray(s.queueSkip) ? s.queueSkip.length : 0;
 });
 
-$("queueKind").addEventListener("change", e => chrome.storage.local.set({ queueKind: e.target.value }));
 $("queueScope").addEventListener("change", e => chrome.storage.local.set({ queueScope: e.target.value }));
 $("clearSkip").addEventListener("click", async e => {
   e.preventDefault();

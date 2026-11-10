@@ -36,20 +36,13 @@
   <input id="token" type="password" autocomplete="off" placeholder="ngsc_…">
   <div class="hint">登入平台後開啟「/omim-capture/」頁面產生 token，貼到這裡。token 只存在這台電腦的瀏覽器裡。</div>
 
-  <label for="queueKind">「下一筆」要處理的項目</label>
-  <select id="queueKind">
-    <option value="">全部（缺說明優先）</option>
-    <option value="missing">只處理缺說明（卡片上的 *）</option>
-    <option value="no_mim">只處理缺 phenotype MIM（開基因頁）</option>
-    <option value="stale">只處理超過一年未更新</option>
-  </select>
   <label for="queueScope">範圍</label>
   <select id="queueScope">
-    <option value="all">全部基因（報告用過、疾病相關基因優先）</option>
+    <option value="all">全部基因（進行中 → 疾病相關基因的基因頁 → 其他）</option>
     <option value="panel">只限疾病相關基因（panel_loose）</option>
     <option value="reported">只限個案報告用過的疾病</option>
   </select>
-  <div class="hint">已略過 <span id="skipCount">0</span> 頁。<a href="#" id="clearSkip">清除略過清單</a></div>
+  <div class="hint">已略過 <span id="skipCount">0</span> 項（頁面或基因）。<a href="#" id="clearSkip">清除略過清單</a></div>
 
   <div class="actions">
     <button id="save">儲存並測試連線</button>

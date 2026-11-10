@@ -100,23 +100,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           { method: "POST" });
       }
       case "next": {
-        const s = await chrome.storage.local.get(["queueSkip", "queueKind", "queueScope"]);
+        const s = await chrome.storage.local.get(["queueSkip", "queueScope", "queueGene"]);
         const skip = Array.isArray(s.queueSkip) ? s.queueSkip : [];
         const params = new URLSearchParams({
           current: message.current || "",
+          gene: s.queueGene || "",
           skip: skip.join(","),
-          kind: s.queueKind || "",
           scope: s.queueScope || "all",
         });
         return api(`/api/omim/queue/next?${params}`);
       }
+      case "set-gene":
+        await chrome.storage.local.set({ queueGene: message.gene || "" });
+        return { ok: true };
       case "skip": {
         const s = await chrome.storage.local.get(["queueSkip"]);
         const skip = Array.isArray(s.queueSkip) ? s.queueSkip : [];
         if (message.mim && !skip.includes(message.mim)) skip.push(message.mim);
-        await chrome.storage.local.set({ queueSkip: skip.slice(-500) });
+        await chrome.storage.local.set({ queueSkip: skip.slice(-1000) });
         return { ok: true, data: { skipped: skip.length } };
       }
+      case "review":
+        return api(`/api/omim/reviews/${encodeURIComponent(message.id)}`,
+          { method: "POST", body: { action: message.action } });
       case "ping":
         return api("/api/omim/ping");
       case "outbox": {

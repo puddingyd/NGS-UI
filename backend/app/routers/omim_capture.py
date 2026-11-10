@@ -121,8 +121,9 @@ def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(
     return data
 
 
-_QUEUE_KINDS = {"", "missing", "no_mim", "stale"}
+_QUEUE_STATUSES = {"", "in_progress", "gene_sync", "phenotype", "review"}
 _QUEUE_SCOPES = {"all", "panel", "reported"}
+_SKIP_RE = re.compile(r"^g?\d{6}$")
 
 
 def _pending_mims() -> set[str]:
@@ -130,30 +131,33 @@ def _pending_mims() -> set[str]:
     return {e.get("mim") for e in pending if e.get("mim")}
 
 
-def _check_queue_args(kind: str, scope: str) -> None:
-    if kind not in _QUEUE_KINDS or scope not in _QUEUE_SCOPES:
-        raise HTTPException(400, "invalid kind or scope")
-
-
 @router.get("/queue")
-def work_queue(kind: str = "", scope: str = "all", offset: int = 0, limit: int = 200,
+def work_queue(status: str = "", scope: str = "all", offset: int = 0, limit: int = 100,
                user: dict = Depends(current_user)):
-    """OMIM pages worth capturing, most useful first."""
-    _check_queue_args(kind, scope)
-    return omim_queue.queue(kind=kind, scope=scope, pending_mims=_pending_mims(),
+    """Genes to work through, with their gene-page / disease-page steps."""
+    if status not in _QUEUE_STATUSES or scope not in _QUEUE_SCOPES:
+        raise HTTPException(400, "invalid status or scope")
+    return omim_queue.queue(status=status, scope=scope, pending_mims=_pending_mims(),
                             recent_mims=omim_db.recently_adopted_mims(),
                             offset=max(0, int(offset)), limit=max(1, min(int(limit), 1000)))
 
 
 @router.get("/queue/next")
-def work_queue_next(current: str = "", skip: str = "", kind: str = "", scope: str = "all",
+def work_queue_next(current: str = "", gene: str = "", skip: str = "", scope: str = "all",
                     user: dict = Depends(capture_user)):
-    """Next page for the extension's "前往下一筆" (``skip`` = comma-separated MIMs)."""
-    _check_queue_args(kind, scope)
-    skipped = {m for m in skip.split(",") if _MIM_RE.match(m)}
-    return omim_queue.next_item(current=current if _MIM_RE.match(current or "") else "",
-                                skip=skipped, kind=kind, scope=scope, pending_mims=_pending_mims(),
-                                recent_mims=omim_db.recently_adopted_mims())
+    """Next page for the extension; stays on ``gene`` until its steps are done.
+
+    ``skip``: comma-separated MIMs, or ``g<geneMIM>`` to skip a whole gene.
+    """
+    if scope not in _QUEUE_SCOPES:
+        raise HTTPException(400, "invalid scope")
+    skipped = {m for m in skip.split(",") if _SKIP_RE.match(m)}
+    return omim_queue.next_step(
+        current=current if _MIM_RE.match(current or "") else "",
+        gene=gene if _MIM_RE.match(gene or "") else "",
+        skip=skipped, scope=scope, pending_mims=_pending_mims(),
+        recent_mims=omim_db.recently_adopted_mims(),
+    )
 
 
 @router.get("/adoptions")
@@ -244,6 +248,10 @@ def adopt_capture(mim: str, name: str, user: dict = Depends(capture_user)):
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     omim_store.ensure_loaded()
+    by_gene = omim_db.open_reviews_by_gene()
+    result["gene_reviews"] = [
+        item for g in result.get("genes") or [] for item in by_gene.get(g.get("gene_mim"), [])
+    ]
     return {"result": result, "summary": _summary(parsed)}
 
 
@@ -264,7 +272,7 @@ def list_reviews(status: str = "open", kind: str = "", limit: int = 500,
 
 
 @router.post("/reviews/{item_id}")
-def resolve_review(item_id: int, payload: dict, user: dict = Depends(current_user)):
+def resolve_review(item_id: int, payload: dict, user: dict = Depends(capture_user)):
     if not omim_db.exists():
         raise HTTPException(409, "平台 OMIM 資料庫尚未建立")
     try:

@@ -289,8 +289,10 @@ def test_api_capture_preview_adopt_reviews_export(client):
     reviews = c.get("/api/omim/reviews").json()
     assert reviews["db_enabled"] and reviews["items"]
     item = reviews["items"][0]
-    assert c.post(f"/api/omim/reviews/{item['id']}", json={"action": "keep"}).json()["resolution"] == "keep"
-    assert c.post(f"/api/omim/reviews/{item['id']}", json={"action": "bogus"}).status_code == 400
+    assert c.post(f"/api/omim/reviews/{item['id']}", json={"action": "keep"},
+                  headers=headers).json()["resolution"] == "keep"
+    assert c.post(f"/api/omim/reviews/{item['id']}", json={"action": "bogus"},
+                  headers=headers).status_code == 400
     export = c.get("/api/omim/export.xlsx")
     assert export.status_code == 200 and export.content[:2] == b"PK"
 
@@ -352,52 +354,136 @@ def test_old_database_gets_adoptions_table_backfilled(db):
     assert omim_db.adopted_capture_ids(db["path"]) == {"600002/old"}
 
 
-def test_work_queue_orders_and_skips(client, monkeypatch):
+def _gene_page(mim, symbol, rows):
+    return {
+        "mim": mim, "entry_type": "gene", "prefix": "*", "symbol": symbol, "title": symbol,
+        "relationships": [
+            {"phenotype": name, "phenotype_mim": pm, "inheritance": inh, "mapping_key": "3",
+             "gene": symbol, "gene_mim": mim, "location": ""}
+            for name, pm, inh in rows
+        ],
+        "description": "", "synopsis": "", "content_hash": f"gene-{mim}",
+    }
+
+
+@pytest.fixture
+def queue_env(client, monkeypatch):
     from app.services import omim_queue
-    c, user = client
-    monkeypatch.setattr(omim_queue.panel_deadzone, "disease_associated_genes", lambda: frozenset({"ATXNX"}))
+    monkeypatch.setattr(omim_queue.panel_deadzone, "disease_associated_genes",
+                        lambda: frozenset({"ATXNX", "OTX9"}))
     monkeypatch.setattr(omim_queue, "reported_usage", lambda ttl=0: {"600002": 3})
-    omim_queue._items_cache.update(sig=None)
+    omim_queue._cache.update(sig=None)
+    c, user = client
+    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
+    return c, headers
+
+
+def test_queue_is_gene_centred_and_ordered(queue_env):
+    c, _headers = queue_env
     data = c.get("/api/omim/queue").json()
-    targets = [i["target_mim"] for i in data["items"]]
-    # reported first, then panel gene (ATXNX: SCA1 label only), then the rest
-    assert targets[0] == "600002" and data["items"][0]["reported"] == 3
-    assert targets[1] == "164400"
-    assert set(data["items"][1]["kinds"]) == {"missing"}
-    assert c.get("/api/omim/queue?kind=no_mim").json()["items"] == []
-    omim_db.adopt_capture({
-        "mim": "100004", "entry_type": "gene", "symbol": "ATXNX", "title": "ATAXIN X",
-        "relationships": [{"phenotype": "{Susceptibility to testing}", "phenotype_mim": "",
-                           "inheritance": "", "mapping_key": "3", "gene": "ATXNX", "gene_mim": "100004"}],
-    }, user="rev", capture_id="100004/x")
-    omim_store.ensure_loaded()
-    no_mim = c.get("/api/omim/queue?kind=no_mim").json()["items"]
-    assert [i["target_mim"] for i in no_mim] == ["100004"]  # gene page for MIM-less line
-    assert no_mim[0]["target_type"] == "gene"
-    assert data["counts"]["missing"] >= 2
+    genes = [i["gene"] for i in data["items"]]
+    # nothing synced yet: panel genes needing a gene-page sync come first
+    assert genes[:2] == ["ATXNX", "OTX9"]
+    atxn = data["items"][0]
+    assert atxn["status"] == "gene_sync"
+    # gene page, then the label-only SCA1 (missing) before SCA10 (curated, no Done → stale)
+    assert [(s["type"], s["mim"], s["kinds"]) for s in atxn["steps"]] == [
+        ("gene", "100004", ["gene_page"]), ("phenotype", "164400", ["missing"]),
+        ("phenotype", "603516", ["stale"]),
+    ]
+    assert [r["kind"] for r in atxn["reviews"]] == ["slot_not_in_omim_disease"]
+    # non-panel gene with a disease to fill still gets its gene page first
+    gene1 = next(i for i in data["items"] if i["gene"] == "GENE1")
+    assert gene1["reported"] == 3
+    assert [(s["type"], s["kinds"]) for s in gene1["steps"]] == [
+        ("gene", ["gene_page"]), ("phenotype", ["missing"]), ("phenotype", ["stale"])]
+    assert data["counts"]["panel_gene_sync"] == 2
+    assert c.get("/api/omim/queue?status=review").json()["total"] >= 1
     assert c.get("/api/omim/queue?scope=bogus").status_code == 400
 
-    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
+
+def test_next_stays_on_gene_and_gene_sync_puts_it_in_progress(queue_env):
+    c, headers = queue_env
     first = c.get("/api/omim/queue/next", headers=headers).json()
-    assert first["item"]["target_mim"] == "600002"
-    after = c.get("/api/omim/queue/next?current=600002&skip=164400", headers=headers).json()
-    assert after["item"]["target_mim"] not in {"600002", "164400"}
-    # a captured-but-not-adopted page is not offered again
-    c.post("/api/omim/captures", json={"mim": "600002", "text": PAGE}, headers=headers)
-    again = c.get("/api/omim/queue/next", headers=headers).json()
-    assert again["item"]["target_mim"] != "600002"
-    listed = {i["target_mim"]: i for i in c.get("/api/omim/queue").json()["items"]}
-    assert listed["600002"]["captured"] is True
+    assert first["step"]["type"] == "gene" and first["gene"]["gene"] == "ATXNX"
+    assert first["gene"]["total_steps"] == 3
+    # adopt the gene page: OMIM lists SCA1 and a disease the platform lacked
+    result = omim_db.adopt_capture(
+        _gene_page("100004", "ATXNX", [("Spinocerebellar ataxia 1", "164400", "AD"),
+                                       ("Brand new ataxia", "620001", "AR")]),
+        user="rev", capture_id="100004/g",
+    )
+    # migration review settled; SCA10 row flagged as not listed by OMIM
+    assert result["reviews"] == 1
+    omim_store.ensure_loaded()
+    nxt = c.get("/api/omim/queue/next?current=100004&gene=100004", headers=headers).json()
+    assert nxt["continuing"] is True and nxt["gene"]["gene"] == "ATXNX"
+    assert nxt["step"]["mim"] in {"164400", "620001"}
+    item = c.get("/api/omim/queue").json()["items"][0]
+    assert item["gene"] == "ATXNX" and item["status"] == "in_progress"
+    assert {s["mim"] for s in item["steps"]} == {"164400", "620001", "603516"}
+    assert [r["kind"] for r in item["reviews"]] == ["not_in_omim"]
+    # skipping both diseases leaves the gene; next gene comes up
+    other = c.get("/api/omim/queue/next?current=164400&gene=100004&skip=620001,603516",
+                  headers=headers).json()
+    assert other["gene"]["gene"] != "ATXNX" and other["continuing"] is False
+    # skipping a whole gene with g<MIM>
+    skipped = c.get("/api/omim/queue/next?skip=g100004,g100002", headers=headers).json()
+    assert skipped["gene"]["gene"] not in {"ATXNX", "OTX9"}
 
 
-def test_next_page_skips_recently_adopted(client):
-    c, user = client
-    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
-    first = c.get("/api/omim/queue/next", headers=headers).json()["item"]["target_mim"]
-    omim_db.adopt_capture({"mim": first, "entry_type": "phenotype", "relationships": [],
-                           "description": "", "synopsis": ""}, user="rev", capture_id=f"{first}/x")
-    nxt = c.get("/api/omim/queue/next", headers=headers).json()["item"]
-    assert nxt is None or nxt["target_mim"] != first
-    listed = {i["target_mim"]: i for i in c.get("/api/omim/queue").json()["items"]}
-    if first in listed:
-        assert listed[first]["recently_adopted"] is True
+def test_gene_sync_resolves_reviews_for_listed_diseases(queue_env):
+    c, headers = queue_env
+    # CERTX: stale label without MIM, curated cell already new name + MIM
+    omim_db.adopt_capture(_gene_page("100003", "CERTX", [
+        ("Intellectual developmental disorder, autosomal dominant 34", "616351", "AD")]),
+        user="rev", capture_id="100003/g")
+    reviews = omim_db.open_reviews_by_gene().get("100003", [])
+    assert reviews == []
+    # GENE1: OMIM lists A and an unknown C, but not B (renamed elsewhere)
+    result = omim_db.adopt_capture(_gene_page("100001", "GENE1", [
+        ("Disease A", "600001", "AD"), ("Disease B renamed", "600002", "AR")]),
+        user="rev", capture_id="100001/g")
+    assert result["reviews"] == 0
+
+
+def test_adopt_response_lists_gene_reviews_and_token_can_resolve(queue_env, tmp_path):
+    c, headers = queue_env
+    page = (
+        "OMIM\n*100004\nTable of Contents\nTitle\nGene-Phenotype Relationships\n"
+        "▼ External Links\n* 100004\nATAXIN X; ATXNX\n\nGene-Phenotype Relationships\n\n"
+        "Location\tPhenotype\tPhenotype\nMIM number\tInheritance\tPhenotype\nmapping key\n"
+        "6p22\tSpinocerebellar ataxia 1\t164400\tAD\t3\n\n▼ TEXT\n\nText.\n\n"
+        "Edit History: carol : 08/14/2026\n"
+    )
+    created = c.post("/api/omim/captures", json={"mim": "100004", "text": page}, headers=headers).json()
+    mim, name = created["capture"]["id"].split("/")
+    adopted = c.post(f"/api/omim/captures/{mim}/{name}/adopt", headers=headers).json()
+    reviews = adopted["result"]["gene_reviews"]
+    assert [r["kind"] for r in reviews] == ["not_in_omim"]
+    assert reviews[0]["current_label"].startswith("Spinocerebellar ataxia 10")
+    done = c.post(f"/api/omim/reviews/{reviews[0]['id']}", json={"action": "remove"}, headers=headers)
+    assert done.json()["resolution"] == "remove"
+
+
+def test_old_database_gets_legacy_done_column(db):
+    import sqlite3
+    con = sqlite3.connect(db["path"])
+    con.execute("CREATE TABLE genes_old AS SELECT gene_mim, gene_symbol, alias_symbols, inheritance, "
+                "done, row_order, updated_at FROM genes")
+    con.execute("DROP TABLE genes")
+    con.execute("ALTER TABLE genes_old RENAME TO genes")
+    con.execute("UPDATE genes SET done = '2020-01-01' WHERE gene_symbol = 'GENE1'")
+    con.commit()
+    con.close()
+    omim_db._schema_checked.clear()
+    _by_id, by_gene = omim_db.load_rows(db["path"])
+    assert by_gene["GENE1"]["Legacy_done"] == "2020-01-01"
+
+
+def test_preview_reports_mim_filled_for_old_label(db):
+    omim_db.adopt_capture(_gene_page("100004", "ATXNX", [("Mystery", "", "")]),
+                          user="rev", capture_id="100004/a")
+    preview = omim_db.preview_adoption(_gene_page("100004", "ATXNX", [("Mystery", "620002", "AR")]))
+    row = preview["genes"][0]
+    assert row["current_labels"] == [] and row["fills_mim_for"] == "Mystery"

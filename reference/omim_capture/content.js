@@ -403,7 +403,8 @@
     const isGene = summary.entry_type === "gene";
     const lines = (preview.genes || []).map(g => {
       const current = (g.current_labels || []).join("、");
-      const change = !current ? "新增" : (current === g.label ? "沿用" : `原為「${esc(current)}」`);
+      const change = g.fills_mim_for ? `補上 MIM，原為「${esc(g.fills_mim_for)}」`
+        : (!current ? "新增" : (current === g.label ? "沿用" : `原為「${esc(current)}」`));
       return `<li>${esc(g.gene)}：${esc(g.label)}（${change}）</li>`;
     }).join("");
     let note = isGene ? "採用後會依 OMIM 基因頁同步這個基因的疾病清單（OMIM 已不列出的舊疾病只會列入待確認，不會刪除）。"
@@ -440,51 +441,97 @@
     box.innerHTML = `
       <span class="badge ok">已採用到平台</span>
       ${genes ? `<p class="muted">已更新：${genes}${r.text ? `（說明${r.text === "added" ? "新增" : "已取代"}）` : ""}</p>` : ""}
-      ${r.reviews ? `<p class="muted">另有 ${r.reviews} 項需要在平台「OMIM 擷取」頁確認。</p>` : ""}
+
       ${r.kept_previous_synopsis ? `<p class="muted">這次沒擷取到 Synopsis，已保留平台原本的內容。</p>` : ""}
       <p class="muted">平台上的個案重新載入後會顯示新內容。</p>`;
-    if (goNext) {
-      await goToNext(false);
+    const geneReviews = r.gene_reviews || [];
+    if (geneReviews.length) {
+      box.insertAdjacentHTML("beforeend", renderGeneReviews(geneReviews)
+        + (goNext ? `<p class="muted">處理完上面的項目後，按下方「前往」繼續。</p>` : ""));
+      box.addEventListener("click", handleReviewClick);
+    }
+    if (goNext && !geneReviews.length) {
+      await goToNext(null);
     } else {
       loadNext();
     }
   }
 
   // ---------------------------------------------------------- work queue
-  let nextItem = null;
-  const KIND_TEXT = { missing: "缺說明", no_mim: "缺 MIM（基因頁）", stale: "超過一年未更新" };
+  let nextData = null;
+  const KIND_TEXT = { gene_page: "同步這個基因的疾病清單", missing: "缺說明", stale: "超過一年未更新" };
 
   async function loadNext() {
     const bar = root.querySelector("#nextbar");
     const result = await send({ type: "next", current: MIM });
     if (!result.ok) {
       bar.innerHTML = `<span class="muted">待補清單：${esc(result.error)}</span>`;
+      nextData = null;
       return null;
     }
-    nextItem = result.data.item;
-    if (!nextItem) {
+    nextData = result.data;
+    if (!nextData.step) {
       bar.innerHTML = `<span class="muted">待補清單已完成 🎉</span>`;
-      return null;
+      return nextData;
     }
-    const kinds = (nextItem.kinds || []).map(k => KIND_TEXT[k] || k).join("、");
+    const g = nextData.gene;
+    const step = nextData.step;
+    const kinds = (step.kinds || []).map(k => KIND_TEXT[k] || k).join("、");
+    const done = g.total_steps - g.remaining_steps;
     bar.innerHTML = `
-      <b>下一筆</b>（剩 ${esc(result.data.remaining)} 筆）
-      <div class="next-label">${esc(nextItem.target_mim)} ${esc((nextItem.labels || [])[0] || "")}
-        <br><span class="muted">${esc((nextItem.genes || []).slice(0, 4).join("、"))} · ${esc(kinds)}${nextItem.reported ? ` · 報告用過 ${esc(nextItem.reported)} 次` : ""}</span></div>
+      <b>${nextData.continuing ? "同一個基因的下一步" : "下一個基因"}</b>
+      <span class="muted">（還有 ${esc(nextData.remaining_genes)} 個基因）</span>
+      <div class="next-label"><b>${esc(g.gene)}</b>${g.panel ? " · 疾病相關" : ""} · 第 ${done + 1}／${g.total_steps} 步${g.reviews ? ` · 待確認 ${esc(g.reviews)} 項` : ""}
+        <br>${step.type === "gene" ? `基因頁 ${esc(step.mim)}` : `${esc(step.mim)} ${esc((step.labels || [])[0] || "")}`}
+        <br><span class="muted">${esc(kinds)}${g.reported ? ` · 報告用過 ${esc(g.reported)} 次` : ""}</span></div>
       <div class="next-actions">
-        <button class="btn" id="go-next">前往下一筆</button>
-        <button class="btn secondary" id="skip-current" title="這個頁面先不處理，之後不再推薦">略過這頁</button>
+        <button class="btn" id="go-next">前往</button>
+        <button class="btn secondary" id="skip-current" title="這一頁先不處理，之後不再推薦">略過這頁</button>
+        <button class="btn secondary" id="skip-gene" title="${esc(g.gene)} 整個基因先不處理">略過 ${esc(g.gene)}</button>
       </div>`;
-    root.querySelector("#go-next").addEventListener("click", () => goToNext(false));
-    root.querySelector("#skip-current").addEventListener("click", () => goToNext(true));
-    return nextItem;
+    root.querySelector("#go-next").addEventListener("click", () => goToNext(null));
+    root.querySelector("#skip-current").addEventListener("click", () => goToNext("page"));
+    root.querySelector("#skip-gene").addEventListener("click", () => goToNext("gene", g.gene_mim));
+    return nextData;
   }
 
-  async function goToNext(skipCurrent) {
-    if (skipCurrent) await send({ type: "skip", mim: MIM });
-    const item = skipCurrent || !nextItem ? await loadNext() : nextItem;
-    if (item && item.target_mim) {
-      location.href = `${location.origin}/entry/${item.target_mim}`;
+  async function goToNext(skipMode, geneMim) {
+    if (skipMode === "page") await send({ type: "skip", mim: MIM });
+    if (skipMode === "gene") await send({ type: "skip", mim: `g${geneMim}` });
+    // Always ask again: an adoption may have just changed this gene's steps.
+    const data = await loadNext();
+    if (data && data.step) {
+      await send({ type: "set-gene", gene: data.gene.gene_mim });
+      location.href = `${location.origin}/entry/${data.step.mim}`;
+    }
+  }
+
+  function renderGeneReviews(reviews) {
+    if (!reviews || !reviews.length) return "";
+    return `<div class="row"><span class="badge warn">這個基因有 ${reviews.length} 項對不上，請確認</span><ul id="gene-reviews">${
+      reviews.map(r => {
+        const d = r.detail || {};
+        const label = r.current_label || d.label || d.disease_cell || d.omim_disease || "";
+        return `<li data-review="${esc(r.id)}">${esc(r.kind_label)}：<b>${esc(label)}</b>
+          ${d.suggestion ? `<br><span class="muted">可能是：${esc(d.suggestion)}</span>` : ""}
+          <br><button class="btn secondary" data-action="keep">保留</button>
+          ${r.disease_id && r.disease_active ? `<button class="btn secondary" data-action="remove">移除疾病</button>` : ""}</li>`;
+      }).join("")
+    }</ul></div>`;
+  }
+
+  async function handleReviewClick(ev) {
+    const btn = ev.target.closest("[data-action]");
+    const li = ev.target.closest("[data-review]");
+    if (!btn || !li) return;
+    btn.disabled = true;
+    const result = await send({ type: "review", id: li.dataset.review, action: btn.dataset.action });
+    if (result.ok) {
+      li.innerHTML = `<span class="muted">${btn.dataset.action === "remove" ? "已移除" : "已保留"}</span>`;
+      if (!root.querySelector("#gene-reviews [data-action]")) loadNext();
+    } else {
+      btn.disabled = false;
+      li.insertAdjacentHTML("beforeend", `<br><span class="badge err">${esc(result.error)}</span>`);
     }
   }
 

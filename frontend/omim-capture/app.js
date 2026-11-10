@@ -129,7 +129,9 @@
     const preview = summary.adopt_preview || {};
     const lines = (preview.genes || []).map(g => {
       const current = (g.current_labels || []).join("、");
-      return `<li>${esc(g.gene)}：${esc(g.label)}${current && current !== g.label ? `（原為「${esc(current)}」）` : (current ? "" : "（新增）")}</li>`;
+      const change = g.fills_mim_for ? `（補上 MIM，原為「${esc(g.fills_mim_for)}」）`
+        : (current && current !== g.label ? `（原為「${esc(current)}」）` : (current ? "" : "（新增）"));
+      return `<li>${esc(g.gene)}：${esc(g.label)}${change}</li>`;
     }).join("");
     const note = summary.entry_type === "gene"
       ? "依 OMIM 基因頁同步這個基因的疾病清單；OMIM 已不列出的舊疾病只會列入待確認。"
@@ -147,7 +149,6 @@
     if (!status.enabled) {
       box.innerHTML = `尚未啟用，平台目前讀取 OMIM.xlsx。在 dev 機執行一次<br>
         <code>PYTHONPATH=backend python scripts/omim_db.py init</code><br>即可從 OMIM.xlsx 建立資料庫並啟用採用功能。`;
-      $("#review-card").hidden = true;
       $("#btn-export").hidden = true;
       return;
     }
@@ -155,60 +156,48 @@
     box.innerHTML = `已啟用（平台讀取資料庫）：基因 ${c.genes}、疾病 ${c.diseases}、已採用擷取的疾病說明 ${c.phenotype_texts}、待確認 ${c.open_reviews}、異動紀錄 ${c.changes}。
       <br>建立時間：${esc(fmtTime((status.meta || {}).created_at))}`;
     $("#btn-export").hidden = false;
-    $("#review-card").hidden = false;
-    await loadReviews();
   }
 
-  async function loadReviews() {
-    const kind = $("#review-kind").value || "";
-    const data = await api(`/api/omim/reviews?kind=${encodeURIComponent(kind)}`);
-    const counts = data.open_counts || {};
-    const kinds = data.kinds || {};
-    const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    const current = $("#review-kind").value;
-    $("#review-kind").innerHTML = `<option value="">全部（${total}）</option>` + Object.keys(kinds)
-      .filter(k => counts[k]).map(k => `<option value="${esc(k)}">${esc(kinds[k])}（${counts[k]}）</option>`).join("");
-    $("#review-kind").value = current || "";
-    $("#review-table tbody").innerHTML = data.items.length ? data.items.map(item => {
-      const d = item.detail || {};
-      const content = [
-        d.omim_disease && typeof d.omim_disease === "string" ? `OMIM_disease：${esc(d.omim_disease)}` : "",
-        d.disease_cell ? `Disease 欄：${esc(d.disease_cell)}` : "",
-        d.label ? esc(d.label) : "",
-        d.count ? `${esc(d.count)} 個疾病` : "",
-      ].filter(Boolean).join("<br>");
-      const mim = (String(d.omim_disease || d.disease_cell || d.label || "").match(/\((\d{6})\)/) || [])[1];
-      const omimLink = mim ? `<a class="btn btn-secondary" href="https://omim.org/entry/${mim}" target="_blank" rel="noopener">OMIM</a>`
-        : (/^\d{6}$/.test(item.gene_mim) ? `<a class="btn btn-secondary" href="https://omim.org/entry/${item.gene_mim}" target="_blank" rel="noopener">基因頁</a>` : "");
-      const canRemove = item.disease_id && item.disease_active;
-      return `<tr><td>${esc(item.gene_symbol || item.gene_mim)}</td><td>${esc(item.kind_label)}</td><td>${content}</td>
-        <td class="review-actions">${omimLink}
-          <button class="btn btn-secondary" type="button" data-review="${item.id}" data-action="keep">保留</button>
-          ${canRemove ? `<button class="btn btn-secondary" type="button" data-review="${item.id}" data-action="remove">移除疾病</button>` : ""}</td></tr>`;
-    }).join("") : `<tr><td colspan="4" class="muted-text">沒有待確認項目。</td></tr>`;
-  }
-
-  const QUEUE_KIND = { missing: ["缺說明", "warn"], no_mim: ["缺 MIM", "info"], stale: ["逾一年", "info"] };
+  const STEP_KIND = { gene_page: ["基因頁", "info"], missing: ["缺說明", "warn"], stale: ["逾一年", "info"] };
+  const STATUS_BADGE = {
+    in_progress: ["進行中", "warn"], gene_sync: ["基因頁待同步", "info"], phenotype: ["疾病待補", "info"],
+  };
   let queueOffset = 0;
+
+  function reviewHtml(r) {
+    const d = r.detail || {};
+    const label = r.current_label || d.label || d.disease_cell || d.omim_disease || "";
+    const canRemove = r.disease_id && r.disease_active;
+    return `<li data-review-item="${r.id}">${esc(r.kind_label)}：${esc(label)}
+      ${d.suggestion ? `<br><span class="muted-text">可能是：${esc(d.suggestion)}</span>` : ""}
+      <span class="review-actions"><button class="btn btn-secondary" type="button" data-review="${r.id}" data-action="keep">保留</button>${
+        canRemove ? `<button class="btn btn-secondary" type="button" data-review="${r.id}" data-action="remove">移除疾病</button>` : ""}</span></li>`;
+  }
 
   async function loadQueue(append = false) {
     if (!append) queueOffset = 0;
-    const kind = $("#queue-kind").value;
+    const status = $("#queue-status").value;
     const scope = $("#queue-scope").value;
-    const data = await api(`/api/omim/queue?kind=${encodeURIComponent(kind)}&scope=${encodeURIComponent(scope)}&offset=${queueOffset}&limit=100`);
-    $("#queue-total").textContent = `（${data.total}）`;
-    const rows = data.items.map(i => `
+    const data = await api(`/api/omim/queue?status=${encodeURIComponent(status)}&scope=${encodeURIComponent(scope)}&offset=${queueOffset}&limit=100`);
+    const c = data.counts || {};
+    $("#queue-total").textContent = `（${data.total} 個基因）`;
+    $("#queue-summary").textContent = `進行中 ${c.in_progress || 0}、基因頁待同步 ${c.gene_sync || 0}（其中疾病相關 ${c.panel_gene_sync || 0}）、只有疾病待補 ${c.phenotype || 0}；待補疾病頁 ${c.phenotype_steps || 0}、待確認 ${c.reviews || 0} 項。`;
+    const rows = data.items.map(g => `
       <tr>
-        <td><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.target_mim)}</a>${i.target_type === "gene" ? '<br><span class="muted-text">基因頁</span>' : ""}</td>
-        <td>${i.labels.map(esc).join("<br>")}</td>
-        <td>${esc(i.genes.join("、"))}</td>
-        <td>${i.kinds.map(k => badge(QUEUE_KIND[k] || [k, "info"])).join(" ")}${i.captured ? `<br>${badge(["已擷取待採用", "ok"])}` : ""}${i.recently_adopted ? `<br>${badge(["7 天內採用過", "info"])}` : ""}</td>
-        <td>${i.reported ? esc(i.reported) : ""}</td>
-        <td>${esc(i.done || "—")}</td>
+        <td>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.gene || g.gene_mim)}</b></a>` : `<b>${esc(g.gene)}</b>`}
+          <br><span class="muted-text">${esc(g.gene_mim)}${g.panel ? " · 疾病相關" : ""}</span></td>
+        <td>${badge(STATUS_BADGE[g.status] || [g.status, "info"])}${g.synced_at ? `<br><span class="muted-text">基因頁同步 ${esc(fmtTime(g.synced_at))}</span>` : ""}</td>
+        <td><ol class="step-list">${g.steps.map(st => `<li>
+          <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a>
+          ${st.type === "gene" ? "" : esc((st.labels || [])[0] || "")}
+          ${(st.kinds || []).map(k => badge(STEP_KIND[k] || [k, "info"])).join(" ")}
+          ${st.captured ? badge(["已擷取待採用", "ok"]) : ""}${st.recently_adopted ? badge(["7 天內採用過", "info"]) : ""}</li>`).join("")}</ol></td>
+        <td>${g.reviews.length ? `<ul class="review-list">${g.reviews.map(reviewHtml).join("")}</ul>` : ""}</td>
+        <td>${g.reported ? esc(g.reported) : ""}</td>
       </tr>`).join("");
     const body = $("#queue-table tbody");
     if (append) body.insertAdjacentHTML("beforeend", rows);
-    else body.innerHTML = rows || `<tr><td colspan="6" class="muted-text">沒有待補項目。</td></tr>`;
+    else body.innerHTML = rows || `<tr><td colspan="5" class="muted-text">沒有待補項目。</td></tr>`;
     queueOffset += data.items.length;
     $("#btn-queue-more").hidden = queueOffset >= data.total;
   }
@@ -294,11 +283,10 @@
       $("#adopt-result").textContent = `採用失敗：${err.message}`;
     }
   });
-  $("#review-kind").addEventListener("change", () => loadReviews());
-  $("#queue-kind").addEventListener("change", () => loadQueue());
+  $("#queue-status").addEventListener("change", () => loadQueue());
   $("#queue-scope").addEventListener("change", () => loadQueue());
   $("#btn-queue-more").addEventListener("click", () => loadQueue(true));
-  $("#review-table").addEventListener("click", async ev => {
+  $("#queue-table").addEventListener("click", async ev => {
     const btn = ev.target.closest("[data-review]");
     if (!btn) return;
     const action = btn.dataset.action;
@@ -307,6 +295,8 @@
     await api(`/api/omim/reviews/${btn.dataset.review}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
     });
+    const li = btn.closest("[data-review-item]");
+    if (li) li.innerHTML = `<span class="muted-text">${action === "remove" ? "已移除" : "已保留"}</span>`;
     loadDbStatus();
   });
 
