@@ -520,6 +520,14 @@ def install(built_path: Path, target: Path | None = None) -> Path | None:
 # Rendering for omim_store
 # --------------------------------------------------------------------------
 
+EMPTY_ENTRY_NOTE = "（OMIM 此 entry 沒有 Description、Clinical Features 與 Clinical Synopsis）"
+
+
+def text_is_empty(text: dict | None) -> bool:
+    """Adopted capture of a page with neither description nor synopsis."""
+    return bool(text) and not text.get("description") and not text.get("synopsis")
+
+
 def compose_cell(label: str, text: dict | None) -> str:
     parts = [label]
     if text:
@@ -527,6 +535,8 @@ def compose_cell(label: str, text: dict | None) -> str:
             parts.append(text["description"])
         if text.get("synopsis"):
             parts.append(text["synopsis"])
+        if text_is_empty(text):
+            parts.append(EMPTY_ENTRY_NOTE)
     return "\n\n".join(p for p in parts if p)
 
 
@@ -546,7 +556,14 @@ def _render_gene(gene: dict, diseases: list[dict], legacy: dict[int, str],
         row[f"Disease{idx}"] = ""
     for idx, d in enumerate(diseases, start=1):
         text = texts.get(d["phenotype_mim"]) if d["phenotype_mim"] else None
-        if text:
+        if text and text_is_empty(text) and d["legacy_slot"] and len(
+            [ln for ln in (legacy.get(d["legacy_slot"]) or "").splitlines() if ln.strip()]
+        ) > 1:
+            # OMIM page has no text to adopt: keep the curated workbook text,
+            # but count the disease as checked against OMIM.
+            cell = legacy[d["legacy_slot"]]
+            source = "capture"
+        elif text:
             cell = compose_cell(d["label"], text)
             source = "capture"
         elif d["legacy_slot"] and legacy.get(d["legacy_slot"]):
@@ -562,6 +579,7 @@ def _render_gene(gene: dict, diseases: list[dict], legacy: dict[int, str],
             "disease_id": d["id"],
             "phenotype_mim": d["phenotype_mim"],
             "source": source,
+            "omim_empty": text_is_empty(text),
             "omim_edit_date": (text or {}).get("omim_edit_date", ""),
             "adopted_at": (text or {}).get("adopted_at", ""),
         })
@@ -955,10 +973,11 @@ def adoption_blockers(parsed: dict) -> list[str]:
         if not parsed.get("relationships"):
             reasons.append("基因頁沒有解析到疾病清單")
     else:
+        # A page without Description / Clinical Features (common for
+        # susceptibility or cancer-predisposition entries) is still a valid
+        # capture: adopting it records that OMIM has nothing more to add.
         if parsed.get("synopsis_status") == "not_loaded":
             reasons.append("Clinical Synopsis 沒有擷取到")
-        if not parsed.get("description"):
-            reasons.append("沒有 Description／Clinical Features")
     return reasons
 
 

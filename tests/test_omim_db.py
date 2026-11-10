@@ -563,3 +563,34 @@ def test_gene_lookup_lists_removed_and_linked(queue_env):
     shared_row = next(d for d in gene["diseases"] if d["phenotype_mim"] == "699998")
     assert shared_row["linked_genes"] == ["GENE1"]
     assert c.get("/api/omim/gene?q=699998").json()["matches"][1]["gene"] in {"GENE1", "ATXNX"}
+
+
+def test_entry_without_description_is_not_blocked_and_counts_as_checked(db):
+    empty = _phenotype_capture(mim="600002", name="Disease B", desc="", synopsis="")
+    empty["description_source"] = ""
+    empty["synopsis_status"] = "absent"
+    assert omim_db.adoption_blockers(empty) == []
+    synopsis_only = _phenotype_capture(desc="")
+    assert omim_db.adoption_blockers(synopsis_only) == []
+    # Synopsis not expanded is still a blocker.
+    collapsed = dict(empty, synopsis_status="not_loaded")
+    assert omim_db.adoption_blockers(collapsed) == ["Clinical Synopsis 沒有擷取到"]
+
+    omim_db.adopt_capture(empty, user="rev", capture_id="600002/e")
+    _by_id, by_gene = omim_db.load_rows(db["path"])
+    row = by_gene["GENE1"]
+    cell = cells(row)[1]
+    assert cell == f"Disease B (600002)(AR)\n\n{omim_db.EMPTY_ENTRY_NOTE}"
+    meta = {m["phenotype_mim"]: m for m in row["Disease_meta"]}
+    assert meta["600002"]["source"] == "capture" and meta["600002"]["omim_empty"] is True
+
+
+def test_empty_capture_keeps_curated_workbook_text(db):
+    empty = _phenotype_capture(mim="600001", name="Disease A", inh="AD", desc="", synopsis="")
+    empty["synopsis_status"] = "absent"
+    omim_db.adopt_capture(empty, user="rev", capture_id="600001/e")
+    _by_id, by_gene = omim_db.load_rows(db["path"])
+    row = by_gene["GENE1"]
+    assert cells(row)[0] == ALIGNED
+    meta = {m["phenotype_mim"]: m for m in row["Disease_meta"]}
+    assert meta["600001"]["source"] == "capture" and meta["600001"]["omim_empty"] is True

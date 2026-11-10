@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v10.14 — 2026-11-10
+
+- OMIM 頁面本身沒有 Description／Clinical Features（常見於癌症易感性、susceptibility 這類 entry）不再標成「需確認」，可以直接「全部採用」；Clinical Synopsis 沒展開的擷取仍會被跳過。
+- 採用這類頁面後，疾病說明會註明「OMIM 此 entry 沒有 Description、Clinical Features 與 Clinical Synopsis」，不會再顯示 `*` 或留在待補清單；如果原本 OMIM.xlsx 已有說明，會保留原文。
+
 ### v10.13 — 2026-11-10
 
 - 「OMIM 擷取」頁新增「查詢基因的 OMIM 資料」：輸入基因名稱（可用舊名稱／別名）、基因 MIM 或 phenotype MIM，就能看到這個基因在平台上的完整 OMIM 資料——每個疾病卡片與報告實際使用的內容、內容來源（擷取採用／OMIM.xlsx 原文／只有名稱）、採用時間與 OMIM 編輯日期、共用疾病的其他基因、待補步驟、待確認（可直接處理）、已移除的疾病與異動紀錄。

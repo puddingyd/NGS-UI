@@ -106,6 +106,7 @@ def detail(row: dict) -> dict:
             "url": f"https://omim.org/entry/{pm}" if pm else "",
             "text": text,
             "source": source,
+            "omim_empty": bool((meta.get(slot) or {}).get("omim_empty")),
             "adopted_at": info.get("adopted_at", ""),
             "adopted_by": info.get("adopted_by", ""),
             "omim_edit_date": info.get("omim_edit_date", ""),

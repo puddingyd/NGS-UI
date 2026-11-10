@@ -262,7 +262,7 @@
         <td>${i + 1}</td>
         <td>${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.phenotype_mim)}</a> ` : '<span class="muted-text">無 MIM</span> '}${esc(d.label)}
           ${d.linked_genes.length ? `<br><span class="muted-text">也連到：${d.linked_genes.map(x => `<a href="#" data-lookup="${esc(x)}">${esc(x)}</a>`).join("、")}</span>` : ""}</td>
-        <td>${badge(SOURCE_BADGE[d.source] || [d.source, "info"])}
+        <td>${badge(SOURCE_BADGE[d.source] || [d.source, "info"])}${d.omim_empty ? `<br><span class="muted-text">OMIM 頁面沒有內文${d.text.includes("\n") && !d.text.includes("（OMIM 此 entry") ? "，保留 OMIM.xlsx 原文" : ""}</span>` : ""}
           ${d.adopted_at ? `<br><span class="muted-text">${esc(fmtTime(d.adopted_at))} · ${esc(d.adopted_by)}${d.omim_edit_date ? `<br>OMIM 編輯 ${esc(d.omim_edit_date)}` : ""}</span>` : ""}</td>
         <td>${d.reported ? esc(d.reported) : ""}</td>
       </tr>
