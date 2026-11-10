@@ -28,7 +28,7 @@ from pathlib import Path
 from ..config import OMIM_CAPTURE_DIR
 from . import disease_picks, omim_store
 
-PARSER_VERSION = 2
+PARSER_VERSION = 3
 MAX_TEXT_CHARS = 3_000_000
 
 ENTRY_TYPES = {
@@ -204,18 +204,22 @@ _CATEGORY_LIKE_RE = re.compile(r"^[A-Z][A-Z ,&/()-]{2,}$")
 def _clean_synopsis(lines: list[str]) -> str:
     """Normalize a synopsis block to the workbook format.
 
-    Starts at the first category heading (dropping widget text such as
+    Starts at the first current-style category heading (dropping widget text such as
     "Toggle Dropdown" / "Phenotypic Series" / "PheneGene Graphics"), drops
     blank lines and widget lines, strips each line, and stops at "▲ Close"
     or the page footer — matching the manually pasted cells already in
-    OMIM.xlsx (no blank lines between categories).
+    OMIM.xlsx (no blank lines between categories). Old-style synopses
+    without such headings start at the first non-widget line.
     """
     stripped = [str(line).strip() for line in lines]
     start = next((i for i, s in enumerate(stripped) if s in SYNOPSIS_CATEGORIES), None)
     if start is None:
+        # Older OMIM synopses use short mixed-case headings ("GI", "Vascular",
+        # "Misc", "Lab", "Inheritance"): take the first non-widget line.
         start = next(
             (i for i, s in enumerate(stripped)
-             if _CATEGORY_LIKE_RE.match(s) and s.lower() not in SYNOPSIS_NOISE),
+             if s and s.lower() not in SYNOPSIS_NOISE and not _SYNOPSIS_LABEL_RE.match(s)
+             and s not in _SYNOPSIS_TRAILERS and not s.startswith(_FOOTER_STARTS)),
             None,
         )
     if start is None:
@@ -632,6 +636,7 @@ def store_capture(payload: dict, parsed: dict, *, user: dict) -> dict:
         "synopsis_status": parsed.get("synopsis_status"),
         "description_source": parsed.get("description_source"),
         "relationship_count": len(parsed.get("relationships") or []),
+        "parser_version": parsed.get("parser_version"),
         "warnings": parsed.get("warnings") or [],
     }
     OMIM_CAPTURE_DIR.mkdir(parents=True, exist_ok=True)

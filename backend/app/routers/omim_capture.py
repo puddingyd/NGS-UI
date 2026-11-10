@@ -116,6 +116,22 @@ def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(
     adopted = omim_db.adopted_capture_ids()
     data = omim_capture.pending_captures(adopted, limit)
     for event in data["captures"]:
+        if event.get("parser_version") != omim_capture.PARSER_VERSION:
+            # Captured with older parser rules: re-read so the list shows
+            # what adopting would actually use (e.g. old-style synopses).
+            mim, _, name = str(event.get("id") or "").partition("/")
+            try:
+                _data, parsed = _load_parsed(mim, name)
+            except HTTPException:
+                parsed = None
+            if parsed:
+                event.update(
+                    synopsis_status=parsed.get("synopsis_status"),
+                    description_source=parsed.get("description_source"),
+                    warnings=parsed.get("warnings") or [],
+                    relationship_count=len(parsed.get("relationships") or []),
+                    title=parsed.get("title") or event.get("title"),
+                )
         event["blockers"] = _index_blockers(event) if omim_db.exists() else []
     data["db_enabled"] = omim_db.exists()
     return data

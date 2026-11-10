@@ -365,3 +365,37 @@ def test_old_captures_are_reparsed_with_current_rules(client):
     mim, name = created["capture"]["id"].split("/")
     cell = c.get(f"/api/omim/captures/{mim}/{name}").json()["summary"]["disease_cells"][0]["cell"]
     assert "Toggle" not in cell and "\nINHERITANCE\n- Autosomal recessive\n" in cell
+
+
+def test_old_style_synopsis_headings_are_kept():
+    old_style = (
+        "    \nGI\n- Pancreatitis\n- Severe abdominal pain attacks\nVascular\n"
+        "- Portal or splenic vein thrombosis\nMisc\n- Fever with attacks\n"
+        "Lab\n- Marked elevation of serum amylase with attacks\nInheritance\n- Autosomal dominant\n▲ Close\n"
+    )
+    current = (
+        "   \nINHERITANCE\n- Autosomal recessive\nHEAD & NECK\nFace\n- Long face\n"
+        "MOLECULAR BASIS\n- Caused by mutation in GENE1 (GENE1, 100001.0001)\n▲ Close\n"
+    )
+    page = phenotype_page()
+    assert current in page
+    p = omim_capture.parse_entry_text(
+        page.replace(current, "Toggle Dropdown\n\nPheneGene Graphics\n" + old_style), url_mim="600001"
+    )
+    assert p["synopsis_status"] == "present"
+    assert p["synopsis"].splitlines()[0] == "GI"
+    assert p["synopsis"].splitlines()[-1] == "- Autosomal dominant"
+    assert "Toggle" not in p["synopsis"] and "PheneGene" not in p["synopsis"]
+    assert not any("Clinical Synopsis" in w for w in p["warnings"])
+
+
+def test_pending_list_rereads_captures_from_older_parser(client):
+    c, user, tmp_path = client
+    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
+    c.post("/api/omim/captures", json={"mim": "600001", "text": phenotype_page()}, headers=headers)
+    index = tmp_path / "captures" / "index.jsonl"
+    event = json.loads(index.read_text().splitlines()[-1])
+    event.update(parser_version=2, synopsis_status="not_loaded")
+    index.write_text(json.dumps(event) + "\n")
+    pending = c.get("/api/omim/captures").json()["captures"]
+    assert pending[0]["synopsis_status"] == "present"
