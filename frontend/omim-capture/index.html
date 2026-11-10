@@ -61,6 +61,16 @@
       <div id="db-status" class="muted-text">讀取中…</div>
     </section>
 
+    <section class="card" id="lookup-card">
+      <h2 class="section-title">查詢基因的 OMIM 資料</h2>
+      <form id="lookup-form" class="lookup-form" autocomplete="off">
+        <input id="lookup-q" list="lookup-suggest" placeholder="基因名稱（可用舊名稱）、基因 MIM 或 phenotype MIM，例如 GAA、606800、232300">
+        <datalist id="lookup-suggest"></datalist>
+        <button class="btn btn-primary" type="submit">查詢</button>
+      </form>
+      <div id="lookup-result" class="lookup-result" hidden></div>
+    </section>
+
     <section class="card">
       <div class="section-head">
         <div class="tab-bar" role="tablist">

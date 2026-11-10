@@ -52,3 +52,15 @@
 .review-list { margin: 0 0 0 16px; padding: 0; }
 .review-list li { margin: 2px 0 6px; }
 .review-list .review-actions { display: inline-block; margin-left: 4px; }
+.lookup-form { display: flex; gap: 8px; }
+.lookup-form input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.lookup-result { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
+.lookup-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lookup-head h3 { font-size: 16px; margin: 0; }
+.lookup-head h3 a { color: inherit; }
+.lookup-table .lookup-text-row td { border-bottom: 1px solid var(--border); padding-top: 0; }
+.lookup-table tr:not(.lookup-text-row) td { border-bottom: none; }
+.lookup-table pre { white-space: pre-wrap; background: #f6f8fa; padding: 8px; border-radius: 6px; max-height: 360px; overflow: auto; font-size: 12px; }
+.lookup-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.lookup-changes { margin-top: 10px; }
+.btn-mini { padding: 2px 8px; font-size: 12px; margin-top: 4px; }

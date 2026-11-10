@@ -185,7 +185,8 @@
     const rows = data.items.map(g => `
       <tr>
         <td>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.gene || g.gene_mim)}</b></a>` : `<b>${esc(g.gene)}</b>`}
-          <br><span class="muted-text">${esc(g.gene_mim)}${g.panel ? " · 疾病相關" : ""}</span></td>
+          <br><span class="muted-text">${esc(g.gene_mim)}${g.panel ? " · 疾病相關" : ""}</span>
+          <br><button class="btn btn-secondary btn-mini" type="button" data-lookup="${esc(g.gene_mim || g.gene)}">查看</button></td>
         <td>${badge(STATUS_BADGE[g.status] || [g.status, "info"])}${g.synced_at ? `<br><span class="muted-text">基因頁同步 ${esc(fmtTime(g.synced_at))}</span>` : ""}${g.partially_updated ? `<br><span class="muted-text">已有疾病被更新（共用疾病）</span>` : ""}</td>
         <td><ol class="step-list">${g.steps.map(st => `<li>
           <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a>
@@ -200,6 +201,85 @@
     else body.innerHTML = rows || `<tr><td colspan="5" class="muted-text">沒有待補項目。</td></tr>`;
     queueOffset += data.items.length;
     $("#btn-queue-more").hidden = queueOffset >= data.total;
+  }
+
+  // ------------------------------------------------------- gene lookup
+  const SOURCE_BADGE = {
+    capture: ["擷取採用", "ok"], xlsx: ["OMIM.xlsx 原文", "info"], label: ["只有名稱 *", "warn"],
+  };
+  const ACTION_LABEL = {
+    adopt_text: "採用說明", update_label: "更新疾病名稱", add_disease: "新增疾病",
+    add_gene: "新增基因", remove_disease: "移除疾病",
+  };
+  let lookupTimer = null;
+
+  async function lookupSuggest() {
+    const q = $("#lookup-q").value.trim();
+    if (q.length < 2 || /^\d+$/.test(q)) return;
+    const { items } = await api(`/api/omim/genes/search?q=${encodeURIComponent(q)}&limit=15`);
+    $("#lookup-suggest").innerHTML = items.map(i =>
+      `<option value="${esc(i.symbol)}">${esc(i.symbol !== i.gene ? `${i.gene}（別名 ${i.symbol}）` : i.gene)} ${esc(i.gene_mim)}</option>`).join("");
+  }
+
+  function geneButton(g) {
+    return `<button class="btn btn-secondary" type="button" data-lookup="${esc(g.gene_mim || g.gene || g.symbol)}">${esc(g.gene || g.symbol)} ${esc(g.gene_mim || "")}${g.diseases != null ? `（${g.diseases} 個疾病）` : ""}</button>`;
+  }
+
+  function renderGene(g) {
+    const q = g.queue;
+    const statusBadge = q ? badge(STATUS_BADGE[q.status] || [q.status, "info"]) : badge(["已完成，不在待補清單", "ok"]);
+    const diseases = g.diseases.map((d, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.phenotype_mim)}</a> ` : '<span class="muted-text">無 MIM</span> '}${esc(d.label)}
+          ${d.linked_genes.length ? `<br><span class="muted-text">也連到：${d.linked_genes.map(x => `<a href="#" data-lookup="${esc(x)}">${esc(x)}</a>`).join("、")}</span>` : ""}</td>
+        <td>${badge(SOURCE_BADGE[d.source] || [d.source, "info"])}
+          ${d.adopted_at ? `<br><span class="muted-text">${esc(fmtTime(d.adopted_at))} · ${esc(d.adopted_by)}${d.omim_edit_date ? `<br>OMIM 編輯 ${esc(d.omim_edit_date)}` : ""}</span>` : ""}</td>
+        <td>${d.reported ? esc(d.reported) : ""}</td>
+      </tr>
+      <tr class="lookup-text-row"><td></td><td colspan="3"><details><summary>卡片／報告使用的內容</summary><pre>${esc(d.text)}</pre></details></td></tr>`).join("");
+    const steps = q && q.steps.length ? `<p><b>待補步驟</b></p><ol class="step-list">${q.steps.map(st => `<li>
+      <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a> ${st.type === "gene" ? "基因頁" : esc((st.labels || [])[0] || "")}
+      ${(st.kinds || []).map(k => badge(STEP_KIND[k] || [k, "info"])).join(" ")}</li>`).join("")}</ol>` : "";
+    const reviews = q && q.reviews.length ? `<p><b>待確認</b></p><ul class="review-list">${q.reviews.map(reviewHtml).join("")}</ul>` : "";
+    const removed = g.removed.length ? `<p><b>已移除的疾病</b></p><ul>${g.removed.map(r =>
+      `<li>${esc(r.label)} <span class="muted-text">${esc(fmtTime(r.updated_at))}</span></li>`).join("")}</ul>` : "";
+    const changes = g.changes.length ? `<details class="lookup-changes"><summary>異動紀錄（${g.changes.length}）</summary>
+      <table class="data-table"><thead><tr><th>時間</th><th>使用者</th><th>動作</th><th>內容</th></tr></thead><tbody>${
+        g.changes.map(ch => `<tr><td>${esc(fmtTime(ch.at))}</td><td>${esc(ch.user)}</td><td>${esc(ACTION_LABEL[ch.action] || ch.action)}</td>
+          <td>${esc(ch.phenotype_mim || "")} ${ch.before && ch.before.label ? `${esc(ch.before.label)} → ` : ""}${esc((ch.after && (ch.after.label || ch.after.title)) || (ch.before && ch.before.label) || "")}</td></tr>`).join("")
+      }</tbody></table></details>` : "";
+    return `
+      <div class="lookup-head">
+        <h3>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener">${esc(g.gene)} ${esc(g.gene_mim)}</a>` : `${esc(g.gene)} ${esc(g.gene_mim)}`}</h3>
+        ${statusBadge} ${badge([g.source === "db" ? "平台資料庫" : "OMIM.xlsx", "info"])}
+      </div>
+      <p class="muted-text">${g.aliases.length ? `別名：${esc(g.aliases.join("、"))} · ` : ""}Inheritance：${esc(g.inheritance || "—")} · Done：${esc(g.done || "—")}${g.legacy_done && g.legacy_done !== g.done ? `（OMIM.xlsx 原 Done：${esc(g.legacy_done)}）` : ""} · 基因頁同步：${esc(g.synced_at ? fmtTime(g.synced_at) : "尚未")}</p>
+      ${g.diseases.length ? `<table class="data-table lookup-table"><thead><tr><th>#</th><th>疾病</th><th>內容來源</th><th>報告</th></tr></thead><tbody>${diseases}</tbody></table>`
+        : '<p class="muted-text">平台沒有這個基因的疾病資料。</p>'}
+      ${steps}${reviews}${removed}${changes}`;
+  }
+
+  async function runLookup(q) {
+    q = String(q || "").trim();
+    if (!q) return;
+    $("#lookup-q").value = q;
+    const box = $("#lookup-result");
+    box.hidden = false;
+    box.innerHTML = "查詢中…";
+    try {
+      const data = await api(`/api/omim/gene?q=${encodeURIComponent(q)}`);
+      if (data.gene) {
+        box.innerHTML = renderGene(data.gene);
+      } else if (data.matches.length) {
+        box.innerHTML = `<p>${esc(q)} 連到多個基因，請選一個：</p><div class="lookup-choices">${data.matches.map(geneButton).join("")}</div>`;
+      } else {
+        box.innerHTML = `<p>找不到「${esc(q)}」。</p>${(data.suggestions || []).length
+          ? `<p class="muted-text">是不是要找：</p><div class="lookup-choices">${data.suggestions.map(geneButton).join("")}</div>` : ""}`;
+      }
+    } catch (err) {
+      box.textContent = `查詢失敗：${err.message}`;
+    }
   }
 
   function list(title, items, fmt) {
@@ -284,6 +364,30 @@
     }
   });
   $("#queue-status").addEventListener("change", () => loadQueue());
+  $("#lookup-form").addEventListener("submit", ev => { ev.preventDefault(); runLookup($("#lookup-q").value); });
+  $("#lookup-q").addEventListener("input", () => {
+    clearTimeout(lookupTimer);
+    lookupTimer = setTimeout(() => lookupSuggest().catch(() => {}), 200);
+  });
+  document.addEventListener("click", ev => {
+    const target = ev.target.closest("[data-lookup]");
+    if (!target) return;
+    ev.preventDefault();
+    runLookup(target.dataset.lookup);
+    $("#lookup-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  $("#lookup-result").addEventListener("click", async ev => {
+    const btn = ev.target.closest("[data-review]");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === "remove" && !confirm("移除這個疾病？卡片與報告將不再顯示它（已勾選的個案仍保留勾選時的名稱）。")) return;
+    btn.disabled = true;
+    await api(`/api/omim/reviews/${btn.dataset.review}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
+    });
+    runLookup($("#lookup-q").value);
+    loadDbStatus();
+  });
   $("#queue-scope").addEventListener("change", () => loadQueue());
   $("#btn-queue-more").addEventListener("click", () => loadQueue(true));
   $("#queue-table").addEventListener("click", async ev => {

@@ -17,7 +17,7 @@ from fastapi.responses import Response
 
 from ..auth import current_user
 from ..config import REPO_ROOT
-from ..services import capture_tokens, omim_capture, omim_db, omim_queue, omim_store
+from ..services import capture_tokens, omim_capture, omim_db, omim_lookup, omim_queue, omim_store
 
 router = APIRouter(prefix="/api/omim", tags=["omim-capture"])
 
@@ -174,6 +174,31 @@ def work_queue_next(current: str = "", gene: str = "", skip: str = "", scope: st
         skip=skipped, scope=scope, pending_mims=_pending_mims(),
         recent_mims=omim_db.recently_adopted_mims(),
     )
+
+
+@router.get("/genes/search")
+def gene_search(q: str = "", limit: int = 20, user: dict = Depends(current_user)):
+    """Gene symbol typeahead for the lookup box."""
+    return {"items": omim_lookup.search(q[:40], max(1, min(int(limit), 50)))}
+
+
+@router.get("/gene")
+def gene_lookup(q: str = "", user: dict = Depends(current_user)):
+    """A gene's OMIM data as the platform uses it.
+
+    ``q``: gene symbol or alias, gene MIM, or phenotype MIM (may match
+    several genes; then only a short list is returned to pick from).
+    """
+    q = q.strip()[:40]
+    if not q:
+        raise HTTPException(400, "請輸入基因名稱或 MIM")
+    rows = omim_lookup.resolve(q)
+    if not rows:
+        return {"query": q, "matches": [], "gene": None,
+                "suggestions": omim_lookup.search(q, 10)}
+    if len(rows) > 1:
+        return {"query": q, "matches": [omim_lookup.summary(r) for r in rows], "gene": None}
+    return {"query": q, "matches": [omim_lookup.summary(rows[0])], "gene": omim_lookup.detail(rows[0])}
 
 
 @router.get("/adoptions")

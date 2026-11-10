@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**OMIM 基因查詢（v10.13，2026-11-10）**：`services/omim_lookup.py` 以 `omim_store` 目前的 rows（DB 或 xlsx）為準：`search()` 依 symbol／alias 前綴與包含比對；`resolve()` 接受 symbol／alias（不分大小寫）、gene MIM（`by_omim_id`）或 phenotype MIM（掃 `OMIM_disease` 與 Disease 首行，可能多個基因）；`detail()` 回傳每個 Disease 欄的完整內容、來源（`Disease_meta.source`，xlsx 模式以行數推斷）、已採用者的 `phenotype_texts` 資訊、報告使用次數、`omim_queue` 的狀態／步驟／待確認，以及 `omim_db.gene_extras()`（aliases、legacy_done、基因頁同步時間、已移除疾病、共用疾病的其他基因、最近 50 筆 change_log）。API：`GET /api/omim/genes/search?q=`、`GET /api/omim/gene?q=`（多筆命中只回 `matches` 讓使用者選，查無時回 `suggestions`）。`/omim-capture/` 新增查詢卡片（datalist typeahead、待確認可直接處理、異動紀錄收合），待補清單每列有「查看」。建庫合併同 gene MIM 的新舊 symbol 列時，Inheritance 為空會改用另一列的值。
+
 **共用疾病連動的基因（v10.12，2026-11-10）**：`omim_queue.build_genes()` 中，基因只要有任一疾病的 `Disease_meta.source == "capture"`（可能是透過共用 phenotype 被其他基因的採用帶到）且仍有步驟或待確認，即列為 `in_progress`（`partially_updated=True` 表示基因頁尚未同步）；`next_step` 在目前基因沒有可用步驟後，先找與它共用 `disease_mims` 的 in_progress 基因（回應帶 `related: true`），再走全域順序。擴充功能 0.4.1 面板顯示「下一個基因（共用剛才的疾病）」。
 
 **OMIM 舊式 Clinical Synopsis（v10.11，2026-11-10）**：`omim_capture._clean_synopsis()` 找不到現行全大寫分類標題時（舊格式 `GI`／`Vascular`／`Misc`／`Lab`／`Inheritance`），改從第一個非頁面元件行開始收，只在 entry 頁（▲ Close 之前）適用；`PARSER_VERSION=3`，index.jsonl 每筆記 `parser_version`，`GET /api/omim/captures`（pending）遇到舊版本會重新解析以更新 Synopsis 狀態與 blockers。擴充功能面板的狀態比較（`compare_with_workbook` → `_status_for_link`）對未採用擷取的舊說明改用 `Legacy_done`（`curated_done`），避免共用 phenotype 的採用把其他基因的 Done 改成今天後，舊說明被誤判為已是最新。

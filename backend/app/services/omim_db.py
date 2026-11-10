@@ -394,6 +394,8 @@ def build_from_xlsx(xlsx_path: Path, out_path: Path) -> dict:
             stats["duplicate_gene_mim"] += 1
             if row["gene_symbol"] and row["gene_symbol"] not in first["aliases"]:
                 first["aliases"].append(row["gene_symbol"])
+            if not first["inheritance"] and row["inheritance"]:
+                first["inheritance"] = row["inheritance"]
             if len(row["slots"]) > len(first["slots"]):
                 first["slots"] = row["slots"]
                 if row["omim_disease"].strip():
@@ -1049,6 +1051,67 @@ def resolve_review(item_id: int, action: str, *, user: str, path: Path | None = 
             (_now(), user, action, int(item_id)),
         )
     return {"id": item_id, "status": "resolved", "resolution": action}
+
+
+def gene_extras(gene_mim: str, path: Path | None = None) -> dict:
+    """Database-only details for the gene lookup page."""
+    if not exists(path):
+        return {}
+    with connect(path) as con:
+        gene = con.execute("SELECT * FROM genes WHERE gene_mim = ?", (gene_mim,)).fetchone()
+        if not gene:
+            return {}
+        rows = [dict(r) for r in con.execute(
+            "SELECT * FROM gene_diseases WHERE gene_mim = ? ORDER BY active DESC, ordinal, id", (gene_mim,)
+        )]
+        mims = sorted({r["phenotype_mim"] for r in rows if r["phenotype_mim"]})
+        texts = {}
+        if mims:
+            marks = ",".join("?" * len(mims))
+            for t in con.execute(
+                f"SELECT phenotype_mim, title, description_source, synopsis_status, omim_edit_date, "
+                f"capture_id, adopted_at, adopted_by FROM phenotype_texts WHERE phenotype_mim IN ({marks})",
+                mims,
+            ):
+                texts[t["phenotype_mim"]] = dict(t)
+        linked = {}
+        if mims:
+            marks = ",".join("?" * len(mims))
+            for r in con.execute(
+                f"SELECT d.phenotype_mim, g.gene_symbol FROM gene_diseases d JOIN genes g ON g.gene_mim = d.gene_mim "
+                f"WHERE d.active = 1 AND d.gene_mim != ? AND d.phenotype_mim IN ({marks})",
+                [gene_mim, *mims],
+            ):
+                linked.setdefault(r["phenotype_mim"], []).append(r["gene_symbol"])
+        synced = con.execute(
+            "SELECT MAX(adopted_at) FROM adoptions WHERE mim = ? AND entry_type IN ('gene','gene_phenotype')",
+            (gene_mim,),
+        ).fetchone()[0]
+        params = [gene_mim, *mims]
+        marks = ",".join("?" * len(mims)) or "''"
+        changes = [dict(r) for r in con.execute(
+            f"SELECT at, user, action, gene_mim, phenotype_mim, capture_id, before, after FROM change_log "
+            f"WHERE gene_mim = ? OR phenotype_mim IN ({marks}) ORDER BY id DESC LIMIT 50",
+            params,
+        )]
+    for change in changes:
+        for key in ("before", "after"):
+            try:
+                change[key] = json.loads(change[key]) if change[key] else None
+            except json.JSONDecodeError:
+                pass
+    return {
+        "aliases": [a for a in (gene["alias_symbols"] or "").split(",") if a],
+        "legacy_done": gene["legacy_done"] if "legacy_done" in gene.keys() else "",
+        "synced_at": synced or "",
+        "removed": [
+            {"label": r["label"], "phenotype_mim": r["phenotype_mim"], "updated_at": r["updated_at"]}
+            for r in rows if not r["active"]
+        ],
+        "texts": texts,
+        "linked_genes": linked,
+        "changes": changes,
+    }
 
 
 def status(path: Path | None = None) -> dict:

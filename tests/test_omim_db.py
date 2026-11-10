@@ -521,3 +521,45 @@ def test_genes_updated_through_shared_disease_come_next(queue_env):
     steps = [s["mim"] for s in items["GENE1"]["steps"]]
     nxt = c.get(f"/api/omim/queue/next?gene=100001&skip={','.join(steps)}", headers=headers).json()
     assert nxt["gene"]["gene"] == "ATXNX" and nxt.get("related") is True
+
+
+def test_gene_lookup_shows_sources_queue_and_history(queue_env):
+    c, headers = queue_env
+    omim_db.adopt_capture(_phenotype_capture(), user="rev", capture_id="600002/x")
+    omim_store.ensure_loaded()
+    assert [i["symbol"] for i in c.get("/api/omim/genes/search?q=gen").json()["items"]] == ["GENE1"]
+    assert c.get("/api/omim/genes/search?q=recq").json()["items"][0]["gene"] == "BLMX"  # alias
+    data = c.get("/api/omim/gene?q=gene1").json()
+    gene = data["gene"]
+    assert gene["gene"] == "GENE1" and gene["gene_mim"] == "100001" and gene["source"] == "db"
+    by_mim = {d["phenotype_mim"]: d for d in gene["diseases"]}
+    assert by_mim["600001"]["source"] == "xlsx"
+    assert by_mim["600002"]["source"] == "capture"
+    assert by_mim["600002"]["adopted_by"] == "rev" and by_mim["600002"]["omim_edit_date"] == "2026-08-14"
+    assert gene["queue"]["status"] == "in_progress"
+    assert any(ch["action"] == "adopt_text" for ch in gene["changes"])
+    # alias, gene MIM and phenotype MIM all resolve
+    assert c.get("/api/omim/gene?q=RECQLX").json()["gene"]["gene"] == "BLMX"
+    assert c.get("/api/omim/gene?q=100004").json()["gene"]["gene"] == "ATXNX"
+    shared = c.get("/api/omim/gene?q=610125").json()
+    assert shared["gene"]["gene"] == "OTX9"
+    missing = c.get("/api/omim/gene?q=GEN").json()
+    assert missing["gene"] is None and missing["suggestions"][0]["symbol"] == "GENE1"
+    assert c.get("/api/omim/gene?q=").status_code == 400
+
+
+def test_gene_lookup_lists_removed_and_linked(queue_env):
+    c, _headers = queue_env
+    shared = _phenotype_capture(mim="699998", gene_mim="100001", gene="GENE1", name="Shared disorder")
+    shared["relationships"].append({"phenotype": "Shared disorder", "phenotype_mim": "699998",
+                                    "inheritance": "AR", "mapping_key": "3", "gene": "ATXNX",
+                                    "gene_mim": "100004", "location": ""})
+    omim_db.adopt_capture(shared, user="rev", capture_id="699998/x")
+    item = omim_db.list_reviews(kind="slot_not_in_omim_disease")["items"][0]
+    omim_db.resolve_review(item["id"], "remove", user="rev")
+    omim_store.ensure_loaded()
+    gene = c.get("/api/omim/gene?q=ATXNX").json()["gene"]
+    assert [r["label"] for r in gene["removed"]] == ["Spinocerebellar ataxia 10 (603516)(AD)"]
+    shared_row = next(d for d in gene["diseases"] if d["phenotype_mim"] == "699998")
+    assert shared_row["linked_genes"] == ["GENE1"]
+    assert c.get("/api/omim/gene?q=699998").json()["matches"][1]["gene"] in {"GENE1", "ATXNX"}
