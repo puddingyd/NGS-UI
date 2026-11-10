@@ -486,10 +486,12 @@
         <br><span class="muted">${esc(kinds)}${g.reported ? ` · 報告用過 ${esc(g.reported)} 次` : ""}</span></div>
       <div class="next-actions">
         <button class="btn" id="go-next">前往</button>
+        <button class="btn" id="capture-next" title="把目前這一頁 Capture 送到平台（不採用），再前往下一步；之後到平台的 OMIM 擷取頁「全部採用」">Capture 並前往</button>
         <button class="btn secondary" id="skip-current" title="這一頁先不處理，之後不再推薦">略過這頁</button>
         <button class="btn secondary" id="skip-gene" title="${esc(g.gene)} 整個基因先不處理">略過 ${esc(g.gene)}</button>
       </div>`;
     root.querySelector("#go-next").addEventListener("click", () => goToNext(null));
+    root.querySelector("#capture-next").addEventListener("click", () => captureAndNext());
     root.querySelector("#skip-current").addEventListener("click", () => goToNext("page"));
     root.querySelector("#skip-gene").addEventListener("click", () => goToNext("gene", g.gene_mim));
     return nextData;
@@ -503,7 +505,9 @@
     if (data && data.step) {
       await send({ type: "set-gene", gene: data.gene.gene_mim });
       location.href = `${location.origin}/entry/${data.step.mim}`;
+      return true;
     }
+    return false;
   }
 
   function renderGeneReviews(reviews) {
@@ -541,10 +545,35 @@
     renderStatus(await send({ type: "status", mim: MIM, editDate: localEdit }), localEdit);
   }
 
+  // Capture this page (without adopting) and move on; stops on this page
+  // when the capture failed or needs a look (e.g. Synopsis not captured), so
+  // it can be fixed right here. Adopt everything later on /omim-capture/.
+  async function captureAndNext() {
+    const buttons = root.querySelectorAll("#go-next, #capture-next, #skip-current, #skip-gene");
+    buttons.forEach(b => { b.disabled = true; });
+    const button = root.querySelector("#capture-next");
+    button.textContent = "擷取中…";
+    const result = await runCapture();
+    const blockers = result && result.ok ? (result.data.summary.blockers || []) : null;
+    if (blockers && !blockers.length) {
+      button.textContent = "前往中…";
+      const moved = await goToNext(null);
+      if (moved) return;
+      button.textContent = "Capture 並前往";
+      return;
+    }
+    buttons.forEach(b => { b.disabled = false; });
+    button.textContent = "Capture 並前往";
+    const msg = blockers ? `這一頁需要確認（${blockers.join("、")}），沒有自動前往；可重新 Capture，或按「前往」先跳過。`
+      : "Capture 沒有成功送到平台，沒有自動前往。";
+    $("#body").insertAdjacentHTML("afterbegin", `<p class="badge warn">${esc(msg)}</p>`);
+  }
+
   async function runCapture() {
     const button = $("#capture");
     button.disabled = true;
     button.textContent = "擷取中…";
+    let result = null;
     try {
       const prefix = entryPrefix(pageText());
       let synopsisMethod = "";
@@ -574,13 +603,16 @@
         extension_version: chrome.runtime.getManifest().version,
         captured_at_client: new Date().toISOString(),
       };
-      renderCapture(await send({ type: "capture", payload }));
+      result = await send({ type: "capture", payload });
+      renderCapture(result);
     } catch (err) {
-      renderCapture({ ok: false, error: String(err) });
+      result = { ok: false, error: String(err) };
+      renderCapture(result);
     } finally {
       button.disabled = false;
       button.textContent = "Capture 送到平台";
     }
+    return result;
   }
 
   refreshStatus();

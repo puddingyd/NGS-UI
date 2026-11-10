@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v10.15 — 2026-11-10
+
+- 擴充功能（0.5.0）：面板的「前往」旁新增「Capture 並前往」——把目前這一頁 Capture 送到平台（先不採用），接著直接前往待補清單的下一步，可以一直按下去，最後再到「OMIM 擷取」頁按「全部採用」。這一頁 Capture 失敗或需要確認（例如 Clinical Synopsis 沒擷取到）時會停在原頁並提示，可重新 Capture 或按「前往」跳過。已 Capture 但還沒採用的頁面不會被重複推薦。
+
 ### v10.14 — 2026-11-10
 
 - OMIM 頁面本身沒有 Description／Clinical Features（常見於癌症易感性、susceptibility 這類 entry）不再標成「需確認」，可以直接「全部採用」；Clinical Synopsis 沒展開的擷取仍會被跳過。
