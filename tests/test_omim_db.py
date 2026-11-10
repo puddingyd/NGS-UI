@@ -350,3 +350,54 @@ def test_old_database_gets_adoptions_table_backfilled(db):
     con.close()
     omim_db._schema_checked.clear()
     assert omim_db.adopted_capture_ids(db["path"]) == {"600002/old"}
+
+
+def test_work_queue_orders_and_skips(client, monkeypatch):
+    from app.services import omim_queue
+    c, user = client
+    monkeypatch.setattr(omim_queue.panel_deadzone, "disease_associated_genes", lambda: frozenset({"ATXNX"}))
+    monkeypatch.setattr(omim_queue, "reported_usage", lambda ttl=0: {"600002": 3})
+    omim_queue._items_cache.update(sig=None)
+    data = c.get("/api/omim/queue").json()
+    targets = [i["target_mim"] for i in data["items"]]
+    # reported first, then panel gene (ATXNX: SCA1 label only), then the rest
+    assert targets[0] == "600002" and data["items"][0]["reported"] == 3
+    assert targets[1] == "164400"
+    assert set(data["items"][1]["kinds"]) == {"missing"}
+    assert c.get("/api/omim/queue?kind=no_mim").json()["items"] == []
+    omim_db.adopt_capture({
+        "mim": "100004", "entry_type": "gene", "symbol": "ATXNX", "title": "ATAXIN X",
+        "relationships": [{"phenotype": "{Susceptibility to testing}", "phenotype_mim": "",
+                           "inheritance": "", "mapping_key": "3", "gene": "ATXNX", "gene_mim": "100004"}],
+    }, user="rev", capture_id="100004/x")
+    omim_store.ensure_loaded()
+    no_mim = c.get("/api/omim/queue?kind=no_mim").json()["items"]
+    assert [i["target_mim"] for i in no_mim] == ["100004"]  # gene page for MIM-less line
+    assert no_mim[0]["target_type"] == "gene"
+    assert data["counts"]["missing"] >= 2
+    assert c.get("/api/omim/queue?scope=bogus").status_code == 400
+
+    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
+    first = c.get("/api/omim/queue/next", headers=headers).json()
+    assert first["item"]["target_mim"] == "600002"
+    after = c.get("/api/omim/queue/next?current=600002&skip=164400", headers=headers).json()
+    assert after["item"]["target_mim"] not in {"600002", "164400"}
+    # a captured-but-not-adopted page is not offered again
+    c.post("/api/omim/captures", json={"mim": "600002", "text": PAGE}, headers=headers)
+    again = c.get("/api/omim/queue/next", headers=headers).json()
+    assert again["item"]["target_mim"] != "600002"
+    listed = {i["target_mim"]: i for i in c.get("/api/omim/queue").json()["items"]}
+    assert listed["600002"]["captured"] is True
+
+
+def test_next_page_skips_recently_adopted(client):
+    c, user = client
+    headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}
+    first = c.get("/api/omim/queue/next", headers=headers).json()["item"]["target_mim"]
+    omim_db.adopt_capture({"mim": first, "entry_type": "phenotype", "relationships": [],
+                           "description": "", "synopsis": ""}, user="rev", capture_id=f"{first}/x")
+    nxt = c.get("/api/omim/queue/next", headers=headers).json()["item"]
+    assert nxt is None or nxt["target_mim"] != first
+    listed = {i["target_mim"]: i for i in c.get("/api/omim/queue").json()["items"]}
+    if first in listed:
+        assert listed[first]["recently_adopted"] is True

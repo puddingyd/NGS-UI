@@ -99,6 +99,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return api(`/api/omim/captures/${encodeURIComponent(mim)}/${encodeURIComponent(name)}/adopt`,
           { method: "POST" });
       }
+      case "next": {
+        const s = await chrome.storage.local.get(["queueSkip", "queueKind", "queueScope"]);
+        const skip = Array.isArray(s.queueSkip) ? s.queueSkip : [];
+        const params = new URLSearchParams({
+          current: message.current || "",
+          skip: skip.join(","),
+          kind: s.queueKind || "",
+          scope: s.queueScope || "all",
+        });
+        return api(`/api/omim/queue/next?${params}`);
+      }
+      case "skip": {
+        const s = await chrome.storage.local.get(["queueSkip"]);
+        const skip = Array.isArray(s.queueSkip) ? s.queueSkip : [];
+        if (message.mim && !skip.includes(message.mim)) skip.push(message.mim);
+        await chrome.storage.local.set({ queueSkip: skip.slice(-500) });
+        return { ok: true, data: { skipped: skip.length } };
+      }
       case "ping":
         return api("/api/omim/ping");
       case "outbox": {

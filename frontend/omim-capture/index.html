@@ -85,6 +85,31 @@
       <div id="capture-detail" class="capture-detail" hidden></div>
     </section>
 
+    <section class="card" id="queue-card">
+      <div class="section-head">
+        <h2 class="section-title">待補清單 <span id="queue-total" class="muted-text"></span></h2>
+        <div class="head-actions">
+          <select id="queue-kind">
+            <option value="">全部原因</option>
+            <option value="missing">缺說明（*）</option>
+            <option value="no_mim">缺 phenotype MIM</option>
+            <option value="stale">超過一年未更新</option>
+          </select>
+          <select id="queue-scope">
+            <option value="all">全部基因</option>
+            <option value="panel">疾病相關基因</option>
+            <option value="reported">報告用過的疾病</option>
+          </select>
+        </div>
+      </div>
+      <p class="muted-text">要開哪個 OMIM 頁面補資料：報告用過的疾病最優先，其次是疾病相關基因（panel_loose），{易感性}／[非疾病]／?暫定的排最後。缺 phenotype MIM 的會開基因頁。擴充功能面板的「前往下一筆」就是依這個順序。</p>
+      <table class="data-table" id="queue-table">
+        <thead><tr><th>OMIM</th><th>疾病</th><th>基因</th><th>原因</th><th>報告</th><th>Done</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button id="btn-queue-more" class="btn btn-secondary" type="button" hidden>顯示更多</button>
+    </section>
+
     <section class="card" id="review-card" hidden>
       <div class="section-head">
         <h2 class="section-title">待確認</h2>

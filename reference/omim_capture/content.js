@@ -76,6 +76,11 @@
       .mini .body, .mini .foot { display: none; }
       .mini.panel { width: auto; }
       .foot { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #d0d7de; }
+      .nextbar { padding: 8px 10px; border-top: 1px solid #d0d7de; background: #f6f8fa; font-size: 12px; }
+      .nextbar .next-label { margin: 2px 0 6px; }
+      .nextbar .next-actions { display: flex; gap: 6px; }
+      .nextbar .btn { flex: 0 0 auto; padding: 4px 8px; font-size: 12px; }
+      .mini .nextbar { display: none; }
       .btn { flex: 1; border: 1px solid #1f6feb; background: #1f6feb; color: #fff;
         border-radius: 6px; padding: 6px 8px; cursor: pointer; font-size: 13px; }
       .btn.secondary { flex: 0 0 auto; background: #f6f8fa; color: #1f2328; border-color: #d0d7de; }
@@ -97,6 +102,7 @@
       <div class="head"><b>NGS OMIM Capture · ${esc(MIM)}</b>
         <button id="min" title="縮小／展開">—</button></div>
       <div class="body" id="body"><span class="muted">讀取平台狀態中…</span></div>
+      <div class="nextbar" id="nextbar"><span class="muted">讀取待補清單中…</span></div>
       <div class="foot">
         <button class="btn" id="capture">Capture 送到平台</button>
         <button class="btn secondary" id="options" title="設定平台網址與 token">設定</button>
@@ -384,7 +390,9 @@
       ${result.outboxSent ? `<p class="muted">另外補送了 ${result.outboxSent} 筆先前未送出的擷取。</p>` : ""}
       <div id="adopt-box" class="row">${renderAdoptBox(summary)}</div>`;
     const adoptBtn = root.querySelector("#adopt");
-    if (adoptBtn) adoptBtn.addEventListener("click", () => runAdopt(capture.id, adoptBtn));
+    if (adoptBtn) adoptBtn.addEventListener("click", () => runAdopt(capture.id, adoptBtn, false));
+    const adoptNext = root.querySelector("#adopt-next");
+    if (adoptNext) adoptNext.addEventListener("click", () => runAdopt(capture.id, adoptNext, true));
   }
 
   function renderAdoptBox(summary) {
@@ -405,20 +413,25 @@
     if (!isGene && summary.synopsis_status === "not_loaded") {
       note += "<br><b>注意：Clinical Synopsis 沒有擷取到，建議展開後重新 Capture 再採用。</b>";
     }
+    const blocked = (summary.blockers || []).length > 0;
     return `
       ${lines ? `<b>採用後</b><ul>${lines}</ul>` : ""}
       <p class="muted">${note}</p>
-      <button class="btn" id="adopt" ${preview.same_content ? "disabled" : ""}>採用到平台</button>`;
+      <div class="next-actions" style="display:flex;gap:6px">
+        <button class="btn" id="adopt" ${preview.same_content ? "disabled" : ""}>採用到平台</button>
+        ${blocked || preview.same_content ? "" : `<button class="btn" id="adopt-next">採用並前往下一筆</button>`}
+      </div>`;
   }
 
-  async function runAdopt(captureId, button) {
-    button.disabled = true;
+  async function runAdopt(captureId, button, goNext) {
+    const label = button.textContent;
+    root.querySelectorAll("#adopt, #adopt-next").forEach(b => { b.disabled = true; });
     button.textContent = "採用中…";
     const result = await send({ type: "adopt", captureId });
     const box = root.querySelector("#adopt-box");
     if (!result.ok) {
-      button.disabled = false;
-      button.textContent = "採用到平台";
+      root.querySelectorAll("#adopt, #adopt-next").forEach(b => { b.disabled = false; });
+      button.textContent = label;
       box.insertAdjacentHTML("beforeend", `<p class="badge err">${esc(result.error)}</p>`);
       return;
     }
@@ -428,7 +441,51 @@
       <span class="badge ok">已採用到平台</span>
       ${genes ? `<p class="muted">已更新：${genes}${r.text ? `（說明${r.text === "added" ? "新增" : "已取代"}）` : ""}</p>` : ""}
       ${r.reviews ? `<p class="muted">另有 ${r.reviews} 項需要在平台「OMIM 擷取」頁確認。</p>` : ""}
+      ${r.kept_previous_synopsis ? `<p class="muted">這次沒擷取到 Synopsis，已保留平台原本的內容。</p>` : ""}
       <p class="muted">平台上的個案重新載入後會顯示新內容。</p>`;
+    if (goNext) {
+      await goToNext(false);
+    } else {
+      loadNext();
+    }
+  }
+
+  // ---------------------------------------------------------- work queue
+  let nextItem = null;
+  const KIND_TEXT = { missing: "缺說明", no_mim: "缺 MIM（基因頁）", stale: "超過一年未更新" };
+
+  async function loadNext() {
+    const bar = root.querySelector("#nextbar");
+    const result = await send({ type: "next", current: MIM });
+    if (!result.ok) {
+      bar.innerHTML = `<span class="muted">待補清單：${esc(result.error)}</span>`;
+      return null;
+    }
+    nextItem = result.data.item;
+    if (!nextItem) {
+      bar.innerHTML = `<span class="muted">待補清單已完成 🎉</span>`;
+      return null;
+    }
+    const kinds = (nextItem.kinds || []).map(k => KIND_TEXT[k] || k).join("、");
+    bar.innerHTML = `
+      <b>下一筆</b>（剩 ${esc(result.data.remaining)} 筆）
+      <div class="next-label">${esc(nextItem.target_mim)} ${esc((nextItem.labels || [])[0] || "")}
+        <br><span class="muted">${esc((nextItem.genes || []).slice(0, 4).join("、"))} · ${esc(kinds)}${nextItem.reported ? ` · 報告用過 ${esc(nextItem.reported)} 次` : ""}</span></div>
+      <div class="next-actions">
+        <button class="btn" id="go-next">前往下一筆</button>
+        <button class="btn secondary" id="skip-current" title="這個頁面先不處理，之後不再推薦">略過這頁</button>
+      </div>`;
+    root.querySelector("#go-next").addEventListener("click", () => goToNext(false));
+    root.querySelector("#skip-current").addEventListener("click", () => goToNext(true));
+    return nextItem;
+  }
+
+  async function goToNext(skipCurrent) {
+    if (skipCurrent) await send({ type: "skip", mim: MIM });
+    const item = skipCurrent || !nextItem ? await loadNext() : nextItem;
+    if (item && item.target_mim) {
+      location.href = `${location.origin}/entry/${item.target_mim}`;
+    }
   }
 
   // ------------------------------------------------------------ actions
@@ -480,4 +537,5 @@
   }
 
   refreshStatus();
+  loadNext();
 })();

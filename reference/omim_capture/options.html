@@ -11,7 +11,7 @@
     h1 { font-size: 18px; margin: 0 0 4px; }
     p.lead { color: #59636e; margin: 0 0 20px; }
     label { display: block; font-weight: 600; margin: 16px 0 4px; }
-    input { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid #d0d7de;
+    input, select { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid #d0d7de;
       border-radius: 6px; font: inherit; }
     .hint { color: #59636e; font-size: 12px; margin-top: 4px; }
     .actions { display: flex; gap: 8px; margin-top: 20px; }
@@ -35,6 +35,21 @@
   <label for="token">Capture token</label>
   <input id="token" type="password" autocomplete="off" placeholder="ngsc_…">
   <div class="hint">登入平台後開啟「/omim-capture/」頁面產生 token，貼到這裡。token 只存在這台電腦的瀏覽器裡。</div>
+
+  <label for="queueKind">「下一筆」要處理的項目</label>
+  <select id="queueKind">
+    <option value="">全部（缺說明優先）</option>
+    <option value="missing">只處理缺說明（卡片上的 *）</option>
+    <option value="no_mim">只處理缺 phenotype MIM（開基因頁）</option>
+    <option value="stale">只處理超過一年未更新</option>
+  </select>
+  <label for="queueScope">範圍</label>
+  <select id="queueScope">
+    <option value="all">全部基因（報告用過、疾病相關基因優先）</option>
+    <option value="panel">只限疾病相關基因（panel_loose）</option>
+    <option value="reported">只限個案報告用過的疾病</option>
+  </select>
+  <div class="hint">已略過 <span id="skipCount">0</span> 頁。<a href="#" id="clearSkip">清除略過清單</a></div>
 
   <div class="actions">
     <button id="save">儲存並測試連線</button>

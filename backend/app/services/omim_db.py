@@ -40,7 +40,7 @@ import shutil
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from ..config import OMIM_DB
@@ -839,6 +839,15 @@ def adopted_capture_ids(path: Path | None = None) -> set[str]:
         return set()
     with connect(path) as con:
         return {r["capture_id"] for r in con.execute("SELECT DISTINCT capture_id FROM adoptions")}
+
+
+def recently_adopted_mims(days: int = 7, path: Path | None = None) -> set[str]:
+    """MIMs adopted within ``days`` (kept out of the "next page" suggestion)."""
+    if not exists(path):
+        return set()
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    with connect(path) as con:
+        return {r["mim"] for r in con.execute("SELECT DISTINCT mim FROM adoptions WHERE adopted_at >= ?", (since,))}
 
 
 def list_adoptions(limit: int = 200, path: Path | None = None) -> list[dict]:

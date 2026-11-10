@@ -17,7 +17,7 @@ from fastapi.responses import Response
 
 from ..auth import current_user
 from ..config import REPO_ROOT
-from ..services import capture_tokens, omim_capture, omim_db, omim_store
+from ..services import capture_tokens, omim_capture, omim_db, omim_queue, omim_store
 
 router = APIRouter(prefix="/api/omim", tags=["omim-capture"])
 
@@ -91,6 +91,7 @@ async def create_capture(request: Request, user: dict = Depends(capture_user)):
     summary = omim_capture.summarize(parsed, comparison)
     summary["db_enabled"] = omim_db.exists()
     summary["adopt_preview"] = omim_db.preview_adoption(parsed) if summary["db_enabled"] else None
+    summary["blockers"] = omim_db.adoption_blockers(parsed)
     return {"capture": stored, "summary": summary}
 
 
@@ -118,6 +119,41 @@ def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(
         event["blockers"] = _index_blockers(event) if omim_db.exists() else []
     data["db_enabled"] = omim_db.exists()
     return data
+
+
+_QUEUE_KINDS = {"", "missing", "no_mim", "stale"}
+_QUEUE_SCOPES = {"all", "panel", "reported"}
+
+
+def _pending_mims() -> set[str]:
+    pending = omim_capture.pending_captures(omim_db.adopted_capture_ids(), 100000)["captures"]
+    return {e.get("mim") for e in pending if e.get("mim")}
+
+
+def _check_queue_args(kind: str, scope: str) -> None:
+    if kind not in _QUEUE_KINDS or scope not in _QUEUE_SCOPES:
+        raise HTTPException(400, "invalid kind or scope")
+
+
+@router.get("/queue")
+def work_queue(kind: str = "", scope: str = "all", offset: int = 0, limit: int = 200,
+               user: dict = Depends(current_user)):
+    """OMIM pages worth capturing, most useful first."""
+    _check_queue_args(kind, scope)
+    return omim_queue.queue(kind=kind, scope=scope, pending_mims=_pending_mims(),
+                            recent_mims=omim_db.recently_adopted_mims(),
+                            offset=max(0, int(offset)), limit=max(1, min(int(limit), 1000)))
+
+
+@router.get("/queue/next")
+def work_queue_next(current: str = "", skip: str = "", kind: str = "", scope: str = "all",
+                    user: dict = Depends(capture_user)):
+    """Next page for the extension's "前往下一筆" (``skip`` = comma-separated MIMs)."""
+    _check_queue_args(kind, scope)
+    skipped = {m for m in skip.split(",") if _MIM_RE.match(m)}
+    return omim_queue.next_item(current=current if _MIM_RE.match(current or "") else "",
+                                skip=skipped, kind=kind, scope=scope, pending_mims=_pending_mims(),
+                                recent_mims=omim_db.recently_adopted_mims())
 
 
 @router.get("/adoptions")
@@ -185,6 +221,7 @@ def _summary(parsed: dict) -> dict:
     summary = omim_capture.summarize(parsed, comparison)
     summary["db_enabled"] = omim_db.exists()
     summary["adopt_preview"] = omim_db.preview_adoption(parsed) if summary["db_enabled"] else None
+    summary["blockers"] = omim_db.adoption_blockers(parsed)
     return summary
 
 

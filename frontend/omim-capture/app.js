@@ -188,6 +188,31 @@
     }).join("") : `<tr><td colspan="4" class="muted-text">沒有待確認項目。</td></tr>`;
   }
 
+  const QUEUE_KIND = { missing: ["缺說明", "warn"], no_mim: ["缺 MIM", "info"], stale: ["逾一年", "info"] };
+  let queueOffset = 0;
+
+  async function loadQueue(append = false) {
+    if (!append) queueOffset = 0;
+    const kind = $("#queue-kind").value;
+    const scope = $("#queue-scope").value;
+    const data = await api(`/api/omim/queue?kind=${encodeURIComponent(kind)}&scope=${encodeURIComponent(scope)}&offset=${queueOffset}&limit=100`);
+    $("#queue-total").textContent = `（${data.total}）`;
+    const rows = data.items.map(i => `
+      <tr>
+        <td><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.target_mim)}</a>${i.target_type === "gene" ? '<br><span class="muted-text">基因頁</span>' : ""}</td>
+        <td>${i.labels.map(esc).join("<br>")}</td>
+        <td>${esc(i.genes.join("、"))}</td>
+        <td>${i.kinds.map(k => badge(QUEUE_KIND[k] || [k, "info"])).join(" ")}${i.captured ? `<br>${badge(["已擷取待採用", "ok"])}` : ""}${i.recently_adopted ? `<br>${badge(["7 天內採用過", "info"])}` : ""}</td>
+        <td>${i.reported ? esc(i.reported) : ""}</td>
+        <td>${esc(i.done || "—")}</td>
+      </tr>`).join("");
+    const body = $("#queue-table tbody");
+    if (append) body.insertAdjacentHTML("beforeend", rows);
+    else body.innerHTML = rows || `<tr><td colspan="6" class="muted-text">沒有待補項目。</td></tr>`;
+    queueOffset += data.items.length;
+    $("#btn-queue-more").hidden = queueOffset >= data.total;
+  }
+
   function list(title, items, fmt) {
     return items && items.length
       ? `<p><b>${esc(title)}</b></p><ul>${items.map(i => `<li>${fmt(i)}</li>`).join("")}</ul>` : "";
@@ -225,7 +250,7 @@
     const id = ev.target.closest("[data-capture]")?.dataset.capture;
     if (id) showCapture(id).catch(err => { $("#capture-detail").textContent = String(err); });
   });
-  $("#btn-refresh").addEventListener("click", () => { loadCaptures(); loadDbStatus(); });
+  $("#btn-refresh").addEventListener("click", () => { loadCaptures(); loadDbStatus(); loadQueue(); });
   document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => setView(t.dataset.view)));
   $("#adoption-table").addEventListener("click", ev => {
     const id = ev.target.closest("[data-capture]")?.dataset.capture;
@@ -251,7 +276,7 @@
     }
     box.hidden = false;
     $("#capture-detail").hidden = true;
-    await Promise.all([loadCaptures(), loadDbStatus()]);
+    await Promise.all([loadCaptures(), loadDbStatus(), loadQueue()]);
   });
   $("#capture-detail").addEventListener("click", async ev => {
     const btn = ev.target.closest("[data-adopt]");
@@ -270,6 +295,9 @@
     }
   });
   $("#review-kind").addEventListener("change", () => loadReviews());
+  $("#queue-kind").addEventListener("change", () => loadQueue());
+  $("#queue-scope").addEventListener("change", () => loadQueue());
+  $("#btn-queue-more").addEventListener("click", () => loadQueue(true));
   $("#review-table").addEventListener("click", async ev => {
     const btn = ev.target.closest("[data-review]");
     if (!btn) return;
@@ -286,7 +314,7 @@
     try {
       const me = await api("/api/auth/me");
       $("#whoami").textContent = me.username;
-      await Promise.all([loadTokens(), loadCaptures(), loadDbStatus()]);
+      await Promise.all([loadTokens(), loadCaptures(), loadDbStatus(), loadQueue()]);
     } catch (_) { /* login hint already shown */ }
   })();
 })();

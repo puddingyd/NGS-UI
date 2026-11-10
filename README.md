@@ -465,6 +465,8 @@ PYTHONPATH=backend python scripts/omim_db.py init
 
 它會先固定既有個案的報告疾病勾選，再從 OMIM.xlsx 建立 `NGS_UI_HOME/OMIM/omim.sqlite`，之後平台改讀這個資料庫（不需重啟）。擷取後在面板或 `/omim-capture/` 按「採用到平台」，卡片、DOCX 與個案清單就改用新內容；`/omim-capture/` 另有待確認清單（遷移或採用時無法自動判斷的項目，可「保留」或「移除疾病」）與「匯出 OMIM.xlsx」。從此不要再手動改 OMIM.xlsx（資料庫不會讀它）；要回到 xlsx 只需把 `omim.sqlite` 改名。`scripts/omim_db.py status`／`reviews`／`export --out FILE` 可在命令列查看與匯出。
 
+**連續補資料**：`/omim-capture/` 的「待補清單」列出要開的 OMIM 頁（缺說明、缺 phenotype MIM、超過一年未更新），報告用過的疾病與疾病相關基因優先。擴充功能面板下方的「下一筆」依同樣順序推薦；擷取後按「採用並前往下一筆」即可在同一個分頁連續處理，「略過這頁」則之後不再推薦（可在擴充功能設定清除略過清單，並選擇只處理某一種原因或範圍）。
+
 擴充功能只在按下按鈕時讀取目前頁面，不會自動開啟或爬其他 OMIM 頁；Synopsis 無法就地展開時才取一次同站的 `/clinicalSynopsis/{MIM}`。擷取存在 `NGS_UI_OMIM_CAPTURE_DIR/{MIM}/`（同內容不重複存檔），資料庫啟用前只保存與比對。
 
 SNV 報告的 OMIM 疾病勾選以 `phenotype MIM＋疾病名稱` 記錄（`report_disease_picks`），OMIM.xlsx 調整順序或改名時已勾選的疾病不會換錯。升級後執行一次：
