@@ -770,7 +770,10 @@ def adopt_capture(parsed: dict, *, user: str, capture_id: str, path: Path | None
                 result = _upsert_relationship(con, gene["gene_mim"], rel, user=user, capture_id=capture_id)
                 listed.append(result["disease_id"])
                 changes.append(result)
-            if relationships:
+            omim_lists_none = not relationships and parsed.get("relationship_section") == "absent"
+            if omim_lists_none:
+                summary["omim_lists_no_disease"] = True
+            if relationships or omim_lists_none:
                 for row in con.execute(
                     "SELECT * FROM gene_diseases WHERE gene_mim = ? AND active = 1", (gene["gene_mim"],)
                 ).fetchall():
@@ -970,7 +973,9 @@ def adoption_blockers(parsed: dict) -> list[str]:
     if any("找不到 entry" in w or "不一致" in w for w in parsed.get("warnings") or []):
         reasons.append("頁面與 MIM 對不上")
     if entry_type in {"gene", "gene_phenotype"}:
-        if not parsed.get("relationships"):
+        # A page without the relationships table means OMIM lists no
+        # disease; a table that is there but unparsed needs a look.
+        if not parsed.get("relationships") and parsed.get("relationship_section") != "absent":
             reasons.append("基因頁沒有解析到疾病清單")
     else:
         # A page without Description / Clinical Features (common for
@@ -994,6 +999,12 @@ def preview_adoption(parsed: dict, path: Path | None = None) -> dict:
             out["text_exists"] = True
             out["same_content"] = text["content_hash"] == parsed.get("content_hash")
             out["adopted_at"] = text["adopted_at"]
+        if (parsed.get("entry_type") in {"gene", "gene_phenotype"} and not parsed.get("relationships")
+                and parsed.get("relationship_section") == "absent"):
+            out["omim_lists_no_disease"] = True
+            out["unlisted"] = [r["label"] for r in con.execute(
+                "SELECT label FROM gene_diseases WHERE gene_mim = ? AND active = 1 ORDER BY ordinal", (mim,)
+            )]
         for rel in parsed.get("relationships") or []:
             if parsed.get("entry_type") not in {"gene", "gene_phenotype"} and rel.get("phenotype_mim") != mim:
                 continue

@@ -28,7 +28,7 @@ from pathlib import Path
 from ..config import OMIM_CAPTURE_DIR
 from . import disease_picks, omim_store
 
-PARSER_VERSION = 3
+PARSER_VERSION = 4
 MAX_TEXT_CHARS = 3_000_000
 
 ENTRY_TYPES = {
@@ -328,7 +328,21 @@ def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = N
         if synopsis:
             synopsis_source = "clinical_synopsis_page"
 
+    # Does the page have a Gene-Phenotype Relationships table at all? Only a
+    # real table of contents without that heading proves OMIM lists no
+    # disease for the entry; a missing TOC leaves it unknown.
+    toc_lower = {t.lower() for t in toc}
+    if relationships or rel_idx >= 0 or toc_lower & _RELATIONSHIP_HEADINGS \
+            or extracted.get("relationship_rows"):
+        relationship_section = "present"
+    elif toc_lower & {"title", "text"}:
+        relationship_section = "absent"
+    else:
+        relationship_section = "unknown"
+
     entry_type = ENTRY_TYPES.get(prefix, "other")
+    if entry_type in {"gene", "gene_phenotype"} and relationship_section == "absent":
+        warnings.append("OMIM 頁面沒有 Gene-Phenotype Relationships：這個基因目前沒有已知疾病")
     if entry_type in {"gene", "gene_phenotype"}:
         own_symbol = symbol.split(",")[0].strip()
         for row in relationships:
@@ -422,6 +436,7 @@ def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = N
         "included_entities": included,
         "toc": toc,
         "relationships": relationships,
+        "relationship_section": relationship_section,
         "description": description,
         "description_source": description_source,
         "synopsis": synopsis,
@@ -640,6 +655,7 @@ def store_capture(payload: dict, parsed: dict, *, user: dict) -> dict:
         "synopsis_status": parsed.get("synopsis_status"),
         "description_source": parsed.get("description_source"),
         "relationship_count": len(parsed.get("relationships") or []),
+        "relationship_section": parsed.get("relationship_section") or "",
         "parser_version": parsed.get("parser_version"),
         "warnings": parsed.get("warnings") or [],
     }
@@ -716,6 +732,7 @@ def summarize(parsed: dict, comparison: dict) -> dict:
         "title": parsed.get("title"),
         "symbol": parsed.get("symbol"),
         "relationships": parsed.get("relationships") or [],
+        "relationship_section": parsed.get("relationship_section") or "",
         "description_chars": len(parsed.get("description") or ""),
         "description_source": parsed.get("description_source"),
         "description_preview": (parsed.get("description") or "")[:400],

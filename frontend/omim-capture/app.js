@@ -133,7 +133,12 @@
         : (current && current !== g.label ? `（原為「${esc(current)}」）` : (current ? "" : "（新增）"));
       return `<li>${esc(g.gene)}：${esc(g.label)}${change}</li>`;
     }).join("");
-    const note = summary.entry_type === "gene"
+    const unlisted = preview.unlisted || [];
+    const note = preview.omim_lists_no_disease
+      ? (unlisted.length
+        ? `OMIM 沒有列出這個基因的疾病。採用後記錄為已核對；平台現有的 ${unlisted.length} 個疾病（${unlisted.join("、")}）會列入待確認，不會刪除。`
+        : "OMIM 沒有列出這個基因的疾病，平台也沒有；採用後記錄為已核對。")
+      : summary.entry_type === "gene"
       ? "依 OMIM 基因頁同步這個基因的疾病清單；OMIM 已不列出的舊疾病只會列入待確認。"
       : (preview.same_content ? "平台已採用過相同內容。"
         : (preview.text_exists ? "會取代目前的說明與 Clinical Synopsis。" : "會新增說明與 Clinical Synopsis。"));

@@ -104,6 +104,7 @@ def _index_blockers(event: dict) -> list[str]:
         "synopsis_status": event.get("synopsis_status") or "",
         "description": event.get("description_source") or "",
         "relationships": [None] * int(event.get("relationship_count") or 0),
+        "relationship_section": event.get("relationship_section") or "",
     })
 
 
@@ -130,6 +131,7 @@ def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(
                     description_source=parsed.get("description_source"),
                     warnings=parsed.get("warnings") or [],
                     relationship_count=len(parsed.get("relationships") or []),
+                    relationship_section=parsed.get("relationship_section") or "",
                     title=parsed.get("title") or event.get("title"),
                 )
         event["blockers"] = _index_blockers(event) if omim_db.exists() else []

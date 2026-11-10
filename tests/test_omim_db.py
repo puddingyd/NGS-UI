@@ -594,3 +594,30 @@ def test_empty_capture_keeps_curated_workbook_text(db):
     assert cells(row)[0] == ALIGNED
     meta = {m["phenotype_mim"]: m for m in row["Disease_meta"]}
     assert meta["600001"]["source"] == "capture" and meta["600001"]["omim_empty"] is True
+
+
+def test_gene_page_without_relationships_section_flags_platform_diseases(db):
+    page = _gene_page("100001", "GENE1", [])
+    page["relationship_section"] = "absent"
+    assert omim_db.adoption_blockers(page) == []
+    preview = omim_db.preview_adoption(page)
+    assert preview["omim_lists_no_disease"] is True
+    assert preview["unlisted"] == ["Disease A (600001)(AD)", "Disease B (600002)(AR)"]
+
+    result = omim_db.adopt_capture(page, user="rev", capture_id="100001/n")
+    assert result["omim_lists_no_disease"] is True and result["reviews"] >= 2
+    _by_id, by_gene = omim_db.load_rows(db["path"])
+    assert by_gene["GENE1"]["OMIM_disease"].count("\n") == 1  # nothing deleted
+    assert "100001" in omim_db.gene_sync_map()
+    with omim_db.connect(db["path"]) as con:
+        kinds = [r["kind"] for r in con.execute(
+            "SELECT kind FROM review_items WHERE gene_mim='100001' AND status='open'")]
+    assert kinds.count("not_in_omim") == 2
+
+    # Unknown (unparsed) pages keep the old, cautious behaviour.
+    unknown = _gene_page("100004", "ATXNX", [])
+    assert omim_db.adoption_blockers(unknown) == ["基因頁沒有解析到疾病清單"]
+    omim_db.adopt_capture(unknown, user="rev", capture_id="100004/n")
+    with omim_db.connect(db["path"]) as con:
+        assert not con.execute(
+            "SELECT 1 FROM review_items WHERE gene_mim='100004' AND kind='not_in_omim'").fetchone()

@@ -399,3 +399,37 @@ def test_pending_list_rereads_captures_from_older_parser(client):
     index.write_text(json.dumps(event) + "\n")
     pending = c.get("/api/omim/captures").json()["captures"]
     assert pending[0]["synopsis_status"] == "present"
+
+
+NO_DISEASE_GENE_PAGE = (
+    NAV + "*100009\nTable of Contents\n\nTitle\nText\n"
+    "▼  \tExternal Links\n \n* 100009\nQUIET GENE; QUIETX\n\n"
+    "\n▼ TEXT\n\n▼ Description\n\nQUIETX encodes a protein with no known disease.\n" + FOOTER
+)
+
+
+def test_relationship_section_present_absent_or_unknown():
+    from app.services import omim_db
+
+    present = omim_capture.parse_entry_text(GENE_PAGE, url_mim="100001")
+    assert present["relationship_section"] == "present"
+
+    absent = omim_capture.parse_entry_text(NO_DISEASE_GENE_PAGE, url_mim="100009")
+    assert absent["relationship_section"] == "absent" and absent["relationships"] == []
+    assert any("沒有已知疾病" in w for w in absent["warnings"])
+    assert omim_db.adoption_blockers(absent) == []
+
+    # Heading in the table of contents but no rows parsed: needs a look.
+    unparsed = omim_capture.parse_entry_text(
+        GENE_PAGE.split("Gene-Phenotype Relationships\n\nLocation")[0] + "\n▼ TEXT\n" + FOOTER,
+        url_mim="100001",
+    )
+    assert unparsed["relationships"] == [] and unparsed["relationship_section"] == "present"
+    assert omim_db.adoption_blockers(unparsed) == ["基因頁沒有解析到疾病清單"]
+
+    # No table of contents: cannot tell.
+    no_toc = omim_capture.parse_entry_text(
+        NO_DISEASE_GENE_PAGE.replace("Table of Contents\n\nTitle\nText\n", ""), url_mim="100009",
+    )
+    assert no_toc["relationship_section"] == "unknown"
+    assert omim_db.adoption_blockers(no_toc) == ["基因頁沒有解析到疾病清單"]
