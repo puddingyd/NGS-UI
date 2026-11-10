@@ -505,3 +505,19 @@ def test_shared_mim_adoption_does_not_hide_other_stale_text(db):
     link = status["phenotype_links"][0]
     assert link["done"] == omim_db._today()
     assert link["status"] == "outdated"
+
+
+def test_genes_updated_through_shared_disease_come_next(queue_env):
+    c, headers = queue_env
+    shared = _phenotype_capture(mim="699998", gene_mim="100001", gene="GENE1", name="Shared disorder")
+    shared["relationships"].append({"phenotype": "Shared disorder", "phenotype_mim": "699998",
+                                    "inheritance": "AR", "mapping_key": "3", "gene": "ATXNX",
+                                    "gene_mim": "100004", "location": ""})
+    omim_db.adopt_capture(shared, user="rev", capture_id="699998/x")
+    omim_store.ensure_loaded()
+    items = {i["gene"]: i for i in c.get("/api/omim/queue").json()["items"]}
+    assert items["ATXNX"]["status"] == "in_progress" and items["ATXNX"]["partially_updated"] is True
+    # GENE1 finished (all its steps skipped here) -> the related gene comes next
+    steps = [s["mim"] for s in items["GENE1"]["steps"]]
+    nxt = c.get(f"/api/omim/queue/next?gene=100001&skip={','.join(steps)}", headers=headers).json()
+    assert nxt["gene"]["gene"] == "ATXNX" and nxt.get("related") is True

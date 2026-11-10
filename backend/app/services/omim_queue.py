@@ -12,8 +12,9 @@ Each queue item is one gene with ordered steps:
 Diseases without a phenotype MIM are handled by the gene step. Open review
 items (``omim_db.review_items``) are attached to their gene.
 
-Gene order: genes in progress (gene page adopted, but diseases still to
-fill or items to confirm) → disease-associated (panel_loose) genes whose
+Gene order: genes in progress (gene page adopted, or some disease already
+updated from a capture — possibly via another gene sharing the phenotype —
+but steps or items to confirm remain) → disease-associated (panel_loose) genes whose
 gene page has not been synced yet → everything else; inside each group,
 genes whose diseases were ticked in case reports come first, then genes
 with review items, then genes with diseases to fill. Within a gene,
@@ -21,6 +22,7 @@ the gene page comes first, then diseases (missing before stale; entries in
 {}, [] or with "?" last).
 
 ``next_step`` keeps the reviewer on the same gene until its steps are done,
+then moves to in-progress genes sharing a disease with it,
 skipping pages captured but not adopted yet, pages adopted in the last 7
 days, and anything the extension asked to skip (``MIM`` or ``g<geneMIM>``).
 """
@@ -36,7 +38,7 @@ from . import disease_picks, omim_db, omim_store, panel_deadzone
 STALE_DAYS = 365
 KIND_RANK = {"missing": 2, "stale": 1}
 STATUS_LABELS = {
-    "in_progress": "進行中（基因頁已同步，尚有疾病待補或待確認）",
+    "in_progress": "進行中（已同步基因頁或已有疾病被更新，但尚未完成）",
     "gene_sync": "基因頁待同步",
     "phenotype": "只有疾病待補",
 }
@@ -173,7 +175,11 @@ def build_genes() -> list[dict]:
             "type": "gene", "mim": gene_mim, "url": f"https://omim.org/entry/{gene_mim}",
             "labels": [f"{gene} 基因頁"], "kinds": ["gene_page"],
         }] if need_gene_step else []) + ph_steps
-        if is_synced and (ph_steps or gene_reviews):
+        # Some disease of this gene already carries adopted capture text —
+        # possibly via another gene sharing the phenotype (e.g. 167800 for
+        # CFTR/CTRC/SPINK1/PRSS1/PRSS2) — so finish it soon.
+        touched = any(m.get("source") == "capture" for m in meta.values())
+        if (is_synced or touched) and (ph_steps or gene_reviews or need_gene_step):
             status = "in_progress"
         elif need_gene_step:
             status = "gene_sync"
@@ -187,6 +193,7 @@ def build_genes() -> list[dict]:
             "synced_at": synced.get(gene_mim, ""),
             "done": done,
             "status": status,
+            "partially_updated": touched and not is_synced,
             "steps": steps,
             "reviews": gene_reviews,
             "disease_mims": disease_mims,
@@ -302,6 +309,17 @@ def next_step(*, current: str = "", gene: str = "", skip: set[str] | None = None
         steps = available(g)
         if steps:
             return answer(g, steps, True)
+    # Then genes sharing a disease with the one just finished (they were
+    # partly updated by the same adoption).
+    shared = {m for g in candidates for m in g["disease_mims"]}
+    if shared:
+        for g in genes:
+            if g["status"] == "in_progress" and shared.intersection(g["disease_mims"]):
+                steps = available(g)
+                if steps:
+                    result = answer(g, steps, False)
+                    result["related"] = True
+                    return result
     for g in genes:
         steps = available(g)
         if steps:

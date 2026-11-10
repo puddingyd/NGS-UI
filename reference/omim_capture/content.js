@@ -479,7 +479,7 @@
     const kinds = (step.kinds || []).map(k => KIND_TEXT[k] || k).join("、");
     const done = g.total_steps - g.remaining_steps;
     bar.innerHTML = `
-      <b>${nextData.continuing ? "同一個基因的下一步" : "下一個基因"}</b>
+      <b>${nextData.continuing ? "同一個基因的下一步" : (nextData.related ? "下一個基因（共用剛才的疾病）" : "下一個基因")}</b>
       <span class="muted">（還有 ${esc(nextData.remaining_genes)} 個基因）</span>
       <div class="next-label"><b>${esc(g.gene)}</b>${g.panel ? " · 疾病相關" : ""} · 第 ${done + 1}／${g.total_steps} 步${g.reviews ? ` · 待確認 ${esc(g.reviews)} 項` : ""}
         <br>${step.type === "gene" ? `基因頁 ${esc(step.mim)}` : `${esc(step.mim)} ${esc((step.labels || [])[0] || "")}`}

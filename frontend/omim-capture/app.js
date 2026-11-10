@@ -186,7 +186,7 @@
       <tr>
         <td>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.gene || g.gene_mim)}</b></a>` : `<b>${esc(g.gene)}</b>`}
           <br><span class="muted-text">${esc(g.gene_mim)}${g.panel ? " · 疾病相關" : ""}</span></td>
-        <td>${badge(STATUS_BADGE[g.status] || [g.status, "info"])}${g.synced_at ? `<br><span class="muted-text">基因頁同步 ${esc(fmtTime(g.synced_at))}</span>` : ""}</td>
+        <td>${badge(STATUS_BADGE[g.status] || [g.status, "info"])}${g.synced_at ? `<br><span class="muted-text">基因頁同步 ${esc(fmtTime(g.synced_at))}</span>` : ""}${g.partially_updated ? `<br><span class="muted-text">已有疾病被更新（共用疾病）</span>` : ""}</td>
         <td><ol class="step-list">${g.steps.map(st => `<li>
           <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a>
           ${st.type === "gene" ? "" : esc((st.labels || [])[0] || "")}
