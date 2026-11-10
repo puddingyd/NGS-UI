@@ -23,11 +23,12 @@
 
     <section class="card">
       <h2 class="section-title">1. 安裝擴充功能（Chrome / Edge）</h2>
+      <p class="muted-text">擴充功能原始碼在 repo 的 <code>reference/omim_capture/</code>。</p>
       <ol class="steps">
-        <li><a class="btn btn-primary" href="/api/omim/extension.zip">下載 ngs-omim-capture.zip</a>，解壓縮到固定位置（之後不要刪除這個資料夾）。</li>
-        <li>開啟 <code>chrome://extensions</code>（Edge 為 <code>edge://extensions</code>），打開右上角「開發人員模式」。</li>
-        <li>按「載入未封裝項目」，選擇解壓縮後的 <code>omim_capture</code> 資料夾。</li>
-        <li>更新版本時，重新下載解壓縮覆蓋，再到擴充功能頁按「重新載入」。</li>
+        <li>開啟 <code>chrome://extensions</code>（Edge 為 <code>edge://extensions</code>），打開「開發人員模式」。</li>
+        <li>按「載入未封裝項目」，選本機 repo 裡的 <code>reference/omim_capture</code> 資料夾（裡面直接看得到 <code>manifest.json</code> 的那一層）。</li>
+        <li>更新：在 repo <code>git pull</code> 後，到擴充功能頁的 NGS OMIM Capture 卡片按「重新載入」。</li>
+        <li>沒有本機 repo 時：<a class="btn btn-secondary" href="/api/omim/extension.zip">下載 ngs-omim-capture.zip</a>，解壓縮到固定位置後同樣用「載入未封裝項目」載入。</li>
       </ol>
     </section>
 

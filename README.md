@@ -452,7 +452,7 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 
 用來取代「手動展開 Clinical Synopsis → 全選複製 → 貼進 txt → 跑 `process_genes.py`」的流程。
 
-1. 登入平台後開「OMIM 擷取」（topbar 或 `/omim-capture/`），下載 `ngs-omim-capture.zip` 解壓縮，在 `chrome://extensions`（Edge：`edge://extensions`）開啟開發人員模式後「載入未封裝項目」。
+1. 擴充功能原始碼在 repo 的 `reference/omim_capture/`。在本機 clone 的 repo 上，於 `chrome://extensions`（Edge：`edge://extensions`）開啟開發人員模式後「載入未封裝項目」，直接選 `reference/omim_capture`；之後只要 `git pull`，再在擴充功能卡片按「重新載入」即更新。沒有本機 clone 時，也可在平台「OMIM 擷取」頁（`/omim-capture/`）下載 `ngs-omim-capture.zip` 解壓縮後載入。
 2. 在同一頁產生 capture token，貼到擴充功能「設定」並按「儲存並測試連線」。token 只顯示一次，平台只存 hash，可隨時停用。
 3. 開啟 `omim.org/entry/{MIM}`（卡片上缺說明的 `*` 可直接點過去）。右下角面板會顯示平台工作簿的狀態；按「Capture 送到平台」會自動展開 Clinical Synopsis、送出頁面內容，面板列出解析結果、注意事項與 Disease 欄預覽。
 

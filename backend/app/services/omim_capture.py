@@ -1,6 +1,6 @@
 """OMIM page captures sent by the browser extension (proof of concept).
 
-The extension (``browser_extension/omim_capture``) runs only on
+The extension (``reference/omim_capture``) runs only on
 ``omim.org/entry/*`` and only when the reviewer presses Capture in their own
 browser session. It sends the rendered page text (what a manual Ctrl+A /
 Ctrl+C would copy) plus a few DOM-extracted extras. This module

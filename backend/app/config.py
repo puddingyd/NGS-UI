@@ -300,7 +300,7 @@ OMIM_XLSX = Path(os.environ.get(
 ))
 
 # Raw OMIM page captures sent by the browser extension
-# (browser_extension/omim_capture). Append-only: one gzip JSON per capture
+# (reference/omim_capture). Append-only: one gzip JSON per capture
 # under {dir}/{MIM}/ plus index.jsonl. Never committed to git.
 OMIM_CAPTURE_DIR = Path(os.environ.get(
     "NGS_UI_OMIM_CAPTURE_DIR",

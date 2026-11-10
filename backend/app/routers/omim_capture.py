@@ -21,7 +21,7 @@ from ..services import capture_tokens, omim_capture
 
 router = APIRouter(prefix="/api/omim", tags=["omim-capture"])
 
-EXTENSION_DIR = REPO_ROOT / "browser_extension" / "omim_capture"
+EXTENSION_DIR = REPO_ROOT / "reference" / "omim_capture"
 MAX_BODY_BYTES = 8 * 1024 * 1024
 _MIM_RE = re.compile(r"^\d{6}$")
 
