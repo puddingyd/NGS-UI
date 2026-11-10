@@ -10061,7 +10061,14 @@ function resolveDiseasePicks(id, v) {
   const picks = edits.report_disease_picks;
   if (!picks || typeof picks !== "object" || Array.isArray(picks)) {
     const legacy = edits.report_diseases || {};
-    const wanted = new Set(Object.keys(legacy).filter(k => legacy[k]).map(Number));
+    let wanted = new Set(Object.keys(legacy).filter(k => legacy[k]).map(Number));
+    // Platform OMIM DB may render diseases in another order than the old
+    // workbook; translate legacy slot numbers (see disease_picks.py).
+    const legacyMap = v && v.OMIM_legacy_slots;
+    if (legacyMap && typeof legacyMap === "object" && Object.keys(legacyMap).length) {
+      wanted = new Set([...wanted].filter(n => legacyMap[String(n)] != null)
+        .map(n => Number(legacyMap[String(n)])));
+    }
     return {
       mode: "legacy",
       matched: cells.filter(c => wanted.has(c.slot))

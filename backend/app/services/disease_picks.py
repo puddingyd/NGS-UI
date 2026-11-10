@@ -23,7 +23,8 @@ Resolution against the *current* Disease1..N cells, in order:
    disease the reviewer actually ticked.
 
 When ``report_disease_picks`` is absent the legacy slot behaviour is kept
-unchanged. The frontend (``frontend/app.js`` ``diseasePickKey``) must
+unchanged (old slot numbers are translated through ``Disease_legacy_slots``
+when the platform OMIM database renders diseases in a different order). The frontend (``frontend/app.js`` ``diseasePickKey``) must
 compute the same key; ``tests/test_disease_picks.py`` pins both.
 """
 from __future__ import annotations
@@ -107,6 +108,13 @@ def resolve(record: dict | None, edits: dict | None) -> dict:
     cells = disease_cells(record)
     if not has_picks(edits):
         wanted = set(_legacy_slots(edits))
+        # The platform OMIM database may render diseases in a different
+        # order than the old workbook; translate old slot numbers.
+        legacy_map = (record or {}).get("Disease_legacy_slots") or (record or {}).get(
+            "OMIM_legacy_slots"
+        )
+        if isinstance(legacy_map, dict) and legacy_map:
+            wanted = {int(legacy_map[str(s)]) for s in wanted if str(s) in legacy_map}
         matched = [
             (slot, text, pick_key(text)) for slot, text in cells if slot in wanted
         ]
@@ -167,6 +175,9 @@ def selected_texts(
 def picks_from_slots(record: dict | None, slots: Iterable[int]) -> dict:
     """Build the new-format picks from legacy slot numbers (migration)."""
     wanted = {int(s) for s in slots}
+    legacy_map = (record or {}).get("Disease_legacy_slots") or (record or {}).get("OMIM_legacy_slots")
+    if isinstance(legacy_map, dict) and legacy_map:
+        wanted = {int(legacy_map[str(s)]) for s in wanted if str(s) in legacy_map}
     picks: dict[str, dict] = {}
     for slot, text in disease_cells(record):
         if slot in wanted:

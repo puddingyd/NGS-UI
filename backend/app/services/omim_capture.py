@@ -487,7 +487,13 @@ def _workbook_index() -> tuple[dict, dict]:
                     if disease_picks.phenotype_mim(text) == pm
                 ]
                 rich = any(len([l for l in t.splitlines() if l.strip()]) > 1 for _s, t in slot_hits)
+                adopted = [
+                    m for m in row.get("Disease_meta") or []
+                    if m.get("phenotype_mim") == pm and m.get("source") == "capture"
+                ]
                 by_mim.setdefault(pm, []).append({
+                    "adopted_edit_date": max((m.get("omim_edit_date") or "" for m in adopted), default=""),
+                    "adopted_at": max((m.get("adopted_at") or "" for m in adopted), default=""),
                     "gene": gene,
                     "gene_mim": gene_mim,
                     "done": row.get("Done") or "",
@@ -502,6 +508,10 @@ def _workbook_index() -> tuple[dict, dict]:
 
 
 def _status_for_link(link: dict, edit_date: str) -> str:
+    if link.get("adopted_at"):
+        # Text adopted from a capture: compare with that capture's OMIM date.
+        adopted = link.get("adopted_edit_date") or link["adopted_at"][:10]
+        return "outdated" if edit_date and edit_date > adopted else "up_to_date"
     if not link["has_detail"]:
         return "missing_detail"
     if edit_date and link["done"] and edit_date > link["done"][:10]:
@@ -597,6 +607,9 @@ def store_capture(payload: dict, parsed: dict, *, user: dict) -> dict:
     duplicate = bool(existing) and existing[-1].name.endswith(f"_{digest[:12]}.json.gz")
     now = datetime.now(timezone.utc)
     capture_id = f"{mim}/{now.strftime('%Y%m%dT%H%M%S%fZ')}_{digest[:12]}"
+    if duplicate:
+        # Same content as the latest stored file: point at that file.
+        capture_id = f"{mim}/{existing[-1].name[:-len('.json.gz')]}"
     record = {
         "id": capture_id,
         "captured_at": now.isoformat(timespec="seconds"),

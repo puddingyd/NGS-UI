@@ -234,6 +234,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_PANEL_DEADZONE_DIR` | `REPO_ROOT/ngs_panel_deadzone` | expanded reportable gene list、HGNC alias map、WES/WGS dead-zone tables |
 | `NGS_UI_OMIM_XLSX` | `$NGS_UI_HOME/OMIM/OMIM.xlsx` | OMIM 疾病註解（缺檔 = 停用） |
 | `NGS_UI_OMIM_CAPTURE_DIR` | `$NGS_UI_HOME/OMIM/captures` | OMIM 擷取擴充功能送回的頁面原文（append-only，不進 git） |
+| `NGS_UI_OMIM_DB` | `$NGS_UI_HOME/OMIM/omim.sqlite` | 平台 OMIM 資料庫；存在時取代 OMIM.xlsx 作為疾病資料來源（`scripts/omim_db.py init` 建立） |
 | `NGS_UI_BIOTOOLS_DIR` | `$NGS_UI_HOME/biotools` | Exomiser / LIRICAL |
 | `NGS_UI_GPN_STAR_DIR` | `$NGS_UI_HOME/biotools/gpn_star` | 固定 hg38 GPN-Star V/M Parquet bundle＋manifest；只有 Research-only case 以 Polars 補 final review SNV 分數，失敗只 warning／記狀態 |
 | `NGS_UI_GPN_MSA_DB` | `$NGS_UI_HOME/biotools/gpn_msa/scores.tsv.bgz` | 所有三級 case 與 Somatic 都使用；保留 `.tbi`／tabix |
@@ -456,7 +457,15 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 2. 在同一頁產生 capture token，貼到擴充功能「設定」並按「儲存並測試連線」。token 只顯示一次，平台只存 hash，可隨時停用。
 3. 開啟 `omim.org/entry/{MIM}`（卡片上缺說明的 `*` 可直接點過去）。右下角面板會顯示平台工作簿的狀態；按「Capture 送到平台」會自動展開 Clinical Synopsis、送出頁面內容，面板列出解析結果、注意事項與 Disease 欄預覽。
 
-擴充功能只在按下按鈕時讀取目前頁面，不會自動開啟或爬其他 OMIM 頁；Synopsis 無法就地展開時才取一次同站的 `/clinicalSynopsis/{MIM}`。擷取存在 `NGS_UI_OMIM_CAPTURE_DIR/{MIM}/`（同內容不重複存檔），**目前只保存與比對，不會改寫 OMIM.xlsx**。
+**啟用採用功能（一次性）**：在 dev 機執行
+
+```bash
+PYTHONPATH=backend python scripts/omim_db.py init
+```
+
+它會先固定既有個案的報告疾病勾選，再從 OMIM.xlsx 建立 `NGS_UI_HOME/OMIM/omim.sqlite`，之後平台改讀這個資料庫（不需重啟）。擷取後在面板或 `/omim-capture/` 按「採用到平台」，卡片、DOCX 與個案清單就改用新內容；`/omim-capture/` 另有待確認清單（遷移或採用時無法自動判斷的項目，可「保留」或「移除疾病」）與「匯出 OMIM.xlsx」。從此不要再手動改 OMIM.xlsx（資料庫不會讀它）；要回到 xlsx 只需把 `omim.sqlite` 改名。`scripts/omim_db.py status`／`reviews`／`export --out FILE` 可在命令列查看與匯出。
+
+擴充功能只在按下按鈕時讀取目前頁面，不會自動開啟或爬其他 OMIM 頁；Synopsis 無法就地展開時才取一次同站的 `/clinicalSynopsis/{MIM}`。擷取存在 `NGS_UI_OMIM_CAPTURE_DIR/{MIM}/`（同內容不重複存檔），資料庫啟用前只保存與比對。
 
 SNV 報告的 OMIM 疾病勾選以 `phenotype MIM＋疾病名稱` 記錄（`report_disease_picks`），OMIM.xlsx 調整順序或改名時已勾選的疾病不會換錯。升級後執行一次：
 

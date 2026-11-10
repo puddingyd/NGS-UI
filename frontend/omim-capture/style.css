@@ -24,3 +24,6 @@
 @media (max-width: 720px) {
   .data-table { display: block; overflow-x: auto; }
 }
+.review-actions { white-space: nowrap; display: flex; gap: 4px; flex-wrap: wrap; }
+#review-kind { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; max-width: 60%; }
+#db-status code, .capture-detail code { background: var(--chip-bg); padding: 1px 4px; border-radius: 4px; }

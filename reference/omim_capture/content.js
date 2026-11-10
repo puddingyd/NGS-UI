@@ -381,7 +381,54 @@
       ${summary.comparison.gene ? renderGene(summary.comparison.gene) : ""}
       ${(summary.disease_cells || []).map(c => `
         <details><summary>預覽 ${esc(c.gene)} 的 Disease 欄內容</summary><pre>${esc(c.cell)}</pre></details>`).join("")}
-      ${result.outboxSent ? `<p class="muted">另外補送了 ${result.outboxSent} 筆先前未送出的擷取。</p>` : ""}`;
+      ${result.outboxSent ? `<p class="muted">另外補送了 ${result.outboxSent} 筆先前未送出的擷取。</p>` : ""}
+      <div id="adopt-box" class="row">${renderAdoptBox(summary)}</div>`;
+    const adoptBtn = root.querySelector("#adopt");
+    if (adoptBtn) adoptBtn.addEventListener("click", () => runAdopt(capture.id, adoptBtn));
+  }
+
+  function renderAdoptBox(summary) {
+    if (!summary.db_enabled) {
+      return `<p class="muted">平台尚未啟用 OMIM 資料庫，暫時只保存擷取內容，無法採用。</p>`;
+    }
+    const preview = summary.adopt_preview || {};
+    const isGene = summary.entry_type === "gene";
+    const lines = (preview.genes || []).map(g => {
+      const current = (g.current_labels || []).join("、");
+      const change = !current ? "新增" : (current === g.label ? "沿用" : `原為「${esc(current)}」`);
+      return `<li>${esc(g.gene)}：${esc(g.label)}（${change}）</li>`;
+    }).join("");
+    let note = isGene ? "採用後會依 OMIM 基因頁同步這個基因的疾病清單（OMIM 已不列出的舊疾病只會列入待確認，不會刪除）。"
+      : (preview.same_content ? "平台已採用過相同內容。"
+        : (preview.text_exists ? "會取代平台上這個疾病目前的說明與 Clinical Synopsis。"
+          : "會新增這個疾病的說明與 Clinical Synopsis。"));
+    if (!isGene && summary.synopsis_status === "not_loaded") {
+      note += "<br><b>注意：Clinical Synopsis 沒有擷取到，建議展開後重新 Capture 再採用。</b>";
+    }
+    return `
+      ${lines ? `<b>採用後</b><ul>${lines}</ul>` : ""}
+      <p class="muted">${note}</p>
+      <button class="btn" id="adopt" ${preview.same_content ? "disabled" : ""}>採用到平台</button>`;
+  }
+
+  async function runAdopt(captureId, button) {
+    button.disabled = true;
+    button.textContent = "採用中…";
+    const result = await send({ type: "adopt", captureId });
+    const box = root.querySelector("#adopt-box");
+    if (!result.ok) {
+      button.disabled = false;
+      button.textContent = "採用到平台";
+      box.insertAdjacentHTML("beforeend", `<p class="badge err">${esc(result.error)}</p>`);
+      return;
+    }
+    const r = result.data.result || {};
+    const genes = (r.genes || []).map(g => esc(g.gene)).filter(Boolean).join("、");
+    box.innerHTML = `
+      <span class="badge ok">已採用到平台</span>
+      ${genes ? `<p class="muted">已更新：${genes}${r.text ? `（說明${r.text === "added" ? "新增" : "已取代"}）` : ""}</p>` : ""}
+      ${r.reviews ? `<p class="muted">另有 ${r.reviews} 項需要在平台「OMIM 擷取」頁確認。</p>` : ""}
+      <p class="muted">平台上的個案重新載入後會顯示新內容。</p>`;
   }
 
   // ------------------------------------------------------------ actions

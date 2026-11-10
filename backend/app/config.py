@@ -299,6 +299,14 @@ OMIM_XLSX = Path(os.environ.get(
     NGS_UI_HOME / "OMIM" / "OMIM.xlsx",
 ))
 
+# Platform-owned OMIM database (built once from OMIM.xlsx with
+# `scripts/omim_db.py init`, then updated by adopting extension captures).
+# When this file exists omim_store reads it instead of OMIM.xlsx.
+OMIM_DB = Path(os.environ.get(
+    "NGS_UI_OMIM_DB",
+    NGS_UI_HOME / "OMIM" / "omim.sqlite",
+))
+
 # Raw OMIM page captures sent by the browser extension
 # (reference/omim_capture). Append-only: one gzip JSON per capture
 # under {dir}/{MIM}/ plus index.jsonl. Never committed to git.

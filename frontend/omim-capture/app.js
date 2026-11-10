@@ -80,7 +80,74 @@
       ${links ? `<p><b>工作簿</b></p><ul>${links}</ul>` : ""}
       ${gene}
       ${list("注意", summary.warnings, esc)}
-      ${(summary.disease_cells || []).map(c => `<p><b>${esc(c.gene)} Disease 欄預覽</b></p><pre>${esc(c.cell)}</pre>`).join("")}`;
+      ${(summary.disease_cells || []).map(c => `<p><b>${esc(c.gene)} Disease 欄預覽</b></p><pre>${esc(c.cell)}</pre>`).join("")}
+      ${adoptSection(id, summary)}`;
+  }
+
+  function adoptSection(id, summary) {
+    if (!summary.db_enabled) {
+      return `<p class="muted-text">平台 OMIM 資料庫尚未啟用，無法採用。</p>`;
+    }
+    const preview = summary.adopt_preview || {};
+    const lines = (preview.genes || []).map(g => {
+      const current = (g.current_labels || []).join("、");
+      return `<li>${esc(g.gene)}：${esc(g.label)}${current && current !== g.label ? `（原為「${esc(current)}」）` : (current ? "" : "（新增）")}</li>`;
+    }).join("");
+    const note = summary.entry_type === "gene"
+      ? "依 OMIM 基因頁同步這個基因的疾病清單；OMIM 已不列出的舊疾病只會列入待確認。"
+      : (preview.same_content ? "平台已採用過相同內容。"
+        : (preview.text_exists ? "會取代目前的說明與 Clinical Synopsis。" : "會新增說明與 Clinical Synopsis。"));
+    return `<p><b>採用</b></p>${lines ? `<ul>${lines}</ul>` : ""}
+      <p class="muted-text">${esc(note)}</p>
+      <button class="btn btn-primary" type="button" data-adopt="${esc(id)}" ${preview.same_content ? "disabled" : ""}>採用到平台</button>
+      <span id="adopt-result" class="muted-text"></span>`;
+  }
+
+  async function loadDbStatus() {
+    const status = await api("/api/omim/db/status");
+    const box = $("#db-status");
+    if (!status.enabled) {
+      box.innerHTML = `尚未啟用，平台目前讀取 OMIM.xlsx。在 dev 機執行一次<br>
+        <code>PYTHONPATH=backend python scripts/omim_db.py init</code><br>即可從 OMIM.xlsx 建立資料庫並啟用採用功能。`;
+      $("#review-card").hidden = true;
+      $("#btn-export").hidden = true;
+      return;
+    }
+    const c = status.counts || {};
+    box.innerHTML = `已啟用（平台讀取資料庫）：基因 ${c.genes}、疾病 ${c.diseases}、已採用擷取的疾病說明 ${c.phenotype_texts}、待確認 ${c.open_reviews}、異動紀錄 ${c.changes}。
+      <br>建立時間：${esc(fmtTime((status.meta || {}).created_at))}`;
+    $("#btn-export").hidden = false;
+    $("#review-card").hidden = false;
+    await loadReviews();
+  }
+
+  async function loadReviews() {
+    const kind = $("#review-kind").value || "";
+    const data = await api(`/api/omim/reviews?kind=${encodeURIComponent(kind)}`);
+    const counts = data.open_counts || {};
+    const kinds = data.kinds || {};
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    const current = $("#review-kind").value;
+    $("#review-kind").innerHTML = `<option value="">全部（${total}）</option>` + Object.keys(kinds)
+      .filter(k => counts[k]).map(k => `<option value="${esc(k)}">${esc(kinds[k])}（${counts[k]}）</option>`).join("");
+    $("#review-kind").value = current || "";
+    $("#review-table tbody").innerHTML = data.items.length ? data.items.map(item => {
+      const d = item.detail || {};
+      const content = [
+        d.omim_disease && typeof d.omim_disease === "string" ? `OMIM_disease：${esc(d.omim_disease)}` : "",
+        d.disease_cell ? `Disease 欄：${esc(d.disease_cell)}` : "",
+        d.label ? esc(d.label) : "",
+        d.count ? `${esc(d.count)} 個疾病` : "",
+      ].filter(Boolean).join("<br>");
+      const mim = (String(d.omim_disease || d.disease_cell || d.label || "").match(/\((\d{6})\)/) || [])[1];
+      const omimLink = mim ? `<a class="btn btn-secondary" href="https://omim.org/entry/${mim}" target="_blank" rel="noopener">OMIM</a>`
+        : (/^\d{6}$/.test(item.gene_mim) ? `<a class="btn btn-secondary" href="https://omim.org/entry/${item.gene_mim}" target="_blank" rel="noopener">基因頁</a>` : "");
+      const canRemove = item.disease_id && item.disease_active;
+      return `<tr><td>${esc(item.gene_symbol || item.gene_mim)}</td><td>${esc(item.kind_label)}</td><td>${content}</td>
+        <td class="review-actions">${omimLink}
+          <button class="btn btn-secondary" type="button" data-review="${item.id}" data-action="keep">保留</button>
+          ${canRemove ? `<button class="btn btn-secondary" type="button" data-review="${item.id}" data-action="remove">移除疾病</button>` : ""}</td></tr>`;
+    }).join("") : `<tr><td colspan="4" class="muted-text">沒有待確認項目。</td></tr>`;
   }
 
   function list(title, items, fmt) {
@@ -121,12 +188,39 @@
     if (id) showCapture(id).catch(err => { $("#capture-detail").textContent = String(err); });
   });
   $("#btn-refresh").addEventListener("click", () => loadCaptures());
+  $("#capture-detail").addEventListener("click", async ev => {
+    const btn = ev.target.closest("[data-adopt]");
+    if (!btn) return;
+    btn.disabled = true;
+    const [mim, name] = btn.dataset.adopt.split("/");
+    try {
+      const res = await api(`/api/omim/captures/${encodeURIComponent(mim)}/${encodeURIComponent(name)}/adopt`, { method: "POST" });
+      const genes = (res.result.genes || []).map(g => g.gene).filter(Boolean).join("、");
+      $("#adopt-result").textContent = `已採用${genes ? `：${genes}` : ""}${res.result.reviews ? `；新增 ${res.result.reviews} 項待確認` : ""}`;
+      loadDbStatus();
+    } catch (err) {
+      btn.disabled = false;
+      $("#adopt-result").textContent = `採用失敗：${err.message}`;
+    }
+  });
+  $("#review-kind").addEventListener("change", () => loadReviews());
+  $("#review-table").addEventListener("click", async ev => {
+    const btn = ev.target.closest("[data-review]");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === "remove" && !confirm("移除這個疾病？卡片與報告將不再顯示它（已勾選的個案仍保留勾選時的名稱）。")) return;
+    btn.disabled = true;
+    await api(`/api/omim/reviews/${btn.dataset.review}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
+    });
+    loadDbStatus();
+  });
 
   (async () => {
     try {
       const me = await api("/api/auth/me");
       $("#whoami").textContent = me.username;
-      await Promise.all([loadTokens(), loadCaptures()]);
+      await Promise.all([loadTokens(), loadCaptures(), loadDbStatus()]);
     } catch (_) { /* login hint already shown */ }
   })();
 })();

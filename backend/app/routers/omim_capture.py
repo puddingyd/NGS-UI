@@ -17,7 +17,7 @@ from fastapi.responses import Response
 
 from ..auth import current_user
 from ..config import REPO_ROOT
-from ..services import capture_tokens, omim_capture
+from ..services import capture_tokens, omim_capture, omim_db, omim_store
 
 router = APIRouter(prefix="/api/omim", tags=["omim-capture"])
 
@@ -88,7 +88,10 @@ async def create_capture(request: Request, user: dict = Depends(capture_user)):
         edit_date=parsed.get("omim_edit_date") or "",
         relationships=parsed.get("relationships") or [],
     )
-    return {"capture": stored, "summary": omim_capture.summarize(parsed, comparison)}
+    summary = omim_capture.summarize(parsed, comparison)
+    summary["db_enabled"] = omim_db.exists()
+    summary["adopt_preview"] = omim_db.preview_adoption(parsed) if summary["db_enabled"] else None
+    return {"capture": stored, "summary": summary}
 
 
 @router.get("/captures")
@@ -96,8 +99,7 @@ def list_captures(limit: int = 50, user: dict = Depends(current_user)):
     return {"captures": omim_capture.recent_captures(max(1, min(int(limit), 500)))}
 
 
-@router.get("/captures/{mim}/{name}")
-def get_capture(mim: str, name: str, user: dict = Depends(current_user)):
+def _load_parsed(mim: str, name: str) -> tuple[dict, dict]:
     data = omim_capture.load_capture(f"{mim}/{name}")
     if not data:
         raise HTTPException(404, "capture not found")
@@ -110,13 +112,85 @@ def get_capture(mim: str, name: str, user: dict = Depends(current_user)):
             url_mim=str(payload.get("mim") or mim),
             extracted=payload.get("extracted") if isinstance(payload.get("extracted"), dict) else {},
         )
+    return data, parsed
+
+
+def _summary(parsed: dict) -> dict:
     comparison = omim_capture.compare_with_workbook(
-        parsed.get("mim") or mim,
+        parsed.get("mim") or "",
         entry_type=parsed.get("entry_type") or "",
         edit_date=parsed.get("omim_edit_date") or "",
         relationships=parsed.get("relationships") or [],
     )
-    return {"meta": data.get("meta"), "summary": omim_capture.summarize(parsed, comparison)}
+    summary = omim_capture.summarize(parsed, comparison)
+    summary["db_enabled"] = omim_db.exists()
+    summary["adopt_preview"] = omim_db.preview_adoption(parsed) if summary["db_enabled"] else None
+    return summary
+
+
+@router.get("/captures/{mim}/{name}")
+def get_capture(mim: str, name: str, user: dict = Depends(current_user)):
+    data, parsed = _load_parsed(mim, name)
+    return {"meta": data.get("meta"), "summary": _summary(parsed)}
+
+
+@router.post("/captures/{mim}/{name}/adopt")
+def adopt_capture(mim: str, name: str, user: dict = Depends(capture_user)):
+    """Write a capture into the platform OMIM database."""
+    if not omim_db.exists():
+        raise HTTPException(409, "平台 OMIM 資料庫尚未建立（請先執行 scripts/omim_db.py init）")
+    _data, parsed = _load_parsed(mim, name)
+    try:
+        result = omim_db.adopt_capture(
+            parsed, user=user.get("username") or "", capture_id=f"{mim}/{name}",
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    omim_store.ensure_loaded()
+    return {"result": result, "summary": _summary(parsed)}
+
+
+@router.get("/db/status")
+def db_status(user: dict = Depends(current_user)):
+    return {**omim_db.status(), "source": omim_store.source()}
+
+
+@router.get("/reviews")
+def list_reviews(status: str = "open", kind: str = "", limit: int = 500,
+                 user: dict = Depends(current_user)):
+    if not omim_db.exists():
+        return {"items": [], "open_counts": {}, "db_enabled": False}
+    if status not in {"open", "resolved"}:
+        raise HTTPException(400, "status must be open or resolved")
+    return {**omim_db.list_reviews(status, kind, max(1, min(int(limit), 2000))), "db_enabled": True,
+            "kinds": omim_db.REVIEW_KINDS}
+
+
+@router.post("/reviews/{item_id}")
+def resolve_review(item_id: int, payload: dict, user: dict = Depends(current_user)):
+    if not omim_db.exists():
+        raise HTTPException(409, "平台 OMIM 資料庫尚未建立")
+    try:
+        result = omim_db.resolve_review(item_id, str((payload or {}).get("action") or ""),
+                                        user=user.get("username") or "")
+    except KeyError:
+        raise HTTPException(404, "review item not found")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    omim_store.ensure_loaded()
+    return result
+
+
+@router.get("/export.xlsx")
+def export_xlsx(user: dict = Depends(current_user)):
+    if not omim_db.exists():
+        raise HTTPException(404, "平台 OMIM 資料庫尚未建立")
+    from datetime import date as _date
+    return Response(
+        omim_db.export_xlsx(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="OMIM_{_date.today():%Y%m%d}.xlsx"'},
+    )
 
 
 @router.get("/capture-tokens")

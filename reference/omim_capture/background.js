@@ -94,6 +94,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           + `&edit_date=${encodeURIComponent(message.editDate || "")}`);
       case "capture":
         return capture(message.payload);
+      case "adopt": {
+        const [mim, name] = String(message.captureId || "").split("/");
+        return api(`/api/omim/captures/${encodeURIComponent(mim)}/${encodeURIComponent(name)}/adopt`,
+          { method: "POST" });
+      }
       case "ping":
         return api("/api/omim/ping");
       case "outbox": {

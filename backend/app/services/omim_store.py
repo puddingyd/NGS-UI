@@ -27,7 +27,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from ..config import OMIM_XLSX
+from ..config import OMIM_DB, OMIM_XLSX
 
 DISEASE_SLOT_COUNT = 16
 DISEASE_FIELDS = tuple(
@@ -151,9 +151,38 @@ def _load(path: Path) -> tuple[dict, dict]:
     return by_omim_id, by_gene
 
 
+def source() -> str:
+    """"db" when the platform OMIM database is in use, else "xlsx"."""
+    return "db" if OMIM_DB and OMIM_DB.is_file() else "xlsx"
+
+
+def _ensure_loaded_db() -> None:
+    from . import omim_db
+
+    sig = omim_db.signature(OMIM_DB)
+    if _state["mtime"] == sig:
+        return
+    with _lock:
+        if _state["mtime"] == sig:
+            return
+        try:
+            by_id, by_gene = omim_db.load_rows(OMIM_DB)
+        except Exception:
+            return
+        _state["mtime"] = sig
+        _state["by_omim_id"] = by_id
+        _state["by_gene"] = by_gene
+
+
 def _ensure_loaded() -> None:
-    """Load (or reload) the xlsx if it changed on disk. Silent on
-    errors — variant payloads just lose their OMIM annotation."""
+    """Load (or reload) the OMIM source if it changed on disk. Silent on
+    errors — variant payloads just lose their OMIM annotation.
+
+    The platform database (config.OMIM_DB) wins whenever it exists;
+    otherwise the curator workbook OMIM.xlsx is read as before."""
+    if source() == "db":
+        _ensure_loaded_db()
+        return
     path = OMIM_XLSX
     if not path or not path.is_file():
         # Wipe the cache so a previously-loaded xlsx isn't served
@@ -165,7 +194,7 @@ def _ensure_loaded() -> None:
                 _state["by_gene"] = {}
         return
     try:
-        mtime = path.stat().st_mtime
+        mtime = ("xlsx", path.stat().st_mtime)
     except OSError:
         return
     if _state["mtime"] == mtime:

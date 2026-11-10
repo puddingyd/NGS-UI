@@ -51,7 +51,27 @@
 
     <section class="card">
       <h2 class="section-title">3. 在 OMIM 頁面按 Capture</h2>
-      <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台。這個階段只保存與比對，<b>還不會改寫 OMIM.xlsx</b>。</p>
+      <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台。平台 OMIM 資料庫啟用後，面板會出現「採用到平台」按鈕，採用後卡片與報告即改用新內容；也可以在下方擷取詳情裡採用。</p>
+    </section>
+
+    <section class="card" id="db-card">
+      <div class="section-head">
+        <h2 class="section-title">平台 OMIM 資料庫</h2>
+        <a id="btn-export" class="btn btn-secondary" href="/api/omim/export.xlsx" hidden>匯出 OMIM.xlsx</a>
+      </div>
+      <div id="db-status" class="muted-text">讀取中…</div>
+    </section>
+
+    <section class="card" id="review-card" hidden>
+      <div class="section-head">
+        <h2 class="section-title">待確認</h2>
+        <select id="review-kind"></select>
+      </div>
+      <p class="muted-text">遷移或採用時無法自動判斷的項目。「保留」只把這項標為已確認；「移除疾病」會讓該疾病不再顯示於卡片與報告（可在異動紀錄追查）。多數項目在 OMIM 擷取並採用該疾病或基因頁後會自然解決。</p>
+      <table class="data-table" id="review-table">
+        <thead><tr><th>基因</th><th>類型</th><th>內容</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
     </section>
 
     <section class="card">
