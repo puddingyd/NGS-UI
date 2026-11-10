@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS說明白話改寫（v10.05，2026-11-10）**：依使用者回饋全面重寫`docs/research/prs/PRS_WORKFLOW.md`，讀者是一般平台使用者。先解釋分數／排名／發病機率，再沿gVCF→score→percentile→risk說明每步目的、資料及選擇理由；以588/735排名與50歲期間例子串起概念。Method1／2與A／B先交代個案可用位點不同的問題，再解釋固定集合及敏感度比較；保留歷史排名、1232筆重現及台灣追蹤未驗證的界線。主文用完整段落銜接，移除公式、hash、路徑及容器故障細節，工具與原始紀錄置末尾延伸資料；重要疾病定義／跨族群／癌症標籤／AF零值限制仍保留。平台「說明」原下載入口直接讀同檔，不改API／計分／風險／資料／快照。未重新執行WGS，不SSH／部署；更新後下載即為新版。之後面向使用者的說明應延續目的、概念、因果在前，技術實作另供查閱的寫法。
+
 **PRS流程說明下載（v10.04，2026-11-10）**：新增`docs/research/prs/PRS_WORKFLOW.md`作為平台唯一下載原文，涵蓋六疾病架構、固定參考準備、gVCF重建／補值計分／EAS735 ECDF／祖源gate／EstBB＋台灣GBD2019競爭風險、Method1 common3與Method2及CHD A／B決策／歷史結果、離散重現與UI連續積分差異、疾病對應／問題處理及台灣常模與outcome後續。精簡摘要連至原始證據，不改歷史交付檔或風險參數；不把三案／兩案平行／completed cache當成中途task恢復或台灣確效。PRS標題靠右在研究用途旁新增同count樣式原生「說明」下載連結；`prs.documentation_router`登入保護GET`/api/prs/documentation`只讀固定MD、attachment／no-store，不讀個案、不接受檔案路徑。點選／鍵盤下載不展開或收合卡片，手機同列。實際以保存原始HR／GBD重建1232筆，bundle與reproduction均與release逐byte一致；119項相關Python與Chrome下載檔案／樣式／桌機手機回歸通過。計分／風險／快照不改，不重跑院內gVCF，不SSH／部署；更新服務並重載即可使用。
 
 **PRS表格定位與癌症名稱（v10.03，2026-11-07）**：逐一核對新Word的3則comment：CHD十年數值前空格及至80歲數值首字的對齊要求、全部癌症改名。PRS仍用`_ascii_table`／MingLiU11pt／89顯示欄寬，但啟用局部`fixed_tabs`，以固定左定位點隔開五欄，並關閉中英文／數字自動字距；風險欄14／14／15，避免混排字距累加造成表頭／數值偏移，其他章節的空白文字表格不改。`prs_presentation.disease_name`只改顯示名稱，平台status／方法／限制、前端表格／病史／六圖及ARIA、健檢結果／模型清單統一用「全部癌症」；原registry、release、模型／快照／fingerprint與重現驗證不改，舊快照可直接新名稱顯示及匯出。更新重載／重新匯出即可，不重跑分析或風險。附件與病患資料不進Git，不SSH／部署；詳見PRS註解對照。
