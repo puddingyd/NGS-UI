@@ -44,6 +44,10 @@ const preview=`<!doctype html><html><meta charset="utf-8"><meta name="viewport" 
 const server=http.createServer((req,res)=>{
  if(req.url==='/'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(preview);return;}
  if(req.url==='/report-picker.js'){res.setHeader('Content-Type','text/javascript');res.end(pickerScript);return;}
+ if(req.url==='/api/prs/documentation'){
+   res.setHeader('Content-Type','text/markdown; charset=utf-8');res.setHeader('Content-Disposition','attachment; filename="PRS_WORKFLOW.md"');
+   res.end(fs.readFileSync(path.join(repo,'docs/research/prs/PRS_WORKFLOW.md')));return;
+ }
  const types={'/frontend/prs.js':'text/javascript','/frontend/prs.css':'text/css','/frontend/style.css':'text/css'};
  if(!types[req.url]){res.writeHead(404);res.end();return;}
  res.setHeader('Content-Type',types[req.url]);res.end(fs.readFileSync(path.join(repo,req.url)));
@@ -69,7 +73,16 @@ const server=http.createServer((req,res)=>{
   }
   if(delay)await new Promise(r=>setTimeout(r,delay));await route.fulfill({json:response}).catch(()=>{});
  });
- await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.locator('#prs-details>summary').click();await page.waitForFunction(()=>!document.querySelector('#prs-submit').disabled);
+ await page.goto(`http://127.0.0.1:${server.address().port}/`);
+ const manual=page.locator('#prs-documentation');
+ const [download]=await Promise.all([page.waitForEvent('download'),manual.click()]);
+ assert.equal(download.suggestedFilename(),'PRS_WORKFLOW.md');
+ assert.equal(fs.readFileSync(await download.path(),'utf8'),fs.readFileSync(path.join(repo,'docs/research/prs/PRS_WORKFLOW.md'),'utf8'));
+ assert.equal(await page.locator('#prs-details').evaluate(e=>e.open),false,'download must not expand the PRS card');
+ const chipStyles=await page.locator('.prs-header-actions .count').evaluateAll(es=>es.map(e=>{
+   const s=getComputedStyle(e);return [s.backgroundColor,s.fontSize,s.padding,s.borderRadius];
+ }));assert.deepEqual(chipStyles[0],chipStyles[1]);
+ await page.locator('#prs-details>summary .title').click();await page.waitForFunction(()=>!document.querySelector('#prs-submit').disabled);
  assert.match(await page.locator('#prs-details>summary').innerText(),/Polygenic risk rcore \(PRS\)/);
  assert.equal(await page.locator('#prs-card').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');
  await page.mouse.move(0,0);
@@ -116,7 +129,12 @@ const server=http.createServer((req,res)=>{
  assert.match(await page.locator('[data-curve-disease="T2D"]').innerText(),/尚未完成分析/);
  assert.equal(await page.locator('[data-disease="CHD"] [data-risk="twenty"]').innerText(),`${(r.risk_20_year.risk*100).toFixed(2)}%`);
  await screenshot('table-result.png');
- await page.setViewportSize({width:390,height:844});await page.waitForTimeout(100);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow outside scrollable table');await screenshot('table-mobile.png');
+ await page.setViewportSize({width:390,height:844});await page.waitForTimeout(100);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow outside scrollable table');
+ const chips=await page.locator('.prs-header-actions .count').evaluateAll(es=>es.map(e=>({x:e.getBoundingClientRect().left,y:e.getBoundingClientRect().top})));
+ assert(chips[1].x>chips[0].x && Math.abs(chips[1].y-chips[0].y)<1,'help must remain beside the research chip');
+ await manual.focus();const [keyboardDownload]=await Promise.all([page.waitForEvent('download'),manual.press('Enter')]);
+ assert.equal(keyboardDownload.suggestedFilename(),'PRS_WORKFLOW.md');assert.equal(await page.locator('#prs-details').evaluate(e=>e.open),true);
+ await screenshot('table-mobile.png');
  await page.locator('#prs-age').fill('60');await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});
  assert.equal(await page.locator('[data-disease="CHD"] [data-risk="twenty"]').innerText(),await page.locator('[data-disease="CHD"] [data-risk="eighty"]').innerText());
  await page.locator('#prs-age').fill('60.01');await page.locator('#prs-submit').click();await page.locator('#prs-result').waitFor({state:'visible'});

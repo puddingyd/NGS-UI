@@ -113,6 +113,7 @@ app.include_router(files.router)
 app.include_router(igv.router)
 app.include_router(somatic.router)
 app.include_router(prs.router)
+app.include_router(prs.documentation_router)
 
 
 # Friendly direct URL for the standalone HPO/panel tool: /phenotype

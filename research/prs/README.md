@@ -1,5 +1,7 @@
 # INTERVENE PRS → 台灣多疾病研究流程
 
+整體方法與開發決策請先看[PRS全流程說明](../../docs/research/prs/PRS_WORKFLOW.md)（v10.04，2026-11-10）；平台PRS標題「研究用途」旁的「說明」可下載同一份文件。以下舊版本細節保留追溯，現行六疾病流程以該摘要及操作文件為準。
+
 v9.91 新增未來20年風險（年齡≤60），與10年及至80歲使用相同參數／競爭風險算法。UI新病史表單預設否，已保存病史保留。舊評估按風險計算產生新版快照即可，不重跑基因計分；nf_work維持原路徑並透過既有bind mount使用SSD。
 
 **六疾病基礎版 v9.90（2026-11-05）**：CHD＋T2D＋All cancers＋Breast cancer＋AF＋Epilepsy 共六疾病已接上共用計分／風險／UI／報告。準備與驗收請先看 [六疾病操作文件](../../docs/ops/PRS_MULTI_DISEASE.md)；來源與 1,232 筆重現見 [參數發行說明](releases/tw_multi_v1/README.md)。`multidisease/` 為共用計分程式，`absolute_risk/registry.py` 為模型對應，`releases/tw_multi_v1/` 為固定研究參數。大型參考模型須在院內準備；完整 WGS 尚未在本次驗收。以下 CHD V1 文件保留供舊版本／凍結計分流程追溯，新增疾病以六疾病文件為準。

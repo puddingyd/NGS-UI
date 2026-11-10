@@ -49,6 +49,7 @@ def setup(tmp_path, monkeypatch):
     app = FastAPI()
     app.add_middleware(SessionMiddleware, secret_key='test-only')
     app.include_router(router.router)
+    app.include_router(router.documentation_router)
     client = TestClient(app)
     payload = {'age':50.5, 'sex':'male', 'assessment_date':datetime.date.today().isoformat(), 'prior_chd':False}
     return client, app, tmp_path, bundle, score, payload
@@ -56,6 +57,30 @@ def setup(tmp_path, monkeypatch):
 
 def login(app):
     app.dependency_overrides[current_user] = lambda: {'username':'researcher'}
+
+
+def test_method_document_download_requires_login_and_no_sample_data(setup, monkeypatch):
+    client, app, *_ = setup
+    assert client.get('/api/prs/documentation').status_code == 401
+    login(app)
+    def no_sample_read(*args):
+        raise AssertionError('Shared documentation must not read patient data')
+    monkeypatch.setattr(prs, 'case_metadata', no_sample_read)
+    response = client.get('/api/prs/documentation')
+    assert response.status_code == 200
+    assert response.content == (ROOT/'docs/research/prs/PRS_WORKFLOW.md').read_bytes()
+    assert response.headers['content-type'] == 'text/markdown; charset=utf-8'
+    assert response.headers['content-disposition'] == 'attachment; filename="PRS_WORKFLOW.md"'
+    assert response.headers['cache-control'] == 'no-store'
+
+
+def test_method_document_missing_returns_clear_error(setup, monkeypatch, tmp_path):
+    client, app, *_ = setup
+    login(app)
+    monkeypatch.setattr(config, 'REPO_ROOT', tmp_path)
+    response = client.get('/api/prs/documentation')
+    assert response.status_code == 503
+    assert response.json()['detail'] == 'PRS 說明文件暫時無法讀取'
 
 
 def test_auth_and_unknown_case(setup):

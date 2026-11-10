@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS流程說明下載（v10.04，2026-11-10）**：新增`docs/research/prs/PRS_WORKFLOW.md`作為平台唯一下載原文，涵蓋六疾病架構、固定參考準備、gVCF重建／補值計分／EAS735 ECDF／祖源gate／EstBB＋台灣GBD2019競爭風險、Method1 common3與Method2及CHD A／B決策／歷史結果、離散重現與UI連續積分差異、疾病對應／問題處理及台灣常模與outcome後續。精簡摘要連至原始證據，不改歷史交付檔或風險參數；不把三案／兩案平行／completed cache當成中途task恢復或台灣確效。PRS標題靠右在研究用途旁新增同count樣式原生「說明」下載連結；`prs.documentation_router`登入保護GET`/api/prs/documentation`只讀固定MD、attachment／no-store，不讀個案、不接受檔案路徑。點選／鍵盤下載不展開或收合卡片，手機同列。實際以保存原始HR／GBD重建1232筆，bundle與reproduction均與release逐byte一致；119項相關Python與Chrome下載檔案／樣式／桌機手機回歸通過。計分／風險／快照不改，不重跑院內gVCF，不SSH／部署；更新服務並重載即可使用。
+
 **PRS表格定位與癌症名稱（v10.03，2026-11-07）**：逐一核對新Word的3則comment：CHD十年數值前空格及至80歲數值首字的對齊要求、全部癌症改名。PRS仍用`_ascii_table`／MingLiU11pt／89顯示欄寬，但啟用局部`fixed_tabs`，以固定左定位點隔開五欄，並關閉中英文／數字自動字距；風險欄14／14／15，避免混排字距累加造成表頭／數值偏移，其他章節的空白文字表格不改。`prs_presentation.disease_name`只改顯示名稱，平台status／方法／限制、前端表格／病史／六圖及ARIA、健檢結果／模型清單統一用「全部癌症」；原registry、release、模型／快照／fingerprint與重現驗證不改，舊快照可直接新名稱顯示及匯出。更新重載／重新匯出即可，不重跑分析或風險。附件與病患資料不進Git，不SSH／部署；詳見PRS註解對照。
 
 **健檢PRS註解改稿（v10.02，2026-11-07）**：逐一核對操作者Word內20則comment的精確範圍，更新`prs_chd_v1.json`及`docx_export.py`。只有指定PRS詞彙替換，首次英文定義及未標註的「PRS百分位」不全域改名；結果標題下一行只列動態年齡／性別。PRS採既有`_ascii_table`、細明體11pt及89顯示欄寬，表頭多基因風險分數百分位、CHD表名冠狀動脈心臟病；保留六疾病百分位，患病列三個風險欄合併顯示「已有此疾病，不估算風險」，其他不適用也在原列說明。刪指定表後說明／逐病限制／20年尾句／注意事項不確定區間句，結果說明及注意事項上方各一空行；研究／台灣未驗證及臨床因素提醒仍保留。方法補PGS Catalog官方可點網址、模型清單一般字重並含所有已計分疾病；第一個計算PRS改為多基因風險分數(PRS)。健檢最後移除主文／附錄keepNext、keepLines等非列印方點來源，明確分頁改br，固定教育索引第三類另起頁避免孤標題、參考資料題名與URL合為普通段落；不改附錄原檔或診斷報告。保存快照／算法／數值及匯出前後驗證不改，重新匯出即可。註解對照`docs/ops/PRS_HEALTH_REPORT_COPY_REVIEW.md`；附件與個資不進Git。

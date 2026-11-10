@@ -1,12 +1,28 @@
-"""Authenticated CHD research estimates for an already registered sample."""
+"""Authenticated PRS estimates and shared methodology documentation."""
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from ..auth import current_user
+from .. import config
 from ..services import prs
 
 router = APIRouter(prefix='/api/samples/{sample_id}/prs', tags=['prs'],
                    dependencies=[Depends(current_user)])
+documentation_router = APIRouter(prefix='/api/prs', tags=['prs'],
+                                dependencies=[Depends(current_user)])
+
+
+@documentation_router.get('/documentation')
+def documentation():
+    path = config.REPO_ROOT / 'docs/research/prs/PRS_WORKFLOW.md'
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        raise HTTPException(503, 'PRS 說明文件暫時無法讀取') from exc
+    return Response(content, media_type='text/markdown; charset=utf-8', headers={
+        'Content-Disposition': 'attachment; filename="PRS_WORKFLOW.md"',
+        'Cache-Control': 'no-store',
+    })
 
 
 def checked(call, *args):
