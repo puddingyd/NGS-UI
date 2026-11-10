@@ -1,0 +1,26 @@
+.topbar-user { color: #d0d7de; font-size: 13px; }
+.steps { margin-left: 20px; line-height: 2; font-size: 14px; }
+.steps code, .muted-text code { background: var(--chip-bg); padding: 1px 4px; border-radius: 4px; }
+.muted-text { color: var(--muted); font-size: 14px; line-height: 1.7; }
+.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.section-head .section-title { margin-bottom: 0; }
+.token-create { display: flex; gap: 8px; margin-bottom: 12px; }
+.token-create input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.token-new { background: #fff8c5; border: 1px solid #d4a72c; border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 13px; }
+.token-value { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.token-value code { flex: 1; word-break: break-all; background: #fff; padding: 6px; border-radius: 4px; border: 1px solid var(--border); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th, .data-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.data-table th { color: var(--muted); font-weight: 600; }
+.data-table tbody tr.clickable { cursor: pointer; }
+.data-table tbody tr.clickable:hover { background: #f6f8fa; }
+.badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
+.badge.ok { background: #dafbe1; color: #116329; }
+.badge.warn { background: #fff8c5; color: #7d4e00; }
+.badge.info { background: #ddf4ff; color: #0550ae; }
+.capture-detail { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
+.capture-detail pre { white-space: pre-wrap; background: #f6f8fa; padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; font-size: 12px; }
+.capture-detail ul { margin: 4px 0 8px 20px; }
+@media (max-width: 720px) {
+  .data-table { display: block; overflow-x: auto; }
+}

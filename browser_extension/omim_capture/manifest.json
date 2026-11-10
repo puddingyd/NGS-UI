@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "NGS OMIM Capture",
+  "short_name": "OMIM Capture",
+  "version": "0.1.0",
+  "description": "在 omim.org 頁面一鍵擷取 Description / Clinical Synopsis，送回成大 NGS 分析平台比對與保存。只在按下按鈕時讀取目前頁面。",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://omim.org/*",
+    "https://www.omim.org/*",
+    "http://192.168.84.91/*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://omim.org/entry/*", "https://www.omim.org/entry/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "NGS OMIM Capture 設定"
+  }
+}

@@ -3883,6 +3883,8 @@ function setLoggedInUser(username) {
   if (dr) dr.hidden = !username;
   const files = document.getElementById("btn-file-inventory");
   if (files) files.hidden = !username;
+  const omimCapture = document.getElementById("btn-omim-capture");
+  if (omimCapture) omimCapture.hidden = !username;
   if (!username) resetFileInventory();
   const pipelineList = document.getElementById("btn-pipeline-list");
   if (pipelineList) pipelineList.hidden = !username;
@@ -4714,6 +4716,12 @@ function _syncVariantCheckboxes(selector, id, idx, checked, source = null) {
     `${selector}[data-id="${CSS.escape(id)}"][data-idx="${CSS.escape(String(idx))}"]`
   ).forEach(input => {
     if (input !== source) input.checked = checked;
+  });
+}
+
+function _syncDiseasePickCheckboxes(id, key, checked, source = null) {
+  document.querySelectorAll(`.disease-pick[data-id="${CSS.escape(id)}"]`).forEach(input => {
+    if (input !== source && input.dataset.pickKey === key) input.checked = checked;
   });
 }
 
@@ -5838,9 +5846,28 @@ function hasOmimDescriptionText(a, d) {
   return String(d || "").split("\n").some((line, idx) => idx > 0 && line.trim());
 }
 
+// "*" = OMIM detail missing. It links to the phenotype entry (or the gene
+// entry when the disease has no phenotype MIM) so the reviewer can press
+// Capture there with the NGS OMIM Capture extension.
+function omimMissingStar(phenotypeMim, v) {
+  const geneMim = String((v && v.OMIM_id) || "").split(".")[0].trim();
+  const mim = /^\d{6}$/.test(String(phenotypeMim || "")) ? phenotypeMim
+    : (/^\d{6}$/.test(geneMim) ? geneMim : "");
+  if (!mim) {
+    return `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>`;
+  }
+  const target = mim === phenotypeMim ? "疾病" : "基因";
+  return `<a class="disease-needs-description-star" href="https://omim.org/entry/${mim}" target="_blank" rel="noopener" title="OMIM 說明待補：開啟 OMIM ${target}頁 ${mim}，用 NGS OMIM Capture 擴充功能擷取" aria-label="OMIM description missing; open OMIM ${mim}">*</a>`;
+}
+
 function renderDiseaseList(v, id, withCheckbox) {
   const rows = [];
-  const picked = (getEdit(id, "report_diseases") || {});
+  const resolvedPicks = resolveDiseasePicks(id, v);
+  const pickedSlots = new Set(resolvedPicks.matched.map(m => m.slot));
+  const pickAttrs = (idx, fallbackText) => {
+    const text = (v && v[`Disease${idx}`]) || fallbackText || "";
+    return `data-pick-key="${escapeAttr(diseasePickKey(text))}" data-pick-label="${escapeAttr(_diseaseFirstLine(text))}"`;
+  };
   const associations = Array.isArray(v.disease_associations) ? v.disease_associations : null;
 
   if (associations && associations.length) {
@@ -5859,12 +5886,12 @@ function renderDiseaseList(v, id, withCheckbox) {
       const summary = (diseaseAssociationSummary(a) || String(d).split("\n")[0] || "").slice(0, 120);
       const idx = Number(a.omim_slot || 0);
       const canPick = Boolean(idx && a.source_kind === "omim");
-      const checked = canPick && picked[idx] ? "checked" : "";
+      const checked = canPick && pickedSlots.has(idx) ? "checked" : "";
       const checkbox = withCheckbox && canPick
-        ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${idx}" ${checked} title="報告要發這個疾病" />`
+        ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${idx}" ${pickAttrs(idx, d)} ${checked} title="報告要發這個疾病" />`
         : "";
       const needsDescription = a.source_kind === "omim" && !hasOmimDescriptionText(a, d);
-      const star = needsDescription ? `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>` : "";
+      const star = needsDescription ? omimMissingStar(a.phenotype_mim || _diseasePhenotypeMim(d), v) : "";
       const isOmim = a.source_kind === "omim";
       const badges = diseaseSourceBadges(a, isOmim ? ["OMIM"] : []);
       const isFirstSupplemental = !isOmim && !supplementalStarted;
@@ -5883,17 +5910,29 @@ function renderDiseaseList(v, id, withCheckbox) {
       const d = v[`Disease${i}`];
       if (!d || d === "NA") continue;
       const summary = (String(d).split("\n")[0] || "").slice(0, 120);
-      const checked = picked[i] ? "checked" : "";
+      const checked = pickedSlots.has(i) ? "checked" : "";
       const checkbox = withCheckbox
-        ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${i}" ${checked} title="報告要發這個疾病" />`
+        ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="${i}" ${pickAttrs(i, d)} ${checked} title="報告要發這個疾病" />`
         : "";
-      const star = hasOmimDescriptionText(null, d) ? "" : `<span class="disease-needs-description-star" aria-label="OMIM description missing">*</span>`;
+      const star = hasOmimDescriptionText(null, d) ? "" : omimMissingStar(_diseasePhenotypeMim(d), v);
       rows.push(`
         <details class="disease-row disease-row-omim">
           <summary>${checkbox}<span class="disease-summary-text">${escapeHtml(summary)}${star}</span></summary>
           <div class="disease-detail">${escapeHtml(String(d))}<button type="button" class="disease-collapse">▴ 收合</button></div>
         </details>`);
     }
+  }
+  // Ticked diseases that no longer exist in the current OMIM rows keep their
+  // snapshot label so the report still names what the reviewer chose.
+  for (const u of resolvedPicks.unmatched) {
+    const label = u.label || u.key;
+    const checkbox = withCheckbox
+      ? `<input type="checkbox" class="disease-pick" data-id="${escapeAttr(id)}" data-idx="" data-pick-key="${escapeAttr(u.key)}" data-pick-label="${escapeAttr(u.label)}" checked title="報告要發這個疾病" />`
+      : "";
+    rows.push(`
+        <div class="disease-row disease-row-omim disease-row-stale-pick">
+          <div class="disease-stale-pick-summary">${checkbox}<span class="disease-summary-text">${escapeHtml(label)}</span><span class="disease-stale-pick-note">目前 OMIM 清單已無此疾病，報告沿用勾選時的名稱</span></div>
+        </div>`);
   }
   if (!rows.length) return "";
   return `<div class="disease-list">${rows.join("")}</div>`;
@@ -9392,12 +9431,20 @@ document.addEventListener("change", ev => {
     renderAll();
     updateSaveHint();
   } else if (t.matches(".disease-pick")) {
-    const picked = { ...(getEdit(t.dataset.id, "report_diseases") || {}) };
-    const idx = t.dataset.idx;
-    if (t.checked) picked[idx] = true;
-    else           delete picked[idx];
-    setEdit(t.dataset.id, "report_diseases", picked);
-    _syncVariantCheckboxes(".disease-pick", t.dataset.id, idx, t.checked, t);
+    // Rebuild the content-keyed picks from every checkbox in this card's
+    // disease list; this also converts legacy slot ticks on first touch.
+    const container = t.closest(".disease-list");
+    const boxes = container ? container.querySelectorAll(".disease-pick") : [t];
+    const picks = {};
+    boxes.forEach(cb => {
+      if (!cb.checked || !cb.dataset.pickKey) return;
+      picks[cb.dataset.pickKey] = {
+        label: cb.dataset.pickLabel || "",
+        slot: Number(cb.dataset.idx) || null,
+      };
+    });
+    setEdit(t.dataset.id, "report_disease_picks", picks);
+    _syncDiseasePickCheckboxes(t.dataset.id, t.dataset.pickKey, t.checked, t);
     updateSaveHint();
   } else if (t.matches(".mito-disease-pick")) {
     const picked = { ...(getEdit(t.dataset.id, "report_diseases_clinvar") || {}) };
@@ -9958,26 +10005,92 @@ function formatVariantTable(rows) {
 
 // Disease helpers ---------------------------------------------------
 
-// Which Disease{i} rows did the user tick on this variant card? Keep every
-// valid tick in slot order, or fall back to the first disease if none is ticked.
+// Which Disease{i} rows did the user tick on this variant card? Picks are
+// stored by content key (report_disease_picks) so a reordered OMIM workbook
+// cannot swap the reported disease; legacy slot ticks (report_diseases) are
+// honoured until the reviewer touches that variant again. Falls back to the
+// first disease when nothing is ticked.
 function pickedDiseaseSlots(id, v) {
-  const picked = (state.reports?.edits?.[id]?.report_diseases) || {};
-  const idxs = Object.keys(picked).filter(k => picked[k]).map(Number)
-    .filter(n => Number.isInteger(n) && n >= 1 && n <= OMIM_DISEASE_SLOT_COUNT)
-    .sort((a, b) => a - b);
-  const selected = [];
-  for (const i of idxs) {
-    const d = v[`Disease${i}`];
-    if (d && d !== "NA") {
-      selected.push({ idx: i, text: d });
-    }
+  const resolved = resolveDiseasePicks(id, v);
+  const selected = resolved.matched.map(m => ({ idx: m.slot, text: m.text }));
+  for (const u of resolved.unmatched) {
+    if (u.label) selected.push({ idx: null, text: u.label });
   }
   if (selected.length) return selected;
+  const cells = _diseaseCells(v);
+  return cells.length ? [{ idx: cells[0].slot, text: cells[0].text }] : [];
+}
+
+function _diseaseCells(v) {
+  const cells = [];
   for (let i = 1; i <= OMIM_DISEASE_SLOT_COUNT; i++) {
-    const d = v[`Disease${i}`];
-    if (d && d !== "NA") return [{ idx: i, text: d }];
+    const text = String((v && v[`Disease${i}`]) || "").trim();
+    if (text && text !== "NA") cells.push({ slot: i, text });
   }
-  return [];
+  return cells;
+}
+
+// Mirror of backend/app/services/disease_picks.py — keep in sync
+// (tests/test_disease_picks.py compares both implementations).
+// disease-pick-key:start
+function _diseaseFirstLine(text) {
+  const value = String(text || "").trim();
+  return value ? value.split(/\r\n|\r|\n/)[0].trim() : "";
+}
+function _diseaseNameKey(text) {
+  let line = _diseaseFirstLine(text);
+  let previous = null;
+  while (previous !== line) {
+    previous = line;
+    line = line.replace(/\s*\([^()]*\)\s*$/, "");
+  }
+  return line.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+}
+function _diseasePhenotypeMim(text) {
+  const match = _diseaseFirstLine(text).match(/\((\d{6})\)/);
+  return match ? match[1] : "";
+}
+function diseasePickKey(text) {
+  return `${_diseasePhenotypeMim(text)}|${_diseaseNameKey(text)}`;
+}
+// disease-pick-key:end
+
+function resolveDiseasePicks(id, v) {
+  const edits = (state.reports?.edits?.[id]) || {};
+  const cells = _diseaseCells(v);
+  const picks = edits.report_disease_picks;
+  if (!picks || typeof picks !== "object" || Array.isArray(picks)) {
+    const legacy = edits.report_diseases || {};
+    const wanted = new Set(Object.keys(legacy).filter(k => legacy[k]).map(Number));
+    return {
+      mode: "legacy",
+      matched: cells.filter(c => wanted.has(c.slot))
+        .map(c => ({ slot: c.slot, text: c.text, key: diseasePickKey(c.text) })),
+      unmatched: [],
+    };
+  }
+  const used = new Set();
+  const matched = [];
+  const unmatched = [];
+  const unique = predicate => {
+    const hits = cells.filter(c => !used.has(c.slot) && predicate(c));
+    return hits.length === 1 ? hits[0] : null;
+  };
+  for (const [key, snapshot] of Object.entries(picks)) {
+    if (!snapshot) continue;
+    const label = String((snapshot && snapshot.label) || "").trim();
+    const sep = key.indexOf("|");
+    const mim = sep >= 0 ? key.slice(0, sep) : "";
+    const nameKey = sep >= 0 ? key.slice(sep + 1) : key;
+    let hit = unique(c => diseasePickKey(c.text) === key);
+    if (!hit && mim) hit = unique(c => _diseasePhenotypeMim(c.text) === mim);
+    if (!hit && nameKey) hit = unique(c => _diseaseNameKey(c.text) === nameKey);
+    if (!hit) { unmatched.push({ key, label }); continue; }
+    used.add(hit.slot);
+    matched.push({ slot: hit.slot, text: hit.text, key });
+  }
+  matched.sort((a, b) => a.slot - b.slot);
+  return { mode: "keys", matched, unmatched };
 }
 
 function pickedDiseaseSlot(id, v) {

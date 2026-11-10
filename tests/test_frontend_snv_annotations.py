@@ -282,7 +282,8 @@ def test_omim_render_and_report_fallback_cover_all_16_slots():
     picked_start = APP_JS.index("function pickedDiseaseSlots(")
     picked_end = APP_JS.index("function diseaseInfo(", picked_start)
     picked_helper = APP_JS[picked_start:picked_end]
-    assert "n <= OMIM_DISEASE_SLOT_COUNT" in picked_helper
+    # Ticks resolve through the 16-slot cell list (content keys or legacy slots).
+    assert "resolveDiseasePicks(id, v)" in picked_helper
     assert "i <= OMIM_DISEASE_SLOT_COUNT" in picked_helper
     assert "if (selected.length) return selected" in picked_helper
 

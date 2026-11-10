@@ -1822,11 +1822,26 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   margin-top: 7px;
   padding-top: 7px;
 }
+.disease-row-stale-pick .disease-stale-pick-summary {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px dashed #d4a72c;
+  border-radius: 4px;
+  background: #fff8c5;
+  font-size: 13px;
+}
+.disease-row-stale-pick .disease-pick { margin-top: 3px; }
+.disease-stale-pick-note { color: #7d4e00; font-size: 12px; }
 .disease-needs-description-star {
   color: #9a6700;
   font-weight: 700;
   margin-left: 2px;
 }
+a.disease-needs-description-star { text-decoration: none; padding: 0 3px; border-radius: 3px; }
+a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: underline; }
 .disease-source-badges {
   display: inline-flex;
   flex-wrap: wrap;

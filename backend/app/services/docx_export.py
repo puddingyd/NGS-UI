@@ -35,6 +35,7 @@ from . import (
     gba,
     specialized,
     hpo_ontology,
+    disease_picks,
     omim_store,
     panel_deadzone,
     phenotype_scorer,
@@ -940,21 +941,14 @@ def _patho_sentence(acmg_class: str) -> str:
 
 
 def _picked_diseases_for_snv(v: dict, edits: dict) -> list[str]:
-    """Return every reviewer-picked Disease cell, falling back to the first."""
-    picked = edits.get("report_diseases") or {}
-    selected: list[str] = []
-    if isinstance(picked, dict):
-        for idx, field in enumerate(omim_store.DISEASE_FIELDS, start=1):
-            if picked.get(str(idx)) or picked.get(idx):
-                disease = (v.get(field) or "").strip()
-                if disease and disease != "NA":
-                    selected.append(disease)
+    """Return every reviewer-picked Disease cell, falling back to the first.
+
+    Picks are resolved by content key (see ``disease_picks``) so a
+    reordered OMIM workbook cannot swap the reported disease.
+    """
+    selected = disease_picks.selected_texts(v, edits, fallback_first=True)
     if selected:
         return selected
-    for field in omim_store.DISEASE_FIELDS:
-        disease = (v.get(field) or "").strip()
-        if disease and disease != "NA":
-            return [disease]
     fallback = (v.get("OMIM_disease") or "").strip()
     return [fallback] if fallback else []
 

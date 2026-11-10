@@ -6,9 +6,9 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '../frontend/app.js'), 'utf8');
 
-function context(reportDiseases = {}) {
+function context(reportDiseases = {}, extraEdits = {}) {
   const c = vm.createContext({
-    state: { reports: { edits: { v1: { report_diseases: reportDiseases } } } },
+    state: { reports: { edits: { v1: { report_diseases: reportDiseases, ...extraEdits } } } },
   });
   const start = source.indexOf('function pickedDiseaseSlots(');
   const end = source.indexOf('// HGVS', start);
@@ -55,4 +55,46 @@ test('SNV report summary describes SMu as a somatic variant', () => {
   assert.equal(summary.names, '?RAS-associated autoimmune lymphoproliferative syndrome type 1, somatic');
   assert.equal(summary.inheritance, '體細胞變異');
   assert.equal(summary.phenotypeMims, '614470');
+});
+
+test('content-keyed picks survive a reordered OMIM workbook', () => {
+  const c = context({ 3: true }, {
+    report_disease_picks: {
+      '613986|pituitary hormone deficiency combined 6': {
+        label: 'Pituitary hormone deficiency, combined, 6 (613986)(AD)', slot: 3,
+      },
+    },
+  });
+  const summary = c.pickedDiseaseSummary('v1', {
+    Disease1: 'Pituitary hormone deficiency, combined, 6 (613986)(AD)',
+    Disease2: 'Microphthalmia, syndromic 5 (610125)(AD)',
+    Disease3: 'Retinal dystrophy, early-onset (610125)(AD)',
+  });
+  assert.equal(summary.names, 'Pituitary hormone deficiency, combined, 6');
+  assert.equal(summary.phenotypeMims, '613986');
+});
+
+test('a ticked disease missing from the workbook keeps its snapshot label', () => {
+  const c = context({}, {
+    report_disease_picks: {
+      '600099|gone disease': { label: 'Gone disease (600099)(AR)', slot: 2 },
+    },
+  });
+  const slots = c.pickedDiseaseSlots('v1', { Disease1: 'Other disease (600001)(AD)' });
+  assert.equal(slots.length, 1);
+  assert.equal(slots[0].idx, null);
+  assert.equal(slots[0].text, 'Gone disease (600099)(AR)');
+});
+
+test('same phenotype MIM with different names keeps the ticked label', () => {
+  const c = context({}, {
+    report_disease_picks: {
+      '610125|retinal dystrophy early onset': { label: 'Retinal dystrophy, early-onset (610125)(AD)', slot: 2 },
+    },
+  });
+  const slots = c.pickedDiseaseSlots('v1', {
+    Disease1: 'Microphthalmia, syndromic 5 (610125)(AD)',
+    Disease2: 'Retinal dystrophy, early-onset (610125)(AD)',
+  });
+  assert.equal(JSON.stringify(slots.map(s => s.idx)), '[2]');
 });

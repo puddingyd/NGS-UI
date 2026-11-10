@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OMIM 擷取</title>
+  <link rel="stylesheet" href="../phenotype/style.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>OMIM 擷取（擴充功能 PoC）</h1>
+    <div class="topbar-actions">
+      <span id="whoami" class="topbar-user"></span>
+      <a href="/" class="btn btn-secondary">← 回分析系統</a>
+    </div>
+  </header>
+
+  <main id="app">
+    <section class="card" id="login-needed" hidden>
+      <p>請先在<a href="/">分析系統</a>登入，再重新整理這一頁。</p>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">1. 安裝擴充功能（Chrome / Edge）</h2>
+      <ol class="steps">
+        <li><a class="btn btn-primary" href="/api/omim/extension.zip">下載 ngs-omim-capture.zip</a>，解壓縮到固定位置（之後不要刪除這個資料夾）。</li>
+        <li>開啟 <code>chrome://extensions</code>（Edge 為 <code>edge://extensions</code>），打開右上角「開發人員模式」。</li>
+        <li>按「載入未封裝項目」，選擇解壓縮後的 <code>omim_capture</code> 資料夾。</li>
+        <li>更新版本時，重新下載解壓縮覆蓋，再到擴充功能頁按「重新載入」。</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">2. 產生 capture token，貼到擴充功能設定</h2>
+      <div class="token-create">
+        <input id="token-label" type="text" maxlength="60" placeholder="名稱，例如：辦公室電腦">
+        <button id="btn-token-create" class="btn btn-primary" type="button">產生 token</button>
+      </div>
+      <div id="token-new" class="token-new" hidden>
+        <p>這個 token 只會顯示一次，請複製後貼到擴充功能的「設定」頁：</p>
+        <div class="token-value"><code id="token-value"></code>
+          <button id="btn-token-copy" class="btn btn-secondary" type="button">複製</button></div>
+      </div>
+      <table class="data-table" id="token-table">
+        <thead><tr><th>名稱</th><th>建立時間</th><th>最後使用</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">3. 在 OMIM 頁面按 Capture</h2>
+      <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台。這個階段只保存與比對，<b>還不會改寫 OMIM.xlsx</b>。</p>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <h2 class="section-title">最近的擷取</h2>
+        <button id="btn-refresh" class="btn btn-secondary" type="button">重新整理</button>
+      </div>
+      <table class="data-table" id="capture-table">
+        <thead><tr><th>MIM</th><th>標題</th><th>Description</th><th>Synopsis</th><th>OMIM 編輯</th><th>擷取</th><th>注意</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="capture-detail" class="capture-detail" hidden></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

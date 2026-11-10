@@ -53,6 +53,8 @@ def _empty_row() -> dict:
         "OMIM_id": "",
         "OMIM_disease": "",
         "Inheritance": "",
+        "gene_symbol": "",
+        "Done": "",
     }
     row.update({field: "" for field in DISEASE_FIELDS})
     return row
@@ -88,6 +90,11 @@ def _row_to_dict(headers: tuple, row: tuple) -> dict:
     out["OMIM_id"]      = get("OMIM_id")
     out["OMIM_disease"] = get("OMIM_disease")
     out["Inheritance"]  = get("Inheritance")
+    out["gene_symbol"]  = get("gene_symbol")
+    done = row[h2i["Done"]] if "Done" in h2i and h2i["Done"] < len(row) else None
+    out["Done"] = done.date().isoformat() if hasattr(done, "date") else (
+        "" if done is None else str(done).strip()
+    )
     for f in DISEASE_FIELDS:
         out[f] = get(f)
     return out

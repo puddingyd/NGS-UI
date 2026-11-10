@@ -47,6 +47,7 @@ from . import (
     analyses_store,
     clinvar_latest_store,
     cnv_disease_selection,
+    disease_picks,
     gene_disease_store,
     gba,
     specialized,
@@ -541,22 +542,20 @@ def load_report_gene_list(sample_id: str, version: str | None = None) -> dict | 
 
 def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:
     """Return only OMIM diseases explicitly selected by the reviewer."""
-    picked = edits.get("report_diseases") or {}
-    if not isinstance(picked, dict) or not any(bool(v) for v in picked.values()):
-        return []
+    if not disease_picks.has_picks(edits):
+        picked = edits.get("report_diseases") or {}
+        if not isinstance(picked, dict) or not any(bool(v) for v in picked.values()):
+            return []
     omim_id = omim_store.parse_omim_id_from_link(variant.get("OMIM_link", ""))
     rec = omim_store.lookup_cached(
         omim_id=omim_id,
         gene=variant.get("gene_symbol", ""),
     ) or {}
     out = []
-    for idx, field in enumerate(omim_store.DISEASE_FIELDS, start=1):
-        if picked.get(str(idx)) or picked.get(idx):
-            disease = omim_store.compact_disease_label(
-                rec.get(field) or ""
-            )
-            if disease and disease not in out:
-                out.append(disease)
+    for text in disease_picks.selected_texts(rec, edits, fallback_first=False):
+        disease = omim_store.compact_disease_label(text)
+        if disease and disease not in out:
+            out.append(disease)
     return out
 
 

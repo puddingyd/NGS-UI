@@ -8,7 +8,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR
-from .routers import acmg, analyses, auth, documents, dragen, emr, files, igv, jobs, phenotype, phenotype_tool, prs, samples, secondary, somatic
+from .routers import acmg, analyses, auth, documents, dragen, emr, files, igv, jobs, omim_capture, phenotype, phenotype_tool, prs, samples, secondary, somatic
 from .services import (
     clinvar_mito,
     hpo_ontology,
@@ -114,6 +114,7 @@ app.include_router(igv.router)
 app.include_router(somatic.router)
 app.include_router(prs.router)
 app.include_router(prs.documentation_router)
+app.include_router(omim_capture.router)
 
 
 # Friendly direct URL for the standalone HPO/panel tool: /phenotype
@@ -123,6 +124,11 @@ app.include_router(prs.documentation_router)
 @app.get("/phenotype")
 def _phenotype_tool_redirect():
     return RedirectResponse("/phenotype/")
+
+
+@app.get("/omim-capture")
+def _omim_capture_redirect():
+    return RedirectResponse("/omim-capture/")
 
 
 if FRONTEND_DIR.exists():

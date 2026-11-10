@@ -233,6 +233,7 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_CUSTOM_GENE_PANELS_DIR` | `REPO_ROOT/phenotype_data/custom_panels` | git-tracked custom panel gene lists 與 `panel_metadata.tsv` 名稱／來源／輸出名稱對照表 |
 | `NGS_UI_PANEL_DEADZONE_DIR` | `REPO_ROOT/ngs_panel_deadzone` | expanded reportable gene list、HGNC alias map、WES/WGS dead-zone tables |
 | `NGS_UI_OMIM_XLSX` | `$NGS_UI_HOME/OMIM/OMIM.xlsx` | OMIM 疾病註解（缺檔 = 停用） |
+| `NGS_UI_OMIM_CAPTURE_DIR` | `$NGS_UI_HOME/OMIM/captures` | OMIM 擷取擴充功能送回的頁面原文（append-only，不進 git） |
 | `NGS_UI_BIOTOOLS_DIR` | `$NGS_UI_HOME/biotools` | Exomiser / LIRICAL |
 | `NGS_UI_GPN_STAR_DIR` | `$NGS_UI_HOME/biotools/gpn_star` | 固定 hg38 GPN-Star V/M Parquet bundle＋manifest；只有 Research-only case 以 Polars 補 final review SNV 分數，失敗只 warning／記狀態 |
 | `NGS_UI_GPN_MSA_DB` | `$NGS_UI_HOME/biotools/gpn_msa/scores.tsv.bgz` | 所有三級 case 與 Somatic 都使用；保留 `.tbi`／tabix |
@@ -446,6 +447,25 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 
 三級分析另保存 `source_sample_id`（原始 sequencing sample ID）到 job state 與 `pipeline_source.json`。IGV 先依 sample ID suffix 判斷來源，`-dragen` 強制 DRAGEN roots、`-nckuh` / legacy `-inhouse` 強制 in-house roots；沒有 suffix hint 時才看 `pipeline_source.json` 的 `pipeline_type`。DRAGEN 找 `NGS_UI_DRAGEN_BAM_ROOT/<run>/bam/{sample}.bam`，預設 roots 包含 `/home/datalake_Raw/Novaseq` 與 `/home/datalake_Intermediate/n102968`；in-house 找 `NGS_UI_INHOUSE_BAM_ROOT/<batch>/{sample}/02_alignment/`。自訂輸出 ID 找不到時，會用 sidecar 回查原始 BAM ID；舊個案缺少 sidecar 欄位時，會移除已知 suffix 後用原始 sample ID 搜尋 BAM。IGV 的「其他路徑」資料夾下拉由 `/api/igv/bam-folders` 列出 configured BAM roots 內的 DRAGEN `<run>/bam/` 與 in-house `<batch>`，選 in-house batch 後會列出該 batch 底下各 sample `02_alignment` 的 BAM，排除 `.repeats.bam`。若 systemd 已設定 `NGS_UI_DRAGEN_BAM_ROOT`，需把 `/home/datalake_Intermediate/n102968` 併入該 env，否則會覆蓋程式預設。
 
+
+### OMIM 擷取擴充功能 `/omim-capture/`（測試版）
+
+用來取代「手動展開 Clinical Synopsis → 全選複製 → 貼進 txt → 跑 `process_genes.py`」的流程。
+
+1. 登入平台後開「OMIM 擷取」（topbar 或 `/omim-capture/`），下載 `ngs-omim-capture.zip` 解壓縮，在 `chrome://extensions`（Edge：`edge://extensions`）開啟開發人員模式後「載入未封裝項目」。
+2. 在同一頁產生 capture token，貼到擴充功能「設定」並按「儲存並測試連線」。token 只顯示一次，平台只存 hash，可隨時停用。
+3. 開啟 `omim.org/entry/{MIM}`（卡片上缺說明的 `*` 可直接點過去）。右下角面板會顯示平台工作簿的狀態；按「Capture 送到平台」會自動展開 Clinical Synopsis、送出頁面內容，面板列出解析結果、注意事項與 Disease 欄預覽。
+
+擴充功能只在按下按鈕時讀取目前頁面，不會自動開啟或爬其他 OMIM 頁；Synopsis 無法就地展開時才取一次同站的 `/clinicalSynopsis/{MIM}`。擷取存在 `NGS_UI_OMIM_CAPTURE_DIR/{MIM}/`（同內容不重複存檔），**目前只保存與比對，不會改寫 OMIM.xlsx**。
+
+SNV 報告的 OMIM 疾病勾選以 `phenotype MIM＋疾病名稱` 記錄（`report_disease_picks`），OMIM.xlsx 調整順序或改名時已勾選的疾病不會換錯。升級後執行一次：
+
+```bash
+PYTHONPATH=backend python scripts/migrate_report_disease_picks.py
+PYTHONPATH=backend python scripts/migrate_report_disease_picks.py --apply
+```
+
+第一行為 dry-run，確認列出的對應正確再加 `--apply`。
 
 ### 臨床表徵工具 `/phenotype/`
 
