@@ -97,6 +97,34 @@
       <div id="capture-detail" class="capture-detail" hidden></div>
     </section>
 
+    <section class="card" id="queue-card">
+      <div class="section-head">
+        <h2 class="section-title">待補清單 <span id="queue-total" class="muted-text"></span></h2>
+        <div class="head-actions">
+          <select id="queue-status">
+            <option value="">全部基因</option>
+            <option value="in_progress">進行中</option>
+            <option value="updated">OMIM 有更新</option>
+            <option value="gene_sync">基因頁待同步</option>
+            <option value="phenotype">只有疾病待補</option>
+            <option value="review">有待確認</option>
+          </select>
+          <select id="queue-scope">
+            <option value="all">全部範圍</option>
+            <option value="panel">疾病相關基因</option>
+            <option value="reported">報告用過的基因</option>
+          </select>
+        </div>
+      </div>
+      <p id="queue-summary" class="muted-text"></p>
+      <p class="muted-text">以基因為單位：先開基因頁同步疾病清單，再補這個基因每個缺說明或超過一年未更新的疾病。順序是「進行中的基因」（基因頁已同步，或因共用疾病已被部分更新）→「OMIM 有更新」（做過的基因或疾病，OMIM 之後又改了，依下方「OMIM 更新清單」判斷）→「疾病相關基因中，基因頁還沒同步的」→ 其他；擴充功能的「前往」會先把同一個基因做完。基因頁和平台對不上的項目列在「待確認」，可直接保留或移除。</p>
+      <table class="data-table" id="queue-table">
+        <thead><tr><th>基因</th><th>狀態</th><th>步驟</th><th>待確認</th><th>報告</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button id="btn-queue-more" class="btn btn-secondary" type="button" hidden>顯示更多</button>
+    </section>
+
     <section class="card" id="updates-card">
       <div class="section-head">
         <h2 class="section-title">OMIM 更新清單</h2>
@@ -121,34 +149,6 @@
           <tbody></tbody>
         </table>
       </details>
-    </section>
-
-    <section class="card" id="queue-card">
-      <div class="section-head">
-        <h2 class="section-title">待補清單 <span id="queue-total" class="muted-text"></span></h2>
-        <div class="head-actions">
-          <select id="queue-status">
-            <option value="">全部基因</option>
-            <option value="in_progress">進行中</option>
-            <option value="updated">OMIM 有更新</option>
-            <option value="gene_sync">基因頁待同步</option>
-            <option value="phenotype">只有疾病待補</option>
-            <option value="review">有待確認</option>
-          </select>
-          <select id="queue-scope">
-            <option value="all">全部範圍</option>
-            <option value="panel">疾病相關基因</option>
-            <option value="reported">報告用過的基因</option>
-          </select>
-        </div>
-      </div>
-      <p id="queue-summary" class="muted-text"></p>
-      <p class="muted-text">以基因為單位：先開基因頁同步疾病清單，再補這個基因每個缺說明或超過一年未更新的疾病。順序是「進行中的基因」（基因頁已同步，或因共用疾病已被部分更新）→「疾病相關基因中，基因頁還沒同步的」→ 其他；擴充功能的「前往」會先把同一個基因做完。基因頁和平台對不上的項目列在「待確認」，可直接保留或移除。</p>
-      <table class="data-table" id="queue-table">
-        <thead><tr><th>基因</th><th>狀態</th><th>步驟</th><th>待確認</th><th>報告</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <button id="btn-queue-more" class="btn btn-secondary" type="button" hidden>顯示更多</button>
     </section>
   </main>
 
