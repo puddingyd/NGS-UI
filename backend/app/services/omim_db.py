@@ -127,6 +127,22 @@ CREATE TABLE IF NOT EXISTS adoptions (
     summary     TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS adoptions_capture ON adoptions(capture_id);
+CREATE TABLE IF NOT EXISTS omim_updates (
+    mim          TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    listed_date  TEXT NOT NULL,
+    prefix       TEXT NOT NULL DEFAULT '',
+    title        TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (mim, kind, listed_date)
+);
+CREATE INDEX IF NOT EXISTS omim_updates_date ON omim_updates(listed_date);
+CREATE TABLE IF NOT EXISTS omim_update_months (
+    month        TEXT PRIMARY KEY,
+    captured_at  TEXT NOT NULL,
+    captured_by  TEXT NOT NULL DEFAULT '',
+    rows         INTEGER NOT NULL DEFAULT 0,
+    complete     INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS change_log (
     id          INTEGER PRIMARY KEY,
     at          TEXT NOT NULL,
@@ -911,6 +927,30 @@ def gene_sync_map(path: Path | None = None) -> dict[str, str]:
             "SELECT mim, MAX(adopted_at) AS at FROM adoptions "
             "WHERE entry_type IN ('gene','gene_phenotype') GROUP BY mim"
         )}
+
+
+def gene_sync_captures(path: Path | None = None) -> dict[str, tuple[str, str]]:
+    """gene MIM -> (capture id, adopted_at) of its latest adopted gene page."""
+    if not exists(path):
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    with connect(path) as con:
+        for r in con.execute(
+            "SELECT mim, capture_id, adopted_at FROM adoptions "
+            "WHERE entry_type IN ('gene','gene_phenotype') ORDER BY adopted_at, id"
+        ):
+            out[r["mim"]] = (r["capture_id"], r["adopted_at"])
+    return out
+
+
+def phenotype_text_sources(path: Path | None = None) -> dict[str, tuple[str, str, str]]:
+    """phenotype MIM -> (capture id, adopted_at, OMIM edit date) of adopted text."""
+    if not exists(path):
+        return {}
+    with connect(path) as con:
+        return {r["phenotype_mim"]: (r["capture_id"], r["adopted_at"], r["omim_edit_date"])
+                for r in con.execute("SELECT phenotype_mim, capture_id, adopted_at, omim_edit_date "
+                                     "FROM phenotype_texts")}
 
 
 def open_reviews_by_gene(path: Path | None = None) -> dict[str, list[dict]]:

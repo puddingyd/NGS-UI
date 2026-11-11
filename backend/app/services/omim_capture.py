@@ -748,3 +748,27 @@ def summarize(parsed: dict, comparison: dict) -> dict:
         ],
         "comparison": comparison,
     }
+
+
+def capture_times() -> dict[str, str]:
+    """capture id -> latest time that content was captured.
+
+    A re-capture with identical content points at the existing file, so its
+    newest index event tells how recent the content is known to be.
+    """
+    out: dict[str, str] = {}
+    for event in capture_events():
+        capture_id = event.get("id") or ""
+        at = event.get("captured_at") or ""
+        if capture_id and at > out.get(capture_id, ""):
+            out[capture_id] = at
+    return out
+
+
+def index_signature() -> tuple:
+    path = OMIM_CAPTURE_DIR / "index.jsonl"
+    try:
+        st = path.stat()
+    except OSError:
+        return ("capture-index", None)
+    return ("capture-index", st.st_mtime_ns, st.st_size)

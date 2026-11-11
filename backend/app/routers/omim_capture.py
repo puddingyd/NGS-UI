@@ -17,7 +17,7 @@ from fastapi.responses import Response
 
 from ..auth import current_user
 from ..config import REPO_ROOT
-from ..services import capture_tokens, omim_capture, omim_db, omim_lookup, omim_queue, omim_store
+from ..services import capture_tokens, omim_capture, omim_db, omim_lookup, omim_queue, omim_store, omim_updates
 
 router = APIRouter(prefix="/api/omim", tags=["omim-capture"])
 
@@ -95,9 +95,15 @@ async def create_capture(request: Request, user: dict = Depends(capture_user)):
     return {"capture": stored, "summary": summary}
 
 
-def _index_blockers(event: dict) -> list[str]:
+def _stale_blocker(mim: str, captured_at: str, latest_any: dict[str, str]) -> list[str]:
+    listed = omim_updates.is_stale(captured_at, mim, latest_any)
+    return [f"OMIM 之後又更新（{listed}），請重新擷取"] if listed else []
+
+
+def _index_blockers(event: dict, latest_any: dict[str, str] | None = None) -> list[str]:
     """Bulk-adopt blockers estimated from an index.jsonl event."""
-    return omim_db.adoption_blockers({
+    stale = _stale_blocker(event.get("mim") or "", event.get("captured_at") or "", latest_any or {})
+    return stale + omim_db.adoption_blockers({
         "mim": event.get("mim"),
         "entry_type": omim_capture.ENTRY_TYPES.get(event.get("prefix") or "", "other"),
         "warnings": event.get("warnings") or [],
@@ -116,6 +122,7 @@ def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(
         return {"captures": omim_capture.recent_captures(limit)}
     adopted = omim_db.adopted_capture_ids()
     data = omim_capture.pending_captures(adopted, limit)
+    latest_any = omim_updates.latest_dates()[1]
     for event in data["captures"]:
         if event.get("parser_version") != omim_capture.PARSER_VERSION:
             # Captured with older parser rules: re-read so the list shows
@@ -134,19 +141,23 @@ def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(
                     relationship_section=parsed.get("relationship_section") or "",
                     title=parsed.get("title") or event.get("title"),
                 )
-        event["blockers"] = _index_blockers(event) if omim_db.exists() else []
+        event["blockers"] = _index_blockers(event, latest_any) if omim_db.exists() else []
     data["db_enabled"] = omim_db.exists()
     return data
 
 
-_QUEUE_STATUSES = {"", "in_progress", "gene_sync", "phenotype", "review"}
+_QUEUE_STATUSES = {"", "in_progress", "updated", "gene_sync", "phenotype", "review"}
 _QUEUE_SCOPES = {"all", "panel", "reported"}
-_SKIP_RE = re.compile(r"^g?\d{6}$")
+_SKIP_RE = re.compile(r"^g?(new)?\d{6}$")
 
 
 def _pending_mims() -> set[str]:
+    """MIMs captured but not adopted yet — unless OMIM updated them after
+    the capture, so the queue sends the reviewer back for the new version."""
     pending = omim_capture.pending_captures(omim_db.adopted_capture_ids(), 100000)["captures"]
-    return {e.get("mim") for e in pending if e.get("mim")}
+    latest_any = omim_updates.latest_dates()[1]
+    return {e.get("mim") for e in pending if e.get("mim")
+            and not omim_updates.is_stale(e.get("captured_at") or "", e.get("mim"), latest_any)}
 
 
 @router.get("/queue")
@@ -176,6 +187,65 @@ def work_queue_next(current: str = "", gene: str = "", skip: str = "", scope: st
         skip=skipped, scope=scope, pending_mims=_pending_mims(),
         recent_mims=omim_db.recently_adopted_mims(),
     )
+
+
+@router.post("/updates/month")
+async def updates_month(request: Request, user: dict = Depends(capture_user)):
+    """One month of the OMIM Update List, read by the extension."""
+    if not omim_db.exists():
+        raise HTTPException(409, "平台 OMIM 資料庫尚未建立（請先執行 scripts/omim_db.py init）")
+    body = await request.body()
+    if len(body) > MAX_BODY_BYTES:
+        raise HTTPException(413, "page too large")
+    try:
+        payload = json.loads(body.decode("utf-8"))
+        year, month = int(payload.get("year")), int(payload.get("month"))
+    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError, TypeError, ValueError):
+        raise HTTPException(400, "body must be JSON with year and month")
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    text = str(payload.get("text") or "")[:omim_capture.MAX_TEXT_CHARS]
+    try:
+        result = omim_updates.ingest(year, month, rows, text, user=user.get("username") or "")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    return {**result, "coverage": _coverage_summary()}
+
+
+def _coverage_summary() -> dict:
+    cov = omim_updates.coverage()
+    return {k: cov[k] for k in ("needed_from", "current_month", "missing", "coverage_start",
+                                "history_complete", "rows", "last_listed_date", "last_captured_at")}
+
+
+@router.get("/updates/status")
+def updates_status(user: dict = Depends(capture_user)):
+    """Update List coverage, plus what it means for the work queue."""
+    if not omim_db.exists():
+        return {"db_enabled": False}
+    cov = omim_updates.coverage()
+    counts = omim_queue.queue(limit=1)["counts"]
+    diseases = omim_updates.new_diseases()
+    return {
+        "db_enabled": True,
+        **cov,
+        "months": cov["months"][:240],
+        "stale_mode": omim_updates.stale_mode(),
+        "queue": {k: counts.get(k, 0) for k in ("updated", "updated_steps", "new_disease_steps", "stale_steps",
+                                                 "stale_confirmed", "stale_hidden")},
+        "new_diseases": diseases[:300],
+        "new_diseases_waiting": sum(1 for d in diseases if not d["queued"]),
+    }
+
+
+@router.post("/settings")
+def update_settings(payload: dict, user: dict = Depends(current_user)):
+    mode = str((payload or {}).get("stale_mode") or "")
+    if mode not in omim_updates.STALE_MODES:
+        raise HTTPException(400, "stale_mode must be both or updates_only")
+    if not omim_db.exists():
+        raise HTTPException(409, "平台 OMIM 資料庫尚未建立")
+    omim_updates.set_setting("stale_mode", mode)
+    return {"stale_mode": mode}
 
 
 @router.get("/genes/search")
@@ -214,7 +284,9 @@ def adopt_pending(payload: dict | None = None, user: dict = Depends(current_user
     if not omim_db.exists():
         raise HTTPException(409, "平台 OMIM 資料庫尚未建立（請先執行 scripts/omim_db.py init）")
     ids = [str(i) for i in (payload or {}).get("ids") or []]
-    pending = {e["id"] for e in omim_capture.pending_captures(omim_db.adopted_capture_ids(), 100000)["captures"]}
+    pending_events = omim_capture.pending_captures(omim_db.adopted_capture_ids(), 100000)["captures"]
+    pending = {e["id"]: e for e in pending_events}
+    latest_any = omim_updates.latest_dates()[1]
     adopted, skipped = [], []
     for capture_id in ids[:500]:
         mim, _, name = capture_id.partition("/")
@@ -226,7 +298,8 @@ def adopt_pending(payload: dict | None = None, user: dict = Depends(current_user
         except HTTPException:
             skipped.append({"id": capture_id, "reasons": ["找不到擷取檔"]})
             continue
-        reasons = omim_db.adoption_blockers(parsed)
+        reasons = _stale_blocker(mim, pending[capture_id].get("captured_at") or "", latest_any) \
+            + omim_db.adoption_blockers(parsed)
         if reasons:
             skipped.append({"id": capture_id, "mim": mim, "title": parsed.get("title"), "reasons": reasons})
             continue

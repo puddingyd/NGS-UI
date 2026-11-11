@@ -123,6 +123,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case "review":
         return api(`/api/omim/reviews/${encodeURIComponent(message.id)}`,
           { method: "POST", body: { action: message.action } });
+      case "updates-status":
+        return api("/api/omim/updates/status");
+      case "updates-month":
+        return api("/api/omim/updates/month", { method: "POST", body: message.payload });
       case "ping":
         return api("/api/omim/ping");
       case "outbox": {

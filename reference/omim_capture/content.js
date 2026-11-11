@@ -478,7 +478,11 @@
 
   // ---------------------------------------------------------- work queue
   let nextData = null;
-  const KIND_TEXT = { gene_page: "同步這個基因的疾病清單", missing: "缺說明", stale: "超過一年未更新" };
+  const KIND_TEXT = {
+    gene_page: "同步這個基因的疾病清單", gene_updated: "OMIM 之後更新了基因頁，重新同步",
+    missing: "缺說明", stale: "超過一年未更新", updated: "OMIM 之後有更新",
+    new_disease: "OMIM 新疾病，確認所屬基因",
+  };
 
   async function loadNext() {
     const bar = root.querySelector("#nextbar");
@@ -495,7 +499,9 @@
     }
     const g = nextData.gene;
     const step = nextData.step;
-    const kinds = (step.kinds || []).map(k => KIND_TEXT[k] || k).join("、");
+    const kinds = (step.kinds || []).map(k => KIND_TEXT[k] || k).join("、")
+      + (step.update_date ? `（OMIM ${step.update_date}）` : "");
+    const pseudo = String(g.gene_mim || "").startsWith("new");
     const done = g.total_steps - g.remaining_steps;
     bar.innerHTML = `
       <b>${nextData.continuing ? "同一個基因的下一步" : (nextData.related ? "下一個基因（共用剛才的疾病）" : "下一個基因")}</b>
@@ -507,12 +513,12 @@
         <button class="btn" id="go-next">前往</button>
         <button class="btn" id="capture-next" title="把目前這一頁 Capture 送到平台（不採用），再前往下一步；之後到平台的 OMIM 擷取頁「全部採用」">Capture 並前往</button>
         <button class="btn secondary" id="skip-current" title="這一頁先不處理，之後不再推薦">略過這頁</button>
-        <button class="btn secondary" id="skip-gene" title="${esc(g.gene)} 整個基因先不處理">略過 ${esc(g.gene)}</button>
+        ${pseudo ? "" : `<button class="btn secondary" id="skip-gene" title="${esc(g.gene)} 整個基因先不處理">略過 ${esc(g.gene)}</button>`}
       </div>`;
     root.querySelector("#go-next").addEventListener("click", () => goToNext(null));
     root.querySelector("#capture-next").addEventListener("click", () => captureAndNext());
     root.querySelector("#skip-current").addEventListener("click", () => goToNext("page"));
-    root.querySelector("#skip-gene").addEventListener("click", () => goToNext("gene", g.gene_mim));
+    if (!pseudo) root.querySelector("#skip-gene").addEventListener("click", () => goToNext("gene", g.gene_mim));
     return nextData;
   }
 

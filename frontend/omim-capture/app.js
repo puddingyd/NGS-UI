@@ -163,9 +163,13 @@
     $("#btn-export").hidden = false;
   }
 
-  const STEP_KIND = { gene_page: ["基因頁", "info"], missing: ["缺說明", "warn"], stale: ["逾一年", "info"] };
+  const STEP_KIND = {
+    gene_page: ["基因頁", "info"], gene_updated: ["基因頁有更新", "warn"], missing: ["缺說明", "warn"],
+    updated: ["OMIM 有更新", "warn"], new_disease: ["OMIM 新疾病", "warn"], stale: ["逾一年", "info"],
+  };
   const STATUS_BADGE = {
-    in_progress: ["進行中", "warn"], gene_sync: ["基因頁待同步", "info"], phenotype: ["疾病待補", "info"],
+    in_progress: ["進行中", "warn"], updated: ["OMIM 有更新", "warn"], gene_sync: ["基因頁待同步", "info"],
+    phenotype: ["疾病待補", "info"],
   };
   let queueOffset = 0;
 
@@ -186,17 +190,17 @@
     const data = await api(`/api/omim/queue?status=${encodeURIComponent(status)}&scope=${encodeURIComponent(scope)}&offset=${queueOffset}&limit=100`);
     const c = data.counts || {};
     $("#queue-total").textContent = `（${data.total} 個基因）`;
-    $("#queue-summary").textContent = `進行中 ${c.in_progress || 0}、基因頁待同步 ${c.gene_sync || 0}（其中疾病相關 ${c.panel_gene_sync || 0}）、只有疾病待補 ${c.phenotype || 0}；待補疾病頁 ${c.phenotype_steps || 0}、待確認 ${c.reviews || 0} 項。`;
+    $("#queue-summary").textContent = `進行中 ${c.in_progress || 0}、OMIM 有更新 ${c.updated || 0}、基因頁待同步 ${c.gene_sync || 0}（其中疾病相關 ${c.panel_gene_sync || 0}）、只有疾病待補 ${c.phenotype || 0}；待補疾病頁 ${c.phenotype_steps || 0}（OMIM 有更新 ${c.updated_steps || 0}、只是逾一年 ${c.stale_steps || 0}，其中已確認 OMIM 沒更新 ${c.stale_confirmed || 0}${c.stale_hidden ? `，另有 ${c.stale_hidden} 個已確認沒更新而不列出` : ""}）、待確認 ${c.reviews || 0} 項。`;
     const rows = data.items.map(g => `
       <tr>
         <td>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.gene || g.gene_mim)}</b></a>` : `<b>${esc(g.gene)}</b>`}
           <br><span class="muted-text">${esc(g.gene_mim)}${g.panel ? " · 疾病相關" : ""}</span>
-          <br><button class="btn btn-secondary btn-mini" type="button" data-lookup="${esc(g.gene_mim || g.gene)}">查看</button></td>
+          ${g.new_disease ? "" : `<br><button class="btn btn-secondary btn-mini" type="button" data-lookup="${esc(g.gene_mim || g.gene)}">查看</button>`}</td>
         <td>${badge(STATUS_BADGE[g.status] || [g.status, "info"])}${g.synced_at ? `<br><span class="muted-text">基因頁同步 ${esc(fmtTime(g.synced_at))}</span>` : ""}${g.partially_updated ? `<br><span class="muted-text">已有疾病被更新（共用疾病）</span>` : ""}</td>
         <td><ol class="step-list">${g.steps.map(st => `<li>
           <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a>
           ${st.type === "gene" ? "" : esc((st.labels || [])[0] || "")}
-          ${(st.kinds || []).map(k => badge(STEP_KIND[k] || [k, "info"])).join(" ")}
+          ${(st.kinds || []).map(k => badge(STEP_KIND[k] || [k, "info"])).join(" ")}${st.update_date ? ` <span class="muted-text">OMIM ${esc(st.update_date)}</span>` : ""}${st.confirmed_current ? badge(["已確認 OMIM 沒更新", "ok"]) : ""}
           ${st.captured ? badge(["已擷取待採用", "ok"]) : ""}${st.recently_adopted ? badge(["7 天內採用過", "info"]) : ""}</li>`).join("")}</ol></td>
         <td>${g.reviews.length ? `<ul class="review-list">${g.reviews.map(reviewHtml).join("")}</ul>` : ""}</td>
         <td>${g.reported ? esc(g.reported) : ""}</td>
@@ -206,6 +210,34 @@
     else body.innerHTML = rows || `<tr><td colspan="5" class="muted-text">沒有待補項目。</td></tr>`;
     queueOffset += data.items.length;
     $("#btn-queue-more").hidden = queueOffset >= data.total;
+  }
+
+  // ------------------------------------------------------ update list
+  async function loadUpdates() {
+    const data = await api("/api/omim/updates/status");
+    const box = $("#updates-status");
+    if (!data.db_enabled) {
+      box.textContent = "平台 OMIM 資料庫尚未啟用。";
+      return;
+    }
+    const q = data.queue || {};
+    const missing = data.missing || [];
+    box.innerHTML = `需要的歷史從 <b>${esc(data.needed_from)}</b> 起（OMIM.xlsx 最早的 Done 日期）。
+      已連續涵蓋：${data.coverage_start ? `<b>${esc(data.coverage_start)}</b> 至上個月` : "尚無"}${data.history_complete ? badge(["歷史已補齊", "ok"]) : ""}；
+      已存 ${esc(data.rows)} 筆，最新一筆 ${esc(data.last_listed_date || "—")}，最後擷取 ${esc(fmtTime(data.last_captured_at))}。
+      <br>還要擷取 ${missing.length} 個月份${missing.length ? `（${esc(missing.slice(0, 8).join("、"))}${missing.length > 8 ? "…" : ""}；當月每次都會重新擷取）` : ""}。
+      <br>對待補清單的影響：OMIM 有更新的基因 ${esc(q.updated || 0)} 個、有更新的頁面 ${esc(q.updated_steps || 0)} 頁、
+      OMIM 新疾病待開 ${esc(q.new_disease_steps || 0)} 頁（另 ${esc(data.new_diseases_waiting || 0)} 個在等基因頁同步）；
+      只是逾一年的疾病頁 ${esc(q.stale_steps || 0)} 頁，其中已確認 OMIM 沒更新 ${esc(q.stale_confirmed || 0)} 頁${q.stale_hidden ? `，另 ${esc(q.stale_hidden)} 頁已確認沒更新而不列出` : ""}。`;
+    $("#stale-mode").value = data.stale_mode || "both";
+    const diseases = data.new_diseases || [];
+    $("#nd-count").textContent = `（${diseases.length}）`;
+    $("#nd-table tbody").innerHTML = diseases.length ? diseases.map(d => `
+      <tr><td>${esc(d.listed_date)}</td>
+        <td><a href="https://omim.org/entry/${esc(d.mim)}" target="_blank" rel="noopener">${esc(d.prefix)}${esc(d.mim)}</a></td>
+        <td>${esc(d.title)}</td>
+        <td>${d.queued ? badge(["已排進待補清單", "warn"]) : badge(["等基因頁同步", "info"])}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="muted-text">沒有。</td></tr>`;
   }
 
   // ------------------------------------------------------- gene lookup
@@ -355,7 +387,7 @@
     const id = ev.target.closest("[data-capture]")?.dataset.capture;
     if (id) showCapture(id).catch(err => { $("#capture-detail").textContent = String(err); });
   });
-  $("#btn-refresh").addEventListener("click", () => { loadCaptures(); loadDbStatus(); loadQueue(); });
+  $("#btn-refresh").addEventListener("click", () => { loadCaptures(); loadDbStatus(); loadQueue(); loadUpdates(); });
   document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => setView(t.dataset.view)));
   $("#adoption-table").addEventListener("click", ev => {
     const id = ev.target.closest("[data-capture]")?.dataset.capture;
@@ -453,6 +485,21 @@
     loadDbStatus();
   });
   $("#queue-scope").addEventListener("change", () => loadQueue());
+  $("#stale-mode").addEventListener("change", async ev => {
+    const select = ev.target;
+    select.disabled = true;
+    try {
+      await api("/api/omim/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stale_mode: select.value }),
+      });
+      await Promise.all([loadUpdates(), loadQueue()]);
+    } catch (err) {
+      alert(`設定失敗：${err.message}`);
+    } finally {
+      select.disabled = false;
+    }
+  });
   $("#btn-queue-more").addEventListener("click", () => loadQueue(true));
   $("#queue-table").addEventListener("click", async ev => {
     const btn = ev.target.closest("[data-review]");
@@ -472,7 +519,7 @@
     try {
       const me = await api("/api/auth/me");
       $("#whoami").textContent = me.username;
-      await Promise.all([loadTokens(), loadCaptures(), loadDbStatus(), loadQueue()]);
+      await Promise.all([loadTokens(), loadCaptures(), loadDbStatus(), loadQueue(), loadUpdates()]);
     } catch (_) { /* login hint already shown */ }
   })();
 })();

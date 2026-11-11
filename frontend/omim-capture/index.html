@@ -49,7 +49,7 @@
         </table>
 
         <h2 class="section-title">3. 在 OMIM 頁面按 Capture</h2>
-        <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台；接著可在面板按「採用到平台」，或回到這一頁的「待採用」清單逐筆或全部採用。想連續處理時，按面板待補清單的「Capture 並前往」，會擷取目前這一頁後直接前往下一步，最後再回這一頁「全部採用」。</p>
+        <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台；接著可在面板按「採用到平台」，或回到這一頁的「待採用」清單逐筆或全部採用。每月一次開 <code>omim.org/statistics/updates</code>（OMIM Update List），在面板按「擷取缺少的月份」，平台就會把 OMIM 之後更新過的頁面列進待補清單。想連續處理時，按面板待補清單的「Capture 並前往」，會擷取目前這一頁後直接前往下一步，最後再回這一頁「全部採用」。</p>
       </div>
     </details>
 
@@ -97,6 +97,32 @@
       <div id="capture-detail" class="capture-detail" hidden></div>
     </section>
 
+    <section class="card" id="updates-card">
+      <div class="section-head">
+        <h2 class="section-title">OMIM 更新清單</h2>
+        <div class="head-actions">
+          <a class="btn btn-secondary" href="https://omim.org/statistics/updates" target="_blank" rel="noopener">開啟 OMIM Update List</a>
+        </div>
+      </div>
+      <p class="muted-text">在 OMIM Update List 頁面用擴充功能按「擷取缺少的月份」，平台就知道哪些內容是 OMIM 在我們擷取（或 OMIM.xlsx Done 日期）之後又更新的，並列入待補清單的「OMIM 有更新」。</p>
+      <div id="updates-status" class="muted-text">讀取中…</div>
+      <div class="updates-setting">
+        <label for="stale-mode">「超過一年未更新」的規則：</label>
+        <select id="stale-mode">
+          <option value="both">與 OMIM 更新清單並存</option>
+          <option value="updates_only">只依 OMIM 更新清單（已確認沒更新的不再列出）</option>
+        </select>
+      </div>
+      <details id="new-diseases">
+        <summary>OMIM 新疾病（平台還沒有的 # / % entry）<span id="nd-count" class="muted-text"></span></summary>
+        <p class="muted-text">列出後 14 天內通常會因所屬基因的基因頁更新而自動加入；超過 14 天還沒加入的，會排進待補清單讓你直接開疾病頁。</p>
+        <table class="data-table" id="nd-table">
+          <thead><tr><th>OMIM 列出日期</th><th>MIM</th><th>標題</th><th>狀態</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </details>
+    </section>
+
     <section class="card" id="queue-card">
       <div class="section-head">
         <h2 class="section-title">待補清單 <span id="queue-total" class="muted-text"></span></h2>
@@ -104,6 +130,7 @@
           <select id="queue-status">
             <option value="">全部基因</option>
             <option value="in_progress">進行中</option>
+            <option value="updated">OMIM 有更新</option>
             <option value="gene_sync">基因頁待同步</option>
             <option value="phenotype">只有疾病待補</option>
             <option value="review">有待確認</option>

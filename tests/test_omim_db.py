@@ -621,3 +621,173 @@ def test_gene_page_without_relationships_section_flags_platform_diseases(db):
     with omim_db.connect(db["path"]) as con:
         assert not con.execute(
             "SELECT 1 FROM review_items WHERE gene_mim='100004' AND kind='not_in_omim'").fetchone()
+
+
+# --------------------------------------------------------------------------
+# OMIM Update List
+# --------------------------------------------------------------------------
+
+UPDATE_PAGE_MD = """OMIM Update List for January 2026
+January 31st, 2026
+Updated Entries:
+[*108731](https://omim.org/entry/108731)
+ATPase, Ca(2+)-TRANSPORTING, PLASMA MEMBRANE, 1; ATP2B1
+[#125310](https://omim.org/entry/125310)
+CEREBRAL ARTERIOPATHY, AUTOSOMAL DOMINANT, WITH SUBCORTICAL INFARCTS AND LEUKOENCEPHALOPATHY, TYPE 1; CADASIL1
+January 30th, 2026
+New Entries:
+[#621485](https://omim.org/entry/621485)
+CHARCOT-MARIE-TOOTH DISEASE, AXONAL, TYPE 2LL; CMT2LL
+Updated Clinical Synopses:
+[619701](https://omim.org/clinicalSynopsis/619701)
+YOON-BELLEN NEURODEVELOPMENTAL SYNDROME; YOBELN
+NOTE: OMIM is intended for use primarily by physicians
+"""
+
+UPDATE_PAGE_TEXT = """January 2nd, 2026
+Updated Entries:
+*100650\tALDEHYDE DEHYDROGENASE 2 FAMILY; ALDH2
+#144650\tHYPERLIPOPROTEINEMIA, TYPE V
+"""
+
+
+def test_update_list_text_parsing():
+    from app.services import omim_updates
+    rows = omim_updates.parse_text(UPDATE_PAGE_MD)
+    assert [(r["mim"], r["prefix"], r["kind"], r["listed_date"]) for r in rows] == [
+        ("108731", "*", "updated_entry", "2026-01-31"),
+        ("125310", "#", "updated_entry", "2026-01-31"),
+        ("621485", "#", "new_entry", "2026-01-30"),
+        ("619701", "", "updated_synopsis", "2026-01-30"),
+    ]
+    assert rows[0]["title"] == "ATPase, Ca(2+)-TRANSPORTING, PLASMA MEMBRANE, 1; ATP2B1"
+    rows = omim_updates.parse_text(UPDATE_PAGE_TEXT)
+    assert [(r["mim"], r["title"]) for r in rows] == [
+        ("100650", "ALDEHYDE DEHYDROGENASE 2 FAMILY; ALDH2"), ("144650", "HYPERLIPOPROTEINEMIA, TYPE V")]
+    dom = omim_updates.normalize_rows([
+        {"date": "January 31st, 2026", "section": "Updated Entries:", "mim": "108731", "prefix": "*", "title": "X"},
+        {"date": "Jan 31", "section": "Updated Entries:", "mim": "108732"},
+        {"date": "January 31st, 2026", "section": "Contact Us", "mim": "108733"},
+    ])
+    assert [(r["mim"], r["kind"]) for r in dom] == [("108731", "updated_entry")]
+
+
+@pytest.fixture
+def updates_env(queue_env, db, monkeypatch):
+    from app.services import omim_queue, omim_updates
+    monkeypatch.setattr(omim_updates, "us_today", lambda: "2026-03-15")
+    with omim_db.connect(db["path"], write=True) as con:
+        con.execute("UPDATE genes SET legacy_done = '2025-11-01' WHERE gene_mim = '100001'")
+        con.execute("UPDATE genes SET legacy_done = '2026-10-01' WHERE gene_mim = '100002'")
+        con.execute("UPDATE meta SET value = '2025-12-01T00:00:00+00:00' WHERE key = 'created_at'")
+    omim_store._state.update(mtime=None)
+    omim_queue._cache.update(sig=None)
+    return queue_env
+
+
+def _month(c, headers, ym, rows):
+    year, month = ym.split("-")
+    return c.post("/api/omim/updates/month", headers=headers,
+                  json={"year": int(year), "month": int(month), "rows": rows})
+
+
+def _row(day, section, mim, prefix="#", title="T"):
+    return {"date": day, "section": section, "mim": mim, "prefix": prefix, "title": title}
+
+
+def test_update_months_and_coverage(updates_env):
+    c, headers = updates_env
+    bad = _month(c, headers, "2026-01", [_row("February 1st, 2026", "New Entries:", "621999")])
+    assert bad.status_code == 422
+    days = {"2025-11": "November 3rd, 2025", "2025-12": "December 3rd, 2025",
+            "2026-01": "January 3rd, 2026", "2026-02": "February 3rd, 2026"}
+    for ym, day in days.items():
+        r = _month(c, headers, ym, [_row(day, "Updated Entries:", "999999")])
+        assert r.status_code == 200, r.text
+        assert r.json()["complete"] is True
+    status = c.get("/api/omim/updates/status", headers=headers).json()
+    assert status["needed_from"] == "2025-11"
+    assert status["coverage_start"] == "2025-11" and status["history_complete"] is True
+    assert status["missing"] == ["2026-03"]  # current month is never complete
+
+
+def test_queue_flags_omim_updates_and_confirmed_text(updates_env, db, monkeypatch):
+    from app.services import omim_queue
+    c, headers = updates_env
+    # OTX9's gene page adopted on 2026-01-10 (its captured content date).
+    page = _gene_page("100002", "OTX9", [("Micro 5", "610125", "AD"), ("Retinal", "610125", "AD")])
+    omim_db.adopt_capture(page, user="rev", capture_id="100002/20260110T000000000000Z_aaaaaaaaaaaa")
+    monkeypatch.setattr(omim_capture, "capture_times",
+                        lambda: {"100002/20260110T000000000000Z_aaaaaaaaaaaa": "2026-01-10T12:00:00+00:00"})
+    months = {
+        "2025-11": [_row("November 3rd, 2025", "Updated Entries:", "999999")],
+        "2025-12": [_row("December 3rd, 2025", "Updated Entries:", "999999")],
+        "2026-01": [_row("January 5th, 2026", "Updated Entries:", "100002", "*")],
+        "2026-02": [_row("February 3rd, 2026", "Updated Entries:", "999998"),
+                    _row("February 1st, 2026", "New Entries:", "621485", "#", "NEW DISEASE"),
+                    _row("February 2nd, 2026", "New Entries:", "600002", "#")],
+        "2026-03": [_row("March 10th, 2026", "New Entries:", "621486", "#", "TOO NEW")],
+    }
+    for ym, rows in months.items():
+        assert _month(c, headers, ym, rows).status_code == 200
+    omim_queue._cache.update(sig=None)
+    items = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+    # The gene page captured on 01-10 already includes OMIM's 01-05 update.
+    assert "100002" not in items or not any(s["type"] == "gene" for s in items["100002"]["steps"])
+
+    # A later update to the gene page asks for a re-sync.
+    assert _month(c, headers, "2026-02", months["2026-02"] + [
+        _row("February 9th, 2026", "Updated Entries:", "100002", "*")]).status_code == 200
+    omim_queue._cache.update(sig=None)
+    data = c.get("/api/omim/queue?limit=1000").json()
+    items = {g["gene_mim"]: g for g in data["items"]}
+    otx = items["100002"]
+    assert otx["status"] == "updated"
+    assert otx["steps"][0]["kinds"] == ["gene_updated"] and otx["steps"][0]["update_date"] == "2026-02-09"
+    # GENE1's curated text (Done 2025-11) is covered by the history: confirmed.
+    gene1 = items["100001"]
+    a = next(s for s in gene1["steps"] if s["mim"] == "600001")
+    assert a["kinds"] == ["stale"] and a["confirmed_current"] is True
+    # New disease: listed 02-01 (> 14 days ago) queued; 03-10 still waiting;
+    # 600002 already belongs to GENE1.
+    assert items["new621485"]["steps"][0]["kinds"] == ["new_disease"]
+    assert "new621486" not in items and "new600002" not in items
+    order = [g["gene_mim"] for g in data["items"]]
+    # Updated (already-done) genes come before genes still waiting for their first sync.
+    assert gene1["status"] == "gene_sync" and order.index("100002") < order.index("100001")
+    status = c.get("/api/omim/updates/status", headers=headers).json()
+    assert status["new_diseases_waiting"] == 1
+    assert status["queue"]["stale_confirmed"] >= 1 and status["queue"]["new_disease_steps"] == 1
+
+    # An OMIM update after GENE1's Done date turns "stale" into "updated".
+    assert _month(c, headers, "2026-03", months["2026-03"] + [
+        _row("March 2nd, 2026", "Updated Clinical Synopses:", "600001")]).status_code == 200
+    omim_queue._cache.update(sig=None)
+    gene1 = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}["100001"]
+    a = next(s for s in gene1["steps"] if s["mim"] == "600001")
+    assert a["kinds"] == ["updated"] and a["update_date"] == "2026-03-02"
+
+    # updates_only hides confirmed-current text instead of listing it as stale.
+    assert c.post("/api/omim/settings", json={"stale_mode": "bogus"}).status_code == 400
+    assert c.post("/api/omim/settings", json={"stale_mode": "updates_only"}).json()["stale_mode"] == "updates_only"
+    omim_queue._cache.update(sig=None)
+    nxt = c.get("/api/omim/queue/next?skip=gnew621485", headers=headers).json()
+    assert nxt["gene"]["gene_mim"] != "new621485"
+
+
+def test_capture_older_than_omim_update_is_not_bulk_adopted(updates_env, db):
+    c, headers = updates_env
+    c.post("/api/omim/captures", json={"mim": "600002", "text": PAGE}, headers=headers)
+    index = omim_capture.OMIM_CAPTURE_DIR / "index.jsonl"
+    events = [json.loads(line) for line in index.read_text(encoding="utf-8").splitlines()]
+    for event in events:
+        event["captured_at"] = "2026-01-01T00:00:00+00:00"
+    index.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    assert _month(c, headers, "2026-02", [_row("February 1st, 2026", "Updated Entries:", "600002")]).status_code == 200
+    pending = c.get("/api/omim/captures").json()["captures"]
+    assert pending[0]["blockers"] == ["OMIM 之後又更新（2026-02-01），請重新擷取"]
+    result = c.post("/api/omim/captures/adopt-pending", json={"ids": [pending[0]["id"]]}).json()
+    assert result["adopted"] == [] and "OMIM 之後又更新" in result["skipped"][0]["reasons"][0]
+    # The queue sends the reviewer back to that page instead of skipping it.
+    from app.routers import omim_capture as router
+    assert "600002" not in router._pending_mims()
