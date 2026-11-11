@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NGS OMIM Capture",
   "short_name": "OMIM Capture",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "在 omim.org 頁面一鍵擷取 Description / Clinical Synopsis 與 OMIM 更新清單，送回成大 NGS 分析平台比對與保存。只在按下按鈕時讀取頁面。",
   "permissions": [
     "storage"

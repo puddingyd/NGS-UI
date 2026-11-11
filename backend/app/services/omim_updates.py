@@ -257,7 +257,7 @@ def stale_mode(path=None) -> str:
 def coverage(path=None) -> dict:
     """Which Update List months are stored, and which are still needed."""
     current = us_today()[:7]
-    out = {"needed_from": "", "current_month": current, "months": [], "missing": [],
+    out = {"needed_from": "", "current_month": current, "months": [], "missing": [], "untitled": [],
            "coverage_start": "", "rows": 0, "last_listed_date": "", "last_captured_at": ""}
     if not omim_db.exists(path):
         return out
@@ -268,6 +268,10 @@ def coverage(path=None) -> dict:
         months = {r["month"]: dict(r) for r in con.execute("SELECT * FROM omim_update_months")}
         out["rows"] = con.execute("SELECT COUNT(*) FROM omim_updates").fetchone()[0]
         out["last_listed_date"] = con.execute("SELECT MAX(listed_date) FROM omim_updates").fetchone()[0] or ""
+        # Months stored before titles were read (extension < 0.6.1).
+        untitled = [r[0] for r in con.execute(
+            "SELECT DISTINCT substr(listed_date, 1, 7) FROM omim_updates WHERE title = '' "
+            "AND prefix != '' ORDER BY 1 DESC")]
     needed = max(FIRST_MONTH, (oldest or "")[:7]) if oldest else ""
     if not needed:
         year, mon = int(current[:4]), int(current[5:])
@@ -286,6 +290,7 @@ def coverage(path=None) -> dict:
             break
         month = _previous_month(month)
     out["coverage_start"] = start
+    out["untitled"] = untitled
     out["history_complete"] = bool(start) and start <= needed
     return out
 

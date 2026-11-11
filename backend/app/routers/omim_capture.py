@@ -213,7 +213,7 @@ async def updates_month(request: Request, user: dict = Depends(capture_user)):
 
 def _coverage_summary() -> dict:
     cov = omim_updates.coverage()
-    return {k: cov[k] for k in ("needed_from", "current_month", "missing", "coverage_start",
+    return {k: cov[k] for k in ("needed_from", "current_month", "missing", "untitled", "coverage_start",
                                 "history_complete", "rows", "last_listed_date", "last_captured_at")}
 
 

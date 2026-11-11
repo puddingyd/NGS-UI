@@ -709,6 +709,9 @@ def test_update_months_and_coverage(updates_env):
     assert status["needed_from"] == "2025-11"
     assert status["coverage_start"] == "2025-11" and status["history_complete"] is True
     assert status["missing"] == ["2026-03"]  # current month is never complete
+    assert status["untitled"] == []
+    _month(c, headers, "2026-02", [_row("February 3rd, 2026", "Updated Entries:", "999999", "#", "")])
+    assert c.get("/api/omim/updates/status", headers=headers).json()["untitled"] == ["2026-02"]
 
 
 def test_queue_flags_omim_updates_and_confirmed_text(updates_env, db, monkeypatch):

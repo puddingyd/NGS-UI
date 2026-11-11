@@ -189,18 +189,26 @@
     if (!await loadStatus()) return;
     $("#body").innerHTML = coverageHtml();
     const missing = status.missing || [];
-    $("#foot").innerHTML = missing.length
-      ? `<button class="btn" id="go">擷取缺少的月份（${missing.length}）</button><button class="btn secondary" id="stop" hidden>停止</button>`
-      : `<span class="muted">需要的月份都擷取過了。</span>`;
-    if (!missing.length) return;
-    $("#go").addEventListener("click", () => fetchMissing(missing));
+    // Months stored before titles were read: fetch them again to fill titles.
+    const untitled = (status.untitled || []).filter(m => !missing.includes(m));
+    if (!missing.length && !untitled.length) {
+      $("#foot").innerHTML = `<span class="muted">需要的月份都擷取過了。</span>`;
+      return;
+    }
+    $("#foot").innerHTML = `
+      ${missing.length ? `<button class="btn" id="go">擷取缺少的月份（${missing.length}）</button>` : ""}
+      ${untitled.length ? `<button class="btn${missing.length ? " secondary" : ""}" id="titles" title="這些月份是在讀取標題之前擷取的，重新擷取以補上標題">補標題（${untitled.length} 個月份）</button>` : ""}
+      <button class="btn secondary" id="stop" hidden>停止</button>`;
+    if (missing.length) $("#go").addEventListener("click", () => fetchMissing(missing));
+    if (untitled.length) $("#titles").addEventListener("click", () => fetchMissing(untitled));
     $("#stop").addEventListener("click", () => { stopRequested = true; $("#stop").disabled = true; });
   }
 
   async function fetchMissing(months) {
     stopRequested = false;
-    $("#go").disabled = true;
+    root.querySelectorAll("#go, #titles").forEach(b => { b.disabled = true; });
     $("#stop").hidden = false;
+    $("#stop").disabled = false;
     $("#body").insertAdjacentHTML("beforeend", `
       <div class="row"><progress id="prog" max="${months.length}" value="0"></progress>
         <span class="muted" id="prog-text"></span></div>`);
@@ -234,17 +242,10 @@
     }
     $("#stop").hidden = true;
     await loadStatus();
-    $("#body").innerHTML = (stopReason ? `<div class="row"><span class="badge warn">${esc(stopReason)}</span></div>`
-      : `<div class="row"><span class="badge ok">完成 ${done} 個月份</span></div>`) + coverageHtml();
-    const left = (status && status.missing) || [];
-    $("#go").disabled = !left.length;
-    $("#go").textContent = left.length ? `擷取缺少的月份（${left.length}）` : "全部完成";
-    $("#go").onclick = null;
-    if (left.length) {
-      const fresh = $("#go").cloneNode(true);
-      $("#go").replaceWith(fresh);
-      fresh.addEventListener("click", () => fetchMissing(left));
-    }
+    const message = stopReason ? `<div class="row"><span class="badge warn">${esc(stopReason)}</span></div>`
+      : `<div class="row"><span class="badge ok">完成 ${done} 個月份</span></div>`;
+    await overviewPage();
+    $("#body").insertAdjacentHTML("afterbegin", message);
   }
 
   if (PAGE) monthPage();
