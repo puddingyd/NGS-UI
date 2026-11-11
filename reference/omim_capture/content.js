@@ -149,7 +149,9 @@
   // Text between the relationships table and the TEXT section, where an
   // expanded synopsis shows up.
   function synopsisSlice(text) {
-    const start = text.search(/(Phenotype|Gene)-(Gene|Phenotype) Relationships/);
+    let start = text.search(/(Phenotype|Gene)-(Gene|Phenotype) Relationships/);
+    // Entries without a relationships table: start at the entry header.
+    if (start < 0) start = text.search(new RegExp(`\\n\\s*[#%*+^]?\\s*${MIM}\\s*\\n`));
     if (start < 0) return "";
     const textIdx = text.search(/\n\s*▼\s*TEXT\b/);
     return text.slice(start, textIdx > start ? textIdx : undefined);
@@ -430,6 +432,9 @@
       : (preview.same_content ? "平台已採用過相同內容。"
         : (preview.text_exists ? "會取代平台上這個疾病目前的說明與 Clinical Synopsis。"
           : "會新增這個疾病的說明與 Clinical Synopsis。"));
+    if (!isGene && summary.entry_type !== "gene_phenotype" && summary.relationship_section === "absent") {
+      note += "<br>OMIM 頁面沒有 Gene-Phenotype Relationships（例如染色體異常），採用後只保存說明，不會連到任何基因，也會從待補清單移除。";
+    }
     if (!isGene && summary.synopsis_status === "not_loaded") {
       note += "<br><b>注意：Clinical Synopsis 沒有擷取到，建議展開後重新 Capture 再採用。</b>";
     }

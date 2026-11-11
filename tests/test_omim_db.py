@@ -825,3 +825,18 @@ def test_gene_page_without_relationships_is_flagged_on_rendered_rows(db):
                           user="rev", capture_id="100007/b")
     _by_id, by_gene = omim_db.load_rows(db["path"])
     assert by_gene["QUIET"]["OMIM_no_relationships"] is False
+
+
+def test_disease_page_without_gene_table_is_done_once_adopted(updates_env):
+    from app.services import omim_queue
+    c, headers = updates_env
+    assert _month(c, headers, "2026-02", [
+        _row("February 4th, 2026", "Updated Entries:", "129850", "#", "EDINBURGH MALFORMATION SYNDROME")]).status_code == 200
+    omim_queue._cache.update(sig=None)
+    assert "new129850" in {g["gene_mim"] for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+    page = _phenotype_capture(mim="129850", name="Edinburgh malformation syndrome")
+    page["relationships"] = []
+    page["relationship_section"] = "absent"
+    omim_db.adopt_capture(page, user="rev", capture_id="129850/x")
+    omim_queue._cache.update(sig=None)
+    assert "new129850" not in {g["gene_mim"] for g in c.get("/api/omim/queue?limit=1000").json()["items"]}

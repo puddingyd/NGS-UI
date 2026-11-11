@@ -28,7 +28,7 @@ from pathlib import Path
 from ..config import OMIM_CAPTURE_DIR
 from . import disease_picks, omim_store
 
-PARSER_VERSION = 4
+PARSER_VERSION = 5
 MAX_TEXT_CHARS = 3_000_000
 
 ENTRY_TYPES = {
@@ -234,6 +234,19 @@ def _clean_synopsis(lines: list[str]) -> str:
     return "\n".join(out)
 
 
+def _old_style_start(lines: list[str]) -> int | None:
+    """First heading line directly followed by a "- item" line, e.g. the
+    old-style "Facies" / "- Carp mouth" synopsis layout."""
+    stripped = [str(line).strip() for line in lines]
+    for i, s in enumerate(stripped):
+        if not s or s.startswith("-") or s.lower() in SYNOPSIS_NOISE or _SYNOPSIS_LABEL_RE.match(s):
+            continue
+        nxt = next((t for t in stripped[i + 1:] if t), "")
+        if nxt.startswith("- "):
+            return i
+    return None
+
+
 def _synopsis_from_page(text: str) -> str:
     """Clinical Synopsis block from a /clinicalSynopsis/{mim} page's text."""
     lines = _lines(text)
@@ -241,6 +254,8 @@ def _synopsis_from_page(text: str) -> str:
         (i for i, line in enumerate(lines) if line.strip() in SYNOPSIS_CATEGORIES),
         None,
     )
+    if start is None:
+        start = _old_style_start(lines)
     return _clean_synopsis(lines[start:]) if start is not None else ""
 
 
@@ -259,9 +274,11 @@ def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = N
     stripped = [ln.strip() for ln in body]
 
     title = symbol = ""
-    for line in stripped:
+    title_idx = -1
+    for idx, line in enumerate(stripped):
         if line:
             title, _, symbol = line.partition("; ")
+            title_idx = idx
             break
 
     toc: list[str] = []
@@ -319,6 +336,17 @@ def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = N
             if 0 <= close_idx <= end:
                 synopsis = _clean_synopsis(body[last_row + 1:close_idx])
                 synopsis_source = "entry_page" if synopsis else ""
+    if not synopsis and rel_idx < 0 and title_idx >= 0:
+        # Entries without a relationships table (e.g. chromosomal syndromes):
+        # an expanded synopsis sits between the title block and "▲ Close".
+        close_idx = index_of(lambda s: s in _SYNOPSIS_TRAILERS, title_idx + 1)
+        if close_idx > 0 and (first_section < 0 or close_idx < first_section):
+            region = body[title_idx + 1:close_idx]
+            if not any(str(s).strip() in SYNOPSIS_CATEGORIES for s in region):
+                start = _old_style_start(region)
+                region = region[start:] if start is not None else []
+            synopsis = _clean_synopsis(region)
+            synopsis_source = "entry_page" if synopsis else ""
     if not relationships and extracted.get("relationship_rows"):
         relationships = _parse_rows_from_cells(extracted.get("relationship_rows"))
         if relationships:

@@ -141,7 +141,9 @@
       : summary.entry_type === "gene"
       ? "依 OMIM 基因頁同步這個基因的疾病清單；OMIM 已不列出的舊疾病只會列入待確認。"
       : (preview.same_content ? "平台已採用過相同內容。"
-        : (preview.text_exists ? "會取代目前的說明與 Clinical Synopsis。" : "會新增說明與 Clinical Synopsis。"));
+        : (preview.text_exists ? "會取代目前的說明與 Clinical Synopsis。" : "會新增說明與 Clinical Synopsis。"))
+        + (summary.entry_type !== "gene" && summary.entry_type !== "gene_phenotype" && summary.relationship_section === "absent"
+          ? "OMIM 頁面沒有 Gene-Phenotype Relationships（例如染色體異常），採用後只保存說明，不會連到任何基因，也會從待補清單移除。" : "");
     return `<p><b>採用</b></p>${lines ? `<ul>${lines}</ul>` : ""}
       <p class="muted-text">${esc(note)}</p>
       <button class="btn btn-primary" type="button" data-adopt="${esc(id)}" ${preview.same_content ? "disabled" : ""}>採用到平台</button>

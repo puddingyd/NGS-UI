@@ -436,3 +436,28 @@ def test_relationship_section_present_absent_or_unknown():
     )
     assert no_toc["relationship_section"] == "unknown"
     assert omim_db.adoption_blockers(no_toc) == ["基因頁沒有解析到疾病清單"]
+
+
+NO_TABLE_OLD_SYNOPSIS_PAGE = (
+    NAV + "#129850\nTable of Contents\nTitle\nClinical Synopsis\nText\nDescription\nClinical Features\n"
+    "References\nCreation Date\nEdit History\n▼\n \nExternal Links\n \nICD+\n# 129850\n"
+    "EDINBURGH MALFORMATION SYNDROME\n  \n\nFacies\n- Carp mouth \n- Forehead hairiness\nNeuro\n"
+    "- True or apparent hydrocephalus\nMisc\n- Death in infancy\nInheritance\n- Autosomal dominant\n"
+    "▲ Close\n▼ TEXT\nA number sign (#) is used with this entry because of a chromosomal aberration.\n"
+    "▼ Description\nThe Edinburgh malformation syndrome is a disorder described in a single family.\n"
+    "▼ Clinical Features\nHabel (1974) described an Edinburgh family.\n▼ REFERENCES\n\n1. Habel, A.\n\n"
+    "Creation Date:\nVictor A. McKusick : 6/4/1986\nEdit History:\nalopez : 06/12/2026\n\nNOTE: OMIM is intended\n"
+)
+
+
+def test_synopsis_without_relationships_table_old_style_headings():
+    p = omim_capture.parse_entry_text(NO_TABLE_OLD_SYNOPSIS_PAGE, url_mim="129850")
+    assert (p["mim"], p["prefix"], p["title"]) == ("129850", "#", "EDINBURGH MALFORMATION SYNDROME")
+    assert p["synopsis_status"] == "present"
+    assert p["synopsis"].splitlines()[:3] == ["Facies", "- Carp mouth", "- Forehead hairiness"]
+    assert p["synopsis"].endswith("Inheritance\n- Autosomal dominant")
+    assert p["description"].startswith("The Edinburgh malformation syndrome")
+    assert p["omim_edit_date"] == "2026-06-12"
+    # Same synopsis read from a /clinicalSynopsis page.
+    page = "OMIM\nAbout\n# 129850\nEDINBURGH MALFORMATION SYNDROME\nFacies\n- Carp mouth\nNeuro\n- Hydrocephalus\n"
+    assert omim_capture._synopsis_from_page(page) == "Facies\n- Carp mouth\nNeuro\n- Hydrocephalus"
