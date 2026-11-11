@@ -91,10 +91,7 @@
           const text = prev ? (prev.textContent || "").trim() : "";
           prefix = /[#%*+^]$/.test(text) ? text.slice(-1) : "";
         }
-        const row = el.closest("tr") || el.parentElement;
-        let title = row ? (row.textContent || "").replace(/\s+/g, " ").trim() : "";
-        title = title.length > 400 ? "" : title.replace(/^[#%*+^]?\s*\d{6}\s*/, "");
-        rows.push({ date: day, section, mim: match[2], prefix, title, link: match[1] });
+        rows.push({ date: day, section, mim: match[2], prefix, title: titleFor(el), link: match[1] });
         continue;
       }
       if (el.children.length > 3) continue;
@@ -104,6 +101,30 @@
       else if (SECTION_RE.test(text)) section = text;
     }
     return rows;
+  }
+
+  // The entry title sits in the same table row, or in the element right
+  // after the link (or after the link's cell), depending on the layout.
+  function titleFor(link) {
+    const clean = node => (node && node.textContent || "").replace(/\s+/g, " ").trim();
+    const strip = text => text.replace(/^[#%*+^]?\s*\d{6}\s*/, "").trim();
+    const tr = link.closest("tr");
+    if (tr) {
+      const text = strip(clean(tr));
+      if (text && text.length <= 400) return text;
+    }
+    let node = link;
+    for (let depth = 0; depth < 3 && node; depth += 1) {
+      const own = strip(clean(node));
+      if (own && own.length <= 400) return own;
+      const next = node.nextElementSibling;
+      if (next && !next.querySelector("a[href*='/entry/'], a[href*='/clinicalSynopsis/']")) {
+        const text = clean(next);
+        if (text && text.length <= 400) return text;
+      }
+      node = node.parentElement;
+    }
+    return "";
   }
 
   async function sendMonth(year, month, doc) {
