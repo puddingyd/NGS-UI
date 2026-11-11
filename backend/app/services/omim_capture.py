@@ -603,7 +603,9 @@ def compare_with_workbook(mim: str, *, entry_type: str = "", edit_date: str = ""
 
     if links:
         out["status"] = max((l["status"] for l in links), key=lambda s: _STATUS_RANK[s])
-    elif entry_type in {"gene", "gene_phenotype"} and out.get("gene", {}).get("in_workbook"):
+    elif out.get("gene", {}).get("in_workbook"):
+        # A gene MIM the platform has (possibly with no disease yet), also
+        # when the caller does not know the entry type (panel status).
         out["status"] = "gene_in_workbook"
     else:
         out["status"] = "not_in_workbook"

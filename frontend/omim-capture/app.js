@@ -227,16 +227,16 @@
       已存 ${esc(data.rows)} 筆，最新一筆 ${esc(data.last_listed_date || "—")}，最後擷取 ${esc(fmtTime(data.last_captured_at))}。
       <br>還要擷取 ${missing.length} 個月份${missing.length ? `（${esc(missing.slice(0, 8).join("、"))}${missing.length > 8 ? "…" : ""}；當月每次都會重新擷取）` : ""}。
       <br>對待補清單的影響：OMIM 有更新的基因 ${esc(q.updated || 0)} 個、有更新的頁面 ${esc(q.updated_steps || 0)} 頁、
-      OMIM 新疾病待開 ${esc(q.new_disease_steps || 0)} 頁（另 ${esc(data.new_diseases_waiting || 0)} 個在等基因頁同步）；
+      OMIM 新疾病（平台還沒有）待開 ${esc(q.new_disease_steps || 0)} 頁；
       只是逾一年的疾病頁 ${esc(q.stale_steps || 0)} 頁，其中已確認 OMIM 沒更新 ${esc(q.stale_confirmed || 0)} 頁${q.stale_hidden ? `，另 ${esc(q.stale_hidden)} 頁已確認沒更新而不列出` : ""}。`;
     $("#stale-mode").value = data.stale_mode || "both";
     const diseases = data.new_diseases || [];
-    $("#nd-count").textContent = `（${diseases.length}）`;
+    $("#nd-count").textContent = `（${data.new_diseases_total ?? diseases.length}）`;
     $("#nd-table tbody").innerHTML = diseases.length ? diseases.map(d => `
       <tr><td>${esc(d.listed_date)}</td>
         <td><a href="https://omim.org/entry/${esc(d.mim)}" target="_blank" rel="noopener">${esc(d.prefix)}${esc(d.mim)}</a></td>
         <td>${esc(d.title)}</td>
-        <td>${d.queued ? badge(["已排進待補清單", "warn"]) : badge(["等基因頁同步", "info"])}</td></tr>`).join("")
+        <td>${badge(["已排進待補清單", "warn"])}</td></tr>`).join("")
       : `<tr><td colspan="4" class="muted-text">沒有。</td></tr>`;
   }
 

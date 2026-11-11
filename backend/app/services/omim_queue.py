@@ -15,8 +15,7 @@ items (``omim_db.review_items``) are attached to their gene.
 With the OMIM Update List stored (``omim_updates``), content OMIM changed
 after the version the platform holds gets an ``updated`` step (phenotype
 page) or a ``gene_updated`` step (gene page adopted before an OMIM update);
-new ``#``/``%`` entries no gene carries two weeks after they were listed
-become ``new_disease`` items. Workbook text whose Done date is covered by
+new ``#`` entries no platform gene carries become ``new_disease`` items. Workbook text whose Done date is covered by
 the stored history with no update since is ``confirmed_current``; with the
 ``stale_mode`` setting ``updates_only`` such text is no longer queued as
 "older than a year".
@@ -259,11 +258,8 @@ def build_genes() -> list[dict]:
             "disease_mims": disease_mims,
             "minor": bool(ph_steps) and all(s["minor"] for s in ph_steps) and not need_gene_step,
         })
-    # New OMIM diseases no platform gene carries yet, once the gene-page
-    # updates had two weeks to bring them in.
+    # New OMIM diseases no platform gene carries yet.
     for item in omim_updates.new_diseases() if db else []:
-        if not item["queued"]:
-            continue
         mim = item["mim"]
         genes.append({
             "gene": "OMIM 新疾病", "gene_mim": f"new{mim}", "url": "", "panel": False,

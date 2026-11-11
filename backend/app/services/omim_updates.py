@@ -34,7 +34,6 @@ KIND_LABELS = {
 }
 ENTRY_KINDS = {"new_entry", "updated_entry"}
 FIRST_MONTH = "1995-12"
-NEW_DISEASE_WAIT_DAYS = 14
 STALE_MODES = {"both", "updates_only"}
 MAX_ROWS = 5000
 
@@ -292,22 +291,26 @@ def coverage(path=None) -> dict:
 
 
 def new_diseases(path=None) -> list[dict]:
-    """New ``#``/``%`` entries listed since the platform database was built
-    that no gene in the platform carries yet."""
+    """New ``#`` entries (disease with a known gene) in the stored Update List
+    that no gene in the platform carries — e.g. a disease newly linked to a
+    gene whose workbook row has no disease, which no gene step would reach.
+
+    The Update List does not name the gene, so each becomes its own queue
+    item; adopting the disease page links it to its gene from the page's
+    relationships table. ``%`` entries (no known gene) and entries since
+    moved or removed are left out.
+    """
     if not omim_db.exists(path):
         return []
     with omim_db.connect(path) as con:
-        created = con.execute("SELECT value FROM meta WHERE key = 'created_at'").fetchone()
-        since = us_date(created["value"]) if created else ""
         rows = con.execute(
             "SELECT mim, MIN(listed_date) AS listed_date, MAX(prefix) AS prefix, MAX(title) AS title "
-            "FROM omim_updates WHERE kind = 'new_entry' AND prefix IN ('#', '%') AND listed_date >= ? "
+            "FROM omim_updates WHERE kind = 'new_entry' AND prefix = '#' "
             "AND mim NOT IN (SELECT phenotype_mim FROM gene_diseases WHERE active = 1) "
-            "GROUP BY mim ORDER BY listed_date DESC, mim",
-            (since,),
+            "AND mim NOT IN (SELECT mim FROM omim_updates WHERE prefix = '^') "
+            "GROUP BY mim ORDER BY listed_date DESC, mim"
         ).fetchall()
-    cutoff = (date.fromisoformat(us_today()) - timedelta(days=NEW_DISEASE_WAIT_DAYS)).isoformat()
-    return [dict(r, queued=r["listed_date"] <= cutoff) for r in rows]
+    return [dict(r) for r in rows]
 
 
 def is_stale(captured_at: str, mim: str, latest_any: dict[str, str]) -> str:

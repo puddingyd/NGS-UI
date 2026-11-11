@@ -199,6 +199,9 @@ def test_compare_phenotype_capture_with_workbook(workbook):
     assert older["status"] == "up_to_date"
     assert omim_capture.compare_with_workbook("600002")["status"] == "missing_detail"
     assert omim_capture.compare_with_workbook("699999")["status"] == "not_in_workbook"
+    # A gene MIM the platform has: not "not in workbook", even when the
+    # caller (extension panel status) does not pass the entry type.
+    assert omim_capture.compare_with_workbook("100001")["status"] == "gene_in_workbook"
 
 
 def test_compare_gene_capture_lists_skeleton_differences(workbook):

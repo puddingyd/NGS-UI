@@ -232,8 +232,8 @@ def updates_status(user: dict = Depends(capture_user)):
         "stale_mode": omim_updates.stale_mode(),
         "queue": {k: counts.get(k, 0) for k in ("updated", "updated_steps", "new_disease_steps", "stale_steps",
                                                  "stale_confirmed", "stale_hidden")},
-        "new_diseases": diseases[:300],
-        "new_diseases_waiting": sum(1 for d in diseases if not d["queued"]),
+        "new_diseases": diseases[:500],
+        "new_diseases_total": len(diseases),
     }
 
 
