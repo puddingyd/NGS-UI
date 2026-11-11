@@ -67,7 +67,10 @@ def main() -> int:
                 key = "已同步基因頁：OMIM 更新晚於擷取" if entry_latest[gene_mim] > day else "已同步基因頁：擷取已含最新更新"
                 note(key, f"{gene} {gene_mim} 擷取 {day} / OMIM {entry_latest[gene_mim]}")
             else:
-                stats["基因頁未同步（不另加步驟）"] += 1
+                listed = entry_latest[gene_mim]
+                key = ("未同步基因頁：OMIM 更新晚於 Done 或沒有 Done（會加基因頁步驟）"
+                       if not done or listed > done else "未同步基因頁：Done 已含最新更新")
+                note(key, f"{gene} {gene_mim} Done {done or '—'} / OMIM {listed}")
         meta = {m.get("slot"): m for m in row.get("Disease_meta") or []}
         for slot, text in disease_picks.disease_cells(row):
             pm = disease_picks.phenotype_mim(disease_picks.first_line(text))
@@ -95,6 +98,11 @@ def main() -> int:
                 note("OMIM.xlsx 原文：OMIM 更新晚於 Done", f"{label} / Done {done}")
             else:
                 note("OMIM.xlsx 原文：Done 之後沒有更新", f"{label} / Done {done}")
+    missing = omim_updates.missing_entries()
+    stats["平台沒有的基因（更新清單有）"] = sum(1 for e in missing if e["cls"] == "gene")
+    stats["平台沒有的疾病（更新清單有）"] = sum(1 for e in missing if e["cls"] == "disease")
+    examples["平台沒有的疾病（更新清單有）"] = [
+        f"{e['prefix']}{e['mim']} {e['title']} OMIM {e['listed_date']}" for e in missing if e["cls"] == "disease"][:5]
     print("== 比對結果")
     for key, n in stats.items():
         print(f"   {key}：{n}")

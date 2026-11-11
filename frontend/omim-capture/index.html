@@ -117,7 +117,7 @@
         </div>
       </div>
       <p id="queue-summary" class="muted-text"></p>
-      <p class="muted-text">以基因為單位：先開基因頁同步疾病清單，再補這個基因每個缺說明或超過一年未更新的疾病。順序是「進行中的基因」（基因頁已同步，或因共用疾病已被部分更新）→「OMIM 有更新」（做過的基因或疾病，OMIM 之後又改了，依下方「OMIM 更新清單」判斷）→「疾病相關基因中，基因頁還沒同步的」→ 其他；擴充功能的「前往」會先把同一個基因做完。基因頁和平台對不上的項目列在「待確認」，可直接保留或移除。</p>
+      <p class="muted-text">以基因為單位：先開基因頁同步疾病清單，再補這個基因每個缺說明或超過一年未更新的疾病。順序是「進行中的基因」（基因頁已同步，或因共用疾病已被部分更新）→「OMIM 有更新」（做過的基因或疾病，OMIM 之後又改了，依下方「OMIM 更新清單」判斷）→「疾病相關基因中，基因頁還沒同步的」→ 其他基因（包含 OMIM 更新過、但還沒同步的基因頁）→ 平台沒有的基因與 % 疾病；擴充功能的「前往」會先把同一個基因做完。基因頁和平台對不上的項目列在「待確認」，可直接保留或移除。</p>
       <table class="data-table" id="queue-table">
         <thead><tr><th>基因</th><th>狀態</th><th>步驟</th><th>待確認</th><th>報告</th></tr></thead>
         <tbody></tbody>
@@ -142,10 +142,10 @@
         </select>
       </div>
       <details id="new-diseases">
-        <summary>OMIM 新疾病（平台還沒有的 # entry）<span id="nd-count" class="muted-text"></span></summary>
-        <p class="muted-text">已存的更新清單中，OMIM 新增、但平台上沒有任何基因帶著的疾病（例如原本沒有疾病的基因新連到一個疾病）。每個都排進待補清單（「OMIM 新疾病」），開疾病頁擷取採用後，會依頁面上的關係表加到對應基因，就會從這裡消失。</p>
+        <summary>平台沒有的 OMIM 基因與疾病<span id="nd-count" class="muted-text"></span></summary>
+        <p class="muted-text">更新清單中出現、但平台完全沒有的基因（* / +），以及平台上沒有任何基因帶著的疾病（# / %，例如原本沒有疾病的基因新連到一個疾病）。每個都排進待補清單；擷取採用後會依頁面建立基因或把疾病加到對應基因，就會從這裡消失。帶已知基因的疾病（#）和其他 OMIM 更新排在一起，平台沒有的基因與 % 疾病排在待補清單最後。</p>
         <table class="data-table" id="nd-table">
-          <thead><tr><th>OMIM 列出日期</th><th>MIM</th><th>標題</th><th>狀態</th></tr></thead>
+          <thead><tr><th>OMIM 最後列出</th><th>類型</th><th>MIM</th><th>標題</th></tr></thead>
           <tbody></tbody>
         </table>
       </details>

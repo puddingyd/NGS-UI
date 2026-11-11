@@ -725,7 +725,10 @@ def test_queue_flags_omim_updates_and_confirmed_text(updates_env, db, monkeypatc
         "2026-01": [_row("January 5th, 2026", "Updated Entries:", "100002", "*")],
         "2026-02": [_row("February 3rd, 2026", "Updated Entries:", "999998"),
                     _row("February 1st, 2026", "New Entries:", "621485", "#", "NEW DISEASE"),
-                    _row("February 2nd, 2026", "New Entries:", "600002", "#")],
+                    _row("February 2nd, 2026", "New Entries:", "600002", "#"),
+                    _row("February 5th, 2026", "New Entries:", "621490", "*", "NEW GENE PROTEIN 1; NGP1"),
+                    _row("February 6th, 2026", "Updated Entries:", "100001", "*", "GENE1"),
+                    _row("February 6th, 2026", "Updated Entries:", "100004", "*", "ATXNX")],
         "2026-03": [_row("March 10th, 2026", "New Entries:", "621486", "#", "RECENT"),
                     _row("March 11th, 2026", "New Entries:", "621487", "%", "NO GENE"),
                     _row("March 11th, 2026", "New Entries:", "621488", "#", "MOVED"),
@@ -751,17 +754,27 @@ def test_queue_flags_omim_updates_and_confirmed_text(updates_env, db, monkeypatc
     gene1 = items["100001"]
     a = next(s for s in gene1["steps"] if s["mim"] == "600001")
     assert a["kinds"] == ["stale"] and a["confirmed_current"] is True
-    # New # diseases no platform gene carries are queued right away; 600002
-    # already belongs to GENE1; % (no gene) and moved entries are left out.
+    # Diseases no platform gene carries are queued; 600002 already belongs
+    # to GENE1; moved entries are left out. % entries go last.
     assert items["new621485"]["steps"][0]["kinds"] == ["new_disease"]
-    assert items["new621486"]["steps"][0]["labels"] == ["RECENT (621486)"]
-    assert not {"new600002", "new621487", "new621488"} & set(items)
+    assert items["new621486"]["steps"][0]["labels"] == ["#621486 RECENT"]
+    assert items["new621487"]["late"] is True and items["new621485"]["late"] is False
+    assert not {"new600002", "new621488"} & set(items)
     order = [g["gene_mim"] for g in data["items"]]
     # Updated (already-done) genes come before genes still waiting for their first sync.
     assert gene1["status"] == "gene_sync" and order.index("100002") < order.index("100001")
     status = c.get("/api/omim/updates/status", headers=headers).json()
-    assert status["new_diseases_total"] == 2
-    assert status["queue"]["stale_confirmed"] >= 1 and status["queue"]["new_disease_steps"] == 2
+    # 999998 / 999999 are #-rows in this test data, so they count as diseases too.
+    assert status["missing_diseases"] == 5 and status["missing_genes"] == 1
+    ngp = items["new621490"]
+    assert ngp["gene"] == "NGP1" and ngp["steps"][0]["kinds"] == ["new_gene"] and ngp["late"] is True
+    assert order.index("new621490") > order.index("100001")  # missing genes go last
+    # Genes never synced get a gene-page step for an OMIM update after their
+    # Done date (GENE1, Done 2025-11-01) or when they have no Done (ATXNX).
+    assert gene1["steps"][0]["kinds"] == ["gene_updated"] and gene1["steps"][0]["update_date"] == "2026-02-06"
+    assert items["100004"]["steps"][0]["kinds"] == ["gene_updated"]
+    assert status["queue"]["stale_confirmed"] >= 1 and status["queue"]["new_disease_steps"] == 5
+    assert status["queue"]["new_gene_steps"] == 1
 
     # An OMIM update after GENE1's Done date turns "stale" into "updated".
     assert _month(c, headers, "2026-03", months["2026-03"] + [

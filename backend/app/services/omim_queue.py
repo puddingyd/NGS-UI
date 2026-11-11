@@ -12,10 +12,13 @@ Each queue item is one gene with ordered steps:
 Diseases without a phenotype MIM are handled by the gene step. Open review
 items (``omim_db.review_items``) are attached to their gene.
 
-With the OMIM Update List stored (``omim_updates``), content OMIM changed
-after the version the platform holds gets an ``updated`` step (phenotype
-page) or a ``gene_updated`` step (gene page adopted before an OMIM update);
-new ``#`` entries no platform gene carries become ``new_disease`` items. Workbook text whose Done date is covered by
+With the OMIM Update List stored (``omim_updates``), every OMIM update to
+content the platform holds is queued when it is newer than the platform's
+version: ``updated`` (phenotype page) and ``gene_updated`` (gene page —
+the adopted gene page, else the workbook Done date; a gene never synced
+and without a Done date counts as older than any update). Update List
+entries the platform does not carry at all become their own items:
+``new_disease`` (``#``/``%`` no platform gene has) and ``new_gene``. Workbook text whose Done date is covered by
 the stored history with no update since is ``confirmed_current``; with the
 ``stale_mode`` setting ``updates_only`` such text is no longer queued as
 "older than a year".
@@ -46,7 +49,7 @@ from . import disease_picks, omim_capture, omim_db, omim_store, omim_updates, pa
 
 STALE_DAYS = 365
 KIND_RANK = {"missing": 3, "updated": 2, "new_disease": 2, "stale": 1}
-UPDATE_KINDS = {"gene_updated", "updated", "new_disease"}
+UPDATE_KINDS = {"gene_updated", "updated", "new_disease", "new_gene"}
 FIRST_PASS_KINDS = {"gene_page", "missing", "stale"}
 STATUS_LABELS = {
     "in_progress": "進行中（已同步基因頁或已有疾病被更新，但尚未完成）",
@@ -204,11 +207,12 @@ def build_genes() -> list[dict]:
         in_panel = gene in panel
         openable = _is_mim(gene_mim)
         is_synced = gene_mim in synced
-        gene_update = ""
-        if is_synced and gene_mim in gene_caps:
-            listed = entry_latest.get(gene_mim, "")
-            if listed and listed > capture_day(*gene_caps[gene_mim]):
-                gene_update = listed
+        # Gene page OMIM updated after the version the platform holds: the
+        # adopted gene page, or the workbook row (Done date; none = unknown,
+        # so any listed update counts).
+        listed = entry_latest.get(gene_mim, "")
+        content = capture_day(*gene_caps[gene_mim]) if is_synced and gene_mim in gene_caps else curated_done
+        gene_update = listed if listed and listed > content else ""
         need_gene_step = openable and (bool(gene_update) or (not is_synced and bool(
             in_panel or no_mim or gene_reviews or phenotype_steps
         )))
@@ -258,19 +262,33 @@ def build_genes() -> list[dict]:
             "disease_mims": disease_mims,
             "minor": bool(ph_steps) and all(s["minor"] for s in ph_steps) and not need_gene_step,
         })
-    # New OMIM diseases no platform gene carries yet.
-    for item in omim_updates.new_diseases() if db else []:
+    # Update List entries the platform does not carry: genes missing from
+    # the platform, and diseases no platform gene has. Done once a capture
+    # of that page newer than OMIM's update was adopted.
+    adopted = omim_db.latest_adoptions() if db else {}
+    for item in omim_updates.missing_entries() if db else []:
         mim = item["mim"]
+        if mim in adopted and capture_day(*adopted[mim]) >= item["listed_date"]:
+            continue
+        is_gene = item["cls"] == "gene"
+        title = item["title"] or ""
+        symbol = title.rsplit("; ", 1)[1].strip() if is_gene and "; " in title else ""
         genes.append({
-            "gene": "OMIM 新疾病", "gene_mim": f"new{mim}", "url": "", "panel": False,
+            "gene": symbol or ("平台沒有的基因" if is_gene else "平台沒有的疾病"),
+            "gene_mim": f"new{mim}", "url": "", "panel": False,
             "synced_at": "", "done": "", "status": "updated", "has_update": True,
-            "partially_updated": False, "new_disease": True,
+            "partially_updated": False, "new_entry": True, "prefix": item["prefix"],
+            "entry": {k: item[k] for k in ("mim", "prefix", "cls", "listed_date", "first_date", "title", "is_new")},
+            # Diseases with a known gene come with the other OMIM updates;
+            # missing genes and %-entries (no known gene) after everything.
+            "late": is_gene or item["prefix"] != "#",
             "steps": [{
-                "type": "phenotype", "mim": mim, "url": f"https://omim.org/entry/{mim}",
-                "labels": [f"{item['title']} ({mim})"], "kinds": ["new_disease"],
+                "type": "gene" if is_gene else "phenotype", "mim": mim, "url": f"https://omim.org/entry/{mim}",
+                "labels": [f"{item['prefix']}{mim} {title}".strip()],
+                "kinds": ["new_gene" if is_gene else "new_disease"],
                 "update_date": item["listed_date"], "minor": False, "rank": KIND_RANK["new_disease"],
             }],
-            "reviews": [], "disease_mims": [mim], "minor": False,
+            "reviews": [], "disease_mims": [] if is_gene else [mim], "minor": False,
         })
     with _lock:
         _cache.update(sig=sig, genes=genes, stats=stats)
@@ -297,6 +315,8 @@ def _decorate(genes: list[dict], scope: str) -> list[dict]:
         # Panel genes waiting for their first gene-page sync come before
         # other genes that only have diseases to fill.
         group = status if not (i["status"] == "gene_sync" and not i["panel"]) else 4
+        if i.get("late"):
+            group = 5
         has_work = bool(i["reviews"]) + any(s["type"] == "phenotype" for s in i["steps"])
         return (group, -bool(i["reported"]), -i["panel"], -i.get("has_update", False), -bool(i["reviews"]),
                 -has_work, i["minor"], -i["reported"], i["gene"], i["gene_mim"])
@@ -316,6 +336,8 @@ def queue(*, status: str = "", scope: str = "all", pending_mims: set[str] | None
     counts["reviews"] = 0
     counts["updated_steps"] = 0
     counts["new_disease_steps"] = 0
+    counts["new_gene_steps"] = 0
+    counts["gene_update_steps"] = 0
     counts["stale_steps"] = 0
     counts["stale_confirmed"] = 0
     counts["stale_hidden"] = (_cache.get("stats") or {}).get("stale_hidden", 0)
@@ -330,6 +352,8 @@ def queue(*, status: str = "", scope: str = "all", pending_mims: set[str] | None
             kinds = set(st["kinds"])
             counts["updated_steps"] += bool(kinds & {"updated", "gene_updated"})
             counts["new_disease_steps"] += "new_disease" in kinds
+            counts["new_gene_steps"] += "new_gene" in kinds
+            counts["gene_update_steps"] += "gene_updated" in kinds
             counts["stale_steps"] += kinds == {"stale"}
             counts["stale_confirmed"] += kinds == {"stale"} and bool(st.get("confirmed_current"))
         if status == "review" and not gene["reviews"]:

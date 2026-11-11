@@ -224,16 +224,18 @@ def updates_status(user: dict = Depends(capture_user)):
         return {"db_enabled": False}
     cov = omim_updates.coverage()
     counts = omim_queue.queue(limit=1)["counts"]
-    diseases = omim_updates.new_diseases()
+    missing = [g["entry"] for g in omim_queue.build_genes() if g.get("new_entry")]
     return {
         "db_enabled": True,
         **cov,
         "months": cov["months"][:240],
         "stale_mode": omim_updates.stale_mode(),
-        "queue": {k: counts.get(k, 0) for k in ("updated", "updated_steps", "new_disease_steps", "stale_steps",
-                                                 "stale_confirmed", "stale_hidden")},
-        "new_diseases": diseases[:500],
-        "new_diseases_total": len(diseases),
+        "queue": {k: counts.get(k, 0) for k in ("updated", "updated_steps", "gene_update_steps", "new_disease_steps",
+                                                 "new_gene_steps", "stale_steps", "stale_confirmed", "stale_hidden")},
+        "missing_entries": missing[:500],
+        "missing_total": len(missing),
+        "missing_genes": sum(1 for e in missing if e["cls"] == "gene"),
+        "missing_diseases": sum(1 for e in missing if e["cls"] == "disease"),
     }
 
 

@@ -959,6 +959,17 @@ def gene_sync_captures(path: Path | None = None) -> dict[str, tuple[str, str]]:
     return out
 
 
+def latest_adoptions(path: Path | None = None) -> dict[str, tuple[str, str]]:
+    """MIM -> (capture id, adopted_at) of its latest adopted capture."""
+    if not exists(path):
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    with connect(path) as con:
+        for r in con.execute("SELECT mim, capture_id, adopted_at FROM adoptions ORDER BY adopted_at, id"):
+            out[r["mim"]] = (r["capture_id"], r["adopted_at"])
+    return out
+
+
 def phenotype_text_sources(path: Path | None = None) -> dict[str, tuple[str, str, str]]:
     """phenotype MIM -> (capture id, adopted_at, OMIM edit date) of adopted text."""
     if not exists(path):

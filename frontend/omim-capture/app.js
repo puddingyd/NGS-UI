@@ -165,7 +165,8 @@
 
   const STEP_KIND = {
     gene_page: ["基因頁", "info"], gene_updated: ["基因頁有更新", "warn"], missing: ["缺說明", "warn"],
-    updated: ["OMIM 有更新", "warn"], new_disease: ["OMIM 新疾病", "warn"], stale: ["逾一年", "info"],
+    updated: ["OMIM 有更新", "warn"], new_disease: ["平台沒有的疾病", "warn"], new_gene: ["平台沒有的基因", "warn"],
+    stale: ["逾一年", "info"],
   };
   const STATUS_BADGE = {
     in_progress: ["進行中", "warn"], updated: ["OMIM 有更新", "warn"], gene_sync: ["基因頁待同步", "info"],
@@ -195,7 +196,7 @@
       <tr>
         <td>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.gene || g.gene_mim)}</b></a>` : `<b>${esc(g.gene)}</b>`}
           <br><span class="muted-text">${esc(g.gene_mim)}${g.panel ? " · 疾病相關" : ""}</span>
-          ${g.new_disease ? "" : `<br><button class="btn btn-secondary btn-mini" type="button" data-lookup="${esc(g.gene_mim || g.gene)}">查看</button>`}</td>
+          ${g.new_entry ? "" : `<br><button class="btn btn-secondary btn-mini" type="button" data-lookup="${esc(g.gene_mim || g.gene)}">查看</button>`}</td>
         <td>${badge(STATUS_BADGE[g.status] || [g.status, "info"])}${g.synced_at ? `<br><span class="muted-text">基因頁同步 ${esc(fmtTime(g.synced_at))}</span>` : ""}${g.partially_updated ? `<br><span class="muted-text">已有疾病被更新（共用疾病）</span>` : ""}</td>
         <td><ol class="step-list">${g.steps.map(st => `<li>
           <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a>
@@ -226,17 +227,18 @@
       已連續涵蓋：${data.coverage_start ? `<b>${esc(data.coverage_start)}</b> 至上個月` : "尚無"}${data.history_complete ? badge(["歷史已補齊", "ok"]) : ""}；
       已存 ${esc(data.rows)} 筆，最新一筆 ${esc(data.last_listed_date || "—")}，最後擷取 ${esc(fmtTime(data.last_captured_at))}。
       <br>還要擷取 ${missing.length} 個月份${missing.length ? `（${esc(missing.slice(0, 8).join("、"))}${missing.length > 8 ? "…" : ""}；當月每次都會重新擷取）` : ""}。
-      <br>對待補清單的影響：OMIM 有更新的基因 ${esc(q.updated || 0)} 個、有更新的頁面 ${esc(q.updated_steps || 0)} 頁、
-      OMIM 新疾病（平台還沒有）待開 ${esc(q.new_disease_steps || 0)} 頁；
+      <br>對待補清單的影響：OMIM 之後有更新的頁面 ${esc(q.updated_steps || 0)} 頁（其中基因頁 ${esc(q.gene_update_steps || 0)} 頁）；
+      平台沒有的疾病 ${esc(q.new_disease_steps || 0)} 頁、平台沒有的基因 ${esc(q.new_gene_steps || 0)} 頁；
       只是逾一年的疾病頁 ${esc(q.stale_steps || 0)} 頁，其中已確認 OMIM 沒更新 ${esc(q.stale_confirmed || 0)} 頁${q.stale_hidden ? `，另 ${esc(q.stale_hidden)} 頁已確認沒更新而不列出` : ""}。`;
     $("#stale-mode").value = data.stale_mode || "both";
-    const diseases = data.new_diseases || [];
-    $("#nd-count").textContent = `（${data.new_diseases_total ?? diseases.length}）`;
-    $("#nd-table tbody").innerHTML = diseases.length ? diseases.map(d => `
-      <tr><td>${esc(d.listed_date)}</td>
+    const entries = data.missing_entries || [];
+    $("#nd-count").textContent = `（疾病 ${data.missing_diseases || 0}、基因 ${data.missing_genes || 0}）`;
+    $("#nd-table tbody").innerHTML = entries.length ? entries.map(d => `
+      <tr><td>${esc(d.listed_date)}${d.is_new ? ` ${badge(["新 entry", "info"])}` : ""}</td>
+        <td>${d.cls === "gene" ? "基因" : "疾病"}</td>
         <td><a href="https://omim.org/entry/${esc(d.mim)}" target="_blank" rel="noopener">${esc(d.prefix)}${esc(d.mim)}</a></td>
-        <td>${esc(d.title)}</td>
-        <td>${badge(["已排進待補清單", "warn"])}</td></tr>`).join("")
+        <td>${esc(d.title)}</td></tr>`).join("")
+      + (data.missing_total > entries.length ? `<tr><td colspan="4" class="muted-text">只列最近 ${entries.length} 筆，共 ${esc(data.missing_total)} 筆；全部都在待補清單。</td></tr>` : "")
       : `<tr><td colspan="4" class="muted-text">沒有。</td></tr>`;
   }
 
