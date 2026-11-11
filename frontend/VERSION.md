@@ -6,6 +6,10 @@
 
 ## 版本紀錄
 
+### v10.20 — 2026-11-11
+
+- SNV/Indel 卡片的 OMIM 疾病清單與 CNV/SV 卡片基因表的 Phenotype 欄：如果這個基因採用過的 OMIM 基因頁沒有「Gene-Phenotype Relationships」（OMIM 沒有列出疾病），會顯示「OMIM 頁面沒有 Gene-Phenotype Relationships」。之後若採用的基因頁有列出疾病，提示會自動消失。
+
 ### v10.19 — 2026-11-11
 
 - 擴充功能（0.6.1）：擷取 OMIM 更新清單時也會存每筆的標題（之前在 OMIM 實際頁面上標題是空的），「OMIM 新疾病」清單會顯示疾病名稱；重新擷取月份即會補上。

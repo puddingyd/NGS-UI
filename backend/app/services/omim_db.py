@@ -619,6 +619,7 @@ def load_rows(path: Path | None = None, slot_count: int = MAX_RENDERED_SLOTS) ->
         for r in con.execute("SELECT gene_mim, slot, text FROM legacy_cells"):
             legacy.setdefault(r["gene_mim"], {})[r["slot"]] = r["text"]
         texts = {r["phenotype_mim"]: dict(r) for r in con.execute("SELECT * FROM phenotype_texts")}
+        no_relationships = _genes_without_relationships(con)
     by_id: dict[int, dict] = {}
     by_gene: dict[str, dict] = {}
     for gene in genes:
@@ -626,6 +627,7 @@ def load_rows(path: Path | None = None, slot_count: int = MAX_RENDERED_SLOTS) ->
             gene, diseases.get(gene["gene_mim"], []), legacy.get(gene["gene_mim"], {}),
             texts, slot_count,
         )
+        row["OMIM_no_relationships"] = gene["gene_mim"] in no_relationships
         try:
             by_id.setdefault(int(row["OMIM_id"]), row)
         except (TypeError, ValueError):
@@ -635,6 +637,20 @@ def load_rows(path: Path | None = None, slot_count: int = MAX_RENDERED_SLOTS) ->
         for alias in filter(None, (gene.get("alias_symbols") or "").split(",")):
             by_gene.setdefault(alias, row)
     return by_id, by_gene
+
+
+def _genes_without_relationships(con) -> set[str]:
+    """Gene MIMs whose latest adopted gene page had no Gene-Phenotype
+    Relationships section (OMIM lists no disease for the gene)."""
+    latest: dict[str, bool] = {}
+    for r in con.execute(
+        "SELECT mim, summary FROM adoptions WHERE entry_type IN ('gene','gene_phenotype') ORDER BY adopted_at, id"
+    ):
+        try:
+            latest[r["mim"]] = bool(json.loads(r["summary"] or "{}").get("omim_lists_no_disease"))
+        except json.JSONDecodeError:
+            latest[r["mim"]] = False
+    return {mim for mim, flag in latest.items() if flag}
 
 
 def signature(path: Path | None = None) -> tuple:

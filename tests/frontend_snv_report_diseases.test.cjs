@@ -98,3 +98,20 @@ test('same phenotype MIM with different names keeps the ticked label', () => {
   });
   assert.equal(JSON.stringify(slots.map(s => s.idx)), '[2]');
 });
+
+test('genes whose OMIM page has no Gene-Phenotype Relationships say so in the disease list', () => {
+  const c = vm.createContext({});
+  const start = source.indexOf('const OMIM_NO_RELATIONSHIPS_TEXT');
+  const end = source.indexOf('\n}\n', source.indexOf('function renderDiseaseList(')) + 3;
+  vm.runInContext(`
+    const OMIM_DISEASE_SLOT_COUNT = 16;
+    const resolveDiseasePicks = () => ({ matched: [], unmatched: [] });
+    const escapeHtml = s => String(s);
+    const escapeAttr = s => String(s);
+    ${source.slice(start, end)}
+    globalThis.renderDiseaseList = renderDiseaseList;
+  `, c);
+  const html = c.renderDiseaseList({ OMIM_no_relationships: true }, 'v1', true);
+  assert.match(html, /OMIM 頁面沒有 Gene-Phenotype Relationships/);
+  assert.equal(c.renderDiseaseList({}, 'v1', true), '');
+});

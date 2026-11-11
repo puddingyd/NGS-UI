@@ -791,3 +791,17 @@ def test_capture_older_than_omim_update_is_not_bulk_adopted(updates_env, db):
     # The queue sends the reviewer back to that page instead of skipping it.
     from app.routers import omim_capture as router
     assert "600002" not in router._pending_mims()
+
+
+def test_gene_page_without_relationships_is_flagged_on_rendered_rows(db):
+    page = _gene_page("100007", "QUIET", [])
+    page["relationship_section"] = "absent"
+    omim_db.adopt_capture(page, user="rev", capture_id="100007/a")
+    by_id, by_gene = omim_db.load_rows(db["path"])
+    assert by_gene["QUIET"]["OMIM_no_relationships"] is True
+    assert by_gene["GENE1"]["OMIM_no_relationships"] is False
+    # A later gene page that lists diseases clears the flag.
+    omim_db.adopt_capture(_gene_page("100007", "QUIET", [("Quiet disease", "600077", "AR")]),
+                          user="rev", capture_id="100007/b")
+    _by_id, by_gene = omim_db.load_rows(db["path"])
+    assert by_gene["QUIET"]["OMIM_no_relationships"] is False

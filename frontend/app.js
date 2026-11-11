@@ -5860,6 +5860,9 @@ function omimMissingStar(phenotypeMim, v) {
   return `<a class="disease-needs-description-star" href="https://omim.org/entry/${mim}" target="_blank" rel="noopener" title="OMIM 說明待補：開啟 OMIM ${target}頁 ${mim}，用 NGS OMIM Capture 擴充功能擷取" aria-label="OMIM description missing; open OMIM ${mim}">*</a>`;
 }
 
+const OMIM_NO_RELATIONSHIPS_TEXT = "OMIM 頁面沒有 Gene-Phenotype Relationships";
+const OMIM_NO_RELATIONSHIPS_HTML = `<div class="omim-no-relationships">${OMIM_NO_RELATIONSHIPS_TEXT}</div>`;
+
 function renderDiseaseList(v, id, withCheckbox) {
   const rows = [];
   const resolvedPicks = resolveDiseasePicks(id, v);
@@ -5934,6 +5937,9 @@ function renderDiseaseList(v, id, withCheckbox) {
           <div class="disease-stale-pick-summary">${checkbox}<span class="disease-summary-text">${escapeHtml(label)}</span><span class="disease-stale-pick-note">目前 OMIM 清單已無此疾病，報告沿用勾選時的名稱</span></div>
         </div>`);
   }
+  // The gene's OMIM page has no Gene-Phenotype Relationships table (OMIM
+  // lists no disease for it); say so where the OMIM diseases would be.
+  if (v && v.OMIM_no_relationships) rows.unshift(OMIM_NO_RELATIONSHIPS_HTML);
   if (!rows.length) return "";
   return `<div class="disease-list">${rows.join("")}</div>`;
 }
@@ -7581,8 +7587,10 @@ function _renderCnvSvGeneRow(g, id) {
   const inh = g.omim_inheritance || "";
   const phenAll = g.omim_phenotype || "";
   const diseaseOptions = _renderCnvGeneDiseases(g, id);
-  const phenotypeCell = diseaseOptions || `<span class="gene-clip-fallback">${escapeHtml((phenAll || "").split("\n")[0]) || "—"}</span>`;
-  const phenotypeAttrs = diseaseOptions
+  const noRelationships = g.omim_no_relationships ? OMIM_NO_RELATIONSHIPS_HTML : "";
+  const phenotypeCell = noRelationships + (diseaseOptions || (noRelationships && !phenAll ? ""
+    : `<span class="gene-clip-fallback">${escapeHtml((phenAll || "").split("\n")[0]) || "—"}</span>`));
+  const phenotypeAttrs = diseaseOptions || (noRelationships && !phenAll)
     ? `class="cnv-gene-phenotype-cell"`
     : `class="cnv-gene-phenotype-cell gene-clip-cell" data-full="${escapeAttr(phenAll)}" title="點此展開"`;
   const sameGeneCell = g.gene

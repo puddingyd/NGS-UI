@@ -204,6 +204,7 @@ def _split_row_to_gene(
         "omim_id":          str((omim_record or {}).get("OMIM_id") or raw_omim_id),
         "omim_phenotype":   str((omim_record or {}).get("OMIM_disease") or raw_omim_phenotype),
         "omim_inheritance": str((omim_record or {}).get("Inheritance") or raw_omim_inheritance),
+        "omim_no_relationships": bool((omim_record or {}).get("OMIM_no_relationships")),
         "annotsv_omim_id":          raw_omim_id,
         "annotsv_omim_phenotype":   raw_omim_phenotype,
         "annotsv_omim_inheritance": raw_omim_inheritance,

@@ -1216,6 +1216,8 @@ def _enrich_snv_variants(
                 v[f] = rec.get(f, "")
             if rec.get("Disease_legacy_slots"):
                 v["OMIM_legacy_slots"] = rec["Disease_legacy_slots"]
+            if rec.get("OMIM_no_relationships"):
+                v["OMIM_no_relationships"] = True
         v["disease_associations"] = gene_disease_store.merged_associations(gene, rec, refresh=False)
         if v.get("specialized") and not rec:
             v["Disease1"] = specialized.DISEASES.get(gene, "") + "(AR)"

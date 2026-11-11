@@ -4625,3 +4625,6 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 .pgx-report-gene { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .pgx-report-gene-alerts { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 4px; margin-left: auto; }
 .pgx-review-note { margin: 8px 0; font-size: 13px; }
+
+/* Gene whose OMIM page has no Gene-Phenotype Relationships table */
+.omim-no-relationships { color: var(--muted, #59636e); font-size: 12px; font-style: italic; margin: 2px 0 4px; }
