@@ -7,6 +7,8 @@ sample loading and report generation remain available in development.
 from __future__ import annotations
 
 import csv
+import re
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -44,7 +46,10 @@ def _current_symbol_by_upper() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
-def disease_associated_genes() -> frozenset[str]:
+def static_disease_associated_genes() -> frozenset[str]:
+    """The delivered panel scope (curated disease list ∪ clinical panels).
+
+    Dead-zone tables cover exactly these genes."""
     paths = [
         NGS_PANEL_DEADZONE_DIR / "panel" / "panel_loose_plus_clinical.hgnc_canonical.txt",
         NGS_PANEL_DEADZONE_DIR / "panel" / "panel_loose.hgnc_canonical.txt",
@@ -58,14 +63,65 @@ def disease_associated_genes() -> frozenset[str]:
     return frozenset()
 
 
-@lru_cache(maxsize=1)
+_MIM_IN_LABEL_RE = re.compile(r"\(\d{6}\)")
+_omim_cache: dict = {"key": None, "genes": frozenset(), "all": None, "ids": None}
+_omim_lock = threading.Lock()
+
+
+def _omim_disease_genes() -> frozenset[str]:
+    """Genes the platform OMIM data links to at least one disease MIM.
+
+    Susceptibility ``{…}`` and provisional ``?…`` links count; non-disease
+    traits ``[…]`` (e.g. blood groups) do not. Keyed on the already-loaded
+    OMIM state, so this stays cheap enough to call per variant.
+    """
+    from . import omim_store
+
+    state = omim_store._state
+    if state.get("mtime") is None:
+        omim_store.ensure_loaded()
+    key = (state.get("mtime"), id(state.get("by_gene")))
+    if _omim_cache["key"] == key:
+        return _omim_cache["genes"]
+    rows = {id(r): r for r in list(state.get("by_omim_id", {}).values())
+            + list(state.get("by_gene", {}).values())}.values()
+    genes = set()
+    for row in rows:
+        symbol = str(row.get("gene_symbol") or "").strip()
+        if not symbol:
+            continue
+        lines = str(row.get("OMIM_disease") or "").splitlines()
+        if any(_MIM_IN_LABEL_RE.search(ln) and not ln.lstrip().startswith("[") for ln in lines):
+            genes.add(canonical_gene_symbol(symbol)[0] or symbol)
+    with _omim_lock:
+        _omim_cache.update(key=key, genes=frozenset(genes), all=None, ids=None)
+    return _omim_cache["genes"]
+
+
+def disease_associated_genes() -> frozenset[str]:
+    """Panel scope ∪ genes with a disease in the platform OMIM data, so a
+    gene OMIM newly links to a disease counts as soon as it is adopted."""
+    omim = _omim_disease_genes()
+    combined = _omim_cache.get("all")
+    if combined is None:
+        combined = static_disease_associated_genes() | omim
+        _omim_cache["all"] = combined
+    return combined
+
+
 def disease_associated_hgnc_ids() -> frozenset[str]:
-    by_symbol = symbol_to_hgnc_id()
-    return frozenset(
-        by_symbol[sym]
-        for sym in disease_associated_genes()
-        if sym in by_symbol
-    )
+    genes = disease_associated_genes()
+    ids = _omim_cache.get("ids")
+    if ids is None:
+        by_symbol = symbol_to_hgnc_id()
+        ids = frozenset(by_symbol[sym] for sym in genes if sym in by_symbol)
+        _omim_cache["ids"] = ids
+    return ids
+
+
+def has_dead_zone_evaluation(symbol: str) -> bool:
+    """Whether the cohort dead-zone tables cover this gene (panel scope)."""
+    return canonical_gene_symbol(symbol)[0] in static_disease_associated_genes()
 
 
 @lru_cache(maxsize=1)

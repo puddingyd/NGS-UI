@@ -1,6 +1,7 @@
 """Supplemental gene-disease associations for variant-card display.
 
-OMIM.xlsx remains the source of curator-maintained rich text. This module
+The platform OMIM data (``omim_store``: the platform OMIM database, or
+OMIM.xlsx before it was built) is the source of the rich disease text. This module
 loads an optional local TSV of supplemental GenCC / ClinGen / MONDO-aligned
 associations and merges them with the current OMIM row at runtime, so edits
 to OMIM Disease1..16 keep showing up without rebuilding this file.

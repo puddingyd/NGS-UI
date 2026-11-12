@@ -2368,8 +2368,12 @@ function renderDeadZoneCard() {
   card.dataset.wasOpen = open ? "1" : "0";
   header.classList.toggle("open", open);
   body.classList.toggle("open", open);
+  const unevaluated = Array.isArray(dz.unevaluated) ? dz.unevaluated : [];
+  const unevaluatedHtml = unevaluated.length
+    ? `<div class="muted dead-zone-unevaluated">未評估 dead zone（不在 cohort coverage 範圍）：${unevaluated.map(escapeHtml).join("、")}</div>`
+    : "";
   if (!entries.length) {
-    body.innerHTML = `<div class="muted">目前 HPO / panel 基因沒有 cohort dead-zone 註記。</div>`;
+    body.innerHTML = `<div class="muted">目前 HPO / panel 基因沒有 cohort dead-zone 註記。</div>${unevaluatedHtml}`;
     body.dataset.expanded = "0";
     body.dataset.deadZoneKey = "";
     return;
@@ -2406,7 +2410,7 @@ function renderDeadZoneCard() {
       ${phenoLabel}</li>`;
   }).join("")}</ul>${!expanded && !visibleEntries.length && entries.length
     ? `<div class="muted">沒有 CDS ≥50% 的 dead-zone；可展開全部查看其他 ${entries.length} 列。</div>`
-    : ""}${toggleHtml}`;
+    : ""}${toggleHtml}${unevaluatedHtml}`;
   const toggleExpanded = () => {
     body.dataset.expanded = expanded ? "0" : "1";
     renderDeadZoneCard();
@@ -7349,7 +7353,7 @@ function renderMitoCard(v, id, opts = {}) {
 //   • per-gene table built from split rows (Tx / Location / OMIM)
 //   • pathogenic-region overlap (P_loss / P_gain) + benign AF
 //   • AnnotSV reasoning text (collapsed)
-//   • per-gene selectable disease rows joined from curator OMIM.xlsx
+//   • per-gene selectable disease rows joined from the platform OMIM data
 //   • selectable pathogenic-region overlap diseases
 //
 // Edits (status / comment / report-disease checkbox) reuse the same

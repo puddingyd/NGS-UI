@@ -2303,6 +2303,13 @@ def load_sample(sample_id: str, version: str | None = None,
         entry = dict(hit)
         entry["pheno_score"] = round(float(pheno_by_gene.get(gene) or 0), 2)
         dead_zone_entries.append(entry)
+    # Disease genes the cohort dead-zone tables do not cover (linked to a
+    # disease in the platform OMIM data after the panel was delivered).
+    dead_zone_unevaluated = sorted(
+        gene for gene, score in pheno_by_gene.items()
+        if (score or 0) > 0 and panel_deadzone.is_disease_associated_gene(gene)
+        and not panel_deadzone.has_dead_zone_evaluation(gene)
+    )
     secondary_categories = (
         _build_secondary_snv_categories(review_variants_for_secondary)
         if include_aux else {category: [] for category in SECONDARY_SNV_PANELS}
@@ -2360,6 +2367,7 @@ def load_sample(sample_id: str, version: str | None = None,
         "dead_zone": {
             "threshold": panel_deadzone.dead_zone_threshold(_test_type),
             "entries": dead_zone_entries,
+            "unevaluated": dead_zone_unevaluated,
         },
         "variants":          variants,
         # When non-empty, the SNV/Indel TSV is in the pre-2026-05

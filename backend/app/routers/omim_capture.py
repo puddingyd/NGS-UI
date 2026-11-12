@@ -2,8 +2,8 @@
 
 Extension calls authenticate with ``Authorization: Bearer ngsc_…`` (a
 personal capture token); the platform's own pages may use the normal
-session cookie. Captures are stored and compared only — nothing is
-written to OMIM.xlsx yet.
+session cookie. Captures are stored, compared and — when adopted — written
+to the platform OMIM database (``omim_db``); OMIM.xlsx is no longer read.
 """
 from __future__ import annotations
 

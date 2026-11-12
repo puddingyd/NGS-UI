@@ -6,6 +6,11 @@
 
 ## 版本紀錄
 
+### v10.25 — 2026-11-12
+
+- 「疾病相關基因」改為：原本的 7,363 個基因清單，再加上平台 OMIM 資料庫中至少連到一個疾病的基因（易感性 `{ }` 與暫定 `?` 算，非疾病特徵 `[ ]` 例如血型不算）。OMIM 新連上疾病的基因（例如 TBPL2）採用後，就會出現在 SNV/Indel 主畫面預設的「疾病相關基因」篩選與 DOCX §五.4 基因清單中，不用等清單重新發布。
+- 這些新加入的基因沒有 cohort dead-zone 資料：主畫面的 Dead zone 卡片會列出「未評估 dead zone」的 HPO / panel 基因；DOCX 報告不另外註記。
+
 ### v10.24 — 2026-11-11
 
 - 修正沒有 Gene-Phenotype Relationships 的疾病頁（例如染色體異常 #129850 Edinburgh malformation syndrome）擷取不到舊格式 Clinical Synopsis（`Facies`、`Neuro`、`Misc` 這類短標題），被標成「需確認」：擴充功能（0.6.4）與平台現在都會在標題與「▲ Close」之間找 Synopsis。已擷取的頁面會依新規則重新判斷，不用重新擷取。

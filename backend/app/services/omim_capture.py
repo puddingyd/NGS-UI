@@ -13,7 +13,7 @@ Ctrl+C would copy) plus a few DOM-extracted extras. This module
   ``omim_store`` so the extension can say whether the platform copy is
   missing, outdated or current (``compare_with_workbook``).
 
-Nothing here writes to OMIM.xlsx yet; applying captures is a later phase.
+Adopting a capture into the platform OMIM database is done by ``omim_db``.
 """
 from __future__ import annotations
 

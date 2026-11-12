@@ -199,7 +199,7 @@ def _split_row_to_gene(
         "splice_type":     (row.get("Nearest_SS_type") or "").strip(),
         "hi":              _to_int(row.get("HI")),
         "ts":              _to_int(row.get("TS")),
-        # Curator-owned OMIM.xlsx is authoritative for card/report disease
+        # The platform OMIM data (omim_store) is authoritative for card/report disease
         # choices. Preserve AnnotSV values explicitly for fallback/audit.
         "omim_id":          str((omim_record or {}).get("OMIM_id") or raw_omim_id),
         "omim_phenotype":   str((omim_record or {}).get("OMIM_disease") or raw_omim_phenotype),
