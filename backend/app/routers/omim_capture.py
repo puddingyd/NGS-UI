@@ -81,6 +81,7 @@ async def create_capture(request: Request, user: dict = Depends(capture_user)):
     parsed = omim_capture.parse_entry_text(text, url_mim=url_mim, extracted=extracted)
     if not parsed.get("mim"):
         raise HTTPException(422, "could not identify the OMIM entry on this page")
+    omim_db.normalize_entry_type(parsed)
     stored = omim_capture.store_capture(payload, parsed, user=user)
     comparison = omim_capture.compare_with_workbook(
         parsed["mim"],
@@ -185,8 +186,19 @@ def work_queue_next(current: str = "", gene: str = "", skip: str = "", scope: st
         current=current if _MIM_RE.match(current or "") else "",
         gene=gene if _MIM_RE.match(gene or "") else "",
         skip=skipped, scope=scope, pending_mims=_pending_mims(),
-        recent_mims=omim_db.recently_adopted_mims(),
+        recent_mims=omim_db.recently_adopted_mims(), captured_days=_captured_days(),
     )
+
+
+def _captured_days() -> dict[str, str]:
+    """MIM -> latest capture day (US Eastern), adopted or not."""
+    out: dict[str, str] = {}
+    for event in omim_capture.capture_events():
+        mim = event.get("mim") or ""
+        day = omim_updates.us_date(event.get("captured_at") or "")
+        if mim and day > out.get(mim, ""):
+            out[mim] = day
+    return out
 
 
 @router.post("/updates/month")
@@ -330,6 +342,7 @@ def _load_parsed(mim: str, name: str) -> tuple[dict, dict]:
             url_mim=str(payload.get("mim") or mim),
             extracted=payload.get("extracted") if isinstance(payload.get("extracted"), dict) else {},
         )
+    omim_db.normalize_entry_type(parsed)
     return data, parsed
 
 

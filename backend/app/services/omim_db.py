@@ -1031,6 +1031,17 @@ def list_adoptions(limit: int = 200, path: Path | None = None) -> list[dict]:
     return out
 
 
+def normalize_entry_type(parsed: dict, path: Path | None = None) -> dict:
+    """Treat an entry without prefix ("other") as a gene page when its MIM is
+    a platform gene — e.g. very old gene entries or genes OMIM reclassified
+    as pseudogenes (*601225 DVL1P1 → 601225). Modifies and returns parsed."""
+    if parsed.get("entry_type") == "other" and parsed.get("mim") and exists(path):
+        with connect(path) as con:
+            if con.execute("SELECT 1 FROM genes WHERE gene_mim = ?", (parsed["mim"],)).fetchone():
+                parsed["entry_type"] = "gene"
+    return parsed
+
+
 def adoption_blockers(parsed: dict) -> list[str]:
     """Reasons a capture should not be adopted in bulk (single adopt still allowed)."""
     reasons = []

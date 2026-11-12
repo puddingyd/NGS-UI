@@ -840,3 +840,41 @@ def test_disease_page_without_gene_table_is_done_once_adopted(updates_env):
     omim_db.adopt_capture(page, user="rev", capture_id="129850/x")
     omim_queue._cache.update(sig=None)
     assert "new129850" not in {g["gene_mim"] for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+
+
+NO_PREFIX_GENE_PAGE = (
+    "OMIM\n100007\nTable of Contents\nTitle\nText\nReferences\nEdit History\n▼\n \nExternal Links\n \n"
+    "100007\nQUIET GENE; QUIET\nHGNC Approved Gene Symbol: QUIET\n▼ TEXT\nAn old gene entry without prefix.\n"
+    "▼ REFERENCES\n\n1. Someone.\n\nCreation Date:\nVictor A. McKusick : 6/4/1986\n"
+    "Edit History:\nalopez : 06/16/2026\n\nNOTE: OMIM is intended\n"
+)
+
+
+def test_gene_entry_without_prefix_is_a_gene_page_and_does_not_loop(updates_env, db):
+    from app.services import omim_queue
+    c, headers = updates_env
+    rows = [_row("February 10th, 2026", "Updated Entries:", "100007", "", "QUIET GENE; QUIET"),
+            _row("February 11th, 2026", "Updated Entries:", "100006", "", "NIL GENE; NILX"),
+            _row("February 12th, 2026", "Updated Entries:", "100004", "*", "ATXNX")]
+    assert _month(c, headers, "2026-02", rows).status_code == 200
+    omim_queue._cache.update(sig=None)
+    items = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+    assert items["100007"]["steps"][0]["kinds"] == ["gene_updated"]
+
+    # The no-prefix page of a platform gene is captured and adopted as a gene page.
+    cap = c.post("/api/omim/captures", json={"mim": "100007", "text": NO_PREFIX_GENE_PAGE}, headers=headers).json()
+    assert cap["summary"]["entry_type"] == "gene" and cap["summary"]["blockers"] == []
+    assert c.post("/api/omim/captures/adopt-pending", json={"ids": [cap["capture"]["id"]]}).json()["adopted"]
+    # Earlier adoptions recorded as "other" also count as the gene page's version.
+    with omim_db.connect(db["path"], write=True) as con:
+        con.execute("INSERT INTO adoptions(capture_id, mim, entry_type, adopted_at) "
+                    "VALUES ('100006/old', '100006', 'other', '2026-03-01T00:00:00+00:00')")
+    omim_queue._cache.update(sig=None)
+    items = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+    for mim in ("100007", "100006"):
+        assert mim not in items or not any(s["type"] == "gene" for s in items[mim]["steps"])
+
+    # A page captured on/after its OMIM update is never suggested again.
+    assert any(s["mim"] == "100004" for s in items["100004"]["steps"])
+    nxt = omim_queue.next_step(gene="100004", captured_days={"100004": "2026-02-12"})
+    assert nxt["step"] is None or nxt["step"]["mim"] != "100004"

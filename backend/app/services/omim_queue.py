@@ -138,12 +138,12 @@ def build_genes() -> list[dict]:
     db = omim_db.exists()
     synced = omim_db.gene_sync_map() if db else {}
     reviews = omim_db.open_reviews_by_gene() if db else {}
-    gene_caps = omim_db.gene_sync_captures() if db else {}
+    adopted = omim_db.latest_adoptions() if db else {}
     texts = omim_db.phenotype_text_sources() if db else {}
     entry_latest, any_latest = omim_updates.latest_dates() if db else ({}, {})
     coverage_start = omim_updates.coverage().get("coverage_start", "") if db else ""
     mode = omim_updates.stale_mode() if db else "both"
-    times = omim_capture.capture_times() if (gene_caps or texts) else {}
+    times = omim_capture.capture_times() if (adopted or texts) else {}
     stats = {"stale_hidden": 0}
 
     def capture_day(capture_id: str, adopted_at: str) -> str:
@@ -208,10 +208,12 @@ def build_genes() -> list[dict]:
         openable = _is_mim(gene_mim)
         is_synced = gene_mim in synced
         # Gene page OMIM updated after the version the platform holds: the
-        # adopted gene page, or the workbook row (Done date; none = unknown,
-        # so any listed update counts).
+        # latest adopted capture of that MIM (whatever its entry type — old
+        # or pseudogene entries have no "*" prefix), else the workbook Done
+        # date (none = unknown, so any listed update counts). Re-capturing
+        # unchanged content refreshes the capture time.
         listed = entry_latest.get(gene_mim, "")
-        content = capture_day(*gene_caps[gene_mim]) if is_synced and gene_mim in gene_caps else curated_done
+        content = capture_day(*adopted[gene_mim]) if gene_mim in adopted else curated_done
         gene_update = listed if listed and listed > content else ""
         need_gene_step = openable and (bool(gene_update) or (not is_synced and bool(
             in_panel or no_mim or gene_reviews or phenotype_steps
@@ -265,7 +267,6 @@ def build_genes() -> list[dict]:
     # Update List entries the platform does not carry: genes missing from
     # the platform, and diseases no platform gene has. Done once a capture
     # of that page newer than OMIM's update was adopted.
-    adopted = omim_db.latest_adoptions() if db else {}
     for item in omim_updates.missing_entries() if db else []:
         mim = item["mim"]
         if mim in adopted and capture_day(*adopted[mim]) >= item["listed_date"]:
@@ -376,22 +377,25 @@ def queue(*, status: str = "", scope: str = "all", pending_mims: set[str] | None
 
 def next_step(*, current: str = "", gene: str = "", skip: set[str] | None = None,
               scope: str = "all", pending_mims: set[str] | None = None,
-              recent_mims: set[str] | None = None) -> dict:
+              recent_mims: set[str] | None = None, captured_days: dict[str, str] | None = None) -> dict:
     """Next page to open, staying on the current gene until it is done."""
     skip = set(skip or ())
     pending_mims = pending_mims or set()
     recent_mims = recent_mims or set()
+    captured_days = captured_days or {}
     genes = _decorate(build_genes(), scope)
 
     def available(g):
         if f"g{g['gene_mim']}" in skip:
             return []
         # A page adopted recently is not suggested again, unless OMIM
-        # updated it after the adopted version.
+        # updated it after the adopted version — but a page already captured
+        # on or after that update never comes back (no capture loops).
         return [
             s for s in g["steps"]
             if s["mim"] != current and s["mim"] not in skip and s["mim"] not in pending_mims
             and (s["mim"] not in recent_mims or set(s["kinds"]) & UPDATE_KINDS)
+            and not (s.get("update_date") and captured_days.get(s["mim"], "") >= s["update_date"])
         ]
 
     def answer(g, steps, continuing):
