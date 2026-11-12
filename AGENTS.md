@@ -24,6 +24,8 @@
 
 **OMIM 所有更新進待補清單（v10.22，擴充 0.6.2）**：`build_genes` 的基因頁內容日期＝已同步者用採用擷取日，未同步者用 legacy_done（空＝視為早於任何更新），entry 更新日較晚即加 `gene_updated` 步驟（未同步者狀態仍是 gene_sync，非 panel 排在 group 4）。`omim_updates.missing_entries()` 取更新清單中平台沒有的 MIM：`*`/`+` 不在 genes → `new_gene`，`#`/`%` 不在 active gene_diseases → `new_disease`（不限新增、不限日期，排除出現過 `^` 與無 prefix 的 MIM）；pseudo 項目 gene_mim=`new{MIM}`、帶 `entry`，`omim_db.latest_adoptions()` 的採用擷取日 ≥ 最後列出日即視為完成。`#` 疾病與一般更新同組，基因與 `%` 標 `late` 排最後（group 5）。`/updates/status` 回 `missing_entries`／`missing_genes`／`missing_diseases`。`coverage()` 另回 `untitled`（有空標題列的月份，新到舊），擴充 0.6.3 總覽頁以「補標題」重抓。`scripts/omim_updates_check.py` 同步列出這些類別。
 
+**疾病掛在基因 MIM 與 locus 列（v10.27）**：`_render_gene` 對 phenotype_mim == gene_mim、無採用文字／xlsx 原文、且該 MIM 有任何採用紀錄的疾病，輸出 label + `GENE_PAGE_NOTE`、source `gene_page`；`build_genes` 對 `gene_page` 不出疾病步驟，未採用前的同 MIM 單行疾病改走基因頁步驟（設 no_mim）。`is_synced` = gene_sync_map 或 `latest_adoptions()` 有該 MIM（任何 entry_type，含 % locus 列）。
+
 **無前綴基因頁與防迴圈（v10.26）**：`omim_db.normalize_entry_type()`：沒有前綴（`other`）但 MIM 在 genes 表者當 `gene`（router `create_capture` 與 `_load_parsed` 都套用）。`build_genes` 基因頁內容日期改用 `omim_db.latest_adoptions()`（該 MIM 最近一次採用，不分 entry_type；擷取時間取 `capture_times()`，重新擷取相同內容也會更新）否則 legacy_done。`next_step(captured_days=)`：router `_captured_days()`（各 MIM 最新擷取的美東日期，含已採用），帶 `update_date` 的步驟若擷取日 ≥ update_date 就不推薦，避免在已擷取頁面間迴圈。
 
 **OMIM 無關係表提示（v10.20）**：`omim_db.load_rows` 依每個基因最新一次基因頁採用的 `adoptions.summary.omim_lists_no_disease` 設 `OMIM_no_relationships`；`sample_loader` 帶到 SNV variant（`OMIM_no_relationships`），`annotsv_tsv` 帶到 CNV/SV gene（`omim_no_relationships`）；前端 `renderDiseaseList` 與 CNV/SV 基因表 Phenotype 欄顯示 `OMIM_NO_RELATIONSHIPS_TEXT`（`.omim-no-relationships`）。

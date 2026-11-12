@@ -878,3 +878,26 @@ def test_gene_entry_without_prefix_is_a_gene_page_and_does_not_loop(updates_env,
     assert any(s["mim"] == "100004" for s in items["100004"]["steps"])
     nxt = omim_queue.next_step(gene="100004", captured_days={"100004": "2026-02-12"})
     assert nxt["step"] is None or nxt["step"]["mim"] != "100004"
+
+
+def test_phenotype_listed_under_the_gene_mim_follows_the_gene_page(queue_env, db):
+    from app.services import omim_queue
+    c, _headers = queue_env
+    # DEK-style: the gene page lists a phenotype with the gene's own MIM.
+    page = _gene_page("100007", "QUIET", [("Leukemia, quiet", "100007", "")])
+    omim_queue._cache.update(sig=None)
+    omim_db.adopt_capture(page, user="rev", capture_id="100007/a")
+    _by_id, by_gene = omim_db.load_rows(db["path"])
+    cell = cells(by_gene["QUIET"])[0]
+    assert cell.startswith("Leukemia, quiet (100007)") and "沒有這個疾病的獨立頁面" in cell
+    assert by_gene["QUIET"]["Disease_meta"][0]["source"] == "gene_page"
+    # Locus/phenotype-entry "gene" rows (HYT1 / SCZD1 style) count as synced
+    # once their page was adopted, whatever the page type.
+    with omim_db.connect(db["path"], write=True) as con:
+        con.execute("INSERT INTO adoptions(capture_id, mim, entry_type, adopted_at) "
+                    "VALUES ('100004/x', '100004', 'phenotype_locus', '2026-11-01T00:00:00+00:00')")
+    omim_store._state.update(mtime=None)
+    omim_queue._cache.update(sig=None)
+    items = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+    assert "100007" not in items
+    assert "100004" not in items or not any(s["type"] == "gene" for s in items["100004"]["steps"])

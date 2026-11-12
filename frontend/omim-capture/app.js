@@ -247,6 +247,7 @@
   // ------------------------------------------------------- gene lookup
   const SOURCE_BADGE = {
     capture: ["擷取採用", "ok"], xlsx: ["OMIM.xlsx 原文", "info"], label: ["只有名稱 *", "warn"],
+    gene_page: ["見基因頁（無獨立頁面）", "info"],
   };
   const ACTION_LABEL = {
     adopt_text: "採用說明", update_label: "更新疾病名稱", add_disease: "新增疾病",

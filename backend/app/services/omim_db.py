@@ -537,6 +537,7 @@ def install(built_path: Path, target: Path | None = None) -> Path | None:
 # --------------------------------------------------------------------------
 
 EMPTY_ENTRY_NOTE = "（OMIM 此 entry 沒有 Description、Clinical Features 與 Clinical Synopsis）"
+GENE_PAGE_NOTE = "（OMIM 沒有這個疾病的獨立頁面；相關內容見基因頁 MIM {mim}）"
 
 
 def text_is_empty(text: dict | None) -> bool:
@@ -557,7 +558,7 @@ def compose_cell(label: str, text: dict | None) -> str:
 
 
 def _render_gene(gene: dict, diseases: list[dict], legacy: dict[int, str],
-                 texts: dict[str, dict], slot_count: int) -> dict:
+                 texts: dict[str, dict], slot_count: int, adopted: set[str] | frozenset = frozenset()) -> dict:
     row = {
         "OMIM_id": gene["gene_mim"] if not gene["gene_mim"].startswith("symbol:") else "",
         "gene_symbol": gene["gene_symbol"],
@@ -585,6 +586,12 @@ def _render_gene(gene: dict, diseases: list[dict], legacy: dict[int, str],
         elif d["legacy_slot"] and legacy.get(d["legacy_slot"]):
             cell = legacy[d["legacy_slot"]]
             source = "xlsx"
+        elif d["phenotype_mim"] and d["phenotype_mim"] == gene["gene_mim"] and d["phenotype_mim"] in adopted:
+            # OMIM lists the phenotype under the gene's own MIM (no separate
+            # entry, e.g. somatic leukemias): the adopted gene page is all
+            # there is to capture.
+            cell = compose_cell(d["label"], None) + "\n\n" + GENE_PAGE_NOTE.format(mim=d["phenotype_mim"])
+            source = "gene_page"
         else:
             cell = d["label"]
             source = "label"
@@ -620,12 +627,13 @@ def load_rows(path: Path | None = None, slot_count: int = MAX_RENDERED_SLOTS) ->
             legacy.setdefault(r["gene_mim"], {})[r["slot"]] = r["text"]
         texts = {r["phenotype_mim"]: dict(r) for r in con.execute("SELECT * FROM phenotype_texts")}
         no_relationships = _genes_without_relationships(con)
+        adopted = {r[0] for r in con.execute("SELECT DISTINCT mim FROM adoptions")}
     by_id: dict[int, dict] = {}
     by_gene: dict[str, dict] = {}
     for gene in genes:
         row = _render_gene(
             gene, diseases.get(gene["gene_mim"], []), legacy.get(gene["gene_mim"], {}),
-            texts, slot_count,
+            texts, slot_count, adopted,
         )
         row["OMIM_no_relationships"] = gene["gene_mim"] in no_relationships
         try:

@@ -172,6 +172,13 @@ def build_genes() -> list[dict]:
             listed = any_latest.get(pm, "")
             kinds = []
             confirmed = False
+            if pm == gene_mim and source != "gene_page" and lines <= 1:
+                # The phenotype is listed under the gene's own MIM: capturing
+                # the gene page is the step (no separate disease page).
+                no_mim = True
+                continue
+            if source == "gene_page":
+                continue  # follows the gene page (gene step covers updates)
             if lines <= 1:
                 kinds.append("missing")
             elif source == "capture":
@@ -206,7 +213,10 @@ def build_genes() -> list[dict]:
         gene_reviews = reviews.get(gene_mim, [])
         in_panel = gene in panel
         openable = _is_mim(gene_mim)
-        is_synced = gene_mim in synced
+        # Any adopted capture of the gene's MIM counts as its page synced —
+        # also when OMIM lists that MIM as a locus (%) or phenotype entry
+        # (e.g. HYT1, SCZD1, BMND7 rows in the workbook).
+        is_synced = gene_mim in synced or gene_mim in adopted
         # Gene page OMIM updated after the version the platform holds: the
         # latest adopted capture of that MIM (whatever its entry type — old
         # or pseudogene entries have no "*" prefix), else the workbook Done
@@ -254,7 +264,7 @@ def build_genes() -> list[dict]:
             "gene_mim": gene_mim,
             "url": f"https://omim.org/entry/{gene_mim}" if openable else "",
             "panel": in_panel,
-            "synced_at": synced.get(gene_mim, ""),
+            "synced_at": synced.get(gene_mim, "") or (adopted[gene_mim][1] if gene_mim in adopted else ""),
             "done": done,
             "status": status,
             "has_update": has_update,
