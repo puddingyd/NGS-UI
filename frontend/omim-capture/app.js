@@ -134,7 +134,11 @@
       return `<li>${esc(g.gene)}：${esc(g.label)}${change}</li>`;
     }).join("");
     const unlisted = preview.unlisted || [];
-    const note = preview.omim_lists_no_disease
+    const moved = summary.moved_to || [];
+    const note = summary.entry_type === "moved_removed"
+      ? (moved.length ? `OMIM 已把這個 entry 搬到 ${moved.join("、")}；平台已記下，待補清單會改到新的 MIM。採用只是把這筆擷取標成已處理。`
+        : "OMIM 已移除這個 entry；採用後，如果它是平台上的基因，會列入「待確認」。")
+      : preview.omim_lists_no_disease
       ? (unlisted.length
         ? `OMIM 沒有列出這個基因的疾病。採用後記錄為已核對；平台現有的 ${unlisted.length} 個疾病（${unlisted.join("、")}）會列入待確認，不會刪除。`
         : "OMIM 沒有列出這個基因的疾病，平台也沒有；採用後記錄為已核對。")
@@ -166,7 +170,8 @@
   }
 
   const STEP_KIND = {
-    gene_page: ["基因頁", "info"], gene_updated: ["基因頁有更新", "warn"], missing: ["缺說明", "warn"],
+    gene_page: ["基因頁", "info"], gene_updated: ["基因頁有更新", "warn"], gene_moved: ["OMIM 已搬到新 MIM", "warn"],
+    missing: ["缺說明", "warn"],
     updated: ["OMIM 有更新", "warn"], new_disease: ["平台沒有的疾病", "warn"], new_gene: ["平台沒有的基因", "warn"],
     stale: ["逾一年", "info"],
   };
@@ -325,6 +330,7 @@
         <h3>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener">${esc(g.gene)} ${esc(g.gene_mim)}</a>` : `${esc(g.gene)} ${esc(g.gene_mim)}`}</h3>
         ${statusBadge} ${badge([g.source === "db" ? "平台資料庫" : "OMIM.xlsx", "info"])}
       </div>
+      ${(g.moved_to || []).length ? `<p class="muted-text">${badge(["OMIM 已搬移", "warn"])} 這個 MIM 已被 OMIM 併入 ${g.moved_to.map(m => `<a href="https://omim.org/entry/${esc(m)}" target="_blank" rel="noopener">${esc(m)}</a>`).join("、")}</p>` : ""}
       <p class="muted-text">${g.aliases.length ? `別名：${esc(g.aliases.join("、"))} · ` : ""}Inheritance：${esc(g.inheritance || "—")} · Done：${esc(g.done || "—")}${g.legacy_done && g.legacy_done !== g.done ? `（OMIM.xlsx 原 Done：${esc(g.legacy_done)}）` : ""} · 基因頁同步：${esc(g.synced_at ? fmtTime(g.synced_at) : "尚未")}</p>
       ${g.diseases.length ? `<table class="data-table lookup-table"><thead><tr><th>#</th><th>疾病</th><th>內容來源</th><th>報告</th></tr></thead><tbody>${diseases}</tbody></table>`
         : '<p class="muted-text">平台沒有這個基因的疾病資料。</p>'}

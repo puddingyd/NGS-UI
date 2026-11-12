@@ -901,3 +901,51 @@ def test_phenotype_listed_under_the_gene_mim_follows_the_gene_page(queue_env, db
     items = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
     assert "100007" not in items
     assert "100004" not in items or not any(s["type"] == "gene" for s in items["100004"]["steps"])
+
+
+def _moved_page(mim, title):
+    return (
+        f"OMIM\n^{mim}\nTable of Contents\nTitle\nText\nContributors\nCreation Date\nEdit History\n \n"
+        f"^ {mim}\n{title}\n▼ TEXT\nThis entry was incorporated into another entry on October 12, 2020.\n"
+        "Contributors:\nBao Lige - updated : 01/25/2019\nCreation Date:\nPatricia A. Hartz : 2/28/2007\n"
+        "Edit History:\nmgross : 10/12/2020\n\nNOTE: OMIM is intended\n"
+    )
+
+
+def test_moved_gene_entry_sends_the_queue_to_the_new_mim(queue_env, db):
+    from app.services import omim_queue
+    c, headers = queue_env
+    # SLC25A32-style: the workbook gene MIM was moved by OMIM.
+    cap = c.post("/api/omim/captures", json={"mim": "100004", "text": _moved_page("100004", "MOVED TO 100099")},
+                 headers=headers).json()
+    assert cap["summary"]["moved_to"] == ["100099"] and cap["summary"]["blockers"] == []
+    assert omim_db.mim_redirects() == {"100004": ["100099"]}  # recorded at capture time
+    omim_queue._cache.update(sig=None)
+    items = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+    step = items["100004"]["steps"][0]
+    assert (step["mim"], step["kinds"]) == ("100099", ["gene_moved"]) and "搬到 100099" in step["labels"][0]
+    nxt = c.get("/api/omim/queue/next?current=100004", headers=headers).json()
+    assert nxt["step"]["mim"] == "100099" and nxt["continuing"] is True
+    # Adopting the new gene page syncs the existing row (matched by symbol).
+    omim_db.adopt_capture(_gene_page("100099", "ATXNX", [("Spinocerebellar ataxia 1", "164400", "AD")]),
+                          user="rev", capture_id="100099/a")
+    omim_store._state.update(mtime=None)
+    omim_queue._cache.update(sig=None)
+    items = {g["gene_mim"]: g for g in c.get("/api/omim/queue?limit=1000").json()["items"]}
+    assert "100004" not in items or not any(s["type"] == "gene" for s in items["100004"]["steps"])
+    by_id, _by_gene = omim_db.load_rows(db["path"])
+    assert by_id[100099]["gene_symbol"] == "ATXNX" and by_id[100004]["OMIM_moved_to"] == ["100099"]
+    # The moved capture itself can be bulk-adopted (just marks it handled).
+    res = c.post("/api/omim/captures/adopt-pending", json={"ids": [cap["capture"]["id"]]}).json()
+    assert [a["id"] for a in res["adopted"]] == [cap["capture"]["id"]]
+
+
+def test_removed_gene_entry_becomes_an_item_to_confirm(db):
+    parsed = omim_capture.parse_entry_text(_moved_page("100006", "REMOVED FROM DATABASE"), url_mim="100006")
+    assert parsed["removed"] is True and omim_db.adoption_blockers(parsed) == []
+    result = omim_db.adopt_capture(parsed, user="rev", capture_id="100006/r")
+    assert result["removed"] is True and result["reviews"] == 1
+    kinds = [r["kind"] for r in omim_db.open_reviews_by_gene()["100006"]]
+    assert "removed_entry" in kinds
+    unknown = dict(parsed, removed=False, moved_to=[])
+    assert omim_db.adoption_blockers(unknown) == ["已移除或搬移的 entry（看不出搬到哪裡）"]

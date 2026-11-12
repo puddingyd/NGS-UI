@@ -124,6 +124,7 @@ def detail(row: dict) -> dict:
         "url": f"https://omim.org/entry/{gene_mim}" if _MIM_RE.match(gene_mim) else "",
         "source": omim_store.source(),
         "aliases": extras.get("aliases", []),
+        "moved_to": row.get("OMIM_moved_to") or [],
         "inheritance": row.get("Inheritance") or "",
         "done": row.get("Done") or "",
         "legacy_done": extras.get("legacy_done", row.get("Legacy_done", "")),

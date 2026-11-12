@@ -28,7 +28,7 @@ from pathlib import Path
 from ..config import OMIM_CAPTURE_DIR
 from . import disease_picks, omim_store
 
-PARSER_VERSION = 5
+PARSER_VERSION = 6
 MAX_TEXT_CHARS = 3_000_000
 
 ENTRY_TYPES = {
@@ -453,11 +453,22 @@ def parse_entry_text(text: str, *, url_mim: str = "", extracted: dict | None = N
     if len(genes) > 1:
         warnings.append(f"此疾病連到 {len(genes)} 個基因：{', '.join(genes)}")
 
+    # "^ 610815 / MOVED TO 138480" or "REMOVED FROM DATABASE".
+    moved_to: list[str] = []
+    removed = False
+    if entry_type == "moved_removed":
+        if title.upper().startswith("MOVED TO"):
+            moved_to = [m for m in re.findall(r"\b\d{6}\b", title) if m != mim]
+        elif title.upper().startswith("REMOVED"):
+            removed = True
+
     parsed = {
         "parser_version": PARSER_VERSION,
         "mim": mim,
         "prefix": prefix,
         "entry_type": entry_type,
+        "moved_to": moved_to,
+        "removed": removed,
         "title": title,
         "symbol": symbol,
         "alternative_titles": alt_titles,
@@ -685,6 +696,8 @@ def store_capture(payload: dict, parsed: dict, *, user: dict) -> dict:
         "synopsis_status": parsed.get("synopsis_status"),
         "description_source": parsed.get("description_source"),
         "relationship_count": len(parsed.get("relationships") or []),
+        "moved_to": parsed.get("moved_to") or [],
+        "removed": bool(parsed.get("removed")),
         "relationship_section": parsed.get("relationship_section") or "",
         "parser_version": parsed.get("parser_version"),
         "warnings": parsed.get("warnings") or [],
@@ -763,6 +776,8 @@ def summarize(parsed: dict, comparison: dict) -> dict:
         "symbol": parsed.get("symbol"),
         "relationships": parsed.get("relationships") or [],
         "relationship_section": parsed.get("relationship_section") or "",
+        "moved_to": parsed.get("moved_to") or [],
+        "removed": bool(parsed.get("removed")),
         "description_chars": len(parsed.get("description") or ""),
         "description_source": parsed.get("description_source"),
         "description_preview": (parsed.get("description") or "")[:400],

@@ -83,6 +83,9 @@ async def create_capture(request: Request, user: dict = Depends(capture_user)):
         raise HTTPException(422, "could not identify the OMIM entry on this page")
     omim_db.normalize_entry_type(parsed)
     stored = omim_capture.store_capture(payload, parsed, user=user)
+    # A moved/removed entry: remember the redirect right away so the work
+    # queue sends the reviewer to the new MIM (no adoption needed for that).
+    omim_db.record_redirect(parsed, user=user.get("username") or "", capture_id=stored["id"])
     comparison = omim_capture.compare_with_workbook(
         parsed["mim"],
         entry_type=parsed.get("entry_type") or "",
@@ -112,6 +115,8 @@ def _index_blockers(event: dict, latest_any: dict[str, str] | None = None) -> li
         "description": event.get("description_source") or "",
         "relationships": [None] * int(event.get("relationship_count") or 0),
         "relationship_section": event.get("relationship_section") or "",
+        "moved_to": event.get("moved_to") or [],
+        "removed": bool(event.get("removed")),
     })
 
 
@@ -134,12 +139,15 @@ def list_captures(limit: int = 100, view: str = "pending", user: dict = Depends(
             except HTTPException:
                 parsed = None
             if parsed:
+                omim_db.record_redirect(parsed, user=event.get("user") or "", capture_id=event.get("id") or "")
                 event.update(
                     synopsis_status=parsed.get("synopsis_status"),
                     description_source=parsed.get("description_source"),
                     warnings=parsed.get("warnings") or [],
                     relationship_count=len(parsed.get("relationships") or []),
                     relationship_section=parsed.get("relationship_section") or "",
+                    moved_to=parsed.get("moved_to") or [],
+                    removed=bool(parsed.get("removed")),
                     title=parsed.get("title") or event.get("title"),
                 )
         event["blockers"] = _index_blockers(event, latest_any) if omim_db.exists() else []

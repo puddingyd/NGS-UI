@@ -424,6 +424,13 @@
       return `<li>${esc(g.gene)}：${esc(g.label)}（${change}）</li>`;
     }).join("");
     const unlisted = preview.unlisted || [];
+    if (summary.entry_type === "moved_removed") {
+      const moved = summary.moved_to || [];
+      return `<p class="muted">${moved.length
+        ? `OMIM 已把這個 entry 搬到 ${esc(moved.join("、"))}。平台已記下，待補清單會改到新的 MIM；採用只是把這筆擷取標成已處理。`
+        : "OMIM 已移除這個 entry。採用後，如果它是平台上的基因，會列入「待確認」讓你決定。"}</p>
+        <div class="next-actions" style="display:flex;gap:6px"><button class="btn" id="adopt">採用到平台</button></div>`;
+    }
     let note = preview.omim_lists_no_disease
       ? (unlisted.length
         ? `OMIM 沒有列出這個基因的疾病。採用後記錄為已核對；平台現有的 ${unlisted.length} 個疾病（${esc(unlisted.join("、"))}）會列入待確認，不會刪除。`
@@ -485,6 +492,7 @@
   let nextData = null;
   const KIND_TEXT = {
     gene_page: "同步這個基因的疾病清單", gene_updated: "OMIM 之後更新了基因頁，重新同步",
+    gene_moved: "OMIM 已把這個基因搬到新的 MIM，同步新的基因頁",
     missing: "缺說明", stale: "超過一年未更新", updated: "OMIM 之後有更新",
     new_disease: "平台沒有的疾病（OMIM 有更新），採用後會加到所屬基因",
     new_gene: "平台沒有的基因（OMIM 有更新），採用後會建立這個基因",

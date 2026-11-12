@@ -50,7 +50,7 @@ from . import disease_picks, omim_capture, omim_db, omim_store, omim_updates, pa
 STALE_DAYS = 365
 KIND_RANK = {"missing": 3, "updated": 2, "new_disease": 2, "stale": 1}
 UPDATE_KINDS = {"gene_updated", "updated", "new_disease", "new_gene"}
-FIRST_PASS_KINDS = {"gene_page", "missing", "stale"}
+FIRST_PASS_KINDS = {"gene_page", "gene_moved", "missing", "stale"}
 STATUS_LABELS = {
     "in_progress": "進行中（已同步基因頁或已有疾病被更新，但尚未完成）",
     "updated": "OMIM 有更新（做過的基因或疾病，OMIM 之後又改了）",
@@ -139,6 +139,7 @@ def build_genes() -> list[dict]:
     synced = omim_db.gene_sync_map() if db else {}
     reviews = omim_db.open_reviews_by_gene() if db else {}
     adopted = omim_db.latest_adoptions() if db else {}
+    redirects = omim_db.mim_redirects() if db else {}
     texts = omim_db.phenotype_text_sources() if db else {}
     entry_latest, any_latest = omim_updates.latest_dates() if db else ({}, {})
     coverage_start = omim_updates.coverage().get("coverage_start", "") if db else ""
@@ -212,21 +213,27 @@ def build_genes() -> list[dict]:
                 step["confirmed_current"] = True
         gene_reviews = reviews.get(gene_mim, [])
         in_panel = gene in panel
-        openable = _is_mim(gene_mim)
-        # Any adopted capture of the gene's MIM counts as its page synced —
-        # also when OMIM lists that MIM as a locus (%) or phenotype entry
+        # OMIM moved the gene's entry (e.g. 610815 SLC25A32 -> 138480): the
+        # gene page to capture is the new MIM; a removed entry has no page.
+        moved = redirects.get(gene_mim)
+        page_mim = moved[0] if moved else gene_mim
+        openable = _is_mim(page_mim) and moved != []
+        # Any adopted capture of the gene's page MIM counts as its page synced
+        # — also when OMIM lists that MIM as a locus (%) or phenotype entry
         # (e.g. HYT1, SCZD1, BMND7 rows in the workbook).
-        is_synced = gene_mim in synced or gene_mim in adopted
+        is_synced = page_mim in synced or page_mim in adopted if moved else (
+            gene_mim in synced or gene_mim in adopted)
         # Gene page OMIM updated after the version the platform holds: the
         # latest adopted capture of that MIM (whatever its entry type — old
         # or pseudogene entries have no "*" prefix), else the workbook Done
         # date (none = unknown, so any listed update counts). Re-capturing
         # unchanged content refreshes the capture time.
-        listed = entry_latest.get(gene_mim, "")
-        content = capture_day(*adopted[gene_mim]) if gene_mim in adopted else curated_done
+        listed = entry_latest.get(page_mim, "")
+        content = capture_day(*adopted[page_mim]) if page_mim in adopted else (
+            "" if moved else curated_done)
         gene_update = listed if listed and listed > content else ""
         need_gene_step = openable and (bool(gene_update) or (not is_synced and bool(
-            in_panel or no_mim or gene_reviews or phenotype_steps
+            in_panel or no_mim or gene_reviews or phenotype_steps or moved
         )))
         if not need_gene_step and not phenotype_steps and not gene_reviews:
             continue
@@ -237,9 +244,12 @@ def build_genes() -> list[dict]:
         ph_steps.sort(key=lambda s: (s["minor"], -s["rank"], s["mim"]))
         gene_step = []
         if need_gene_step:
+            kind = "gene_updated" if gene_update and is_synced else ("gene_moved" if moved else (
+                "gene_updated" if gene_update else "gene_page"))
             gene_step = [{
-                "type": "gene", "mim": gene_mim, "url": f"https://omim.org/entry/{gene_mim}",
-                "labels": [f"{gene} 基因頁"], "kinds": ["gene_updated" if gene_update else "gene_page"],
+                "type": "gene", "mim": page_mim, "url": f"https://omim.org/entry/{page_mim}",
+                "labels": [f"{gene} 基因頁" + (f"（OMIM 已從 {gene_mim} 搬到 {page_mim}）" if moved else "")],
+                "kinds": [kind],
             }]
             if gene_update:
                 gene_step[0]["update_date"] = gene_update
@@ -262,7 +272,8 @@ def build_genes() -> list[dict]:
         genes.append({
             "gene": gene,
             "gene_mim": gene_mim,
-            "url": f"https://omim.org/entry/{gene_mim}" if openable else "",
+            "url": f"https://omim.org/entry/{page_mim}" if openable else "",
+            "moved_to": moved,
             "panel": in_panel,
             "synced_at": synced.get(gene_mim, "") or (adopted[gene_mim][1] if gene_mim in adopted else ""),
             "done": done,

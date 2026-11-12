@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS adoptions (
     summary     TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS adoptions_capture ON adoptions(capture_id);
+CREATE TABLE IF NOT EXISTS mim_redirects (
+    old_mim      TEXT PRIMARY KEY,
+    new_mims     TEXT NOT NULL DEFAULT '',
+    capture_id   TEXT NOT NULL DEFAULT '',
+    recorded_at  TEXT NOT NULL,
+    recorded_by  TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS omim_updates (
     mim          TEXT NOT NULL,
     kind         TEXT NOT NULL,
@@ -163,6 +170,7 @@ REVIEW_KINDS = {
     "overflow": "疾病超過 16 個，卡片只顯示前 16 個",
     "not_in_omim": "OMIM 基因頁已不列出這個疾病",
     "unmatched_label": "基因頁擷取時無法自動對應的舊疾病名稱",
+    "removed_entry": "OMIM 已移除這個 entry",
 }
 
 
@@ -627,6 +635,8 @@ def load_rows(path: Path | None = None, slot_count: int = MAX_RENDERED_SLOTS) ->
             legacy.setdefault(r["gene_mim"], {})[r["slot"]] = r["text"]
         texts = {r["phenotype_mim"]: dict(r) for r in con.execute("SELECT * FROM phenotype_texts")}
         no_relationships = _genes_without_relationships(con)
+        redirects = {r["old_mim"]: [m for m in r["new_mims"].split(",") if m]
+                     for r in con.execute("SELECT old_mim, new_mims FROM mim_redirects")}
         adopted = {r[0] for r in con.execute("SELECT DISTINCT mim FROM adoptions")}
     by_id: dict[int, dict] = {}
     by_gene: dict[str, dict] = {}
@@ -636,6 +646,8 @@ def load_rows(path: Path | None = None, slot_count: int = MAX_RENDERED_SLOTS) ->
             texts, slot_count, adopted,
         )
         row["OMIM_no_relationships"] = gene["gene_mim"] in no_relationships
+        if gene["gene_mim"] in redirects:
+            row["OMIM_moved_to"] = redirects[gene["gene_mim"]]
         try:
             by_id.setdefault(int(row["OMIM_id"]), row)
         except (TypeError, ValueError):
@@ -644,6 +656,14 @@ def load_rows(path: Path | None = None, slot_count: int = MAX_RENDERED_SLOTS) ->
             by_gene.setdefault(row["gene_symbol"], row)
         for alias in filter(None, (gene.get("alias_symbols") or "").split(",")):
             by_gene.setdefault(alias, row)
+    # A gene whose OMIM entry moved stays findable under the new MIM until a
+    # gene row with that MIM exists (pipelines may already link the new one).
+    for row in list(by_id.values()):
+        for new in row.get("OMIM_moved_to") or []:
+            try:
+                by_id.setdefault(int(new), row)
+            except ValueError:
+                pass
     return by_id, by_gene
 
 
@@ -791,14 +811,69 @@ def _upsert_relationship(con, gene_mim: str, rel: dict, *, user: str, capture_id
     return {"action": "unchanged", "label": label, "disease_id": target["id"]}
 
 
+def _record_redirect(con, parsed: dict, *, user: str, capture_id: str) -> None:
+    con.execute(
+        "INSERT INTO mim_redirects(old_mim, new_mims, capture_id, recorded_at, recorded_by) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(old_mim) DO UPDATE SET new_mims=excluded.new_mims, capture_id=excluded.capture_id, "
+        "recorded_at=excluded.recorded_at, recorded_by=excluded.recorded_by",
+        (parsed["mim"], ",".join(parsed.get("moved_to") or []), capture_id, _now(), user),
+    )
+
+
+def record_redirect(parsed: dict, *, user: str, capture_id: str, path: Path | None = None) -> bool:
+    """Remember where OMIM moved an entry (or that it was removed) as soon as
+    such a page is captured, so the work queue goes to the new MIM."""
+    if parsed.get("entry_type") != "moved_removed" or not parsed.get("mim"):
+        return False
+    if not (parsed.get("moved_to") or parsed.get("removed")) or not exists(path):
+        return False
+    with _write_lock, connect(path, write=True) as con:
+        _record_redirect(con, parsed, user=user, capture_id=capture_id)
+    return True
+
+
+def mim_redirects(path: Path | None = None) -> dict[str, list[str]]:
+    """old MIM -> MIMs OMIM moved it to ([] = removed)."""
+    if not exists(path):
+        return {}
+    with connect(path) as con:
+        return {r["old_mim"]: [m for m in r["new_mims"].split(",") if m]
+                for r in con.execute("SELECT old_mim, new_mims FROM mim_redirects")}
+
+
 def adopt_capture(parsed: dict, *, user: str, capture_id: str, path: Path | None = None) -> dict:
     """Apply a parsed capture to the database. Returns a change summary."""
     mim = parsed.get("mim") or ""
     entry_type = parsed.get("entry_type") or ""
     relationships = parsed.get("relationships") or []
     summary: dict = {"mim": mim, "entry_type": entry_type, "genes": [], "text": None, "reviews": 0}
-    if not mim or entry_type == "moved_removed":
-        raise ValueError("this entry cannot be adopted (no MIM, or moved/removed entry)")
+    if not mim:
+        raise ValueError("this entry cannot be adopted (no MIM)")
+    if entry_type == "moved_removed":
+        # Nothing to copy: record where OMIM moved the entry; a removed
+        # entry that is a platform gene gets an item to confirm.
+        if not (parsed.get("moved_to") or parsed.get("removed")):
+            raise ValueError("moved/removed entry without a target")
+        with _write_lock, connect(path, write=True) as con:
+            _record_redirect(con, parsed, user=user, capture_id=capture_id)
+            summary["moved_to"] = parsed.get("moved_to") or []
+            summary["removed"] = bool(parsed.get("removed"))
+            if parsed.get("removed") and con.execute("SELECT 1 FROM genes WHERE gene_mim = ?", (mim,)).fetchone() \
+                    and not con.execute("SELECT 1 FROM review_items WHERE gene_mim = ? AND kind = 'removed_entry' "
+                                        "AND status = 'open'", (mim,)).fetchone():
+                con.execute(
+                    "INSERT INTO review_items(kind, gene_mim, detail, created_at) VALUES ('removed_entry', ?, ?, ?)",
+                    (mim, json.dumps({"label": parsed.get("title") or "", "capture_id": capture_id},
+                                     ensure_ascii=False), _now()),
+                )
+                summary["reviews"] = 1
+            con.execute(
+                "INSERT INTO adoptions(capture_id, mim, entry_type, title, adopted_at, adopted_by, summary) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (capture_id, mim, entry_type, parsed.get("title") or "", _now(), user,
+                 json.dumps(summary, ensure_ascii=False)),
+            )
+        return summary
     with _write_lock, connect(path, write=True) as con:
         if entry_type in {"gene", "gene_phenotype"}:
             gene = _gene_row(con, mim, (parsed.get("symbol") or "").split(",")[0].strip(), user, capture_id)
@@ -1054,8 +1129,9 @@ def adoption_blockers(parsed: dict) -> list[str]:
     """Reasons a capture should not be adopted in bulk (single adopt still allowed)."""
     reasons = []
     entry_type = parsed.get("entry_type") or ""
-    if not parsed.get("mim") or entry_type == "moved_removed":
-        reasons.append("已移除或搬移的 entry")
+    if not parsed.get("mim") or (
+            entry_type == "moved_removed" and not (parsed.get("moved_to") or parsed.get("removed"))):
+        reasons.append("已移除或搬移的 entry（看不出搬到哪裡）")
     if any("找不到 entry" in w or "不一致" in w for w in parsed.get("warnings") or []):
         reasons.append("頁面與 MIM 對不上")
     if entry_type in {"gene", "gene_phenotype"}:
