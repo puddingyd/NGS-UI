@@ -111,7 +111,9 @@
   display: block; margin-top: 2px; padding: 0; border: 0; background: none; cursor: pointer;
   color: #0969da; font: inherit; font-size: 12.5px;
 }
-.lookup-toggle:hover { text-decoration: underline; }
+/* No grey hover box from the global button style. */
+.lookup-toggle:hover, .lookup-toggle:focus, .lookup-toggle:active { background: none; box-shadow: none; text-decoration: underline; }
+.lookup-head .badge, .lookup-head .mim-pill { line-height: 1.6; }
 /* Fixed column widths: expanding a row's 內容 never reflows the columns. */
 .lookup-table { table-layout: fixed; width: 100%; }
 .lookup-table col.col-idx { width: 36px; }

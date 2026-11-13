@@ -347,7 +347,8 @@
       }</tbody></table></details>` : "";
     return `
       <div class="lookup-head">
-        <h3>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener">${esc(g.gene)} ${esc(g.gene_mim)}</a>` : `${esc(g.gene)} ${esc(g.gene_mim)}`}</h3>
+        <h3>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener">${esc(g.gene)}</a>` : esc(g.gene)}</h3>
+        ${g.gene_mim ? mimPill(g.gene_mim, g.url) : ""}
         ${statusBadge} ${badge([g.source === "db" ? "平台資料庫" : "OMIM.xlsx", "info"])}
       </div>
       ${(g.moved_to || []).length ? `<p class="muted-text">${badge(["OMIM 已搬移", "warn"])} 這個 MIM 已被 OMIM 併入 ${g.moved_to.map(m => `<a href="https://omim.org/entry/${esc(m)}" target="_blank" rel="noopener">${esc(m)}</a>`).join("、")}</p>` : ""}
