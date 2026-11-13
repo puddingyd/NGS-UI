@@ -2,7 +2,7 @@
 """DGX duplicate secondary-output review. Python 3.8+, standard library only.
 
 Default: report only. --review additionally asks on /dev/tty before deleting.
-Never infer a directory's creation date from ctime, mtime or its batch name.
+Per operator confirmation, newest and cutoff use the sample directory's mtime.
 """
 import argparse
 from collections import defaultdict
@@ -35,34 +35,6 @@ def within(path, root):
         return False
 
 
-def birth_times(paths):
-    found, pending = {}, []
-    for path in paths:
-        value = getattr(path.stat(), "st_birthtime", 0)
-        if value > 0:
-            found[str(path)] = value
-        else:
-            pending.append(path)
-    if sys.platform.startswith("linux"):
-        for start in range(0, len(pending), 200):
-            batch = pending[start:start+200]
-            try:
-                proc = subprocess.run(["stat", r"--printf=%n\0%W\0", "--", *map(str, batch)],
-                                      capture_output=True, check=False, timeout=30)
-                parts = proc.stdout.split(b"\0")
-                for i in range(0, len(parts)-1, 2):
-                    name = os.fsdecode(parts[i])
-                    try:
-                        value = float(parts[i+1])
-                        if name in set(map(str, batch)) and value > 0:
-                            found[name] = value
-                    except ValueError:
-                        pass
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-    return found
-
-
 def signature(path):
     st = path.lstat()
     return [st.st_dev, st.st_ino, st.st_mode, st.st_size, st.st_mtime_ns, st.st_ctime_ns]
@@ -71,7 +43,6 @@ def signature(path):
 def tree_state(path):
     """Metadata digest, not large BAM content hashing. Never follow links."""
     digest = hashlib.sha256()
-    newest = 0
     device = path.stat().st_dev
     stack = [path]
     while stack:
@@ -81,10 +52,9 @@ def tree_state(path):
             raise RuntimeError("目錄包含另一個掛載點：" + str(p))
         target = os.readlink(p) if p.is_symlink() else ""
         digest.update(json.dumps([str(p.relative_to(path)), sig, target], ensure_ascii=True).encode())
-        newest = max(newest, sig[4]/1e9, sig[5]/1e9)
         if stat.S_ISDIR(sig[2]):
             stack.extend(sorted(p.iterdir(), reverse=True))
-    return digest.hexdigest(), newest
+    return digest.hexdigest()
 
 
 def complete(path, sid):
@@ -114,10 +84,9 @@ def samples(root):
             if not any((path / stage).is_dir() for stage in ("02_alignment", "04_snv_indel")):
                 continue
             rows.append(dict(sample=path.name, batch=batch.name, path=str(path)))
-    dates = birth_times([Path(row["path"]) for row in rows])
     for row in rows:
         path = Path(row["path"])
-        row.update(birth=dates.get(str(path)), modified=path.stat().st_mtime,
+        row.update(modified=path.stat().st_mtime,
                    identity=signature(path)[:2], complete=complete(path, path.name),
                    outputs=core_state(path, path.name),
                    seq_type=next((t for t in ("WES", "WGS") if re.search(r"(?:^|[_-])"+t+r"(?:$|[_-])", row["batch"], re.I)), ""))
@@ -179,31 +148,25 @@ def audit(root, reference_root, cutoff):
     for sid, rows in sorted(grouped.items()):
         if len(rows) < 2:
             continue
-        groups[sid] = sorted(rows, key=lambda r: (r["birth"] or 0, r["path"]), reverse=True)
-        latest = max((r["birth"] or 0 for r in rows))
-        uncertain = any(r["birth"] is None for r in rows)
+        groups[sid] = sorted(rows, key=lambda r: (r["modified"], r["path"]), reverse=True)
+        latest = max(r["modified"] for r in rows)
         mixed = len({r["seq_type"] for r in rows if r["seq_type"]}) > 1
-        latest_ready = all(r["complete"] for r in rows if r["birth"] == latest)
-        needs_tree = not uncertain and not mixed and latest_ready and any(r["birth"] < min(latest, cutoff) for r in rows)
+        latest_ready = all(r["complete"] for r in rows if r["modified"] == latest)
+        needs_tree = not mixed and latest_ready and any(r["modified"] < min(latest, cutoff) for r in rows)
         for row in rows:
-            digest, changed = tree_state(Path(row["path"])) if needs_tree else (None, 0)
+            digest = tree_state(Path(row["path"])) if needs_tree else None
             row.update(action="KEEP", reason="", fingerprint=digest)
-            if uncertain:
-                row["reason"] = "有版本建立時間未知，整組暫不刪"
-            elif mixed:
+            if mixed:
                 row["reason"] = "同ID同時有WES與WGS，整組暫不刪"
-            elif row["birth"] == latest:
-                row["reason"] = "最新版本（同時間並列亦保留）"
-            elif row["birth"] >= cutoff:
-                row["reason"] = "2026/11/5起的保護期間"
+            elif row["modified"] == latest:
+                row["reason"] = "修改時間最新版本（同時間並列亦保留）"
+            elif row["modified"] >= cutoff:
+                row["reason"] = "資料夾修改日期自2026/11/5起，保留"
             elif not latest_ready:
                 row["reason"] = "最新版本的BAM/VCF及index未齊，整組暫不刪"
             else:
-                if changed >= cutoff:
-                    row["reason"] = "保護期間仍有內容或狀態變動"
-                else:
-                    row.update(action="DELETE", reason="舊版本且早於保護期間")
-                    candidates.append(row["path"])
+                row.update(action="DELETE", reason="資料夾修改時間較舊且早於保護期間")
+                candidates.append(row["path"])
     dependency_error = None
     if candidates:
         try:
@@ -217,7 +180,8 @@ def audit(root, reference_root, cutoff):
                     row.update(action="KEEP", reason="相依資料無法核對，暫不刪")
                 elif row["path"] in references:
                     row.update(action="KEEP", reason="仍被其他資料引用", references=references[row["path"]][:20])
-    return dict(root=str(root), reference_root=str(reference_root), cutoff=cutoff, groups=groups, dependency_error=dependency_error)
+    return dict(root=str(root), reference_root=str(reference_root), cutoff=cutoff,
+                date_basis="sample_directory_mtime", groups=groups, dependency_error=dependency_error)
 
 
 def token(plan):
@@ -225,7 +189,7 @@ def token(plan):
 
 
 def stamp(value):
-    return datetime.fromtimestamp(value, TAIPEI).strftime("%Y-%m-%d %H:%M:%S") if value else "無法取得"
+    return datetime.fromtimestamp(value, TAIPEI).strftime("%Y-%m-%d %H:%M:%S") if value is not None else "無法取得"
 
 
 def save_report(plan, destination):
@@ -233,13 +197,13 @@ def save_report(plan, destination):
     (destination / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     with (destination / "duplicates.tsv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")
-        writer.writerow(["sample", "建立時間(台北)", "修改時間(不是建立時間)", "動作", "原因", "路徑"])
+        writer.writerow(["sample", "資料夾修改時間(台北，判定依據)", "動作", "原因", "路徑"])
         for sid, rows in plan["groups"].items():
             print("\nSample: " + sid)
             for row in rows:
-                line = [sid, stamp(row["birth"]), stamp(row["modified"]), row["action"], row["reason"], row["path"]]
+                line = [sid, stamp(row["modified"]), row["action"], row["reason"], row["path"]]
                 writer.writerow(line)
-                print("  {}  建立={}  修改={}  {}\n    {}".format(row["action"], line[1], line[2], row["reason"], row["path"]))
+                print("  {}  資料夾修改={}  {}\n    {}".format(row["action"], line[1], row["reason"], row["path"]))
     count = sum(r["action"] == "DELETE" for rows in plan["groups"].values() for r in rows)
     if plan.get("dependency_error"):
         print("\n相依檢查未完成，本次全部保留：" + plan["dependency_error"])
@@ -318,11 +282,11 @@ def delete_reviewed(plan, report_dir, work_root):
                 nested_mounts(path)
                 no_nextflow()
                 for keeper in rows:
-                    if keeper["birth"] == max(r["birth"] for r in rows):
+                    if keeper["modified"] == max(r["modified"] for r in rows):
                         kept = Path(keeper["path"])
-                        if core_state(kept, keeper["sample"]) != keeper["outputs"] or tree_state(kept)[0] != keeper["fingerprint"]:
+                        if core_state(kept, keeper["sample"]) != keeper["outputs"] or tree_state(kept) != keeper["fingerprint"]:
                             raise RuntimeError("最新保留版本已變動，停止刪除：" + str(kept))
-                digest, _ = tree_state(path)
+                digest = tree_state(path)
                 if digest != row["fingerprint"] or signature(path)[:2] != row["identity"]:
                     raise RuntimeError("目錄已變動，停止刪除：" + str(path))
                 quarantine = path.parent / (".ngs-secondary-cleanup-" + uuid.uuid4().hex)
@@ -363,7 +327,7 @@ def main():
     report_dir = Path(args.report_dir) if args.report_dir else Path(tempfile.mkdtemp(prefix="ngs-secondary-review-"))
     if within(report_dir.resolve(), root):
         raise RuntimeError("報告必須放在二級資料根以外")
-    print("搜尋根：{}\n保護：2026-11-05 00:00:00 +08:00起建立，或之後仍有變動的資料\n只刪batch/sample，不刪整個batch。".format(root))
+    print("搜尋根：{}\n判定依據：sample資料夾修改時間（mtime），不使用建立時間或批次名稱日期\n保護：修改日期為2026-11-05 00:00:00 +08:00起的資料\n只刪batch/sample，不刪整個batch。".format(root))
     plan = audit(root, reference_root, cutoff)
     count = save_report(plan, report_dir)
     if not args.review or not count:

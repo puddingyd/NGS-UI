@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.33：依使用者確認，DGX二級重複清理改用**sample資料夾修改日期**判斷最新版本及11/5保護界線，不再因建立時間讀不到而整組保留。仍先盤點、要求當次確認碼才刪；引用、WES/WGS及執行中工作的保護保留。請重新複製[新版完整可貼程式](scripts/paste_cleanup_secondary_duplicates.sh)，舊`/tmp`程式不會自動更新。[操作規則](docs/ops/SECONDARY_DUPLICATE_CLEANUP.md)。
+
 v10.32：[PRS流程說明](docs/research/prs/PRS_WORKFLOW.md)在原概念主線下，逐步補上可展開的生資方法、工具／參數、程式路徑與審查重點，並明確區分各病計分位點的reference比對與共用CHD位點的祖源分析。文末可查本機／伺服器入口及資料位置；原「說明」入口下載新版，計分與風險算法不變。
 
 v10.31：提供[可整段貼到DGX的二級重複資料盤點／確認清理程式](scripts/paste_cleanup_secondary_duplicates.sh)，使用`/datalake_Intermediate/pipeline/nextflow_output`，先列每個重複sample的所有日期與路徑，保留最新及11/5起的版本，再要求本次報告確認碼才刪舊sample目錄。日期或相依狀態不明則保留；不改服務、不清整個batch／原始FASTQ／三級／work。[操作與限制](docs/ops/SECONDARY_DUPLICATE_CLEANUP.md)。

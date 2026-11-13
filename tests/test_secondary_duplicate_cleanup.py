@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
@@ -16,19 +17,17 @@ CUTOFF = datetime(2026,11,5,tzinfo=cleanup.TAIPEI).timestamp()
 def tree(tmp_path,monkeypatch):
     root=tmp_path/'nextflow_output';root.mkdir()
     tertiary=tmp_path/'tertiary_output';tertiary.mkdir()
-    dates,changes={},{}
-    monkeypatch.setattr(cleanup,'birth_times',lambda paths:{str(p):dates[str(p)] for p in paths if dates.get(str(p))})
-    original=cleanup.tree_state
-    monkeypatch.setattr(cleanup,'tree_state',lambda p:(original(p)[0],changes.get(str(p),CUTOFF-86400)))
+    dates={}
     def add(batch, sid, day, complete=True):
         folder=root/batch/sid
         for rel in ('02_alignment/'+sid+'.aligned.sorted.bam','02_alignment/'+sid+'.aligned.sorted.bam.bai',
                     '04_snv_indel/'+sid+'.ensemble.fixed.vcf.gz','04_snv_indel/'+sid+'.ensemble.fixed.vcf.gz.tbi'):
             path=folder/rel;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'SYNTHETIC')
         if not complete:(folder/'04_snv_indel'/f'{sid}.ensemble.fixed.vcf.gz.tbi').unlink()
-        dates[str(folder)]=datetime(2026,11,day,tzinfo=cleanup.TAIPEI).timestamp() if day else None
+        dates[str(folder)]=datetime(2026,11,day,tzinfo=cleanup.TAIPEI).timestamp()
+        os.utime(folder,(dates[str(folder)],dates[str(folder)]))
         return folder
-    return root,tertiary,add,changes
+    return root,tertiary,add,dates
 
 
 def actions(plan,sid='S1'):
@@ -54,20 +53,46 @@ def test_equal_latest_dates_are_both_retained(tree):
     assert rows['b_WES']['action']==rows['c_WES']['action']=='KEEP'
 
 
-@pytest.mark.parametrize('condition',['unknown_date','incomplete_latest','wes_wgs'])
+@pytest.mark.parametrize('condition',['incomplete_latest','wes_wgs'])
 def test_uncertain_groups_are_not_deleted(tree,condition):
     root,tertiary,add,_=tree
     add('old_WES','S1',1)
-    add('new_WGS' if condition=='wes_wgs' else 'new_WES','S1',None if condition=='unknown_date' else 4,complete=condition!='incomplete_latest')
+    add('new_WGS' if condition=='wes_wgs' else 'new_WES','S1',4,complete=condition!='incomplete_latest')
     assert all(r['action']=='KEEP' for r in actions(cleanup.audit(root,tertiary,CUTOFF)).values())
 
 
-def test_old_folder_with_recent_content_is_protected(tree):
-    root,tertiary,add,changes=tree
-    old=add('old_WES','S1',1);add('new_WES','S1',4)
-    changes[str(old)]=CUTOFF
+def test_sample_folder_mtime_at_cutoff_is_protected(tree):
+    root,tertiary,add,_=tree
+    old=add('old_WES','S1',1);add('new_WES','S1',6)
+    os.utime(old,(CUTOFF,CUTOFF))
     row=actions(cleanup.audit(root,tertiary,CUTOFF))['old_WES']
-    assert row['action']=='KEEP' and '變動' in row['reason']
+    assert row['action']=='KEEP' and '2026/11/5' in row['reason']
+
+
+def test_no_creation_time_lookup_and_ctime_does_not_block_mtime_policy(tree,monkeypatch):
+    root,tertiary,add,_=tree
+    add('old_WES','S1',1);add('new_WES','S1',4)
+    def unexpected(*args,**kwargs):
+        raise AssertionError('audit must not call stat for creation time')
+    monkeypatch.setattr(cleanup.subprocess,'run',unexpected)
+    original=cleanup.signature
+    def recent_ctime(path):
+        result=original(path)
+        result[5]=int((CUTOFF+86400)*1e9)
+        return result
+    monkeypatch.setattr(cleanup,'signature',recent_ctime)
+    plan=cleanup.audit(root,tertiary,CUTOFF)
+    assert plan['date_basis']=='sample_directory_mtime'
+    assert actions(plan)['old_WES']['action']=='DELETE'
+
+
+def test_child_file_dates_do_not_replace_sample_folder_mtime(tree):
+    root,tertiary,add,_=tree
+    old=add('old_WES','S1',1);add('new_WES','S1',4)
+    child=old/'02_alignment/S1.aligned.sorted.bam'
+    os.utime(child,(CUTOFF+86400,CUTOFF+86400))
+    assert old.stat().st_mtime<CUTOFF
+    assert actions(cleanup.audit(root,tertiary,CUTOFF))['old_WES']['action']=='DELETE'
 
 
 @pytest.mark.parametrize('reference',['symlink','source_marker'])
@@ -95,11 +120,12 @@ def test_changed_retained_latest_aborts_before_deletion(tree,tmp_path,monkeypatc
 
 
 def test_delete_only_reviewed_sample_and_preserve_external_link_targets(tree,tmp_path,monkeypatch):
-    root,tertiary,add,_=tree
+    root,tertiary,add,dates=tree
     old=add('old_WES','S1',1);new=add('new_WES','S1',4)
     other=add('old_WES','OTHER',1)
     external=tmp_path/'original.fastq.gz';external.write_bytes(b'RAW INPUT')
     (old/'external-link').symlink_to(external)
+    os.utime(old,(dates[str(old)],dates[str(old)]))
     sheet=old.parent/'samplesheet.csv';sheet.write_text('sample\nS1\nOTHER\n')
     plan=cleanup.audit(root,tertiary,CUTOFF)
     monkeypatch.setattr(cleanup,'idle_guard',lambda p:nullcontext())

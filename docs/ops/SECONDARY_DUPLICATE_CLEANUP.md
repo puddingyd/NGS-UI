@@ -1,10 +1,10 @@
 # DGX 二級重複資料：盤點與確認清理
 
-v10.31，2026-11-13。這是獨立操作者工具，不改平台服務／分析設定，也不代替使用者到 server 執行。
+v10.33，2026-11-13。這是獨立操作者工具，不改平台服務／分析設定，也不代替使用者到 server 執行。
 
 ## 執行方式
 
-開啟 `scripts/paste_cleanup_secondary_duplicates.sh`，**全選整份內容**，貼到 DGX 互動終端。DGX 不必有這個 repo、不需連 GitHub、不需安裝 Python 套件。使用 Python 3.8+ 標準函式庫及 Linux 的 `stat`／`ps`。
+開啟 `scripts/paste_cleanup_secondary_duplicates.sh`，**全選整份內容**，貼到 DGX 互動終端。DGX 不必有這個 repo、不需連 GitHub、不需安裝 Python 套件。使用 Python 3.8+ 標準函式庫及 Linux 的 `ps`。
 
 程式固定傳入使用者指定的 root：
 
@@ -12,7 +12,7 @@ v10.31，2026-11-13。這是獨立操作者工具，不改平台服務／分析�
 /datalake_Intermediate/pipeline/nextflow_output
 ```
 
-先在 `/tmp/ngs-secondary-review.XXXXXX/` 放程式和報告；資料根先唯讀。列出每個重複 sample 的每次建立時間、修改時間（另行標示，不冒稱建立時間）、完整路徑、KEEP／DELETE 與原因。完整紀錄在 `duplicates.tsv` 和 `plan.json`。
+先在 `/tmp/ngs-secondary-review.XXXXXX/` 放程式和報告；資料根先唯讀。列出每個重複 sample 的每次sample資料夾修改時間（台北，判斷依據）、完整路徑、KEEP／DELETE 與原因。完整紀錄在 `duplicates.tsv` 和 `plan.json`。
 
 有可刪項目時最後詢問：
 
@@ -31,14 +31,14 @@ python3 /tmp/ngs-secondary-review.實際代碼/cleanup_secondary_duplicates.py -
 ## 本次規則
 
 - 只辨識既有 `<root>/<batch>/<sample>/02_alignment` 或 `04_snv_indel` 的兩層 sample 目錄；sample ID採完整字串相同，不合併 S1 與 S10，也不刪整個混有其他個案的 batch。
-- 每個重複 sample 保留建立時間最新者；建立時間並列的最新版本全部保留。
-- 日期界線保守設為 **2026-11-05 00:00:00 +08:00**：11/5當天及以後建立的版本全部保留。因此不保證最後每個sample只有一份；這是使用者指定保護例外。
-- 建立時間使用真正的檔案系統 birthtime：macOS的`st_birthtime`或Linux GNU `stat %W`。任何版本取不到建立時間，就保留整組，**不拿批次名稱／mtime／ctime猜建立時間**。修改時間另外列出，方便核對。
-- 舊目錄即使建立於界線以前，只要樹內任一項目的mtime／ctime仍在11/5起有變動，也保留，避免清掉舊目錄內新產生／覆寫的內容。
+- 依使用者確認的新規則，每個重複sample保留**sample資料夾修改時間（mtime）最新者**；相同mtime並列最新者全部保留。這是`<root>/<batch>/<sample>`目錄本身的mtime，不用batch名稱日期，也不以子檔案的最大mtime取代。
+- 日期界線保守設為 **2026-11-05 00:00:00 +08:00**：**sample資料夾修改日期為11/5當天及以後的版本全部保留**。因此不保證最後每個sample只有一份；這是使用者指定保護例外。
+- 不查birthtime，也不再因建立時間未知而整組保留；不把修改日期稱為建立日期。
+- mtime是本次經確認的排序／日期界線；ctime與整個樹的metadata仍存入確認用指紋，僅用於偵測「盤點後又有變更」，不再因ctime或子檔案時間晚於11/5就額外改變日期篩選規則。
 - 同ID出現明確 WES 與 WGS batch標籤時，整組先保留，避免清掉不同檢測類型。標籤判斷只看batch名稱中的完整WES／WGS詞。
 - 最新版本必須具備非空的對應BAM、VCF及BAI／TBI或CSI，才把更舊版本列為候選；這是最低檔案檢查，不代表全部工具或臨床品質已驗證。
 
-如DGX檔案系統沒有birthtime，報告會列「建立時間無法取得」並保留，不會因為人已按確認就猜測日期強刪。這時先檢視盤點報告，再由使用者決定其他日期證據與新的清理規則。
+前次操作者貼回145個重複sample、298個目錄全部birthtime未知，故v10.31只有盤點，沒有刪除；使用者隨後明確確認改採「資料夾修改日期」。新版JSON記`date_basis=sample_directory_mtime`，終端與TSV也標示同一依據。先前保存在`/tmp/ngs-secondary-review.w6rLy9/`的程式不會自動更新，請重新複製新版可貼程式，重新產生清單與確認碼。
 
 ## 相依資料與執行中工作
 
@@ -63,4 +63,4 @@ python3 /tmp/ngs-secondary-review.實際代碼/cleanup_secondary_duplicates.py -
 
 ## 驗證與界線
 
-合成資料測試涵蓋最新／日期並列、11/5界線、未知建立時間、近期變動、最新核心檔不齊、WES/WGS分開保留、symlink／三級marker引用、最新版本變動時拒刪、實際rmtree只刪核准sample、外部link目標與同batch其他sample保留、Enter不刪、busy lease阻擋、相依root缺失不刪、可貼版與受測Python原碼一致。測試只在本機合成暫存目錄；沒有到DGX搜尋或刪除真實資料。
+合成資料測試涵蓋資料夾mtime最新／日期並列、11/5界線、完全不呼叫birthtime查詢、ctime與子檔日期不取代sample目錄mtime、最新核心檔不齊、WES/WGS分開保留、symlink／三級marker引用、最新版本變動時拒刪、實際rmtree只刪核准sample、外部link目標與同batch其他sample保留、Enter不刪、busy lease阻擋、相依root缺失不刪、可貼版與受測Python原碼一致。測試只在本機合成暫存目錄；沒有到DGX搜尋或刪除真實資料。
