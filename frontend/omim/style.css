@@ -131,10 +131,10 @@
 /* MIM numbers as soft pills (lookup and work queue): same size as the
    badges, and inline so a wrapped label keeps even line spacing. */
 .mim-pill {
-  display: inline; padding: 1px 8px; border-radius: 10px; background: #fff6d9; color: #6a4d00;
+  display: inline; padding: 1px 8px; border-radius: 10px; background: #ffead8; color: #8a3d00;
   font-size: 12px; font-variant-numeric: tabular-nums; text-decoration: none; white-space: nowrap;
 }
-a.mim-pill:hover { background: #ffeaa6; color: #4d3800; text-decoration: none; }
+a.mim-pill:hover { background: #ffd8b8; color: #6b2e00; text-decoration: none; }
 .lookup-choices { display: flex; flex-wrap: wrap; gap: 6px; }
 .lookup-changes { margin-top: 10px; }
 .btn-mini { padding: 2px 8px; font-size: 12px; margin-top: 4px; }
