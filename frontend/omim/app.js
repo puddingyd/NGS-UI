@@ -323,16 +323,17 @@
     const q = g.queue;
     const statusBadge = q ? badge(STATUS_BADGE[q.status] || [q.status, "info"]) : badge(["已完成", "ok"]);
     const diseases = g.diseases.map((d, i) => `
-      <tr>
+      <tr class="lookup-main">
         <td>${i + 1}</td>
         <td>${d.phenotype_mim ? mimPill(d.phenotype_mim, d.url) : '<span class="muted-text">無 MIM</span>'} ${esc(d.label)}
-          ${d.linked_genes.length ? `<br><span class="muted-text">也連到：${d.linked_genes.map(x => `<a href="#" data-lookup="${esc(x)}">${esc(x)}</a>`).join("、")}</span>` : ""}</td>
+          ${d.linked_genes.length ? `<br><span class="muted-text">也連到：${d.linked_genes.map(x => `<a href="#" data-lookup="${esc(x)}">${esc(x)}</a>`).join("、")}</span>` : ""}
+          <button type="button" class="lookup-toggle" aria-expanded="false">▸ 內容</button></td>
         <td>${badge(SOURCE_BADGE[d.source] || [d.source, "info"])}${d.adopted_at ? ` <span class="muted-text">${esc(fmtDate(d.adopted_at))}</span>` : ""}
           ${d.omim_edit_date ? `<br><span class="muted-text">OMIM 編輯 ${esc(fmtDate(d.omim_edit_date))}</span>` : ""}
           ${d.omim_empty ? `<br><span class="muted-text">OMIM 頁面沒有內文${d.text.includes("\n") && !d.text.includes("（OMIM 此 entry") ? "，保留 OMIM.xlsx 原文" : ""}</span>` : ""}</td>
         <td class="lookup-samples">${[...new Set((d.reported_samples || []).map(sampleNo))].map(esc).join("<br>")}</td>
       </tr>
-      <tr class="lookup-text-row"><td></td><td colspan="3"><details><summary>內容</summary><div class="lookup-text">${esc(d.text)}</div></details></td></tr>`).join("");
+      <tr class="lookup-text-row" hidden><td></td><td colspan="3"><div class="lookup-text">${esc(d.text)}</div></td></tr>`).join("");
     const steps = q && q.steps.length ? `<p><b>待補步驟</b></p><ol class="step-list">${q.steps.map(st => `<li>
       ${mimPill(st.mim, st.url)} ${st.type === "gene" ? "基因頁" : esc((st.labels || [])[0] || "")}
       ${(st.kinds || []).map(k => badge(STEP_KIND[k] || [k, "info"])).join(" ")}</li>`).join("")}</ol>` : "";
@@ -509,6 +510,19 @@
     $("#lookup-card").scrollIntoView({ behavior: "smooth", block: "start" });
   });
   $("#lookup-result").addEventListener("click", async ev => {
+    // 內容 toggle sits under the disease name; the text opens full width
+    // in the row below.
+    const toggle = ev.target.closest(".lookup-toggle");
+    if (toggle) {
+      const row = toggle.closest("tr");
+      const textRow = row.nextElementSibling;
+      const open = textRow.hidden;
+      textRow.hidden = !open;
+      row.classList.toggle("open", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.textContent = `${open ? "▾" : "▸"} 內容`;
+      return;
+    }
     const btn = ev.target.closest("[data-review]");
     if (!btn) return;
     const action = btn.dataset.action;
