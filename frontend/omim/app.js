@@ -26,6 +26,8 @@
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? String(iso).slice(0, 10) : d.toLocaleDateString("sv-SE");
   };
+  // 檢體編號 without the pipeline-source suffix (26WE0028-dragen → 26WE0028).
+  const sampleNo = id => String(id || "").replace(/-(dragen|nckuh|inhouse)$/i, "");
   // MIM number as a soft pill (linked to omim.org when it is a MIM).
   const mimPill = (mim, url) => {
     const m = esc(mim || "");
@@ -275,6 +277,7 @@
   let lookupTimer = null;
 
   let lookupItems = [];
+  let lookupSeq = 0;
   let lookupActive = -1;
 
   function hideLookupDropdown() {
@@ -295,10 +298,11 @@
   }
 
   async function lookupSuggest() {
+    const seq = ++lookupSeq;
     const q = $("#lookup-q").value.trim();
     if (q.length < 1 || /^\d+$/.test(q)) { lookupItems = []; hideLookupDropdown(); return; }
     const { items } = await api(`/api/omim/genes/search?q=${encodeURIComponent(q)}&limit=15`);
-    if ($("#lookup-q").value.trim() !== q) return;  // typed on meanwhile
+    if ($("#lookup-q").value.trim() !== q || seq !== lookupSeq) return;  // typed on / looked up meanwhile
     lookupItems = items;
     lookupActive = -1;
     renderLookupDropdown();
@@ -317,7 +321,7 @@
 
   function renderGene(g) {
     const q = g.queue;
-    const statusBadge = q ? badge(STATUS_BADGE[q.status] || [q.status, "info"]) : badge(["已完成，不在待補清單", "ok"]);
+    const statusBadge = q ? badge(STATUS_BADGE[q.status] || [q.status, "info"]) : badge(["已完成", "ok"]);
     const diseases = g.diseases.map((d, i) => `
       <tr>
         <td>${i + 1}</td>
@@ -326,7 +330,7 @@
         <td>${badge(SOURCE_BADGE[d.source] || [d.source, "info"])}${d.adopted_at ? ` <span class="muted-text">${esc(fmtDate(d.adopted_at))}</span>` : ""}
           ${d.omim_edit_date ? `<br><span class="muted-text">OMIM 編輯 ${esc(fmtDate(d.omim_edit_date))}</span>` : ""}
           ${d.omim_empty ? `<br><span class="muted-text">OMIM 頁面沒有內文${d.text.includes("\n") && !d.text.includes("（OMIM 此 entry") ? "，保留 OMIM.xlsx 原文" : ""}</span>` : ""}</td>
-        <td class="lookup-samples">${(d.reported_samples || []).map(esc).join("<br>")}</td>
+        <td class="lookup-samples">${[...new Set((d.reported_samples || []).map(sampleNo))].map(esc).join("<br>")}</td>
       </tr>
       <tr class="lookup-text-row"><td></td><td colspan="3"><details><summary>內容</summary><div class="lookup-text">${esc(d.text)}</div></details></td></tr>`).join("");
     const steps = q && q.steps.length ? `<p><b>待補步驟</b></p><ol class="step-list">${q.steps.map(st => `<li>
@@ -349,7 +353,7 @@
       <p class="muted-text">${g.aliases.length ? `別名：${esc(g.aliases.join("、"))} · ` : ""}Inheritance：${esc(g.inheritance || "—")} · 資料日期：${esc(fmtDate(g.done) || "—")}</p>
       ${g.diseases.length ? `<table class="data-table lookup-table">
         <colgroup><col class="col-idx"><col class="col-disease"><col class="col-source"><col class="col-report"></colgroup>
-        <thead><tr><th>#</th><th>疾病</th><th>內容來源</th><th>報告（檢體編號）</th></tr></thead><tbody>${diseases}</tbody></table>`
+        <thead><tr><th>#</th><th>疾病</th><th>內容來源</th><th>報告</th></tr></thead><tbody>${diseases}</tbody></table>`
         : '<p class="muted-text">平台沒有這個基因的疾病資料。</p>'}
       ${steps}${reviews}${removed}${changes}`;
   }
@@ -358,6 +362,10 @@
     q = String(q || "").trim();
     if (!q) return;
     $("#lookup-q").value = q;
+    // Drop suggestions still on their way, so the list does not reopen
+    // over the result.
+    clearTimeout(lookupTimer);
+    lookupSeq += 1;
     lookupItems = [];
     hideLookupDropdown();
     const box = $("#lookup-result");
