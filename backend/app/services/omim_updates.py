@@ -34,7 +34,6 @@ KIND_LABELS = {
 }
 ENTRY_KINDS = {"new_entry", "updated_entry"}
 FIRST_MONTH = "1995-12"
-STALE_MODES = {"both", "updates_only"}
 MAX_ROWS = 5000
 
 _MONTHS = {name.lower(): i for i, name in enumerate(calendar.month_name) if name}
@@ -249,11 +248,6 @@ def set_setting(key: str, value: str, path=None) -> None:
         )
 
 
-def stale_mode(path=None) -> str:
-    mode = get_setting("stale_mode", "both", path)
-    return mode if mode in STALE_MODES else "both"
-
-
 def coverage(path=None) -> dict:
     """Which Update List months are stored, and which are still needed."""
     current = us_today()[:7]
@@ -279,8 +273,12 @@ def coverage(path=None) -> dict:
     out["needed_from"] = needed
     out["months"] = sorted(months.values(), key=lambda m: m["month"], reverse=True)
     out["last_captured_at"] = max((m["captured_at"] for m in months.values()), default="")
-    out["missing"] = [m for m in reversed(months_between(needed, current))
+    # Only finished months are due: November is read once December starts.
+    last_full = _previous_month(current)
+    out["missing"] = [m for m in reversed(months_between(needed, last_full))
                       if not (months.get(m) or {}).get("complete")]
+    out["last_full_month"] = last_full
+    out["reminder_due"] = bool(needed) and last_full >= needed and not (months.get(last_full) or {}).get("complete")
     # Earliest month from which every month up to the last full one is complete.
     start = ""
     month = _previous_month(current)

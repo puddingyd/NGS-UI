@@ -387,17 +387,17 @@ def test_queue_is_gene_centred_and_ordered(queue_env):
     assert genes[:2] == ["ATXNX", "OTX9"]
     atxn = data["items"][0]
     assert atxn["status"] == "gene_sync"
-    # gene page, then the label-only SCA1 (missing) before SCA10 (curated, no Done → stale)
+    # gene page, then the label-only SCA1 (missing); curated SCA10 text is
+    # not re-checked by age (only OMIM updates send it back)
     assert [(s["type"], s["mim"], s["kinds"]) for s in atxn["steps"]] == [
         ("gene", "100004", ["gene_page"]), ("phenotype", "164400", ["missing"]),
-        ("phenotype", "603516", ["stale"]),
     ]
     assert [r["kind"] for r in atxn["reviews"]] == ["slot_not_in_omim_disease"]
     # non-panel gene with a disease to fill still gets its gene page first
     gene1 = next(i for i in data["items"] if i["gene"] == "GENE1")
     assert gene1["reported"] == 3
     assert [(s["type"], s["kinds"]) for s in gene1["steps"]] == [
-        ("gene", ["gene_page"]), ("phenotype", ["missing"]), ("phenotype", ["stale"])]
+        ("gene", ["gene_page"]), ("phenotype", ["missing"])]
     assert data["counts"]["panel_gene_sync"] == 2
     assert c.get("/api/omim/queue?status=review").json()["total"] >= 1
     assert c.get("/api/omim/queue?scope=bogus").status_code == 400
@@ -407,7 +407,7 @@ def test_next_stays_on_gene_and_gene_sync_puts_it_in_progress(queue_env):
     c, headers = queue_env
     first = c.get("/api/omim/queue/next", headers=headers).json()
     assert first["step"]["type"] == "gene" and first["gene"]["gene"] == "ATXNX"
-    assert first["gene"]["total_steps"] == 3
+    assert first["gene"]["total_steps"] == 2
     # adopt the gene page: OMIM lists SCA1 and a disease the platform lacked
     result = omim_db.adopt_capture(
         _gene_page("100004", "ATXNX", [("Spinocerebellar ataxia 1", "164400", "AD"),
@@ -422,7 +422,7 @@ def test_next_stays_on_gene_and_gene_sync_puts_it_in_progress(queue_env):
     assert nxt["step"]["mim"] in {"164400", "620001"}
     item = c.get("/api/omim/queue").json()["items"][0]
     assert item["gene"] == "ATXNX" and item["status"] == "in_progress"
-    assert {s["mim"] for s in item["steps"]} == {"164400", "620001", "603516"}
+    assert {s["mim"] for s in item["steps"]} == {"164400", "620001"}
     assert [r["kind"] for r in item["reviews"]] == ["not_in_omim"]
     # skipping both diseases leaves the gene; next gene comes up
     other = c.get("/api/omim/queue/next?current=164400&gene=100004&skip=620001,603516",
@@ -537,7 +537,8 @@ def test_gene_lookup_shows_sources_queue_and_history(queue_env):
     assert by_mim["600001"]["source"] == "xlsx"
     assert by_mim["600002"]["source"] == "capture"
     assert by_mim["600002"]["adopted_by"] == "rev" and by_mim["600002"]["omim_edit_date"] == "2026-08-14"
-    assert gene["queue"]["status"] == "in_progress"
+    assert gene["queue"] is None  # nothing left to do for GENE1
+    assert by_mim["600002"]["reported_samples"] == ["26WE0001", "26WG0002", "26WE0003"]
     assert any(ch["action"] == "adopt_text" for ch in gene["changes"])
     # alias, gene MIM and phenotype MIM all resolve
     assert c.get("/api/omim/gene?q=RECQLX").json()["gene"]["gene"] == "BLMX"
@@ -698,6 +699,7 @@ def _row(day, section, mim, prefix="#", title="T"):
 
 def test_update_months_and_coverage(updates_env):
     c, headers = updates_env
+    assert c.get("/api/omim/updates/reminder").json() == {"due": True, "month": "2026-02"}
     bad = _month(c, headers, "2026-01", [_row("February 1st, 2026", "New Entries:", "621999")])
     assert bad.status_code == 422
     days = {"2025-11": "November 3rd, 2025", "2025-12": "December 3rd, 2025",
@@ -709,7 +711,9 @@ def test_update_months_and_coverage(updates_env):
     status = c.get("/api/omim/updates/status", headers=headers).json()
     assert status["needed_from"] == "2025-11"
     assert status["coverage_start"] == "2025-11" and status["history_complete"] is True
-    assert status["missing"] == ["2026-03"]  # current month is never complete
+    # Only finished months are due (today is 2026-03-15 here): nothing missing.
+    assert status["missing"] == [] and status["last_full_month"] == "2026-02"
+    assert c.get("/api/omim/updates/reminder").json() == {"due": False, "month": "2026-02"}
     assert status["untitled"] == []
     _month(c, headers, "2026-02", [_row("February 3rd, 2026", "Updated Entries:", "999999", "#", "")])
     assert c.get("/api/omim/updates/status", headers=headers).json()["untitled"] == ["2026-02"]
@@ -754,10 +758,10 @@ def test_queue_flags_omim_updates_and_confirmed_text(updates_env, db, monkeypatc
     otx = items["100002"]
     assert otx["status"] == "updated"
     assert otx["steps"][0]["kinds"] == ["gene_updated"] and otx["steps"][0]["update_date"] == "2026-02-09"
-    # GENE1's curated text (Done 2025-11) is covered by the history: confirmed.
+    # GENE1's curated text (Done 2025-11) has no OMIM update since: no step
+    # (text is no longer re-checked by age).
     gene1 = items["100001"]
-    a = next(s for s in gene1["steps"] if s["mim"] == "600001")
-    assert a["kinds"] == ["stale"] and a["confirmed_current"] is True
+    assert not any(s["mim"] == "600001" for s in gene1["steps"])
     # Diseases no platform gene carries are queued; 600002 already belongs
     # to GENE1; moved entries are left out. % entries go last.
     assert items["new621485"]["steps"][0]["kinds"] == ["new_disease"]
@@ -777,10 +781,10 @@ def test_queue_flags_omim_updates_and_confirmed_text(updates_env, db, monkeypatc
     # Done date (GENE1, Done 2025-11-01) or when they have no Done (ATXNX).
     assert gene1["steps"][0]["kinds"] == ["gene_updated"] and gene1["steps"][0]["update_date"] == "2026-02-06"
     assert items["100004"]["steps"][0]["kinds"] == ["gene_updated"]
-    assert status["queue"]["stale_confirmed"] >= 1 and status["queue"]["new_disease_steps"] == 5
+    assert status["queue"]["new_disease_steps"] == 5
     assert status["queue"]["new_gene_steps"] == 1
 
-    # An OMIM update after GENE1's Done date turns "stale" into "updated".
+    # An OMIM update after GENE1's Done date puts the curated text back.
     assert _month(c, headers, "2026-03", months["2026-03"] + [
         _row("March 2nd, 2026", "Updated Clinical Synopses:", "600001")]).status_code == 200
     omim_queue._cache.update(sig=None)
@@ -788,10 +792,6 @@ def test_queue_flags_omim_updates_and_confirmed_text(updates_env, db, monkeypatc
     a = next(s for s in gene1["steps"] if s["mim"] == "600001")
     assert a["kinds"] == ["updated"] and a["update_date"] == "2026-03-02"
 
-    # updates_only hides confirmed-current text instead of listing it as stale.
-    assert c.post("/api/omim/settings", json={"stale_mode": "bogus"}).status_code == 400
-    assert c.post("/api/omim/settings", json={"stale_mode": "updates_only"}).json()["stale_mode"] == "updates_only"
-    omim_queue._cache.update(sig=None)
     nxt = c.get("/api/omim/queue/next?skip=gnew621485", headers=headers).json()
     assert nxt["gene"]["gene_mim"] != "new621485"
 

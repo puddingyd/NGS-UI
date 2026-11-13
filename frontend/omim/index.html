@@ -49,7 +49,7 @@
         </table>
 
         <h2 class="section-title">3. 在 OMIM 頁面按 Capture</h2>
-        <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台；接著可在面板按「採用到平台」，或回到這一頁的「待採用」清單逐筆或全部採用。每月一次開 <code>omim.org/statistics/updates</code>（OMIM Update List），在面板按「擷取缺少的月份」，平台就會把 OMIM 之後更新過的頁面列進待補清單。想連續處理時，按面板待補清單的「Capture 並前往」，會擷取目前這一頁後直接前往下一步，最後再回這一頁「全部採用」。</p>
+        <p class="muted-text">打開 <code>omim.org/entry/{MIM}</code>，右下角會出現「NGS OMIM Capture」面板，顯示平台目前的狀態（缺說明、OMIM 已更新、已是最新）。按「Capture 送到平台」後，擴充功能會自動展開 Clinical Synopsis 並把頁面內容送回平台；接著可在面板按「採用到平台」，或回到這一頁的「待採用」清單逐筆或全部採用。每月一次開 <code>omim.org/statistics/update</code>（OMIM Update List），在面板按「擷取缺少的月份」，平台就會把 OMIM 之後更新過的頁面列進待補清單。想連續處理時，按面板待補清單的「Capture 並前往」，會擷取目前這一頁後直接前往下一步，最後再回這一頁「全部採用」。</p>
       </div>
     </details>
 
@@ -117,7 +117,6 @@
         </div>
       </div>
       <p id="queue-summary" class="muted-text"></p>
-      <p class="muted-text">以基因為單位：先開基因頁同步疾病清單，再補這個基因每個缺說明或超過一年未更新的疾病。順序是「進行中的基因」（基因頁已同步，或因共用疾病已被部分更新）→「OMIM 有更新」（做過的基因或疾病，OMIM 之後又改了，依下方「OMIM 更新清單」判斷）→「疾病相關基因中，基因頁還沒同步的」→ 其他基因（包含 OMIM 更新過、但還沒同步的基因頁）→ 平台沒有的基因與 % 疾病；擴充功能的「前往」會先把同一個基因做完。基因頁和平台對不上的項目列在「待確認」，可直接保留或移除。</p>
       <table class="data-table" id="queue-table">
         <thead><tr><th>基因</th><th>狀態</th><th>步驟</th><th>待確認</th><th>報告</th></tr></thead>
         <tbody></tbody>
@@ -129,18 +128,11 @@
       <div class="section-head">
         <h2 class="section-title">OMIM 更新清單</h2>
         <div class="head-actions">
-          <a class="btn btn-secondary" href="https://omim.org/statistics/updates" target="_blank" rel="noopener">開啟 OMIM Update List</a>
+          <a class="btn btn-secondary" href="https://omim.org/statistics/update" target="_blank" rel="noopener">開啟 OMIM Update List</a>
         </div>
       </div>
-      <p class="muted-text">在 OMIM Update List 頁面用擴充功能按「擷取缺少的月份」，平台就知道哪些內容是 OMIM 在我們擷取（或 OMIM.xlsx Done 日期）之後又更新的，並列入待補清單的「OMIM 有更新」。</p>
+      <p class="muted-text">在 OMIM Update List 頁面用擴充功能按「擷取缺少的月份」，平台就知道哪些內容是 OMIM 在我們擷取之後又更新的，並列入待補清單的「OMIM 有更新」。</p>
       <div id="updates-status" class="muted-text">讀取中…</div>
-      <div class="updates-setting">
-        <label for="stale-mode">「超過一年未更新」的規則：</label>
-        <select id="stale-mode">
-          <option value="both">與 OMIM 更新清單並存</option>
-          <option value="updates_only">只依 OMIM 更新清單（已確認沒更新的不再列出）</option>
-        </select>
-      </div>
       <details id="new-diseases">
         <summary>平台沒有的 OMIM 基因與疾病<span id="nd-count" class="muted-text"></span></summary>
         <p class="muted-text">更新清單中出現、但平台完全沒有的基因（* / +），以及平台上沒有任何基因帶著的疾病（# / %，例如原本沒有疾病的基因新連到一個疾病）。每個都排進待補清單；擷取採用後會依頁面建立基因或把疾病加到對應基因，就會從這裡消失。帶已知基因的疾病（#）和其他 OMIM 更新排在一起，平台沒有的基因與 % 疾病排在待補清單最後。</p>

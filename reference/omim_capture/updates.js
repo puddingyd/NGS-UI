@@ -1,5 +1,5 @@
 // NGS OMIM Capture — content script for the OMIM Update List
-// (omim.org/statistics/updates and /statistics/updates/{year}/{month}).
+// (overview omim.org/statistics/update, months /statistics/updates/{year}/{month}).
 //
 // On a month page: "擷取這個月份" reads the listed entries (date, New /
 // Updated Entries or Clinical Synopses, MIM) and sends them to the platform.
@@ -140,10 +140,11 @@
     if (!status) return "";
     const missing = status.missing || [];
     return `
-      <div class="row">平台需要的歷史：<b>${esc(status.needed_from)}</b> 起
-        <br><span class="muted">已連續涵蓋：${status.coverage_start ? `${esc(status.coverage_start)} 至上個月` : "尚無"}${status.history_complete ? "（歷史已補齊）" : ""}
-        · 最新一筆：${esc(status.last_listed_date || "—")}</span></div>
-      <div class="row">還要擷取：<b>${missing.length}</b> 個月份${missing.length ? `<br><span class="muted">${esc(missing.slice(0, 6).join("、"))}${missing.length > 6 ? "…" : ""}（當月每次都會重新擷取）</span>` : ""}</div>`;
+      <div class="row">已連續涵蓋：${status.coverage_start ? `<b>${esc(status.coverage_start)}</b> 至上個月` : "尚無"}${status.history_complete ? "（歷史已補齊）" : ""}
+        <br><span class="muted">最新一筆：${esc(status.last_listed_date || "—")}</span></div>
+      <div class="row">${missing.length
+        ? `還要擷取：<b>${missing.length}</b> 個月份<br><span class="muted">${esc(missing.slice(0, 6).join("、"))}${missing.length > 6 ? "…" : ""}（只擷取已結束的月份）</span>`
+        : `已擷取到 <b>${esc(status.last_full_month || "上個月")}</b>，本月結束後再來擷取。`}</div>`;
   }
 
   async function loadStatus() {

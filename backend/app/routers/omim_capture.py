@@ -233,7 +233,7 @@ async def updates_month(request: Request, user: dict = Depends(capture_user)):
 
 def _coverage_summary() -> dict:
     cov = omim_updates.coverage()
-    return {k: cov[k] for k in ("needed_from", "current_month", "missing", "untitled", "coverage_start",
+    return {k: cov[k] for k in ("needed_from", "current_month", "last_full_month", "missing", "untitled", "coverage_start",
                                 "history_complete", "rows", "last_listed_date", "last_captured_at")}
 
 
@@ -249,9 +249,8 @@ def updates_status(user: dict = Depends(capture_user)):
         "db_enabled": True,
         **cov,
         "months": cov["months"][:240],
-        "stale_mode": omim_updates.stale_mode(),
         "queue": {k: counts.get(k, 0) for k in ("updated", "updated_steps", "gene_update_steps", "new_disease_steps",
-                                                 "new_gene_steps", "stale_steps", "stale_confirmed", "stale_hidden")},
+                                                 "new_gene_steps")},
         "missing_entries": missing[:500],
         "missing_total": len(missing),
         "missing_genes": sum(1 for e in missing if e["cls"] == "gene"),
@@ -259,15 +258,13 @@ def updates_status(user: dict = Depends(capture_user)):
     }
 
 
-@router.post("/settings")
-def update_settings(payload: dict, user: dict = Depends(current_user)):
-    mode = str((payload or {}).get("stale_mode") or "")
-    if mode not in omim_updates.STALE_MODES:
-        raise HTTPException(400, "stale_mode must be both or updates_only")
+@router.get("/updates/reminder")
+def updates_reminder(user: dict = Depends(current_user)):
+    """Whether last month's OMIM Update List still has to be read (main page)."""
     if not omim_db.exists():
-        raise HTTPException(409, "平台 OMIM 資料庫尚未建立")
-    omim_updates.set_setting("stale_mode", mode)
-    return {"stale_mode": mode}
+        return {"due": False}
+    cov = omim_updates.coverage()
+    return {"due": cov["reminder_due"], "month": cov["last_full_month"]}
 
 
 @router.get("/genes/search")

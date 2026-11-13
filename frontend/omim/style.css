@@ -141,8 +141,6 @@ a.mim-pill:hover { background: #ffd8b8; color: #6b2e00; text-decoration: none; }
 
 /* OMIM Update List card */
 #updates-status { line-height: 1.7; }
-.updates-setting { margin: 10px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.updates-setting select { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; max-width: 100%; }
 #new-diseases { margin-top: 8px; }
 #new-diseases summary { cursor: pointer; font-weight: 600; }
 #queue-table th, .lookup-table th { white-space: nowrap; }

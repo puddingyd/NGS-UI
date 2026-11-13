@@ -493,7 +493,7 @@
   const KIND_TEXT = {
     gene_page: "同步這個基因的疾病清單", gene_updated: "OMIM 之後更新了基因頁，重新同步",
     gene_moved: "OMIM 已把這個基因搬到新的 MIM，同步新的基因頁",
-    missing: "缺說明", stale: "超過一年未更新", updated: "OMIM 之後有更新",
+    missing: "缺說明", updated: "OMIM 之後有更新",
     new_disease: "平台沒有的疾病（OMIM 有更新），採用後會加到所屬基因",
     new_gene: "平台沒有的基因（OMIM 有更新），採用後會建立這個基因",
   };

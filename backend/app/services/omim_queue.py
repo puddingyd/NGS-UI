@@ -5,9 +5,8 @@ Each queue item is one gene with ordered steps:
 1. the OMIM *gene page* (``*``/``+`` entry) when it has never been adopted —
    this syncs the gene's disease list, so diseases OMIM lists but the
    platform lacks get added (and then show up as missing);
-2. one *phenotype page* per disease of that gene that still needs text:
-   ``missing`` (card shows only the name, the ``*``) or ``stale`` (curated
-   text older than ``STALE_DAYS`` that was never refreshed from a capture).
+2. one *phenotype page* per disease of that gene that still needs text
+   (``missing``: the card shows only the name, the ``*``).
 
 Diseases without a phenotype MIM are handled by the gene step. Open review
 items (``omim_db.review_items``) are attached to their gene.
@@ -18,10 +17,8 @@ version: ``updated`` (phenotype page) and ``gene_updated`` (gene page —
 the adopted gene page, else the workbook Done date; a gene never synced
 and without a Done date counts as older than any update). Update List
 entries the platform does not carry at all become their own items:
-``new_disease`` (``#``/``%`` no platform gene has) and ``new_gene``. Workbook text whose Done date is covered by
-the stored history with no update since is ``confirmed_current``; with the
-``stale_mode`` setting ``updates_only`` such text is no longer queued as
-"older than a year".
+``new_disease`` (``#``/``%`` no platform gene has) and ``new_gene``. Text is
+otherwise not re-checked by age: only OMIM updates send it back.
 
 Gene order: genes in progress (gene page adopted, or some disease already
 updated from a capture — possibly via another gene sharing the phenotype —
@@ -30,7 +27,7 @@ to content already done → disease-associated (panel_loose) genes whose
 gene page has not been synced yet → everything else; inside each group,
 genes whose diseases were ticked in case reports come first, then genes
 with review items, then genes with diseases to fill. Within a gene,
-the gene page comes first, then diseases (missing before stale; entries in
+the gene page comes first, then diseases (missing before updated; entries in
 {}, [] or with "?" last).
 
 ``next_step`` keeps the reviewer on the same gene until its steps are done,
@@ -43,14 +40,13 @@ from __future__ import annotations
 import json
 import threading
 import time
-from datetime import date, timedelta
+
 
 from . import disease_picks, omim_capture, omim_db, omim_store, omim_updates, panel_deadzone
 
-STALE_DAYS = 365
-KIND_RANK = {"missing": 3, "updated": 2, "new_disease": 2, "stale": 1}
+KIND_RANK = {"missing": 3, "updated": 2, "new_disease": 2}
 UPDATE_KINDS = {"gene_updated", "updated", "new_disease", "new_gene"}
-FIRST_PASS_KINDS = {"gene_page", "gene_moved", "missing", "stale"}
+FIRST_PASS_KINDS = {"gene_page", "gene_moved", "missing"}
 STATUS_LABELS = {
     "in_progress": "進行中（已同步基因頁或已有疾病被更新，但尚未完成）",
     "updated": "OMIM 有更新（做過的基因或疾病，OMIM 之後又改了）",
@@ -60,7 +56,7 @@ STATUS_LABELS = {
 _REPORT_TTL = 300
 
 _lock = threading.Lock()
-_cache: dict = {"sig": None, "genes": [], "stats": {}}
+_cache: dict = {"sig": None, "genes": []}
 _report_cache: dict = {"at": 0.0, "usage": {}, "samples": {}}
 
 
@@ -121,14 +117,6 @@ def _rows() -> list[dict]:
     return rows
 
 
-def _stale(done: str, today: date) -> bool:
-    if not done:
-        return True
-    try:
-        return date.fromisoformat(done[:10]) < today - timedelta(days=STALE_DAYS)
-    except ValueError:
-        return True
-
 
 def _is_mim(value: str) -> bool:
     return len(value) == 6 and value.isdigit()
@@ -145,7 +133,6 @@ def build_genes() -> list[dict]:
     with _lock:
         if _cache["sig"] == sig:
             return _cache["genes"]
-    today = date.today()
     panel = panel_deadzone.disease_associated_genes()
     db = omim_db.exists()
     synced = omim_db.gene_sync_map() if db else {}
@@ -154,10 +141,7 @@ def build_genes() -> list[dict]:
     redirects = omim_db.mim_redirects() if db else {}
     texts = omim_db.phenotype_text_sources() if db else {}
     entry_latest, any_latest = omim_updates.latest_dates() if db else ({}, {})
-    coverage_start = omim_updates.coverage().get("coverage_start", "") if db else ""
-    mode = omim_updates.stale_mode() if db else "both"
     times = omim_capture.capture_times() if (adopted or texts) else {}
-    stats = {"stale_hidden": 0}
 
     def capture_day(capture_id: str, adopted_at: str) -> str:
         return omim_updates.us_date(times.get(capture_id) or adopted_at)
@@ -184,7 +168,6 @@ def build_genes() -> list[dict]:
             source = (meta.get(slot) or {}).get("source", "")
             listed = any_latest.get(pm, "")
             kinds = []
-            confirmed = False
             if pm == gene_mim and source != "gene_page" and lines <= 1:
                 # The phenotype is listed under the gene's own MIM: capturing
                 # the gene page is the step (no separate disease page).
@@ -200,14 +183,6 @@ def build_genes() -> list[dict]:
                     kinds.append("updated")
             elif listed and curated_done and listed > curated_done:
                 kinds.append("updated")
-            elif _stale(curated_done, today):
-                # With the Update List read back past the Done date and no
-                # update since, the curated text is known to be current.
-                confirmed = bool(coverage_start and curated_done and curated_done[:7] >= coverage_start)
-                if confirmed and mode == "updates_only":
-                    stats["stale_hidden"] += 1
-                else:
-                    kinds.append("stale")
             if not kinds:
                 continue
             step = phenotype_steps.setdefault(pm, {
@@ -221,8 +196,6 @@ def build_genes() -> list[dict]:
                     step["kinds"].append(kind)
             if "updated" in kinds:
                 step["update_date"] = listed
-            if confirmed:
-                step["confirmed_current"] = True
         gene_reviews = reviews.get(gene_mim, [])
         in_panel = gene in panel
         # OMIM moved the gene's entry (e.g. 610815 SLC25A32 -> 138480): the
@@ -325,7 +298,7 @@ def build_genes() -> list[dict]:
             "reviews": [], "disease_mims": [] if is_gene else [mim], "minor": False,
         })
     with _lock:
-        _cache.update(sig=sig, genes=genes, stats=stats)
+        _cache.update(sig=sig, genes=genes)
     return genes
 
 
@@ -372,9 +345,6 @@ def queue(*, status: str = "", scope: str = "all", pending_mims: set[str] | None
     counts["new_disease_steps"] = 0
     counts["new_gene_steps"] = 0
     counts["gene_update_steps"] = 0
-    counts["stale_steps"] = 0
-    counts["stale_confirmed"] = 0
-    counts["stale_hidden"] = (_cache.get("stats") or {}).get("stale_hidden", 0)
     items = []
     for gene in genes:
         counts[gene["status"]] += 1
@@ -388,8 +358,6 @@ def queue(*, status: str = "", scope: str = "all", pending_mims: set[str] | None
             counts["new_disease_steps"] += "new_disease" in kinds
             counts["new_gene_steps"] += "new_gene" in kinds
             counts["gene_update_steps"] += "gene_updated" in kinds
-            counts["stale_steps"] += kinds == {"stale"}
-            counts["stale_confirmed"] += kinds == {"stale"} and bool(st.get("confirmed_current"))
         if status == "review" and not gene["reviews"]:
             continue
         if status and status != "review" and gene["status"] != status:

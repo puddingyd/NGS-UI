@@ -591,6 +591,9 @@ body.titan-diagnostic-analysis-hidden #card-roh {
    ghost button stays readable. */
 .topbar .btn-ghost { border-color: #4b5058; color: #fff; }
 .topbar .btn-ghost:hover { background: #3f464f; }
+/* Monthly reminder: last month's OMIM Update List not read yet. */
+.topbar .btn-ghost.btn-omim-due { background: #8b1a1a; border-color: #8b1a1a; color: #fff; }
+.topbar .btn-ghost.btn-omim-due:hover { background: #a32020; }
 .btn-link { padding: 2px 8px; font-size: 12px; }
 
 /* Search */

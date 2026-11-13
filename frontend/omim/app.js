@@ -189,7 +189,6 @@
     gene_page: ["基因頁", "info"], gene_updated: ["基因頁有更新", "warn"], gene_moved: ["OMIM 已搬到新 MIM", "warn"],
     missing: ["缺說明", "warn"],
     updated: ["OMIM 有更新", "warn"], new_disease: ["平台沒有的疾病", "warn"], new_gene: ["平台沒有的基因", "warn"],
-    stale: ["逾一年", "info"],
   };
   const STATUS_BADGE = {
     in_progress: ["進行中", "warn"], updated: ["OMIM 有更新", "warn"], gene_sync: ["基因頁待同步", "info"],
@@ -214,7 +213,8 @@
     const data = await api(`/api/omim/queue?status=${encodeURIComponent(status)}&scope=${encodeURIComponent(scope)}&offset=${queueOffset}&limit=100`);
     const c = data.counts || {};
     $("#queue-total").textContent = `（${data.total} 個基因）`;
-    $("#queue-summary").textContent = `進行中 ${c.in_progress || 0}、OMIM 有更新 ${c.updated || 0}、基因頁待同步 ${c.gene_sync || 0}（其中疾病相關 ${c.panel_gene_sync || 0}）、只有疾病待補 ${c.phenotype || 0}；待補疾病頁 ${c.phenotype_steps || 0}（OMIM 有更新 ${c.updated_steps || 0}、只是逾一年 ${c.stale_steps || 0}，其中已確認 OMIM 沒更新 ${c.stale_confirmed || 0}${c.stale_hidden ? `，另有 ${c.stale_hidden} 個已確認沒更新而不列出` : ""}）、待確認 ${c.reviews || 0} 項。`;
+    $("#queue-summary").innerHTML = `進行中 ${esc(c.in_progress || 0)}、OMIM 有更新 ${esc(c.updated || 0)}、基因頁待同步 ${esc(c.gene_sync || 0)}（其中疾病相關 ${esc(c.panel_gene_sync || 0)}）、只有疾病待補 ${esc(c.phenotype || 0)}
+      <br>待補疾病頁 ${esc(c.phenotype_steps || 0)}（OMIM 有更新 ${esc(c.updated_steps || 0)}）、待確認 ${esc(c.reviews || 0)} 項。`;
     const rows = data.items.map(g => `
       <tr>
         <td>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.gene || g.gene_mim)}</b></a>` : `<b>${esc(g.gene)}</b>`}
@@ -246,14 +246,11 @@
     }
     const q = data.queue || {};
     const missing = data.missing || [];
-    box.innerHTML = `需要的歷史從 <b>${esc(data.needed_from)}</b> 起（OMIM.xlsx 最早的 Done 日期）。
-      已連續涵蓋：${data.coverage_start ? `<b>${esc(data.coverage_start)}</b> 至上個月` : "尚無"}${data.history_complete ? badge(["歷史已補齊", "ok"]) : ""}；
+    box.innerHTML = `已連續涵蓋：${data.coverage_start ? `<b>${esc(data.coverage_start)}</b> 至上個月` : "尚無"}${data.history_complete ? badge(["歷史已補齊", "ok"]) : ""}；
       已存 ${esc(data.rows)} 筆，最新一筆 ${esc(data.last_listed_date || "—")}，最後擷取 ${esc(fmtTime(data.last_captured_at))}。
-      <br>還要擷取 ${missing.length} 個月份${missing.length ? `（${esc(missing.slice(0, 8).join("、"))}${missing.length > 8 ? "…" : ""}；當月每次都會重新擷取）` : ""}。
+      <br>${missing.length ? `還要擷取 ${missing.length} 個月份（${esc(missing.slice(0, 8).join("、"))}${missing.length > 8 ? "…" : ""}）。` : `已擷取到 ${esc(data.last_full_month || "上個月")}。`}
       <br>對待補清單的影響：OMIM 之後有更新的頁面 ${esc(q.updated_steps || 0)} 頁（其中基因頁 ${esc(q.gene_update_steps || 0)} 頁）；
-      平台沒有的疾病 ${esc(q.new_disease_steps || 0)} 頁、平台沒有的基因 ${esc(q.new_gene_steps || 0)} 頁；
-      只是逾一年的疾病頁 ${esc(q.stale_steps || 0)} 頁，其中已確認 OMIM 沒更新 ${esc(q.stale_confirmed || 0)} 頁${q.stale_hidden ? `，另 ${esc(q.stale_hidden)} 頁已確認沒更新而不列出` : ""}。`;
-    $("#stale-mode").value = data.stale_mode || "both";
+      平台沒有的疾病 ${esc(q.new_disease_steps || 0)} 頁、平台沒有的基因 ${esc(q.new_gene_steps || 0)} 頁。`;
     const entries = data.missing_entries || [];
     $("#nd-count").textContent = `（疾病 ${data.missing_diseases || 0}、基因 ${data.missing_genes || 0}）`;
     $("#nd-table tbody").innerHTML = entries.length ? entries.map(d => `
@@ -536,21 +533,6 @@
     loadDbStatus();
   });
   $("#queue-scope").addEventListener("change", () => loadQueue());
-  $("#stale-mode").addEventListener("change", async ev => {
-    const select = ev.target;
-    select.disabled = true;
-    try {
-      await api("/api/omim/settings", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stale_mode: select.value }),
-      });
-      await Promise.all([loadUpdates(), loadQueue()]);
-    } catch (err) {
-      alert(`設定失敗：${err.message}`);
-    } finally {
-      select.disabled = false;
-    }
-  });
   $("#btn-queue-more").addEventListener("click", () => loadQueue(true));
   $("#queue-table").addEventListener("click", async ev => {
     const btn = ev.target.closest("[data-review]");

@@ -3889,12 +3889,29 @@ function setLoggedInUser(username) {
   if (files) files.hidden = !username;
   const omimCapture = document.getElementById("btn-omim-capture");
   if (omimCapture) omimCapture.hidden = !username;
+  if (username) checkOmimUpdateReminder();
   if (!username) resetFileInventory();
   const pipelineList = document.getElementById("btn-pipeline-list");
   if (pipelineList) pipelineList.hidden = !username;
   // #btn-phenotype-tool is intentionally always visible — the HPO/panel
   // tool needs no login (it runs on the intranet), so the link stays
   // reachable even before sign-in.
+}
+
+// Dark-red OMIM button while last month's OMIM Update List has not been
+// read into the platform yet (monthly reminder).
+async function checkOmimUpdateReminder() {
+  const btn = document.getElementById("btn-omim-capture");
+  if (!btn) return;
+  try {
+    const res = await fetch(`${API_BASE}/omim/updates/reminder`, { credentials: "same-origin" });
+    if (!res.ok) return;
+    const data = await res.json();
+    btn.classList.toggle("btn-omim-due", !!data.due);
+    btn.title = data.due
+      ? `${data.month} 的 OMIM Update List 還沒擷取：到 OMIM 頁按「開啟 OMIM Update List」，用擴充功能擷取缺少的月份`
+      : "OMIM：查詢基因、待補清單、擷取與更新清單";
+  } catch (_) { /* reminder only */ }
 }
 
 async function handleLogin(ev) {
