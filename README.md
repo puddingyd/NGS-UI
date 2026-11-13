@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.31：提供[可整段貼到DGX的二級重複資料盤點／確認清理程式](scripts/paste_cleanup_secondary_duplicates.sh)，使用`/datalake_Intermediate/pipeline/nextflow_output`，先列每個重複sample的所有日期與路徑，保留最新及11/5起的版本，再要求本次報告確認碼才刪舊sample目錄。日期或相依狀態不明則保留；不改服務、不清整個batch／原始FASTQ／三級／work。[操作與限制](docs/ops/SECONDARY_DUPLICATE_CLEANUP.md)。
+
 v10.05：[PRS流程說明](docs/research/prs/PRS_WORKFLOW.md)改寫為一般使用者可讀版本，先解釋分數、百分位與發病風險，再說明每一步為何需要、資料如何補足資訊，以及開發方法的選擇理由。完整段落搭配例子，工具與驗證細節移至延伸資料；原「說明」入口下載同一份新版文件，分析與數值不變。
 
 v10.04：新增[PRS全流程、開發驗證與方法限制](docs/research/prs/PRS_WORKFLOW.md)，從gVCF到score／percentile／risk，整理套件、資料來源、Method1／2及A／B選擇、原文重現與台灣尚待驗證事項。PRS標題右側「研究用途」旁新增同樣式「說明」，登入後可下載同一份MD。更新服務並重載即可，無須重新分析或計算風險。

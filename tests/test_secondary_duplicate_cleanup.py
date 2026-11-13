@@ -1,0 +1,157 @@
+import importlib.util
+import json
+from contextlib import nullcontext
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+
+spec = importlib.util.spec_from_file_location("secondary_cleanup", Path(__file__).resolve().parents[1]/"scripts/cleanup_secondary_duplicates.py")
+cleanup = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cleanup)
+CUTOFF = datetime(2026,11,5,tzinfo=cleanup.TAIPEI).timestamp()
+
+
+@pytest.fixture
+def tree(tmp_path,monkeypatch):
+    root=tmp_path/'nextflow_output';root.mkdir()
+    tertiary=tmp_path/'tertiary_output';tertiary.mkdir()
+    dates,changes={},{}
+    monkeypatch.setattr(cleanup,'birth_times',lambda paths:{str(p):dates[str(p)] for p in paths if dates.get(str(p))})
+    original=cleanup.tree_state
+    monkeypatch.setattr(cleanup,'tree_state',lambda p:(original(p)[0],changes.get(str(p),CUTOFF-86400)))
+    def add(batch, sid, day, complete=True):
+        folder=root/batch/sid
+        for rel in ('02_alignment/'+sid+'.aligned.sorted.bam','02_alignment/'+sid+'.aligned.sorted.bam.bai',
+                    '04_snv_indel/'+sid+'.ensemble.fixed.vcf.gz','04_snv_indel/'+sid+'.ensemble.fixed.vcf.gz.tbi'):
+            path=folder/rel;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'SYNTHETIC')
+        if not complete:(folder/'04_snv_indel'/f'{sid}.ensemble.fixed.vcf.gz.tbi').unlink()
+        dates[str(folder)]=datetime(2026,11,day,tzinfo=cleanup.TAIPEI).timestamp() if day else None
+        return folder
+    return root,tertiary,add,changes
+
+
+def actions(plan,sid='S1'):
+    return {Path(r['path']).parent.name:r for r in plan['groups'][sid]}
+
+
+def test_keep_latest_and_all_november_5_onward_versions(tree):
+    root,tertiary,add,_=tree
+    for batch,day in [('old_WES',1),('new_WES',4),('protected_WES',5),('latest_WES',6)]:add(batch,'S1',day)
+    add('only_WES','S10',1)
+    plan=cleanup.audit(root,tertiary,CUTOFF)
+    rows=actions(plan)
+    assert rows['old_WES']['action']==rows['new_WES']['action']=='DELETE'
+    assert rows['protected_WES']['action']==rows['latest_WES']['action']=='KEEP'
+    assert 'S10' not in plan['groups']
+
+
+def test_equal_latest_dates_are_both_retained(tree):
+    root,tertiary,add,_=tree
+    add('a_WES','S1',1);add('b_WES','S1',4);add('c_WES','S1',4)
+    rows=actions(cleanup.audit(root,tertiary,CUTOFF))
+    assert rows['a_WES']['action']=='DELETE'
+    assert rows['b_WES']['action']==rows['c_WES']['action']=='KEEP'
+
+
+@pytest.mark.parametrize('condition',['unknown_date','incomplete_latest','wes_wgs'])
+def test_uncertain_groups_are_not_deleted(tree,condition):
+    root,tertiary,add,_=tree
+    add('old_WES','S1',1)
+    add('new_WGS' if condition=='wes_wgs' else 'new_WES','S1',None if condition=='unknown_date' else 4,complete=condition!='incomplete_latest')
+    assert all(r['action']=='KEEP' for r in actions(cleanup.audit(root,tertiary,CUTOFF)).values())
+
+
+def test_old_folder_with_recent_content_is_protected(tree):
+    root,tertiary,add,changes=tree
+    old=add('old_WES','S1',1);add('new_WES','S1',4)
+    changes[str(old)]=CUTOFF
+    row=actions(cleanup.audit(root,tertiary,CUTOFF))['old_WES']
+    assert row['action']=='KEEP' and '變動' in row['reason']
+
+
+@pytest.mark.parametrize('reference',['symlink','source_marker'])
+def test_referenced_old_outputs_are_retained(tree,reference):
+    root,tertiary,add,_=tree
+    old=add('old_WES','S1',1);new=add('new_WES','S1',4)
+    if reference=='symlink':
+        (new/'old_source').symlink_to(old/'04_snv_indel',target_is_directory=True)
+    else:
+        marker=tertiary/'S1-nckuh/08_postprocessing/S1-nckuh.pipeline_source.json'
+        marker.parent.mkdir(parents=True);marker.write_text(json.dumps({'source_vcf_path':str(old/'04_snv_indel/S1.ensemble.fixed.vcf.gz')}))
+    row=actions(cleanup.audit(root,tertiary,CUTOFF))['old_WES']
+    assert row['action']=='KEEP' and row['references']
+
+
+def test_changed_retained_latest_aborts_before_deletion(tree,tmp_path,monkeypatch):
+    root,tertiary,add,_=tree
+    old=add('old_WES','S1',1);new=add('new_WES','S1',4)
+    plan=cleanup.audit(root,tertiary,CUTOFF)
+    (new/'02_alignment/S1.aligned.sorted.bam').write_bytes(b'CHANGED')
+    monkeypatch.setattr(cleanup,'idle_guard',lambda p:nullcontext())
+    with pytest.raises(RuntimeError,match='狀態已變動'):
+        cleanup.delete_reviewed(plan,tmp_path,tmp_path)
+    assert old.exists() and new.exists()
+
+
+def test_delete_only_reviewed_sample_and_preserve_external_link_targets(tree,tmp_path,monkeypatch):
+    root,tertiary,add,_=tree
+    old=add('old_WES','S1',1);new=add('new_WES','S1',4)
+    other=add('old_WES','OTHER',1)
+    external=tmp_path/'original.fastq.gz';external.write_bytes(b'RAW INPUT')
+    (old/'external-link').symlink_to(external)
+    sheet=old.parent/'samplesheet.csv';sheet.write_text('sample\nS1\nOTHER\n')
+    plan=cleanup.audit(root,tertiary,CUTOFF)
+    monkeypatch.setattr(cleanup,'idle_guard',lambda p:nullcontext())
+    monkeypatch.setattr(cleanup,'no_nextflow',lambda:None)
+    monkeypatch.setattr(cleanup,'nested_mounts',lambda p:None)
+    cleanup.delete_reviewed(plan,tmp_path,tmp_path)
+    assert not old.exists() and new.exists() and other.exists() and sheet.exists()
+    assert external.read_bytes()==b'RAW INPUT'
+    events=[json.loads(line) for line in (tmp_path/'actions.jsonl').read_text().splitlines()]
+    assert [e['status'] for e in events]==['staging','deleting','deleted']
+
+
+def test_enter_does_not_delete(tree,tmp_path,monkeypatch,capsys):
+    root,_,add,_=tree
+    old=add('old_WES','S1',1);add('new_WES','S1',4)
+    class Terminal:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def write(self,*args):pass
+        def flush(self):pass
+        def readline(self):return '\n'
+    real_open=open
+    monkeypatch.setattr('builtins.open',lambda p,*args,**kwargs:Terminal() if str(p)=='/dev/tty' else real_open(p,*args,**kwargs))
+    monkeypatch.setattr(cleanup.sys,'argv',['cleanup','--root',str(root),'--review','--report-dir',str(tmp_path/'report')])
+    assert cleanup.main()==0
+    assert old.exists() and '未確認，沒有刪除' in capsys.readouterr().out
+
+
+def test_busy_platform_lease_blocks_cleanup(tmp_path,monkeypatch):
+    work=tmp_path/'work';work.mkdir()
+    locks=tmp_path/'.work.ngs-ui-locks';locks.mkdir()
+    (locks/'admission.lock').touch()
+    lease=locks/'scope.lock';lease.touch()
+    monkeypatch.setattr(cleanup,'no_nextflow',lambda:None)
+    with lease.open('a') as handle:
+        cleanup.fcntl.flock(handle,cleanup.fcntl.LOCK_SH)
+        with pytest.raises(BlockingIOError):
+            with cleanup.idle_guard(work):raise AssertionError('must not enter')
+
+
+def test_missing_reference_mount_still_reports_duplicates_but_deletes_nothing(tree):
+    root,tertiary,add,_=tree
+    add('old_WES','S1',1);add('new_WES','S1',4)
+    tertiary.rmdir()
+    plan=cleanup.audit(root,tertiary,CUTOFF)
+    assert plan['dependency_error']
+    assert all(r['action']=='KEEP' for r in plan['groups']['S1'])
+
+
+def test_paste_bundle_contains_the_tested_current_tool():
+    root=Path(__file__).resolve().parents[1]
+    source=(root/'scripts/cleanup_secondary_duplicates.py').read_text()
+    bundle=(root/'scripts/paste_cleanup_secondary_duplicates.sh').read_text()
+    assert "<<'NGS_SECONDARY_REVIEW_PY'\n"+source+'\nNGS_SECONDARY_REVIEW_PY\n' in bundle
+    assert '--root /datalake_Intermediate/pipeline/nextflow_output' in bundle
