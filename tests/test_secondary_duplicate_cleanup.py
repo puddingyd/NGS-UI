@@ -108,6 +108,77 @@ def test_referenced_old_outputs_are_retained(tree,reference):
     assert row['action']=='KEEP' and row['references']
 
 
+@pytest.mark.parametrize('mount_index',[0,1],ids=['dgm','dgx'])
+@pytest.mark.parametrize('foreign',[False,True],ids=['same-host-reference','other-host-reference'])
+@pytest.mark.parametrize('reference',['symlink','source_path','source_vcf_path'])
+def test_references_protect_old_output_on_either_shared_mount(tree,tmp_path,monkeypatch,mount_index,foreign,reference):
+    root,tertiary,add,_=tree
+    old=add('old_WES','S1',1);add('new_WES','S1',4)
+    mounts=(tmp_path/'home/datalake_Intermediate',tmp_path/'datalake_Intermediate')
+    monkeypatch.setattr(cleanup,'SHARED_MOUNTS',mounts)
+    local=mounts[mount_index]
+    new_root=local/'pipeline/nextflow_output'
+    new_root.parent.mkdir(parents=True)
+    root.rename(new_root)
+    new_tertiary=local/'pipeline/tertiary_output'
+    tertiary.rename(new_tertiary)
+    target_mount=mounts[1-mount_index] if foreign else local
+    target=target_mount/'pipeline/nextflow_output'/old.relative_to(root)/'04_snv_indel/S1.ensemble.fixed.vcf.gz'
+    state=new_tertiary/'S1-nckuh/08_postprocessing'
+    state.mkdir(parents=True)
+    if reference=='symlink':
+        # The other host's absolute path is deliberately unmounted here.
+        (state/'original.vcf.gz').symlink_to(target)
+    else:
+        (state/'S1-nckuh.pipeline_source.json').write_text(json.dumps({reference:str(target)}))
+    plan=cleanup.audit(new_root,new_tertiary,CUTOFF)
+    row=actions(plan)['old_WES']
+    assert not plan['dependency_error']
+    assert row['action']=='KEEP' and row['reason']=='仍被其他資料引用'
+
+
+def test_similar_mount_name_does_not_falsely_protect_unreferenced_old_output(tree,tmp_path,monkeypatch):
+    root,tertiary,add,_=tree
+    add('old_WES','S1',1);add('new_WES','S1',4)
+    monkeypatch.setattr(cleanup,'SHARED_MOUNTS',(tmp_path,tmp_path.parent/'other-mount'))
+    state=tertiary/'S1-nckuh/08_postprocessing'
+    state.mkdir(parents=True)
+    target=tmp_path.parent/'other-mount-extra/nextflow_output/old_WES/S1'
+    (state/'S1-nckuh.pipeline_source.json').write_text(json.dumps({'source_path':str(target)}))
+    assert actions(cleanup.audit(root,tertiary,CUTOFF))['old_WES']['action']=='DELETE'
+
+
+def test_permission_denied_still_prevents_deletion(tree,monkeypatch):
+    root,tertiary,add,_=tree
+    add('old_WES','S1',1);add('new_WES','S1',4)
+    walk=cleanup.os.walk
+    def unreadable(top,**kwargs):
+        if Path(top)==tertiary:
+            kwargs['onerror'](PermissionError(13,'Permission denied',str(tertiary/'case/08_postprocessing/case.prs/runs/job/ancestry')))
+        yield from walk(top,**kwargs)
+    monkeypatch.setattr(cleanup.os,'walk',unreadable)
+    plan=cleanup.audit(root,tertiary,CUTOFF)
+    assert 'Permission denied' in plan['dependency_error']
+    assert all(row['action']=='KEEP' for row in plan['groups']['S1'])
+
+
+def test_report_only_dgm_invocation_never_prompts_or_deletes(tree,tmp_path,monkeypatch,capsys):
+    root,tertiary,add,_=tree
+    old=add('old_WES','S1',1);new=add('new_WES','S1',4)
+    report=tmp_path/'report-dgm'
+    monkeypatch.setattr(cleanup.sys,'argv',['cleanup','--root',str(root),'--reference-root',str(tertiary),'--report-dir',str(report)])
+    def unexpected(*args,**kwargs):
+        raise AssertionError('report-only entry must never ask for deletion or delete')
+    monkeypatch.setattr(cleanup,'delete_reviewed',unexpected)
+    monkeypatch.setattr('builtins.open',unexpected)
+    assert cleanup.main()==0
+    plan=json.loads((report/'plan.json').read_text())
+    assert actions(plan)['old_WES']['action']=='DELETE'
+    assert old.exists() and new.exists() and not (report/'actions.jsonl').exists()
+    output=capsys.readouterr().out
+    assert str(tertiary) in output and '本次只有盤點，沒有刪除' in output
+
+
 def test_changed_retained_latest_aborts_before_deletion(tree,tmp_path,monkeypatch):
     root,tertiary,add,_=tree
     old=add('old_WES','S1',1);new=add('new_WES','S1',4)
@@ -175,9 +246,17 @@ def test_missing_reference_mount_still_reports_duplicates_but_deletes_nothing(tr
     assert all(r['action']=='KEEP' for r in plan['groups']['S1'])
 
 
-def test_paste_bundle_contains_the_tested_current_tool():
+@pytest.mark.parametrize('filename,expected_root,review',[
+    ('paste_cleanup_secondary_duplicates.sh','/datalake_Intermediate/pipeline/nextflow_output',True),
+    ('paste_cleanup_secondary_duplicates_dgm.sh','/home/datalake_Intermediate/pipeline/nextflow_output',False),
+])
+def test_paste_bundle_contains_the_tested_current_tool(filename,expected_root,review):
     root=Path(__file__).resolve().parents[1]
     source=(root/'scripts/cleanup_secondary_duplicates.py').read_text()
-    bundle=(root/'scripts/paste_cleanup_secondary_duplicates.sh').read_text()
+    bundle=(root/'scripts'/filename).read_text()
     assert "<<'NGS_SECONDARY_REVIEW_PY'\n"+source+'\nNGS_SECONDARY_REVIEW_PY\n' in bundle
-    assert '--root /datalake_Intermediate/pipeline/nextflow_output' in bundle
+    invocation=bundle.split('\nNGS_SECONDARY_REVIEW_PY\n',1)[1]
+    assert '--root '+expected_root in invocation
+    assert ('--review' in invocation)==review
+    if not review:
+        assert '--reference-root /home/datalake_Intermediate/pipeline/tertiary_output' in invocation

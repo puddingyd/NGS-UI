@@ -7,7 +7,7 @@ review_dir=$(mktemp -d /tmp/ngs-secondary-review.XXXXXX)
 printf '程式與報告：%s\n' "$review_dir"
 cat > "$review_dir/cleanup_secondary_duplicates.py" <<'NGS_SECONDARY_REVIEW_PY'
 #!/usr/bin/env python3
-"""DGX duplicate secondary-output review. Python 3.8+, standard library only.
+"""DGX/DGM duplicate secondary-output review. Python 3.8+, standard library only.
 
 Default: report only. --review additionally asks on /dev/tty before deleting.
 Per operator confirmation, newest and cutoff use the sample directory's mtime.
@@ -31,6 +31,7 @@ import tempfile
 import uuid
 
 DEFAULT_ROOT = "/datalake_Intermediate/pipeline/nextflow_output"
+SHARED_MOUNTS = (Path("/home/datalake_Intermediate"), Path("/datalake_Intermediate"))
 TAIPEI = timezone(timedelta(hours=8))
 SAMPLE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -101,16 +102,24 @@ def samples(root):
     return rows
 
 
+def shared_mount_path(path, root):
+    """Use the selected root's mount spelling for references from either host."""
+    path = Path(os.path.normpath(str(path)))
+    for local_mount in SHARED_MOUNTS:
+        if within(root, local_mount):
+            for source_mount in SHARED_MOUNTS:
+                if within(path, source_mount):
+                    return local_mount / path.relative_to(source_mount)
+    return path
+
+
 def referenced_candidates(root, reference_root, candidates):
     blocked = defaultdict(list)
     candidate_paths = {str(Path(p)): Path(p) for p in candidates}
 
     def record(target, origin):
-        text = str(target)
         # The same shared volume is mounted with /home on DGM, without it on DGX.
-        if text.startswith("/home/datalake_Intermediate/"):
-            text = text[len("/home"):]
-        target = Path(os.path.normpath(text))
+        target = shared_mount_path(target, root)
         if within(target, root):
             parts = target.relative_to(root).parts
             if len(parts) >= 2:
@@ -324,7 +333,7 @@ def delete_reviewed(plan, report_dir, work_root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=DEFAULT_ROOT)
-    parser.add_argument("--reference-root", help="DGX tertiary_output root; default sibling of nextflow_output")
+    parser.add_argument("--reference-root", help="Local tertiary_output root; default sibling of nextflow_output")
     parser.add_argument("--work-root", default="/raid/DGM/work")
     parser.add_argument("--report-dir")
     parser.add_argument("--review", action="store_true", help="After reporting, ask on /dev/tty before any deletion")
@@ -335,7 +344,7 @@ def main():
     report_dir = Path(args.report_dir) if args.report_dir else Path(tempfile.mkdtemp(prefix="ngs-secondary-review-"))
     if within(report_dir.resolve(), root):
         raise RuntimeError("報告必須放在二級資料根以外")
-    print("搜尋根：{}\n判定依據：sample資料夾修改時間（mtime），不使用建立時間或批次名稱日期\n保護：修改日期為2026-11-05 00:00:00 +08:00起的資料\n只刪batch/sample，不刪整個batch。".format(root))
+    print("搜尋根：{}\n相依資料根：{}\n判定依據：sample資料夾修改時間（mtime），不使用建立時間或批次名稱日期\n保護：修改日期為2026-11-05 00:00:00 +08:00起的資料\n只刪batch/sample，不刪整個batch。".format(root, reference_root))
     plan = audit(root, reference_root, cutoff)
     count = save_report(plan, report_dir)
     if not args.review or not count:

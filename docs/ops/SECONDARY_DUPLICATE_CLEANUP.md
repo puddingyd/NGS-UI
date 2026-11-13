@@ -1,8 +1,23 @@
-# DGX 二級重複資料：盤點與確認清理
+# DGX／DGM 二級重複資料：盤點與確認清理
 
-v10.33，2026-11-13。這是獨立操作者工具，不改平台服務／分析設定，也不代替使用者到 server 執行。
+v10.34，2026-11-13。這是獨立操作者工具，不改平台服務／分析設定，也不代替使用者到 server 執行。
 
-## 執行方式
+## DGM：本次只搜尋
+
+開啟`scripts/paste_cleanup_secondary_duplicates_dgm.sh`，**全選整份內容**，貼到DGM互動終端。完整程式已包含在檔案中，不需要先複製repo、沿用DGX的`/tmp`檔案或安裝套件。明確指定：
+
+```text
+二級：/home/datalake_Intermediate/pipeline/nextflow_output
+三級：/home/datalake_Intermediate/pipeline/tertiary_output
+```
+
+入口先印執行帳號，將程式與`plan.json`／`duplicates.tsv`放在DGM新建的`/tmp/ngs-secondary-review-dgm.XXXXXX/`，**不傳`--review`，所以只有盤點，不出現刪除確認、也不執行刪除**。清單的DELETE僅表示通過本次檢查的待確認候選。修改日期／11月5日界線／最新輸出與相依保護沿用下列規則。終端同時印出實際二級及三級根，方便核對。
+
+不使用sudo、setfacl或chmod。DGX回報`setfacl: Operation not supported`表示該掛載不支援ACL；換到DGM後能否讀取700的目錄，取決於執行帳號是否為擁有者或有其他有效讀取權限，不能只因資料在DGM建立就認定可讀。仍遇到讀取錯誤時，保留所有待刪候選，附出錯路徑；不要略過PRS相依子目錄。
+
+本次先將DGM產生的完整報告交回確認。DGM入口沒有自動進入清理的後續步驟；既有DGX確認碼／報告也不能跨主機沿用。
+
+## DGX：盤點後可確認清理
 
 開啟 `scripts/paste_cleanup_secondary_duplicates.sh`，**全選整份內容**，貼到 DGX 互動終端。DGX 不必有這個 repo、不需連 GitHub、不需安裝 Python 套件。使用 Python 3.8+ 標準函式庫及 Linux 的 `ps`。
 
@@ -26,7 +41,7 @@ v10.33，2026-11-13。這是獨立操作者工具，不改平台服務／分析�
 python3 /tmp/ngs-secondary-review.實際代碼/cleanup_secondary_duplicates.py --review
 ```
 
-也可直接使用 repo 內 `scripts/cleanup_secondary_duplicates.py`；**省略 `--review` 時一律只有盤點**。`--report-dir` 指定報告位置（必須在資料根以外），`--reference-root` 指定實際 DGX 三級資料根，`--work-root` 指定共用 Nextflow work root；預設分別為同層的 `tertiary_output` 與 `/raid/DGM/work`。
+也可直接使用 repo 內 `scripts/cleanup_secondary_duplicates.py`；**省略 `--review` 時一律只有盤點**。`--root`預設仍為DGX二級根，DGM必須明確指定/home路徑，或直接使用上述完整DGM可貼版。`--report-dir` 指定報告位置（必須在資料根以外），`--reference-root` 指定實際本機三級資料根，`--work-root` 指定共用 Nextflow work root；預設分別為同層的 `tertiary_output` 與 `/raid/DGM/work`。
 
 ## 本次規則
 
@@ -45,7 +60,7 @@ python3 /tmp/ngs-secondary-review.實際代碼/cleanup_secondary_duplicates.py -
 候選目錄會核對：
 
 - 二級root及三級root內的symlink是否指回該目錄（不遞迴跟隨symlink）。
-- 三級`08_postprocessing/*pipeline_source.json`的`source_path`／`source_vcf_path`是否仍引用該版本。DGM記錄的`/home/datalake_Intermediate/...`會對應成DGX的`/datalake_Intermediate/...`再比較。
+- 三級`08_postprocessing/*pipeline_source.json`的`source_path`／`source_vcf_path`是否仍引用該版本。只針對已知的共享掛載，依選定root將DGM的`/home/datalake_Intermediate/...`及DGX的`/datalake_Intermediate/...`對應為當前主機寫法再比較；支援兩個方向，亦適用另一主機路徑在本機不存在的symlink。採完整路徑元件界線，不改寫相似名稱或任意自訂root。
 
 被引用者保留。相依root沒掛載或無法完整核對時，仍輸出重複清單，但所有待刪項目改為保留。
 
@@ -63,4 +78,4 @@ python3 /tmp/ngs-secondary-review.實際代碼/cleanup_secondary_duplicates.py -
 
 ## 驗證與界線
 
-合成資料測試涵蓋資料夾mtime最新／日期並列、11/5界線、完全不呼叫birthtime查詢、ctime與子檔日期不取代sample目錄mtime、最新核心檔不齊、WES/WGS分開保留、symlink／三級marker引用、最新版本變動時拒刪、實際rmtree只刪核准sample、外部link目標與同batch其他sample保留、Enter不刪、busy lease阻擋、相依root缺失不刪、可貼版與受測Python原碼一致。測試只在本機合成暫存目錄；沒有到DGX搜尋或刪除真實資料。
+合成資料測試涵蓋資料夾mtime最新／日期並列、11/5界線、完全不呼叫birthtime查詢、ctime與子檔日期不取代sample目錄mtime、最新核心檔不齊、WES/WGS分開保留、symlink／三級marker引用、DGM及DGX兩方向掛載引用保護／相似前綴不誤判、相依子目錄權限錯誤全部保留、DGM唯讀入口不詢問不刪除、最新版本變動時拒刪、實際rmtree只刪核准sample、外部link目標與同batch其他sample保留、Enter不刪、busy lease阻擋、相依root缺失不刪、兩份可貼版與受測Python原碼一致。測試只在本機合成暫存目錄；沒有到DGX或DGM搜尋或刪除真實資料。

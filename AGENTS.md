@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**DGM二級重複盤點（v10.34，2026-11-13）**：新增完整可貼`paste_cleanup_secondary_duplicates_dgm.sh`，明確指定`/home/datalake_Intermediate/pipeline/{nextflow_output,tertiary_output}`，先印執行帳號，只產生JSON／TSV報告、不傳`--review`，不詢問或執行刪除、不修改權限。沿用sample資料夾mtime與11/5保護；共享磁碟引用改依選定root雙向對應DGM／DGX掛載寫法，避免DGM模式把/home引用錯誤移除後漏判。原DGX貼上版同步共用程式，仍保留原確認模式。相依目錄無法讀取仍整批候選保留，不略過PRS目錄；DGM是否可讀由實際執行帳號決定，不能因建立主機或sudo群組推定。合成雙掛載marker／symlink、權限錯誤、唯讀入口及兩份嵌入原碼一致性已驗；不SSH／不執行院內搜尋或刪除。
+
 **DGX清理改採修改日期（v10.33，2026-11-13）**：操作者貼回145個重複sample／298目錄均無birthtime、未刪；隨後明確同意用sample資料夾修改日期判斷新舊與11/5界線。`cleanup_secondary_duplicates.py`與完整可貼版同步改為`<root>/<batch>/<sample>`目錄本身mtime排序，保留最新並列及2026-11-05 00:00台北起mtime的所有版本；不查birthtime，不再套ctime／子檔日期的11/5額外gate。ctime仍在樹metadata及核心輸出signature，只防確認後變動；plan明記date_basis=sample_directory_mtime，終端／TSV同名標示。WES/WGS混合、最新版BAM/VCF/index不足、引用、缺相依root、工作lease／掛載／path／inode與永久刪除確認流程沿用。舊/tmp盤點程式不自動更新，須重貼新版重新產生清單與確認碼。合成資料驗證mtime界線／ctime較新仍按資料夾mtime／子檔時間不取代目錄時間、變更拒刪與確認流程；沒有到DGX實際刪除。
 
 **PRS生資方法與程式對照（v10.32，2026-11-13）**：在`docs/research/prs/PRS_WORKFLOW.md`保留白話概念主線，於各步驟加入可展開的生資方法：五新疾病各自對完整reference匹配、固定CHD校準與六病聯集、gVCF品質／股向／多等位處理、PGEN往返、2p平均補值／REF offset與PLINK-Python對帳、ECDF、CHD位點共用祖源及各病99.5% gate、HR年齡加權回歸、GBD單位／cause與例外、連續競爭風險公式及原文離散路徑。每段列程式／函式與審查重點，文末補repo相對路徑、Mac／院內完整入口及設定／輸出位置。描述現有實作，不更動科學程式、參數、資料或快照，不將文件審查宣稱為新WGS或台灣outcome確效。原登入保護「說明」入口讀同檔，更新後重新下載即可；不SSH／部署。技術細節留在展開段，後續維護勿打散概念脈絡。
