@@ -1,4 +1,4 @@
-"""Gene lookup for the /omim-capture/ page.
+"""Gene lookup for the /omim/ page.
 
 Shows exactly what variant cards and reports use for a gene (the rows
 ``omim_store`` serves, from the platform OMIM database or OMIM.xlsx), plus
@@ -91,6 +91,7 @@ def detail(row: dict) -> dict:
     texts = extras.get("texts", {})
     linked = extras.get("linked_genes", {})
     usage = omim_queue.reported_usage()
+    report_samples = omim_queue.reported_samples()
     meta = {m.get("slot"): m for m in row.get("Disease_meta") or []}
     diseases = []
     for slot, text in disease_picks.disease_cells(row):
@@ -114,6 +115,7 @@ def detail(row: dict) -> dict:
             "synopsis_status": info.get("synopsis_status", ""),
             "linked_genes": sorted(set(linked.get(pm, []))),
             "reported": usage.get(pm, 0) if pm else 0,
+            "reported_samples": report_samples.get(pm, []) if pm else [],
         })
     queue_item = next(
         (g for g in omim_queue.build_genes() if g["gene_mim"] == gene_mim and gene_mim), None

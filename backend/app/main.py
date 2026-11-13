@@ -126,9 +126,16 @@ def _phenotype_tool_redirect():
     return RedirectResponse("/phenotype/")
 
 
+@app.get("/omim")
+def _omim_page_redirect():
+    return RedirectResponse("/omim/")
+
+
+# The OMIM page used to live at /omim-capture/; keep old links working.
 @app.get("/omim-capture")
-def _omim_capture_redirect():
-    return RedirectResponse("/omim-capture/")
+@app.get("/omim-capture/{rest:path}")
+def _omim_capture_old_url(rest: str = ""):
+    return RedirectResponse(f"/omim/{rest}", status_code=301)
 
 
 if FRONTEND_DIR.exists():

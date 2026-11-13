@@ -586,7 +586,7 @@
 
   // Capture this page (without adopting) and move on; stops on this page
   // when the capture failed or needs a look (e.g. Synopsis not captured), so
-  // it can be fixed right here. Adopt everything later on /omim-capture/.
+  // it can be fixed right here. Adopt everything later on /omim/.
   async function captureAndNext() {
     const buttons = root.querySelectorAll("#go-next, #capture-next, #skip-current, #skip-gene");
     buttons.forEach(b => { b.disabled = true; });

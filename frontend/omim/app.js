@@ -19,6 +19,20 @@
     not_applicable: ["不適用", "info"],
   };
   const badge = ([label, cls]) => `<span class="badge ${cls}">${esc(label)}</span>`;
+  // Calendar date (YYYY-MM-DD, local time) for a timestamp or a date string.
+  const fmtDate = iso => {
+    if (!iso) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? String(iso).slice(0, 10) : d.toLocaleDateString("sv-SE");
+  };
+  // MIM number as a soft pill (linked to omim.org when it is a MIM).
+  const mimPill = (mim, url) => {
+    const m = esc(mim || "");
+    if (!m) return "";
+    const href = url || (/^\d{6}$/.test(String(mim)) ? `https://omim.org/entry/${m}` : "");
+    return href ? `<a class="mim-pill" href="${esc(href)}" target="_blank" rel="noopener">${m}</a>` : `<span class="mim-pill">${m}</span>`;
+  };
   const fmtTime = iso => {
     if (!iso) return "—";
     const d = new Date(iso);
@@ -202,11 +216,11 @@
     const rows = data.items.map(g => `
       <tr>
         <td>${g.url ? `<a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.gene || g.gene_mim)}</b></a>` : `<b>${esc(g.gene)}</b>`}
-          <br><span class="muted-text">${esc(g.gene_mim)}${g.panel ? " · 疾病相關" : ""}</span>
+          <br>${g.new_entry ? "" : mimPill(g.gene_mim, g.url)}${g.panel ? ' <span class="muted-text">疾病相關</span>' : ""}
           ${g.new_entry ? "" : `<br><button class="btn btn-secondary btn-mini" type="button" data-lookup="${esc(g.gene_mim || g.gene)}">查看</button>`}</td>
         <td>${badge(STATUS_BADGE[g.status] || [g.status, "info"])}${g.synced_at ? `<br><span class="muted-text">基因頁同步 ${esc(fmtTime(g.synced_at))}</span>` : ""}${g.partially_updated ? `<br><span class="muted-text">已有疾病被更新（共用疾病）</span>` : ""}</td>
         <td><ol class="step-list">${g.steps.map(st => `<li>
-          <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a>
+          ${mimPill(st.mim, st.url)}
           ${st.type === "gene" ? "" : esc((st.labels || [])[0] || "")}
           ${(st.kinds || []).map(k => badge(STEP_KIND[k] || [k, "info"])).join(" ")}${st.update_date ? ` <span class="muted-text">OMIM ${esc(st.update_date)}</span>` : ""}${st.confirmed_current ? badge(["已確認 OMIM 沒更新", "ok"]) : ""}
           ${st.captured ? badge(["已擷取待採用", "ok"]) : ""}${st.recently_adopted ? badge(["7 天內採用過", "info"]) : ""}</li>`).join("")}</ol></td>
@@ -307,15 +321,16 @@
     const diseases = g.diseases.map((d, i) => `
       <tr>
         <td>${i + 1}</td>
-        <td>${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.phenotype_mim)}</a> ` : '<span class="muted-text">無 MIM</span> '}${esc(d.label)}
+        <td>${d.phenotype_mim ? mimPill(d.phenotype_mim, d.url) : '<span class="muted-text">無 MIM</span>'} ${esc(d.label)}
           ${d.linked_genes.length ? `<br><span class="muted-text">也連到：${d.linked_genes.map(x => `<a href="#" data-lookup="${esc(x)}">${esc(x)}</a>`).join("、")}</span>` : ""}</td>
-        <td>${badge(SOURCE_BADGE[d.source] || [d.source, "info"])}${d.omim_empty ? `<br><span class="muted-text">OMIM 頁面沒有內文${d.text.includes("\n") && !d.text.includes("（OMIM 此 entry") ? "，保留 OMIM.xlsx 原文" : ""}</span>` : ""}
-          ${d.adopted_at ? `<br><span class="muted-text">${esc(fmtTime(d.adopted_at))} · ${esc(d.adopted_by)}${d.omim_edit_date ? `<br>OMIM 編輯 ${esc(d.omim_edit_date)}` : ""}</span>` : ""}</td>
-        <td>${d.reported ? esc(d.reported) : ""}</td>
+        <td>${badge(SOURCE_BADGE[d.source] || [d.source, "info"])}${d.adopted_at ? ` <span class="muted-text">${esc(fmtDate(d.adopted_at))}</span>` : ""}
+          ${d.omim_edit_date ? `<br><span class="muted-text">OMIM 編輯 ${esc(fmtDate(d.omim_edit_date))}</span>` : ""}
+          ${d.omim_empty ? `<br><span class="muted-text">OMIM 頁面沒有內文${d.text.includes("\n") && !d.text.includes("（OMIM 此 entry") ? "，保留 OMIM.xlsx 原文" : ""}</span>` : ""}</td>
+        <td class="lookup-samples">${(d.reported_samples || []).map(esc).join("<br>")}</td>
       </tr>
-      <tr class="lookup-text-row"><td></td><td colspan="3"><details><summary>卡片／報告使用的內容</summary><pre>${esc(d.text)}</pre></details></td></tr>`).join("");
+      <tr class="lookup-text-row"><td></td><td colspan="3"><details><summary>內容</summary><div class="lookup-text">${esc(d.text)}</div></details></td></tr>`).join("");
     const steps = q && q.steps.length ? `<p><b>待補步驟</b></p><ol class="step-list">${q.steps.map(st => `<li>
-      <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.mim)}</a> ${st.type === "gene" ? "基因頁" : esc((st.labels || [])[0] || "")}
+      ${mimPill(st.mim, st.url)} ${st.type === "gene" ? "基因頁" : esc((st.labels || [])[0] || "")}
       ${(st.kinds || []).map(k => badge(STEP_KIND[k] || [k, "info"])).join(" ")}</li>`).join("")}</ol>` : "";
     const reviews = q && q.reviews.length ? `<p><b>待確認</b></p><ul class="review-list">${q.reviews.map(reviewHtml).join("")}</ul>` : "";
     const removed = g.removed.length ? `<p><b>已移除的疾病</b></p><ul>${g.removed.map(r =>
@@ -331,8 +346,10 @@
         ${statusBadge} ${badge([g.source === "db" ? "平台資料庫" : "OMIM.xlsx", "info"])}
       </div>
       ${(g.moved_to || []).length ? `<p class="muted-text">${badge(["OMIM 已搬移", "warn"])} 這個 MIM 已被 OMIM 併入 ${g.moved_to.map(m => `<a href="https://omim.org/entry/${esc(m)}" target="_blank" rel="noopener">${esc(m)}</a>`).join("、")}</p>` : ""}
-      <p class="muted-text">${g.aliases.length ? `別名：${esc(g.aliases.join("、"))} · ` : ""}Inheritance：${esc(g.inheritance || "—")} · Done：${esc(g.done || "—")}${g.legacy_done && g.legacy_done !== g.done ? `（OMIM.xlsx 原 Done：${esc(g.legacy_done)}）` : ""} · 基因頁同步：${esc(g.synced_at ? fmtTime(g.synced_at) : "尚未")}</p>
-      ${g.diseases.length ? `<table class="data-table lookup-table"><thead><tr><th>#</th><th>疾病</th><th>內容來源</th><th>報告</th></tr></thead><tbody>${diseases}</tbody></table>`
+      <p class="muted-text">${g.aliases.length ? `別名：${esc(g.aliases.join("、"))} · ` : ""}Inheritance：${esc(g.inheritance || "—")} · 資料日期：${esc(fmtDate(g.done) || "—")}</p>
+      ${g.diseases.length ? `<table class="data-table lookup-table">
+        <colgroup><col class="col-idx"><col class="col-disease"><col class="col-source"><col class="col-report"></colgroup>
+        <thead><tr><th>#</th><th>疾病</th><th>內容來源</th><th>報告（檢體編號）</th></tr></thead><tbody>${diseases}</tbody></table>`
         : '<p class="muted-text">平台沒有這個基因的疾病資料。</p>'}
       ${steps}${reviews}${removed}${changes}`;
   }

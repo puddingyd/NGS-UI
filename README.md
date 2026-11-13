@@ -449,11 +449,11 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 三級分析另保存 `source_sample_id`（原始 sequencing sample ID）到 job state 與 `pipeline_source.json`。IGV 先依 sample ID suffix 判斷來源，`-dragen` 強制 DRAGEN roots、`-nckuh` / legacy `-inhouse` 強制 in-house roots；沒有 suffix hint 時才看 `pipeline_source.json` 的 `pipeline_type`。DRAGEN 找 `NGS_UI_DRAGEN_BAM_ROOT/<run>/bam/{sample}.bam`，預設 roots 包含 `/home/datalake_Raw/Novaseq` 與 `/home/datalake_Intermediate/n102968`；in-house 找 `NGS_UI_INHOUSE_BAM_ROOT/<batch>/{sample}/02_alignment/`。自訂輸出 ID 找不到時，會用 sidecar 回查原始 BAM ID；舊個案缺少 sidecar 欄位時，會移除已知 suffix 後用原始 sample ID 搜尋 BAM。IGV 的「其他路徑」資料夾下拉由 `/api/igv/bam-folders` 列出 configured BAM roots 內的 DRAGEN `<run>/bam/` 與 in-house `<batch>`，選 in-house batch 後會列出該 batch 底下各 sample `02_alignment` 的 BAM，排除 `.repeats.bam`。若 systemd 已設定 `NGS_UI_DRAGEN_BAM_ROOT`，需把 `/home/datalake_Intermediate/n102968` 併入該 env，否則會覆蓋程式預設。
 
 
-### OMIM 擷取擴充功能 `/omim-capture/`（測試版）
+### OMIM 擷取擴充功能 `/omim/`（測試版）
 
 用來取代「手動展開 Clinical Synopsis → 全選複製 → 貼進 txt → 跑 `process_genes.py`」的流程。
 
-1. 擴充功能原始碼在 repo 的 `reference/omim_capture/`。在本機 clone 的 repo 上，於 `chrome://extensions`（Edge：`edge://extensions`）開啟開發人員模式後「載入未封裝項目」，直接選 `reference/omim_capture`；之後只要 `git pull`，再在擴充功能卡片按「重新載入」即更新。沒有本機 clone 時，也可在平台「OMIM 擷取」頁（`/omim-capture/`）下載 `ngs-omim-capture.zip` 解壓縮後載入。
+1. 擴充功能原始碼在 repo 的 `reference/omim_capture/`。在本機 clone 的 repo 上，於 `chrome://extensions`（Edge：`edge://extensions`）開啟開發人員模式後「載入未封裝項目」，直接選 `reference/omim_capture`；之後只要 `git pull`，再在擴充功能卡片按「重新載入」即更新。沒有本機 clone 時，也可在平台「OMIM 擷取」頁（`/omim/`）下載 `ngs-omim-capture.zip` 解壓縮後載入。
 2. 在同一頁產生 capture token，貼到擴充功能「設定」並按「儲存並測試連線」。token 只顯示一次，平台只存 hash，可隨時停用。
 3. 開啟 `omim.org/entry/{MIM}`（卡片上缺說明的 `*` 可直接點過去）。右下角面板會顯示平台工作簿的狀態；按「Capture 送到平台」會自動展開 Clinical Synopsis、送出頁面內容，面板列出解析結果、注意事項與 Disease 欄預覽。
 
@@ -463,13 +463,13 @@ DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比
 PYTHONPATH=backend python scripts/omim_db.py init
 ```
 
-它會先固定既有個案的報告疾病勾選，再從 OMIM.xlsx 建立 `NGS_UI_HOME/OMIM/omim.sqlite`，之後平台改讀這個資料庫（不需重啟）。擷取後在面板或 `/omim-capture/` 按「採用到平台」，卡片、DOCX 與個案清單就改用新內容；`/omim-capture/` 另有待確認清單（遷移或採用時無法自動判斷的項目，可「保留」或「移除疾病」）與「匯出 OMIM.xlsx」。從此不要再手動改 OMIM.xlsx（資料庫不會讀它）；要回到 xlsx 只需把 `omim.sqlite` 改名。`scripts/omim_db.py status`／`reviews`／`export --out FILE` 可在命令列查看與匯出。
+它會先固定既有個案的報告疾病勾選，再從 OMIM.xlsx 建立 `NGS_UI_HOME/OMIM/omim.sqlite`，之後平台改讀這個資料庫（不需重啟）。擷取後在面板或 `/omim/` 按「採用到平台」，卡片、DOCX 與個案清單就改用新內容；`/omim/` 另有待確認清單（遷移或採用時無法自動判斷的項目，可「保留」或「移除疾病」）與「匯出 OMIM.xlsx」。從此不要再手動改 OMIM.xlsx（資料庫不會讀它）；要回到 xlsx 只需把 `omim.sqlite` 改名。`scripts/omim_db.py status`／`reviews`／`export --out FILE` 可在命令列查看與匯出。
 
-**連續補資料**：`/omim-capture/` 的「待補清單」以基因為單位：先開基因頁同步疾病清單，再補這個基因缺說明或超過一年未更新的疾病；順序是進行中的基因 → 疾病相關基因中基因頁還沒同步的 → 其他。基因頁和平台對不上的項目列在各基因的「待確認」，可直接保留或移除。擴充功能面板下方的「前往」依同樣順序、先把同一個基因做完；擷取後按「採用並前往下一筆」即可在同一個分頁連續處理；也可以只按「Capture 並前往」連續擷取（先不採用，需確認的頁面會停下來），最後到 `/omim-capture/` 按「全部採用」。「略過這頁／略過這個基因」之後不再推薦（可在擴充功能設定清除略過清單、選擇範圍）。
+**連續補資料**：`/omim/` 的「待補清單」以基因為單位：先開基因頁同步疾病清單，再補這個基因缺說明或超過一年未更新的疾病；順序是進行中的基因 → 疾病相關基因中基因頁還沒同步的 → 其他。基因頁和平台對不上的項目列在各基因的「待確認」，可直接保留或移除。擴充功能面板下方的「前往」依同樣順序、先把同一個基因做完；擷取後按「採用並前往下一筆」即可在同一個分頁連續處理；也可以只按「Capture 並前往」連續擷取（先不採用，需確認的頁面會停下來），最後到 `/omim/` 按「全部採用」。「略過這頁／略過這個基因」之後不再推薦（可在擴充功能設定清除略過清單、選擇範圍）。
 
-**OMIM 更新清單**：在 `omim.org/statistics/updates`（OMIM Update List）頁面，擴充功能面板可「擷取缺少的月份」（總覽頁）或「擷取這個月份」（月份頁）。平台據此判斷哪些基因頁／疾病頁是 OMIM 在我們擷取（或 OMIM.xlsx Done 日期）之後又更新的，列入待補清單的「OMIM 有更新」；所有 OMIM 更新都會進待補清單：還沒同步的基因頁若 OMIM 在 Done 日期之後（或沒有 Done）更新過，也會加基因頁步驟；更新清單中平台完全沒有的基因（「平台沒有的基因」）與平台上沒有任何基因帶著的疾病（「平台沒有的疾病」）各自排進清單，擷取採用後會建立基因或加到對應基因。`/omim-capture/` 的「OMIM 更新清單」卡片顯示涵蓋月份與影響，並可切換「超過一年未更新」規則。建議每月擷取一次。
+**OMIM 更新清單**：在 `omim.org/statistics/updates`（OMIM Update List）頁面，擴充功能面板可「擷取缺少的月份」（總覽頁）或「擷取這個月份」（月份頁）。平台據此判斷哪些基因頁／疾病頁是 OMIM 在我們擷取（或 OMIM.xlsx Done 日期）之後又更新的，列入待補清單的「OMIM 有更新」；所有 OMIM 更新都會進待補清單：還沒同步的基因頁若 OMIM 在 Done 日期之後（或沒有 Done）更新過，也會加基因頁步驟；更新清單中平台完全沒有的基因（「平台沒有的基因」）與平台上沒有任何基因帶著的疾病（「平台沒有的疾病」）各自排進清單，擷取採用後會建立基因或加到對應基因。`/omim/` 的「OMIM 更新清單」卡片顯示涵蓋月份與影響，並可切換「超過一年未更新」規則。建議每月擷取一次。
 
-**查詢基因**：`/omim-capture/` 的「查詢基因的 OMIM 資料」可輸入基因名稱（含舊名稱）、基因 MIM 或 phenotype MIM，查看卡片與報告實際使用的疾病內容、內容來源、採用與 OMIM 編輯日期、待補步驟、待確認、已移除疾病與異動紀錄。
+**查詢基因**：`/omim/` 的「查詢基因的 OMIM 資料」可輸入基因名稱（含舊名稱）、基因 MIM 或 phenotype MIM，查看卡片與報告實際使用的疾病內容、內容來源、採用與 OMIM 編輯日期、待補步驟、待確認、已移除疾病與異動紀錄。
 
 擴充功能只在按下按鈕時讀取目前頁面，不會自動開啟或爬其他 OMIM 頁；Synopsis 無法就地展開時才取一次同站的 `/clinicalSynopsis/{MIM}`。擷取存在 `NGS_UI_OMIM_CAPTURE_DIR/{MIM}/`（同內容不重複存檔），資料庫啟用前只保存與比對。
 

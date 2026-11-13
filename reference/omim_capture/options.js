@@ -58,5 +58,5 @@ $("save").addEventListener("click", async () => {
 
 $("open").addEventListener("click", () => {
   const base = ($("platformUrl").value.trim() || DEFAULT_PLATFORM).replace(/\/+$/, "");
-  chrome.tabs.create({ url: `${base}/omim-capture/` });
+  chrome.tabs.create({ url: `${base}/omim/` });
 });

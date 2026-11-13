@@ -372,6 +372,7 @@ def queue_env(client, monkeypatch):
     monkeypatch.setattr(omim_queue.panel_deadzone, "disease_associated_genes",
                         lambda: frozenset({"ATXNX", "OTX9"}))
     monkeypatch.setattr(omim_queue, "reported_usage", lambda ttl=0: {"600002": 3})
+    monkeypatch.setattr(omim_queue, "reported_samples", lambda ttl=0: {"600002": ["26WE0001", "26WG0002", "26WE0003"]})
     omim_queue._cache.update(sig=None)
     c, user = client
     headers = {"Authorization": f"Bearer {capture_tokens.create(user)['token']}"}

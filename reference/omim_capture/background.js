@@ -3,7 +3,7 @@
 // All platform traffic goes through here: the content script on omim.org
 // cannot reach the hospital intranet (mixed content / CORS), while an
 // extension worker with host permission can. Auth is a personal capture
-// token created on the platform (/omim-capture/), never the login cookie.
+// token created on the platform (/omim/), never the login cookie.
 
 const DEFAULT_PLATFORM = "http://192.168.84.91:8765";
 const OUTBOX_KEY = "outbox";

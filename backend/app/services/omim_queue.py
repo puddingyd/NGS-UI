@@ -61,17 +61,29 @@ _REPORT_TTL = 300
 
 _lock = threading.Lock()
 _cache: dict = {"sig": None, "genes": [], "stats": {}}
-_report_cache: dict = {"at": 0.0, "usage": {}}
+_report_cache: dict = {"at": 0.0, "usage": {}, "samples": {}}
 
 
 def reported_usage(ttl: int = _REPORT_TTL) -> dict[str, int]:
     """phenotype MIM -> number of variant reports that ticked it."""
+    _scan_reports(ttl)
+    return _report_cache["usage"]
+
+
+def reported_samples(ttl: int = _REPORT_TTL) -> dict[str, list[str]]:
+    """phenotype MIM -> sample IDs (檢體編號) whose report ticked it."""
+    _scan_reports(ttl)
+    return _report_cache["samples"]
+
+
+def _scan_reports(ttl: int) -> None:
     now = time.monotonic()
-    if _report_cache["usage"] and now - _report_cache["at"] < ttl:
-        return _report_cache["usage"]
+    if _report_cache["at"] and now - _report_cache["at"] < ttl:
+        return
     from . import sample_layout
 
     usage: dict[str, int] = {}
+    samples: dict[str, set[str]] = {}
     for sample_id in sample_layout.iter_sample_ids():
         path = sample_layout.state_file(sample_id, "sample_metadata.json")
         try:
@@ -91,8 +103,8 @@ def reported_usage(ttl: int = _REPORT_TTL) -> dict[str, int]:
                 mim = str(key).split("|", 1)[0]
                 if mim:
                     usage[mim] = usage.get(mim, 0) + 1
-    _report_cache.update(at=now, usage=usage)
-    return usage
+                    samples.setdefault(mim, set()).add(str(sample_id))
+    _report_cache.update(at=now, usage=usage, samples={m: sorted(s) for m, s in samples.items()})
 
 
 def _rows() -> list[dict]:

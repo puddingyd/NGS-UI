@@ -24,6 +24,8 @@
 
 **OMIM 所有更新進待補清單（v10.22，擴充 0.6.2）**：`build_genes` 的基因頁內容日期＝已同步者用採用擷取日，未同步者用 legacy_done（空＝視為早於任何更新），entry 更新日較晚即加 `gene_updated` 步驟（未同步者狀態仍是 gene_sync，非 panel 排在 group 4）。`omim_updates.missing_entries()` 取更新清單中平台沒有的 MIM：`*`/`+` 不在 genes → `new_gene`，`#`/`%` 不在 active gene_diseases → `new_disease`（不限新增、不限日期，排除出現過 `^` 與無 prefix 的 MIM）；pseudo 項目 gene_mim=`new{MIM}`、帶 `entry`，`omim_db.latest_adoptions()` 的採用擷取日 ≥ 最後列出日即視為完成。`#` 疾病與一般更新同組，基因與 `%` 標 `late` 排最後（group 5）。`/updates/status` 回 `missing_entries`／`missing_genes`／`missing_diseases`。`coverage()` 另回 `untitled`（有空標題列的月份，新到舊），擴充 0.6.3 總覽頁以「補標題」重抓。`scripts/omim_updates_check.py` 同步列出這些類別。
 
+**OMIM 頁網址 /omim/（v10.29）**：前端目錄改為 `frontend/omim/`，`main.py` 的 `/omim` 轉 `/omim/`，舊 `/omim-capture[/...]` 以 301 轉到 `/omim/...`（文件中舊的 `/omim-capture/` 字樣即指此頁）。查詢基因表格 `table-layout: fixed` + colgroup，內容來源顯示採用日期／OMIM 編輯日期，報告欄來自 `omim_queue.reported_samples()`（phenotype MIM → 勾選過的檢體編號，與 `reported_usage()` 共用 5 分鐘快取）；MIM 號碼用 `.mim-pill`。
+
 **OMIM 搬移／移除的 entry（v10.28，PARSER_VERSION 6，擴充 0.6.5）**：parser 對 `^` entry 取 `moved_to`（標題「MOVED TO …」的 MIM）或 `removed`。新表 `mim_redirects(old_mim, new_mims, …)`；`create_capture` 與待採用清單重新解析時即呼叫 `omim_db.record_redirect()`。`adopt_capture` 對 moved_removed 只記轉向並寫 adoptions，removed 且為平台基因時加 `removed_entry` 待確認；blocker 只擋看不出目標者。`build_genes`：基因 MIM 有轉向時基因頁步驟改用新 MIM（kind `gene_moved`，同步判斷看新 MIM 的採用），removed 不出基因頁步驟。`load_rows` 帶 `OMIM_moved_to` 並把新 MIM 加為 by_id 別名（不覆蓋既有基因列）。
 
 **疾病掛在基因 MIM 與 locus 列（v10.27）**：`_render_gene` 對 phenotype_mim == gene_mim、無採用文字／xlsx 原文、且該 MIM 有任何採用紀錄的疾病，輸出 label + `GENE_PAGE_NOTE`、source `gene_page`；`build_genes` 對 `gene_page` 不出疾病步驟，未採用前的同 MIM 單行疾病改走基因頁步驟（設 no_mim）。`is_synced` = gene_sync_map 或 `latest_adoptions()` 有該 MIM（任何 entry_type，含 % locus 列）。
