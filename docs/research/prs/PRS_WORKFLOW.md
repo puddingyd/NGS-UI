@@ -1,8 +1,10 @@
 # PRS 流程說明：從基因資料到疾病風險
 
-更新：2026-11-10｜文件版本 v10.05
+更新：2026-11-13｜文件版本 v10.32
 
 這份文件說明平台如何利用全基因體定序資料，逐步得到「多基因風險分數」、「百分位」與「未來發病風險」，以及開發時為什麼選擇目前的方法。
+
+各章先說概念；供生資審查的實作方法、參數與程式位置，放在可展開的「生資方法與程式對照」中。文內程式路徑均以NGS-UI repo根目錄為起點，完整本機／伺服器路徑及入口索引列在文末。本次補充描述現有實作，沒有更動計分或風險算法。
 
 PRS（Polygenic Risk Score，多基因風險分數）的概念，是把許多常見基因差異對疾病的影響合併考慮。平台採用已發表的研究模型計分，再結合參考族群與台灣疾病統計，提供六種疾病的風險估計。**目前已確認程式能重現指定的計分與研究結果，但還沒有用台灣族群的實際追蹤資料，驗證預測是否準確，結果僅供研究。**
 
@@ -49,6 +51,20 @@ PRS 頁面
 | 心房顫動（AF） | [PGS004878](https://www.pgscatalog.org/score/PGS004878/) |
 | 癲癇 | [PGS004881](https://www.pgscatalog.org/score/PGS004881/) |
 
+<details>
+<summary>生資方法與程式對照：各疾病如何建立自己的計分位點與參考分布</summary>
+
+這是一次性的模型準備，之後個案分析沿用準備好的版本。**新增五疾病各自對完整reference比對；沒有把它們限制在CHD位點內。** 共用處理的是六模型位點的聯集，並非六病共同交集。
+
+1. `scripts/setup_prs_multi.py`是準備入口，下載並核對官方GRCh38 harmonized權重的SHA256，來源記在`research/prs/multidisease/sources.json`。`prepare.py`的`score_rows()`目前只接受常染色體、ACGT雙等位SNV及加性權重，不接受indel、交互作用或隱性計分規則。
+2. `research/prs/multidisease/prepare.py`的`prepare()`逐一讀取完整HGDP＋1kGP v1的GRCh38 PVAR，以座標及allele pair匹配每個疾病模型。`candidates()`優先直接匹配；反向互補候選須經dbSNP157確認身分。相同優先級有多個候選時排除，不按列順序任選。CHD另核對凍結版master的ID、REF、ALT及effect allele，維持610,305位點。
+3. 五個新模型分別要求匹配數／原始權重列數≥99.5%，各病實際固定數量記入`manifest.json`，不直接把官方列數當成可用數量。SQLite的`locus`表存聯集位置，`model`表保留疾病所屬、effect allele與權重，因此一次讀基因型仍能分別計分。
+4. 使用相同的3,330名無明顯親緣參考者，以PLINK 2 `--freq`估頻率、六欄`--score`建立參考分數；每病各自取其中735名EAS的分布。CHD全3,330人須與舊Model A分數的最大差≤`1e-5`，且CHD正式分布保留原值；其餘五病使用新算的各病分布。完成這些檢查才寫出模型manifest。
+
+**審查重點：** allele harmonization與不唯一匹配的排除是否充分、被排除位點是否集中於重要權重，以及使用同一批參考者是否適合各疾病。CHD回歸通過只表示CHD校準保留，不能當作五個新模型的疾病預測驗證。
+
+</details>
+
 ## 三、從原始基因資料算出分數
 
 ### 1. 先判斷每個位置是否讀得可靠
@@ -56,6 +72,20 @@ PRS 頁面
 gVCF 是定序分析產生的基因資料檔。除了記錄偵測到的變異，它也保留許多未偵測到變異區域的資訊，讓平台有機會區分「這裡確實沒有該變異」和「這裡沒有足夠資料可以判斷」。這個區分很重要：資料不足的位置不能直接當成沒有風險變異。
 
 平台會依模型指定的位置讀取個案資料，檢查定序品質，並確認基因位置及變異方向能與模型對上。可信的結果才用來計分；低品質、未涵蓋或無法明確對應的位置，會保留為缺失。資料轉換前後也會再核對一次，避免轉換格式時改變基因型。
+
+<details>
+<summary>生資方法與程式對照：gVCF重建、品質門檻與格式往返核對</summary>
+
+`research/prs/multidisease/reconstruction.py`的`scan_chromosome()`用bcftools按染色體串流讀取gVCF，並以samtools `faidx`查GRCh38 FASTA。`run.py`的`reconstruct()`處理22條染色體，每條只掃一次六病聯集。
+
+- `reconstruction.py`的`rules()`先核對凍結版vendor檔案的checksum，再載入其中Python重建函式；規則原檔是`research/prs/scoring_v211/vendor/PGS004879_FINAL_gVCF_resume.sh`中的`source_record()`、`observe_at()`與`choose_observation()`。六病流程重用這些規則，沒有把整支舊shell流程執行六次。
+- 目前要求單一樣本、可判讀二倍體GT、`FILTER=PASS`、DP≥10及GQ≥20。reference block須為0/0，深度優先取`MIN_DP`，缺少時才用DP；沒有DP／GQ、低品質或無覆蓋者記missing。`FILTER=.`也不當成PASS。
+- 多等位紀錄只投影目標SNV；GT含非目標ALT時不把它折成REF。會處理同座標多筆及重疊紀錄；個案FASTA的REF若與已準備reference不符，不另外猜測翻股。A/T、C/G回文SNP仍採`assume-direct`假設，沒有藉此解決所有股向歧義。
+- `research/prs/multidisease/run.py`的`run()`用bcftools串接各染色體VCF，經PLINK 2匯入PGEN再匯出VCF；`roundtrip()`逐位點核對位置、REF／ALT、缺失及ALT dosage。這驗證格式轉換保留資料，不是對原始定序基因型的獨立真值驗證。
+
+**審查重點：** 不同gVCF caller的block、FILTER及品質欄位是否符合這些假設，GRCh38／FASTA是否一致，以及回文SNP與多等位排除對各病分數的影響。
+
+</details>
 
 ### 2. 按照模型，把各位置的影響加總
 
@@ -67,6 +97,23 @@ gVCF 是定序分析產生的基因資料檔。除了記錄偵測到的變異，
 
 平台表格的「原始 PRS score」指的就是**固定計分位置、包含上述平均補值的總分**。它可能與完整工具紀錄裡其他計分階段的數字不同，因為那些階段採用的位置集合或缺失處理方式不同；閱讀個案結果時，以正式表格為準。
 
+<details>
+<summary>生資方法與程式對照：加權計分、平均補值與獨立對帳</summary>
+
+計分由`research/prs/multidisease/run.py`的`run()`及`summarize()`執行。對每個疾病，`beta`是原模型權重，`d_effect`是可靠位點的effect-allele dosage（0／1／2），`p_effect`是固定3,330人的effect-allele頻率：
+
+```text
+score = Σ_observed(beta × d_effect) + Σ_missing(beta × 2 × p_effect)
+```
+
+- PLINK 2以`--read-freq reference.afreq`及`--score-col-nums 3-8`一次計六欄。為共用ALT dosage矩陣，若某病effect allele為REF，準備階段將該項權重改為負號，另加`2 × beta`常數offset，恢復原effect-allele定義。
+- Python另按各病原effect allele逐項計算，將observed與imputed貢獻分開加總；與PLINK校正offset後的總分差須≤`1e-5`。CHD補值頻率沿用凍結master，其餘疾病由新參考模型準備。
+- 結果存`summary.json`、`scores.tsv`及`missing_loci.tsv.gz`，保留各病可靠／缺失位點、補值貢獻、較高權重缺失及分組邊界提醒。模型檔由`research/prs/multidisease/common.py`的`load_models()`核對manifest與SHA256，禁止改檔後默默沿用舊校準。
+
+**審查重點：** 補值使用3,330人的跨族群平均，而排名使用735名EAS；應評估這項選擇、較高權重缺失及個案缺失模式對排名的影響。平均補值不是定相或單倍型imputation，也不是個案真實GT。
+
+</details>
+
 ## 四、把分數放進參考族群，得到百分位
 
 單看一個分數，例如0.36，並不知道它在人群中算高還是低。平台因此把個案的分數，放進735名東亞參考者的同疾病分數中排序。
@@ -76,6 +123,22 @@ gVCF 是定序分析產生的基因資料檔。除了記錄偵測到的變異，
 選擇東亞參考者，是為了讓比較族群較接近目前預期的使用對象。平台也會檢查個案的基因資料是否適合與這批參考者比較，這就是祖源分析的用途。若無法明確判定適合，或該疾病的可靠計分位置不足，就不會開放風險計算。
 
 因此，**畫面可以先出現分數和百分位，風險則要等祖源與品質檢查通過**。這是流程分段完成的正常狀況。還要留意，735人是有限的東亞參考資料，並不是台灣人口常模；畫面顯示的小數位也不代表排名具有同等程度的精密度。
+
+<details>
+<summary>生資方法與程式對照：ECDF、共用祖源分析與風險放行條件</summary>
+
+**百分位：** `research/prs/multidisease/run.py`的`summarize()`讀各病`reference_scores.json`，以`bisect_right()`計算`100 × count(reference score ≤ target score) / 735`，包含同分者。沒有用常態分布Z值換算排名；`eas_z`只是另外保存的描述值。風險分組使用未四捨五入的百分位，邊界歸右側組。
+
+**祖源：** 同檔`ancestry()`從聯集PGEN擷取`ancestry.ids`；這份清單只由固定CHD位點產生，先以`--geno 0`去掉該個案缺失位置，再交給`pgscatalog/pgsc_calc v2.3.0`、Nextflow及Apptainer。這只共用祖源判斷，不會把五個疾病的分數或參考分布換成CHD。
+
+- 參考panel為HGDP＋1kGP v1；現有範例設定使用FRAPOSA OADP投影、`SuperPop`標籤、`pca_maf_target=0`及`pca_geno_miss_target=0.1`，實際值由該job的config決定。PCA最終使用經QC／LD pruning的子集，不是把全部610,305點直接當獨立標記。
+- `research/prs/multidisease/ancestry_input.py`的`stage_score()`只補完整PGS metadata、逐列保留變異與權重，再由`preflight()`呼叫pgscatalog-format檢查；預設格式工具映像為pgscatalog-utils 2.0.4。
+- `research/prs/absolute_risk/multi.py`的`ancestry_ready()`要求樣本相符、`MostSimilarPop=EAS`、非低信心、可接受QC狀態及正的PCA標記數；`score_rows()`另要求每病observed／fixed loci≥99.5%。這是個案門檻，與準備模型時的99.5% reference匹配率不同。
+- 距風險分組邊界≤2百分點、缺失位點的`abs(weight)≥0.001`會記錄提醒；提醒本身不等於自動判定失敗。這些研究用門檻沒有經台灣疾病結果驗證。
+
+**審查重點：** 以CHD位置選出的祖源panel是否有選位偏差、能否充分辨識混合或非EAS個案，以及低信心旗標是否足夠。這不是獨立全基因組祖源分析，仍是可再改進的部分。
+
+</details>
 
 ## 五、加入疾病統計，估算未來發病風險
 
@@ -88,6 +151,28 @@ gVCF 是定序分析產生的基因資料檔。除了記錄偵測到的變異，
 
 這兩種資料各自補上一部分資訊：台灣基準告訴我們疾病的常見程度，INTERVENE則告訴我們如何依分數分組調整這個基準。**這仍是把歐洲研究結果用到台灣的推估，並不等於已在台灣驗證。**
 
+<details>
+<summary>生資方法與程式對照：HR、GBD資料整理與疾病對應</summary>
+
+風險參數由`research/prs/absolute_risk/build_multi.py`的`build()`／`bins()`離線建立，沒有在每次風險計算時重新下載或重新擬合。`registry.py`記疾病、PGS、GBD cause、適用性別與HR分層；原始來源的SHA256固定在builder的`PINS`，來源URL與完整清單見`research/prs/releases/tw_multi_v1/README.md`。
+
+| 疾病 | GBD2019 cause | EstBB HR選擇 |
+|---|---|---|
+| CHD | Ischemic heart disease | 男性age＋sex；女性sex |
+| T2D | Diabetes mellitus type 2 | age＋sex |
+| 全部癌症 | Total cancers | age，不另按性別選HR |
+| 乳癌 | Breast cancer | full sample HR，僅計算女性風險 |
+| AF | Atrial fibrillation and flutter | age＋sex |
+| 癲癇 | Idiopathic epilepsy | age，不另按性別選HR |
+
+- **HR處理：** 使用EstBB原始Age＋Sex、Female、Age及Full Sample四種表。對age／age＋sex模型，每個非參考分組以四個年齡層的`MedianAAO`為x、`log(HR)`為y、`1/SE²`為權重做線性回歸，再取各五歲區間中點的HR；超出觀察年齡時固定在端點，不無限外推。此函式為`research/prs/absolute_risk/build_taiwan.py`的`male_hr()`；名稱來自舊CHD版本，現由六病builder重用。sex／full模型直接用對應HR，40–60組固定為1。
+- **GBD處理：** 讀作者的`Sex_Stratified_{Incidence,Prevalence,Mortality}.csv`；乳癌另讀`BreastCancerProstateCancer_*.csv`。只選台灣、2019年、`metric=Rate`及指定cause／All causes，依年齡、性別鍵值連接。每十萬人的率除以100,000，發生／死亡為每人每年，盛行則為比例；不使用All ages、年齡標準化率或直接以病例數代替率。
+- **資料例外：** 全部癌症使用`CANCER_SOURCE_GROUPS`反向對應七個來源分組標籤，不倒數或重新擬合HR；AF四格20–29歲疾病死亡率僅依已稽核的作者補零例外接受。原始六份GBD CSV相關台灣500列保存在`taiwan_raw_gbd_audit.json`，builder逐格核對正式包使用的基準率，其他缺列拒絕。
+
+**審查重點：** HR的SE與年齡回歸定義、端點固定的合理性、疾病endpoint是否與GBD cause相容，以及全部癌症標籤對應是否有足夠證據。重現發表值可支持實作，但無法單獨證明這些外推假設成立。
+
+</details>
+
 ### 2. 從目前年齡開始，逐段計算
 
 平台先依百分位，把個案分進 INTERVENE 使用的七組：低於20、20–40、40–60、60–80、80–90、90–95及95以上。40–60是比較用的中間組。各疾病採用原研究選定的年齡、性別分層方式，並非所有疾病都套相同的相對風險。
@@ -95,6 +180,29 @@ gVCF 是定序分析產生的基因資料檔。除了記錄偵測到的變異，
 接著，平台從評估年齡開始，將台灣人口發生率依這些相對風險分配到各組，同時維持各組加權平均與人口基準一致，再逐段累計到指定年齡。計算過程也會考慮：有些人可能先因其他原因死亡，而不再有機會發生這個疾病。這稱為「競爭風險」，也是不能單純把百分位、人口發生率與年數相乘的原因。
 
 目前使用五歲年齡區間的統計資料，假設同一區間內的發病及死亡速率固定，並假設未來仍維持2019年的年齡別情況。這是模型的簡化，沒有預測醫療進步或未來發病率的變動。同一分組、年齡與性別會得到相同估計；分組邊界附近的小幅排名變化，可能影響風險估計，應留意品質提醒。
+
+<details>
+<summary>生資方法與程式對照：競爭風險公式與數值方法</summary>
+
+`research/prs/absolute_risk/engine.py`的`group()`決定七分組，`integrate()`累計條件式風險。令`I`為人口發生率、`P`為盛行比例、`HR_g`為目標組相對風險、`q_g`為分組比例；所有量均取該年齡區間及性別的資料：
+
+```text
+q = (0.20, 0.20, 0.20, 0.20, 0.10, 0.05, 0.05)
+H_bar   = Σ(q_g × HR_g)
+lambda_g = I × HR_g / H_bar / (1 − P)
+mu       = all_cause_mortality − disease_mortality
+
+deltaF = S × lambda_g/(lambda_g+mu) × [1 − exp(−(lambda_g+mu) × dt)]
+S_new  = S × exp(−(lambda_g+mu) × dt)
+```
+
+`S`是尚存活且未發病的機率，從評估年齡設為1；各段`deltaF`加總成累積風險，`dt`是實際跨到的區間長度。總hazard為零時增量為零。程式用`math.expm1()`計算小增量，採`competing_exact_v1`在每段固定hazard下積分，可切分非五歲邊界的起訖年齡。
+
+原文重現另用`intervene_discrete_v1`：每個完整五年區間的增量為`S × [1 − exp(−5 × lambda_g)]`，S仍以疾病與其他死因hazard更新。這兩條數值路徑沒有混用，也不能把原文重現的誤差當成UI算法與原文的差距。
+
+**審查重點：** 各PRS組共用盛行率與其他原因死亡率、固定分組比例、五歲區間內速率固定，以及將人口率轉成未患病者hazard的假設。百分位不依年齡／性別重新排名，年齡／性別調整發生在風險參數。歐洲HR能否套用到固定子集、平均補值後的EAS分組，仍是未完成台灣追蹤驗證的關鍵。
+
+</details>
 
 ### 3. 三種風險的期間與適用條件
 
@@ -109,6 +217,17 @@ gVCF 是定序分析產生的基因資料檔。除了記錄偵測到的變異，
 本版計算到80歲為止，所以超出終點的完整10年或20年會顯示不適用。所有估計都以「目前仍存活、尚未罹患該病」為前提，用來估算首次發病；已有疾病者不計算復發風險。乳癌風險模型目前只適用女性。
 
 在平台操作時，使用者核對年齡、性別及各疾病病史後，按「風險計算」即可保存評估。病史預設「否」只是方便輸入，仍須確認。修改臨床資訊後要重新計算；有有效評估的個案，才可把PRS納入健檢報告。
+
+<details>
+<summary>生資方法與程式對照：執行入口、來源綁定與風險輸出</summary>
+
+平台worker是`backend/app/workers/prs_run.py`的`Worker.run_multi()`，依序呼叫`research/prs/multidisease_cli.py --stage score`與`--stage ancestry`；CLI轉入`research/prs/multidisease/run.py`。計分完成先發布summary，祖源完成再發布QC，不以祖源工具的輔助分數覆蓋正式分數。
+
+風險API由`backend/app/routers/prs.py`接收請求，經`backend/app/services/prs.py`分派至`prs_multi.py`的`assess()`。`research/prs/absolute_risk/multi.py`的`person_for()`驗臨床輸入，`evaluate()`逐病檢查病史、性別、計分及祖源條件，再呼叫`engine.integrate()`計算10年、20年、至80歲與40–60參考組曲線。API不採用使用者自行傳入的score／percentile；超出完整期間的欄位回null，病史／性別／品質不符的疾病另附原因。
+
+`prs_multi.py`固定核對`research/prs/releases/tw_multi_v1/bundle.json`的release hash，並把臨床輸入、score、bundle、來源hash及結果保存為不可變評估。`report_assessment()`依當前資料重現結果並比較快照；健檢匯出由`backend/app/services/docx_export.py`使用同份有效評估，不另算一套風險。個案輸入或來源變更時，舊快照保留但不能靜默當成新結果。
+
+</details>
 
 ## 六、開發時遇到的問題，如何影響目前的選擇
 
@@ -148,6 +267,24 @@ Method 2決定「固定位置再計分」的原則，A／B則是在這個原則�
 
 執行可靠性也仍有待補驗的項目。已測過完成工作的續跑與部分失敗情境，但不能宣稱所有分析中途的中斷都已驗證可恢復；六疾病完整院內WGS流程與大量個案負載，也仍需持續驗收。
 
+<details>
+<summary>生資方法與程式對照：驗證資料與可重現範圍</summary>
+
+| 想核對的項目 | 程式／紀錄 | 證據範圍 |
+|---|---|---|
+| CHD固定A／B與三案／平行執行 | `research/prs/scoring_v211/METHOD2_INTEGRATION_SOP.md`、`VALIDATION_REPORT_v211_2026-11-02.md`（同目錄） | 歷史交付結果；沒有因本次補寫文件重跑院內WGS |
+| 六病gVCF重建、計分與往返 | `tests/test_prs_multi_tools.py` | 小型合成22染色體資料，含真正bcftools／samtools／PLINK的測試；缺工具時該測試會skip，不能把skip算通過 |
+| 風險解析解、期間與輸入條件 | `research/prs/tests/test_absolute_risk.py`、`tests/test_prs_multi.py` | 數值與條件邏輯驗證，不是疾病預測效能 |
+| 原文1,232筆點估計 | `research/prs/absolute_risk/build_multi.py`、`research/prs/releases/tw_multi_v1/reproduction.json` | 使用原HR與Estonia基準；公開表格只作expected值，不作係數擬合 |
+
+CHD歷史A／B計分由`research/prs/scoring_v211/method2_score.py`讀取已固定的模型。官方原始610,677位點中，A保留610,305個reference相容位置；B再要求EAS及全體參考者的位點缺失率均≤1%，保留603,438個。這些原始篩選證據見歷史SOP與model lock；大型master／score／reference資料在設定的`method2_model_dir`，未隨repo附上，審查時須另取得。六病`prepare.py`只沿用CHD A並做回歸，沒有替五疾病產生B模型。
+
+builder要求每病完整覆蓋兩性／適用性別、七組及16個年齡終點，最大誤差≤0.0050001百分點才產生正式參數。重現作者出生起曲線時，第一格沿作者將1–4歲資料對應五年區間的約定；正式台灣包僅從20歲起，不因此提供出生風險。原作者R bootstrap未在此流程執行，個人不確定性區間仍為null。
+
+Review時請同時查看原文離散重現與UI連續積分的測試，不把「點估計重現」「流程能跑完」「台灣疾病預測準確」視為同一個驗證結論。
+
+</details>
+
 ## 八、閱讀結果時，最需要注意的限制
 
 **東亞排名加上台灣統計，仍然包含跨族群推估。** 主要模型與相對風險來自歐洲研究，735名東亞參考者則用來比較分數。兩者與台灣真實發病關係是否相符，仍需前述追蹤驗證。此外，平台目前沒有納入血壓、血脂、血糖、吸菸、家族史、罕見致病變異或治療效果，也尚未提供個人風險估計的誤差範圍，因此這不是完整的個人臨床風險評估。
@@ -171,6 +308,46 @@ Method 2決定「固定位置再計分」的原則，A／B則是在這個原則�
 ## 延伸資料：工具、來源與詳細驗證
 
 基因資料主要由bcftools與samtools讀取、檢查，PLINK 2負責計分，Python另做獨立加總確認。祖源分析使用pgsc_calc v2.3.0與FRAPOSA；Nextflow安排分析步驟，Apptainer提供工具執行環境。風險估算由平台的Python程式執行。這些工具讓流程可重複執行，前面介紹的研究假設與限制仍需另外驗證。
+
+### 程式完整路徑與入口索引
+
+本文的`research/prs/...`、`scripts/...`及`backend/...`都從**repo根目錄**起算。依既有checkout，本機根目錄是`/Users/changym/Desktop/NGS-UI/`，院內伺服器是`/home/n102968/NGS_UI/NGS-UI/`；若部署位置不同，請換成實際repo根目錄。例如個案運算入口的完整路徑為：
+
+```text
+本機：/Users/changym/Desktop/NGS-UI/research/prs/multidisease_cli.py
+院內：/home/n102968/NGS_UI/NGS-UI/research/prs/multidisease_cli.py
+```
+
+| 要審查的步驟 | Repo內程式路徑 | 主要入口／函式 |
+|---|---|---|
+| 一次性模型準備 | `scripts/setup_prs_multi.py` → `research/prs/multidisease/prepare.py` | `main()` → `prepare()`、`candidates()` |
+| 新個案計分與祖源 | `research/prs/multidisease_cli.py` → `research/prs/multidisease/run.py` | `main()` → `run(stage='score'/'ancestry')` |
+| gVCF判讀規則 | `research/prs/multidisease/reconstruction.py` | `rules()`、`scan_chromosome()`、`scan_records()` |
+| 格式往返／分數／百分位／祖源 | `research/prs/multidisease/run.py` | `roundtrip()`、`summarize()`、`ancestry()` |
+| 祖源輸入格式預檢 | `research/prs/multidisease/ancestry_input.py` | `stage_score()`、`preflight()` |
+| 建立風險包／原文重現 | `research/prs/absolute_risk/build_multi.py`、`research/prs/absolute_risk/build_taiwan.py` | `build()`、`bins()`、`male_hr()` |
+| 疾病／PGS／GBD／HR對應 | `research/prs/absolute_risk/registry.py` | `DISEASES` |
+| 個案風險條件與數值積分 | `research/prs/absolute_risk/multi.py`、`research/prs/absolute_risk/engine.py` | `person_for()`、`evaluate()`、`group()`、`integrate()` |
+| 平台啟動與發布 | `backend/app/services/prs_jobs.py`、`backend/app/workers/prs_run.py` | `start()`、`Worker.run_multi()`、`Worker.publish()` |
+| 風險保存與匯出核對 | `backend/app/services/prs_multi.py`、`backend/app/services/docx_export.py` | `assess()`、`report_assessment()`、`build_health_docx()` |
+
+未啟用六病模型的舊CHD個案，仍可能經`research/prs/scoring_v211/pipeline_v21.py`與`method2_score.py`執行。它們也是追溯CHD歷史A／B的入口；不能把舊CHD腳本誤當成新增五疾病的個案入口。上述科學程式可對照[本次核對的repo版本](https://github.com/puddingyd/NGS-UI/tree/114281b/research/prs)閱讀。
+
+### 設定與分析產物在哪裡
+
+PRS設定由`NGS_UI_PRS_CONFIG`指定，未設時讀`NGS_UI_HOME/data/prs_config.json`；`multi_model_dir`決定是否啟用六病。工具／FASTA／dbSNP／reference panel等實際路徑均由此設定取得。現有PLINK容器檔名標示`2.00a5.10`；完整環境重現還須一併查看該job的設定、容器身分與工具紀錄。
+
+| 資料 | 預設位置或設定 |
+|---|---|
+| 準備完成的六病reference模型 | `NGS_UI_HOME/biotools/prs/multi_v1/`，由`multi_model_dir`指定；含manifest、SQLite、頻率與各病參考分布 |
+| 模型準備暫存 | `NGS_UI_HOME/nf_work/prs/_reference_prepare_v1/` |
+| 個案重建、audit、Nextflow及暫存 | `NGS_UI_HOME/nf_work/prs/{個案ID}/`；沿既有work root設定及SSD掛載，容器tmp在該案`.runtime/tmp/` |
+| 正式分數／QC／風險評估 | `NGS_UI_TERTIARY_ROOT/{個案ID}/08_postprocessing/`；分數連結為`{個案ID}.prs.summary.json`，發布版本與快照在`{個案ID}.prs/` |
+| 固定台灣風險包與驗算紀錄 | repo的`research/prs/releases/tw_multi_v1/` |
+
+院內典型的`NGS_UI_HOME`是`/home/n102968/NGS_UI`，三級主root預設是`/home/datalake_Intermediate/pipeline/tertiary_output`；環境變數可覆寫，因此查實際job時以保存的config及來源紀錄為準。舊PRS專案只供讀取既有資源，不接收新個案輸出。`research/prs/scoring_v211/config.example.json`保留歷史配置，不能把其中舊`project`路徑直接當成平台目前的個案輸出位置；平台路徑配置實作在`backend/app/services/prs_paths.py`。
+
+### 研究來源與歷史紀錄
 
 - [INTERVENE原論文與附件](https://doi.org/10.1038/s41467-024-48938-2)：模型架構、疾病定義與原文風險結果。
 - [作者公開的GBD資料與風險程式](https://github.com/intervene-EU-H2020/flagship/tree/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation)：本平台使用固定版本，以維持結果可追溯。
