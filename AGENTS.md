@@ -10,7 +10,7 @@
 
 ## 0. 一句話總覽
 
-**PRS盤點清單回傳（v10.36，同日補記2026-11-14）**：已讀使用者回傳`samples.tsv`，1,526列／1,526個唯一ID與路徑；26T0候選1,516個，跨27個run（目錄日期6/11～11/9），全部ONE_FILE且回報一份非空名稱相符檔案。標準品VAL-45～49/HG001與VAL-50～54/HG002各5份，全在4/28同run，不能稱為跨run重複性。只存`validation_20261114/cohort_inventory_summary.json`的彙整／來源hash，不將原始清單或健康人ID／路徑放Git。只有samples.tsv，整庫搜尋完整性／錯誤／跳過link仍未知；未讀gVCF、未確認個人去重、祖源／QC、PRS分布或補值誤差。workflow第九章、研究設計與盤點操作／索引已補目前數量。癌症病例對照仍暫緩；未SSH／部署，科學程式與參數未變。
+**PRS盤點清單回傳（v10.36，同日補記2026-11-14）**：已讀使用者回傳`samples.tsv`，1,526列／1,526個唯一ID與路徑；26T0候選1,516個，跨27個run（目錄日期6/11～11/9），全部ONE_FILE且回報一份非空名稱相符檔案。標準品VAL-45～49/HG001與VAL-50～54/HG002各5份，全在4/28同run，不能稱為跨run重複性。只存`validation_20261114/cohort_inventory_summary.json`的彙整／來源hash，不將原始清單或健康人ID／路徑放Git。使用者另回傳終端摘要確認搜尋完成，錯誤／跳過link／名稱衝突／跨ID共用實體均0，標準品無缺；報告在既有PRS work下`_validation_20261114/inventory_20261114T070046Z_6hjyoj6n`，未直接讀取院內inventory.json。未讀gVCF、未確認個人去重、祖源／QC、PRS分布或補值誤差。workflow第九章、研究設計與盤點操作／索引已同步。癌症病例對照仍暫緩；未SSH／部署，科學程式與參數未變。
 
 **PRS健康人盤點與查核彙入（v10.36，2026-11-14）**：新增stdlib Python3.8+ `scripts/inventory_prs_gvcfs.py`，遞迴唯讀盤點Novaseq下26T0檢體候選及VAL-45～49/HG001、VAL-50～54/HG002等標準品。只取metadata，不讀header／基因型、不hash／索引／計分；每次在指定既有PRS work父目錄新建唯一JSON／samples.tsv／files.tsv。分開ID／路徑／實體inode／標準品個體，重複來源不按mtime選最新，檔名／germline_seq資料夾衝突、空檔、跨ID共用實體及缺索引明列。目錄symlink不跟隨並列部分搜尋，讀取錯誤也不當零筆成功；部分exit2、入口／輸出失敗exit1、完整exit0。26T0只是使用者指定候選規則，ID數不冒稱去重人數或已確認健康。workflow v10.36將六病來源零回文、CHD來源lock、癌症818872列原始／harmonized一致與作者模板未見翻號等已有結果彙入第七章，第九章解釋M4分布／EAS與M5補值及自建ECDF自驗的限制。無院內人數、真實補值／分布新結果；癌症病例對照因年齡／性別／癌別未齊依使用者決定暫緩，保留原計畫歷史。操作`docs/ops/PRS_COHORT_INVENTORY.md`；未SSH／部署／搜尋院內磁碟，科學模型／快照不改。
 

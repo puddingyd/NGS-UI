@@ -7,6 +7,17 @@
     "sha256": "340f8090dd82ccd5590e64fcae72c612acd60180f1c83664f7764074459bbbca",
     "raw_file_committed": false
   },
+  "reported_scan_completion": {
+    "evidence": "User-provided terminal summary on 2026-11-14",
+    "discovery_complete": true,
+    "errors": 0,
+    "skipped_directory_symlinks": 0,
+    "identity_conflicts": 0,
+    "physical_files_shared_across_ids": 0,
+    "expected_val_ids_not_found": [],
+    "report_directory": "/home/n102968/NGS_UI/nf_work/prs/_validation_20261114/inventory_20261114T070046Z_6hjyoj6n",
+    "original_inventory_json_independently_read": false
+  },
   "counts": {
     "sample_rows": 1526,
     "unique_sample_ids": 1526,
@@ -40,7 +51,6 @@
     "cross_run_replicates_available_in_this_list": false
   },
   "not_established_by_samples_tsv": [
-    "Whole-root discovery completeness, scan errors and skipped directory symlinks; inventory.json or terminal status needed.",
     "Number of unrelated biological people and clinically confirmed disease-free status.",
     "Current file/index readability, header identity, caller/reference versions and whole-genome coverage.",
     "Per-disease genotype quality, PRS scores, percentile distributions, mean-fill errors or disease validity."
