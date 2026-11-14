@@ -1,8 +1,8 @@
 # INTERVENE PRS → 台灣多疾病研究流程
 
-一般使用者請先看[PRS流程說明：從基因資料到疾病風險](../../docs/research/prs/PRS_WORKFLOW.md)（v10.32，2026-11-13），由概念、例子與選擇理由解釋整個流程；各步驟可展開生資方法、參數與程式對照，文末另列完整路徑與入口。平台PRS標題「研究用途」旁的「說明」可下載同一份文件。以下舊版本細節保留追溯，現行六疾病流程以該說明及操作文件為準。
+一般使用者請先看[PRS流程說明：從基因資料到疾病風險](../../docs/research/prs/PRS_WORKFLOW.md)（v10.35，2026-11-14），由概念、例子與選擇理由解釋整個流程；各步驟可展開生資方法、參數與程式對照，文末另列完整路徑與入口。平台PRS標題「研究用途」旁的「說明」可下載同一份文件。以下舊版本細節保留追溯，現行六疾病流程以該說明及操作文件為準。
 
-方法審查、回應與後續計畫統一由[PRS 文件與審查索引](../../docs/research/prs/README.md)管理，標明對象版本、固定 commit、原稿 hash、狀態與後續決策。依序可讀[Claude 審查原稿](../../docs/research/prs/reviews/PRS_REVIEW_2026-11-13.md)、[審查回應與台灣在地化評估](../../docs/research/prs/PRS_REVIEW_RESPONSE_2026-11-14.md)、[三項後續工作計畫](../../docs/research/prs/PRS_VALIDATION_PLAN_2026-11-14.md)。原稿保留原樣；目前三項僅完成規劃，尚未執行驗證或修改平台。
+方法審查、回應與後續計畫統一由[PRS 文件與審查索引](../../docs/research/prs/README.md)管理，標明對象版本、固定 commit、原稿 hash、狀態與後續決策。依序可讀[Claude 審查原稿](../../docs/research/prs/reviews/PRS_REVIEW_2026-11-13.md)、[審查回應與台灣在地化評估](../../docs/research/prs/PRS_REVIEW_RESPONSE_2026-11-14.md)、[三項後續工作計畫](../../docs/research/prs/PRS_VALIDATION_PLAN_2026-11-14.md)、[執行結果與待資料項目](../../docs/research/prs/PRS_VALIDATION_2026-11-14.md)。原稿與原計畫保留；v10.35 已完成來源查核、驗證 CLI 及 UI／Word 呈現調整，獨立完整基因型與補值實測仍待院內資料。[驗證工具操作](../../docs/ops/PRS_VALIDATION.md)
 
 v9.91 新增未來20年風險（年齡≤60），與10年及至80歲使用相同參數／競爭風險算法。UI新病史表單預設否，已保存病史保留。舊評估按風險計算產生新版快照即可，不重跑基因計分；nf_work維持原路徑並透過既有bind mount使用SSD。
 

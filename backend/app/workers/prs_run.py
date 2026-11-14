@@ -145,15 +145,19 @@ class Worker:
                 raise ValueError('祖源 QC 未通過')
             # Derived envelope only; never edit the frozen upstream summary.
             summary = {**summary, 'ancestry_status': evidence}
+        score_files = ('summary.json', 'scores.tsv', 'inputs.lock.json', 'missing_loci.tsv.gz') if multi else prs_paths.SCORE_FILES
+        if multi and (original.parent/'provenance.score.json').is_file():
+            score_files = (*score_files,'provenance.score.json')
         artifacts = dict(score=prs_paths.publish_files(
             self.job['sample_id'], self.job['job_id'], 'score', original.parent,
-            ('summary.json', 'scores.tsv', 'inputs.lock.json', 'missing_loci.tsv.gz') if multi else prs_paths.SCORE_FILES))
+            score_files))
         if artifacts['score']['files']['summary.json'] != digest:
             raise ValueError('計分結果在發布期間已變更')
         if qc:
             artifacts['ancestry'] = prs_paths.publish_files(
                 self.job['sample_id'], self.job['job_id'], 'ancestry', qc.parent,
-                ('qc.json',) if multi else prs_paths.QC_FILES)
+                (('qc.json','provenance.ancestry.json') if (qc.parent/'provenance.ancestry.json').is_file()
+                 else ('qc.json',)) if multi else prs_paths.QC_FILES)
             if artifacts['ancestry']['files']['qc.json'] != qc_hash:
                 raise ValueError('祖源結果在發布期間已變更')
         self.verify_inputs()

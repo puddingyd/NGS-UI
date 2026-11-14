@@ -79,8 +79,10 @@ def test_shared_six_column_score_real_tools_and_resume(tmp_path,monkeypatch):
         expected=22*(j+1)*.001*(5 if j%2 else 3)
         assert r['total_sum']==pytest.approx(expected,abs=1e-12)
     times={p.name:p.stat().st_mtime_ns for p in root.glob('chr*.json')}
+    original_provenance=(root/'provenance.score.json').read_bytes()
     pipeline.run(cfg,'SYNTHETIC',Path(str(gvcf)+'.gz'),root,'score')
     assert times=={p.name:p.stat().st_mtime_ns for p in root.glob('chr*.json')}
+    assert (root/'provenance.score.json').read_bytes()==original_provenance
     with (root/'chr1.audit.tsv.gz').open('ab') as f:f.write(b'tampered')
     # The full score checkpoint validates published files; remove it to exercise
     # failed-run chromosome recovery and reject altered genotype audit artifacts.

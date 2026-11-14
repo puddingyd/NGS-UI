@@ -3878,6 +3878,7 @@ def _render_health_prs_section(doc, snapshot):
     multi = result.get('schema') == 'PRS_MULTI_RESULT_V1'
     assessment_rows = (list(result['diseases'].values()) if multi
                        else [{**result, 'id': 'CHD', 'name': '冠狀動脈心臟病', 'available': True}])
+    presentation = prs_presentation.assessment_presentation(snapshot)['diseases']
     _add_paragraph(doc, content['result_title'], bold=True)
     _add_paragraph(doc, f'評估時年齡：{person["age"]:g} 歲；性別：{sex}')
     columns = [('疾病', 18), ('多基因風險分數百分位', 22),
@@ -3888,7 +3889,7 @@ def _render_health_prs_section(doc, snapshot):
                 else prs_presentation.disease_name(r['id'], r['name']).split('（')[0])
         prefix = [name, f'第{_health_prs_number(r["percentile"])}百分位']
         if r['available']:
-            values.append([*prefix, *[_health_prs_number(r[key]['risk'], risk=True)+'%' if r[key]
+            values.append([*prefix, *[presentation[r['id']]['risks'][key]['report_text'] if r[key]
                                      else '不適用' for key in ('risk_10_year', 'risk_20_year', 'risk_to_80')]])
         else:
             reason = ('已有此疾病，不估算風險' if person['history'].get(r['id']) is True else r['reason'])
@@ -3896,6 +3897,12 @@ def _render_health_prs_section(doc, snapshot):
             # wrapping it independently in each narrow horizon column.
             values.append(dict(cells=[*prefix, reason], widths=[18, 22, 43], modes=['char']*3))
     _ascii_table(doc, columns=columns, rows=values, fixed_tabs=True)
+    notices = {}
+    for r in assessment_rows:
+        for notice in presentation[r['id']]['notices']:
+            notices.setdefault(notice,[]).append(prs_presentation.disease_name(r['id'],r['name']).split('（')[0])
+    for notice,names in notices.items():
+        _add_paragraph(doc, notice if any(notice.startswith(name+'：') for name in names) else '、'.join(names)+'：'+notice)
     assessment_rows = [r for r in assessment_rows if r['available']]
     if any(r['risk_10_year'] is None for r in assessment_rows):
         _add_paragraph(doc, '未來10年風險不適用：評估年齡超過70歲，完整十年期間超出本模型80歲的估算終點。')

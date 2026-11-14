@@ -1,5 +1,90 @@
 """Human-readable presentation only; never modify locked scores or risk inputs."""
 import re
+from decimal import Decimal, ROUND_HALF_UP
+
+RANK_EXPLANATION = ('PRS 百分位表示分數在參考族群中的排名，不是發病機率。風險依七個百分位區間估算，'
+    '跨到另一區間時數字可能跳動；來源研究的相鄰組估計也不一定依序增加。')
+BOUNDARY_NOTE = '此百分位接近風險分組邊界；排名小幅變動可能改變分組與風險數字。這是分組穩定性提醒，不是個人風險的誤差區間。'
+CANCER_NOTE = '全部癌症：權重分數與來源相對風險分組的方向對應仍待確認；目前風險屬研究性重建，不能把高百分位直接解讀為已確認的高發病風險。'
+ZERO_NOTE = '來源資料在此年齡設為零，無法據此確認零風險。'
+PARTIAL_ZERO_NOTE = '本次期間有部分年齡使用來源資料設定的零發生率，估計受此限制；其餘年齡仍依模型計算，不代表零值年齡不會發病。'
+
+
+def probability_text(value, digits=2):
+    """Display precision is explicit; a positive risk must not look exactly zero."""
+    number = Decimal(str(value)) * 100
+    unit = Decimal(1).scaleb(-digits)
+    rounded = number.quantize(unit, rounding=ROUND_HALF_UP)
+    return ('<' + str(unit) if number > 0 and rounded == 0 else str(rounded)) + '%'
+
+
+def _zero_intervals(bundle, disease, sex, start, end):
+    # Only the audited GBD2019 AF source exception is a source-zero label.
+    if disease != 'AF' or bundle.get('baseline_release') != 'GBD2019':
+        return []
+    return [[max(start, r['age_start']), min(end, r['age_end'])]
+        for r in bundle['bins'] if r['sex'] == sex and 20 <= r['age_start'] < r['age_end'] <= 30
+        and r['incidence'] == 0 and min(end, r['age_end']) > max(start, r['age_start'])]
+
+
+def risk_annotation(bundle, disease, sex, start, endpoint, value):
+    intervals = _zero_intervals(bundle, disease, sex, start, endpoint)
+    coverage = 'none'
+    if intervals:
+        cursor = start
+        for a,b in sorted(intervals):
+            if a > cursor: break
+            cursor = max(cursor,b)
+        coverage = 'all' if cursor >= endpoint else 'partial'
+    # Initial curve point is the conditioning origin, not a zero-risk forecast.
+    origin = endpoint == start
+    return dict(source_zero=coverage, intervals=intervals,
+        ui_text='評估起點' if origin else '來源零值*' if coverage == 'all' else probability_text(value),
+        report_text='來源零值*' if coverage == 'all' else probability_text(value, 1),
+        message=ZERO_NOTE if coverage == 'all' else PARTIAL_ZERO_NOTE if coverage == 'partial' else '')
+
+
+def assessment_presentation(snapshot):
+    """Derived view of a validated snapshot; never write into its inputs/result."""
+    from . import prs
+    result = snapshot['result']; person = result['person']; pack = snapshot['inputs']['bundle']
+    rows = result.get('diseases') or {'CHD': {**result, 'available': True}}
+    views = {}
+    for key, r in rows.items():
+        if not r.get('available'):
+            views[key] = dict(notices=[], risks={}, curve=[])
+            continue
+        bundle = pack['models'][key] if 'models' in pack else pack
+        start, sex = person['age'], person['sex']
+        notices = [CANCER_NOTE] if key == 'ALL_CANCERS' else []
+        if min(abs(r.get('percentile', 50)-b) for b in (20,40,60,80,90,95)) <= 2:
+            notices.append(BOUNDARY_NOTE)
+        risks = {}; inversions = []
+        for field, end in (('risk_10_year', start+10), ('risk_20_year', start+20), ('risk_to_80', 80)):
+            value = r.get(field)
+            if value is None: continue
+            annotation = risk_annotation(bundle, key, sex, start, end, value['risk'])
+            risks[field] = annotation
+            if annotation['message'] and annotation['message'] not in notices:
+                notices.append(annotation['message'])
+            comparison = [prs.engine.integrate(bundle, sex, p, start, end)['risk'] for p in (10,30,50,70,85,92,97)]
+            if any(a > b+1e-12 for a,b in zip(comparison,comparison[1:])):
+                inversions.append({'risk_10_year':'10年','risk_20_year':'20年','risk_to_80':'至80歲'}[field])
+        if inversions:
+            notices.append('此疾病的'+ '／'.join(inversions)+'估計在部分相鄰分組未依百分位遞增；不能解讀為較高 PRS 具有保護作用。')
+        curve = []
+        for point, reference in zip(r['risk_to_80']['curve'], r['reference']['risk_to_80']['curve']):
+            a = risk_annotation(bundle, key, sex, start, point['age'], point['risk'])
+            a.update(age=point['age'], reference_text=risk_annotation(bundle, key, sex, start, reference['age'], reference['risk'])['ui_text'])
+            curve.append(a)
+        reference = {field:risk_annotation(bundle,key,sex,start,end,r['reference'][field]['risk'])
+            for field,end in (('risk_10_year',start+10),('risk_20_year',start+20),('risk_to_80',80)) if r['reference'].get(field) is not None}
+        views[key] = dict(notices=notices, risks=risks, curve=curve, reference=reference)
+    return dict(version='PRS_PRESENTATION_V2', diseases=views)
+
+
+def presented_snapshot(snapshot):
+    return {**snapshot, 'presentation': assessment_presentation(snapshot)}
 
 
 def disease_name(key, source_name):

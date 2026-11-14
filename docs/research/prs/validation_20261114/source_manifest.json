@@ -1,0 +1,77 @@
+{
+  "retrieved_on": "2026-11-14",
+  "sources": [
+    {
+      "filename": "AbsoluteRiskEstimation__05_Age_SplineFitting.R",
+      "sha256": "5717508685e14d79bc18f4f5c70c110bf201d1afcd271ea1abe81fde21ed9336",
+      "bytes": 8689,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/05_Age_SplineFitting.R"
+    },
+    {
+      "filename": "AbsoluteRiskEstimation__06_Age_LifetimeRiskEstimation.R",
+      "sha256": "8eae0859a11cc59c0ff596d7b72c3aa7f643c061a96d9adb6a77b1ff2b97e0fc",
+      "bytes": 19333,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/AbsoluteRiskEstimation/06_Age_LifetimeRiskEstimation.R"
+    },
+    {
+      "filename": "PGS004875.txt.gz",
+      "sha256": "fa628dea2a43eb7582791e3c555acfbb2e96280d74786a967955222a768b2e6d",
+      "bytes": 11307359,
+      "url": "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/PGS004875/ScoringFiles/PGS004875.txt.gz"
+    },
+    {
+      "filename": "PGS004879_hmPOS_GRCh38.txt.gz",
+      "sha256": "46aa87b850c8077196f44bc4742129277d272e571daa880fe8301fabd8635df0",
+      "bytes": 12747780,
+      "url": "https://ftp.ebi.ac.uk/pub/databases/spot/pgs/scores/PGS004879/ScoringFiles/Harmonized/PGS004879_hmPOS_GRCh38.txt.gz"
+    },
+    {
+      "filename": "PRS__GeneratePRS.sh",
+      "sha256": "4917ac9d03e5a9341d0ac8fc19d5042428d3d8d0b89ad3878a48417275960030",
+      "bytes": 1061,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/GeneratePRS.sh"
+    },
+    {
+      "filename": "PRS__GeneratePRS_IndividualChr.sh",
+      "sha256": "db7be8d8dc865605af24710874e2369038d774665961616c7aba0769ef889aec",
+      "bytes": 1141,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/GeneratePRS_IndividualChr.sh"
+    },
+    {
+      "filename": "PRS__HazardRatio_AgeStratified.R",
+      "sha256": "c06c01c50fdd343842688e0c917977c544702ff9eada8e422a52c4e071317e42",
+      "bytes": 8467,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/HazardRatio_AgeStratified.R"
+    },
+    {
+      "filename": "PRS__HazardRatio_AgeandSexStratified.R",
+      "sha256": "601e8d29ed2922f43f435ce6abde6b733f25ce4bdb7d23aaee0c5246f6724894",
+      "bytes": 8545,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/HazardRatio_AgeandSexStratified.R"
+    },
+    {
+      "filename": "PRS__HazardRatio_FullSample.R",
+      "sha256": "ccb85d462262058813c251574e2661ab2e5e2c76a3ee656e63bf7deb3fae52be",
+      "bytes": 6209,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/HazardRatio_FullSample.R"
+    },
+    {
+      "filename": "PRS__HazardRatioperStandardDeviation.R",
+      "sha256": "b889a2d3de71d76686fef7c123b7258c8e92d0f3450aea48a4d11b9485566016",
+      "bytes": 8064,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/HazardRatioperStandardDeviation.R"
+    },
+    {
+      "filename": "PRS__PRSSummationOverChr.R",
+      "sha256": "10b7bf197fe388a84718441714307f86dfe546e986fb076ce371ac1a33eef0fd",
+      "bytes": 1355,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/PRSSummationOverChr.R"
+    },
+    {
+      "filename": "PRS__hg38_biobankadjustments.R",
+      "sha256": "22b89b07a7d264707896f5f16c6942d28bdf56c16fb42eee0ef9e274ab0e49a7",
+      "bytes": 2052,
+      "url": "https://raw.githubusercontent.com/intervene-EU-H2020/flagship/179986db2f9af3b6eb32e4e16dc9201a23d2a29c/PRS/hg38_biobankadjustments.R"
+    }
+  ]
+}

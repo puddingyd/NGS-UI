@@ -11,7 +11,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 from research.prs.absolute_risk.__main__ import evaluate
-from backend.app.services.prs_presentation import explanation
+from backend.app.services.prs_presentation import explanation, presented_snapshot
 p=Path('research/prs/examples')
 b=json.loads((p/'synthetic_bundle.json').read_text())
 s=json.loads((p/'synthetic_summary.json').read_text())
@@ -30,7 +30,13 @@ mp=deepcopy(mp);mp['sex']='female';mp['history']['AF']=True
 old=prs_multi.calculator.evaluate(pack,ms,prs_multi.calculator.person_for(ms,mp))
 for r in old['diseases'].values():
  if r['available']:r.pop('risk_20_year');r['reference'].pop('risk_20_year')
-print(json.dumps({'multi':{'female':{'result':female},'male':{'result':male},'old':{'result':old},'explanation':prs_multi.explanation()}, 'results':{str(age):{'result':evaluate(b,s,{**a,'age':age,'sex':'male'},True)} for age in [50.5,60,60.01,75]}, 'explanation':explanation()}))
+def present(r, bundle=pack, summary=ms):
+ return presented_snapshot(dict(result=r,inputs=dict(bundle=bundle,summary=summary)))
+for age in (20,25,30):
+ af_person=deepcopy(multi_payload());af_person['age']=age
+ fixture_result=prs_multi.calculator.evaluate(pack,ms,prs_multi.calculator.person_for(ms,af_person))
+ globals()['af'+str(age)]=present(fixture_result)
+print(json.dumps({'multi':{'female':present(female),'male':present(male),'old':present(old),'af20':af20,'af25':af25,'af30':af30,'explanation':prs_multi.explanation()}, 'results':{str(age):{'result':evaluate(b,s,{**a,'age':age,'sex':'male'},True)} for age in [50.5,60,60.01,75]}, 'explanation':explanation()}))
 `],{cwd:repo,encoding:'utf8'}));
 const results=fixture.results;
 const html=fs.readFileSync(path.join(repo,'frontend/index.html'),'utf8');
@@ -62,7 +68,7 @@ const server=http.createServer((req,res)=>{
  const score={raw_score:1.23456789,percentile:97,group:'>=95',qc_ready:true,job_id:'published'};
  await page.route('**/api/samples/*/prs**',async route=>{
   const path=route.request().url(),post=route.request().method()==='POST';let response;
-  if(path.endsWith('/assessments')) {posts++;const p=route.request().postDataJSON();assert.equal(Object.keys(p.history).length,6);response=multiMode?fixture.multi[p.sex]:results[String(p.age)];latest=response;}
+  if(path.endsWith('/assessments')) {posts++;const p=route.request().postDataJSON();assert.equal(Object.keys(p.history).length,6);response=multiMode?(fixture.multi['af'+p.age]||fixture.multi[p.sex]):results[String(p.age)];latest=response;}
   else if(path.endsWith('/jobs')) {started++;job={job_id:'abc',status:'running',step:'原始計分'};response=job;}
   else if(path.endsWith('/cancel')) {cancelled++;job={...job,status:'cancelled',step:'已取消'};response=job;}
   else if(path.endsWith('/log'))response={log:'SYNTHETIC JOB LOG',raw_log_available:true};
@@ -178,6 +184,19 @@ const server=http.createServer((req,res)=>{
  assert((await page.locator('[data-risk="eighty"]').allTextContents()).every(s=>/^\d+\.\d+%$/.test(s)));
  assert((await page.locator('[data-risk="twenty"]').allTextContents()).every(s=>/^\d+\.\d+%$/.test(s)));
  assert.match(await page.locator('[data-curve-disease="BREAST"] h4').innerText(),/乳癌/);
+
+ for(const [age,expected] of [[20,'來源零值*'],[25,'%'],[30,'%']]) {
+   await page.locator('#prs-age').fill(String(age));await page.locator('#prs-submit').click();
+   await page.waitForFunction(a=>document.querySelector('#prs-result-context').textContent.includes('· '+a+'歲'),age);
+   const cell=page.locator('[data-disease="AF"] [data-risk="ten"]');
+   assert((await cell.innerText()).includes(expected));
+   if(age===20)assert.match(await cell.getAttribute('title'),/無法據此確認零風險/);
+   if(age===25)assert.match(await page.locator('[data-curve-disease="AF"]').innerText(),/其餘年齡仍依模型計算/);
+   if(age===30)assert.equal(await cell.getAttribute('title'),'');
+   await screenshot('af-'+age+'.png');
+ }
+ await page.locator('#prs-age').fill('50.5');await page.locator('#prs-submit').click();
+ await page.waitForFunction(()=>document.querySelector('#prs-result-context').textContent.includes('· 50.5歲'));
  await screenshot('six-diseases-female.png');
  await page.setViewportSize({width:900,height:1000});await page.waitForTimeout(100);
  assert.equal(await page.locator('#prs-curve-grid').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length),2);

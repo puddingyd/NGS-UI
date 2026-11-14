@@ -1,0 +1,67 @@
+{
+  "schema": "PRS_SOURCE_AUDIT_V1",
+  "status": "PASS",
+  "diseases": {
+    "CHD": {
+      "status": "PASS",
+      "pgs_id": "PGS004879",
+      "sha256": "46aa87b850c8077196f44bc4742129277d272e571daa880fe8301fabd8635df0",
+      "decompressed_sha256": "0ee9852635bc831bfbcbb144cb308157bed658e0e26fc4243737b3957aea4d3f",
+      "source_rows": 610677,
+      "palindromic": 0,
+      "scope": "Source file only; retained model and genotype truth still require benchmark"
+    },
+    "T2D": {
+      "status": "PASS",
+      "pgs_id": "PGS004870",
+      "sha256": "0a2b6b5c7c3a6b1ce858a9c61849fe2f052d7a730a719e7a48114a35b3988d1f",
+      "decompressed_sha256": null,
+      "source_rows": 930506,
+      "palindromic": 0,
+      "scope": "Source file only; retained model and genotype truth still require benchmark"
+    },
+    "ALL_CANCERS": {
+      "status": "PASS",
+      "pgs_id": "PGS004875",
+      "sha256": "8120064d4a58d1778551dcf227cf8d1b2a61dab11f56ff45d1ba1c0d1bf50349",
+      "decompressed_sha256": null,
+      "source_rows": 818872,
+      "palindromic": 0,
+      "scope": "Source file only; retained model and genotype truth still require benchmark"
+    },
+    "BREAST": {
+      "status": "PASS",
+      "pgs_id": "PGS004869",
+      "sha256": "3436864dda31f36f3833b3f5ae98d03bf601d7db9bf2f5af7d43a77eb96c23a7",
+      "decompressed_sha256": null,
+      "source_rows": 872060,
+      "palindromic": 0,
+      "scope": "Source file only; retained model and genotype truth still require benchmark"
+    },
+    "AF": {
+      "status": "PASS",
+      "pgs_id": "PGS004878",
+      "sha256": "2591549f15c520c2d0a24a8b81d08e5fa1ae476c22b9afa40b99f59b4adbebc0",
+      "decompressed_sha256": null,
+      "source_rows": 785779,
+      "palindromic": 0,
+      "scope": "Source file only; retained model and genotype truth still require benchmark"
+    },
+    "EPILEPSY": {
+      "status": "PASS",
+      "pgs_id": "PGS004881",
+      "sha256": "6e30cd35b90f389cb11775cce9c578e61103a6d7116da092fe4e92599a6ee9d5",
+      "decompressed_sha256": null,
+      "source_rows": 605432,
+      "palindromic": 0,
+      "scope": "Source file only; retained model and genotype truth still require benchmark"
+    }
+  },
+  "cancer_original_comparison": {
+    "rows": 818872,
+    "mismatched_rows": 0,
+    "sha256": "fa628dea2a43eb7582791e3c555acfbb2e96280d74786a967955222a768b2e6d",
+    "status": "PASS",
+    "scope": "Row identity/alleles/weight preservation; not HR direction validation"
+  }
+}

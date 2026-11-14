@@ -154,10 +154,11 @@ def test_old_chd_assessment_keeps_values_and_requires_twenty_year_recalculation(
     saved=client.post('/api/samples/S1/prs/assessments',json=payload).json()
     result=saved['result'];result.pop('risk_20_year');result.pop('risk_20_year_unavailable_reason')
     result['reference'].pop('risk_20_year');result['risk_difference_pp'].pop('twenty_year')
+    saved.pop('presentation', None)  # Response-only view is not part of immutable inputs/result.
     path=prs.assessment_dir('S1')/(saved['assessment_id']+'.json');prs.atomic_json(path,saved)
     original=path.read_bytes()
     status=client.get('/api/samples/S1/prs').json()
-    assert status['latest']==saved and status['available']
+    assert {k:v for k,v in status['latest'].items() if k!='presentation'}==saved and status['available']
     readiness=client.get('/api/samples/S1/prs/report-readiness').json()
     assert not readiness['available'] and '20年' in readiness['reason']
     assert path.read_bytes()==original
@@ -264,7 +265,7 @@ def test_health_readiness_requires_current_verified_saved_assessment(setup):
     assert client.get(url).json()['assessment_id'] == snapshot['assessment_id']
     path=prs.assessment_dir('S1')/f"{snapshot['assessment_id']}.json"
     before=path.read_bytes()
-    assert prs.report_assessment('S1') == snapshot and path.read_bytes() == before
+    assert prs.report_assessment('S1') == {k:v for k,v in snapshot.items() if k!='presentation'} and path.read_bytes() == before
     altered=copy.deepcopy(snapshot); altered['result']['risk_10_year']['risk']=.999
     prs.atomic_json(path,altered)
     assert not client.get(url).json()['available']

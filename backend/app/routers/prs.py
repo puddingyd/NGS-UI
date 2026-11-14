@@ -4,7 +4,7 @@ from fastapi.responses import Response
 
 from ..auth import current_user
 from .. import config
-from ..services import prs
+from ..services import prs, prs_presentation
 
 router = APIRouter(prefix='/api/samples/{sample_id}/prs', tags=['prs'],
                    dependencies=[Depends(current_user)])
@@ -40,7 +40,10 @@ def checked(call, *args):
 
 @router.get('')
 def status(sample_id: str):
-    return checked(prs.status, sample_id)
+    value = checked(prs.status, sample_id)
+    if value.get('latest'):
+        value = {**value, 'latest': checked(prs_presentation.presented_snapshot, value['latest'])}
+    return value
 
 
 @router.get('/report-readiness')
@@ -51,7 +54,8 @@ def report_readiness(sample_id: str):
 
 @router.post('/assessments')
 def assess(sample_id: str, payload: dict, user=Depends(current_user)):
-    return checked(prs.assess, sample_id, payload, user.get('username', ''))
+    return checked(prs_presentation.presented_snapshot,
+                   checked(prs.assess, sample_id, payload, user.get('username', '')))
 
 
 @router.post('/jobs')

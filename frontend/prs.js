@@ -1,7 +1,7 @@
 // Separate genotype scoring from clinical risk assessment. Values are server-owned.
 let sampleId = null, generation = 0, controller = null, ready = false;
 let timer = null, currentJob = null, dirtyClinical = false, busy = false;
-let assessmentResults = {}, scoredDiseases = [];
+let assessmentResults = {}, assessmentPresentation = {}, scoredDiseases = [];
 const diseases = [
   ['CHD','冠心病（CHD）'],['T2D','第二型糖尿病（T2D）'],['ALL_CANCERS','全部癌症（All cancers）'],
   ['BREAST','乳癌（Breast cancer）'],['AF','心房顫動（AF）'],['EPILEPSY','癲癇（Epilepsy）'],
@@ -15,11 +15,13 @@ export function prsClinicalInformationPending(sid) {
   return sampleId===sid && dirtyClinical;
 }
 export function formatRisk(value) {
-  return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=1 ? `${(value*100).toFixed(2)}%` : '無法估算';
+  return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=1 ? (value>0 && value*100<.005 ? '<0.01%' : `${(value*100).toFixed(2)}%`) : '無法估算';
 }
 function resetRisks() {
-  assessmentResults={};byId('prs-result').hidden=true;byId('prs-curve-grid').replaceChildren();
-  for (const cell of document.querySelectorAll('#prs-disease-rows [data-risk]'))cell.textContent=pending;
+  assessmentResults={};assessmentPresentation={};byId('prs-result').hidden=true;byId('prs-curve-grid').replaceChildren();
+  for (const cell of document.querySelectorAll('#prs-disease-rows [data-risk]')) {
+    cell.textContent=pending;cell.title='';cell.removeAttribute('aria-label');
+  }
 }
 function renderRows(records=[]) {
   scoredDiseases=records.filter(r=>r.score).map(r=>r.id);
@@ -93,13 +95,15 @@ function renderCurve(result, svg, body) {
     svg.append(svgNode('path',attrs));
     for (const point of curve) {
       const dot=svgNode('circle',{cx:x(point.age),cy:y(point.risk),r:3,fill:color});
-      dot.append(svgNode('title',{},`${point.age}歲：${formatRisk(point.risk)}`));svg.append(dot);
+      const a=assessmentPresentation[result.id||'CHD']?.curve?.find(p=>p.age===point.age);
+      dot.append(svgNode('title',{},`${point.age}歲：${a?(dash?a.reference_text:a.ui_text):formatRisk(point.risk)}${a?.message?'；'+a.message:''}`));svg.append(dot);
     }
   }
   body.replaceChildren();
   own.forEach((point,i)=>{
     const row=document.createElement('tr');
-    for (const value of [`${point.age}歲`,formatRisk(point.risk),formatRisk(reference[i]?.risk)]) {
+    const a=assessmentPresentation[result.id||'CHD']?.curve?.find(p=>p.age===point.age);
+    for (const value of [`${point.age}歲`,a?.ui_text||formatRisk(point.risk),a?.reference_text||formatRisk(reference[i]?.risk)]) {
       const cell=document.createElement('td');cell.textContent=value;row.append(cell);
     }
     body.append(row);
@@ -107,13 +111,17 @@ function renderCurve(result, svg, body) {
 }
 function renderResult(snapshot) {
   const result=snapshot.result;
+  assessmentPresentation=snapshot.presentation?.diseases||{};
   assessmentResults=result.diseases||{CHD:{...result,available:true,name:'冠心病（CHD）'}};
   for(const [id,name] of diseases) {
     const r=assessmentResults[id];if(!r)continue;
     const row=document.querySelector(`#prs-disease-rows [data-disease="${id}"]`);if(!row)continue;
-    row.querySelector('[data-risk="ten"]').textContent=!r.available?r.reason:r.risk_10_year?formatRisk(r.risk_10_year.risk):'超出模型年齡範圍';
-    row.querySelector('[data-risk="twenty"]').textContent=!r.available?r.reason:!('risk_20_year' in r)?'請重新計算風險':r.risk_20_year?formatRisk(r.risk_20_year.risk):'超出模型年齡範圍';
-    row.querySelector('[data-risk="eighty"]').textContent=r.available?formatRisk(r.risk_to_80.risk):r.reason;
+    for(const [cellKey,key] of [['ten','risk_10_year'],['twenty','risk_20_year'],['eighty','risk_to_80']]) {
+      const cell=row.querySelector(`[data-risk="${cellKey}"]`),a=assessmentPresentation[id]?.risks?.[key];
+      cell.textContent=!r.available?r.reason:!(key in r)?'請重新計算風險':r[key]?(a?.ui_text||formatRisk(r[key].risk)):'超出模型年齡範圍';
+      cell.title=a?.message||'';
+      if(a?.message)cell.setAttribute('aria-label',cell.textContent+'；'+a.message);else cell.removeAttribute('aria-label');
+    }
   }
   byId('prs-result').hidden=!Object.values(assessmentResults).some(r=>r.available);
   const person=result.person;
@@ -132,8 +140,8 @@ function renderCurves() {
       message.textContent=r?.reason||(scoredDiseases.includes(id)?'尚未完成風險評估':'尚未完成分析');card.append(message);continue;
     }
     const reference=document.createElement('p');reference.className='prs-footnote prs-curve-reference';
-    const twenty=!('risk_20_year' in r.reference)?'待重新計算':r.reference.risk_20_year?formatRisk(r.reference.risk_20_year.risk):'不適用';
-    reference.textContent=`參考組：10年 ${r.reference.risk_10_year?formatRisk(r.reference.risk_10_year.risk):'不適用'}／20年 ${twenty}／至80歲 ${formatRisk(r.reference.risk_to_80.risk)}`;
+    const view=assessmentPresentation[id]||{},ref=key=>view.reference?.[key]?.ui_text||(r.reference[key]?formatRisk(r.reference[key].risk):'不適用');
+    reference.textContent=`參考組：10年 ${ref('risk_10_year')}／20年 ${!('risk_20_year' in r.reference)?'待重新計算':ref('risk_20_year')}／至80歲 ${ref('risk_to_80')}`;
     const svg=svgNode('svg',{class:'prs-chart',role:'img'});
     const details=document.createElement('details'), summary=document.createElement('summary');
     summary.textContent='查看曲線數值';details.append(summary);
@@ -141,7 +149,9 @@ function renderCurves() {
     const head=document.createElement('thead'), row=document.createElement('tr');
     for(const label of ['至年齡','此個案','參考組']) {const cell=document.createElement('th');cell.scope='col';cell.textContent=label;row.append(cell);}
     head.append(row);const body=document.createElement('tbody');table.append(head,body);details.append(table);
-    card.append(reference,svg,details);renderCurve(r,svg,body);
+    card.append(reference,svg,details);
+    for(const text of view.notices||[]) {const note=document.createElement('p');note.className='prs-footnote';note.textContent=text;card.append(note);}
+    renderCurve(r,svg,body);
   }
 }
 function buildHistory() {

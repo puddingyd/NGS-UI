@@ -16,6 +16,7 @@ from ..absolute_risk.multi import score_rows
 from .common import command, load_models, plink, rows, score_values, sha, write_json
 from .reconstruction import rules, scan_chromosome
 from .ancestry_input import stage_score, preflight
+from .provenance import collect, record_launch
 
 
 def fingerprint(path):
@@ -176,10 +177,16 @@ def run(cfg, sample, gvcf, root, stage):
     lock = root/'inputs.lock.json'
     if lock.exists() and json.loads(lock.read_text()) != expected: raise ValueError('PRS inputs changed; start a new run')
     write_json(lock, expected)
+    if stage != 'score' and not checkpoint(root/'score.complete.json',expected):
+        raise ValueError('Scoring has not completed')
+    if checkpoint(root/('score.complete.json' if stage == 'score' else 'ancestry.complete.json'),expected):
+        return
+    provenance = collect(cfg, gvcf, stage, root)
+    provenance_path = root/f'provenance.{stage}.json'
+    write_json(provenance_path, provenance)
     db = sqlite3.connect((model_dir/'models.sqlite').resolve().as_uri()+'?mode=ro', uri=True); db.row_factory = sqlite3.Row
     try:
         if stage == 'score':
-            if checkpoint(root/'score.complete.json', expected): return
             reconstruct(cfg, sample, gvcf, root, db, expected)
             command(['bcftools', 'concat', '-Oz', '-o', root/'union.vcf.gz', *[root/f'chr{c}.vcf.gz' for c in range(1, 23)]])
             command(plink(cfg, '--vcf', root/'union.vcf.gz', '--make-pgen', '--out', root/'union'))
@@ -189,15 +196,15 @@ def run(cfg, sample, gvcf, root, stage):
                 '--score', model_dir/'weights.tsv', '1', '2', 'header-read', 'cols=+scoresums',
                 '--score-col-nums', '3-8', '--out', root/'scored'))
             summarize(db, root, manifest, model_dir, sample, model_hash)
-            files = ['summary.json', 'scores.tsv', 'missing_loci.tsv.gz', 'union.pgen', 'union.pvar', 'union.psam',
+            files = ['summary.json', 'scores.tsv', 'missing_loci.tsv.gz', 'provenance.score.json', 'union.pgen', 'union.pvar', 'union.psam',
                      *[f'chr{c}.audit.tsv.gz' for c in range(1,23)]]
             write_json(root/'score.complete.json', dict(input=expected, files={f: sha(root/f) for f in files}))
         else:
-            if not checkpoint(root/'score.complete.json', expected): raise ValueError('Scoring has not completed')
-            if checkpoint(root/'ancestry.complete.json', expected): return
             ancestry(cfg, sample, root, model_dir)
+            record_launch(provenance,root)
+            write_json(provenance_path,provenance)
             artifacts = ('qc.json', 'ancestry/ancestry_score.txt.gz',
-                         'ancestry/ancestry_score.txt.source.json', 'ancestry/format_check.json')
+                         'ancestry/ancestry_score.txt.source.json', 'ancestry/format_check.json','provenance.ancestry.json')
             write_json(root/'ancestry.complete.json', dict(input=expected, files={f: sha(root/f) for f in artifacts}))
     finally: db.close()
 

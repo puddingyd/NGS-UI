@@ -104,10 +104,11 @@ def explanation():
     return dict(method=[
         'gVCF → PRS score：共用一次基因型重建，依各疾病模型的固定變異位點與權重加總。無法可靠判讀的位點，以固定 3,330 名參考者的平均基因型補值；品質不足的疾病不估算風險。',
         '使用的模型：'+ '；'.join(prs_presentation.disease_name(k, d['name'])+' '+d['pgs_id'] for k,d in registry.items())+'。',
-        'score → percentile：各疾病分別與相同 735 名東亞參考者的該疾病分數比較；百分位是相對排名，不是發病機率，也不能跨疾病比較原始分數。',
+        'score → percentile：各疾病分別與相同 735 名東亞參考者的該疾病分數比較；不能跨疾病比較原始分數。'+prs_presentation.RANK_EXPLANATION,
         'percentile → risk：依 INTERVENE 愛沙尼亞資料庫的百分位分組相對風險，結合台灣 GBD 2019 年齡、性別別的發生率、盛行率與死亡率；估算首次發病，並考慮先因其他原因死亡的可能。',
     ], limitations=[
         common['limitations'][0], common['limitations'][1],
+        prs_presentation.CANCER_NOTE,
         '只估算評估時仍存活、確認尚未罹患該疾病的 20 至未滿 80 歲個案；各疾病病史分別確認。超過 60 歲不提供完整二十年風險，超過 70 歲不提供完整十年風險，仍可查看至 80 歲風險。乳癌風險模型僅適用女性。',
         *[prs_presentation.disease_name(k, d['name'])+'：'+d['limitation'].replace('整體癌症', '全部癌症') for k,d in registry.items()],
         '全部癌症與乳癌的事件範圍重疊，兩個風險不能相加；此模型也不能用來預測特定癌別、腫瘤位置或癌症復發。',
