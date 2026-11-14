@@ -1,0 +1,9 @@
+{
+  "schema": "PRS_COHORT_PREFLIGHT_RECEIPT_V1",
+  "received_on": "2026-11-14",
+  "artifact": "cohort_preflight_summary.json",
+  "sha256": "f8c20b7d6222c5c1cd40ff3d20c37f7d71213ce545b71922b3c62f2ea4b3da43",
+  "evidence": "User-uploaded hospital-side preflight summary; no direct access to hospital gVCFs or model artifacts.",
+  "caller_version_status": "unknown_from_this_summary",
+  "scope": "Source-model audit and header readiness only; no genotype coverage, sample identity, ancestry, PRS accuracy or clinical validation."
+}

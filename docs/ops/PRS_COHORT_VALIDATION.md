@@ -31,6 +31,8 @@ cd ~/NGS_UI/NGS-UI
 
 成功後先看`cohort_v1/preflight_summary.json`；逐樣本錯誤看`plan.json`。只有前置核對通過才進入下一步。
 
+**2026-11-14已收到院內前置摘要：** `source_model_audit=PASS`，`HEADER_PASS=1526`，與盤點的1,516份健康人候選及10份標準品相符，摘要未列header失敗。DRAGEN來源標記一致，但沒有確切版本。可以接著執行第三節；不用重做prepare或重建模型。這份摘要只確認前置條件，不能當作基因型、coverage、祖源或PRS品質通過。證據見[原始摘要](../research/prs/validation_20261114/cohort_preflight_summary.json)與[來源hash／界線](../research/prs/validation_20261114/cohort_preflight_receipt.json)。
+
 ## 三、先跑十份標準品
 
 ```bash
@@ -110,7 +112,7 @@ cd ~/NGS_UI/NGS-UI
 - 若`prepare`尚未寫出`plan.json`就失敗或被中斷，保留該目錄供查錯，改用新的study名稱重新prepare，不宣稱可從半份前置清單接續。參考遮罩的選樣或參數改變時也需新的`--output`。
 - `plan.json`、`scores.tsv`、`sensitivity.tsv`、缺失清單與原始基因資料留院內。先交回`preflight_summary.json`，以及各`report_.../summary.json`、`frequency_.../summary.json`、`reference_pilot_v1/summary.json`供解讀；摘要不列健康人個別ID。
 
-程式入口是`scripts/run_prs_cohort_validation.py`，實作在`research/prs/cohort_validation.py`；方法與歷史證據看[PRS workflow](../research/prs/PRS_WORKFLOW.md)。本版已做本機合成及既有工具整合測試，尚未在院內對這批WGS執行，沒有新的真實補值誤差或臨床通過結論。
+程式入口是`scripts/run_prs_cohort_validation.py`，實作在`research/prs/cohort_validation.py`；方法與歷史證據看[PRS workflow](../research/prs/PRS_WORKFLOW.md)。本版已做本機合成及既有工具整合測試，院內另完成來源／header前置檢查；這批WGS的實際計分／補值比較結果仍未回傳，沒有新的真實補值誤差或臨床通過結論。
 
 ## 八、本機驗證紀錄
 

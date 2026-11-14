@@ -83,3 +83,5 @@ python3 scripts/inventory_prs_gvcfs.py \
 本次院內報告目錄：`/home/n102968/NGS_UI/nf_work/prs/_validation_20261114/inventory_20261114T070046Z_6hjyoj6n/`。搜尋完整性依使用者回傳的終端摘要記錄；未宣稱已直接讀取該目錄中的inventory.json或原始gVCF。
 
 下一步用這1,516個候選作資料準備，不任意裁成原估的1,200人；核對身分、親緣、祖源、版本與逐病品質後，再確定有效樣本數。v10.37已提供[院內批次驗證工具與命令](PRS_COHORT_VALIDATION.md)，先做標準品同run重複性、每run健康人試跑、頻率敏感度與有限參考者遮罩比較。GIAB可靠範圍的外部真值仍需另外整合，不能將重複性報告當成GIAB通過。
+
+後續同日已收到院內前置摘要：來源模型核對PASS，1,526份全部HEADER_PASS。這更新的是header／索引前置狀態，個人去重、基因型、coverage、祖源與PRS結果仍未確認；詳見[批次操作的結果補記](PRS_COHORT_VALIDATION.md#二建立這一輪的固定輸入)。

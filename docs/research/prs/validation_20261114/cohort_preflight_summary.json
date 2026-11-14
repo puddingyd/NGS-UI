@@ -1,0 +1,18 @@
+{
+  "schema": "PRS_COHORT_PREFLIGHT_V1",
+  "model_sha256": "aebc9a8983fa0855ce336306d0a7e3001a935e6c1155ccfb63970120f125d0b8",
+  "source_model_audit": "PASS",
+  "counts": {
+    "HEADER_PASS": 1526
+  },
+  "cohort_counts": {
+    "healthy_candidate": 1516,
+    "standard": 10
+  },
+  "caller_headers": {
+    "##source=DRAGEN_SNV | ##source=DRAGEN_TARGETED": 1526
+  },
+  "limitations": [
+    "Header PASS does not establish WGS coverage, genotype identity, ancestry or PRS accuracy."
+  ]
+}

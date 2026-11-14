@@ -150,7 +150,7 @@ GIAB 的外部答案同時需要基準 VCF 與相配的 benchmark BED。HG001 �
 
 | 原設計問題 | 已提供工具 | 尚待完成 |
 |---|---|---|
-| 來源及caller可追溯 | JSON／TSV交叉核對、固定模型來源、GRCh38與單樣本header／索引前置檢查；沿用計分核心的provenance | 院內實跑；header不證明基因型身分或coverage |
+| 來源及caller可追溯 | JSON／TSV交叉核對、固定模型來源、GRCh38與單樣本header／索引前置檢查；沿用計分核心的provenance | 院內前置回傳來源PASS及1,526份HEADER_PASS；caller確切版本未知，header不證明基因型身分或coverage |
 | 標準品重複性 | 十份分別計分；分數／百分位範圍、共同觀測GT一致率、單側／雙側缺失 | 實測數字；跨run重複性需更多run，GIAB外部可靠區間／真值另接 |
 | 3,330與EAS735平均補值 | 使用保留參考PGEN算EAS頻率，依同個案真實缺失清單比較兩種補值、固定原ECDF | 實際排名位移；僅敏感度不判正確性 |
 | 有答案的參考者遮罩 | 有限EAS參考者×真實缺失模式，獨立加總並核對未遮罩完整分數；部分GT保持PARTIAL | 院內誤差與完整覆蓋數；完整735×全體缺失模式未啟動 |
@@ -158,3 +158,5 @@ GIAB 的外部答案同時需要基準 VCF 與相配的 benchmark BED。HG001 �
 | 癌症方向／疾病關聯 | 原設計保留，未啟動病例對照 | 臨床欄位與獨立疾病證據；本批技術檔案不能自行解決HR方向 |
 
 研究輸出隔離在既有PRS work下，與UI共用執行名額，不發布正式個案結果或改動模型。先完成前置核對與標準品，再做每run健康人試跑，依實測耗時／資源擴大；本機測試僅驗工具流程與既有小模型整合，不當成台灣或本批WGS確效。
+
+**同日院內前置結果補記：** 使用者回傳[preflight原始摘要](validation_20261114/cohort_preflight_summary.json)，模型來源核對PASS，1,516份健康人候選及10份標準品共1,526份均HEADER_PASS；[收件紀錄](validation_20261114/cohort_preflight_receipt.json)保存原檔SHA256。全部來源標記為`DRAGEN_SNV`與`DRAGEN_TARGETED`，這份摘要不含確切版本，仍記未知。這是使用者院內執行結果，並非本機直接讀取原始gVCF；沒有基因型／coverage／祖源或計分準確性結論。可以沿原study接著跑10份標準品，不重建模型。
