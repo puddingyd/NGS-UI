@@ -1,6 +1,6 @@
 # PRS 流程說明：從基因資料到疾病風險
 
-更新：2026-11-14｜文件版本 v10.36（原 v10.32 的 review／response 見[文件索引](README.md)）
+更新：2026-11-14｜文件版本 v10.37（原 v10.32 的 review／response 見[文件索引](README.md)）
 
 這份文件說明平台如何利用全基因體定序資料，逐步得到「多基因風險分數」、「百分位」與「未來發病風險」，以及開發時為什麼選擇目前的方法。
 
@@ -342,6 +342,10 @@ Review 的 M4 提議檢查百分位均勻性，M5 則提議用真實缺失模式
 
 本輪先盤點26T0候選與兩種標準品，並進行技術／分布及補值的資料準備。癌症病例對照因年齡、性別及癌別資料尚未齊全，依使用者決定暫緩；全部癌症方向繼續保留待確認。實際執行入口與資料需求見[健康人盤點及比較操作](../../ops/PRS_COHORT_INVENTORY.md)。未來若另取得合適的台灣參考，例如TWB，亦可按同一套方法與現行參考並列評估。
 
+**v10.37已提供可在院內執行的批次工具，但本批WGS的比較結果仍待跑出。** 先核對固定來源與gVCF header，再跑10份標準品及每run一份健康人候選；同一HG001／HG002比較的是重複性，不等於與GIAB答案一致。健康人報告分開呈現全部已計分者的初步分布，以及祖源與逐病品質條件通過者，避免把未確認祖源的資料當成台灣常模。
+
+補值比較也分兩層：先保留同一個案讀到的基因型，只換缺失位置的平均值，看排名移動多少；再把真實缺失位置套到參考者的已知基因型，才可評估補值與答案的差距。後者先用有限參考者及缺失模式試跑；若參考者本身也缺位置，保留「部分答案」，不宣稱全模型誤差已確認。現行平台補值、EAS排名與風險參數均不因試算改變。命令、輸出與尚未整合的GIAB外部比較見[院內批次驗證操作](../../ops/PRS_COHORT_VALIDATION.md)。
+
 針對風險，則需要台灣的疾病追蹤驗證：除了確認高分組是否較容易發病，也要檢查模型預測10%風險的一群人，實際發病比例是否接近10%。若有偏差，就需要評估相對風險或台灣基準是否須調整。這項驗證可以先針對現行版本進行，不必等到換成台灣的百分位參考資料。
 
 更後續可評估加入臨床因素、更新人口統計年度與呈現估計的不確定性，並完成更大規模的流程測試。每一種更新都需要保留版本與重新驗證，才能知道新舊結果的差異來自哪裡。目前TWB等台灣個人資料尚未納入這套模型。
@@ -363,6 +367,7 @@ Review 的 M4 提議檢查百分位均勻性，M5 則提議用真實缺失模式
 |---|---|---|
 | 一次性模型準備 | `scripts/setup_prs_multi.py` → `research/prs/multidisease/prepare.py` | `main()` → `prepare()`、`candidates()` |
 | 健康人與標準品gVCF盤點 | `scripts/inventory_prs_gvcfs.py` | `main()`、`scan()`；只讀檔案metadata，不讀gVCF內容或計分 |
+| 院內批次驗證 | `scripts/run_prs_cohort_validation.py` → `research/prs/cohort_validation.py` | `prepare()`、`run_batch()`、`report()`、`frequency_sensitivity()`、`reference_benchmark()`；隔離研究輸出，真實WGS結果待執行 |
 | 來源／獨立計分／補值敏感度 | `research/prs/validation.py` | `source_audit()`、`model_audit()`、`benchmark()`、`aggregate()`；真實資料結果仍待執行 |
 | 新個案計分與祖源 | `research/prs/multidisease_cli.py` → `research/prs/multidisease/run.py` | `main()` → `run(stage='score'/'ancestry')` |
 | gVCF判讀規則 | `research/prs/multidisease/reconstruction.py` | `rules()`、`scan_chromosome()`、`scan_records()` |
@@ -384,6 +389,7 @@ PRS設定由`NGS_UI_PRS_CONFIG`指定，未設時讀`NGS_UI_HOME/data/prs_config
 |---|---|
 | 準備完成的六病reference模型 | `NGS_UI_HOME/biotools/prs/multi_v1/`，由`multi_model_dir`指定；含manifest、SQLite、頻率與各病參考分布 |
 | 模型準備暫存 | `NGS_UI_HOME/nf_work/prs/_reference_prepare_v1/` |
+| 本輪批次研究結果／暫存 | 既有PRS work下`_validation_20261114/cohort_v1/`；不發布為平台個案結果 |
 | 個案重建、audit、Nextflow及暫存 | `NGS_UI_HOME/nf_work/prs/{個案ID}/`；沿既有work root設定及SSD掛載，容器tmp在該案`.runtime/tmp/` |
 | 正式分數／QC／風險評估 | `NGS_UI_TERTIARY_ROOT/{個案ID}/08_postprocessing/`；分數連結為`{個案ID}.prs.summary.json`，發布版本與快照在`{個案ID}.prs/` |
 | 固定台灣風險包與驗算紀錄 | repo的`research/prs/releases/tw_multi_v1/` |

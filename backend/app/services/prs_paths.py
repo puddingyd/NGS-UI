@@ -63,7 +63,37 @@ def container_tmp_options(paths):
 
 
 def execution_config(sid, cfg):
-    paths = layout(sid, cfg)
+    return _execution_config(cfg, layout(sid, cfg))
+
+
+def validation_config(workspace, cfg):
+    """Use the same runtime rules inside an isolated validation namespace."""
+    root = config.PRS_WORK_ROOT.resolve()
+    workspace = Path(workspace).absolute()
+    try:
+        # The configured work root may itself be the existing SSD alias.
+        # Accept that root alias, but never aliases below the research namespace.
+        parts = workspace.relative_to(config.PRS_WORK_ROOT.absolute()).parts
+    except ValueError:
+        try:
+            parts = workspace.relative_to(root).parts
+        except ValueError:
+            raise ValueError('驗證工作區必須位於既有 PRS work root')
+    workspace = root.joinpath(*parts)
+    if len(parts) < 3 or not parts[0].startswith('_validation_'):
+        raise ValueError('驗證工作區需位於 _validation_*/study/...，不能覆寫平台個案')
+    prs.validate_sid(parts[0].lstrip('_'))
+    for part in parts[1:]:
+        prs.validate_sid(part)
+    # The leading underscore identifies research data rather than a UI sample.
+    paths = layout('validation-'+parts[0].lstrip('_'), cfg)
+    if workspace.resolve() != workspace:
+        raise ValueError('驗證工作區不能經由 symlink 指到其他目錄')
+    paths['project'] = str(workspace)
+    return _execution_config(cfg, paths)
+
+
+def _execution_config(cfg, paths):
     project = Path(paths['project'])
     runtime = project / '.runtime'
     effective = {**cfg, 'project': str(project), 'raw_work': str(project)}

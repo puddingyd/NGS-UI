@@ -1,6 +1,8 @@
 # INTERVENE PRS → 台灣多疾病研究流程
 
-一般使用者請先看[PRS流程說明：從基因資料到疾病風險](../../docs/research/prs/PRS_WORKFLOW.md)（v10.35，2026-11-14），由概念、例子與選擇理由解釋整個流程；各步驟可展開生資方法、參數與程式對照，文末另列完整路徑與入口。平台PRS標題「研究用途」旁的「說明」可下載同一份文件。以下舊版本細節保留追溯，現行六疾病流程以該說明及操作文件為準。
+一般使用者請先看[PRS流程說明：從基因資料到疾病風險](../../docs/research/prs/PRS_WORKFLOW.md)（v10.37，2026-11-14），由概念、例子與選擇理由解釋整個流程；各步驟可展開生資方法、參數與程式對照，文末另列完整路徑與入口。平台PRS標題「研究用途」旁的「說明」可下載同一份文件。以下舊版本細節保留追溯，現行六疾病流程以該說明及操作文件為準。
+
+v10.37新增`cohort_validation.py`，由`scripts/run_prs_cohort_validation.py`執行院內固定輸入核對、標準品重複性、健康人分批計分／分布報告、兩種頻率敏感度及有限參考者遮罩試驗。沿用現行核心與執行名額，研究產物不發布UI；GIAB外部真值未整合，院內實測結果尚待執行。完整命令見[批次驗證操作](../../docs/ops/PRS_COHORT_VALIDATION.md)。
 
 方法審查、回應與後續計畫統一由[PRS 文件與審查索引](../../docs/research/prs/README.md)管理，標明對象版本、固定 commit、原稿 hash、狀態與後續決策。依序可讀[Claude 審查原稿](../../docs/research/prs/reviews/PRS_REVIEW_2026-11-13.md)、[審查回應與台灣在地化評估](../../docs/research/prs/PRS_REVIEW_RESPONSE_2026-11-14.md)、[三項後續工作計畫](../../docs/research/prs/PRS_VALIDATION_PLAN_2026-11-14.md)、[執行結果與待資料項目](../../docs/research/prs/PRS_VALIDATION_2026-11-14.md)。原稿與原計畫保留；v10.35 已完成來源查核、驗證 CLI 及 UI／Word 呈現調整，獨立完整基因型與補值實測仍待院內資料。[驗證工具操作](../../docs/ops/PRS_VALIDATION.md)
 
