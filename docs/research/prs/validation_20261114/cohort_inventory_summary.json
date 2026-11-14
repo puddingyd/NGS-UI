@@ -1,0 +1,48 @@
+{
+  "schema": "PRS_RETURNED_INVENTORY_SUMMARY_V1",
+  "recorded_on": "2026-11-14",
+  "status": "SAMPLE_LIST_CHECKED_QC_NOT_PERFORMED",
+  "source": {
+    "filename": "samples.tsv",
+    "sha256": "340f8090dd82ccd5590e64fcae72c612acd60180f1c83664f7764074459bbbca",
+    "raw_file_committed": false
+  },
+  "counts": {
+    "sample_rows": 1526,
+    "unique_sample_ids": 1526,
+    "unique_gvcf_paths": 1526,
+    "healthy_candidate_sample_ids": 1516,
+    "healthy_candidate_gvcf_paths": 1516,
+    "healthy_candidate_run_directories": 27,
+    "standard_sample_ids": 10,
+    "standard_gvcf_paths": 10,
+    "standard_biological_samples": 2,
+    "standard_run_directories": 1,
+    "multiple_candidates_per_sample_id": 0,
+    "path_template_mismatches": 0
+  },
+  "reported_file_metadata": {
+    "all_selections": "ONE_FILE",
+    "every_row_reports_one_nonempty_matching_file": true,
+    "every_row_reports_one_distinct_physical_file": true,
+    "current_source_files_rechecked": false
+  },
+  "run_dates_from_directory_names": {
+    "healthy_candidates_first": "2026-06-11",
+    "healthy_candidates_last": "2026-11-09",
+    "standards": "2026-04-28",
+    "actual_library_preparation_dates_checked": false
+  },
+  "standards": {
+    "HG001_NA12878": {"val_id_range": "VAL-45..VAL-49", "gvcf_paths": 5},
+    "HG002_NA24385": {"val_id_range": "VAL-50..VAL-54", "gvcf_paths": 5},
+    "all_ten_paths_report_same_run": true,
+    "cross_run_replicates_available_in_this_list": false
+  },
+  "not_established_by_samples_tsv": [
+    "Whole-root discovery completeness, scan errors and skipped directory symlinks; inventory.json or terminal status needed.",
+    "Number of unrelated biological people and clinically confirmed disease-free status.",
+    "Current file/index readability, header identity, caller/reference versions and whole-genome coverage.",
+    "Per-disease genotype quality, PRS scores, percentile distributions, mean-fill errors or disease validity."
+  ]
+}
