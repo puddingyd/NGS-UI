@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.36：新增[PRS健康人與標準品gVCF唯讀盤點](docs/ops/PRS_COHORT_INVENTORY.md)，搜尋Novaseq下26T0候選與HG001／HG002，分開計算檢體ID、檔案及重複來源，不自動選檔或跑分析。PRS workflow已納入六病來源零回文、癌症818,872列權重對照等已完成查核，以及健康人與EAS分布比較的解讀；院內實際人數、補值與分布結果仍待執行。癌症病例對照因臨床資料不足暫緩，計分與風險算法不變。
+
 v10.35：PRS 加入分組邊界／非單調提醒、全部癌症方向待確認及 AF 年輕區間的來源零值說明，UI 與健檢報告使用相同呈現規則。新增六病離線驗證工具與新分析的工具追溯；六個來源檔已核對零回文，真實基因型／補值驗證仍需院內資料。[執行結果](docs/research/prs/PRS_VALIDATION_2026-11-14.md)／[工具操作](docs/ops/PRS_VALIDATION.md)。既有評估重新載入／匯出即可使用新文案，模型及風險數值不變。
 
 v10.34：新增[可整段貼到DGM的二級重複資料盤點程式](scripts/paste_cleanup_secondary_duplicates_dgm.sh)，搜尋`/home/datalake_Intermediate/pipeline/nextflow_output`，三級相依根也加`/home/`。這份入口只產生報告，保留原修改日期規則；同步修正DGM／DGX引用路徑對應。權限不足仍保留候選，實際可讀性由DGM帳號決定。[操作方式](docs/ops/SECONDARY_DUPLICATE_CLEANUP.md)。
