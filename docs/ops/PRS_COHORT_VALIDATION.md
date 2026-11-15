@@ -112,10 +112,16 @@ cd ~/NGS_UI/NGS-UI
 - 若`prepare`尚未寫出`plan.json`就失敗或被中斷，保留該目錄供查錯，改用新的study名稱重新prepare，不宣稱可從半份前置清單接續。參考遮罩的選樣或參數改變時也需新的`--output`。
 - `plan.json`、`scores.tsv`、`sensitivity.tsv`、缺失清單與原始基因資料留院內。先交回`preflight_summary.json`，以及各`report_.../summary.json`、`frequency_.../summary.json`、`reference_pilot_v1/summary.json`供解讀；摘要不列健康人個別ID。
 
-程式入口是`scripts/run_prs_cohort_validation.py`，實作在`research/prs/cohort_validation.py`；方法與歷史證據看[PRS workflow](../research/prs/PRS_WORKFLOW.md)。本版已做本機合成及既有工具整合測試，院內另完成來源／header前置檢查；這批WGS的實際計分／補值比較結果仍未回傳，沒有新的真實補值誤差或臨床通過結論。
+程式入口是`scripts/run_prs_cohort_validation.py`，實作在`research/prs/cohort_validation.py`；方法與歷史證據看[PRS workflow](../research/prs/PRS_WORKFLOW.md)。本版已做本機合成及既有工具整合測試，院內另完成來源／header前置檢查；2026-11-15另回傳10份標準品六病重複性，詳見第九節；健康人與補值結果仍待取得，沒有臨床通過結論。
 
 ## 八、本機驗證紀錄
 
 本輪相關測試130項通過、7項未執行。包含來源／header與索引變動拒絕、研究輸出與SSD根目錄連結、重複性及缺失分母、兩種頻率的REF／ALT方向、參考者未遮罩分數／遮罩比較／checkpoint遭改拒絕，以及既有PRS工作、QC、模型準備與真實bcftools／samtools／PLINK的小型六病整合測試。新批次的頻率與參考匯出測試使用合成資料及模擬工具輸出，不能代替院內全模型容器驗收。未執行者為6項需指定實際Nextflow的選配檢查及1項pgscatalog格式套件檢查。
 
 另核對平台說明下載：未登入401、登入200且內容與新版workflow逐byte相同、不讀個案、檔案缺失503。文件連結與差異格式檢查通過；沒有連入院內主機或重啟服務。
+
+## 九、2026-11-15標準品結果與下一步
+
+使用者已回傳10份標準品的報告，HG001／HG002各5份、各1個run。六病皆達99.5%觀測比例，5次檢測皆未跨組；最大排名範圍為HG002癲癇2.041個百分點，需追查。共同觀測GT一致率高，但本報告不是GIAB外部準確性或正式驗收通過。逐病表、缺失分母與來源hash見[標準品比較紀錄](../research/prs/PRS_STANDARD_REPEATABILITY_2026-11-15.md)。
+
+報告的`not_scored_sample_ids=1516`是健康人尚未開始，非失敗。下一步沿原study執行第四節每run一份健康人候選，共預計27份，然後重產report；再用實際缺失清單接第五節頻率與參考遮罩比較。計分與祖源分開，score試跑尚不會提供已確認EAS的台灣分布。原始模型、程式與設定未變時可沿用既有checkpoint，不需重新prepare。

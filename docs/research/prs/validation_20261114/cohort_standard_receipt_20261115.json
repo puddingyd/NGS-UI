@@ -1,0 +1,9 @@
+{
+  "schema": "PRS_STANDARD_REPEATABILITY_RECEIPT_V1",
+  "received_on": "2026-11-15",
+  "artifact": "cohort_standard_report_20261115.json",
+  "sha256": "a06ff39ffa396c86941affc563066ff960ee69a7f09c58b3adc9be1a29a2c768",
+  "model_matches_preflight": true,
+  "evidence": "User-uploaded hospital-side cohort report; raw gVCFs and per-case artifacts not accessed locally.",
+  "interpretation": "Same-run technical repeatability; no prospective acceptance threshold, GIAB accuracy or clinical validation."
+}

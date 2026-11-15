@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS標準品結果回傳（v10.37補記，2026-11-15）**：使用者上傳PRS_COHORT_REPORT_V1，10份標準品／HG001與HG002各5、每組1run，模型hash與preflight相同；1,516健康人尚未計分不是失敗。12個個體×病皆達99.5%觀測比例（最低99.5163%），五次皆未跨組；最大排名範圍HG002癲癇2.041pp、CHD1.361pp保留追查，不事後設整體PASS。六病聯集1130808位點，20對共同觀測GT一致率99.9984～99.9999%；缺失另列，不能稱全WGS／非REF準確率或GIAB確效。單側缺失數多不直接判定分數差異主因，仍需加權分解。原始報告與SHA存validation_20261114/cohort_standard_*20261115.json，分析PRS_STANDARD_REPEATABILITY_2026-11-15.md，workflow／ops／索引同步。可沿原study做27run各1份score試跑，後接frequency／reference；無臨床／癌症方向結論，不改程式／模型／參數／study簽章，不SSH／部署。
+
 **PRS院內前置檢查回傳（v10.37，同日補記2026-11-14）**：已讀使用者上傳`preflight_summary.json`，來源模型核對PASS、1,526份HEADER_PASS（健康人候選1516／標準品10），與盤點相符。原檔逐byte存`validation_20261114/cohort_preflight_summary.json`，receipt記SHA256及證據為使用者院內執行回傳；不是本機直接讀取gVCF／模型。所有來源header只有DRAGEN_SNV／DRAGEN_TARGETED，確切caller版本仍未知，不由TARGETED字樣判定檢測類型。可以沿原cohort_v1接10份標準品score及report --genotypes；無需重做prepare。header／索引前置通過不代表coverage、基因型身分、祖源、PRS準確性或臨床驗證；計分／補值／分布結果仍待回傳。只更新證據與文件，不改科學程式／模型或既有study簽章，不SSH／部署。
 
 **PRS院內批次驗證（v10.37，2026-11-14）**：`scripts/run_prs_cohort_validation.py`→`research/prs/cohort_validation.py`提供prepare／run／report／frequency／reference，接完整inventory JSON＋TSV，不把header通過當coverage／身分驗證。固定來源／模型／設定／程式及gVCF＋index身分，拒混版；同命令依原核心checksum接續，僅讀已執行後核對的完成結果。預設標準品score；健康人須明選每run數或全體，祖源另選，避免自動啟動1516份Nextflow。與UI共用execution lock及work cleanup lease，子程序持FD，Ctrl-C／TERM停止自有程序組；每案釋放名額。`prs_paths`只抽出共用execution_config，新增_validation_*隔離入口，容器tmp及清理繼承規則不變；研究產物不發布08／UI。report分開同run重複性、共同觀測GT一致率／缺失、全部初步分布與EAS＋逐病QC群；人數仍是檢體ID，無親緣去重或均勻性P值。frequency從保留reference PGEN＋#IID keep算EAS頻率，比兩種平均補值但固定原ECDF，不當真值。reference預設10人×10真實缺失清單，逐組checksum；完整GT獨立分數核對凍結分數，部分真值保留PARTIAL不報全模型排名。沒有GIAB BED外部真值整合、新常模或臨床驗證；癌症病例對照仍暫緩。實際院內WGS未執行，操作`docs/ops/PRS_COHORT_VALIDATION.md`；模型／風險與核心科學程式不改，不SSH／部署。
