@@ -278,3 +278,23 @@ PYPARTIAL
 ```
 
 即使這名參考者已知GT比例很高，也不能把少數未知位置當0/0或平均值來製造完整答案。已知子集的誤差僅用來判斷試跑是否提供可用資訊；缺答案的根因及全模型準確性仍需原始GT／匯出與GIAB等資料核對。
+
+## 十四、已知子集回傳後：完成27份祖源
+
+一名參考者六病答案覆蓋99.9156～99.9254%，完整真值仍不足；37份mask已知子集的平均誤差不作換補值依據。先不擴同一人遮罩，沿既有研究流程補27份祖源與報告。4份觀測不達者仍受逐病門檻限制；不能只因EAS就納入常模／風險。完整補值確效、未知GT與原始WGS QC／block MIN_DP問題另留待辦。全1,516份等這輪祖源及資源狀況再定。
+
+```bash
+cd ~/NGS_UI/NGS-UI
+.venv/bin/python scripts/run_prs_cohort_validation.py run \
+  --study /home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1 \
+  --group healthy --per-run 1 --stage ancestry
+```
+
+祖源需每份執行既有Nextflow流程，會比只讀摘要久，與平台共用名額。保留score checkpoint，不重算六病分數；第一案失敗時先貼錯誤，不重做prepare或換設定。成功完成再產生新報告：
+
+```bash
+.venv/bin/python scripts/run_prs_cohort_validation.py report \
+  --study /home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1
+```
+
+回傳新report目錄的summary.json即可；原始每run分數不放Git，後續只保存去run彙整。若研究流程文件的歷史段落與最新執行狀態不同，以最新有日期的補記理解進度，不將舊的「尚待資料」改當已確效。

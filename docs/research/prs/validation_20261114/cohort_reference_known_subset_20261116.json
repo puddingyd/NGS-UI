@@ -1,0 +1,175 @@
+{
+  "scope": "Known-genotype subset only; not whole-model score or percentile accuracy",
+  "reference_people": 1,
+  "comparison_files": 37,
+  "diseases": {
+    "CHD": {
+      "model_loci": [
+        610305
+      ],
+      "truth_observed": [
+        609850
+      ],
+      "truth_missing": [
+        455
+      ],
+      "truth_observed_fraction": [
+        0.9992544711250932
+      ],
+      "masked_known_min": 826,
+      "masked_known_max": 26613,
+      "known_subset_errors": {
+        "current": {
+          "mean_signed_score_error": -0.0021885131542137078,
+          "mean_absolute_score_error": 0.0035404544405021475,
+          "max_absolute_score_error": 0.03713913483328801
+        },
+        "eas": {
+          "mean_signed_score_error": -0.0007830041050245176,
+          "mean_absolute_score_error": 0.0026231167175049795,
+          "max_absolute_score_error": 0.026009819287070024
+        }
+      }
+    },
+    "T2D": {
+      "model_loci": [
+        929667
+      ],
+      "truth_observed": [
+        928882
+      ],
+      "truth_missing": [
+        785
+      ],
+      "truth_observed_fraction": [
+        0.9991556116329826
+      ],
+      "masked_known_min": 1357,
+      "masked_known_max": 40211,
+      "known_subset_errors": {
+        "current": {
+          "mean_signed_score_error": -0.006606368048487258,
+          "mean_absolute_score_error": 0.008915045885384795,
+          "max_absolute_score_error": 0.03742208075226383
+        },
+        "eas": {
+          "mean_signed_score_error": -0.005101254941412898,
+          "mean_absolute_score_error": 0.007956557059243577,
+          "max_absolute_score_error": 0.033273732470173734
+        }
+      }
+    },
+    "ALL_CANCERS": {
+      "model_loci": [
+        818425
+      ],
+      "truth_observed": [
+        817756
+      ],
+      "truth_missing": [
+        669
+      ],
+      "truth_observed_fraction": [
+        0.999182576289825
+      ],
+      "masked_known_min": 1219,
+      "masked_known_max": 35388,
+      "known_subset_errors": {
+        "current": {
+          "mean_signed_score_error": 0.0003288911379832379,
+          "mean_absolute_score_error": 0.001536439987263891,
+          "max_absolute_score_error": 0.007231439859843994
+        },
+        "eas": {
+          "mean_signed_score_error": 0.0007179027522385893,
+          "mean_absolute_score_error": 0.0017086316774712433,
+          "max_absolute_score_error": 0.012757357494317986
+        }
+      }
+    },
+    "BREAST": {
+      "model_loci": [
+        871225
+      ],
+      "truth_observed": [
+        870497
+      ],
+      "truth_missing": [
+        728
+      ],
+      "truth_observed_fraction": [
+        0.999164394961118
+      ],
+      "masked_known_min": 1325,
+      "masked_known_max": 37704,
+      "known_subset_errors": {
+        "current": {
+          "mean_signed_score_error": -0.003760222495536341,
+          "mean_absolute_score_error": 0.00965709403467117,
+          "max_absolute_score_error": 0.09708671371720401
+        },
+        "eas": {
+          "mean_signed_score_error": 0.0010434593505280244,
+          "mean_absolute_score_error": 0.006303681879742264,
+          "max_absolute_score_error": 0.026071578261928074
+        }
+      }
+    },
+    "AF": {
+      "model_loci": [
+        785104
+      ],
+      "truth_observed": [
+        784498
+      ],
+      "truth_missing": [
+        606
+      ],
+      "truth_observed_fraction": [
+        0.9992281277384907
+      ],
+      "masked_known_min": 1108,
+      "masked_known_max": 33807,
+      "known_subset_errors": {
+        "current": {
+          "mean_signed_score_error": 0.00209892354264679,
+          "mean_absolute_score_error": 0.0025503573220179423,
+          "max_absolute_score_error": 0.01569772251947188
+        },
+        "eas": {
+          "mean_signed_score_error": 0.0017454224734234035,
+          "mean_absolute_score_error": 0.0019930692519282657,
+          "max_absolute_score_error": 0.010346294223922081
+        }
+      }
+    },
+    "EPILEPSY": {
+      "model_loci": [
+        605144
+      ],
+      "truth_observed": [
+        604692
+      ],
+      "truth_missing": [
+        452
+      ],
+      "truth_observed_fraction": [
+        0.9992530703435877
+      ],
+      "masked_known_min": 784,
+      "masked_known_max": 25510,
+      "known_subset_errors": {
+        "current": {
+          "mean_signed_score_error": 0.00030258666941126175,
+          "mean_absolute_score_error": 0.009852187752948967,
+          "max_absolute_score_error": 0.07183616041027596
+        },
+        "eas": {
+          "mean_signed_score_error": 0.0008977888885314646,
+          "mean_absolute_score_error": 0.008590025027225189,
+          "max_absolute_score_error": 0.0712319963036201
+        }
+      }
+    }
+  }
+}

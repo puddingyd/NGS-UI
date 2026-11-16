@@ -1,0 +1,19 @@
+{
+  "schema": "PRS_KNOWN_SUBSET_RECEIPT_V1",
+  "received_on": "2026-11-16",
+  "artifact": "cohort_reference_known_subset_20261116.json",
+  "sha256": "90d2d97ac178023bcf492312dbb2eb78bbc4f79fd0baaeb5a79bd0f33e467228",
+  "evidence": "User-uploaded derived summary of one reference person and 37 masks; no direct local access to truth VCF or per-comparison sums.",
+  "checks": [
+    "six diseases",
+    "n_loci = truth_observed + truth_missing",
+    "reported fraction equals observed/model",
+    "masked known counts positive and within observed",
+    "finite errors; max_abs >= mean_abs >= abs(mean_signed)"
+  ],
+  "limitations": [
+    "Known subset, not whole-model percentile accuracy.",
+    "One person with repeated correlated masks, not 37 independent people.",
+    "No subgroup-specific errors, population estimates or uncertainty intervals."
+  ]
+}
