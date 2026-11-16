@@ -1,0 +1,127 @@
+{
+  "schema": "PRS_FREQUENCY_STRATIFIED_V1",
+  "received_on": "2026-11-16",
+  "source_sha256": "3cb5d4ff844f7123a584f206c66e851233591edfcb33a7e7c507010deef2aeb5",
+  "rows": 222,
+  "samples": 37,
+  "diseases": {
+    "CHD": {
+      "standard": {
+        "n": 10,
+        "max_absolute_percentile_shift_pp": 0.27210884353741704,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_pass": {
+        "n": 23,
+        "max_absolute_percentile_shift_pp": 0.27210884353741704,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_fail": {
+        "n": 4,
+        "max_absolute_percentile_shift_pp": 4.625850340136054,
+        "stratum_changes": 0
+      }
+    },
+    "T2D": {
+      "standard": {
+        "n": 10,
+        "max_absolute_percentile_shift_pp": 0.0,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_pass": {
+        "n": 23,
+        "max_absolute_percentile_shift_pp": 1.088435374149661,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_fail": {
+        "n": 4,
+        "max_absolute_percentile_shift_pp": 2.448979591836732,
+        "stratum_changes": 0
+      }
+    },
+    "ALL_CANCERS": {
+      "standard": {
+        "n": 10,
+        "max_absolute_percentile_shift_pp": 0.0,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_pass": {
+        "n": 23,
+        "max_absolute_percentile_shift_pp": 0.816326530612244,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_fail": {
+        "n": 4,
+        "max_absolute_percentile_shift_pp": 9.931972789115655,
+        "stratum_changes": 1
+      }
+    },
+    "BREAST": {
+      "standard": {
+        "n": 10,
+        "max_absolute_percentile_shift_pp": 0.6802721088435373,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_pass": {
+        "n": 23,
+        "max_absolute_percentile_shift_pp": 2.040816326530617,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_fail": {
+        "n": 4,
+        "max_absolute_percentile_shift_pp": 8.29931972789116,
+        "stratum_changes": 1
+      }
+    },
+    "AF": {
+      "standard": {
+        "n": 10,
+        "max_absolute_percentile_shift_pp": 0.13605442176870675,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_pass": {
+        "n": 23,
+        "max_absolute_percentile_shift_pp": 1.2244897959183731,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_fail": {
+        "n": 4,
+        "max_absolute_percentile_shift_pp": 0.6802721088435391,
+        "stratum_changes": 0
+      }
+    },
+    "EPILEPSY": {
+      "standard": {
+        "n": 10,
+        "max_absolute_percentile_shift_pp": 0.27210884353740994,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_pass": {
+        "n": 23,
+        "max_absolute_percentile_shift_pp": 0.816326530612244,
+        "stratum_changes": 0
+      },
+      "healthy_observed_gate_fail": {
+        "n": 4,
+        "max_absolute_percentile_shift_pp": 1.904761904761905,
+        "stratum_changes": 0
+      }
+    }
+  },
+  "both_stratum_changes_same_observed_gate_fail_sample": true,
+  "all_23_observed_gate_pass_no_stratum_changes": true,
+  "validation": [
+    "unique sample/disease keys",
+    "finite numbers and score/percentile arithmetic",
+    "group transitions independently recalculated",
+    "all six aggregate maxima and cross counts match frequency summary",
+    "27 current-percentile means match prior pilot",
+    "4 masks agree with missing-status counts"
+  ],
+  "classification_basis": "23/4 groups from prior pilot plus four-case missing-status identity; observed-locus gate only, not ancestry or clinical eligibility.",
+  "privacy": "Raw TSV, individual IDs and individual scores not copied into Git.",
+  "limitations": [
+    "No outcome or genotype-truth accuracy comparison.",
+    "No general bound for other people or boundary cases."
+  ]
+}

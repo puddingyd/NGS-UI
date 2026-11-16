@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS222列頻率分層（v10.37補記，2026-11-16）**：回傳sensitivity.tsv222列＝37×6，核對唯一key、finite與分數／pct算式、獨立group、前摘要max／跨組、27健康排名mean及4份mask數一致。標準10／健康觀測門檻23／4分層；兩個跨組同一缺失最高未達者。23達門檻皆未跨組，但乳癌最大2.041pp／AF1.224／T2D1.088，不宣稱影響零或族群bound；標準最多乳癌0.680pp皆未跨組。cohort_frequency_stratified_20261116.json僅存分群彙整＋原TSV SHA，不將健康ID／個別分數／原TSV進Git。補值review第四節、workflow／ops同步；保留門檻與補值，接1名EAS參考×目前37份mask技術pilot（reference-limit1/mask-limit50），包含4未達者、保留partial真值不報完整排名，不能當一人即族群確效。WGS QC／block MIN_DP查核仍待、癌症HR方向未結案。文件不影響study簽章，不SSH／部署；直接貼server指令。
+
 **PRS頻率與原因回傳（v10.37同日補記，2026-11-16）**：37份頻率敏感度摘要：最大pp位移CHD4.626／T2D2.449／全部癌症9.932／乳癌8.299／AF1.224／癲癇1.905，癌症及乳癌各1筆跨組；未分標準品與23／4健康品質，不能歸因4低品質或宣稱EAS較準。4份missing-status跨六病96.43～99.63%屬LOW_DP／LOW_GQ／NON_PASS_FILTER，NO_GVCF_COVERAGE少；22chr有缺失但無目標分母，不稱均勻。vendor observe_at先FILTER再DP再GQ，choose_observation另有失敗優先順序；block有MIN_DP時用區塊最低值，不冒充site DP。原頻率摘要存cohort_frequency_summary_20261116.json；原missing檔有健康ID不存Git，僅存cohort_missing_status_aggregate_20261116.json彙整＋來源SHA。PRS_FREQUENCY_REVIEW_2026-11-16.md及workflow／ops／索引同步；先逐筆sensitivity.tsv定位跨組及QC分層，再核WGS QC／block值，維持暫緩全量、不降門檻或改補值，原科學程式與study簽章不變，不SSH／部署。後續直接貼server指令給使用者。
 
 **PRS健康人試跑回傳（v10.37補記，2026-11-16）**：上傳summary顯示37已計分＝27健康候選＋10標準、1489尚未計分非失敗，27run各1；模型hash／標準品分數描述與前次一致，未帶genotypes故本次pairs空不推翻前次20對。六病均同4份未達99.5%觀測門檻（缺失0.69～4.38%），23份達標；EAS＋QC可納入0，原只跑score，不解讀成非EAS。平均EAS排名46.36～54.78含低品質、非祖源確認，不宣稱常模相同。暫緩全量，先missing status／位置原因與frequency（37份，含低品質者僅研究）、再祖源／reference；不降門檻、不自動排除換來源，不由每run1份判整批失敗。新PRS_HEALTH_PILOT_2026-11-16.md及cohort_health_pilot_aggregate_20261116.json存去run彙整＋原檔SHA，不把原始每run單人分數或健康ID進Git。workflow／ops／索引同步，模型／科學程式與study簽章不變，不SSH／部署。

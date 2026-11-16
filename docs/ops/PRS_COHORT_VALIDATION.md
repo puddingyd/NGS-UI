@@ -193,3 +193,37 @@ if len({hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}) != 1:
 print('請下載並回傳：', paths[0])
 PYFREQ
 ```
+
+## 十二、222列分層後：先做1名參考者×37份缺失清單
+
+逐筆核對後，全部癌症與乳癌的跨組來自同一份觀測比例未達者；23份達門檻者六病均未跨組，最大位移仍有乳癌2.041pp。保留原補值及門檻，先做reference-limit=1／mask-limit=50，納入目前全部37份缺失檔（非50份），涵蓋4份未達者。這是一名參考者的技術與覆蓋試跑，不是族群確效；若PARTIAL，維持部分真值，不將其轉成全模型百分位／準確性通過。
+
+以下依本次上傳TSV的確切SHA256找相符的frequency工作，不猜最新日期；找不到即停。原科學程式／設定／模型未變時，既有study可接續；reference會在獨立新目錄產生結果，不改正式個案。對相同試跑參數重貼命令可沿原checksum接續。
+
+```bash
+cd ~/NGS_UI/NGS-UI
+.venv/bin/python - <<'PYREFERENCE'
+from pathlib import Path
+import hashlib, json, subprocess, sys
+study = Path('/home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1')
+matches = []
+for p in sorted(study.glob('frequency_*/sensitivity.tsv')):
+    if hashlib.sha256(p.read_bytes()).hexdigest() != '3cb5d4ff844f7123a584f206c66e851233591edfcb33a7e7c507010deef2aeb5':
+        continue
+    d = json.loads((p.parent/'summary.json').read_text())
+    if d.get('sample_ids') == 37 and d.get('frequency_sha256') == '3cf7b13615155924594d6c0a53715115995971483b589b52c7f8976231ee971a':
+        matches.append(p.parent)
+if not matches:
+    raise SystemExit('找不到與本次TSV相符的frequency目錄，請貼回此訊息。')
+output = study/'reference_1x37_v1'
+print('使用頻率工作：', matches[0], flush=True)
+subprocess.run([
+    sys.executable, 'scripts/run_prs_cohort_validation.py', 'reference',
+    '--study', str(study), '--frequency-dir', str(matches[0]),
+    '--output', str(output), '--reference-limit', '1', '--mask-limit', '50',
+], check=True)
+print('完成後請回傳：', output/'summary.json')
+PYREFERENCE
+```
+
+實際至多37個人／缺失檔配對，完全相同的缺失檔內容在彙整時去重，不能預先宣稱37個獨立缺失模式。先回傳reference_1x37_v1/summary.json，依完整／部分真值數與誤差再決定擴大；原始WGS QC與block MIN_DP問題仍待核對，這個試跑不會替4份降低門檻。
