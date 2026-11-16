@@ -227,3 +227,54 @@ PYREFERENCE
 ```
 
 實際至多37個人／缺失檔配對，完全相同的缺失檔內容在彙整時去重，不能預先宣稱37個獨立缺失模式。先回傳reference_1x37_v1/summary.json，依完整／部分真值數與誤差再決定擴大；原始WGS QC與block MIN_DP問題仍待核對，這個試跑不會替4份降低門檻。
+
+## 十三、1×37全為PARTIAL：先提取既有檔的答案覆蓋
+
+回傳摘要六病全0完整／37partial，空metrics不當零誤差，numerical_failures=0亦非對帳通過。先不擴大或重跑，以下只讀現有37份詳細比較並核對其SHA與原summary，再新增唯一JSON；提取truth覆蓋、known masked數及相同已知GT子集的分數誤差，不產生全模型排名。不改科學程式或原結果。
+
+```bash
+cd ~/NGS_UI/NGS-UI
+.venv/bin/python - <<'PYPARTIAL'
+from pathlib import Path
+import json, hashlib, math, statistics, tempfile
+pilot = Path('/home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1/reference_1x37_v1')
+summary = json.loads((pilot/'summary.json').read_text())
+reports, hashes = [], []
+for p in sorted(pilot.glob('*/*.json')):
+    v = json.loads(p.read_text())
+    if v.get('schema') == 'PRS_INDEPENDENT_BENCHMARK_V1':
+        assert v['model_sha256'] == summary['model_sha256']
+        reports.append(v)
+        hashes.append(hashlib.sha256(p.read_bytes()).hexdigest())
+assert len(reports) == summary['unique_comparisons']
+assert len(set(hashes)) == len(hashes) and set(hashes) == set(summary['input_sha256'])
+assert len({v['inputs']['vcf'] for v in reports}) == 1
+out = {'scope': 'Known-genotype subset only; not whole-model score or percentile accuracy',
+       'reference_people': 1, 'comparison_files': len(reports), 'diseases': {}}
+for disease in summary['diseases']:
+    rows = [v['diseases'][disease] for v in reports]
+    assert all(r['truth_observed'] + r['truth_missing'] == r['n_loci'] for r in rows)
+    assert all(0 <= r['masked'] <= r['truth_observed'] for r in rows)
+    result = {
+        'model_loci': sorted({r['n_loci'] for r in rows}),
+        'truth_observed': sorted({r['truth_observed'] for r in rows}),
+        'truth_missing': sorted({r['truth_missing'] for r in rows}),
+        'truth_observed_fraction': sorted({r['truth_observed']/r['n_loci'] for r in rows}),
+        'masked_known_min': min(r['masked'] for r in rows),
+        'masked_known_max': max(r['masked'] for r in rows),
+        'known_subset_errors': {}}
+    for scenario in ('current', 'eas'):
+        delta = [r['sums'][scenario] - r['sums']['full'] for r in rows]
+        assert all(math.isfinite(x) for x in delta)
+        result['known_subset_errors'][scenario] = {
+            'mean_signed_score_error': statistics.mean(delta),
+            'mean_absolute_score_error': statistics.mean(abs(x) for x in delta),
+            'max_absolute_score_error': max(abs(x) for x in delta)}
+    out['diseases'][disease] = result
+with tempfile.NamedTemporaryFile(mode='w', prefix='known_subset_', suffix='.json', dir=pilot, delete=False) as f:
+    json.dump(out, f, ensure_ascii=False, indent=2)
+    print('請下載並回傳：', f.name)
+PYPARTIAL
+```
+
+即使這名參考者已知GT比例很高，也不能把少數未知位置當0/0或平均值來製造完整答案。已知子集的誤差僅用來判斷試跑是否提供可用資訊；缺答案的根因及全模型準確性仍需原始GT／匯出與GIAB等資料核對。

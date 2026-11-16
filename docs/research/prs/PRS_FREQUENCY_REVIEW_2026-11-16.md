@@ -51,3 +51,13 @@
 下一步先用1名EAS參考者×現有37份缺失清單做有答案的有限遮罩試跑，檢查匯出／獨立加總與真值覆蓋後再擴大參考者。使用mask-limit=50納入目前全部37份，涵蓋4份未達門檻者及標準品；不只挑隨機10份而漏掉主要問題。這只是一人的技術pilot，不是參考族群確效；參考者自己缺失時必須保持PARTIAL，不報全模型排名。依此結果再決定擴大／整合GIAB，原始WGS QC與block MIN_DP查核仍待完成。
 
 [分層彙整與原TSV SHA256](validation_20261114/cohort_frequency_stratified_20261116.json)保存核對項目與分群結果；不保存原始TSV、健康人ID或個別分數。原先第三節為當時待逐筆資料的決策，現以本節補記進度。
+
+## 五、1名參考者×37份缺失清單試跑回傳
+
+使用者回傳summary：reference_people=1、mask_files=37、exported_comparisons=37、unique_comparisons=37。六病均complete_comparisons=0、partial_comparisons=37、metrics={}。這表示37份比較檔均有產生，但驗證器沒有取得所有模型位置的明確基因型答案；尚須詳細檔的truth_observed／truth_missing確認缺多少，再辨別原參考缺GT、匯出或解析／allele涵蓋問題。不能單憑這份摘要宣稱參考資料完整或程序的所有輸出已獨立確效。
+
+現有aggregate只計完整真值的全模型百分位誤差，因此空metrics是沒有可用比較，不是誤差為零。numerical_failures也只從完整比較計數；本試跑又沒有傳入expected平台分數，不能把0當成加總或準確性通過。完整參考分數對帳同樣只在完整真值時執行，不能宣稱本輪已核對凍結校準分數。這是目前工具的報告限制，保留PARTIAL是正確處理，不放寬條件變成PASS。
+
+先不擴大參考者或重跑，從37份既有詳細檔提取truth覆蓋、masked已知位點數與sums差。partial的sums是在相同已知GT子集內加總，current−full／eas−full可描述該子集的遮罩補值誤差；它不包含未知GT位置，不報全模型排名、不認定一種補值較準或已完成族群驗證。若已知GT很少或mask幾乎不落在已知位置，該比較亦缺乏代表性。完成此核對後才決定補參考真值／改設計，WGS QC與GIAB外部驗證仍未完成。
+
+- [原始試跑摘要](validation_20261114/cohort_reference_1x37_summary_20261116.json)／[來源hash與界線](validation_20261114/cohort_reference_1x37_receipt_20261116.json)。

@@ -1,0 +1,87 @@
+{
+  "schema": "PRS_BENCHMARK_AGGREGATE_V1",
+  "model_sha256": "aebc9a8983fa0855ce336306d0a7e3001a935e6c1155ccfb63970120f125d0b8",
+  "diseases": {
+    "CHD": {
+      "complete_comparisons": 0,
+      "partial_comparisons": 37,
+      "metrics": {},
+      "numerical_failures": 0
+    },
+    "T2D": {
+      "complete_comparisons": 0,
+      "partial_comparisons": 37,
+      "metrics": {},
+      "numerical_failures": 0
+    },
+    "ALL_CANCERS": {
+      "complete_comparisons": 0,
+      "partial_comparisons": 37,
+      "metrics": {},
+      "numerical_failures": 0
+    },
+    "BREAST": {
+      "complete_comparisons": 0,
+      "partial_comparisons": 37,
+      "metrics": {},
+      "numerical_failures": 0
+    },
+    "AF": {
+      "complete_comparisons": 0,
+      "partial_comparisons": 37,
+      "metrics": {},
+      "numerical_failures": 0
+    },
+    "EPILEPSY": {
+      "complete_comparisons": 0,
+      "partial_comparisons": 37,
+      "metrics": {},
+      "numerical_failures": 0
+    }
+  },
+  "unit": "Comparison files, not independent people; repeated truth samples/masks are not population validation",
+  "input_sha256": [
+    "7b66ec976f2e28059209bda8495ee410d5b63176286a2f1d39ba26442e7e8494",
+    "c71f9e50dd7624074db837d6e51c0e392c69051f2ecbb34729ad0a4760cffe6c",
+    "257a928b4c4b7e8e2f56625bd967427dc4cb1146ee0ddc2090946785fdcbf331",
+    "2d20cd03d2f6c8f3f2a9eeeec10b78dd3f929949e29b46d707efb760d14a9469",
+    "77ad798526dd13ffbc56d5d10c2f7f88446e521d0f74fbe570be033e2e463ac3",
+    "a112fb727f2c72599bdebb45585f57cbff71f7513f6af56161477fe5f9b2e5b9",
+    "b462951cc6e0cccf83cb75b64d18add69605d4c8cca676fcb8d07c1841f087f0",
+    "e27d90b7c5b38b523f6510d28c4e71d10a1f539e3361caf3114e79b2b709f53b",
+    "c06dc68cd087f7bb34e7d04377eb1eddf6870ca9d70c2b68593eafcedeb59caf",
+    "c7daed4c039ac042a6f712087ab6aa6e86c09ef3403093c4d576d8df6872f86d",
+    "aed738f34f85aa9f547f59211a4beffae1c2e4673a450f4c719b3affb8e35d5b",
+    "c58fa429873ee0e6eb79874301dd04b6c93ae04cea9f3be485e004cddc1de48a",
+    "17da5eb5e4455a23a3593affbd1a6bf7192eaf67afdc21f9bf9da2bc0789a378",
+    "778b1b6c0dbbc3ff50ec23ad0366cefcc53af551b5187a24ca10b19c1ff6218c",
+    "eab4ea484ea61a41e8de8dd3e93c20d20dac6a8bea60ecf2c4c42bd2b57859f9",
+    "890f98e68fca31da9419e018f462ade8c9e247dea25d0668376fc9398d76e645",
+    "b38ac2a294322f1e7a231178b2e713ad8daf9911dda9a8549d27cd292567dd2c",
+    "f508af1ad9b8124988bd7da381d89442029d5da3f692cd92c11aa70453fff939",
+    "c6d6b97ee27711b52c59574f8e00ea36eba5e317a6173d0672a13d45db8d9242",
+    "825f7dd99f549160474e4c94b6fe7568ffee2522429ef4c6b52c1eb886d8a8ae",
+    "e50fb36aafd196604b2f978387eb639159c67a785e5a667d20813173161017fb",
+    "5c16680bd1772a1620f1b418b2cc7c779fa69e35d5e1d610b5d9c31202c53d3f",
+    "0d6600a0b58bc55e983aead76fc31ef0b078c728c132115986dd05c6902e4dfc",
+    "7a6f0433fd8a00bcf0772c348be0e91c9fe2bf330d8b22b25924a1bd5661b825",
+    "2452ce565dca68fe9a3a245f687c9d08e5356cd8d142311497b01a0f16d18644",
+    "36fe128a49c03db074aeaaf1be702ae0ba6b9ede16a1aefda11f704237ff7692",
+    "daee2a9d620800e0860f08f48fd99e31c1ead2eaf5334cc55806480432345d82",
+    "77ac855a5cc3e987e8c6fc9e8b2252942c5ec2799ea313009ee81b96ceb8885e",
+    "f81798691aa0f068929b592515c0677f54d2be0c4b1286b51f10cf77aeaad595",
+    "197345497315ab2fa79105ccb682bfaa817f9b1b28b9ca83728d4902e953a188",
+    "1f66d72d3887a4ce363ff0524beea08bb9dd2bb6a6e5135ba090fdc28415cb2b",
+    "edfe7723f2669fe32f5569c8d9cefbc3398413d153ef80865611f8cd1425ceb5",
+    "63aaf7c0bb7fe514eaeb8066110d7d79855de49686eca2180510337242f93a3a",
+    "3458a3e13a3923db055f7ea14caed79531144a539d6113b7863b41a965345424",
+    "a3e5f87e6a5db4857b9fdf25347aef339e9034ae4e57fc03a61c850dd587d76a",
+    "8e17bfdc31673bd9f42fbbbcd514e2c4b4750f76315841cb713baea788d5000f",
+    "2aabac8111f1d8b2eed9d3749e4923c7db0f6a444f0b157303acd8062094a981"
+  ],
+  "reference_people": 1,
+  "mask_files": 37,
+  "exported_comparisons": 37,
+  "unique_comparisons": 37,
+  "meaning": "Technical reference-genotype masking; no clinical outcomes, no GIAB comparison or reference activation"
+}

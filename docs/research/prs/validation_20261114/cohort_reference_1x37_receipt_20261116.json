@@ -1,0 +1,8 @@
+{
+  "schema": "PRS_REFERENCE_PILOT_RECEIPT_V1",
+  "received_on": "2026-11-16",
+  "artifact": "cohort_reference_1x37_summary_20261116.json",
+  "sha256": "5e194cc782ff3d3c39f3b8b64c687bb7fe97ea5b887fcaabc2d9a0efa0f962ab",
+  "interpretation": "All six diseases have 37 partial and zero complete comparisons; no full-model error metrics or accuracy pass.",
+  "evidence": "User-uploaded hospital summary, not direct local access to exported truth VCF, reference PGEN or detailed comparison reports."
+}
