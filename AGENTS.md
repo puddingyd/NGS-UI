@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS健康人試跑回傳（v10.37補記，2026-11-16）**：上傳summary顯示37已計分＝27健康候選＋10標準、1489尚未計分非失敗，27run各1；模型hash／標準品分數描述與前次一致，未帶genotypes故本次pairs空不推翻前次20對。六病均同4份未達99.5%觀測門檻（缺失0.69～4.38%），23份達標；EAS＋QC可納入0，原只跑score，不解讀成非EAS。平均EAS排名46.36～54.78含低品質、非祖源確認，不宣稱常模相同。暫緩全量，先missing status／位置原因與frequency（37份，含低品質者僅研究）、再祖源／reference；不降門檻、不自動排除換來源，不由每run1份判整批失敗。新PRS_HEALTH_PILOT_2026-11-16.md及cohort_health_pilot_aggregate_20261116.json存去run彙整＋原檔SHA，不把原始每run單人分數或健康ID進Git。workflow／ops／索引同步，模型／科學程式與study簽章不變，不SSH／部署。
+
 **PRS標準品結果回傳（v10.37補記，2026-11-15）**：使用者上傳PRS_COHORT_REPORT_V1，10份標準品／HG001與HG002各5、每組1run，模型hash與preflight相同；1,516健康人尚未計分不是失敗。12個個體×病皆達99.5%觀測比例（最低99.5163%），五次皆未跨組；最大排名範圍HG002癲癇2.041pp、CHD1.361pp保留追查，不事後設整體PASS。六病聯集1130808位點，20對共同觀測GT一致率99.9984～99.9999%；缺失另列，不能稱全WGS／非REF準確率或GIAB確效。單側缺失數多不直接判定分數差異主因，仍需加權分解。原始報告與SHA存validation_20261114/cohort_standard_*20261115.json，分析PRS_STANDARD_REPEATABILITY_2026-11-15.md，workflow／ops／索引同步。可沿原study做27run各1份score試跑，後接frequency／reference；無臨床／癌症方向結論，不改程式／模型／參數／study簽章，不SSH／部署。
 
 **PRS院內前置檢查回傳（v10.37，同日補記2026-11-14）**：已讀使用者上傳`preflight_summary.json`，來源模型核對PASS、1,526份HEADER_PASS（健康人候選1516／標準品10），與盤點相符。原檔逐byte存`validation_20261114/cohort_preflight_summary.json`，receipt記SHA256及證據為使用者院內執行回傳；不是本機直接讀取gVCF／模型。所有來源header只有DRAGEN_SNV／DRAGEN_TARGETED，確切caller版本仍未知，不由TARGETED字樣判定檢測類型。可以沿原cohort_v1接10份標準品score及report --genotypes；無需重做prepare。header／索引前置通過不代表coverage、基因型身分、祖源、PRS準確性或臨床驗證；計分／補值／分布結果仍待回傳。只更新證據與文件，不改科學程式／模型或既有study簽章，不SSH／部署。

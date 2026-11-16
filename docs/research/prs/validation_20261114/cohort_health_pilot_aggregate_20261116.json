@@ -1,0 +1,461 @@
+{
+  "schema": "PRS_HEALTH_PILOT_AGGREGATE_V1",
+  "received_on": "2026-11-16",
+  "source_sha256": "d1a29ade8ae95c8c6451d4fb54dbbd77e5bf232e90aad8feb65c0e6098f6399a",
+  "source_report_created_at": "2026-11-16T01:01:43.346217+00:00",
+  "model_sha256": "aebc9a8983fa0855ce336306d0a7e3001a935e6c1155ccfb63970120f125d0b8",
+  "counts": {
+    "planned_sample_ids": 1526,
+    "scored_sample_ids": 37,
+    "health_scored_ids": 27,
+    "standards_scored_ids": 10,
+    "not_scored_sample_ids": 1489
+  },
+  "run_count": 27,
+  "same_four_sample_runs_below_observed_gate_all_diseases": true,
+  "population": {
+    "CHD": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 0,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 0.41123735617492224,
+        "median": 0.43077059873445195,
+        "sd": 0.1643881002508395,
+        "minimum": 0.016396061358644,
+        "maximum": 0.672034231629664,
+        "mean_shift_reference_sd": -0.06200224592907596,
+        "max_ecdf_distance": 0.07362055933484504,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 49.1156462585034,
+      "all_scored_percentile_deciles": [
+        3,
+        3,
+        3,
+        2,
+        1,
+        5,
+        2,
+        2,
+        5,
+        1
+      ],
+      "eligible_score_distribution": null,
+      "eligible_percentile_deciles": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "eligible_stratum_counts": {
+        "<20": 0,
+        "20-40": 0,
+        "40-60": 0,
+        "60-80": 0,
+        "80-90": 0,
+        "90-95": 0,
+        ">=95": 0
+      },
+      "missing_fraction_range": [
+        0.001440263474819967,
+        0.043774833894528145
+      ],
+      "high_weight_missing_range": [
+        0,
+        23
+      ],
+      "observed_quality_only_descriptive": {
+        "n": 23,
+        "mean_percentile": 50.31055900621118,
+        "ancestry_confirmed": false
+      }
+    },
+    "T2D": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 0,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 3.151576458221084,
+        "median": 3.1533722413637157,
+        "sd": 0.3623289948331721,
+        "minimum": 2.573874339987712,
+        "maximum": 3.757742562587274,
+        "mean_shift_reference_sd": 0.0018768834637474788,
+        "max_ecdf_distance": 0.11972789115646257,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 49.095490047871,
+      "all_scored_percentile_deciles": [
+        4,
+        3,
+        3,
+        3,
+        1,
+        2,
+        1,
+        3,
+        3,
+        4
+      ],
+      "eligible_score_distribution": null,
+      "eligible_percentile_deciles": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "eligible_stratum_counts": {
+        "<20": 0,
+        "20-40": 0,
+        "40-60": 0,
+        "60-80": 0,
+        "80-90": 0,
+        "90-95": 0,
+        ">=95": 0
+      },
+      "missing_fraction_range": [
+        0.001580135682991867,
+        0.04346394999499821
+      ],
+      "high_weight_missing_range": [
+        7,
+        361
+      ],
+      "observed_quality_only_descriptive": {
+        "n": 23,
+        "mean_percentile": 46.518781425613724,
+        "ancestry_confirmed": false
+      }
+    },
+    "ALL_CANCERS": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 0,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 0.07109191960525259,
+        "median": 0.071088371841844,
+        "sd": 0.06298637942949563,
+        "minimum": -0.03986937592062,
+        "maximum": 0.20724470625346,
+        "mean_shift_reference_sd": 0.01414929294550746,
+        "max_ecdf_distance": 0.11458805744520034,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 50.36533131771227,
+      "all_scored_percentile_deciles": [
+        4,
+        0,
+        2,
+        2,
+        5,
+        5,
+        3,
+        2,
+        2,
+        2
+      ],
+      "eligible_score_distribution": null,
+      "eligible_percentile_deciles": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "eligible_stratum_counts": {
+        "<20": 0,
+        "20-40": 0,
+        "40-60": 0,
+        "60-80": 0,
+        "80-90": 0,
+        "90-95": 0,
+        ">=95": 0
+      },
+      "missing_fraction_range": [
+        0.0015957479304762195,
+        0.04343220209548829
+      ],
+      "high_weight_missing_range": [
+        0,
+        19
+      ],
+      "observed_quality_only_descriptive": {
+        "n": 23,
+        "mean_percentile": 52.67672286305827,
+        "ancestry_confirmed": false
+      }
+    },
+    "BREAST": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 0,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 1.2834149240898014,
+        "median": 1.312667238534428,
+        "sd": 0.38748045900021666,
+        "minimum": 0.591550301548934,
+        "maximum": 1.867061389669118,
+        "mean_shift_reference_sd": 0.1605007936625323,
+        "max_ecdf_distance": 0.1201814058956916,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 54.774502393550016,
+      "all_scored_percentile_deciles": [
+        3,
+        2,
+        2,
+        2,
+        2,
+        3,
+        4,
+        1,
+        3,
+        5
+      ],
+      "eligible_score_distribution": null,
+      "eligible_percentile_deciles": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "eligible_stratum_counts": {
+        "<20": 0,
+        "20-40": 0,
+        "40-60": 0,
+        "60-80": 0,
+        "80-90": 0,
+        "90-95": 0,
+        ">=95": 0
+      },
+      "missing_fraction_range": [
+        0.0016448104680191684,
+        0.043489339722804096
+      ],
+      "high_weight_missing_range": [
+        7,
+        216
+      ],
+      "observed_quality_only_descriptive": {
+        "n": 23,
+        "mean_percentile": 52.99023957409051,
+        "ancestry_confirmed": false
+      }
+    },
+    "AF": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 0,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 1.118940987344584,
+        "median": 1.113922711666962,
+        "sd": 0.1293169226573628,
+        "minimum": 0.902202356210418,
+        "maximum": 1.39046824267024,
+        "mean_shift_reference_sd": -0.10576914085784678,
+        "max_ecdf_distance": 0.1295540438397581,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 46.35928445452255,
+      "all_scored_percentile_deciles": [
+        2,
+        3,
+        3,
+        5,
+        1,
+        5,
+        2,
+        3,
+        2,
+        1
+      ],
+      "eligible_score_distribution": null,
+      "eligible_percentile_deciles": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "eligible_stratum_counts": {
+        "<20": 0,
+        "20-40": 0,
+        "40-60": 0,
+        "60-80": 0,
+        "80-90": 0,
+        "90-95": 0,
+        ">=95": 0
+      },
+      "missing_fraction_range": [
+        0.0015093541747335385,
+        0.04324904725998084
+      ],
+      "high_weight_missing_range": [
+        0,
+        26
+      ],
+      "observed_quality_only_descriptive": {
+        "n": 23,
+        "mean_percentile": 46.696243714877255,
+        "ancestry_confirmed": false
+      }
+    },
+    "EPILEPSY": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 0,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": -2.800404665330562,
+        "median": -2.8508543962676,
+        "sd": 0.39161496579081023,
+        "minimum": -3.45170046941004,
+        "maximum": -2.0364837559167204,
+        "mean_shift_reference_sd": -0.022710590353337626,
+        "max_ecdf_distance": 0.12637944066515494,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 47.80045351473923,
+      "all_scored_percentile_deciles": [
+        3,
+        2,
+        5,
+        3,
+        2,
+        4,
+        2,
+        0,
+        2,
+        4
+      ],
+      "eligible_score_distribution": null,
+      "eligible_percentile_deciles": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "eligible_stratum_counts": {
+        "<20": 0,
+        "20-40": 0,
+        "40-60": 0,
+        "60-80": 0,
+        "80-90": 0,
+        "90-95": 0,
+        ">=95": 0
+      },
+      "missing_fraction_range": [
+        0.001412886850072049,
+        0.042360165514323866
+      ],
+      "high_weight_missing_range": [
+        5,
+        272
+      ],
+      "observed_quality_only_descriptive": {
+        "n": 23,
+        "mean_percentile": 46.29399585921325,
+        "ancestry_confirmed": false
+      }
+    }
+  },
+  "privacy": "Original report contains one-person-per-run scores; original and run-level records are not copied to Git.",
+  "evidence": "User-uploaded hospital-side summary, not direct access to raw gVCFs or per-case audit artifacts.",
+  "interpretation": "Unfiltered 27-ID descriptive pilot; no ancestry, sample identity, relatedness, clinical or reference-replacement validation.",
+  "prior_standard_scores_unchanged": true,
+  "genotype_pairs_in_this_report": 0
+}

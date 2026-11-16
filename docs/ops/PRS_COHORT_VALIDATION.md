@@ -125,3 +125,42 @@ cd ~/NGS_UI/NGS-UI
 使用者已回傳10份標準品的報告，HG001／HG002各5份、各1個run。六病皆達99.5%觀測比例，5次檢測皆未跨組；最大排名範圍為HG002癲癇2.041個百分點，需追查。共同觀測GT一致率高，但本報告不是GIAB外部準確性或正式驗收通過。逐病表、缺失分母與來源hash見[標準品比較紀錄](../research/prs/PRS_STANDARD_REPEATABILITY_2026-11-15.md)。
 
 報告的`not_scored_sample_ids=1516`是健康人尚未開始，非失敗。下一步沿原study執行第四節每run一份健康人候選，共預計27份，然後重產report；再用實際缺失清單接第五節頻率與參考遮罩比較。計分與祖源分開，score試跑尚不會提供已確認EAS的台灣分布。原始模型、程式與設定未變時可沿用既有checkpoint，不需重新prepare。
+
+## 十、2026-11-16健康人候選試跑結果
+
+27個run各一份完成計分，加10份標準品共37份。六病皆23/27達99.5%觀測位點門檻，同4份在六病未達（缺失約0.69%～4.38%），尚無EAS＋品質合格群結果；這輪只跑score，不能把0解讀成沒有東亞個案。每run僅一份，不能判整個run有問題。詳細數字及限制見[本次紀錄](../research/prs/PRS_HEALTH_PILOT_2026-11-16.md)。
+
+先暫緩第六節全量計分，沿既有study執行第五節frequency，回傳新frequency目錄的summary.json；它會包含現有37份，包括4份低品質者，但只是補值選擇敏感度，不將低品質者變成可計算風險或常模合格。接著依原因／敏感度補祖源及reference試驗，不重做prepare或降低品質門檻。
+
+缺失原因可用以下命令從已校驗結果彙整，只讀既有缺失清單的status，不讀原始gVCF、不修改任何計分；在study內新建唯一JSON。輸出包含4份檢體的ID與技術原因，留院內；如需分享只提供必要的去識別彙整，不放Git。狀態命名代表計分器當時的判定，仍須和WGS QC／gVCF對照，不能直接當成根因已證實。
+
+```bash
+cd ~/NGS_UI/NGS-UI
+.venv/bin/python - <<'PYCODE'
+from pathlib import Path
+from collections import Counter, defaultdict
+import json, tempfile
+from research.prs.cohort_validation import study_read, completed
+from research.prs.multidisease.common import rows
+study = Path('/home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1')
+result = []
+for item, summary, qc, root in completed(study_read(study)):
+    if item['cohort'] != 'healthy_candidate':
+        continue
+    diseases = summary['diseases']
+    if all(r['qc_ready'] for r in diseases.values()):
+        continue
+    counts = defaultdict(Counter)
+    chromosomes = defaultdict(Counter)
+    for row in rows(root/'missing_loci.tsv.gz'):
+        counts[row['disease']][row['status']] += 1
+        chromosomes[row['disease']][row['id'].split(':')[0]] += 1
+    result.append(dict(sample_id=item['sample_id'], run_id=item['run_id'],
+        missing_status={k:dict(v) for k,v in counts.items()},
+        missing_by_chromosome={k:dict(v) for k,v in chromosomes.items()}))
+with tempfile.NamedTemporaryFile(mode='w', prefix='missing_status_', suffix='.json',
+                                 dir=study, delete=False) as f:
+    json.dump(result, f, ensure_ascii=False, indent=2)
+    print('Missing-status report:', f.name, 'samples:', len(result))
+PYCODE
+```
