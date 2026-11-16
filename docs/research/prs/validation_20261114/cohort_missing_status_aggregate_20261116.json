@@ -1,0 +1,124 @@
+{
+  "schema": "PRS_MISSING_STATUS_AGGREGATE_V1",
+  "received_on": "2026-11-16",
+  "source_sha256": "1ffa8339aba4a420ffdf419196324083772525a1ae586939b14e57d46229540e",
+  "frequency_source_sha256": "e97df7afdef64494c5900a79e9e5e83d32dbecc9e54891ced8bc7bc527ff51a3",
+  "cases": 4,
+  "diseases": {
+    "CHD": {
+      "status_counts_four_cases": {
+        "LOW_GQ": 12900,
+        "LOW_DP": 27339,
+        "NON_PASS_FILTER": 3036,
+        "ALLELE_MISMATCH": 157,
+        "NON_TARGET_ALT_IN_GT": 71,
+        "NON_HOMREF_REFERENCE_BLOCK": 132,
+        "COMPLEX_MULTIALLELIC_OR_REF_MISMATCH": 26,
+        "NO_GVCF_COVERAGE": 30
+      },
+      "quality_filter_fraction_range": [
+        0.9769520225776105,
+        0.9958077556520437
+      ],
+      "all_22_autosomes_have_missing": true,
+      "chromosome_denominators_not_available": true
+    },
+    "T2D": {
+      "status_counts_four_cases": {
+        "LOW_GQ": 20212,
+        "NON_PASS_FILTER": 4828,
+        "LOW_DP": 41226,
+        "COMPLEX_MULTIALLELIC_OR_REF_MISMATCH": 111,
+        "ALLELE_MISMATCH": 224,
+        "NO_GVCF_COVERAGE": 55,
+        "NON_HOMREF_REFERENCE_BLOCK": 304,
+        "NON_TARGET_ALT_IN_GT": 95
+      },
+      "quality_filter_fraction_range": [
+        0.9702955367913149,
+        0.9945801470042319
+      ],
+      "all_22_autosomes_have_missing": true,
+      "chromosome_denominators_not_available": true
+    },
+    "ALL_CANCERS": {
+      "status_counts_four_cases": {
+        "LOW_GQ": 18049,
+        "NON_PASS_FILTER": 4361,
+        "LOW_DP": 35841,
+        "ALLELE_MISMATCH": 156,
+        "COMPLEX_MULTIALLELIC_OR_REF_MISMATCH": 54,
+        "NO_GVCF_COVERAGE": 46,
+        "NON_HOMREF_REFERENCE_BLOCK": 232,
+        "NON_TARGET_ALT_IN_GT": 90
+      },
+      "quality_filter_fraction_range": [
+        0.9732968161588497,
+        0.9956957182242727
+      ],
+      "all_22_autosomes_have_missing": true,
+      "chromosome_denominators_not_available": true
+    },
+    "BREAST": {
+      "status_counts_four_cases": {
+        "LOW_GQ": 19016,
+        "NON_PASS_FILTER": 4567,
+        "LOW_DP": 38506,
+        "COMPLEX_MULTIALLELIC_OR_REF_MISMATCH": 116,
+        "ALLELE_MISMATCH": 294,
+        "NO_GVCF_COVERAGE": 70,
+        "NON_TARGET_ALT_IN_GT": 131,
+        "NON_HOMREF_REFERENCE_BLOCK": 259
+      },
+      "quality_filter_fraction_range": [
+        0.9657216082011854,
+        0.9940352081078941
+      ],
+      "all_22_autosomes_have_missing": true,
+      "chromosome_denominators_not_available": true
+    },
+    "AF": {
+      "status_counts_four_cases": {
+        "LOW_GQ": 16838,
+        "NON_PASS_FILTER": 3935,
+        "LOW_DP": 34708,
+        "COMPLEX_MULTIALLELIC_OR_REF_MISMATCH": 95,
+        "ALLELE_MISMATCH": 277,
+        "NO_GVCF_COVERAGE": 62,
+        "NON_TARGET_ALT_IN_GT": 131,
+        "NON_HOMREF_REFERENCE_BLOCK": 222
+      },
+      "quality_filter_fraction_range": [
+        0.9642664751301849,
+        0.9939625975555882
+      ],
+      "all_22_autosomes_have_missing": true,
+      "chromosome_denominators_not_available": true
+    },
+    "EPILEPSY": {
+      "status_counts_four_cases": {
+        "LOW_GQ": 13036,
+        "LOW_DP": 26384,
+        "NON_PASS_FILTER": 2924,
+        "NON_HOMREF_REFERENCE_BLOCK": 170,
+        "ALLELE_MISMATCH": 72,
+        "NON_TARGET_ALT_IN_GT": 48,
+        "COMPLEX_MULTIALLELIC_OR_REF_MISMATCH": 33,
+        "NO_GVCF_COVERAGE": 8
+      },
+      "quality_filter_fraction_range": [
+        0.9825567502986858,
+        0.9962549738628385
+      ],
+      "all_22_autosomes_have_missing": true,
+      "chromosome_denominators_not_available": true
+    }
+  },
+  "privacy": "No original sample IDs, run IDs or per-case rows copied to Git.",
+  "limitations": [
+    "Statuses are ordered classifier labels, not independent causal diagnoses.",
+    "DP may be reference-block MIN_DP; not necessarily site-specific DP.",
+    "Missing counts across diseases overlap; no sum interpreted as unique genomic sites.",
+    "No normalized per-chromosome missing-rate claim without target denominators."
+  ]
+}

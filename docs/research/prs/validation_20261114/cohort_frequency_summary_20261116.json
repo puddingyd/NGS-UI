@@ -1,0 +1,64 @@
+{
+  "schema": "PRS_FREQUENCY_SENSITIVITY_V1",
+  "model_sha256": "aebc9a8983fa0855ce336306d0a7e3001a935e6c1155ccfb63970120f125d0b8",
+  "frequency_sha256": "3cf7b13615155924594d6c0a53715115995971483b589b52c7f8976231ee971a",
+  "keep_sha256": "3ff673496fa2ab9d3ceb7a91ac8172a047fff2bf1e5f9b5f62d0c474aea1e74a",
+  "reference_genotype_signatures": {
+    ".pgen": [
+      "/home/n102968/NGS_UI/biotools/prs/multi_v1/reference.pgen",
+      667791608,
+      1793847984786988394,
+      1793847984786988394
+    ],
+    ".pvar": [
+      "/home/n102968/NGS_UI/biotools/prs/multi_v1/reference.pvar",
+      153806262,
+      1793847982729977230,
+      1793847982729977230
+    ],
+    ".psam": [
+      "/home/n102968/NGS_UI/biotools/prs/multi_v1/reference.psam",
+      102517,
+      1793847974469944323,
+      1793847974469944323
+    ]
+  },
+  "sample_ids": 37,
+  "diseases": {
+    "CHD": {
+      "n": 37,
+      "max_absolute_percentile_shift_pp": 4.625850340136054,
+      "stratum_changes": 0
+    },
+    "T2D": {
+      "n": 37,
+      "max_absolute_percentile_shift_pp": 2.448979591836732,
+      "stratum_changes": 0
+    },
+    "ALL_CANCERS": {
+      "n": 37,
+      "max_absolute_percentile_shift_pp": 9.931972789115655,
+      "stratum_changes": 1
+    },
+    "BREAST": {
+      "n": 37,
+      "max_absolute_percentile_shift_pp": 8.29931972789116,
+      "stratum_changes": 1
+    },
+    "AF": {
+      "n": 37,
+      "max_absolute_percentile_shift_pp": 1.2244897959183731,
+      "stratum_changes": 0
+    },
+    "EPILEPSY": {
+      "n": 37,
+      "max_absolute_percentile_shift_pp": 1.904761904761905,
+      "stratum_changes": 0
+    }
+  },
+  "limitations": [
+    "Frequency-choice sensitivity on the same observed sample; not genotype-truth accuracy.",
+    "Fixed original EAS735 ECDF; no reference/model activation.",
+    "Reference-masking population benchmark and GIAB accuracy remain separate tasks."
+  ]
+}

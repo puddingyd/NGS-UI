@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS頻率與原因回傳（v10.37同日補記，2026-11-16）**：37份頻率敏感度摘要：最大pp位移CHD4.626／T2D2.449／全部癌症9.932／乳癌8.299／AF1.224／癲癇1.905，癌症及乳癌各1筆跨組；未分標準品與23／4健康品質，不能歸因4低品質或宣稱EAS較準。4份missing-status跨六病96.43～99.63%屬LOW_DP／LOW_GQ／NON_PASS_FILTER，NO_GVCF_COVERAGE少；22chr有缺失但無目標分母，不稱均勻。vendor observe_at先FILTER再DP再GQ，choose_observation另有失敗優先順序；block有MIN_DP時用區塊最低值，不冒充site DP。原頻率摘要存cohort_frequency_summary_20261116.json；原missing檔有健康ID不存Git，僅存cohort_missing_status_aggregate_20261116.json彙整＋來源SHA。PRS_FREQUENCY_REVIEW_2026-11-16.md及workflow／ops／索引同步；先逐筆sensitivity.tsv定位跨組及QC分層，再核WGS QC／block值，維持暫緩全量、不降門檻或改補值，原科學程式與study簽章不變，不SSH／部署。後續直接貼server指令給使用者。
+
 **PRS健康人試跑回傳（v10.37補記，2026-11-16）**：上傳summary顯示37已計分＝27健康候選＋10標準、1489尚未計分非失敗，27run各1；模型hash／標準品分數描述與前次一致，未帶genotypes故本次pairs空不推翻前次20對。六病均同4份未達99.5%觀測門檻（缺失0.69～4.38%），23份達標；EAS＋QC可納入0，原只跑score，不解讀成非EAS。平均EAS排名46.36～54.78含低品質、非祖源確認，不宣稱常模相同。暫緩全量，先missing status／位置原因與frequency（37份，含低品質者僅研究）、再祖源／reference；不降門檻、不自動排除換來源，不由每run1份判整批失敗。新PRS_HEALTH_PILOT_2026-11-16.md及cohort_health_pilot_aggregate_20261116.json存去run彙整＋原檔SHA，不把原始每run單人分數或健康ID進Git。workflow／ops／索引同步，模型／科學程式與study簽章不變，不SSH／部署。
 
 **PRS標準品結果回傳（v10.37補記，2026-11-15）**：使用者上傳PRS_COHORT_REPORT_V1，10份標準品／HG001與HG002各5、每組1run，模型hash與preflight相同；1,516健康人尚未計分不是失敗。12個個體×病皆達99.5%觀測比例（最低99.5163%），五次皆未跨組；最大排名範圍HG002癲癇2.041pp、CHD1.361pp保留追查，不事後設整體PASS。六病聯集1130808位點，20對共同觀測GT一致率99.9984～99.9999%；缺失另列，不能稱全WGS／非REF準確率或GIAB確效。單側缺失數多不直接判定分數差異主因，仍需加權分解。原始報告與SHA存validation_20261114/cohort_standard_*20261115.json，分析PRS_STANDARD_REPEATABILITY_2026-11-15.md，workflow／ops／索引同步。可沿原study做27run各1份score試跑，後接frequency／reference；無臨床／癌症方向結論，不改程式／模型／參數／study簽章，不SSH／部署。

@@ -164,3 +164,32 @@ with tempfile.NamedTemporaryFile(mode='w', prefix='missing_status_', suffix='.js
     print('Missing-status report:', f.name, 'samples:', len(result))
 PYCODE
 ```
+
+## 十一、頻率與缺失原因回傳後
+
+37份頻率比較已有結果：全部癌症與乳癌各1筆跨組，最大百分位位移各9.932及8.299；不能從摘要認定跨組的是4份低品質者，需逐筆sensitivity.tsv。4份缺失主要是LOW_DP／LOW_GQ／NON_PASS_FILTER，仍須確認原始品質及reference block MIN_DP；詳見[回傳結果與限制](../research/prs/PRS_FREQUENCY_REVIEW_2026-11-16.md)。維持暫緩全量，不改補值／門檻。
+
+以下只列出與這次37份摘要相符的sensitivity.tsv完整路徑。不按最新日期猜；如果相符工作不只一份，必須TSV內容相同才選第一份，內容不同則停並列路徑。將印出的檔案下載回傳以定位跨組與品質分層；原始TSV含個案ID，留院內及必要分析範圍，不放Git。後續交付指令直接貼給操作者，不要求一直點進文件。
+
+```bash
+cd ~/NGS_UI/NGS-UI
+.venv/bin/python - <<'PYFREQ'
+from pathlib import Path
+import json, hashlib
+study = Path('/home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1')
+paths = []
+for p in sorted(study.glob('frequency_*/summary.json')):
+    d = json.loads(p.read_text())
+    if (d.get('schema') == 'PRS_FREQUENCY_SENSITIVITY_V1'
+        and d.get('sample_ids') == 37
+        and d.get('model_sha256') == 'aebc9a8983fa0855ce336306d0a7e3001a935e6c1155ccfb63970120f125d0b8'
+        and d.get('frequency_sha256') == '3cf7b13615155924594d6c0a53715115995971483b589b52c7f8976231ee971a'):
+        paths.append(p.parent / 'sensitivity.tsv')
+if not paths:
+    raise SystemExit('找不到相符的37份頻率比較工作，請貼回此訊息。')
+if len({hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}) != 1:
+    print(*paths, sep='\n')
+    raise SystemExit('有多份不同內容，請貼回上列路徑，先不要任選。')
+print('請下載並回傳：', paths[0])
+PYFREQ
+```
