@@ -298,3 +298,23 @@ cd ~/NGS_UI/NGS-UI
 ```
 
 回傳新report目錄的summary.json即可；原始每run分數不放Git，後續只保存去run彙整。若研究流程文件的歷史段落與最新執行狀態不同，以最新有日期的補記理解進度，不將舊的「尚待資料」改當已確效。
+
+## 十五、2026-11-17祖源結果後：擴大研究用計分
+
+六病各同23份符合EAS＋逐病99.5%觀測門檻，27份原分數分布未變；4份仍未納入，摘要未另列其祖源。23份的描述性分布不能作等價／常模驗證，但計分、品質分層與EAS納入流程已有實測證據，可將研究用score擴至盤點的1,516個健康人候選ID。這更新先前等待祖源試跑的暫緩決策，不表示補值／臨床確效完成。詳見[祖源紀錄](../research/prs/PRS_ANCESTRY_PILOT_2026-11-17.md)。
+
+```bash
+cd ~/NGS_UI/NGS-UI
+.venv/bin/python scripts/run_prs_cohort_validation.py run \
+  --study /home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1 \
+  --group healthy --all-healthy --stage score
+```
+
+會沿用已完成27份，不重做prepare、不更換資源／設定。與平台共用PRS名額、一次一份，完整批次可能耗時較長且持續增加工作檔；執行中不清理study。第一個錯誤會停，先回傳錯誤及該案tools.log，不改設定硬接續。成功後產生報告：
+
+```bash
+.venv/bin/python scripts/run_prs_cohort_validation.py report \
+  --study /home/n102968/NGS_UI/nf_work/prs/_validation_20261114/cohort_v1
+```
+
+回傳新report目錄summary.json，原始每run分數留院內、不放Git。這輪是score-only，全量祖源不自動啟動；全庫初步分布不代表EAS＋品質合格分布，eligible可能仍只有23份，後續按實測品質及工作資源安排祖源批次。不因有分數就計算或發布正式風險、換台灣常模、合併重複／親緣；其他既列驗證待辦保留。

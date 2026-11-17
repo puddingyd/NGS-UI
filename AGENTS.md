@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS祖源試跑回傳（v10.37補記，2026-11-17）**：使用者summary37計分＝27健康候選＋10標準、1489未計分，模型hash／27初步分數分布同前；六病eligible均同23run且各n1，正好觀測門檻pass23，decile／stratum總數各23。摘要不足另判4份祖源，不宣稱27全EAS。23份平均分數相對EAS偏移−0.106～+0.099 SD，非分布等價／常模或臨床確效。原摘要含每run單人分數不進Git；PRS_ANCESTRY_PILOT_2026-11-17.md與cohort_ancestry_pilot_aggregate_20261117.json存去run彙整、來源SHA及限制。試跑計分／QC／EAS納入可追溯，下一步可擴至1516健康候選score-only（既有27接續），不一次跑全祖源；新增未確認EAS只列初步分布，eligible可能仍23，後續依品質與資源分批祖源。逐病門檻不改，4份不強行納入、不刪除換來源；個人/親緣、完整補值/GIAB、原WGS QC/block MIN_DP/未知GT及癌症HR方向不結案。workflow／ops／索引更新，科學程式／設定與study簽章不變、不SSH／部署，直接貼server命令。
+
 **PRS已知子集回傳（v10.37補記，2026-11-16）**：known_subset一人／37mask，六病答案覆蓋99.9156～99.9254%，未知452～785位點；不是大部分資料失敗，但完整真值仍partial。核n=observed+missing、fraction、masked範圍、有限error與max≥MAE≥abs偏差。EAS在5病已知子集MAE較小／全部癌症較大，非每mask更好、非37人、非全分數或pct確效，不據此換補值。原JSON及receipt存cohort_reference_known_subset*_20261116.json，review第六節／workflow／ops同步。保留3330補值及99.5%觀測門檻；先沿原study跑27候選ancestry並report以做研究分布，4份即使EAS仍逐病QC不過，全1516仍暫緩等pilot祖源與資源。完整補值確效／未知GT根因／原WGS QC／GIAB及癌症HR方向不結案；更多參考者與保留資料另設計，不反覆要求同一人資料。科學程式／設定與study簽章不變、不SSH／部署，直接貼下一步server命令。
 
 **PRS1×37參考試跑回傳（v10.37補記，2026-11-16）**：summary schema PRS_BENCHMARK_AGGREGATE_V1、1ref/37mask/37export/37unique；六病均0完整/37partial/metrics空/numerical_failures0。驗證器未取得全模型明確GT，根因仍需詳細truth_missing與原PGEN/匯出解析核對，不直接判定原參考全缺或流程完整確效。aggregate只完整真值產生pct誤差，partial空不是零；數值failure只計完整且本試跑無expected，0不當對帳PASS；凍結校準核對也僅完整時做，不能宣稱本輪已做。cohort_reference_1x37_summary／receipt_20261116保存原始摘要/hash，頻率review第五節與workflow同步。先從37份既有檔提truth覆蓋、known masked及已知GT子集的sums差，不擴大/重跑；子集不是全模型分數或排名，保留partial不放寬條件。模型／核心科學程式與study簽章不變，不SSH／部署，直接貼server指令。

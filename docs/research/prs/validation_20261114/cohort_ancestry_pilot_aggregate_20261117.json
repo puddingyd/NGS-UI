@@ -1,0 +1,450 @@
+{
+  "schema": "PRS_ANCESTRY_PILOT_AGGREGATE_V1",
+  "received_on": "2026-11-17",
+  "source_report_created_at": "2026-11-17T01:18:57.319732+00:00",
+  "source_sha256": "99f03455fd08e3c07fd9721efba72fa204b687025da40132e52cd43144386acf",
+  "model_sha256": "aebc9a8983fa0855ce336306d0a7e3001a935e6c1155ccfb63970120f125d0b8",
+  "counts": {
+    "planned_sample_ids": 1526,
+    "scored_sample_ids": 37,
+    "health_scored_ids": 27,
+    "standards_scored_ids": 10,
+    "not_scored_sample_ids": 1489
+  },
+  "same_23_eligible_runs_all_diseases": true,
+  "population": {
+    "CHD": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 23,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 0.41123735617492224,
+        "median": 0.43077059873445195,
+        "sd": 0.1643881002508395,
+        "minimum": 0.016396061358644,
+        "maximum": 0.672034231629664,
+        "mean_shift_reference_sd": -0.06200224592907596,
+        "max_ecdf_distance": 0.07362055933484504,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 49.1156462585034,
+      "all_scored_percentile_deciles": [
+        3,
+        3,
+        3,
+        2,
+        1,
+        5,
+        2,
+        2,
+        5,
+        1
+      ],
+      "eligible_score_distribution": {
+        "n": 23,
+        "mean": 0.41378734826864644,
+        "median": 0.43258220889794,
+        "sd": 0.17653007427656858,
+        "minimum": 0.016396061358644,
+        "maximum": 0.672034231629664,
+        "mean_shift_reference_sd": -0.04582185301022157,
+        "max_ecdf_distance": 0.10937592428275661,
+        "p_value": null
+      },
+      "eligible_percentile_deciles": [
+        3,
+        3,
+        1,
+        2,
+        0,
+        5,
+        1,
+        2,
+        5,
+        1
+      ],
+      "eligible_stratum_counts": {
+        "<20": 6,
+        "20-40": 3,
+        "40-60": 5,
+        "60-80": 3,
+        "80-90": 5,
+        "90-95": 0,
+        ">=95": 1
+      },
+      "eligible_mean_percentile": 50.31055900621118
+    },
+    "T2D": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 23,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 3.151576458221084,
+        "median": 3.1533722413637157,
+        "sd": 0.3623289948331721,
+        "minimum": 2.573874339987712,
+        "maximum": 3.757742562587274,
+        "mean_shift_reference_sd": 0.0018768834637474788,
+        "max_ecdf_distance": 0.11972789115646257,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 49.095490047871,
+      "all_scored_percentile_deciles": [
+        4,
+        3,
+        3,
+        3,
+        1,
+        2,
+        1,
+        3,
+        3,
+        4
+      ],
+      "eligible_score_distribution": {
+        "n": 23,
+        "mean": 3.1154287479990135,
+        "median": 3.1533722413637157,
+        "sd": 0.3488844129020834,
+        "minimum": 2.573874339987712,
+        "maximum": 3.757742562587274,
+        "mean_shift_reference_sd": -0.10584723589072302,
+        "max_ecdf_distance": 0.17769890564921623,
+        "p_value": null
+      },
+      "eligible_percentile_deciles": [
+        4,
+        3,
+        2,
+        2,
+        1,
+        2,
+        1,
+        3,
+        3,
+        2
+      ],
+      "eligible_stratum_counts": {
+        "<20": 7,
+        "20-40": 4,
+        "40-60": 3,
+        "60-80": 4,
+        "80-90": 3,
+        "90-95": 0,
+        ">=95": 2
+      },
+      "eligible_mean_percentile": 46.518781425613724
+    },
+    "ALL_CANCERS": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 23,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 0.07109191960525259,
+        "median": 0.071088371841844,
+        "sd": 0.06298637942949563,
+        "minimum": -0.03986937592062,
+        "maximum": 0.20724470625346,
+        "mean_shift_reference_sd": 0.01414929294550746,
+        "max_ecdf_distance": 0.11458805744520034,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 50.36533131771227,
+      "all_scored_percentile_deciles": [
+        4,
+        0,
+        2,
+        2,
+        5,
+        5,
+        3,
+        2,
+        2,
+        2
+      ],
+      "eligible_score_distribution": {
+        "n": 23,
+        "mean": 0.07675060840722678,
+        "median": 0.08070429133411999,
+        "sd": 0.06385068093424355,
+        "minimum": -0.029019412419256,
+        "maximum": 0.20724470625346,
+        "mean_shift_reference_sd": 0.09551937188559842,
+        "max_ecdf_distance": 0.11049985211475896,
+        "p_value": null
+      },
+      "eligible_percentile_deciles": [
+        3,
+        0,
+        2,
+        2,
+        3,
+        4,
+        3,
+        2,
+        2,
+        2
+      ],
+      "eligible_stratum_counts": {
+        "<20": 3,
+        "20-40": 4,
+        "40-60": 7,
+        "60-80": 5,
+        "80-90": 2,
+        "90-95": 0,
+        ">=95": 2
+      },
+      "eligible_mean_percentile": 52.67672286305827
+    },
+    "BREAST": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 23,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 1.2834149240898014,
+        "median": 1.312667238534428,
+        "sd": 0.38748045900021666,
+        "minimum": 0.591550301548934,
+        "maximum": 1.867061389669118,
+        "mean_shift_reference_sd": 0.1605007936625323,
+        "max_ecdf_distance": 0.1201814058956916,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 54.774502393550016,
+      "all_scored_percentile_deciles": [
+        3,
+        2,
+        2,
+        2,
+        2,
+        3,
+        4,
+        1,
+        3,
+        5
+      ],
+      "eligible_score_distribution": {
+        "n": 23,
+        "mean": 1.259572856254158,
+        "median": 1.292335548188572,
+        "sd": 0.40268660839173703,
+        "minimum": 0.591550301548934,
+        "maximum": 1.867061389669118,
+        "mean_shift_reference_sd": 0.0993139665465636,
+        "max_ecdf_distance": 0.12475598935226262,
+        "p_value": null
+      },
+      "eligible_percentile_deciles": [
+        3,
+        2,
+        2,
+        1,
+        2,
+        3,
+        2,
+        1,
+        3,
+        4
+      ],
+      "eligible_stratum_counts": {
+        "<20": 5,
+        "20-40": 3,
+        "40-60": 5,
+        "60-80": 3,
+        "80-90": 3,
+        "90-95": 2,
+        ">=95": 2
+      },
+      "eligible_mean_percentile": 52.99023957409051
+    },
+    "AF": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 23,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": 1.118940987344584,
+        "median": 1.113922711666962,
+        "sd": 0.1293169226573628,
+        "minimum": 0.902202356210418,
+        "maximum": 1.39046824267024,
+        "mean_shift_reference_sd": -0.10576914085784678,
+        "max_ecdf_distance": 0.1295540438397581,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 46.35928445452255,
+      "all_scored_percentile_deciles": [
+        2,
+        3,
+        3,
+        5,
+        1,
+        5,
+        2,
+        3,
+        2,
+        1
+      ],
+      "eligible_score_distribution": {
+        "n": 23,
+        "mean": 1.1190718331126057,
+        "median": 1.157226577689792,
+        "sd": 0.13160475225923654,
+        "minimum": 0.902202356210418,
+        "maximum": 1.39046824267024,
+        "mean_shift_reference_sd": -0.1049986897685107,
+        "max_ecdf_distance": 0.1374741200828158,
+        "p_value": null
+      },
+      "eligible_percentile_deciles": [
+        2,
+        3,
+        2,
+        3,
+        1,
+        5,
+        2,
+        3,
+        1,
+        1
+      ],
+      "eligible_stratum_counts": {
+        "<20": 5,
+        "20-40": 5,
+        "40-60": 6,
+        "60-80": 5,
+        "80-90": 1,
+        "90-95": 1,
+        ">=95": 0
+      },
+      "eligible_mean_percentile": 46.696243714877255
+    },
+    "EPILEPSY": {
+      "scored_health_ids": 27,
+      "confident_eas_quality_ids": 23,
+      "stratum_expected_proportions": [
+        0.2,
+        0.2,
+        0.2,
+        0.2,
+        0.1,
+        0.05,
+        0.05
+      ],
+      "all_scored_descriptive_not_ancestry_validated": {
+        "n": 27,
+        "mean": -2.800404665330562,
+        "median": -2.8508543962676,
+        "sd": 0.39161496579081023,
+        "minimum": -3.45170046941004,
+        "maximum": -2.0364837559167204,
+        "mean_shift_reference_sd": -0.022710590353337626,
+        "max_ecdf_distance": 0.12637944066515494,
+        "p_value": null
+      },
+      "observed_locus_quality_pass_ids": 23,
+      "all_scored_mean_percentile": 47.80045351473923,
+      "all_scored_percentile_deciles": [
+        3,
+        2,
+        5,
+        3,
+        2,
+        4,
+        2,
+        0,
+        2,
+        4
+      ],
+      "eligible_score_distribution": {
+        "n": 23,
+        "mean": -2.8146606136403802,
+        "median": -2.925550634549324,
+        "sd": 0.3846271562471481,
+        "minimum": -3.45170046941004,
+        "maximum": -2.0364837559167204,
+        "mean_shift_reference_sd": -0.058339983730326825,
+        "max_ecdf_distance": 0.16663708961845608,
+        "p_value": null
+      },
+      "eligible_percentile_deciles": [
+        2,
+        2,
+        5,
+        3,
+        1,
+        4,
+        2,
+        0,
+        0,
+        4
+      ],
+      "eligible_stratum_counts": {
+        "<20": 4,
+        "20-40": 8,
+        "40-60": 5,
+        "60-80": 2,
+        "80-90": 0,
+        "90-95": 1,
+        ">=95": 3
+      },
+      "eligible_mean_percentile": 46.29399585921325
+    }
+  },
+  "privacy": "Original report contains one-person-per-run scores; only aggregate statistics and source hash saved.",
+  "limitations": [
+    "23 confirmed EAS and per-disease observed-locus gate passes; other four ancestry status cannot be inferred from this summary.",
+    "No person/relatedness deduplication or clinical outcome validation.",
+    "n=23 and one per run do not establish population representativeness or distribution equivalence.",
+    "Full-cohort score-only results remain preliminary until ancestry checks."
+  ]
+}
