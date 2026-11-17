@@ -603,3 +603,40 @@ k = 東亞每 SD log 效應 ÷ EstBB 每 SD log 效應（55 歲、同性別）�
 - 多族群 CAD PRS（嘉道理驗證）：https://www.researchgate.net/publication/372162660
 - 亞洲女性乳癌 PRS：https://pmc.ncbi.nlm.nih.gov/articles/PMC7612481
 - 先前的 review：`docs/research/prs/PRS_REVIEW_2026-11-13.md`
+
+---
+
+## 附錄 B：各方法的完整疾病清單與驗證清單（2026-11-17 補充）
+
+### B.1 已在本次 session 驗證完成
+
+| 項目 | 結果 | 怎麼重做 |
+|---|---|---|
+| 作者 GBD CSV 的台灣資料 | 三個 `Sex_Stratified_*.csv` 的 SHA256 與 repo pin 相同。台灣有 INTERVENE 全部 19 個 GBD cause 的發生率、盛行率、死亡率（男女各 19 個年齡組）；乳癌、攝護腺癌在 `BreastCancerProstateCancer_*.csv`。痛風、憂鬱症、髖／膝關節炎的疾病死亡率全為 0，這是 GBD 視為非致死疾病的正常結果。 | 從作者 GitHub 固定 commit `179986db…` 的 `AbsoluteRiskEstimation/` 下載，篩選 `location == "Taiwan (Province of China)"`、`metric == "Rate"` |
+| TWB 分組檔的疾病 | 13 個：CHD、T2D、AF、乳癌（僅女性）、癲癇、大腸直腸癌、肺癌、氣喘、痛風、膝關節炎、髖關節炎、憂鬱症、闌尾炎 | 見 3.1 節 |
+| BBJ 分組檔的疾病 | 8 個：CHD、T2D、全部癌症、大腸直腸癌、癲癇、氣喘、間質性肺病、肺癌 | 見 3.2 節 |
+| TPMI 有 PRS 的疾病 | 265 個 phecode；全部對應得到 PGS Catalog 編號 | `docs/research/prs/derived/tpmi_prs_only_auc_2026-11-17.csv` |
+
+### B.2 各方法的完整候選清單
+
+**方法 1（EstBB × k(TWB)）**：INTERVENE 19 個表型 ∩ TWB 13 個 ∩ 台灣 GBD，共 13 個：CHD、T2D、AF、乳癌、癲癇、大腸直腸癌、肺癌、氣喘、痛風、膝關節炎、髖關節炎、憂鬱症、闌尾炎。INTERVENE 的全部癌症、攝護腺癌、黑色素瘤、類風濕性關節炎、第一型糖尿病、間質性肺病不在 TWB 檔，無法算 k。
+
+**方法 2（BBJ）**：目前檔案中的 8 個。作者 Drive 的 BiobankJapan 資料夾可能還有其他檔案（例如 `HR_MaleSample_BBJ.csv`），尚未確認。
+
+**方法 3（TPMI）**：265 個 phecode。依每 SD OR 分布：≥2.0 有 13 個、1.5–2.0 有 34 個、1.3–1.5 有 32 個、1.15–1.3 有 78 個、<1.15 有 108 個。要算絕對風險還需要基準率：
+
+- 作者 GBD CSV 已有：T2D、AF、乳癌、攝護腺癌、類風濕性關節炎、大腸直腸癌、肺癌、痛風、氣喘、癲癇、第一型糖尿病、憂鬱症、關節炎、黑色素瘤、間質性肺病、缺血性心臟病（心肌梗塞只能近似）。
+- GBD 有此 cause 但需另外匯出：乾癬、紅斑性狼瘡、甲狀腺癌、慢性腎臟病、青光眼、腎結石、肝硬化、鼻咽癌等。來源為 GBD Results（vizhub.healthdata.org/gbd-results），或台灣癌症登記、健保研究文獻。
+- GBD 沒有對應的發生率：高血壓、僵直性脊椎炎、甲狀腺功能低下、B 型肝炎帶原等。只能報百分位，或另找台灣資料。
+
+### B.3 尚待驗證的項目與方法
+
+| 項目 | 去哪裡找 | 怎麼驗證 |
+|---|---|---|
+| EstBB 其他 13 個表型的原始 HR | 本機 `research/prs/runtime/original_hr_20261102/`（年齡性別、女性）與 `runtime/multi_sources_20261105/`（年齡、全樣本）；或 `releases/tw_multi_v1/README.md` 與 `absolute_risk/build_taiwan.py` 的 Drive 連結 | 列出每個檔第 2 欄（Phenotype）的所有值，確認有哪些疾病 |
+| INTERVENE 其他疾病的 PGS 權重 | PGS Catalog PGP000618；INTERVENE 分數編號在 PGS004869–PGS004886 之間 | 在 PGP000618 頁面確認編號與疾病的對應；下載 `*_hmPOS_GRCh38.txt.gz`，確認全部是體染色體 SNV（`prepare.score_rows()` 不接受 indel） |
+| TWB 檔的 `prs_norm` 定義與病例定義 | INTERVENE 作者群 | 寄信或在 flagship GitHub 開 issue 詢問；同時確認使用授權 |
+| TWB 是否還有其他檔（例如分年齡的） | `DATA_SOURCES.md` 記錄的 NBCTaiwan Drive 資料夾 | 打開資料夾列出全部檔案 |
+| BBJ 是否還有其他檔或疾病 | `DATA_SOURCES.md` 記錄的 BiobankJapan Drive 資料夾 | 同上 |
+| TPMI 權重是否全為 SNV、PRSmix+ 組成 | PGS Catalog（例如 PGS018727）或 TPMI PheWeb | 下載權重檔，統計 effect／other allele 長度不為 1 的列數 |
+| TPMI 在 TWB 的確切 AUC 數值 | TPMI PheWeb；或寄信給 TPMI 作者群 | 論文只有圖（Extended Data Fig. 7），目前數值是目測 |
