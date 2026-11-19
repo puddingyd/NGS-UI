@@ -115,29 +115,61 @@ def _payload(result: dict[str, object]) -> dict[str, str]:
     }
 
 
+class SharedLookup:
+    """One read-only connection + memo shared by every TSV of a batch.
+
+    A result depends only on the identifiers of the variant group, so the
+    memo key includes them; identical groups across samples hit the DB once.
+    """
+
+    def __init__(self, db_path: Path):
+        self.db_path = Path(db_path)
+        self.conn = litvar2_store.open_readonly(db_path)
+        self.memo: dict[tuple, dict[str, object]] = {}
+
+    def lookup(self, identifiers: dict[str, list[str]]) -> dict[str, object]:
+        memo_key = (tuple(identifiers["rsids"]), tuple(identifiers["genes"]), tuple(identifiers["hgvs"]))
+        if memo_key not in self.memo:
+            if self.conn is None:  # closed before forking workers; reopen on a miss
+                self.conn = litvar2_store.open_readonly(self.db_path)
+            self.memo[memo_key] = litvar2_store.lookup_variant(
+                self.conn,
+                rsids=identifiers["rsids"],
+                genes=identifiers["genes"],
+                hgvs_values=identifiers["hgvs"],
+            )
+        return self.memo[memo_key]
+
+    def close(self) -> None:
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
+
+
 def annotate_tsv(
     tsv: Path,
     db_path: Path,
     *,
     test_type: str,
     marker_path: Path | None = None,
+    shared: SharedLookup | None = None,
 ) -> dict[str, int]:
     tsv = Path(tsv)
     groups, candidate_rows = _candidate_groups(tsv, test_type=test_type)
     results: dict[tuple[str, str, str, str], dict[str, str]] = {}
     counts = {"hit": 0, "no_match": 0, "ambiguous": 0}
-    with litvar2_store.open_readonly(db_path) as conn:
+    own = shared is None
+    shared = shared or SharedLookup(db_path)
+    try:
         for key, identifiers in groups.items():
-            result = litvar2_store.lookup_variant(
-                conn,
-                rsids=identifiers["rsids"],
-                genes=identifiers["genes"],
-                hgvs_values=identifiers["hgvs"],
-            )
+            result = shared.lookup(identifiers)
             status = str(result.get("status") or "no_match")
             if status in counts:
                 counts[status] += 1
             results[key] = _payload(result)
+    finally:
+        if own:
+            shared.close()
 
     with tsv.open("r", encoding="utf-8", newline="") as src:
         reader = csv.DictReader(src, delimiter="\t")

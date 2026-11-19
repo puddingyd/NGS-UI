@@ -138,6 +138,21 @@ def query_scores(
     *,
     tabix_bin: str,
 ) -> dict[tuple[str, int, str, str], str]:
+    """Exact-allele scores, served from a batch prefetch when available."""
+    from . import gpn_prefetch
+
+    found, missing = gpn_prefetch.split(gpn_prefetch.provider_id("gpn_msa", db_path), keys)
+    if missing:
+        found.update(query_scores_db(db_path, missing, tabix_bin=tabix_bin))
+    return found
+
+
+def query_scores_db(
+    db_path: Path,
+    keys: set[tuple[str, int, str, str]],
+    *,
+    tabix_bin: str,
+) -> dict[tuple[str, int, str, str], str]:
     """Query exact alleles in bounded tabix batches.
 
     Regions are deduplicated by position because the table returns all three

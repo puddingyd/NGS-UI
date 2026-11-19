@@ -165,6 +165,8 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
     state = {}
     monkeypatch.setattr(dragen_run, '_update', lambda jid, **kw: state.update(kw))
     monkeypatch.setattr(dragen_run, '_set_step', lambda jid, step, **kw: state.update(step=step, **kw))
+    nextflow_steps = []
+    monkeypatch.setattr(dragen_run, '_record_nextflow_step', lambda jid, *a, **kw: nextflow_steps.append(a))
     prs_calls=[]
     def prs_postprocessing(samples,jid):
         assert state['state']=='running' and state['step']=='promote-output'
@@ -210,11 +212,21 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
             trace.write_text('\n'.join(rows) + '\n')
             nextflow_seen.append(state['progress_phase'])
         elif label.startswith('post-processing'):
-            assert Path(cmd[cmd.index('--work-tsv')+1]).is_relative_to(work)
+            # One step-major batch run for both samples (single chunk).
+            assert cmd[1].endswith('postprocess_batch.py')
+            batch = json.loads(Path(cmd[cmd.index('--manifest')+1]).read_text())['samples']
+            assert [b['sample'] for b in batch] == ['S1-nckuh', 'S2-nckuh']
+            for entry in batch:
+                assert Path(entry['work_tsv']).is_relative_to(work) and Path(entry['work_tsv']).is_file()
+            post_calls.append(label)
             kw['on_line']('[2026-01-01T00:00:00+08:00] [post-processing-step] genebe start\n')
             kw['on_line']('[2026-01-01T00:00:00+08:00] [post-processing-step] genebe done elapsed=4s\n')
             assert state['step'] == 'post-processing:genebe' and state['progress_phase'] == 'postprocessing'
+            for entry in batch:
+                kw['on_line'](f"[x] [sample-step] review-tsv start sample={entry['sample']}\n")
+                kw['on_line'](f"[x] [sample-step] review-tsv done sample={entry['sample']} elapsed=3s\n")
     nextflow_seen = []
+    post_calls = []
     monkeypatch.setattr(dragen_run, '_run', run)
     copy = workspace.verified_copytree
     copied = []
@@ -259,12 +271,15 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
     assert (live/'.rollback/job').exists() == (failure == 'rollback_failure' or cancelled)
     assert not workspace.runtime_paths(work, 'nckuh', 'job')['job'].exists()
     assert nextflow_seen == ['nextflow']
+    assert ('vep-annotate', 'VEP_ANNOTATE', 'start') in nextflow_steps
     profile_path = jobs/'_timing_profile.json'
     if publication_completed:
         assert state['progress_pct'] == (100.0 if not cancelled else 95.0)
         learned = json.loads(profile_path.read_text())['kinds']['nckuh:WGS']
         assert learned['processes']['VEP_ANNOTATE'] == {'seconds': 1800.0, 'tasks_per_sample': 1.0}
-        assert learned['postprocessing_steps']['genebe'] == 4.0
+        assert learned['postprocessing_batch_steps']['genebe'] == 2.0  # 4 s for 2 samples
+        assert learned['postprocessing_batch_steps']['review-tsv'] == 3.0
+        assert post_calls == ['post-processing batch 1/1 (2 samples)']
     else:
         assert not profile_path.exists()
 

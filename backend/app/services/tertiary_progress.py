@@ -78,23 +78,32 @@ _DRAGEN_ONLY = re.compile(r"(?:_DRAGEN$|^ADD_DRAGEN_TAG$)")
 _NCKUH_ONLY = re.compile(r"(?:_NCKUH(?:_WES|_WGS)?$|^ADD_CALLERS_TAG$|^CNVKIT_TO_BED$)")
 _GENERIC_CNV = {"ANNOTSV_CNV_NCKUH"}  # superseded by the _WES/_WGS variants
 
-# Average seconds per post-processing step (NCKUH WES, 133-sample batch).
+# Post-processing runs step by step for a whole chunk of samples (one DB pass
+# per resource), then the per-sample review/overlay/index builds in parallel.
+# Values are amortised wall seconds *per sample*; batch steps are scaled by
+# the chunk size. Rough first estimates -- replaced by the learned profile.
+BATCH_STEPS = ("clinvar-latest", "genebe", "spliceai", "giab-strata", "inhouse-af",
+               "mane-refseq", "litvar2", "gpn-prefetch")
+SAMPLE_STEPS = ("snv-overlay", "review-tsv", "gene-index", "cnv-rescue")
 DEFAULT_POSTPROCESSING_STEP_SECONDS: dict[str, float] = {
-    "clinvar-latest": 10.0,
-    "genebe": 240.0,
-    "spliceai": 97.0,
-    "giab-strata": 10.0,
-    "inhouse-af": 31.0,
+    "clinvar-latest": 3.0,
+    "genebe": 40.0,
+    "spliceai": 15.0,
+    "giab-strata": 3.0,
+    "inhouse-af": 2.0,
     "mane-refseq": 1.0,
-    "litvar2": 22.0,
+    "litvar2": 5.0,
+    "gpn-prefetch": 5.0,
     "snv-overlay": 2.0,
-    "review-tsv": 79.0,
+    "review-tsv": 8.0,
     "gene-index": 1.0,
     "cnv-rescue": 60.0,
 }
-# Wall seconds per sample for each phase (same batch: Nextflow 64,189 s and
-# post-processing 65,436 s for 133 samples).
-DEFAULT_PHASE_SECONDS_PER_SAMPLE = {"nextflow": 483.0, "postprocessing": 492.0}
+# Wall seconds per sample for each phase. Nextflow: 64,189 s / 133 NCKUH WES
+# samples. Post-processing took 65,436 s for that batch one sample at a time;
+# the batch implementation is expected to need a small fraction of that, so
+# this starts at an estimate and is learned from the first real job.
+DEFAULT_PHASE_SECONDS_PER_SAMPLE = {"nextflow": 483.0, "postprocessing": 90.0}
 
 # ---- small helpers ------------------------------------------------------
 
@@ -216,7 +225,7 @@ def phase_seconds_per_sample(profile: dict, kind: str, phase: str) -> float:
 
 
 def postprocessing_step_seconds(profile: dict, kind: str) -> dict[str, float]:
-    learned = (((profile.get("kinds") or {}).get(kind) or {}).get("postprocessing_steps") or {})
+    learned = (((profile.get("kinds") or {}).get(kind) or {}).get("postprocessing_batch_steps") or {})
     out = dict(DEFAULT_POSTPROCESSING_STEP_SECONDS)
     for step, seconds in learned.items():
         try:
@@ -267,7 +276,7 @@ def update_profile(
             if seconds and seconds / sample_count >= 1.0:
                 phases[phase] = round(_ema(phases.get(phase), seconds / sample_count), 2)
     if step_seconds:
-        steps = entry.setdefault("postprocessing_steps", {})
+        steps = entry.setdefault("postprocessing_batch_steps", {})
         for step, values in step_seconds.items():
             if values:
                 steps[step] = round(_ema(steps.get(step), sum(values) / len(values)), 2)
@@ -515,17 +524,23 @@ class NextflowProgress:
 
 @dataclass
 class PostprocessingProgress:
-    """Sample-by-sample post-processing progress weighted by step time."""
+    """Batch post-processing progress weighted by expected step time.
 
-    sample_kinds: list[str]
+    ``chunks`` holds the sample kinds of each chunk run by one orchestrator
+    call. Batch-wide steps (``[post-processing-step]`` markers) cost their
+    per-sample estimate times the chunk size; sample steps
+    (``[sample-step] … sample=SID``) may run in parallel and are credited per
+    sample. ``step_seconds`` collects learned per-sample seconds.
+    """
+
+    chunks: list[list[str]]
     profile: dict
     research_only: bool = False
     dragen: bool = False
-    _index: int = 0
-    _step: str | None = None
-    _step_started: float | None = None
-    _done_steps: list[str] = field(default_factory=list)
     step_seconds: dict[str, list[float]] = field(default_factory=dict)
+    _chunk: int = 0
+    _done: float = 0.0
+    _running: dict[tuple[str, str], float] = field(default_factory=dict)
     _lock: threading.RLock = field(default_factory=threading.RLock)
 
     def _weights(self, kind: str) -> dict[str, float]:
@@ -536,44 +551,62 @@ class PostprocessingProgress:
             weights.pop("cnv-rescue", None)
         return weights
 
-    def start_sample(self, index: int) -> None:
-        with self._lock:
-            self._index = index
-            self._step = None
-            self._step_started = None
-            self._done_steps = []
+    def _chunk_weights(self, index: int) -> dict[str, float]:
+        """Summed per-step seconds for every sample of one chunk."""
+        total: dict[str, float] = {}
+        for kind in self.chunks[index] if index < len(self.chunks) else []:
+            for step, seconds in self._weights(kind).items():
+                total[step] = total.get(step, 0.0) + seconds
+        return total
 
-    def on_marker(self, step: str, state: str, elapsed: float | None = None, now: float | None = None) -> None:
+    def _total(self) -> float:
+        return sum(sum(self._chunk_weights(i).values()) for i in range(len(self.chunks))) or 1.0
+
+    def start_chunk(self, index: int) -> None:
+        with self._lock:
+            self._chunk = index
+            self._running.clear()
+
+    def finish_chunk(self, index: int) -> None:
+        """Credit whatever a chunk did not report (skipped/absent steps)."""
+        with self._lock:
+            before = sum(sum(self._chunk_weights(i).values()) for i in range(index + 1))
+            self._done = max(self._done, before)
+            self._running.clear()
+
+    def on_marker(self, step: str, state: str, elapsed: float | None = None,
+                  sample: str | None = None, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
         with self._lock:
+            key = (step, sample or "")
+            chunk = self._chunk_weights(self._chunk)
+            size = max(1, len(self.chunks[self._chunk]) if self._chunk < len(self.chunks) else 1)
             if state == "start":
-                self._step = step
-                self._step_started = now
-            elif state == "done":
-                if elapsed is None and self._step == step and self._step_started is not None:
-                    elapsed = now - self._step_started
+                self._running[key] = now
+                return
+            started = self._running.pop(key, None)
+            if elapsed is None and started is not None:
+                elapsed = now - started
+            if sample:
+                self._done += chunk.get(step, 0.0) / size
                 if elapsed is not None:
                     self.step_seconds.setdefault(step, []).append(float(elapsed))
-                if step not in self._done_steps:
-                    self._done_steps.append(step)
-                if self._step == step:
-                    self._step = None
-                    self._step_started = None
+            else:
+                self._done += chunk.get(step, 0.0)
+                if elapsed is not None:
+                    self.step_seconds.setdefault(step, []).append(float(elapsed) / size)
 
     def fraction(self, now: float | None = None) -> float:
         now = time.monotonic() if now is None else now
         with self._lock:
-            total_samples = max(1, len(self.sample_kinds))
-            kind = self.sample_kinds[min(self._index, total_samples - 1)] if self.sample_kinds else ""
-            weights = self._weights(kind)
-            total = sum(weights.values()) or 1.0
-            done = sum(weights.get(step, 0.0) for step in self._done_steps)
-            if self._step and self._step_started is not None:
-                expected = weights.get(self._step, 0.0)
+            chunk = self._chunk_weights(self._chunk)
+            size = max(1, len(self.chunks[self._chunk]) if self._chunk < len(self.chunks) else 1)
+            done = self._done
+            for (step, sample), started in self._running.items():
+                expected = chunk.get(step, 0.0) / (size if sample else 1)
                 if expected > 0:
-                    done += min(RUNNING_CREDIT_CAP, (now - self._step_started) / expected) * expected
-            within = max(0.0, min(1.0, done / total))
-            return max(0.0, min(1.0, (self._index + within) / total_samples))
+                    done += min(RUNNING_CREDIT_CAP, (now - started) / expected) * expected
+            return max(0.0, min(1.0, done / self._total()))
 
 
 # ---- ticker -------------------------------------------------------------

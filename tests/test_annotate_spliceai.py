@@ -70,3 +70,46 @@ def test_spliceai_sites_use_final_review_predicate_including_clinvar_change(tmp_
         if not line.startswith("#")
     ]
     assert [line.split("\t")[1] for line in records] == ["10", "30", "40"]
+
+
+def test_batch_runs_vep_once_on_union_and_matches_single_runs(tmp_path, monkeypatch):
+    import argparse
+    import json
+    fields = ["CHROM", "POS", "REF", "ALT", "GNOMAD_G_AF", "DP", "CLINVAR_SIG", "CLINVAR_CHANGE"]
+    samples = {"S1": [["chr1", "10", "A", "G"], ["chr1", "20", "C", "T"]],
+               "S2": [["chr1", "10", "A", "G"], ["chr2", "5", "G", "A"]]}
+    vep_runs = []
+
+    def fake_vep(_args, sites, vep_out):
+        records = [l.split("\t")[:5] for l in sites.read_text().splitlines() if not l.startswith("#")]
+        vep_runs.append([r[1] for r in records])
+        header = ("##fileformat=VCFv4.2\n##INFO=<ID=CSQ,Number=.,Type=String,Description=\"Format: "
+                  "Allele|PICK|SpliceAI_pred_DS_AG|SpliceAI_pred_DS_AL|SpliceAI_pred_DS_DG|SpliceAI_pred_DS_DL\">\n"
+                  "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+        body = "".join(f"{c}\t{p}\t.\t{r}\t{a}\t.\t.\tCSQ={a}|1|0.{p}|0|0|0\n" for c, p, _i, r, a in records)
+        import gzip
+        with gzip.open(vep_out, "wt") as handle:
+            handle.write(header + body)
+
+    monkeypatch.setattr(spliceai, "run_vep", fake_vep)
+    single_dir, batch_dir = tmp_path / "single", tmp_path / "batch"
+    for directory in (single_dir, batch_dir):
+        directory.mkdir()
+        for sid, rows in samples.items():
+            with (directory / f"{sid}.tsv").open("w", newline="") as handle:
+                writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+                writer.writerow(fields)
+                writer.writerows([r + ["0.001", "30", "", ""] for r in rows])
+    args = argparse.Namespace(workdir=None)
+    for sid in samples:
+        path = single_dir / f"{sid}.tsv"
+        spliceai.annotate_items([{"in": path, "out": path, "test_type": "WES", "label": ""}], args, candidate_bed=None)
+    assert len(vep_runs) == 2
+    vep_runs.clear()
+    items = [{"in": batch_dir / f"{sid}.tsv", "out": batch_dir / f"{sid}.tsv", "test_type": "WES", "label": sid}
+             for sid in samples]
+    spliceai.annotate_items(items, args, candidate_bed=None)
+    assert vep_runs == [["10", "20", "5"]]  # one VEP run, union of unique sites
+    for sid in samples:
+        assert (batch_dir / f"{sid}.tsv").read_bytes() == (single_dir / f"{sid}.tsv").read_bytes()
+    assert "0.1000" in (batch_dir / "S2.tsv").read_text()

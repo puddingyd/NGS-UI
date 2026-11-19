@@ -346,3 +346,73 @@ def test_small_batch_api_first_then_db_and_cache_fallback(
     assert rows[1]["GENEBE_ACMG_CLASS"] == "Likely_pathogenic"
     assert rows[2]["GENEBE_ACMG_SCORE"] == "-2"
     assert len(list(pending.glob("*.tsv"))) == 1
+
+
+def _write_db_rows(path: Path, rows: list[str]) -> None:
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write("#chr\tpos\tref\talt\tacmg_classification\tacmg_score\tacmg_criteria\n")
+        for row in rows:
+            handle.write(row + "\n")
+
+
+def _sample_rows(positions):
+    return [{
+        "CHROM": "chr1", "POS": str(pos), "REF": "A", "ALT": "G", "CLINVAR_SIG": "",
+        "GNOMAD_G_AF": "0.2", "DP": "30", "ACMG_CLASS": "VUS",
+    } for pos in positions]
+
+
+def test_batch_manifest_matches_one_by_one_runs_with_a_single_lookup(tmp_path, monkeypatch):
+    db = tmp_path / "genebe_hg38.tsv.gz"
+    _write_db_rows(db, [
+        "chr1\t100\tA\tG\tLikely_benign\t-4\tBP4",
+        "chr1\t200\tA\tG\tLikely_pathogenic\t7\tPM2,PP3",
+        "chr1\t200\tA\tG\tPathogenic\t11\tPVS1",  # duplicate: last line wins
+        "chr1\t300\tA\tG\tVUS\t2\tPM2",
+    ])
+    inputs = {"S1": [100, 200, 999], "S2": [200, 300]}
+    single, batch = tmp_path / "single", tmp_path / "batch"
+    for directory in (single, batch):
+        directory.mkdir()
+        for sample, positions in inputs.items():
+            _write_tsv(directory / f"{sample}.tsv", _sample_rows(positions))
+    common = ["--genebe-db", str(db), "--skip-api", "--api-cache", str(tmp_path / "api.sqlite"),
+              "--sqlite-db", str(tmp_path / "genebe.sqlite")]
+    for sample in inputs:
+        monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--tsv", str(single / f"{sample}.tsv"), *common])
+        assert genebe.main() == 0
+    lookups = []
+    original = genebe.sqlite_lookup
+    monkeypatch.setattr(genebe, "sqlite_lookup", lambda path, wanted: lookups.append(set(wanted)) or original(path, wanted))
+    manifest = tmp_path / "batch.json"
+    manifest.write_text(json.dumps([
+        {"tsv": str(batch / f"{sample}.tsv"), "test_type": "WES", "sample": sample} for sample in inputs
+    ]))
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--batch-manifest", str(manifest), *common])
+    assert genebe.main() == 0
+    assert len(lookups) == 1 and lookups[0] == {f"chr1:{p}:A:G" for p in (100, 200, 300, 999)}
+    for sample in inputs:
+        assert (batch / f"{sample}.tsv").read_bytes() == (single / f"{sample}.tsv").read_bytes()
+    with (batch / "S1.tsv").open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert [r["GENEBE_ACMG_SCORE"] for r in rows] == ["-4", "11", ""]
+
+
+def test_sqlite_cache_is_without_rowid_and_v1_caches_stay_usable(tmp_path):
+    import sqlite3
+    db = tmp_path / "genebe_hg38.tsv.gz"
+    _write_db_rows(db, ["chr1\t100\tA\tG\tLikely_benign\t-4\tBP4", "chr2\t5\tC\tT\tVUS\t1\tPM2"])
+    idx = genebe.preflight_db(db)
+    cache = tmp_path / "genebe.sqlite"
+    assert genebe.ensure_sqlite_cache(db, cache, idx)[0] is True
+    with sqlite3.connect(cache) as conn:
+        ddl = conn.execute("SELECT sql FROM sqlite_master WHERE name='variants'").fetchone()[0]
+        assert "WITHOUT ROWID" in ddl
+        assert dict(conn.execute("SELECT key, value FROM meta"))["schema_version"] == "2"
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name LIKE '%raw%'").fetchall() == []
+    assert not list(tmp_path.glob("*.raw"))
+    assert genebe.sqlite_lookup(cache, {"chr1:100:A:G", "chr9:1:A:C"}) == {"chr1:100:A:G": ("-4", "BP4")}
+    # A cache built by the previous (rowid) schema is still current for the same DB.
+    with sqlite3.connect(cache) as conn:
+        conn.execute("UPDATE meta SET value='1' WHERE key='schema_version'")
+    assert genebe.ensure_sqlite_cache(db, cache, idx) == (False, "current")

@@ -745,3 +745,28 @@ def test_reproduces_missing_polars_stage_then_platform_refresh_without_db_change
     assert 'signature_diff=[{"field":"polars","before":"","after":' in capsys.readouterr().out
     after={str(p):(p.stat().st_mtime_ns,hashlib.sha256(p.read_bytes()).hexdigest()) for p in files if p.is_file()}
     assert after==before  # Database bytes AND timestamps unchanged throughout.
+
+
+def test_batch_prefetch_serves_review_builds_without_db_queries(tmp_path, dual_bundle, monkeypatch):
+    from app.services import gpn_prefetch
+    a, b = tmp_path / "a.tsv", tmp_path / "b.tsv"
+    write_tsv(a, [row(pos=10), row(pos=11)])
+    write_tsv(b, [row(pos=10), row(pos=13)])
+    monkeypatch.setattr(snv_review, "_candidate_bed_path", lambda: tmp_path / "no.bed")
+    prefetch = tmp_path / "prefetch.sqlite"
+    scans = []
+    original = gpn_star.query_scores_db
+    monkeypatch.setattr(gpn_star, "query_scores_db", lambda root, keys, model=gpn_star.MODEL:
+                        scans.append((model, set(keys))) or original(root, keys, model))
+    summary = gpn_prefetch.build_for_tsvs(prefetch, [(a, "WGS"), (b, "WGS")], msa_db=tmp_path / "no-msa",
+                                          star_dir=dual_bundle, research_only=True, log=lambda _m: None)
+    assert "error" in summary["gpn_msa"] and summary["gpn_star"] == {"keys": 3, "found": 2}
+    assert len(scans) == 2  # one shard scan per model for the union of both samples
+    expected = original(dual_bundle, {("1", 10, "A", "G"), ("1", 13, "A", "G")}, gpn_star.MODEL)
+    scans.clear()
+    monkeypatch.setenv(gpn_prefetch.ENV_VAR, str(prefetch))
+    assert gpn_star.query_scores(dual_bundle, {("1", 10, "A", "G"), ("1", 13, "A", "G")}) == expected
+    assert scans == []
+    # a key outside the prefetch still goes to the database
+    gpn_star.query_scores(dual_bundle, {("1", 12, "A", "G")})
+    assert scans == [(gpn_star.MODEL, {("1", 12, "A", "G")})]

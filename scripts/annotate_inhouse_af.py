@@ -256,27 +256,47 @@ def write_out(tsv: Path, header, nalts, hits, tmp_path: str) -> int:
     return n_hit
 
 
-def annotate(tsv: Path, db: str) -> int:
-    if not os.path.exists(db):
-        print(f"[inhouse-af] DB not found: {db} — skipping (no-op)", file=sys.stderr)
-        return 0
+def join_scan_values(keys, db: str) -> dict:
+    """One streaming pass over the sites VCF → {key: (AC, AN, AF)}.
 
+    Duplicate DB lines keep the last one, exactly like ``join_scan``."""
+    values = {}
+    fh, finish = open_db_text(db)
+    try:
+        for line in fh:
+            if not line or line[0] == "#":
+                continue
+            F = line.rstrip("\n").split("\t", 8)
+            if len(F) < 8:
+                continue
+            try:
+                k = (F[0], int(F[1]), F[3].upper(), F[4].upper())
+            except ValueError:
+                continue
+            if k in keys:
+                values[k] = info3(F[7])
+    finally:
+        finish()
+    return values
+
+
+def _prepare(tsv: Path):
     with open(tsv, "r", encoding="utf-8", newline="") as f:
         header = next(csv.reader(f, delimiter="\t"), None)
     if not header:
         print(f"[inhouse-af] empty TSV: {tsv}", file=sys.stderr)
-        return 0
+        return None
     cols = {name: i for i, name in enumerate(header)}
     missing = [c for c in ("CHROM", "POS", "REF", "ALT") if c not in cols]
     if missing:
         print(f"[inhouse-af] {tsv} has no {','.join(missing)} column — skipping",
               file=sys.stderr)
-        return 0
-
+        return None
     index, nalts = scan_keys(tsv, cols["CHROM"], cols["POS"], cols["REF"], cols["ALT"])
+    return header, index, nalts
 
-    hits = join_scan(index, db)
 
+def _write(tsv: Path, header, nalts, hits, label: str = "") -> None:
     fd, tmp_name = tempfile.mkstemp(dir=str(tsv.parent), prefix=tsv.name + ".", suffix=".tmp")
     os.close(fd)
     try:
@@ -288,8 +308,75 @@ def annotate(tsv: Path, db: str) -> int:
         except OSError:
             pass
         raise
+    tag = f"{label}: " if label else ""
+    print(f"[inhouse-af] {tag}{len(nalts)} variants, {n_hit} matched in-house AF DB")
 
-    print(f"[inhouse-af] {len(nalts)} variants, {n_hit} matched in-house AF DB")
+
+def annotate(tsv: Path, db: str) -> int:
+    return annotate_many([(tsv, "")], db)
+
+
+def annotate_many(items, db: str, *, max_keys: int | None = None, workers: int = 1) -> int:
+    """Annotate several TSVs with one DB pass per chunk of samples.
+
+    ``items`` are ``(tsv_path, label)``. TSVs are grouped until their key
+    indexes reach ``max_keys`` (memory bound; env
+    ``NGS_UI_POSTPROC_BATCH_MAX_KEYS``, default 8M), then the ~57M-line sites
+    VCF is streamed once for the whole group instead of once per sample.
+    With ``workers`` > 1 the per-TSV indexing and rewriting run in forked
+    worker processes (``workers`` TSVs are indexed at a time).
+    """
+    if not os.path.exists(db):
+        print(f"[inhouse-af] DB not found: {db} — skipping (no-op)", file=sys.stderr)
+        return 0
+    if max_keys is None:
+        try:
+            max_keys = int(os.environ.get("NGS_UI_POSTPROC_BATCH_MAX_KEYS", "8000000"))
+        except ValueError:
+            max_keys = 8_000_000
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+    from app.services.parallel_tsv import fork_map  # noqa: PLC0415
+
+    pending: list[tuple[Path, str, tuple]] = []
+    pending_keys = 0
+
+    def flush() -> None:
+        nonlocal pending_keys
+        if not pending:
+            return
+        union = set()
+        for _tsv, _label, (_header, index, _nalts) in pending:
+            union.update(index)
+        if len(pending) > 1:
+            print(f"[inhouse-af] scanning DB once for {len(pending)} TSVs ({len(union)} unique keys)",
+                  file=sys.stderr)
+        values = join_scan_values(union, db)
+
+        def write_one(entry) -> None:
+            tsv, label, (header, index, nalts) = entry
+            hits = {}
+            for k in index:
+                val = values.get(k)
+                if val is not None:
+                    _spread(index, k, val, hits)
+            _write(tsv, header, nalts, hits, label)
+
+        fork_map(write_one, pending, workers)
+        pending.clear()
+        pending_keys = 0
+
+    items = [(Path(tsv), label) for tsv, label in items]
+    wave = max(1, int(workers))
+    for start in range(0, len(items), wave):
+        group = items[start:start + wave]
+        for (tsv, label), prepared in zip(group, fork_map(lambda item: _prepare(item[0]), group, workers)):
+            if prepared is None:
+                continue
+            if pending and pending_keys + len(prepared[1]) > max_keys:
+                flush()
+            pending.append((tsv, label, prepared))
+            pending_keys += len(prepared[1])
+    flush()
     return 0
 
 
@@ -395,6 +482,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tsv", type=Path, help="snv_indel.annotated.tsv to annotate in place")
+    ap.add_argument("--batch-manifest", type=Path,
+                    help="JSON list of {tsv, sample}: one DB scan per chunk of TSVs")
     ap.add_argument("--db", default=DEFAULT_DB, help=f"in-house AF sites VCF (default {DEFAULT_DB})")
     ap.add_argument("--no-cache", action="store_true",
                     help="skip the SQLite lookup index and stream the DB instead "
@@ -404,6 +493,15 @@ def main() -> int:
     csv.field_size_limit(_CSV_MAX)
     if args.selftest:
         return selftest()
+    if args.batch_manifest:
+        import json
+        raw = json.loads(args.batch_manifest.read_text(encoding="utf-8"))
+        entries = raw.get("samples", raw) if isinstance(raw, dict) else raw
+        items = [(Path(e["tsv"]), str(e.get("sample") or "")) for e in entries]
+        for tsv, _label in items:
+            if not tsv.is_file():
+                raise SystemExit(f"--tsv not found: {tsv}")
+        return annotate_many(items, args.db)
     if not args.tsv:
         ap.error("--tsv required (or --selftest)")
     if not args.tsv.is_file():

@@ -1513,6 +1513,40 @@ def _record_gpn_completion(job_id: str, sample_id: str, post_dir: Path, research
         _log('[gpn-warning] '+warning)
 
 
+_POSTPROC_MARKER_RE = re.compile(
+    r"\[(post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+(start|done)"
+    r"(?:\s+sample=(\S+))?(?:.*?elapsed=([\d.]+)s)?"
+)
+
+
+def _postprocessing_chunks(samples: list[dict], raw_tsv_by_sid: dict[str, Path]) -> list[list[dict]]:
+    """Group samples so one chunk's working TSVs fit the scratch budget.
+
+    Each chunk copies every member's raw TSV to a disposable working TSV and
+    keeps them until the chunk finishes. ``NGS_UI_POSTPROC_CHUNK_GB`` (default
+    40) bounds that; a WES batch normally fits in one chunk, large WGS TSVs
+    split into several. A sample larger than the budget gets its own chunk.
+    """
+    try:
+        budget = float(os.environ.get("NGS_UI_POSTPROC_CHUNK_GB", "40")) * 1024 ** 3
+    except ValueError:
+        budget = 40 * 1024 ** 3
+    chunks: list[list[dict]] = []
+    used = 0.0
+    for sample in samples:
+        try:
+            size = raw_tsv_by_sid[sample["sample_id"]].stat().st_size
+        except OSError:
+            size = 0
+        if chunks and used + size <= budget:
+            chunks[-1].append(sample)
+            used += size
+        else:
+            chunks.append([sample])
+            used = size
+    return chunks
+
+
 def _record_timing_profile(
     *,
     pipeline_type: str,
@@ -2102,11 +2136,18 @@ def main() -> int:
                 _log(f"[source] {sid}: use pipeline {kind.upper()} TSV directly ({annotsv_src})")
             _log(postprocessing_log.event(sid, 'prepare', 'done', elapsed=time.monotonic()-prepare_started))
 
-        # 5. Post-processing chain. ClinVar is compared against the weekly UI
-        # snapshot here; the fixed pipeline annotation remains immutable.
+        # 5. Post-processing chain, step by step for chunks of samples: each
+        # resource (GeneBe, SpliceAI/VEP, in-house AF, ClinVar, LitVar2, GIAB,
+        # MANE, GPN) is queried once per chunk instead of once per sample.
+        # ClinVar is compared against the weekly UI snapshot; the fixed
+        # pipeline annotation remains immutable.
         _set_step(job_id, "post-processing")
+        post_chunks = _postprocessing_chunks(samples, raw_tsv_by_sid)
         pp_progress = tertiary_progress.PostprocessingProgress(
-            sample_kinds=sample_kinds,
+            chunks=[
+                [tertiary_progress.kind_key(pipeline_type, s["seq_type"]) for s in chunk]
+                for chunk in post_chunks
+            ],
             profile=timing_profile,
             research_only=bool(args.research_only),
             dragen=(mode == "dragen"),
@@ -2115,99 +2156,111 @@ def main() -> int:
         def publish_postprocessing_progress() -> None:
             set_progress("postprocessing", pp_progress.fraction())
 
-        def track_post_processing(line: str) -> None:
-            match = re.search(
-                r"\[(post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+(start|done)"
-                r"(?:.*?elapsed=([\d.]+)s)?",
-                line,
-            )
+        def track_post_processing(line: str, sample: str | None = None) -> None:
+            match = _POSTPROC_MARKER_RE.search(line)
             if not match:
                 return
-            group_tag, step, marker, elapsed = match.groups()
-            pp_progress.on_marker(step, marker, float(elapsed) if elapsed else None)
+            group_tag, step, marker, marker_sample, elapsed = match.groups()
+            marker_sample = marker_sample or sample
+            pp_progress.on_marker(
+                step, marker, float(elapsed) if elapsed else None, sample=marker_sample,
+            )
             if marker == "start":
                 group = "post-processing" if group_tag == "post-processing-step" else "sample-step"
                 _set_step(job_id, f"{group}:{step}", log_transition=False)
             publish_postprocessing_progress()
 
         post_processing_count = len(samples)
+        post_log = TERTIARY_JOBS_DIR / job_id / "postprocessing.log"
         pp_ticker = tertiary_progress.Ticker(publish_postprocessing_progress).start()
-        for post_processing_index, sample in enumerate(samples):
-            sid = sample["sample_id"]
-            pp_progress.start_sample(post_processing_index)
-            publish_postprocessing_progress()
+        done_before_chunk = 0
+        for chunk_index, chunk in enumerate(post_chunks):
+            pp_progress.start_chunk(chunk_index)
+            chunk_ids = [sample["sample_id"] for sample in chunk]
             _update(
                 job_id,
-                post_processing_sample_index=post_processing_index,
+                post_processing_sample_index=done_before_chunk,
                 post_processing_sample_count=post_processing_count,
-                post_processing_sample_id=sid,
+                post_processing_sample_id=",".join(chunk_ids),
+                post_processing_chunk_index=chunk_index,
+                post_processing_chunk_count=len(post_chunks),
                 # Backward-compatible keys for older frontends/state readers.
-                stopgap_sample_index=post_processing_index,
+                stopgap_sample_index=done_before_chunk,
                 stopgap_sample_count=post_processing_count,
-                stopgap_sample_id=sid,
+                stopgap_sample_id=",".join(chunk_ids),
             )
-            raw_tsv = raw_tsv_by_sid[sid]
-            staged_sample_dir = staged_sample_dir_by_sid[sid]
-            post_dir = staged_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
-            for stale_work in post_dir.glob(".snv_indel.*.working.tsv"):
-                stale_work.unlink(missing_ok=True)
-            work_tsv = post_dir / f".snv_indel.{job_id}.working.tsv"
+            entries = []
+            work_tsvs: list[Path] = []
+            for sample in chunk:
+                sid = sample["sample_id"]
+                post_dir = staged_sample_dir_by_sid[sid] / sample_layout.POSTPROCESSING_DIRNAME
+                for stale_work in post_dir.glob(".snv_indel.*.working.tsv"):
+                    stale_work.unlink(missing_ok=True)
+                work_tsv = post_dir / f".snv_indel.{job_id}.working.tsv"
+                work_tsvs.append(work_tsv)
+                entries.append({
+                    "sample": sid,
+                    "work_tsv": str(work_tsv),
+                    "raw_tsv": str(raw_tsv_by_sid[sid]),
+                    "post_dir": str(post_dir),
+                    "seq_type": sample["seq_type"],
+                })
             previous_sigterm = signal.getsignal(signal.SIGTERM)
 
-            def cleanup_work_on_sigterm(_signum, _frame):
-                work_tsv.unlink(missing_ok=True)
+            def cleanup_work_on_sigterm(_signum, _frame, work_tsvs=work_tsvs):
+                for path in work_tsvs:
+                    path.unlink(missing_ok=True)
                 raise SystemExit(143)
 
             signal.signal(signal.SIGTERM, cleanup_work_on_sigterm)
+            chunk_manifest = TERTIARY_JOBS_DIR / job_id / f"postprocessing-chunk-{chunk_index + 1}.json"
             try:
-                shutil.copyfile(raw_tsv, work_tsv)
-            except BaseException:
-                work_tsv.unlink(missing_ok=True)
-                signal.signal(signal.SIGTERM, previous_sigterm)
-                raise
-            stop_args = [str(scripts / "run_stopgaps.sh"),
-                         "--work-tsv", str(work_tsv),
-                         "--raw-tsv", str(raw_tsv),
-                         "--post-dir", str(post_dir),
-                         "--sample", sid,
-                         "--seq-type", sample["seq_type"]]
-            if args.research_only:
-                stop_args.append("--research-only")
-            else:
-                stop_args.append("--skip-spliceai")
-            display_stop_args = [
-                "post-processing",
-                "--raw-tsv", str(raw_tsv),
-                "--post-dir", str(post_dir),
-                "--sample", sid,
-                "--seq-type", sample["seq_type"],
-            ]
-            if "--research-only" in stop_args:
-                display_stop_args.append("--research-only")
-            if "--skip-spliceai" in stop_args:
-                display_stop_args.append("--skip-spliceai")
-            try:
+                for entry in entries:
+                    shutil.copyfile(entry["raw_tsv"], entry["work_tsv"])
+                chunk_manifest.write_text(
+                    json.dumps({"samples": entries}, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                post_args = [sys.executable, str(scripts / "postprocess_batch.py"),
+                             "--manifest", str(chunk_manifest), "--raw-log", str(post_log)]
+                post_args.append("--research-only" if args.research_only else "--skip-spliceai")
+                label = (
+                    f"batch {chunk_index + 1}/{len(post_chunks)} ({len(chunk)} samples)"
+                    if len(chunk) > 1 or len(post_chunks) > 1 else chunk_ids[0]
+                )
+                _log(f"[post-processing] chunk {chunk_index + 1}/{len(post_chunks)}: {', '.join(chunk_ids)}")
                 _run(
-                    stop_args,
-                    label=f"post-processing {sid}",
+                    post_args,
+                    label=f"post-processing {label}",
                     on_line=track_post_processing,
-                    display_cmd=display_stop_args,
-                    post_sample=sid, raw_log=TERTIARY_JOBS_DIR/job_id/'postprocessing.log',
+                    display_cmd=["post-processing", "--manifest", str(chunk_manifest),
+                                 *post_args[-1:]],
+                    post_sample=label, raw_log=post_log,
                 )
-                _record_gpn_completion(job_id, sid, post_dir, bool(args.research_only))
-                _run_cnv_rescue_for_sample(
-                    mode=mode, sample=sample, base_tsv=pipeline_cnv_by_sid[sid],
-                    post_dir=post_dir, scripts=scripts, on_line=track_post_processing, job_id=job_id,
-                )
-                sample_layout.write_layout_marker_in_sample_dir(
-                    staged_sample_dir,
-                    sid,
-                    source_id=sample["source_sample_id"],
-                    raw_tsv=raw_tsv,
-                )
+                for sample in chunk:
+                    sid = sample["sample_id"]
+                    staged_sample_dir = staged_sample_dir_by_sid[sid]
+                    post_dir = staged_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
+                    _record_gpn_completion(job_id, sid, post_dir, bool(args.research_only))
+                    _run_cnv_rescue_for_sample(
+                        mode=mode, sample=sample, base_tsv=pipeline_cnv_by_sid[sid],
+                        post_dir=post_dir, scripts=scripts, job_id=job_id,
+                        # cnv-rescue runs per sample; tag its markers for progress.
+                        on_line=lambda line, sid=sid: track_post_processing(line, sample=sid),
+                    )
+                    sample_layout.write_layout_marker_in_sample_dir(
+                        staged_sample_dir,
+                        sid,
+                        source_id=sample["source_sample_id"],
+                        raw_tsv=raw_tsv_by_sid[sid],
+                    )
             finally:
-                work_tsv.unlink(missing_ok=True)
+                for path in work_tsvs:
+                    path.unlink(missing_ok=True)
                 signal.signal(signal.SIGTERM, previous_sigterm)
+            pp_progress.finish_chunk(chunk_index)
+            done_before_chunk += len(chunk)
+            publish_postprocessing_progress()
 
         pp_ticker.stop()
         pp_ticker = None

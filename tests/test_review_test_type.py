@@ -73,10 +73,12 @@ def test_manifest_records_titan_wgs_and_keeps_low_dp_rows(tmp_path, monkeypatch)
 
 
 def test_run_stopgaps_passes_sample_to_review_builder():
-    script = (SCRIPT.parent / "run_stopgaps.sh").read_text(encoding="utf-8")
-    call = script[script.index('"$SCRIPT_DIR/build_snv_review_tsv.py"'):]
-    call = call[:call.index("step_done")]
-    assert '--sample "$SID"' in call
+    wrapper = (SCRIPT.parent / "run_stopgaps.sh").read_text(encoding="utf-8")
+    assert "postprocess_batch.py" in wrapper
+    script = (SCRIPT.parent / "postprocess_batch.py").read_text(encoding="utf-8")
+    call = script[script.index('"build_snv_review_tsv.py"'):]
+    call = call[:call.index("*gpn_args]")]
+    assert '"--sample", sid' in call and '"--test-type", s["seq"]' in call
 
 
 @pytest.mark.parametrize('built_type,loaded_type', [

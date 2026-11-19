@@ -173,14 +173,21 @@ def load_manifest(strat_dir: Path, manifest_path: Path | None) -> list[dict]:
 
 
 def annotate(tsv: Path, strat_dir: Path, manifest_path: Path | None, column: str) -> None:
+    beds = load_strata(strat_dir, manifest_path)
+    if beds:
+        annotate_with(tsv, beds, column)
+
+
+def load_strata(strat_dir: Path, manifest_path: Path | None) -> list[tuple[str, BedIndex]]:
+    """Load every stratum BED once (reused for each TSV of a batch)."""
     if not strat_dir.is_dir():
         print(f"[giab-strata] dir not found: {strat_dir} — skipping", file=sys.stderr)
-        return
+        return []
 
     entries = load_manifest(strat_dir, manifest_path)
     if not entries:
         print(f"[giab-strata] no BEDs found under {strat_dir} — skipping", file=sys.stderr)
-        return
+        return []
 
     # Load every BED once. Preserve manifest order for deterministic output.
     beds: list[tuple[str, BedIndex]] = []
@@ -199,8 +206,10 @@ def annotate(tsv: Path, strat_dir: Path, manifest_path: Path | None, column: str
 
     if not beds:
         print(f"[giab-strata] no loadable BEDs under {strat_dir} — skipping", file=sys.stderr)
-        return
+    return beds
 
+
+def annotate_with(tsv: Path, beds: list[tuple[str, BedIndex]], column: str) -> None:
     with open(tsv, "r", encoding="utf-8", newline="") as fi:
         reader = csv.DictReader(fi, delimiter="\t")
         fieldnames = list(reader.fieldnames or [])

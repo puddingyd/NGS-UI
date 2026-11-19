@@ -466,6 +466,8 @@ PYTHONPATH=backend python scripts/migrate_tertiary_output_layout.py --all --appl
 
 三級分析進度條為時間加權：Nextflow 以 `-ansi-log false -with-trace` 執行，worker 依 task 送出（純文字 stdout，完整 process 名稱）與完成（`data/jobs/tertiary/{job}/trace.txt`）以及每個 process 的預估秒數計算進度，執行中的 task 依已執行時間給部分分數；post-processing 依各子步驟的預估秒數推進。Nextflow 與 post-processing 佔整條進度的比例由每 sample 的實際 wall time 決定，每次成功 job 後自動以 EMA 更新 `data/jobs/tertiary/_timing_profile.json`（依 `pipeline_type:seq_type` 分開；沒有紀錄時用 133 例 NCKUH WES 實測預設）。進度面板另顯示預估剩餘時間，且百分比單調不倒退。（舊版解析 Nextflow ANSI 畫面時，長 process 名稱被左截，VEP / Pangolin / PARSE_CSQ 從未計入，造成跑 VEP 時停在約 16%、Nextflow 結束才跳到 82%。）
 
+三級 post-processing 以整批、逐步驟方式執行（`scripts/postprocess_batch.py`；`scripts/run_stopgaps.sh` 為單一 sample wrapper）：同一批 sample 的 GeneBe、SpliceAI/VEP、院內 AF、ClinVar 最新版、LitVar2、GIAB、MANE 與 GPN-MSA/GPN-Star 都只查一次，再平行寫回各 sample（`NGS_UI_POSTPROC_WORKERS`，預設 min(8, CPU)），review TSV／overlay／gene index 也逐 sample 平行建立。結果與逐一 sample 執行完全相同，但不再對每個 sample 重複讀大型資料庫（原本 133 例 WES 需約 18 小時）。working TSV 依 `NGS_UI_POSTPROC_CHUNK_GB`（預設 40 GiB）分批。GeneBe 本機 SQLite cache 新版為 `WITHOUT ROWID`，既有 cache 仍可用；可於離峰執行 `python scripts/annotate_acmg_genebe.py --rebuild-sqlite` 升級。
+
 CNV／SV 四個分頁（Clinical／Pathogenic）皆支援影響類型勾選，適用 DRAGEN／NCKUH、WGS／WES：預設顯示「外顯子／剪接影響」和「位置註解不足」，勾選可擴大顯示。篩選列採單行半透明底色，以英文 Exonic / splicing、Only UTR / intronic、Insufficient annotation 顯示各類別數／總數，不另設標題、按鈕或說明列。Clinical 依命中 HPO／panel 的基因分類，Pathogenic 依所有基因；Clinical 的 P／LP 保持可見；Pathogenic 則實際套用勾選篩選，兩區都保留已標記 1／2／C 的事件。分析排序依 P／LP、影響類型、獨立 HPO 符合度、方向一致的 dosage 證據與 AnnotSV 原始分數；卡片列出英文影響類別、臨床相關基因與英文括號描述，以及 HPO match 分數 / 100。這些選項只控制分析畫面，保留原始事件、ACMG、Clinical／Pathogenic 分類與報告選取。缺少必要註解，或 INV／BND 等無法從區間判斷斷點影響時，保留在位置註解不足。更新服務並重新載入個案即可使用，無須為此重跑三級分析。
 
 DOCX CNV/SV 表格的「變異位置」欄使用 buffered wrap，內容寬度比欄寬少一格，避免座標字串貼到後面的欄位。

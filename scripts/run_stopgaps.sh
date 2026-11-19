@@ -1,359 +1,55 @@
 #!/usr/bin/env bash
 # =========================================================
-# run_stopgaps.sh — one-shot post-processing annotation chain
+# run_stopgaps.sh — one-sample post-processing (thin wrapper)
 # =========================================================
-# Runs every post-processing step on a disposable working TSV. The immutable
-# pipeline TSV remains under 03_acmg; only sparse/derived artifacts persist.
+# Runs the tertiary post-processing chain on a disposable working TSV. The
+# immutable pipeline TSV remains under 03_acmg; only sparse/derived
+# artifacts persist. All logic lives in scripts/postprocess_batch.py, which
+# the tertiary worker also uses for whole batches (one DB pass per resource
+# for every sample); this wrapper is the same code path with one sample.
 #
-#   1. annotate_clinvar_latest.py — compare fixed Nextflow ClinVar against the
-#                                  weekly local ClinVar snapshot for UI only
-#   2. annotate_acmg_genebe.py  — write SECOND-opinion ACMG to GENEBE_*
-#                                  columns via local DB first, then query
-#                                  review-filtered DB misses through the live
-#                                  API when credentials/SIF are configured;
-#                                  pipeline's ACMG_* stay untouched
-#   3. annotate_spliceai.py     — add only SpliceAI (dbNSFP stays in Nextflow)
-#   4. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
-#   5. annotate_litvar2.py   — local bulk SQLite lookup for review candidates
-#   6. build_snv_annotation_overlay.py — persist sparse field differences
-#   7. build_snv_review_tsv.py — materialise final review rows and join the
-#                                  GPN-MSA + Research-only GPN-Star scores
-#      build_snv_gene_index.py
+#   1. clinvar-latest  annotate_clinvar_latest.py — weekly ClinVar comparison
+#                      (UI only; the fixed pipeline ClinVar stays untouched)
+#   2. genebe          annotate_acmg_genebe.py — SECOND-opinion ACMG to
+#                      GENEBE_* (local DB → API cache → review-filtered API)
+#   3. spliceai        annotate_spliceai.py — SpliceAI only (Research-only;
+#                      dbNSFP stays in Nextflow)
+#   3b. giab-strata    annotate_giab_strata.py
+#   3b2. inhouse-af    annotate_inhouse_af.py
+#   3c. mane-refseq    annotate_mane_refseq.py
+#   4. litvar2         annotate_litvar2.py (review candidates only)
+#   5. gpn-prefetch    GPN-MSA (+ Research-only GPN-Star V/M) review keys
+#   6. snv-overlay → review-tsv → gene-index (sample steps)
 #
-# (ClinVar annotation was a compatibility step before the new pipeline shipped
-#  CLINVAR_SIG / STARS / DN / SIGCONF / VARIATION_ID natively. The
-#  pipeline now owns it; the legacy annotate_clinvar.py is left on
-#  disk for emergencies.)
-#
-# All steps are idempotent fill-or-augment. CNV/SV AnnotSV output is owned by
-# the Nextflow pipeline (06_cnv_sv/); the worker refuses to post-process a
-# sample whose pipeline CNV/SV TSVs are missing, so there is no local AnnotSV
-# fallback here.
+# CNV/SV AnnotSV output is owned by the Nextflow pipeline (06_cnv_sv/); the
+# worker refuses to post-process a sample whose pipeline CNV/SV TSVs are
+# missing, so there is no local AnnotSV fallback here.
 #
 # Usage:
-#   scripts/run_stopgaps.sh \\
-#       --tsv tertiary_output/<SID>/<SID>.snv_indel.annotated.tsv \\
-#       [--sample SID] [--seq-type WES|WGS]
+#   scripts/run_stopgaps.sh \
+#       --work-tsv <post_dir>/.snv_indel.<job>.working.tsv \
+#       --raw-tsv  <sample>/03_acmg/<SRC>.snv_indel.acmg.tsv \
+#       --post-dir <sample>/08_postprocessing \
+#       [--sample SID] [--seq-type WES|WGS] [--research-only]
 #
-# Env / flags:
-#   NGS_UI_GENEBE_DB / --genebe-db     — local GeneBe DB for step 2
-#                                         (default $HOME/NGS_UI/biotools/
-#                                         genebe/genebe_hg38.tsv.gz); builds
-#                                         genebe_hg38.sqlite lazily.
-#                                         --skip-genebe to disable.
-#   GENEBE_USER / GENEBE_API_KEY / GENEBE_SIF
-#                                      — optional live fallback; only DB misses
-#                                        retained by the review TSV filter are
-#                                        submitted. Results are cached and
-#                                        saved as import-ready seven-column TSV.
-#   NGS_UI_CDS_CANDIDATE_BED           — optional, default
-#                                         $HOME/NGS_UI/biotools/cds_combined.bed
-#   --spliceai-snv / --spliceai-indel  — required when Research-only is on; default
-#                                         $HOME/NGS_UI/biotools/spliceai/...
-#   NGS_UI_CLINVAR_LATEST_DB / --clinvar-latest-db
-#                                      — weekly ClinVar SQLite snapshot for UI
-#                                        comparison; missing DB is a safe no-op
-#   --candidate-bed / --skip-candidate-bed
-#                                      — restrict GeneBe/SpliceAI candidates
-#   --skip-spliceai / --skip-extra-vep — disable SpliceAI (legacy alias kept)
-#   --skip-clinvar-latest              — disable weekly ClinVar comparison
-#   NGS_UI_MANE_SUMMARY / --mane-summary
-#                                      — MANE summary for RefSeq mapping
-#   --skip-mane-refseq                 — disable Ensembl→RefSeq mapping
-#   NGS_UI_LITVAR2_DB / --litvar2-db   — local bulk LitVar2 SQLite
-#   --skip-litvar2                     — disable local literature annotation
-#   NGS_UI_GPN_MSA_DB / --gpn-msa-db   — fixed BGZF/TBI, every case
-#   --research-only                   — also annotate GPN-Star
-#   NGS_UI_GPN_STAR_DIR / --gpn-star-dir — canonical Parquet bundle
-#   NGS_UI_PYTHON_BIN                  — explicit review Python (set by worker)
-#   Both GPN predictors are best-effort; missing resources only warn.
+# Resource flags (same names/defaults as before; env in parentheses):
+#   --genebe-db (NGS_UI_GENEBE_DB) / --skip-genebe
+#   --clinvar-latest-db (NGS_UI_CLINVAR_LATEST_DB) / --skip-clinvar-latest
+#   --spliceai-snv / --spliceai-indel / --skip-spliceai (--skip-extra-vep)
+#   --candidate-bed (NGS_UI_CDS_CANDIDATE_BED) / --skip-candidate-bed
+#   --giab-strat-dir (NGS_UI_GIAB_STRAT_DIR) / --skip-giab
+#   --inhouse-af-db (NGS_UI_INHOUSE_AF_DB) / --skip-inhouse-af
+#   --mane-summary (NGS_UI_MANE_SUMMARY) / --skip-mane-refseq
+#   --litvar2-db (NGS_UI_LITVAR2_DB) / --skip-litvar2
+#   --gpn-msa-db (NGS_UI_GPN_MSA_DB) / --gpn-star-dir (NGS_UI_GPN_STAR_DIR)
+#   NGS_UI_PYTHON_BIN — interpreter with the worker's dependencies (Polars)
+#   NGS_UI_POSTPROC_WORKERS — parallel sample steps (batch use)
 # =========================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-timestamp() { TZ=Asia/Taipei date +"%Y-%m-%dT%H:%M:%S+08:00"; }
-step_start() {
-  STOPGAP_STEP="$1"
-  STOPGAP_MARKER="${2:-post-processing-step}"
-  STOPGAP_STEP_STARTED="$(date +%s)"
-  echo "[$(timestamp)] [$STOPGAP_MARKER] $STOPGAP_STEP start"
-}
-step_done() {
-  local ended
-  ended="$(date +%s)"
-  echo "[$(timestamp)] [$STOPGAP_MARKER] $STOPGAP_STEP done elapsed=$((ended - STOPGAP_STEP_STARTED))s"
-}
-run_silent_step() {
-  local label="$1"
-  shift
-  local tmp_log
-  tmp_log="$(mktemp "${TMPDIR:-/tmp}/ngs-${label}.XXXXXX.log")"
-  if ! "$@" >"$tmp_log" 2>&1; then
-    cat "$tmp_log" >&2
-    rm -f "$tmp_log"
-    exit 1
-  fi
-  rm -f "$tmp_log"
-}
-
-TSV=""
-RAW_TSV=""
-POST_DIR=""
-SID=""
-SKIP_SPLICEAI=0
-RESEARCH_ONLY=0
-REVIEW_PYTHON="${NGS_UI_PYTHON_BIN:-python3}"
-SKIP_CANDIDATE_BED=0
-SKIP_CLINVAR_LATEST=0
-SKIP_GIAB=0
-SKIP_GENEBE=0
-SKIP_MANE_REFSEQ=0
-SKIP_INHOUSE_AF=0
-SKIP_LITVAR2=0
-SEQ_TYPE="${SEQ_TYPE:-WES}"
-NGS_HOME_DEFAULT="${NGS_UI_HOME:-$HOME/NGS_UI}"
-GENEBE_DB="${NGS_UI_GENEBE_DB:-$NGS_HOME_DEFAULT/biotools/genebe/genebe_hg38.tsv.gz}"
-MANE_SUMMARY="${NGS_UI_MANE_SUMMARY:-$NGS_HOME_DEFAULT/biotools/MANE.GRCh38.v1.5.summary.txt.gz}"
-GIAB_STRAT_DIR="${NGS_UI_GIAB_STRAT_DIR:-}"
-INHOUSE_AF_DB="${NGS_UI_INHOUSE_AF_DB:-$NGS_HOME_DEFAULT/biotools/inhouse_af/inhouse_af.hg38.vcf.gz}"
-LITVAR2_DB="${NGS_UI_LITVAR2_DB:-$NGS_HOME_DEFAULT/biotools/litvar2/litvar2.sqlite}"
-GPN_MSA_DB="${NGS_UI_GPN_MSA_DB:-$NGS_HOME_DEFAULT/biotools/gpn_msa/scores.tsv.bgz}"
-GPN_STAR_DIR="${NGS_UI_GPN_STAR_DIR:-$NGS_HOME_DEFAULT/biotools/gpn_star}"
-CLINVAR_LATEST_DB="${NGS_UI_CLINVAR_LATEST_DB:-$NGS_HOME_DEFAULT/biotools/clinvar_latest/clinvar_latest.sqlite}"
-# Keep the established production SpliceAI paths. On n102968 these resolve to
-# /home/n102968/NGS_UI/biotools/spliceai/...; do not point runtime at a desktop
-# /Volumes mount.
-SPLICEAI_SNV="$NGS_HOME_DEFAULT/biotools/spliceai/spliceai_scores.raw.snv.hg38.vcf.gz"
-SPLICEAI_INDEL="$NGS_HOME_DEFAULT/biotools/spliceai/spliceai_scores.raw.indel.hg38.vcf.gz"
-CANDIDATE_BED="${NGS_UI_CDS_CANDIDATE_BED:-$NGS_HOME_DEFAULT/biotools/cds_combined.bed}"
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --tsv|--work-tsv)     TSV="$2"; shift 2;;
-    --raw-tsv)            RAW_TSV="$2"; shift 2;;
-    --post-dir)           POST_DIR="$2"; shift 2;;
-    --sample)             SID="$2"; shift 2;;
-    --seq-type)           SEQ_TYPE="$2"; shift 2;;
-    --spliceai-snv)       SPLICEAI_SNV="$2"; shift 2;;
-    --spliceai-indel)     SPLICEAI_INDEL="$2"; shift 2;;
-    --clinvar-latest-db)  CLINVAR_LATEST_DB="$2"; shift 2;;
-    --candidate-bed)      CANDIDATE_BED="$2"; shift 2;;
-    --skip-candidate-bed) SKIP_CANDIDATE_BED=1; shift;;
-    --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
-    --skip-extra-vep)     SKIP_SPLICEAI=1; shift;;
-    --skip-clinvar-latest) SKIP_CLINVAR_LATEST=1; shift;;
-    --genebe-db)          GENEBE_DB="$2"; shift 2;;
-    --skip-genebe)        SKIP_GENEBE=1; shift;;
-    --mane-summary)       MANE_SUMMARY="$2"; shift 2;;
-    --skip-mane-refseq)   SKIP_MANE_REFSEQ=1; shift;;
-    --giab-strat-dir)     GIAB_STRAT_DIR="$2"; shift 2;;
-    --skip-giab)          SKIP_GIAB=1; shift;;
-    --inhouse-af-db)      INHOUSE_AF_DB="$2"; shift 2;;
-    --skip-inhouse-af)    SKIP_INHOUSE_AF=1; shift;;
-    --litvar2-db)         LITVAR2_DB="$2"; shift 2;;
-    --skip-litvar2)       SKIP_LITVAR2=1; shift;;
-    --research-only)      RESEARCH_ONLY=1; shift;;
-    --gpn-msa-db)         GPN_MSA_DB="$2"; shift 2;;
-    --gpn-star-dir)       GPN_STAR_DIR="$2"; shift 2;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0;;
-    *) echo "unknown arg: $1" >&2; exit 2;;
-  esac
-done
-[ -n "$TSV" ] || { echo "ERROR: --tsv required" >&2; exit 2; }
-[ -f "$TSV" ] || { echo "ERROR: --tsv not found: $TSV" >&2; exit 2; }
-if [ -z "$RAW_TSV" ]; then RAW_TSV="$TSV"; fi
-[ -f "$RAW_TSV" ] || { echo "ERROR: --raw-tsv not found: $RAW_TSV" >&2; exit 2; }
-if [ -z "$POST_DIR" ]; then POST_DIR="$(dirname "$TSV")"; fi
-mkdir -p "$POST_DIR"
-SEQ_TYPE="$(printf '%s' "$SEQ_TYPE" | tr '[:lower:]' '[:upper:]')"
-case "$SEQ_TYPE" in
-  WES|WGS) ;;
-  *) echo "ERROR: --seq-type must be WES or WGS (got: $SEQ_TYPE)" >&2; exit 2;;
-esac
-# Derive sample id from path if not supplied. Working TSVs now live below
-# tertiary_output/<SID>/08_postprocessing/, while legacy invocations may
-# still point directly below tertiary_output/<SID>/.
-if [ -z "$SID" ]; then
-  TSV_DIR="$(dirname "$TSV")"
-  if [ "$(basename "$TSV_DIR")" = "08_postprocessing" ]; then
-    SID="$(basename "$(dirname "$TSV_DIR")")"
-  else
-    SID="$(basename "$TSV_DIR")"
-  fi
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  sed -n '2,46p' "$0"
+  exit 0
 fi
-OVERLAY_PATH="$POST_DIR/$SID.snv_annotations.sqlite"
-REVIEW_PATH="$POST_DIR/$SID.snv_indel.review.tsv"
-REVIEW_MANIFEST_PATH="$POST_DIR/$SID.snv_indel.review.tsv.source.json"
-GENE_INDEX_PATH="$POST_DIR/$SID.snv_gene_index.sqlite"
-LITVAR2_MARKER_PATH="$POST_DIR/$SID.litvar2_annotation.json"
-CLINVAR_MARKER_PATH="$POST_DIR/$SID.clinvar_comparison.json"
-
-echo "================================================================"
-echo "  post-processing : $TSV"
-echo "================================================================"
-
-CANDIDATE_BED_ARGS=()
-if [ "$SKIP_CANDIDATE_BED" -eq 1 ]; then
-  echo "  candidate BED: skipped (--skip-candidate-bed)"
-elif [ -f "$CANDIDATE_BED" ]; then
-  CANDIDATE_BED_ARGS=(--candidate-bed "$CANDIDATE_BED")
-  echo "  candidate BED: $CANDIDATE_BED"
-else
-  echo "  candidate BED: not found at $CANDIDATE_BED (final-review rule uses AF-only candidates)"
-fi
-
-# Every candidate-scoped annotator imports the same review predicate and BED
-# path.  Export the resolved CLI value so GeneBe API, SpliceAI, and LitVar2
-# cannot silently use different candidate regions.
-if [ "$SKIP_CANDIDATE_BED" -eq 1 ]; then
-  export NGS_UI_CDS_CANDIDATE_BED="$POST_DIR/.candidate-bed-disabled"
-else
-  export NGS_UI_CDS_CANDIDATE_BED="$CANDIDATE_BED"
-fi
-
-# GPN-MSA is attempted for every review; GPN-Star requires explicit research.
-# Both are best-effort, with independent signatures and status in the manifest.
-echo "  GPN-MSA DB: $GPN_MSA_DB (best-effort)"
-echo "  GPN-Star DB: $GPN_STAR_DIR (research-only=$RESEARCH_ONLY, best-effort)"
-REVIEW_GPN_ARGS=(--gpn-msa-db "$GPN_MSA_DB" --gpn-star-dir "$GPN_STAR_DIR")
-if [ "$RESEARCH_ONLY" -eq 1 ]; then
-  REVIEW_GPN_ARGS+=(--research-only)
-fi
-
-# 1. Compare the immutable v3.6 ClinVar annotation with the latest weekly
-#    local snapshot. This affects only the working TSV/UI overlay and never
-#    rewrites the 03_acmg source used by exported reports.
-if [ "$SKIP_CLINVAR_LATEST" -eq 0 ]; then
-  if [ -f "$CLINVAR_LATEST_DB" ]; then
-    echo
-    echo "[post-processing] annotate_clinvar_latest.py"
-    step_start "clinvar-latest"
-    "$SCRIPT_DIR/annotate_clinvar_latest.py" \
-      --tsv "$TSV" --db "$CLINVAR_LATEST_DB" \
-      --marker "$CLINVAR_MARKER_PATH" --baseline-release "2026-07-20"
-    step_done
-  else
-    echo "  - weekly ClinVar comparison skipped (DB not found: $CLINVAR_LATEST_DB)"
-  fi
-fi
-
-# 2. GeneBe ACMG second opinion. The local DB is always queried first across
-#    the complete TSV. Live API fallback is best-effort and only sees DB misses
-#    that meet the same WES/WGS filter as review.tsv.
-if [ "$SKIP_GENEBE" -eq 0 ]; then
-  echo
-  echo "[post-processing] annotate_acmg_genebe.py"
-  step_start "genebe"
-  if [ ! -f "$GENEBE_DB" ]; then
-    echo "ERROR: GeneBe DB not found: $GENEBE_DB" >&2
-    echo "       set NGS_UI_GENEBE_DB / --genebe-db, or pass --skip-genebe" >&2
-    exit 2
-  fi
-  # Whole-TSV lookup (no candidate gate) — the DB read is one streaming
-  # pass regardless of how many variants are queried.
-  "$SCRIPT_DIR/annotate_acmg_genebe.py" \
-    --tsv "$TSV" --genebe-db "$GENEBE_DB" --test-type "$SEQ_TYPE"
-  step_done
-fi
-
-# 3. SpliceAI-only post-processing. All dbNSFP predictors, including REVEL,
-#    MutPred2, VEST4, and CADD_phred, are produced by Nextflow v3.6.
-if [ "$SKIP_SPLICEAI" -eq 0 ]; then
-  echo
-  echo "[post-processing] annotate_spliceai.py"
-  step_start "spliceai"
-  "$SCRIPT_DIR/annotate_spliceai.py" \
-    --tsv "$TSV" \
-    --test-type "$SEQ_TYPE" \
-    --spliceai-snv "$SPLICEAI_SNV" \
-    --spliceai-indel "$SPLICEAI_INDEL" \
-    "${CANDIDATE_BED_ARGS[@]}"
-  step_done
-else
-  echo "  - SpliceAI skipped (--skip-spliceai / Research-only unchecked)"
-fi
-
-# 3b. GIAB stratification labels (difficult-region badges). Runs on the
-#     whole TSV; cheap interval lookup. No-op when the BED dir is absent.
-if [ "$SKIP_GIAB" -eq 0 ]; then
-  echo
-  echo "[post-processing] annotate_giab_strata.py"
-  step_start "giab-strata"
-  GIAB_ARGS=(--tsv "$TSV")
-  if [ -n "$GIAB_STRAT_DIR" ]; then
-    GIAB_ARGS+=(--strat-dir "$GIAB_STRAT_DIR")
-  fi
-  "$SCRIPT_DIR/annotate_giab_strata.py" "${GIAB_ARGS[@]}"
-  step_done
-fi
-
-# 3b2. In-house allele frequency. Joins INHOUSE_AC/AN/AF from the local cohort
-#      sites VCF (single streaming pass). Runs on the whole TSV, before review
-#      TSV / gene index so the columns reach the UI. No-op when the DB is absent.
-if [ "$SKIP_INHOUSE_AF" -eq 0 ]; then
-  if [ -f "$INHOUSE_AF_DB" ]; then
-    echo
-    echo "[post-processing] annotate_inhouse_af.py"
-    step_start "inhouse-af"
-    "$SCRIPT_DIR/annotate_inhouse_af.py" --tsv "$TSV" --db "$INHOUSE_AF_DB"
-    step_done
-  else
-    echo "  - in-house AF skipped (DB not found: $INHOUSE_AF_DB)"
-  fi
-fi
-
-# 3c. MANE RefSeq mapping. Runs before review TSV / gene index so every
-#     derived artifact carries the display transcript IDs.
-if [ "$SKIP_MANE_REFSEQ" -eq 0 ]; then
-  echo
-  echo "[post-processing] annotate_mane_refseq.py"
-  step_start "mane-refseq"
-  "$SCRIPT_DIR/annotate_mane_refseq.py" --tsv "$TSV" --mane-summary "$MANE_SUMMARY"
-  step_done
-fi
-
-# 4. LitVar2 literature references from the local bulk SQLite. Only rows
-#    retained by the review TSV filter are queried; missing/corrupt DB is a
-#    warning/no-op and never fails otherwise valid tertiary output.
-if [ "$SKIP_LITVAR2" -eq 0 ]; then
-  echo
-  echo "[post-processing] annotate_litvar2.py"
-  step_start "litvar2"
-  "$SCRIPT_DIR/annotate_litvar2.py" \
-    --tsv "$TSV" --db "$LITVAR2_DB" --test-type "$SEQ_TYPE" \
-    --marker "$LITVAR2_MARKER_PATH"
-  step_done
-fi
-
-SAMPLE_DIR="$POST_DIR"
-echo
-echo "[sample] sparse overlay  build_snv_annotation_overlay.py"
-step_start "snv-overlay" "sample-step"
-run_silent_step "snv-overlay" "$SCRIPT_DIR/build_snv_annotation_overlay.py" \
-  --raw "$RAW_TSV" --annotated "$TSV" --out "$OVERLAY_PATH"
-step_done
-
-echo
-echo "[sample] review TSV  build_snv_review_tsv.py"
-step_start "review-tsv" "sample-step"
-"$REVIEW_PYTHON" "$SCRIPT_DIR/build_snv_review_tsv.py" \
-  --tsv "$RAW_TSV" --output-dir "$POST_DIR" \
-  --output-path "$REVIEW_PATH" --manifest-path "$REVIEW_MANIFEST_PATH" \
-  --overlay "$OVERLAY_PATH" --test-type "$SEQ_TYPE" --sample "$SID" \
-  "${REVIEW_GPN_ARGS[@]}"
-step_done
-
-echo
-echo "[sample] gene index  build_snv_gene_index.py"
-step_start "gene-index" "sample-step"
-run_silent_step "gene-index" "$SCRIPT_DIR/build_snv_gene_index.py" \
-  --tsv "$RAW_TSV" --out "$GENE_INDEX_PATH"
-step_done
-
-echo
-echo "================================================================"
-echo "  done. raw TSV: $RAW_TSV"
-echo "  sparse overlay: $OVERLAY_PATH"
-echo "================================================================"
-wc -l "$RAW_TSV"
-ls -la "$SAMPLE_DIR"/"$SID".{cnv,sv,mito}.annotated.tsv 2>/dev/null || true
+exec "${NGS_UI_PYTHON_BIN:-python3}" "$SCRIPT_DIR/postprocess_batch.py" "$@"

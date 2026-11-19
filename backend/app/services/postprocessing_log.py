@@ -55,27 +55,36 @@ class Summary:
         self.errors = deque(maxlen=10)
         self.warnings = set()
 
-    def start(self, step=None, detail=''):
+    def start(self, step=None, detail='', sample=None):
         step = step or self.step
-        if step not in self.started:
-            self.started[step] = time.monotonic()
-            self.logger(event(self.sample, step, 'start', detail=detail))
+        key = (sample or self.sample, step)
+        if key not in self.started:
+            self.started[key] = time.monotonic()
+            self.logger(event(key[0], step, 'start', detail=detail))
 
-    def done(self, step, *, elapsed=None, status='done', detail=''):
-        start = self.started.pop(step, time.monotonic())
-        self.logger(event(self.sample, step, status,
+    def done(self, step, *, elapsed=None, status='done', detail='', sample=None):
+        key = (sample or self.sample, step)
+        start = self.started.pop(key, time.monotonic())
+        self.logger(event(key[0], step, status,
                           elapsed=elapsed if elapsed is not None else time.monotonic()-start, detail=detail))
+
+    def _current(self):
+        """(sample, step) that most recently started and is still open."""
+        return next(reversed(self.started), (self.sample, self.step))
 
     def feed(self, line):
         text = line.strip()
         self.tail.append(text)
-        marker = re.search(r'\[(?:post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+(start|done)', text)
+        # Batch post-processing tags per-sample steps with ``sample=SID``;
+        # batch-wide steps belong to this run's label.
+        marker = re.search(r'\[(?:post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+(start|done)'
+                           r'(?:\s+sample=(\S+))?', text)
         if marker:
-            step, state = marker.groups()
-            if state == 'start': self.start(step)
+            step, state, sample = marker.groups()
+            if state == 'start': self.start(step, sample=sample)
             else:
                 elapsed = re.search(r'elapsed=([\d.]+)s', text)
-                self.done(step, elapsed=float(elapsed[1]) if elapsed else None)
+                self.done(step, elapsed=float(elapsed[1]) if elapsed else None, sample=sample)
             return
         gpn = re.search(r'\[perf] snv_review\.gpn_(start|done).*provider=(\S+)', text)
         if gpn:
@@ -89,18 +98,18 @@ class Summary:
             return
         if re.search(r'FATAL:|(?:ERROR|Error|OSError|ValueError|FileNotFoundError):', text):
             self.errors.append(text)
-            self.logger(event(self.sample, next(reversed(self.started), self.step), 'error', detail=text[:1500]))
+            self.logger(event(*self._current(), 'error', detail=text[:1500]))
         elif re.search(r'\bWARNING\b|\bwarning\b', text) or _SKIPPED_RE.search(text):
             # Repeated bind warnings can flood stderr; retain every raw line.
             if text not in self.warnings:
                 self.warnings.add(text)
                 status = 'warning' if re.search(r'\bWARNING\b|\bwarning\b', text) else 'skipped'
-                self.logger(event(self.sample, next(reversed(self.started), self.step), status, detail=text[:500]))
+                self.logger(event(*self._current(), status, detail=text[:500]))
         elif re.search(r'\bbackfilled\b|candidate_rows=|integrated_PASS=|\[gpn-[^]]+] status=', text):
-            self.logger(event(self.sample, next(reversed(self.started), self.step), 'info', detail=text.split(' manifest=')[0][:500]))
+            self.logger(event(*self._current(), 'info', detail=text.split(' manifest=')[0][:500]))
 
     def finish(self, code):
         detail = failure_detail('\n'.join(self.errors or self.tail), f'exit={code}') if code else ''
-        for step in reversed(list(self.started)):
-            self.done(step, status='failed' if code else 'done', detail=detail if code else '')
+        for sample, step in reversed(list(self.started)):
+            self.done(step, status='failed' if code else 'done', detail=detail if code else '', sample=sample)
         return detail

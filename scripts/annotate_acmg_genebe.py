@@ -87,7 +87,10 @@ except ImportError:  # pragma: no cover - production is Linux/macOS.
 BedIndex = dict[str, tuple[list[int], list[tuple[int, int]]]]
 
 _MISSING = ("", ".", "NA", "N/A")
-SQLITE_SCHEMA_VERSION = "1"
+# v2 = WITHOUT ROWID (one B-tree read per lookup instead of index + table).
+# v1 caches stay usable until rebuilt (``--rebuild-sqlite`` or a new DB).
+SQLITE_SCHEMA_VERSION = "2"
+SQLITE_ACCEPTED_SCHEMAS = {"1", "2"}
 API_CACHE_SCHEMA_VERSION = "1"
 DB_EXPORT_FIELDS = (
     "#chr", "pos", "ref", "alt",
@@ -458,7 +461,9 @@ def _sqlite_is_current(sqlite_path: Path, db: Path) -> bool:
         return False
     meta = _read_sqlite_meta(sqlite_path)
     sig = _db_signature(db)
-    return all(meta.get(k) == v for k, v in sig.items())
+    if meta.get("schema_version") not in SQLITE_ACCEPTED_SCHEMAS:
+        return False
+    return all(meta.get(k) == v for k, v in sig.items() if k != "schema_version")
 
 
 @contextmanager
@@ -490,17 +495,36 @@ def build_sqlite_cache(db: Path, sqlite_path: Path, idx: dict[str, int]) -> int:
     ci_score, ci_crit = idx["acmg_score"], idx["acmg_criteria"]
     need = max(ci_chr, ci_pos, ci_ref, ci_alt, ci_score, ci_crit)
 
+    raw = tmp.with_name(tmp.name + ".raw")
+    raw.unlink(missing_ok=True)
+    # SQLite sorts in SQLITE_TMPDIR/TMPDIR (often a small /tmp). The final
+    # ORDER BY can need as much space as the cache itself, so keep its spill
+    # files on the same filesystem as the cache for the rebuild.
+    previous_tmpdir = os.environ.get("SQLITE_TMPDIR")
+    os.environ["SQLITE_TMPDIR"] = str(sqlite_path.parent)
     try:
         with sqlite3.connect(tmp) as conn:
             conn.execute("PRAGMA journal_mode=OFF")
             conn.execute("PRAGMA synchronous=OFF")
-            conn.execute("PRAGMA temp_store=MEMORY")
+            # The final ORDER BY can sort far more than RAM: spill to disk
+            # (SQLITE_TMPDIR above), never to memory.
+            conn.execute("PRAGMA temp_store=FILE")
+            conn.execute("PRAGMA cache_size=-524288")
+            conn.execute("ATTACH DATABASE ? AS staging", (str(raw),))
+            conn.execute("PRAGMA staging.journal_mode=OFF")
+            conn.execute("PRAGMA staging.synchronous=OFF")
             conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            # Append-only staging table (no index) keeps the streaming pass
+            # fast; the WITHOUT ROWID table is then filled in key order.
+            conn.execute(
+                "CREATE TABLE staging.raw_variants ("
+                "vkey TEXT, acmg_score TEXT, acmg_criteria TEXT)"
+            )
             conn.execute(
                 "CREATE TABLE variants ("
                 "vkey TEXT PRIMARY KEY, "
                 "acmg_score TEXT, "
-                "acmg_criteria TEXT)"
+                "acmg_criteria TEXT) WITHOUT ROWID"
             )
             conn.executemany(
                 "INSERT INTO meta(key, value) VALUES (?, ?)",
@@ -519,19 +543,28 @@ def build_sqlite_cache(db: Path, sqlite_path: Path, idx: dict[str, int]) -> int:
                 batch.append((key, f[ci_score], f[ci_crit]))
                 if len(batch) >= 50000:
                     conn.executemany(
-                        "INSERT OR REPLACE INTO variants VALUES (?, ?, ?)",
+                        "INSERT INTO staging.raw_variants VALUES (?, ?, ?)",
                         batch,
                     )
                     row_count += len(batch)
                     batch.clear()
             if batch:
                 conn.executemany(
-                    "INSERT OR REPLACE INTO variants VALUES (?, ?, ?)",
+                    "INSERT INTO staging.raw_variants VALUES (?, ?, ?)",
                     batch,
                 )
                 row_count += len(batch)
+            conn.commit()
+            # Duplicate keys keep the last DB line, as the v1 INSERT OR
+            # REPLACE stream did.
+            conn.execute(
+                "INSERT OR REPLACE INTO variants(vkey, acmg_score, acmg_criteria) "
+                "SELECT vkey, acmg_score, acmg_criteria FROM staging.raw_variants "
+                "ORDER BY vkey, rowid"
+            )
             conn.execute("INSERT INTO meta(key, value) VALUES (?, ?)", ("row_count", str(row_count)))
             conn.commit()
+            conn.execute("DETACH DATABASE staging")
             check = conn.execute("PRAGMA quick_check").fetchone()
             if not check or check[0] != "ok":
                 raise GeneBeDBError(f"SQLite quick_check failed: {check}")
@@ -539,6 +572,11 @@ def build_sqlite_cache(db: Path, sqlite_path: Path, idx: dict[str, int]) -> int:
         tmp.unlink(missing_ok=True)
         raise
     finally:
+        raw.unlink(missing_ok=True)
+        if previous_tmpdir is None:
+            os.environ.pop("SQLITE_TMPDIR", None)
+        else:
+            os.environ["SQLITE_TMPDIR"] = previous_tmpdir
         if proc is not None:
             err = proc.stderr.read() if proc.stderr else ""
             proc.wait()
@@ -573,6 +611,10 @@ def sqlite_lookup(sqlite_path: Path, wanted: set[str]) -> dict[str, tuple[str, s
         return hits
     with sqlite3.connect(sqlite_path) as conn:
         conn.execute("PRAGMA temp_store=MEMORY")
+        # Batch lookups probe many keys in sorted order: a large page cache
+        # and mmap let neighbouring keys share B-tree pages.
+        conn.execute("PRAGMA cache_size=-262144")
+        conn.execute("PRAGMA mmap_size=1073741824")
         conn.execute("CREATE TEMP TABLE wanted (vkey TEXT PRIMARY KEY)")
         batch: list[tuple[str]] = []
         for key in wanted:
@@ -583,8 +625,9 @@ def sqlite_lookup(sqlite_path: Path, wanted: set[str]) -> dict[str, tuple[str, s
         if batch:
             conn.executemany("INSERT OR IGNORE INTO wanted(vkey) VALUES (?)", batch)
         for key, score, crit in conn.execute(
+            # Drive the join from the (sorted) wanted keys.
             "SELECT v.vkey, v.acmg_score, v.acmg_criteria "
-            "FROM variants v JOIN wanted w ON w.vkey = v.vkey"
+            "FROM wanted w CROSS JOIN variants v ON v.vkey = w.vkey"
         ):
             hits[str(key)] = (score or "", crit or "")
     return hits
@@ -1118,9 +1161,16 @@ def main() -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--tsv", required=True,
+    ap.add_argument("--tsv",
                     help="snv_indel.annotated.tsv (updated in place unless "
                          "--out-tsv given)")
+    ap.add_argument("--batch-manifest",
+                    help="JSON list (or {samples: [...]}) of {tsv, test_type, sample}; "
+                         "all TSVs share one DB/cache/API pass and are updated in place")
+    ap.add_argument("--rebuild-sqlite", action="store_true",
+                    help="rebuild the derived SQLite cache now (schema "
+                         f"v{SQLITE_SCHEMA_VERSION}, WITHOUT ROWID); exits unless "
+                         "--tsv/--batch-manifest is also given")
     ap.add_argument("--out-tsv",
                     help="write merged TSV here instead of overwriting --tsv")
     ap.add_argument("--genebe-db",
@@ -1179,13 +1229,53 @@ def main() -> int:
                     default=_env_int("NGS_UI_GENEBE_API_NEGATIVE_TTL_DAYS", 30))
     args = ap.parse_args()
 
-    in_tsv = Path(args.tsv).resolve()
-    if not in_tsv.is_file():
-        print(f"ERROR: --tsv 找不到：{in_tsv}", file=sys.stderr)
-        return 2
-    out_tsv = Path(args.out_tsv).resolve() if args.out_tsv else in_tsv
-
     db = Path(args.genebe_db).resolve()
+    if args.rebuild_sqlite:
+        try:
+            idx = preflight_db(db)
+            sqlite_path = Path(args.sqlite_db).resolve() if args.sqlite_db else default_sqlite_path(db)
+            lock_path = sqlite_path.with_suffix(sqlite_path.suffix + ".lock")
+            t0 = time.time()
+            with _file_lock(lock_path):
+                rows = build_sqlite_cache(db, sqlite_path, idx)
+            print(f"[genebe] sqlite rebuilt (schema v{SQLITE_SCHEMA_VERSION}): "
+                  f"{sqlite_path} rows={rows} in {time.time() - t0:.0f}s", file=sys.stderr)
+        except (GeneBeDBError, OSError, sqlite3.Error) as exc:
+            print(f"ERROR: GeneBe SQLite rebuild failed: {exc}", file=sys.stderr)
+            return 2
+        if not args.tsv and not args.batch_manifest:
+            return 0
+
+    items: list[dict] = []
+    if args.batch_manifest:
+        if args.tsv or args.out_tsv:
+            ap.error("--batch-manifest cannot be combined with --tsv/--out-tsv")
+        raw = json.loads(Path(args.batch_manifest).read_text(encoding="utf-8"))
+        for entry in raw.get("samples", raw) if isinstance(raw, dict) else raw:
+            path = Path(entry["tsv"]).resolve()
+            items.append({
+                "in": path, "out": path,
+                "test_type": str(entry.get("test_type") or args.test_type).upper(),
+                "label": str(entry.get("sample") or path.parent.name),
+            })
+    elif args.tsv:
+        in_tsv = Path(args.tsv).resolve()
+        items.append({
+            "in": in_tsv,
+            "out": Path(args.out_tsv).resolve() if args.out_tsv else in_tsv,
+            "test_type": args.test_type,
+            "label": "",
+        })
+    else:
+        ap.error("--tsv or --batch-manifest required")
+    for item in items:
+        if not item["in"].is_file():
+            print(f"ERROR: --tsv 找不到：{item['in']}", file=sys.stderr)
+            return 2
+        if item["test_type"] not in ("WES", "WGS"):
+            print(f"ERROR: unsupported test type {item['test_type']}", file=sys.stderr)
+            return 2
+
     try:
         idx = preflight_db(db)
     except GeneBeDBError as e:
@@ -1201,17 +1291,67 @@ def main() -> int:
             return 2
         candidate_bed = load_bed(bed_path)
 
+    if args.api_first_max_variants > 0 and len(items) > 1:
+        # API-first is a per-input size decision; keep it per TSV.
+        for item in items:
+            code = annotate_items([item], args, db=db, idx=idx, candidate_bed=candidate_bed)
+            if code:
+                return code
+        return 0
+    return annotate_items(items, args, db=db, idx=idx, candidate_bed=candidate_bed)
+
+
+def _tag(item: dict) -> str:
+    return f"{item['label']}: " if item.get("label") else ""
+
+
+def _fork_map(fn, items):
+    """Per-TSV passes in parallel worker processes (see parallel_tsv)."""
+    backend = str(Path(__file__).resolve().parents[1] / "backend")
+    if backend not in sys.path:
+        sys.path.insert(0, backend)
+    from app.services.parallel_tsv import fork_map  # noqa: PLC0415
+
+    return fork_map(fn, items)
+
+
+def annotate_items(
+    items: list[dict],
+    args: argparse.Namespace,
+    *,
+    db: Path,
+    idx: dict[str, int],
+    candidate_bed: BedIndex | None,
+) -> int:
+    """Annotate one or more TSVs with a single shared lookup.
+
+    Every lookup is per variant key, so querying the union of all inputs once
+    and merging each TSV from the shared result is identical to running the
+    TSVs one by one -- just without re-reading the DB/cache per sample.
+    """
     max_af = None if args.max_af < 0 else args.max_af
     af_cols = [c.strip() for c in args.af_cols.split(",") if c.strip()]
-    wanted, n_af, n_star, n_bed = collect_wanted(
-        in_tsv, max_af=max_af, af_cols=af_cols, candidate_bed=candidate_bed,
+    wanted_by_item: list[set[str]] = []
+    collected = _fork_map(
+        lambda item: collect_wanted(
+            item["in"], max_af=max_af, af_cols=af_cols, candidate_bed=candidate_bed,
+        ),
+        items,
     )
-    scope = "whole TSV" if (max_af is None and candidate_bed is None) else "gated"
-    print(f"[genebe] {len(wanted)} unique variants to look up ({scope}; "
-          f"AF-dropped {n_af}, BED-dropped {n_bed}, '*'-skipped {n_star})",
-          file=sys.stderr)
+    for item, (wanted_i, n_af, n_star, n_bed) in zip(items, collected):
+        scope = "whole TSV" if (max_af is None and candidate_bed is None) else "gated"
+        print(f"[genebe] {_tag(item)}{len(wanted_i)} unique variants to look up ({scope}; "
+              f"AF-dropped {n_af}, BED-dropped {n_bed}, '*'-skipped {n_star})",
+              file=sys.stderr)
+        wanted_by_item.append(wanted_i)
+    wanted: set[str] = set().union(*wanted_by_item) if wanted_by_item else set()
+    if len(items) > 1:
+        total = sum(len(w) for w in wanted_by_item)
+        print(f"[genebe] batch of {len(items)} TSVs: {total} per-sample keys → "
+              f"{len(wanted)} unique", file=sys.stderr)
     if not wanted:
-        merge_into_tsv(in_tsv, out_tsv, {})
+        for item in items:
+            merge_into_tsv(item["in"], item["out"], {})
         print("[genebe] nothing to look up", file=sys.stderr)
         return 0
 
@@ -1308,11 +1448,14 @@ def main() -> int:
 
     unresolved = wanted - set(gb) - negative_cached
     if not api_first:
-        api_candidates = collect_api_candidates(
-            in_tsv,
-            unresolved,
-            test_type=args.test_type,
-        )
+        api_candidates = set()
+        for found in _fork_map(
+            lambda pair: collect_api_candidates(
+                pair[0]["in"], unresolved & pair[1], test_type=pair[0]["test_type"],
+            ),
+            list(zip(items, wanted_by_item)),
+        ):
+            api_candidates |= found
         print(
             f"[genebe] review-filtered live API candidates={len(api_candidates)} "
             f"from unresolved={len(unresolved)}",
@@ -1365,12 +1508,12 @@ def main() -> int:
             negative_ttl_days=args.api_negative_ttl_days,
         )
 
-    n_filled, n_total = merge_into_tsv(in_tsv, out_tsv, gb)
-    print(f"[genebe] backfilled ACMG for {n_filled}/{n_total} TSV rows",
-          file=sys.stderr)
-    print(f"[genebe] done → {out_tsv}", file=sys.stderr)
+    merged = _fork_map(lambda item: merge_into_tsv(item["in"], item["out"], gb), items)
+    for item, (n_filled, n_total) in zip(items, merged):
+        print(f"[genebe] {_tag(item)}backfilled ACMG for {n_filled}/{n_total} TSV rows",
+              file=sys.stderr)
+        print(f"[genebe] done → {item['out']}", file=sys.stderr)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

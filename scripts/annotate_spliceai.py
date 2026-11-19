@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import json
 import os
 import re
 import subprocess
@@ -21,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
 from app.services import snv_review  # noqa: E402
+from app.services.parallel_tsv import fork_map  # noqa: E402
 
 DEFAULT_REF_DIR = "/home/pipeline/reference/hg38"
 DEFAULT_VEP_SIF = "/home/pipeline/nextflow_containers/vep_115.sif"
@@ -57,6 +59,27 @@ def tsv_to_sites(
     candidate_bed: snv_review.BedIndex | None,
 ) -> tuple[int, int]:
     """Write only variants retained by the authoritative final review rule."""
+    rows, dropped_review = collect_sites(tsv_in, test_type=test_type, candidate_bed=candidate_bed)
+    write_sites(rows, vcf_out)
+    return len(rows), dropped_review
+
+
+def write_sites(rows, vcf_out: Path) -> None:
+    rows = sorted(set(rows), key=lambda row: (_normalize_chrom(row[0]), row[1], row[2], row[3]))
+    with vcf_out.open("w", encoding="utf-8") as destination:
+        destination.write("##fileformat=VCFv4.2\n")
+        destination.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+        for chrom, pos, ref, alt in rows:
+            destination.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
+
+
+def collect_sites(
+    tsv_in: Path,
+    *,
+    test_type: str,
+    candidate_bed: snv_review.BedIndex | None,
+) -> tuple[list[tuple[str, int, str, str]], int]:
+    """Unique (chrom, pos, ref, alt) sites kept by the final review rule."""
     seen: set[tuple[str, str, str, str]] = set()
     rows: list[tuple[str, int, str, str]] = []
     dropped_review = 0
@@ -84,13 +107,7 @@ def tsv_to_sites(
                 continue
             seen.add(key)
             rows.append((chrom, numeric_pos, ref, alt))
-    rows.sort(key=lambda row: (_normalize_chrom(row[0]), row[1], row[2], row[3]))
-    with vcf_out.open("w", encoding="utf-8") as destination:
-        destination.write("##fileformat=VCFv4.2\n")
-        destination.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
-        for chrom, pos, ref, alt in rows:
-            destination.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.\n")
-    return len(rows), dropped_review
+    return rows, dropped_review
 
 
 def _parse_csq_format(vcf_path: Path) -> list[str]:
@@ -244,8 +261,10 @@ def merge_into_tsv(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tsv", required=True)
+    parser.add_argument("--tsv")
     parser.add_argument("--out-tsv")
+    parser.add_argument("--batch-manifest",
+                        help="JSON list of {tsv, test_type, sample}: one VEP run for all TSVs")
     parser.add_argument("--workdir")
     parser.add_argument("--ref-dir", default=DEFAULT_REF_DIR)
     parser.add_argument("--vep-sif", default=DEFAULT_VEP_SIF)
@@ -260,12 +279,33 @@ def main() -> int:
 
     args.vep_cache = args.vep_cache or f"{args.ref_dir}/tertiary/vep_cache"
     args.ref_fasta = args.ref_fasta or f"{args.ref_dir}/Homo_sapiens_assembly38.fasta"
-    in_tsv = Path(args.tsv).resolve()
-    out_tsv = Path(args.out_tsv).resolve() if args.out_tsv else in_tsv
+    if args.batch_manifest:
+        if args.tsv or args.out_tsv:
+            parser.error("--batch-manifest cannot be combined with --tsv/--out-tsv")
+        raw = json.loads(Path(args.batch_manifest).read_text(encoding="utf-8"))
+        items = [
+            {
+                "in": Path(entry["tsv"]).resolve(),
+                "out": Path(entry["tsv"]).resolve(),
+                "test_type": str(entry.get("test_type") or args.test_type).upper(),
+                "label": str(entry.get("sample") or ""),
+            }
+            for entry in (raw.get("samples", raw) if isinstance(raw, dict) else raw)
+        ]
+    elif args.tsv:
+        in_tsv = Path(args.tsv).resolve()
+        items = [{
+            "in": in_tsv,
+            "out": Path(args.out_tsv).resolve() if args.out_tsv else in_tsv,
+            "test_type": args.test_type,
+            "label": "",
+        }]
+    else:
+        parser.error("--tsv or --batch-manifest required")
     spliceai_snv = Path(args.spliceai_snv)
     spliceai_indel = Path(args.spliceai_indel)
     required = [
-        in_tsv,
+        *(item["in"] for item in items),
         spliceai_snv,
         Path(str(spliceai_snv) + ".tbi"),
         spliceai_indel,
@@ -285,7 +325,15 @@ def main() -> int:
         candidate_bed = snv_review.load_candidate_bed(bed_path)
     else:
         candidate_bed = snv_review.load_candidate_bed()
+    return annotate_items(items, args, candidate_bed=candidate_bed)
 
+
+def annotate_items(items: list[dict], args: argparse.Namespace, *, candidate_bed) -> int:
+    """Collect review sites from every TSV, run VEP once, merge each TSV.
+
+    SpliceAI is a per-site plugin lookup, so one VEP run on the union of sites
+    yields the same score per site as one run per sample.
+    """
     if args.workdir:
         workdir = Path(args.workdir)
         workdir.mkdir(parents=True, exist_ok=True)
@@ -297,28 +345,35 @@ def main() -> int:
     try:
         sites = workdir / "sites.vcf"
         vep_vcf = workdir / "sites.vep.vcf.gz"
-        count, dropped_review = tsv_to_sites(
-            in_tsv,
-            sites,
-            test_type=args.test_type,
-            candidate_bed=candidate_bed,
+        union: set[tuple[str, int, str, str]] = set()
+        collected = fork_map(
+            lambda item: collect_sites(item["in"], test_type=item["test_type"], candidate_bed=candidate_bed),
+            items,
         )
-        print(
-            f"[spliceai] {count} final-review sites (review filtered {dropped_review})",
-            file=sys.stderr,
-        )
-        if count:
+        for item, (rows, dropped_review) in zip(items, collected):
+            tag = f"{item['label']}: " if item["label"] else ""
+            print(
+                f"[spliceai] {tag}{len(rows)} final-review sites (review filtered {dropped_review})",
+                file=sys.stderr,
+            )
+            union.update(rows)
+        if len(items) > 1:
+            print(f"[spliceai] batch of {len(items)} TSVs → {len(union)} unique sites",
+                  file=sys.stderr)
+        if union:
+            write_sites(union, sites)
             run_vep(args, sites, vep_vcf)
             annotations = parse_vep_vcf(vep_vcf)
         else:
             annotations = {}
-        rows, filled = merge_into_tsv(in_tsv, out_tsv, annotations)
-        print(f"[spliceai] backfilled {filled}/{rows} rows -> {out_tsv}", file=sys.stderr)
+        merged = fork_map(lambda item: merge_into_tsv(item["in"], item["out"], annotations), items)
+        for item, (rows, filled) in zip(items, merged):
+            tag = f"{item['label']}: " if item["label"] else ""
+            print(f"[spliceai] {tag}backfilled {filled}/{rows} rows -> {item['out']}", file=sys.stderr)
     finally:
         if temp_context is not None:
             temp_context.cleanup()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

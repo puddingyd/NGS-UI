@@ -200,3 +200,27 @@ def test_erepo_exposes_expert_class_and_derived_criteria_score():
     assert variant["clingen_vcep_class"] == "Likely pathogenic"
     assert variant["clingen_vcep_score"] == 9
     assert variant["clingen_vcep_criteria"] == "PVS1,PM2_Supporting"
+
+
+def test_shared_lookup_cache_matches_uncached_annotation(tmp_path):
+    vcf = tmp_path / "clinvar.vcf.gz"
+    db = tmp_path / "clinvar.sqlite"
+    _write_vcf(vcf)
+    clinvar_latest_store.build_database(vcf, db)
+    plain, cached = tmp_path / "plain.tsv", tmp_path / "cached.tsv"
+    _write_tsv(plain)
+    _write_tsv(cached)
+    annotator.annotate_tsv(plain, db, tmp_path / "plain.json", baseline_release="2026-07-20")
+    lookup = annotator.CachedLookup(db)
+    second = tmp_path / "second.tsv"
+    _write_tsv(second)
+    annotator.annotate_tsv(cached, db, tmp_path / "cached.json", baseline_release="2026-07-20", lookup=lookup)
+    calls = []
+    original = clinvar_latest_store.lookup_records
+    try:
+        clinvar_latest_store.lookup_records = lambda *a: calls.append(a) or original(*a)
+        annotator.annotate_tsv(second, db, tmp_path / "second.json", baseline_release="2026-07-20", lookup=lookup)
+    finally:
+        clinvar_latest_store.lookup_records = original
+    assert calls == []  # every key/ID of the second sample came from the shared cache
+    assert cached.read_bytes() == plain.read_bytes() == second.read_bytes()

@@ -76,12 +76,45 @@ def _latest_values(record: dict[str, object]) -> dict[str, str]:
     }
 
 
+class CachedLookup:
+    """Memoise ``lookup_records`` per allele key / Variation ID.
+
+    Results only depend on each key (direct allele match) and each ID (unique
+    ID match), so sharing one cache across a batch of samples returns exactly
+    what per-sample lookups would.
+    """
+
+    def __init__(self, db_path: Path):
+        self.db_path = Path(db_path)
+        self._by_key: dict[str, dict[str, object] | None] = {}
+        self._by_id: dict[str, dict[str, object] | None] = {}
+
+    def __call__(self, db_path, keys, variation_ids):
+        keys = [str(k) for k in keys if k]
+        ids = [str(v) for v in variation_ids if v]
+        new_keys = sorted({k for k in keys if k not in self._by_key})
+        new_ids = sorted({v for v in ids if v not in self._by_id})
+        if new_keys or new_ids:
+            by_key, _unused = clinvar_latest_store.lookup_records(self.db_path, new_keys, ())
+            for key in new_keys:
+                self._by_key[key] = by_key.get(key)
+            if new_ids:
+                _unused, by_id = clinvar_latest_store.lookup_records(self.db_path, (), new_ids)
+                for variation_id in new_ids:
+                    self._by_id[variation_id] = by_id.get(variation_id)
+        return (
+            {k: self._by_key[k] for k in keys if self._by_key.get(k) is not None},
+            {v: self._by_id[v] for v in ids if self._by_id.get(v) is not None},
+        )
+
+
 def annotate_tsv(
     tsv_path: Path,
     db_path: Path,
     marker_path: Path,
     *,
     baseline_release: str,
+    lookup=None,
 ) -> dict[str, object]:
     tsv_path = Path(tsv_path)
     db_path = Path(db_path)
@@ -145,11 +178,11 @@ def annotate_tsv(
                 for row in reader:
                     batch.append(dict(row))
                     if len(batch) >= 5_000:
-                        _annotate_batch(batch, db_path, stats)
+                        _annotate_batch(batch, db_path, stats, lookup)
                         writer.writerows(batch)
                         batch.clear()
                 if batch:
-                    _annotate_batch(batch, db_path, stats)
+                    _annotate_batch(batch, db_path, stats, lookup)
                     writer.writerows(batch)
         os.replace(target, tsv_path)
     except BaseException:
@@ -180,10 +213,11 @@ def _annotate_batch(
     rows: list[dict[str, str]],
     db_path: Path,
     stats: dict[str, int],
+    lookup=None,
 ) -> None:
     keys = [_lookup_key(row) for row in rows]
     variation_ids = [_variation_id(row) for row in rows]
-    by_key, by_id = clinvar_latest_store.lookup_records(db_path, keys, variation_ids)
+    by_key, by_id = (lookup or clinvar_latest_store.lookup_records)(db_path, keys, variation_ids)
     stats["rows"] += len(rows)
     for row, key, variation_id in zip(rows, keys, variation_ids):
         record = by_key.get(key)

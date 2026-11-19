@@ -305,9 +305,9 @@ def test_v38_validation_requires_haploid_het_column(tmp_path):
 
 def test_production_postprocessing_is_spliceai_only():
     script = (
-        Path(__file__).resolve().parents[1] / "scripts/run_stopgaps.sh"
+        Path(__file__).resolve().parents[1] / "scripts/postprocess_batch.py"
     ).read_text(encoding="utf-8")
-    active = script[script.index("# 3. SpliceAI-only"):script.index("# 3b. GIAB")]
+    active = script[script.index("# 3. SpliceAI"):script.index("# 3b. GIAB")]
     assert "annotate_spliceai.py" in active
     assert "annotate_extra_vep.py" not in active
     assert "--dbnsfp" not in active

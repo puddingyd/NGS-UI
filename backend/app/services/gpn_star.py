@@ -98,6 +98,16 @@ def _normalise_key(row: dict) -> tuple[str, int, str, str] | None:
 
 
 def query_scores(root: Path, keys: set[tuple], model: str = MODEL) -> dict[tuple, str]:
+    """Exact-allele scores, served from a batch prefetch when available."""
+    from . import gpn_prefetch
+
+    found, missing = gpn_prefetch.split(gpn_prefetch.provider_id("gpn_star", root, model), keys)
+    if missing:
+        found.update(query_scores_db(root, missing, model))
+    return found
+
+
+def query_scores_db(root: Path, keys: set[tuple], model: str = MODEL) -> dict[tuple, str]:
     import polars as pl
 
     found = {}

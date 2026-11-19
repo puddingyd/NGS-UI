@@ -47,8 +47,9 @@ def _load_mane(path: Path) -> dict[str, dict[str, str]]:
     return mapping
 
 
-def annotate_tsv(tsv: Path, mane: Path) -> tuple[int, int]:
-    mapping = _load_mane(mane)
+def annotate_tsv(tsv: Path, mane: Path, mapping: dict[str, dict[str, str]] | None = None) -> tuple[int, int]:
+    """``mapping`` lets a batch load the MANE summary once for every TSV."""
+    mapping = mapping if mapping is not None else _load_mane(mane)
     if not mapping:
         raise RuntimeError(f"MANE summary has no transcript mappings: {mane}")
 

@@ -95,27 +95,35 @@ def test_default_table_matches_pipeline_and_seq_type():
     assert not names & {"ANNOTSV_CNV_DRAGEN", "ANNOTSV_CNV_NCKUH_WGS", "CNVKIT_TO_BED", "PGX_PHARMCAT"}
 
 
-def test_postprocessing_progress_is_weighted_by_step_time():
-    pp = tp.PostprocessingProgress(sample_kinds=["nckuh:WES"] * 2, profile={"version": 1, "kinds": {}})
-    weights = pp._weights("nckuh:WES")
-    assert "spliceai" not in weights and "cnv-rescue" not in weights
-    total = sum(weights.values())
-    pp.start_sample(0)
-    pp.on_marker("clinvar-latest", "start", now=0)
-    pp.on_marker("clinvar-latest", "done", elapsed=10, now=10)
-    pp.on_marker("genebe", "start", now=10)
-    expected = (weights["clinvar-latest"] + weights["genebe"] * 0.5) / total / 2
-    assert pp.fraction(now=10 + weights["genebe"] * 0.5) == pytest.approx(expected)
-    pp.start_sample(1)
-    assert pp.fraction(now=0) == pytest.approx(0.5)
-    assert pp.step_seconds["clinvar-latest"] == [10.0]
+def test_postprocessing_progress_scales_batch_steps_by_chunk_size():
+    pp = tp.PostprocessingProgress(chunks=[["nckuh:WES"] * 3, ["nckuh:WES"]], profile={"version": 1, "kinds": {}})
+    w = pp._weights("nckuh:WES")
+    assert "spliceai" not in w and "cnv-rescue" not in w
+    total = sum(w.values()) * 4
+    pp.start_chunk(0)
+    pp.on_marker("genebe", "start", now=0)
+    assert pp.fraction(now=w["genebe"] * 3 * 0.5) == pytest.approx(w["genebe"] * 3 * 0.5 / total)
+    pp.on_marker("genebe", "done", elapsed=30, now=30)
+    assert pp.step_seconds["genebe"] == [10.0]  # per-sample amortised
+    # parallel per-sample steps each earn one sample's share
+    pp.on_marker("review-tsv", "start", sample="A", now=30)
+    pp.on_marker("review-tsv", "start", sample="B", now=30)
+    pp.on_marker("review-tsv", "done", sample="A", elapsed=6, now=36)
+    expected_done = w["genebe"] * 3 + w["review-tsv"] + min(0.9, 6 / w["review-tsv"]) * w["review-tsv"]
+    assert pp.fraction(now=36) == pytest.approx(expected_done / total)
+    pp.finish_chunk(0)
+    assert pp.fraction(now=36) == pytest.approx(0.75)
+    pp.start_chunk(1)
+    pp.finish_chunk(1)
+    assert pp.fraction() == pytest.approx(1.0)
 
 
 def test_phase_bands_follow_learned_wall_time():
     default = tp.phase_bands({"version": 1, "kinds": {}}, ["nckuh:WES"] * 10, with_prs=False)
     assert default["pre"] == (0.0, 2.0)
     assert default["promote"] == (97.0, 99.0)
-    assert 45 < default["nextflow"][1] < 52  # ~even split from the measured batch
+    # Nextflow 483 s/sample vs. the batch post-processing estimate of 90 s/sample.
+    assert default["nextflow"][1] == pytest.approx(2 + 95 * 483 / 573)
     learned = {"version": 1, "kinds": {"nckuh:WES": {"phases": {"nextflow": 900, "postprocessing": 100}}}}
     bands = tp.phase_bands(learned, ["nckuh:WES"] * 10, with_prs=True)
     assert bands["nextflow"][1] == pytest.approx(2 + 92 * 0.9)
@@ -136,7 +144,7 @@ def test_update_profile_learns_from_trace_and_round_trips(tmp_path):
     assert entry["processes"]["VEP_ANNOTATE"] == {"seconds": 900.0, "tasks_per_sample": 1.0}
     assert "seconds" not in entry["processes"]["MITO_VEP"]  # cached tasks carry no timing
     assert entry["phases"] == {"nextflow": 1000.0, "postprocessing": 200.0}
-    assert entry["postprocessing_steps"]["genebe"] == 120.0
+    assert entry["postprocessing_batch_steps"]["genebe"] == 120.0
     path = tmp_path / "_timing_profile.json"
     tp.save_profile(path, profile)
     again = tp.update_profile(tp.load_profile(path), "nckuh:WES", sample_count=2, nextflow_seconds=1000)
@@ -159,3 +167,41 @@ def test_worker_progress_is_monotonic_and_prs_maps_onto_overall_pct(monkeypatch)
     assert store["progress_pct"] == 40.0
     dragen_run._update("job", prs_progress_pct=96.5)
     assert store["progress_pct"] == 96.5
+
+
+def test_postprocessing_chunks_respect_scratch_budget(tmp_path, monkeypatch):
+    from app.workers import dragen_run
+    sizes = {"A": 10, "B": 10, "C": 30, "D": 5}
+    raw = {}
+    for sid, size in sizes.items():
+        raw[sid] = tmp_path / f"{sid}.tsv"
+        raw[sid].write_bytes(b"x" * size)
+    samples = [{"sample_id": sid} for sid in sizes]
+    monkeypatch.setenv("NGS_UI_POSTPROC_CHUNK_GB", str(25 / 1024 ** 3))
+    chunks = dragen_run._postprocessing_chunks(samples, raw)
+    assert [[s["sample_id"] for s in c] for c in chunks] == [["A", "B"], ["C"], ["D"]]
+    monkeypatch.delenv("NGS_UI_POSTPROC_CHUNK_GB")
+    assert len(dragen_run._postprocessing_chunks(samples, raw)) == 1
+
+
+def test_marker_regex_reads_sample_and_elapsed():
+    from app.workers import dragen_run
+    m = dragen_run._POSTPROC_MARKER_RE.search("[t] [sample-step] review-tsv done sample=S1-nckuh elapsed=12s")
+    assert m.groups() == ("sample-step", "review-tsv", "done", "S1-nckuh", "12")
+    m = dragen_run._POSTPROC_MARKER_RE.search("[t] [post-processing-step] genebe done elapsed=4s")
+    assert m.groups() == ("post-processing-step", "genebe", "done", None, "4")
+
+
+def test_log_summary_attributes_sample_steps_inside_a_batch():
+    from app.services import postprocessing_log
+    events = []
+    summary = postprocessing_log.Summary("batch 1/1 (2 samples)", "postprocessing", events.append)
+    summary.feed("[t] [post-processing-step] genebe start")
+    summary.feed("[t] [post-processing-step] genebe done elapsed=4s")
+    summary.feed("[t] [sample-step] review-tsv start sample=S1")
+    summary.feed("[t] [sample-step] review-tsv start sample=S2")
+    summary.feed("[t] [sample-step] review-tsv done sample=S1 elapsed=3s")
+    summary.finish(0)
+    assert "sample=batch 1/1 (2 samples) step=genebe status=done elapsed=4.0s" in events[1]
+    assert any("sample=S1 step=review-tsv status=done elapsed=3.0s" in e for e in events)
+    assert any("sample=S2 step=review-tsv status=done" in e for e in events)
