@@ -151,7 +151,7 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
     monkeypatch.setenv('NXF_HOME', str(root/'empty-nextflow'))
     monkeypatch.setattr(sys, 'argv', ['worker', '--job-id', 'job', '--mode', 'inhouse', '--without-pgx']+(['--with-prs'] if with_prs else []))
     samples = [dict(mode='inhouse', sample_id=f'S{i}-nckuh', source_sample_id=f'S{i}',
-                    seq_type='WGS', vcf_path=str(root/f'S{i}.vcf.gz'), cnv_vcf='', sv_vcf='') for i in (1, 2)]
+                    seq_type='WGS', vcf_path=str(root/f'S{i}.vcf.gz')) for i in (1, 2)]
     monkeypatch.setattr(dragen_run, '_load_samples', lambda args: samples)
     monkeypatch.setattr(dragen_run, '_load_secrets', lambda: None)
     monkeypatch.setattr(dragen_run, '_seed_shared_nextflow_context', lambda *a, **kw: None)
@@ -197,8 +197,24 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
                                         ('05_str', 'str'), ('06_cnv_sv', 'cnv.annotated'),
                                         ('06_cnv_sv', 'sv.annotated')):
                     (stage/sid/directory/f'{sid}.{name}.tsv').write_text('CHROM\tPOS\tREF\tALT\n')
+            # Plain task lines + trace file drive the time-weighted progress bar.
+            assert "-ansi-log false" in cmd[-1] and "-with-trace" in cmd[-1]
+            trace = jobs/'job'/'trace.txt'
+            trace.parent.mkdir(parents=True, exist_ok=True)
+            rows = ['task_id\thash\tnative_id\tname\tstatus\texit\tsubmit\tduration\trealtime']
+            for number in (1, 2):
+                task_hash = f'a{number}/00000{number}'
+                kw['on_line'](f'[{task_hash}] Submitted process > ANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE ({number})\n')
+                rows.append(f'{number}\t{task_hash}\t1\tANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE ({number})'
+                            f'\tCOMPLETED\t0\t-\t30m\t30m')
+            trace.write_text('\n'.join(rows) + '\n')
+            nextflow_seen.append(state['progress_phase'])
         elif label.startswith('post-processing'):
             assert Path(cmd[cmd.index('--work-tsv')+1]).is_relative_to(work)
+            kw['on_line']('[2026-01-01T00:00:00+08:00] [post-processing-step] genebe start\n')
+            kw['on_line']('[2026-01-01T00:00:00+08:00] [post-processing-step] genebe done elapsed=4s\n')
+            assert state['step'] == 'post-processing:genebe' and state['progress_phase'] == 'postprocessing'
+    nextflow_seen = []
     monkeypatch.setattr(dragen_run, '_run', run)
     copy = workspace.verified_copytree
     copied = []
@@ -242,6 +258,15 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
     assert (live/'.staging/job').exists() == (failure == 'rollback_failure' or cancelled)
     assert (live/'.rollback/job').exists() == (failure == 'rollback_failure' or cancelled)
     assert not workspace.runtime_paths(work, 'nckuh', 'job')['job'].exists()
+    assert nextflow_seen == ['nextflow']
+    profile_path = jobs/'_timing_profile.json'
+    if publication_completed:
+        assert state['progress_pct'] == (100.0 if not cancelled else 95.0)
+        learned = json.loads(profile_path.read_text())['kinds']['nckuh:WGS']
+        assert learned['processes']['VEP_ANNOTATE'] == {'seconds': 1800.0, 'tasks_per_sample': 1.0}
+        assert learned['postprocessing_steps']['genebe'] == 4.0
+    else:
+        assert not profile_path.exists()
 
 
 @pytest.mark.parametrize('profile', [False, True])

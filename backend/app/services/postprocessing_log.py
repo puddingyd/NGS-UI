@@ -42,6 +42,11 @@ def read_tail(path, size=50000):
         return ''
 
 
+# "skipped" as a status word only: counters such as GeneBe's
+# "'*'-skipped 0" are informational and must not mark the step skipped.
+_SKIPPED_RE = re.compile(r"(?<![\w'*-])skipped\b(?!\s*\d)")
+
+
 class Summary:
     def __init__(self, sample, step, logger=print_event):
         self.sample, self.step, self.logger = sample, step, logger
@@ -85,7 +90,7 @@ class Summary:
         if re.search(r'FATAL:|(?:ERROR|Error|OSError|ValueError|FileNotFoundError):', text):
             self.errors.append(text)
             self.logger(event(self.sample, next(reversed(self.started), self.step), 'error', detail=text[:1500]))
-        elif re.search(r'\bWARNING\b|\bwarning\b|\bskipped\b', text):
+        elif re.search(r'\bWARNING\b|\bwarning\b', text) or _SKIPPED_RE.search(text):
             # Repeated bind warnings can flood stderr; retain every raw line.
             if text not in self.warnings:
                 self.warnings.add(text)

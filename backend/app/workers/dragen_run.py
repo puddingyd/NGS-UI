@@ -6,26 +6,25 @@ VCF (`--mode dragen`) or an in-house ensemble Nextflow output
 
     1. acquire per-sample locks
     2. write a v3.x samplesheet       → data/jobs/tertiary/<job>/samplesheet.csv
-       (legacy env fallback can still stage into nf_stage/<SID>/04_snv_indel)
     3. always run Nextflow -resume    → job-private staging/<source SID>/
-    4. validate staged 00-07 outputs
+    4. validate staged 00-07 outputs  (SNV, mito, STR, CNV/SV AnnotSV, PGx)
     5. prepare staged post-processing → audit + optional ploidy/MITOMAP output
     6. post-processing                → disposable SNV working TSV → sparse
-                                          overlay + review TSV + gene index;
+                                          overlay + review TSV + gene index
+                                          (GeneBe writes a SECOND opinion to
+                                           GENEBE_* columns)
     7. transactionally promote 00-07 and derived files into the live sample,
        preserving reviewer-owned 08_postprocessing state and publishing
        layout.json last
-                                          (ClinVar removed — pipeline already
-                                           does it; GeneBe writes a SECOND
-                                           opinion to GENEBE_* columns)
 
 Mode differences:
   dragen  — sample sheet uses pipeline_type=dragen and the DRAGEN run
-            folder as input_dir; CNV/SV AnnotSV auto-discovers sibling
-            <SID>.cnv.vcf.gz + <SID>.sv.vcf.gz from the same dir.
+            folder as input_dir.
   inhouse — sample sheet uses pipeline_type=nckuh and the in-house sample
-            output folder as input_dir; CNV/SV AnnotSV runs separately on
-            gcnv + delly VCFs.
+            output folder as input_dir.
+  CNV/SV AnnotSV output always comes from the pipeline (06_cnv_sv/); a
+  sample missing it fails validation instead of falling back to a local
+  AnnotSV run.
 
 Nextflow owns cache/re-run decisions.  Existing published files are never
 used to skip the workflow; one shared launch/work lineage per pipeline mode
@@ -49,6 +48,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime, timedelta, timezone
@@ -57,7 +57,7 @@ from pathlib import Path
 from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
 from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, gba, specialized
-from ..services import nextflow_work, tertiary_workspace, postprocessing_log
+from ..services import nextflow_work, tertiary_workspace, postprocessing_log, tertiary_progress
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -1194,8 +1194,6 @@ def _sample_from_args(args: argparse.Namespace) -> dict:
         "sample_id": args.sample,
         "source_sample_id": args.source_sample,
         "seq_type": "WGS" if mode == "dragen" else "WES",
-        "cnv_vcf": args.cnv_vcf,
-        "sv_vcf": args.sv_vcf,
         "mito_vcf": args.mito_vcf,
     }
 
@@ -1237,8 +1235,6 @@ def _load_samples(args: argparse.Namespace) -> list[dict]:
                 sample.get("seq_type"),
                 default=("WGS" if mode == "dragen" else "WES"),
             ),
-            "cnv_vcf": (sample.get("cnv_vcf") or "").strip(),
-            "sv_vcf": (sample.get("sv_vcf") or "").strip(),
             "mito_vcf": (sample.get("mito_vcf") or "").strip(),
         })
     modes = {s["mode"] for s in out}
@@ -1297,29 +1293,6 @@ def _track_pipeline_source(
     )
 
 
-def _symlink_inhouse_into_nf_stage(vcf: Path, sid: str, nf_stage: Path) -> Path:
-    """In-house ensemble VCFs are already 2-sample (DV+HC) and don't
-    need staging — but Nextflow's input_dir convention forces a layout
-    `<input_dir>/04_snv_indel/<sample_id>.ensemble.fixed.vcf.gz`. Drop
-    a symlink at that path so Nextflow sees the original VCF
-    unmodified (no gnomAD/BED pre-filter — let the pipeline see every
-    variant). Returns the staging directory.
-    """
-    stage_snv = nf_stage / "04_snv_indel"
-    stage_snv.mkdir(parents=True, exist_ok=True)
-    stage_vcf = stage_snv / f"{sid}.ensemble.fixed.vcf.gz"
-    stage_tbi = stage_snv / f"{sid}.ensemble.fixed.vcf.gz.tbi"
-    # Idempotent: remove stale links from a prior run.
-    for p in (stage_vcf, stage_tbi):
-        if p.is_symlink() or p.exists():
-            p.unlink()
-    stage_vcf.symlink_to(vcf)
-    tbi = vcf.with_suffix(vcf.suffix + ".tbi")  # .vcf.gz.tbi
-    if tbi.is_file():
-        stage_tbi.symlink_to(tbi)
-    return nf_stage
-
-
 TAIPEI_TZ = timezone(timedelta(hours=8))
 
 
@@ -1351,15 +1324,31 @@ def _load_secrets() -> None:
             os.environ[k] = v
 
 
-def _update(job_id: str, **kw) -> None:
-    st = dragen_jobs.load_state(job_id) or {}
-    if "nextflow_progress_pct" in kw:
-        kw["nextflow_progress_pct"] = max(
-            float(st.get("nextflow_progress_pct") or 0),
-            float(kw.get("nextflow_progress_pct") or 0),
+# The progress ticker thread and the main thread both read-modify-write
+# state.json; serialise every worker-side update.
+_STATE_LOCK = threading.RLock()
+
+
+def _timing_profile_path() -> Path:
+    return TERTIARY_JOBS_DIR / "_timing_profile.json"
+
+
+def _monotonic_progress(st: dict, kw: dict) -> None:
+    if "prs_progress_pct" in kw and "progress_pct" not in kw:
+        kw["progress_pct"] = kw["prs_progress_pct"]
+    if "progress_pct" in kw:
+        kw["progress_pct"] = max(
+            float(st.get("progress_pct") or 0),
+            float(kw.get("progress_pct") or 0),
         )
-    st.update(kw)
-    dragen_jobs.save_state(job_id, st)
+
+
+def _update(job_id: str, **kw) -> None:
+    with _STATE_LOCK:
+        st = dragen_jobs.load_state(job_id) or {}
+        _monotonic_progress(st, kw)
+        st.update(kw)
+        dragen_jobs.save_state(job_id, st)
 
 
 def _log(message: str = "") -> None:
@@ -1370,17 +1359,14 @@ def _log(message: str = "") -> None:
 def _set_step(job_id: str, step: str, *, log_transition=True, **kw) -> None:
     """Persist and log step transitions for post-run timing analysis."""
     now = _now()
-    st = dragen_jobs.load_state(job_id) or {}
-    if "nextflow_progress_pct" in kw:
-        kw["nextflow_progress_pct"] = max(
-            float(st.get("nextflow_progress_pct") or 0),
-            float(kw.get("nextflow_progress_pct") or 0),
-        )
-    history = list(st.get("step_history") or [])
-    history.append({"step": step, "started_at": now})
-    st.update(kw)
-    st.update(step=step, step_started_at=now, step_history=history)
-    dragen_jobs.save_state(job_id, st)
+    with _STATE_LOCK:
+        st = dragen_jobs.load_state(job_id) or {}
+        _monotonic_progress(st, kw)
+        history = list(st.get("step_history") or [])
+        history.append({"step": step, "started_at": now})
+        st.update(kw)
+        st.update(step=step, step_started_at=now, step_history=history)
+        dragen_jobs.save_state(job_id, st)
     if log_transition:
         _log(f"[step] {step}")
 
@@ -1396,6 +1382,12 @@ def _record_nextflow_step(
     total: int | None = None,
 ) -> None:
     now = _now()
+    with _STATE_LOCK:
+        _record_nextflow_step_locked(job_id, slug, process, event, now,
+                                     elapsed=elapsed, done=done, total=total)
+
+
+def _record_nextflow_step_locked(job_id, slug, process, event, now, *, elapsed, done, total) -> None:
     st = dragen_jobs.load_state(job_id) or {}
     history = list(st.get("nextflow_step_history") or [])
     item = {
@@ -1413,71 +1405,6 @@ def _record_nextflow_step(
     history.append(item)
     st["nextflow_step_history"] = history
     dragen_jobs.save_state(job_id, st)
-
-
-def _elapsed_minutes_label(elapsed: float | None) -> str:
-    if elapsed is None:
-        return ""
-    return f"elapsed={elapsed / 60:.1f}m"
-
-
-_ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-
-
-def _parse_nextflow_progress_line(
-    line: str,
-    tokens: tuple[str, ...],
-    *,
-    expected_total: int,
-) -> dict[str, object] | None:
-    """Parse one Nextflow process status line for batch progress.
-
-    Nextflow may initially print ``1 of 1`` and then grow the denominator as
-    more channel items arrive.  Treating that first line as 100% makes a
-    long-running per-sample process such as VEP consume its whole weight at
-    once and leaves the UI progress bar apparently frozen.  Use the known
-    batch size as the denominator while the process is active, and only
-    consider the process terminal when Nextflow marks it complete (or when
-    the reported total has reached the whole batch).
-    """
-    norm = " ".join(_ANSI_ESCAPE_RE.sub("", line).strip().split())
-    token = next((candidate for candidate in tokens if candidate in norm), "")
-    if not token:
-        return None
-
-    count_match = re.search(r"\|\s*(\d+)\s+of\s+(\d+)", norm)
-    done = int(count_match.group(1)) if count_match else 0
-    reported_total = int(count_match.group(2)) if count_match else 0
-    progress_total = max(1, expected_total, reported_total)
-    visibly_complete = "✔" in norm or "✓" in norm
-
-    if "[-" in norm:
-        event = "queued"
-    elif visibly_complete or (
-        reported_total >= max(1, expected_total)
-        and done >= reported_total
-    ):
-        event = "done"
-    else:
-        event = "start"
-
-    if event == "done":
-        fraction = 1.0
-    elif count_match:
-        fraction = max(0.0, min(1.0, done / progress_total))
-    else:
-        fraction = 0.0
-
-    return {
-        "norm": norm,
-        "process": token,
-        "event": event,
-        "done": done,
-        "reported_total": reported_total,
-        "progress_total": progress_total,
-        "fraction": fraction,
-        "has_count": bool(count_match),
-    }
 
 
 def _run(
@@ -1549,7 +1476,7 @@ def _run_cnv_rescue_for_sample(*, mode: str, sample: dict, base_tsv: Path,
                                post_dir: Path, scripts: Path, on_line=None, job_id=None) -> None:
     if mode != "dragen":
         return
-    # Independent of --skip-cnv: reannotate integrated PASS + Rule B CNVs.
+    # Reannotate integrated PASS + Rule B CNVs (pipeline 06_cnv_sv stays the baseline).
     # The 06 TSV supplies legacy IDs only, never annotations or eligibility.
     _run(
         [sys.executable, str(scripts / "rescue_dragen_cnv.py"),
@@ -1584,6 +1511,48 @@ def _record_gpn_completion(job_id: str, sample_id: str, post_dir: Path, research
     _log(f'[gpn-completion] {sample_id}: Research-only={research_only}; {statuses}')
     for warning in warnings:
         _log('[gpn-warning] '+warning)
+
+
+def _record_timing_profile(
+    *,
+    pipeline_type: str,
+    sample_kinds: list[str],
+    trace_path: Path,
+    nextflow_elapsed: float | None,
+    postprocessing_elapsed: float | None,
+    step_seconds: dict[str, list[float]],
+) -> None:
+    """Learn per-process / per-step / per-phase durations for the progress bar.
+
+    Only homogeneous batches (one pipeline_type + seq_type) update the
+    profile: trace rows carry no sample tag, so a mixed WES/WGS batch cannot
+    be attributed.  A mostly cached Nextflow run says nothing about its real
+    duration, so its phase time is not learned.  Never fails the job.
+    """
+    kinds = set(sample_kinds)
+    if len(kinds) != 1 or not sample_kinds:
+        _log("[progress] timing profile not updated (mixed WES/WGS batch)")
+        return
+    kind = next(iter(kinds))
+    try:
+        rows, _offset = tertiary_progress.read_trace(trace_path, 0)
+        statuses = [str(r.get("status") or "").upper() for r in rows]
+        cached_share = statuses.count("CACHED") / len(statuses) if statuses else 1.0
+        with _STATE_LOCK:
+            profile = tertiary_progress.load_profile(_timing_profile_path())
+            tertiary_progress.update_profile(
+                profile,
+                kind,
+                trace_rows=rows,
+                sample_count=len(sample_kinds),
+                nextflow_seconds=nextflow_elapsed if cached_share < 0.5 else None,
+                postprocessing_seconds=postprocessing_elapsed,
+                step_seconds=step_seconds,
+            )
+            tertiary_progress.save_profile(_timing_profile_path(), profile)
+        _log(f"[progress] timing profile updated for {kind} ({len(rows)} trace rows)")
+    except Exception as exc:  # noqa: BLE001 — progress learning is best-effort
+        _log(f"[progress] warning: timing profile not updated: {exc}")
 
 
 def _run_prs_postprocessing(samples, job_id):
@@ -1670,9 +1639,7 @@ def main() -> int:
     )
     ap.add_argument("--without-pgx", action="store_true")
     ap.add_argument("--with-prs", action="store_true")
-    # In-house only — explicit sibling VCF paths from the index.
-    ap.add_argument("--cnv-vcf",  default="")
-    ap.add_argument("--sv-vcf",   default="")
+    # Retained in job metadata only; pipeline v3.2 04_mito output is copied.
     ap.add_argument("--mito-vcf", default="")
     args = ap.parse_args()
 
@@ -1693,11 +1660,9 @@ def main() -> int:
     work_lease = nextflow_work.acquire_lease(TERTIARY_NF_WORK_ROOT, pipeline_type)
     os.environ.update(nextflow_work.lease_env(TERTIARY_NF_WORK_ROOT, pipeline_type, work_lease))
     nf_launch, nf_work = _nextflow_context(samples)
-    legacy_staging = os.environ.get("NGS_UI_TERTIARY_LEGACY_STAGING", "").strip().lower() in {
-        "1", "true", "yes", "y", "on"
-    }
     lock_handles: list[object] = []
     nextflow_cache_lock: object | None = None
+    pp_ticker: tertiary_progress.Ticker | None = None
     staging_root: Path | None = None
     publication_root: Path | None = None
     rollback_root: Path | None = None
@@ -1713,7 +1678,32 @@ def main() -> int:
     signal.signal(signal.SIGTERM, cleanup_on_sigterm)
 
     started_at = _now()
-    _set_step(job_id, "detect-pipeline-output", state="running", started_at=started_at)
+    job_started = time.monotonic()
+    timing_profile = tertiary_progress.load_profile(_timing_profile_path())
+    sample_kinds = [
+        tertiary_progress.kind_key(pipeline_type, sample["seq_type"]) for sample in samples
+    ]
+    progress_bands = tertiary_progress.phase_bands(
+        timing_profile, sample_kinds, with_prs=bool(args.with_prs),
+    )
+    nextflow_elapsed: float | None = None
+    postprocessing_elapsed: float | None = None
+
+    def set_progress(phase: str, fraction: float, **extra) -> None:
+        pct = tertiary_progress.band_pct(progress_bands, phase, fraction)
+        _update(
+            job_id,
+            progress_pct=pct,
+            progress_phase=phase,
+            progress_eta_seconds=tertiary_progress.eta_seconds(job_started, pct),
+            **extra,
+        )
+
+    _set_step(
+        job_id, "detect-pipeline-output", state="running", started_at=started_at,
+        progress_pct=0.0, progress_phase="pre",
+        progress_bands={k: list(v) for k, v in progress_bands.items()},
+    )
     try:
         lock_handles = _acquire_sample_locks(
             sample_ids + [sample["source_sample_id"] for sample in samples]
@@ -1765,167 +1755,72 @@ def main() -> int:
             _log(f"[detect] running nextflow for {len(pending_samples)} sample(s)")
 
             if pending_samples:
-                # 2. v3.x pipeline input. The official pipeline now owns
-                # PREPARE_VCF / PREPARE_VCF_DRAGEN, so the default path is
-                # a one-row sample sheet. Keep the old staging route behind
-                # an env switch for deployments that have not upgraded yet.
-                if legacy_staging:
-                    if len(pending_samples) != 1:
-                        raise RuntimeError(
-                            "batch jobs require the v3.x samplesheet pipeline; "
-                            "unset NGS_UI_TERTIARY_LEGACY_STAGING or run one sample at a time"
-                        )
-                    sample = pending_samples[0]
-                    sid = sample["sample_id"]
-                    source_sid = sample["source_sample_id"]
-                    vcf = sample["vcf_path"]
-                    vcf_path = Path(vcf)
-                    nf_stage = NGS_UI_HOME / "nf_stage" / sid
-                    _set_step(job_id, "stage")
-                    _log("[stage] legacy staging enabled by NGS_UI_TERTIARY_LEGACY_STAGING")
-                    if mode == "inhouse":
-                        if source_sid == sid:
-                            _symlink_inhouse_into_nf_stage(vcf_path, sid, nf_stage)
-                            _log(f"[stage] in-house symlink → {nf_stage}/04_snv_indel/"
-                                 f"{sid}.ensemble.fixed.vcf.gz (no filter)")
-                        else:
-                            _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-                                  "--in",         vcf,
-                                  "--sample",     sid,
-                                  "--skip-norm",
-                                  "--skip-bed",
-                                  "--skip-gnomad",
-                                  "--keep-chrm"],
-                                 label="2a/4 stage in-house alias")
-                    else:
-                        _run([str(scripts / "stage_dragen_for_tertiary.sh"),
-                              "--in",     vcf,
-                              "--sample", sid],
-                             label="2a/4 stage")
-                else:
-                    _set_step(job_id, "samplesheet")
-                    samplesheet = _write_samplesheet(
-                        job_id,
-                        samples=pending_samples,
+                # 2. v3.x pipeline input. The official pipeline owns
+                # PREPARE_VCF / PREPARE_VCF_DRAGEN; NGS-UI only writes the
+                # multi-row sample sheet.
+                _set_step(job_id, "samplesheet")
+                samplesheet = _write_samplesheet(
+                    job_id,
+                    samples=pending_samples,
+                )
+                _log(f"[samplesheet] {samplesheet}")
+                for sample in pending_samples:
+                    _log(
+                        "[samplesheet] "
+                        f"source_sample_id={sample['source_sample_id']} "
+                        f"ui_sample_id={sample['sample_id']} "
+                        f"pipeline_type={pipeline_type} "
+                        f"input_dir={_pipeline_input_dir(Path(sample['vcf_path']), mode)}"
                     )
-                    _log(f"[samplesheet] {samplesheet}")
-                    for sample in pending_samples:
-                        _log(
-                            "[samplesheet] "
-                            f"source_sample_id={sample['source_sample_id']} "
-                            f"ui_sample_id={sample['sample_id']} "
-                            f"pipeline_type={pipeline_type} "
-                            f"input_dir={_pipeline_input_dir(Path(sample['vcf_path']), mode)}"
-                        )
 
                 # 3. Nextflow → job-private staging/<source SID>/...
                 _set_step(job_id, "waiting-nextflow-cache")
-                nextflow_stages = [
-                    ("prepare-vcf-dragen-add-tag", ("PREPARE_VCF_DRAGEN:ADD_DRAGEN_TAG",), 0.5),
-                    ("prepare-vcf-dragen", ("PREPARE_VCF_DRAGEN",), 0.5),
-                    ("prepare-vcf", ("PREPARE_VCF",), 1.0),
-                    ("mito-vep", ("MITO_ANNOTATE:MITO_VEP",), 1.5),
-                    ("mito-parse", ("MITO_ANNOTATE:MITO_PARSE",), 0.8),
-                    ("str-parse-dragen", ("STR_PARSE_DRAGEN",), 0.7),
-                    ("prepare-cnv-dragen", ("PREPARE_CNV_DRAGEN", "PREPARE_CNV_NCKUH"), 0.7),
-                    ("annotsv-cnv-dragen", ("ANNOTSV_CNV_DRAGEN", "ANNOTSV_CNV_NCKUH"), 3.0),
-                    ("prepare-sv-dragen", ("PREPARE_SV_DRAGEN", "PREPARE_SV_NCKUH"), 0.7),
-                    ("annotsv-sv-dragen", ("ANNOTSV_SV_DRAGEN", "ANNOTSV_SV_NCKUH"), 8.0),
-                    ("vep-annotate", ("SNV_ANNOTATE:VEP_ANNOTATE",), 32.0),
-                    ("pangolin-score", ("SNV_ANNOTATE:PANGOLIN_SCORE",), 8.0),
-                    ("parse-csq", ("PARSE_VEP_CSQ:PARSE_CSQ",), 16.0),
-                    ("acmg-classify", ("ACMG_CLASSIFY",), 8.0),
-                    ("pgx-stellarpgx", ("PGX_ANNOTATE:PGX_STELLARPGX",), 1.0),
-                    ("pgx-hla-extract", ("PGX_ANNOTATE:PGX_HLA_EXTRACT",), 1.0),
-                    ("pgx-optitype", ("PGX_ANNOTATE:PGX_OPTITYPE",), 8.0),
-                    ("pgx-pharmcat", ("PGX_ANNOTATE:PGX_PHARMCAT",), 4.0),
-                    ("pgx-parse", ("PGX_ANNOTATE:PGX_PARSE",), 2.0),
-                ]
-                if args.without_pgx:
-                    nextflow_stages = [row for row in nextflow_stages if not row[0].startswith("pgx-")]
-                nextflow_stage_index = {slug: idx for idx, (slug, _tokens, _weight) in enumerate(nextflow_stages)}
-                nextflow_progress_start = 3.0
-                nextflow_progress_end = 82.0
-                nextflow_total_weight = max(1.0, sum(weight for _slug, _tokens, weight in nextflow_stages))
-                nextflow_stage_fraction: dict[str, float] = {
-                    slug: 0.0 for slug, _tokens, _weight in nextflow_stages
-                }
-                nextflow_progress_rank = -1
-                nextflow_running: dict[str, float] = {}
-                nextflow_seen_events: set[tuple[str, str, int, int]] = set()
+                nf_progress = tertiary_progress.NextflowProgress(
+                    kinds=[
+                        tertiary_progress.kind_key(pipeline_type, sample["seq_type"])
+                        for sample in pending_samples
+                    ],
+                    profile=timing_profile,
+                    with_pgx=not args.without_pgx,
+                )
+                trace_path = TERTIARY_JOBS_DIR / job_id / "trace.txt"
+
+                def emit_nextflow_events(events: list[dict]) -> None:
+                    for item in events:
+                        process = item["process"]
+                        slug = process.lower().replace("_", "-")
+                        if item["event"] == "start":
+                            _log(f"[nextflow-step] {process} start")
+                            _record_nextflow_step(job_id, slug, process, "start")
+                        else:
+                            elapsed = item.get("elapsed")
+                            _log(
+                                f"[nextflow-step] {process} done "
+                                f"{item.get('done')}/{item.get('total')} "
+                                f"elapsed={(elapsed or 0) / 60:.1f}m"
+                            )
+                            _record_nextflow_step(
+                                job_id, slug, process, "done",
+                                elapsed=elapsed, done=item.get("done"), total=item.get("total"),
+                            )
+
+                def publish_nextflow_progress() -> None:
+                    emit_nextflow_events(nf_progress.poll_trace(trace_path))
+                    set_progress(
+                        "nextflow",
+                        nf_progress.fraction(),
+                        nextflow_current=nf_progress.current(),
+                    )
 
                 def track_nextflow(line: str) -> None:
-                    nonlocal nextflow_progress_rank
-                    if "[" not in line or "]" not in line:
-                        return
-                    for slug, tokens, weight in nextflow_stages:
-                        parsed = _parse_nextflow_progress_line(
-                            line,
-                            tokens,
-                            expected_total=len(pending_samples),
+                    events = nf_progress.on_stdout(line)
+                    if events:
+                        emit_nextflow_events(events)
+                        set_progress(
+                            "nextflow",
+                            nf_progress.fraction(),
+                            nextflow_current=nf_progress.current(),
                         )
-                        if parsed is None:
-                            continue
-                        process = str(parsed["process"])
-                        event = str(parsed["event"])
-                        done = int(parsed["done"])
-                        reported_total = int(parsed["reported_total"])
-                        progress_total = int(parsed["progress_total"])
-                        fraction = float(parsed["fraction"])
-                        has_count = bool(parsed["has_count"])
-                        key = (slug, event, done, reported_total)
-                        if key in nextflow_seen_events:
-                            return
-                        nextflow_seen_events.add(key)
-                        if event == "start":
-                            nextflow_running.setdefault(slug, time.monotonic())
-                        elapsed = None
-                        if event == "done":
-                            started = nextflow_running.get(slug)
-                            elapsed = (time.monotonic() - started) if started is not None else None
-                        _record_nextflow_step(
-                            job_id,
-                            slug,
-                            process,
-                            event,
-                            elapsed=elapsed,
-                            done=done or None,
-                            total=reported_total or None,
-                        )
-                        suffix = ""
-                        elapsed_label = _elapsed_minutes_label(elapsed)
-                        if elapsed_label:
-                            suffix = f"  {elapsed_label} [{_now()}]"
-                        if event == "queued":
-                            return
-                        stage_idx = nextflow_stage_index.get(slug, 0)
-                        nextflow_stage_fraction[slug] = max(
-                            nextflow_stage_fraction.get(slug, 0.0),
-                            max(0.0, min(1.0, fraction)),
-                        )
-                        weighted_done = sum(
-                            nextflow_stage_fraction.get(stage_slug, 0.0) * stage_weight
-                            for stage_slug, _stage_tokens, stage_weight in nextflow_stages
-                        )
-                        pct = nextflow_progress_start + (
-                            weighted_done
-                            / nextflow_total_weight
-                        ) * (nextflow_progress_end - nextflow_progress_start)
-                        if stage_idx > nextflow_progress_rank or event == "done" or has_count:
-                            nextflow_progress_rank = max(nextflow_progress_rank, stage_idx)
-                            _update(
-                                job_id,
-                                nextflow_progress_pct=round(pct, 1),
-                                nextflow_current={
-                                    "step": slug,
-                                    "process": process,
-                                    "event": event,
-                                    "done": done,
-                                    "total": progress_total,
-                                    "reported_total": reported_total,
-                                },
-                            )
-                        return suffix
 
                 _log(
                     f"[nextflow] waiting for shared {pipeline_type} cache lineage"
@@ -1958,50 +1853,30 @@ def main() -> int:
                         f"{seeded_resume_session} into shared {pipeline_type} lineage"
                     )
                 _set_step(job_id, "nextflow")
+                set_progress("nextflow", 0.0)
 
-                if legacy_staging:
-                    sample = pending_samples[0]
-                    sid = sample["sample_id"]
-                    nextflow_cmd = [
-                        "nextflow",
-                        "-c", str(nf_config),
-                        "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
-                        "-profile", "dgm",
-                        "-work-dir", str(nf_work),
-                        "--sample_id", sid,
-                        "--input_dir", str(nf_stage),
-                        "--seq_type",  sample["seq_type"],
-                        "--out_dir",   str(staging_root),
-                    ]
-                    if args.without_pgx:
-                        nextflow_cmd += ["--run_pgx", "false"]
-                    if args.research_only:
-                        nextflow_cmd += ["--academic_dbnsfp", "true"]
-                    nextflow_cmd.append("-resume")
-                    if seeded_resume_session:
-                        nextflow_cmd.append(seeded_resume_session)
-                    nextflow_run_cmd = nextflow_cmd
-                    nextflow_run_label = "2b/4 nextflow legacy"
-                else:
-                    samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
-                    nextflow_cmd = [
-                        "nextflow",
-                        "-c", str(nf_config),
-                        "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
-                        "-profile", "dgm",
-                        "-work-dir", str(nf_work),
-                        "--pipeline_type", pipeline_type,
-                        "--samplesheet", str(samplesheet),
-                        "--out_dir", str(staging_root),
-                    ]
-                    if args.without_pgx:
-                        nextflow_cmd += ["--run_pgx", "false"]
-                    if args.research_only:
-                        nextflow_cmd += ["--academic_dbnsfp", "true"]
-                    nextflow_cmd.append("-resume")
-                    if seeded_resume_session:
-                        nextflow_cmd.append(seeded_resume_session)
-                    nextflow_run_label = "2b/4 nextflow v3.x"
+                samplesheet = TERTIARY_JOBS_DIR / job_id / "samplesheet.csv"
+                nextflow_cmd = [
+                    "nextflow",
+                    "-c", str(nf_config),
+                    "run", "/home/pipeline/tertiary_code/main_tertiary.nf",
+                    "-profile", "dgm",
+                    "-work-dir", str(nf_work),
+                    "--pipeline_type", pipeline_type,
+                    "--samplesheet", str(samplesheet),
+                    "--out_dir", str(staging_root),
+                ]
+                if args.without_pgx:
+                    nextflow_cmd += ["--run_pgx", "false"]
+                if args.research_only:
+                    nextflow_cmd += ["--academic_dbnsfp", "true"]
+                # Plain task lines (full process names) + a trace file drive
+                # the progress bar; neither option affects -resume task hashes.
+                nextflow_cmd += ["-ansi-log", "false", "-with-trace", str(trace_path)]
+                nextflow_cmd.append("-resume")
+                if seeded_resume_session:
+                    nextflow_cmd.append(seeded_resume_session)
+                nextflow_run_label = "2b/4 nextflow v3.x"
 
                 nextflow_run_cmd = tertiary_workspace.nextflow_command(
                     nextflow_cmd, TERTIARY_NF_WORK_ROOT, pipeline_type, job_id,
@@ -2013,13 +1888,19 @@ def main() -> int:
                 previous_nextflow_log_signature = (
                     dragen_jobs.nextflow_log_signature(nf_launch)
                 )
+                nextflow_started = time.monotonic()
                 try:
-                    _run(
-                        nextflow_run_cmd,
-                        label=nextflow_run_label,
-                        on_line=track_nextflow,
-                        cwd=nf_launch,
-                    )
+                    with tertiary_progress.Ticker(publish_nextflow_progress):
+                        _run(
+                            nextflow_run_cmd,
+                            label=nextflow_run_label,
+                            on_line=track_nextflow,
+                            cwd=nf_launch,
+                        )
+                    nextflow_elapsed = time.monotonic() - nextflow_started
+                    emit_nextflow_events(nf_progress.poll_trace(trace_path))
+                    emit_nextflow_events(nf_progress.finish_events())
+                    set_progress("nextflow", 1.0)
                 finally:
                     try:
                         snapshot = dragen_jobs.snapshot_nextflow_log(
@@ -2046,16 +1927,16 @@ def main() -> int:
                 for sample in pending_samples:
                     sid = sample["sample_id"]
                     source_sid = sample["source_sample_id"]
-                    staged_pipeline_id = sid if legacy_staging else source_sid
                     outputs = _validate_staged_sample(
                         staging_root,
-                        staged_pipeline_id,
+                        source_sid,
                         require_pgx=not args.without_pgx,
                     )
                     existing_by_sid[sid] = outputs
         # 4. Prepare job-private 08_postprocessing beside staged 00-07.
         _set_step(job_id, "prepare-postprocessing")
-        pipeline_annotsv_available: dict[str, set[str]] = {}
+        postprocessing_started = time.monotonic()
+        set_progress("postprocessing", 0.0)
         pipeline_cnv_by_sid: dict[str, Path] = {}
         raw_tsv_by_sid: dict[str, Path] = {}
         staged_sample_dir_by_sid: dict[str, Path] = {}
@@ -2066,7 +1947,7 @@ def main() -> int:
             _log(postprocessing_log.event(sid, 'prepare', 'start'))
             source_sid = sample["source_sample_id"]
             source_vcf = sample["vcf_path"]
-            staged_pipeline_id = sid if legacy_staging else source_sid
+            staged_pipeline_id = source_sid
             staged_sample_dir = staging_root / staged_pipeline_id
             staged_sample_dir_by_sid[sid] = staged_sample_dir
             post_dir = staged_sample_dir / sample_layout.POSTPROCESSING_DIRNAME
@@ -2077,12 +1958,11 @@ def main() -> int:
                 raise RuntimeError(f"internal error: no pipeline TSV for {sid}")
             _validate_acmg_tsv(
                 existing,
-                strict_v31=not legacy_staging,
-                expect_academic_dbnsfp=(args.research_only if not legacy_staging else None),
+                strict_v31=True,
+                expect_academic_dbnsfp=args.research_only,
             )
-            if not legacy_staging:
-                sidecar = _ensure_pipeline_annotation_versions(existing)
-                _log(f"[source] {sid}: ClinVar baseline metadata {sidecar}")
+            sidecar = _ensure_pipeline_annotation_versions(existing)
+            _log(f"[source] {sid}: ClinVar baseline metadata {sidecar}")
             raw_tsv_by_sid[sid] = existing
             final_raw_tsv = (
                 sample_layout.unified_sample_dir(sid)
@@ -2105,9 +1985,21 @@ def main() -> int:
                 mode=mode, source_vcf=source_vcf, source_sample_id=source_sid,
                 sample_id=sid, post_dir=post_dir, raw_tsv=existing,
             )
-            _log(f"[specialized] {sid}: {specialized_result['status']}; alleles={len(specialized_result['variants'])}")
-            for warning in [w for loc in specialized_result.get("loci", {}).values() for w in loc.get("warnings", [])]:
-                _log(f"[specialized] {sid}: {warning}")
+            specialized_warnings = list(dict.fromkeys(
+                w for loc in specialized_result.get("loci", {}).values() for w in loc.get("warnings", [])
+            ))
+            specialized_line = (
+                f"[specialized] {sid}: {specialized_result['status']}; "
+                f"alleles={len(specialized_result['variants'])}"
+            )
+            if specialized_result["status"] == "not_available" and len(specialized_warnings) <= 1:
+                # In-house sources never ship the DRAGEN specialized JSON;
+                # one line instead of one identical warning per locus.
+                _log(specialized_line + (f" ({specialized_warnings[0]})" if specialized_warnings else ""))
+            else:
+                _log(specialized_line)
+                for warning in specialized_warnings:
+                    _log(f"[specialized] {sid}: {warning}")
             ploidy_copy, ploidy_qc_copy = _copy_ploidy_artifacts(
                 mode=mode,
                 source_vcf=source_vcf,
@@ -2205,7 +2097,6 @@ def main() -> int:
                         f"under staged {staged_sample_dir}/06_cnv_sv/"
                     )
                     continue
-                pipeline_annotsv_available.setdefault(sid, set()).add(kind)
                 if kind == "cnv":
                     pipeline_cnv_by_sid[sid] = annotsv_src
                 _log(f"[source] {sid}: use pipeline {kind.upper()} TSV directly ({annotsv_src})")
@@ -2214,15 +2105,37 @@ def main() -> int:
         # 5. Post-processing chain. ClinVar is compared against the weekly UI
         # snapshot here; the fixed pipeline annotation remains immutable.
         _set_step(job_id, "post-processing")
+        pp_progress = tertiary_progress.PostprocessingProgress(
+            sample_kinds=sample_kinds,
+            profile=timing_profile,
+            research_only=bool(args.research_only),
+            dragen=(mode == "dragen"),
+        )
+
+        def publish_postprocessing_progress() -> None:
+            set_progress("postprocessing", pp_progress.fraction())
+
         def track_post_processing(line: str) -> None:
-            match = re.search(r"\[(post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+start", line)
-            if match:
-                group = "post-processing" if match.group(1) == "post-processing-step" else "sample-step"
-                _set_step(job_id, f"{group}:{match.group(2)}", log_transition=False)
+            match = re.search(
+                r"\[(post-processing-step|sample-step)]\s+([a-z0-9-]+)\s+(start|done)"
+                r"(?:.*?elapsed=([\d.]+)s)?",
+                line,
+            )
+            if not match:
+                return
+            group_tag, step, marker, elapsed = match.groups()
+            pp_progress.on_marker(step, marker, float(elapsed) if elapsed else None)
+            if marker == "start":
+                group = "post-processing" if group_tag == "post-processing-step" else "sample-step"
+                _set_step(job_id, f"{group}:{step}", log_transition=False)
+            publish_postprocessing_progress()
 
         post_processing_count = len(samples)
+        pp_ticker = tertiary_progress.Ticker(publish_postprocessing_progress).start()
         for post_processing_index, sample in enumerate(samples):
             sid = sample["sample_id"]
+            pp_progress.start_sample(post_processing_index)
+            publish_postprocessing_progress()
             _update(
                 job_id,
                 post_processing_sample_index=post_processing_index,
@@ -2258,16 +2171,6 @@ def main() -> int:
                          "--post-dir", str(post_dir),
                          "--sample", sid,
                          "--seq-type", sample["seq_type"]]
-            if pipeline_annotsv_available.get(sid) == {"cnv", "sv"}:
-                stop_args += ["--skip-cnv"]
-                _log(f"[post-processing] {sid}: skip AnnotSV fallback; pipeline CNV/SV are available")
-            elif mode == "dragen":
-                stop_args += ["--dragen-cnv-source", sample["vcf_path"]]
-            elif mode == "inhouse":
-                if sample["cnv_vcf"]:
-                    stop_args += ["--inhouse-cnv-vcf", sample["cnv_vcf"]]
-                if sample["sv_vcf"]:
-                    stop_args += ["--inhouse-sv-vcf",  sample["sv_vcf"]]
             if args.research_only:
                 stop_args.append("--research-only")
             else:
@@ -2279,8 +2182,6 @@ def main() -> int:
                 "--sample", sid,
                 "--seq-type", sample["seq_type"],
             ]
-            if "--skip-cnv" in stop_args:
-                display_stop_args.append("--skip-cnv")
             if "--research-only" in stop_args:
                 display_stop_args.append("--research-only")
             if "--skip-spliceai" in stop_args:
@@ -2308,10 +2209,16 @@ def main() -> int:
                 work_tsv.unlink(missing_ok=True)
                 signal.signal(signal.SIGTERM, previous_sigterm)
 
+        pp_ticker.stop()
+        pp_ticker = None
+        postprocessing_elapsed = time.monotonic() - postprocessing_started
+        set_progress("postprocessing", 1.0)
+
         # 6. Promote every fully prepared generation. Keep every backup until
         # the whole batch has switched so a later sample failure can roll back
         # earlier samples from the same job.
         _set_step(job_id, "promote-output")
+        set_progress("promote", 0.0)
         publication_samples: dict[str, Path] = {}
         # Transfer and verify the entire batch before replacing any live data.
         for sample in samples:
@@ -2364,12 +2271,23 @@ def main() -> int:
             except Exception as cache_error:
                 _log(f"[cache] {sid}: refresh failed: {cache_error}")
 
+        set_progress("promote", 1.0)
+        _record_timing_profile(
+            pipeline_type=pipeline_type,
+            sample_kinds=sample_kinds,
+            trace_path=TERTIARY_JOBS_DIR / job_id / "trace.txt",
+            nextflow_elapsed=nextflow_elapsed,
+            postprocessing_elapsed=postprocessing_elapsed,
+            step_seconds=pp_progress.step_seconds,
+        )
+
         if args.with_prs:
             # Publish source identity first, but remain running through PRS.
             # The inline worker shares our sample ownership, never waits for it.
             _run_prs_postprocessing(samples, job_id)
         finished_at = _now()
-        _set_step(job_id, "done", state="done", finished_at=finished_at)
+        _set_step(job_id, "done", state="done", finished_at=finished_at,
+                  progress_pct=100.0, progress_phase="done", progress_eta_seconds=None)
         from ..services import unregistered_samples
         unregistered_samples.refresh_samples(sample_ids)
         _log(f"[tertiary_run] DONE. samples={','.join(sample_ids)}")
@@ -2389,6 +2307,8 @@ def main() -> int:
         _log(f"[tertiary_run] FAILED: {e}")
         return 1
     finally:
+        if pp_ticker is not None:
+            pp_ticker.stop()
         signal.signal(signal.SIGTERM, previous_main_sigterm)
         _release_nextflow_cache_lock(nextflow_cache_lock)
         _release_sample_locks(lock_handles)

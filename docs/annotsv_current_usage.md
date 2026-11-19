@@ -1,76 +1,34 @@
 # NGS-UI 目前的 AnnotSV 使用方式
 
-這份文件只描述 NGS-UI 目前怎麼跑 CNV/SV 的 AnnotSV，以及輸出如何接回 GUI。
+這份文件只描述 NGS-UI 目前 CNV/SV 的 AnnotSV 輸出從哪裡來，以及如何接回 GUI。
 
-## 安裝位置
+## 主要來源：三級 pipeline（Nextflow）
 
-AnnotSV 目前預設放在 DGM/NGS-UI 本機資料樹底下：
+CNV/SV 的 AnnotSV 註解由正式三級 pipeline 負責，輸出在：
 
-- 程式：`/home/n102968/NGS_UI/biotools/AnnotSV/bin/AnnotSV`
-- AnnotSV annotation database：`/home/n102968/NGS_UI/biotools/AnnotSV/share/AnnotSV`
-
-
-NGS-UI 自己的呼叫程式在：
-
-- `scripts/run_annotsv_cnv_sv.sh`：統一入口，依來源分派 DRAGEN 或 in-house。
-- `scripts/annotate_dragen_cnv_annotsv.sh`：DRAGEN CNV/SV VCF。
-- `scripts/annotate_inhouse_cnv_sv_annotsv.sh`：in-house gCNV + Delly VCF。
-
-
-## 輸入
-
-DRAGEN 模式給 hard-filtered SNV VCF，script 會從同一個 `vcf.gz/` 目錄找 sibling 檔案：
-
-- `{sample}.cnv.vcf.gz` → CNV
-- `{sample}.sv.vcf.gz` → SV
-
-in-house 模式直接給兩個 VCF：
-
-- gCNV：`{sample}.gcnv.vcf.gz`
-- Delly：`{sample}.delly.vcf.gz`
-
-## 執行範例
-
-DRAGEN：
-
-```bash
-scripts/run_annotsv_cnv_sv.sh \
-  --sample 26WG0001 \
-  --out-dir $HOME/NGS_UI/tertiary_output/26WG0001 \
-  --dragen-cnv-source /path/to/vcf.gz/26WG0001.hard-filtered.vcf.gz
+```text
+/home/pipeline/tertiary_output/{sample}/06_cnv_sv/{source_sample_id}.cnv.annotated.tsv
+/home/pipeline/tertiary_output/{sample}/06_cnv_sv/{source_sample_id}.sv.annotated.tsv
 ```
 
-in-house：
+NGS-UI worker 在 Nextflow 結束後驗證每個 sample 的 staging 輸出；**缺 CNV 或 SV TSV 會直接讓 job 失敗**，
+不再有 NGS-UI 本機 AnnotSV fallback（舊的 `run_annotsv_cnv_sv.sh` /
+`annotate_dragen_cnv_annotsv.sh` / `annotate_inhouse_cnv_sv_annotsv.sh` 已移除）。
 
-```bash
-scripts/run_annotsv_cnv_sv.sh \
-  --sample 26WE0001 \
-  --out-dir $HOME/NGS_UI/tertiary_output/26WE0001 \
-  --inhouse-cnv-vcf /path/to/26WE0001.gcnv.vcf.gz \
-  --inhouse-sv-vcf  /path/to/26WE0001.delly.vcf.gz
-```
+## DRAGEN integrated CNV rescue
 
-## AnnotSV 參數
+DRAGEN 模式另外有 `scripts/rescue_dragen_cnv.py`（post-processing 的 `cnv-rescue` 步驟），
+會從 `{sample}.cnv_sv.vcf.gz` 取 integrated PASS + Rule B CNV 重新跑 AnnotSV，
+輸出 `08_postprocessing/{sample}.cnv.review.tsv`。它使用的 AnnotSV runtime 由
+`backend/app/services/dragen_cnv_rescue.py::annotsv_command()` 決定：
 
-兩種來源最後都會呼叫 AnnotSV，主要參數一致：
+- 程式：`ANNOTSV_BIN`，或 `$NGS_UI_HOME/biotools/AnnotSV/bin/AnnotSV`，否則使用 `annotsv_3.5.10.sif`（`NGS_UI_ANNOTSV_SIF` 可覆寫）
+- annotation database：`ANNOTSV_ANNOTATIONS`，或 `/home/pipeline/reference/hg38/tertiary/annotsv_annotations/share/AnnotSV`、`$NGS_UI_HOME/biotools/AnnotSV/share/AnnotSV`
 
-```bash
-AnnotSV \
-  -SVinputFile <input.vcf.gz> \
-  -outputDir <sample_out>/_annotsv_<cnv|sv> \
-  -outputFile <sample>.<cnv|sv>.annotated.tsv \
-  -genomeBuild GRCh38 \
-  -annotationsDir "$ANNOTSV_ANNOTATIONS" \
-  -SVinputInfo 1
-```
+In-house（NCKUH）模式不跑 rescue。
 
 ## 輸出
 
-NGS-UI GUI 固定讀 sample 目錄下這兩個檔案：
-
-```text
-$HOME/NGS_UI/tertiary_output/{sample}/cnv.annotated.tsv
-$HOME/NGS_UI/tertiary_output/{sample}/sv.annotated.tsv
-```
-
-TSV 是 AnnotSV 標準輸出。GUI adapter 會讀 `Annotation_mode=full` 的事件列，並聚合 `split` gene rows，主要使用座標、SV type、cytoband、gene、pathogenic/benign overlap、OMIM/GenCC、`AnnotSV_ranking_score` 與 `ACMG_class` 等欄位。
+TSV 是 AnnotSV 標準輸出。GUI adapter 會讀 `Annotation_mode=full` 的事件列，並聚合 `split` gene rows，
+主要使用座標、SV type、cytoband、gene、pathogenic/benign overlap、OMIM/GenCC、`AnnotSV_ranking_score`
+與 `ACMG_class` 等欄位。

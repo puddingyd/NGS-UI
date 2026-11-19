@@ -72,6 +72,19 @@ def test_summary_reports_gpn_progress_without_large_signature_dump():
     assert 'BIG_DUMP' not in ''.join(events)
 
 
+def test_skipped_counter_is_info_not_a_skipped_status():
+    events = []
+    summary = postprocessing_log.Summary('S1', 'postprocessing', events.append)
+    summary.feed('[post-processing-step] genebe start')
+    summary.feed("[genebe] 37037 unique variants to look up (whole TSV; AF-dropped 0, "
+                 "BED-dropped 0, '*'-skipped 0)")
+    summary.feed('[genebe] backfilled ACMG for 16179/47525 TSV rows')
+    summary.feed('[genebe] live API skipped (disabled); tertiary analysis continues')
+    statuses = [e.split('status=')[1].split()[0] for e in events]
+    assert statuses == ['start', 'info', 'skipped']
+    assert "'*'-skipped" not in ''.join(events)
+
+
 @pytest.mark.parametrize('integrated', [False, True])
 def test_parent_log_and_api_surface_prs_failure_without_failing_tertiary(tmp_path, monkeypatch, integrated):
     jobs = tmp_path/'tertiary_jobs'

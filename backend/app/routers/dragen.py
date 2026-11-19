@@ -115,8 +115,6 @@ def post_dragen_job(payload: dict = Body(...)):
       seq_type:       "WES" | "WGS" (mainly for in-house; DRAGEN defaults WGS)
       with_research_only: bool (default false; legacy with_extra_vep accepted)
       with_pgx:       bool (default true; false adds --run_pgx false)
-      cnv_vcf:        in-house: gcnv VCF       (ignored for dragen)
-      sv_vcf:         in-house: delly VCF      (ignored for dragen)
       mito_vcf:       in-house: mito VCF       (ignored for dragen)
       samples:        optional batch list of the same fields; all rows must
                       share one mode/pipeline_type.
@@ -131,8 +129,6 @@ def post_dragen_job(payload: dict = Body(...)):
         payload.get("with_research_only", payload.get("with_extra_vep", False))
     )
     with_pgx = bool(payload.get("with_pgx", True))
-    cnv_vcf  = (payload.get("cnv_vcf")  or "").strip()
-    sv_vcf   = (payload.get("sv_vcf")   or "").strip()
     mito_vcf = (payload.get("mito_vcf") or "").strip()
     if samples is not None:
         if not isinstance(samples, list) or not samples:
@@ -150,8 +146,6 @@ def post_dragen_job(payload: dict = Body(...)):
             with_research_only=with_research_only,
             with_pgx=with_pgx,
             with_prs=bool(payload.get("with_prs", False)),
-            cnv_vcf=cnv_vcf,
-            sv_vcf=sv_vcf,
             mito_vcf=mito_vcf,
             samples=samples,
         )

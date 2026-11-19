@@ -12858,7 +12858,7 @@ function _dragenMatchVcfs(mode, query, { showAll = false } = {}) {
   if (!q && !showAll) return [];
   return _dragenCurrentList(mode).filter(v => {
     if (!q) return true;
-    return [v.sample_id, v.run, v.path, v.cnv_vcf, v.sv_vcf, v.mito_vcf]
+    return [v.sample_id, v.run, v.path, v.mito_vcf]
       .some(value => String(value || "").toLowerCase().includes(q));
   });
 }
@@ -12930,8 +12930,6 @@ function _dragenBuildSample(mode, row, sampleId) {
     seq_type: mode === "inhouse" ? (_DRAGEN_STATE.seqType.inhouse || _dragenInferSeqType(row)) : "WGS",
   };
   if (mode === "inhouse") {
-    sample.cnv_vcf = row.cnv_vcf || "";
-    sample.sv_vcf = row.sv_vcf || "";
     sample.mito_vcf = row.mito_vcf || "";
   }
   return sample;
@@ -13221,7 +13219,10 @@ function _dragenSetJob(state) {
       stateEl.textContent += '；PRS：' + state.prs_children.map(c => `${c.sample_id} ${c.status}`).join('、');
     }
     if (progressBar) progressBar.style.width = `${pct}%`;
-    if (progressText) progressText.textContent = `${pct}%`;
+    if (progressText) {
+      const eta = _dragenFmtEta(state);
+      progressText.textContent = eta ? `${pct}% · 預估剩餘 ${eta}` : `${pct}%`;
+    }
     if (progressBar) progressBar.classList.toggle("failed", state.state === "failed");
     if (cancelBtn) {
       const running = state.state === "queued" || state.state === "running" || !!state.running;
@@ -13237,6 +13238,17 @@ function _dragenSetJob(state) {
     if (logEl)   logEl.scrollTop     = logEl.scrollHeight;
     _dragenRenderBatch();
   }
+}
+
+function _dragenFmtEta(state) {
+  const running = state?.state === "queued" || state?.state === "running";
+  const seconds = Number(state?.progress_eta_seconds);
+  if (!running || !Number.isFinite(seconds) || seconds <= 0) return "";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes < 60) return `約 ${minutes} 分`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `約 ${hours} 小時 ${rest} 分` : `約 ${hours} 小時`;
 }
 
 function _dragenJobStepLabel(state) {
@@ -13258,6 +13270,13 @@ function _dragenJobStepLabel(state) {
 function _dragenProgressPercent(state) {
   if (!state) return 0;
   if (state.state === "done") return 100;
+  // Workers since the time-weighted redesign publish the overall percentage
+  // (learned per-process / per-phase durations). Older job states fall
+  // through to the legacy step table below.
+  if (state.progress_pct !== undefined && state.progress_pct !== null
+      && Number.isFinite(Number(state.progress_pct))) {
+    return _clampPct(state.progress_pct);
+  }
   if (state.state === "cancelled") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
   if (state.state === "failed") return _clampPct(_dragenProgressPercent({ ...state, state: "running" }));
   const step = String(state.step || "");
@@ -13311,7 +13330,6 @@ function _dragenStopgapProgressPercent(state) {
     "post-processing:inhouse-af": 0.70,
     "post-processing:mane-refseq": 0.72,
     "post-processing:litvar2": 0.76,
-    "post-processing:annotsv": 0.79,
     "sample-step:snv-overlay": 0.82,
     "sample-step:review-tsv": 0.86,
     "sample-step:gene-index": 0.92,

@@ -303,7 +303,7 @@ def test_stopgaps_passes_research_mode_to_actual_review_builder(tmp_path, dual_b
                "--seq-type", "WGS", "--gpn-msa-db", str(msa), "--gpn-star-dir", str(bundle),
                "--skip-spliceai", "--skip-clinvar-latest", "--skip-genebe",
                "--skip-giab", "--skip-inhouse-af", "--skip-mane-refseq", "--skip-litvar2",
-               "--skip-cnv", "--skip-candidate-bed"]
+               "--skip-candidate-bed"]
     if research:
         command.append("--research-only")
     # A legacy shell Python cannot import Polars, but the review subprocess

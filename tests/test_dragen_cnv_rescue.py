@@ -335,7 +335,6 @@ def test_worker_dispatch_is_dragen_only_and_passes_source_sample(tmp_path, monke
     assert not calls
     dragen_run._run_cnv_rescue_for_sample(mode="dragen", **args)
     assert calls[0][-2:] == ["--source-sample", "SRC"]
-    assert "--skip-cnv" not in calls[0]
     assert rescue.MANAGED_NAMES <= dragen_run.MANAGED_POSTPROCESSING_NAMES
 
 

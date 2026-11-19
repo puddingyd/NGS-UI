@@ -15,10 +15,8 @@
 #   3. annotate_spliceai.py     — add only SpliceAI (dbNSFP stays in Nextflow)
 #   4. annotate_mane_refseq.py — map Ensembl transcript IDs to MANE RefSeq
 #   5. annotate_litvar2.py   — local bulk SQLite lookup for review candidates
-#   6. run_annotsv_cnv_sv.sh — DRAGEN sibling CNV/SV VCFs or in-house
-#                              gCNV + Delly VCFs. Skipped if none supplied.
-#   7. build_snv_annotation_overlay.py — persist sparse field differences
-#   8. build_snv_review_tsv.py — materialise final review rows and join the
+#   6. build_snv_annotation_overlay.py — persist sparse field differences
+#   7. build_snv_review_tsv.py — materialise final review rows and join the
 #                                  GPN-MSA + Research-only GPN-Star scores
 #      build_snv_gene_index.py
 #
@@ -27,14 +25,14 @@
 #  pipeline now owns it; the legacy annotate_clinvar.py is left on
 #  disk for emergencies.)
 #
-# All steps are idempotent fill-or-augment. Step 6 produces fresh
-# cnv.annotated.tsv / sv.annotated.tsv whenever CNV VCFs are
-# pointed to; pass --skip-cnv to bypass.
+# All steps are idempotent fill-or-augment. CNV/SV AnnotSV output is owned by
+# the Nextflow pipeline (06_cnv_sv/); the worker refuses to post-process a
+# sample whose pipeline CNV/SV TSVs are missing, so there is no local AnnotSV
+# fallback here.
 #
 # Usage:
 #   scripts/run_stopgaps.sh \\
 #       --tsv tertiary_output/<SID>/<SID>.snv_indel.annotated.tsv \\
-#       [--dragen-cnv-source /path/to/<sample>.hard-filtered.vcf.gz] \\
 #       [--sample SID] [--seq-type WES|WGS]
 #
 # Env / flags:
@@ -69,8 +67,6 @@
 #   NGS_UI_GPN_STAR_DIR / --gpn-star-dir — canonical Parquet bundle
 #   NGS_UI_PYTHON_BIN                  — explicit review Python (set by worker)
 #   Both GPN predictors are best-effort; missing resources only warn.
-#   --skip-cnv                         — disable AnnotSV step 6 even
-#                                         when --dragen-cnv-source is set
 # =========================================================
 set -euo pipefail
 
@@ -105,15 +101,11 @@ TSV=""
 RAW_TSV=""
 POST_DIR=""
 SID=""
-DRAGEN_VCF=""
-INHOUSE_CNV_VCF=""
-INHOUSE_SV_VCF=""
 SKIP_SPLICEAI=0
 RESEARCH_ONLY=0
 REVIEW_PYTHON="${NGS_UI_PYTHON_BIN:-python3}"
 SKIP_CANDIDATE_BED=0
 SKIP_CLINVAR_LATEST=0
-SKIP_CNV=0
 SKIP_GIAB=0
 SKIP_GENEBE=0
 SKIP_MANE_REFSEQ=0
@@ -142,9 +134,6 @@ while [ $# -gt 0 ]; do
     --post-dir)           POST_DIR="$2"; shift 2;;
     --sample)             SID="$2"; shift 2;;
     --seq-type)           SEQ_TYPE="$2"; shift 2;;
-    --dragen-cnv-source)  DRAGEN_VCF="$2"; shift 2;;
-    --inhouse-cnv-vcf)    INHOUSE_CNV_VCF="$2"; shift 2;;
-    --inhouse-sv-vcf)     INHOUSE_SV_VCF="$2"; shift 2;;
     --spliceai-snv)       SPLICEAI_SNV="$2"; shift 2;;
     --spliceai-indel)     SPLICEAI_INDEL="$2"; shift 2;;
     --clinvar-latest-db)  CLINVAR_LATEST_DB="$2"; shift 2;;
@@ -153,7 +142,6 @@ while [ $# -gt 0 ]; do
     --skip-spliceai)      SKIP_SPLICEAI=1; shift;;
     --skip-extra-vep)     SKIP_SPLICEAI=1; shift;;
     --skip-clinvar-latest) SKIP_CLINVAR_LATEST=1; shift;;
-    --skip-cnv)           SKIP_CNV=1; shift;;
     --genebe-db)          GENEBE_DB="$2"; shift 2;;
     --skip-genebe)        SKIP_GENEBE=1; shift;;
     --mane-summary)       MANE_SUMMARY="$2"; shift 2;;
@@ -337,26 +325,7 @@ if [ "$SKIP_LITVAR2" -eq 0 ]; then
   step_done
 fi
 
-# 5. CNV/SV via AnnotSV.
 SAMPLE_DIR="$POST_DIR"
-if [ "$SKIP_CNV" -eq 0 ] && { [ -n "$DRAGEN_VCF" ] || [ -n "$INHOUSE_CNV_VCF" ] || [ -n "$INHOUSE_SV_VCF" ]; }; then
-  echo
-  echo "[post-processing] run_annotsv_cnv_sv.sh"
-  step_start "annotsv"
-  ANNOTSV_ARGS=(--sample "$SID" --out-dir "$SAMPLE_DIR")
-  if [ -n "$DRAGEN_VCF" ]; then
-    ANNOTSV_ARGS+=(--dragen-cnv-source "$DRAGEN_VCF")
-  fi
-  if [ -n "$INHOUSE_CNV_VCF" ]; then
-    ANNOTSV_ARGS+=(--inhouse-cnv-vcf "$INHOUSE_CNV_VCF")
-  fi
-  if [ -n "$INHOUSE_SV_VCF" ]; then
-    ANNOTSV_ARGS+=(--inhouse-sv-vcf "$INHOUSE_SV_VCF")
-  fi
-  "$SCRIPT_DIR/run_annotsv_cnv_sv.sh" "${ANNOTSV_ARGS[@]}"
-  step_done
-fi
-
 echo
 echo "[sample] sparse overlay  build_snv_annotation_overlay.py"
 step_start "snv-overlay" "sample-step"

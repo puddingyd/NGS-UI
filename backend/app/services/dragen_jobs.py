@@ -227,8 +227,6 @@ def list_inhouse_vcfs(*, paths=None) -> list[dict]:
                 p = sample_dir / rel
                 return str(p) if p.is_file() else ""
 
-            cnv  = sib(f"05_cnv_sv/{sid}.gcnv.vcf.gz")
-            sv   = sib(f"05_cnv_sv/{sid}.delly.vcf.gz")
             mito = sib(f"07_mitochondria/{sid}.mito.vcf.gz")
 
             try:
@@ -243,8 +241,6 @@ def list_inhouse_vcfs(*, paths=None) -> list[dict]:
                 "input_dir":   str(sample_dir),
                 "batch_dir":   str(sample_dir.parent),
                 "run":         run,
-                "cnv_vcf":     cnv,
-                "sv_vcf":      sv,
                 "mito_vcf":    mito,
                 "seq_type":    seq_type,
                 "seq_type_inferred_by": "size",
@@ -924,8 +920,6 @@ def start_job(
     with_research_only: bool = False,
     with_pgx: bool = True,
     with_prs: bool = False,
-    cnv_vcf: str = "",
-    sv_vcf: str = "",
     mito_vcf: str = "",
     samples: list[dict] | None = None,
 ) -> str:
@@ -935,9 +929,8 @@ def start_job(
                        {input_dir}/vcf.gz/{source_sample_id}.hard-filtered.vcf.gz.
     mode = "inhouse" → NCKUH ensemble output; v3.x sample sheet uses
                        {input_dir}/04_snv_indel/{source_sample_id}.ensemble.fixed.vcf.gz.
-                       seq_type should be WES or WGS. cnv_vcf / sv_vcf
-                       are still passed for NGS-UI AnnotSV fallback until
-                       pipeline CNV/SV lands. mito_vcf is
+                       seq_type should be WES or WGS. CNV/SV AnnotSV
+                       output always comes from the pipeline. mito_vcf is
                        retained in job metadata only; v3.2 pipeline output
                        04_mito/{sample}.mito.tsv is copied back to the UI.
 
@@ -971,8 +964,6 @@ def start_job(
                 "sample_id": sample_id_i,
                 "source_sample_id": source_id_i,
                 "seq_type": _normalize_seq_type(item.get("seq_type"), default=default_seq),
-                "cnv_vcf": (item.get("cnv_vcf") or "").strip(),
-                "sv_vcf": (item.get("sv_vcf") or "").strip(),
                 "mito_vcf": (item.get("mito_vcf") or "").strip(),
             })
         modes = {s["mode"] for s in batch_samples}
@@ -1001,8 +992,6 @@ def start_job(
             "sample_id": sample_id,
             "source_sample_id": source_sample_id,
             "seq_type": _normalize_seq_type(seq_type, default=default_seq),
-            "cnv_vcf": cnv_vcf,
-            "sv_vcf": sv_vcf,
             "mito_vcf": mito_vcf,
         }]
 
@@ -1046,8 +1035,6 @@ def start_job(
             "with_extra_vep": with_research_only,
             "with_pgx":       with_pgx,
             "with_prs":       with_prs,
-            "cnv_vcf":        cnv_vcf,
-            "sv_vcf":         sv_vcf,
             "mito_vcf":       mito_vcf,
             "state":          "queued",
             "step":           "queued",
@@ -1078,8 +1065,6 @@ def start_job(
             cmd.append("--with-prs")
         if not with_pgx:
             cmd.append("--without-pgx")
-        if cnv_vcf:  cmd += ["--cnv-vcf",  cnv_vcf]
-        if sv_vcf:   cmd += ["--sv-vcf",   sv_vcf]
         if mito_vcf: cmd += ["--mito-vcf", mito_vcf]
 
         env = os.environ.copy()
