@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import current_user
 from ..services import (
+    category_store,
     hpo_ontology,
     patient_phenotype_store,
     phenotype_scorer,
@@ -51,6 +52,7 @@ def panels_list():
 
 
 @router.post("/samples/{sample_id}/phenotype")
+@category_store.serialized
 def update_phenotype(sample_id: str, payload: dict):
     sub = sample_layout.state_dir(sample_id)
     if not sub.is_dir():

@@ -147,7 +147,10 @@ async function apiPut(path, body) {
     body: JSON.stringify(body),
   });
   if (resp.status === 401) { showLoginModal(); throw new Error("not authenticated"); }
-  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} on ${path}`);
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : `${resp.status} ${resp.statusText} on ${path}`);
+  }
   return await resp.json();
 }
 
@@ -2164,14 +2167,7 @@ function renderSampleMeta() {
   // and persisted via _saveSampleMeta.
   _populateRosterOptions(m.Department || "", m.Physician || "");
 
-  const sel = document.getElementById("m-category");
-  const opts = (state.options && state.options.category_options) || [];
-  const current = state.reports.category ?? m.Category ?? "";
-  const all = Array.from(new Set(["", ...opts, current].filter(x => x !== undefined && x !== null)));
-  sel.innerHTML = all.map(o => {
-    const label = o === "" ? "—" : o;
-    return `<option value="${escapeAttr(o)}" ${o === current ? "selected" : ""}>${escapeHtml(label)}</option>`;
-  }).join("");
+  populateCategorySelect(document.getElementById("m-category"), state.reports.category || "");
 
   document.getElementById("sample-card").classList.remove("hidden");
   applyDiagnosticAnalysisVisibility();
@@ -9452,6 +9448,7 @@ document.addEventListener("change", ev => {
     updateSaveHint();
   } else if (t.matches("#m-category")) {
     state.reports.category = t.value || null;
+    state.reports.category_revision = state.options?.category_revision;
     state.dirty = true;
     updateSaveHint();
   } else if (t.matches(".variant-comment")) {
@@ -9683,7 +9680,7 @@ function encodePath(p) {
 async function saveChanges(opts = {}) {
   // opts.silent: don't pop an alert on failure (auto-save calls this
   // with silent=true; manual 💾 clicks pass nothing → loud failure).
-  if (!state.currentLIS || _saveInflight) return;
+  if (!state.currentLIS || _saveInflight || _categoryEditor.busy) return;
   if (!state.dirty) return;
   _saveInflight = true;
   _saveError = "";
@@ -9705,8 +9702,10 @@ async function saveChanges(opts = {}) {
     const row = (state.index || []).find(r => r.LIS_ID === state.currentLIS);
     const sid = row?.sample_id || state.currentLIS;
     await apiPut(`/samples/${encodeURIComponent(sid)}/report`, state.reports);
+    if (row) row.Category = state.reports.category || "";
     state.dirty = false;
     _lastSavedAt = new Date();
+    refreshCategoryOptions().catch(() => {});
   } catch (e) {
     _saveError = e.message || "未知錯誤";
     if (!opts.silent) alert("儲存失敗：" + e.message);
@@ -11231,6 +11230,7 @@ function showModal(id) {
   document.getElementById(id)?.classList.remove("hidden");
 }
 function hideModal(id) {
+  if (id === "category-manager-modal" && !closeCategoryEditor()) return;
   document.getElementById(id)?.classList.add("hidden");
   // IGV needs an explicit browser teardown to stop background fetches.
   if (id === "igv-modal" && typeof closeIgvModal === "function") closeIgvModal();
@@ -11254,8 +11254,178 @@ document.addEventListener("click", ev => {
 });
 document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") {
+    if (!document.getElementById("category-manager-modal")?.classList.contains("hidden")) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      hideModal("category-manager-modal");
+      return;
+    }
     document.querySelectorAll(".modal:not(.hidden):not(#sample-loading-modal)").forEach(m => m.classList.add("hidden"));
   }
+});
+
+// ---- Shared category editor ---------------------------------------
+let _categoryEditor = { rows: [], revision: null, ready: false, busy: false, opener: null, request: 0 };
+let _categoryOptionsRequest = 0;
+
+function populateCategorySelect(select, current = select?.value || "") {
+  if (!select) return;
+  const options = [...new Set(["", ...(state.options?.category_options || []), current])];
+  select.innerHTML = options.map(name => `<option value="${escapeAttr(name)}">${escapeHtml(name || "—")}</option>`).join("");
+  select.value = current;
+}
+
+async function refreshCategoryOptions() {
+  const request = ++_categoryOptionsRequest;
+  const options = await apiFetch("/options");
+  if (!options || !Array.isArray(options.category_options)) throw new Error("分類清單讀取失敗");
+  if (request === _categoryOptionsRequest) state.options = options;
+  return options;
+}
+
+function renderCategoryEditor() {
+  const editor = _categoryEditor;
+  document.getElementById("category-manager-rows").innerHTML = editor.rows.map((row, i) => `
+    <div class="category-manager-row">
+      <input type="text" value="${escapeAttr(row.name)}" maxlength="100" required data-category-row="${i}" aria-label="分類名稱 ${i + 1}" />
+      <span class="category-manager-count">${row.count}</span>
+      <button type="button" class="btn btn-ghost" data-remove-category="${i}" aria-label="移除 ${escapeAttr(row.name || "新分類")}">移除</button>
+    </div>`).join("");
+  const removed = Object.keys(editor.counts || {}).filter(name => !editor.rows.some(row => row.original === name));
+  const removedCount = removed.reduce((sum, name) => sum + (editor.counts[name] || 0), 0);
+  document.getElementById("category-manager-status").textContent = removed.length
+    ? `待移除 ${removed.length} 個分類，${removedCount} 個個案將改為未分類；按儲存後套用。`
+    : "編輯後按儲存，統一套用到分類清單與既有個案。";
+}
+
+function closeCategoryEditor() {
+  if (_categoryEditor.busy) return false;
+  _categoryEditor.request++;
+  document.querySelectorAll("[data-category-inert]").forEach(el => {
+    el.inert = false;
+    el.removeAttribute("data-category-inert");
+  });
+  _categoryEditor.opener?.focus();
+  return true;
+}
+
+async function openCategoryEditor(opener) {
+  if (_saveInflight) return;
+  const editor = _categoryEditor = {
+    rows: [], counts: {}, revision: null, ready: false, busy: false,
+    opener, request: _categoryEditor.request + 1,
+  };
+  const request = editor.request;
+  document.getElementById("category-manager-rows").innerHTML = "";
+  document.getElementById("category-manager-error").classList.add("hidden");
+  document.getElementById("category-manager-status").textContent = "正在讀取分類與使用個案數…";
+  document.getElementById("category-manager-fields").disabled = true;
+  document.getElementById("category-manager-save").disabled = true;
+  document.querySelectorAll(".modal:not(.hidden):not(#category-manager-modal)").forEach(el => {
+    if (!el.inert) { el.inert = true; el.setAttribute("data-category-inert", ""); }
+  });
+  showModal("category-manager-modal");
+  document.querySelector('#category-manager-modal [data-close]')?.focus();
+  try {
+    const options = await refreshCategoryOptions();
+    if (_categoryEditor.request !== request) return;
+    editor.counts = options.category_counts || {};
+    editor.rows = options.category_options.map(name => ({ original: name, name, count: editor.counts[name] || 0 }));
+    editor.revision = options.category_revision;
+    editor.ready = true;
+    renderCategoryEditor();
+    document.getElementById("category-manager-fields").disabled = false;
+    document.getElementById("category-manager-save").disabled = false;
+    document.querySelector("#category-manager-rows input")?.focus();
+  } catch (e) {
+    if (_categoryEditor.request !== request) return;
+    document.getElementById("category-manager-status").textContent = "";
+    const error = document.getElementById("category-manager-error");
+    error.textContent = e.message;
+    error.classList.remove("hidden");
+  }
+}
+
+document.getElementById("m-category")?.addEventListener("focus", ev => populateCategorySelect(ev.currentTarget));
+
+document.querySelectorAll("[data-manage-categories]").forEach(button => {
+  button.addEventListener("click", () => openCategoryEditor(button));
+});
+document.getElementById("category-manager-rows")?.addEventListener("input", ev => {
+  const row = ev.target.dataset.categoryRow;
+  if (row !== undefined) _categoryEditor.rows[Number(row)].name = ev.target.value;
+});
+document.getElementById("category-manager-rows")?.addEventListener("click", ev => {
+  const button = ev.target.closest("[data-remove-category]");
+  if (!button || _categoryEditor.busy) return;
+  const index = Number(button.dataset.removeCategory);
+  _categoryEditor.rows.splice(index, 1);
+  renderCategoryEditor();
+  const inputs = document.querySelectorAll("#category-manager-rows input");
+  (inputs[Math.min(index, inputs.length - 1)] || document.getElementById("category-manager-add"))?.focus();
+});
+document.getElementById("category-manager-add")?.addEventListener("click", () => {
+  if (!_categoryEditor.ready || _categoryEditor.busy) return;
+  _categoryEditor.rows.push({ original: null, name: "", count: 0 });
+  renderCategoryEditor();
+  document.querySelector("#category-manager-rows .category-manager-row:last-child input")?.focus();
+});
+document.getElementById("category-manager-form")?.addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const editor = _categoryEditor;
+  if (!editor.ready || editor.busy || _saveInflight) return;
+  const error = document.getElementById("category-manager-error");
+  error.classList.add("hidden");
+  const names = editor.rows.map(row => row.name.trim());
+  if (names.some(name => !name) || new Set(names.map(name => name.toLowerCase())).size !== names.length) {
+    error.textContent = "請填寫分類名稱，名稱不可重複（不分大小寫）。";
+    error.classList.remove("hidden");
+    return;
+  }
+  editor.busy = true;
+  document.getElementById("category-manager-fields").disabled = true;
+  document.getElementById("category-manager-save").disabled = true;
+  document.querySelector('#category-manager-modal [data-close]').disabled = true;
+  document.getElementById("category-manager-status").textContent = "正在儲存並更新既有個案…";
+  try {
+    const result = await apiPut("/options/categories", {
+      category_revision: editor.revision,
+      categories: editor.rows.map(row => ({ original: row.original, name: row.name.trim() })),
+    });
+    const mapping = result.category_changes || {};
+    const mapped = value => Object.prototype.hasOwnProperty.call(mapping, value || "") ? mapping[value || ""] : (value || "");
+    _categoryOptionsRequest++;
+    state.options = { ...state.options, ...result };
+    // Preserve report edits and new-case fields; only translate categories.
+    if (state.reports) {
+      state.reports.category = mapped(state.reports.category);
+      state.reports.category_revision = result.category_revision;
+    }
+    if (state.data?.meta) state.data.meta.Category = mapped(state.data.meta.Category);
+    (state.index || []).forEach(row => { row.Category = mapped(row.Category); });
+    _caseListRows = [];
+    populateCategorySelect(document.getElementById("m-category"), mapped(document.getElementById("m-category")?.value));
+    populateCategorySelect(document.getElementById("new-case-category"), mapped(document.getElementById("new-case-category")?.value));
+    editor.busy = false;
+    hideModal("category-manager-modal");
+  } catch (e) {
+    error.textContent = e.message;
+    error.classList.remove("hidden");
+    document.getElementById("category-manager-status").textContent = "尚未完成儲存，請檢查後重試。";
+  } finally {
+    editor.busy = false;
+    document.getElementById("category-manager-fields").disabled = false;
+    document.getElementById("category-manager-save").disabled = false;
+    document.querySelector('#category-manager-modal [data-close]').disabled = false;
+    if (state.dirty) scheduleAutoSave();
+  }
+});
+document.getElementById("category-manager-modal")?.addEventListener("keydown", ev => {
+  if (ev.key !== "Tab") return;
+  const elements = [...ev.currentTarget.querySelectorAll('input, button')].filter(el => !el.disabled && !el.closest('fieldset:disabled'));
+  const first = elements[0], last = elements[elements.length - 1];
+  if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last?.focus(); }
+  else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first?.focus(); }
 });
 
 // ---- Load new case ------------------------------------------------
@@ -11559,14 +11729,12 @@ document.getElementById("btn-new-case")?.addEventListener("click", async () => {
   if (emrBtn) emrBtn.hidden = !state.emrEnabled;
   _updateNewCaseEmrLink();
 
-  // Populate the Category dropdown from /api/options so this modal +
-  // the sample-card Category select share one source of truth.
-  const catSel = document.getElementById("new-case-category");
-  if (catSel) {
-    const opts = (state.options && state.options.category_options) || [];
-    catSel.innerHTML = `<option value="" selected>—</option>` +
-      opts.map(o => `<option value="${escapeAttr(o)}">${escapeHtml(o)}</option>`).join("");
-  }
+  populateCategorySelect(document.getElementById("new-case-category"), "");
+  refreshCategoryOptions().then(() => {
+    if (!document.getElementById("new-case-modal")?.classList.contains("hidden")) {
+      populateCategorySelect(document.getElementById("new-case-category"));
+    }
+  }).catch(() => {});
 
   // Show the last lightweight list immediately, then revalidate in the background.
   const lisInput = document.getElementById("new-case-lis-id-search");
@@ -12020,6 +12188,7 @@ document.getElementById("new-case-form")?.addEventListener("submit", async (ev) 
     return;
   }
   const fd = new FormData(form);
+  fd.set("category_revision", state.options?.category_revision || "");
   // Send the visible chips plus whether the reviewer actually changed them.
   // Untouched empty chips let the backend recover a just-entered MRN's
   // patient snapshot; explicitly cleared chips remain authoritative.

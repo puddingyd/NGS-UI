@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import (
+    category_store,
     analyses_store,
     emr_client,
     patient_phenotype_store,
@@ -149,6 +150,7 @@ def register(
     test_type: str = "WES",
     genome_build: str = "hg38",
     category: str = "",
+    category_revision: str = "",
     department: str = "",
     physician: str = "",
     sign_received_at: str = "",
@@ -294,14 +296,16 @@ def register(
         "updated_at":           now,
     }
     meta_started = time.perf_counter()
-    sample_layout.state_file(
-        lis_id,
-        "sample_metadata.json",
-        for_write=True,
-    ).write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    with category_store.locked():
+        meta["category"] = category_store.validate_selection(category, category_revision)
+        sample_layout.state_file(
+            lis_id,
+            "sample_metadata.json",
+            for_write=True,
+        ).write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     _log_perf("patient_store.register.metadata", meta_started, sample=lis_id)
     unregistered_samples.refresh_samples([lis_id])
 

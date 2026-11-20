@@ -4681,3 +4681,27 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 
 /* Gene whose OMIM page has no Gene-Phenotype Relationships table */
 .omim-no-relationships { color: var(--muted, #59636e); font-size: 12px; font-style: italic; margin: 2px 0 4px; }
+
+/* Shared case-category editor, including when opened above the new-case form. */
+.category-select-tools { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.category-select-tools select { flex: 1; min-width: 0; }
+.category-manage-btn { flex: 0 0 26px; width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--muted); cursor: pointer; font-size: 16px; }
+.category-manage-btn:hover { color: var(--accent); background: #f1f5f9; }
+.category-manage-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#category-manager-modal { z-index: 180; }
+.category-manager-card { max-width: 570px; }
+.category-manager-description { font-size: 12px; line-height: 1.6; margin: 0 0 12px; }
+#category-manager-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.category-manager-header, .category-manager-row { display: grid; grid-template-columns: minmax(0, 1fr) 80px 48px; gap: 8px; align-items: center; }
+.category-manager-header { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.category-manager-row { margin-bottom: 7px; }
+.category-manager-header > :nth-child(2), .category-manager-count { text-align: center; }
+.category-manager-count { color: var(--muted); font-size: 12px; }
+.category-manager-row input { min-width: 0; box-sizing: border-box; }
+.category-manager-row .btn { padding: 5px 7px; font-size: 12px; }
+#category-manager-status { font-size: 12px; }
+#category-manager-error { color: #b42318; font-size: 12px; }
+@media (max-width: 480px) {
+  .category-manager-card { padding: 16px; }
+  .category-manager-header, .category-manager-row { grid-template-columns: minmax(0, 1fr) 64px 42px; gap: 5px; }
+}

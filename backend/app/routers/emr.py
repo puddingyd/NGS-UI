@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import current_user
-from ..services import emr_client, patient_phenotype_store, sample_layout
+from ..services import category_store, emr_client, patient_phenotype_store, sample_layout
 
 router = APIRouter(prefix="/api", tags=["emr"], dependencies=[Depends(current_user)])
 
@@ -73,6 +73,7 @@ def emr_lookup(mrn: str):
 
 
 @router.post("/samples/{sample_id}/sync_emr")
+@category_store.serialized
 def sync_emr(sample_id: str):
     """Re-fetch EMR for the sample's stored MRN and merge into
     sample_metadata.json. Sex from EMR overwrites whatever was there;

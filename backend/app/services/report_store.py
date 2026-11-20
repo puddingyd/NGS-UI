@@ -16,7 +16,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import clinical_presentation_store, sample_layout
+from . import category_store, clinical_presentation_store, sample_layout
 
 
 _REVIEWER_FIELDS = {
@@ -86,9 +86,11 @@ def _project_reviewer(meta: dict) -> dict:
     return out
 
 
+@category_store.serialized
 def load(sample_id: str) -> dict:
     meta = _read_json(_meta_path(sample_id))
     out = _project_reviewer(meta)
+    out["category_revision"] = category_store.revision()
     if not str(out.get("clinical_description") or "").strip():
         try:
             sidecar = clinical_presentation_store.load(
@@ -102,12 +104,18 @@ def load(sample_id: str) -> dict:
     return out
 
 
+@category_store.serialized
 def save(sample_id: str, payload: dict, *, user: dict | None = None) -> dict:
     """Merge reviewer fields into sample_metadata.json."""
     with _WRITE_LOCK:
         p = _meta_path(sample_id)
         meta = _read_json(p)
         payload = payload or {}
+        if "category" in payload:
+            payload = dict(payload)
+            payload["category"] = category_store.validate_selection(
+                payload["category"], payload.get("category_revision"), previous=meta.get("category"),
+            ) or None
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         if "status" in payload and isinstance(payload.get("status"), dict):
             old_status = meta.get("status") if isinstance(meta.get("status"), dict) else {}
@@ -204,6 +212,7 @@ def save(sample_id: str, payload: dict, *, user: dict | None = None) -> dict:
     return _project_reviewer(meta)
 
 
+@category_store.serialized
 def save_manual_acmg(
     sample_id: str,
     variant_id: str,

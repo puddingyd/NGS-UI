@@ -21,7 +21,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import sample_layout
+from . import category_store, sample_layout
 
 VERSION_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")
 RESERVED_NAMES = {"default"}
@@ -85,6 +85,7 @@ def active_version_dir(sample_id: str) -> Path:
     return version_dir(sample_id, name)
 
 
+@category_store.serialized
 def set_active(sample_id: str, version: str) -> None:
     """Persist `active_analysis` on sample_metadata.json. Validates name."""
     if version not in {v["name"] for v in list_versions(sample_id)}:

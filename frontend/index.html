@@ -182,7 +182,10 @@
           <div><span class="label">日期</span><span id="m-generated"></span></div>
           <div>
             <span class="label">分類</span>
-            <select id="m-category" class="meta-select"></select>
+            <span class="category-select-tools">
+              <select id="m-category" class="meta-select" aria-label="分類"></select>
+              <button type="button" class="category-manage-btn" data-manage-categories title="管理分類" aria-label="管理分類">⚙</button>
+            </span>
           </div>
           <div>
             <span class="label">科別</span>
@@ -575,6 +578,24 @@
       <div id="somatic-candidates-list"></div>
     </div>
   </div>
+  <div id="category-manager-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="category-manager-title">
+    <form id="category-manager-form" class="modal-card category-manager-card">
+      <h2 id="category-manager-title">管理分類</h2>
+      <p class="muted category-manager-description">依使用個案數由多到少排列。改名會套用到所有既有個案；移除後，使用該分類的個案會變成未分類。</p>
+      <p id="category-manager-status" class="muted" role="status" aria-live="polite"></p>
+      <fieldset id="category-manager-fields">
+        <div class="category-manager-header"><span>分類名稱</span><span>使用個案數</span><span></span></div>
+        <div id="category-manager-rows"></div>
+        <button type="button" id="category-manager-add" class="btn btn-ghost">＋ 新增分類</button>
+      </fieldset>
+      <p id="category-manager-error" class="error hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close="category-manager-modal">取消</button>
+        <button type="submit" class="btn btn-primary" id="category-manager-save" disabled>儲存</button>
+      </div>
+    </form>
+  </div>
+
   <div id="new-case-modal" class="modal hidden">
     <form id="new-case-form" class="modal-card modal-card-wide">
       <h2>載入新個案</h2>
@@ -620,9 +641,12 @@
           </select>
         </label>
         <label>Category
-          <select name="category" id="new-case-category">
-            <option value="" selected>—</option>
-          </select>
+          <span class="category-select-tools">
+            <select name="category" id="new-case-category">
+              <option value="" selected>—</option>
+            </select>
+            <button type="button" class="category-manage-btn" data-manage-categories title="管理分類" aria-label="管理分類">⚙</button>
+          </span>
           <span id="new-case-dept-hint" class="muted" style="font-size:11px"></span>
         </label>
       </div>

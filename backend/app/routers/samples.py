@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, Response
 
 from ..auth import current_user
 from ..services import (
+    category_store,
     analyses_store,
     clinical_presentation_store,
     docx_export,
@@ -215,6 +216,7 @@ def register_sample(
     test_type:        str = Form("WES"),
     genome_build:     str = Form("hg38"),
     category:         str = Form(""),
+    category_revision: str = Form(""),
     department:       str = Form(""),
     physician:        str = Form(""),
     sign_received_at: str = Form(""),
@@ -310,6 +312,7 @@ def register_sample(
             lis_id=lis_id, name=name, mrn=mrn, sex=sex,
             test_type=test_type, genome_build=genome_build,
             category=category,
+            category_revision=category_revision,
             department=department,
             physician=physician,
             sign_received_at=sign_received_at,
@@ -505,6 +508,7 @@ def lookup_sample_litvar2(sample_id: str, payload: dict = Body(...)):
 
 
 @router.put("/samples/{sample_id}/metadata")
+@category_store.serialized
 def put_sample_metadata(
     sample_id: str,
     payload: dict,
@@ -530,6 +534,11 @@ def put_sample_metadata(
             meta = {}
     if not isinstance(meta, dict):
         meta = {}
+    if "category" in (payload or {}):
+        payload = dict(payload)
+        payload["category"] = category_store.validate_selection(
+            payload["category"], payload.get("category_revision"), previous=meta.get("category"),
+        )
     old_mrn = str(meta.get("mrn") or "").strip()
     requested_mrn = None
     if "mrn" in (payload or {}):
@@ -655,28 +664,14 @@ def post_pgx_reannotation(sample_id: str, payload: dict, user: dict = Depends(cu
         raise HTTPException(500, "PGx 更新操作失敗，請重試") from exc
 
 
-# Canonical category list — drives both the load-new-case modal
-# dropdown AND the editable Category select on the sample card so the
-# values stay in sync. Order matches the reviewer-requested ordering.
-_CATEGORY_OPTIONS = [
-    "Neurology", "Endocrinology", "MCA", "Nephrology", "GI", "Metabolism",
-    "AIR", "Hematology", "Oncology", "Ophthalmology", "Musculoskeletal",
-    "Dermatology", "CV", "ENT", "Asymptomatic",
-]
-
-
 @router.get("/options")
 def get_options():
-    """Category list + (optional) tag suggestions.
-
-    Categories are hard-coded server-side so adding a new one is a
-    one-line edit + restart, not a config file the operator has to
-    remember to update. Tag suggestions still come from _options.json
-    when present so reviewers can keep iterating on the tag vocabulary
-    without a deploy.
-    """
+    """Shared categories ordered by registered-case usage, plus tags."""
     import json as _json
-    payload = {"category_options": list(_CATEGORY_OPTIONS), "tag_suggestions": []}
+    try:
+        payload = {**category_store.options(), "tag_suggestions": []}
+    except (OSError, ValueError) as exc:
+        raise HTTPException(500, "分類清單讀取失敗，請重試") from exc
     p = sample_layout.global_cache_path("_options.json")
     if not p.exists():
         p = sample_layout.legacy_ui_root() / "_options.json"
@@ -688,3 +683,11 @@ def get_options():
         except _json.JSONDecodeError:
             pass
     return payload
+
+
+@router.put("/options/categories")
+def put_categories(payload: dict, user: dict = Depends(current_user)):
+    try:
+        return category_store.save(payload, user=user)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(500, "分類儲存失敗，請重試；若持續失敗請聯絡管理者") from exc
