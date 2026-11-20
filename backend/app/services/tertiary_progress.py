@@ -78,32 +78,35 @@ _DRAGEN_ONLY = re.compile(r"(?:_DRAGEN$|^ADD_DRAGEN_TAG$)")
 _NCKUH_ONLY = re.compile(r"(?:_NCKUH(?:_WES|_WGS)?$|^ADD_CALLERS_TAG$|^CNVKIT_TO_BED$)")
 _GENERIC_CNV = {"ANNOTSV_CNV_NCKUH"}  # superseded by the _WES/_WGS variants
 
-# Post-processing runs step by step for a whole chunk of samples (one DB pass
-# per resource), then the per-sample review/overlay/index builds in parallel.
-# Values are amortised wall seconds *per sample*; batch steps are scaled by
-# the chunk size. Rough first estimates -- replaced by the learned profile.
+# Wall time of a phase or a batch-wide post-processing step is modelled as
+# ``fixed + per_sample * n``: each resource has a one-off cost (start VEP,
+# open/scan a database) shared by every sample of the batch, plus a
+# per-sample part. Defaults are fitted from two NCKUH WES Research-only runs
+# (1 sample and 36 samples, 2026-11-20); the learned profile replaces them.
 BATCH_STEPS = ("clinvar-latest", "genebe", "spliceai", "giab-strata", "inhouse-af",
                "mane-refseq", "litvar2", "gpn-prefetch")
 SAMPLE_STEPS = ("snv-overlay", "review-tsv", "gene-index", "cnv-rescue")
-DEFAULT_POSTPROCESSING_STEP_SECONDS: dict[str, float] = {
-    "clinvar-latest": 3.0,
-    "genebe": 40.0,
-    "spliceai": 15.0,
-    "giab-strata": 3.0,
-    "inhouse-af": 2.0,
-    "mane-refseq": 1.0,
-    "litvar2": 5.0,
-    "gpn-prefetch": 5.0,
+DEFAULT_LINEAR: dict[str, tuple[float, float]] = {
+    "phase:nextflow": (114.0, 473.0),
+    "phase:postprocessing": (650.0, 60.0),
+    "phase:promote": (5.0, 10.0),
+    "step:clinvar-latest": (30.0, 0.95),
+    "step:genebe": (315.0, 15.0),
+    "step:spliceai": (98.0, 10.0),
+    "step:giab-strata": (10.0, 0.2),
+    "step:inhouse-af": (31.0, 0.25),
+    "step:mane-refseq": (1.0, 0.12),
+    "step:litvar2": (20.0, 10.5),
+    "step:gpn-prefetch": (141.0, 23.0),
+}
+# Per-sample steps (each sample on its own; run in parallel workers).
+DEFAULT_SAMPLE_STEP_SECONDS: dict[str, float] = {
     "snv-overlay": 2.0,
-    "review-tsv": 8.0,
+    "review-tsv": 2.0,
     "gene-index": 1.0,
     "cnv-rescue": 60.0,
 }
-# Wall seconds per sample for each phase. Nextflow: 64,189 s / 133 NCKUH WES
-# samples. Post-processing took 65,436 s for that batch one sample at a time;
-# the batch implementation is expected to need a small fraction of that, so
-# this starts at an estimate and is learned from the first real job.
-DEFAULT_PHASE_SECONDS_PER_SAMPLE = {"nextflow": 483.0, "postprocessing": 90.0}
+MAX_OBSERVATIONS = 12
 
 # ---- small helpers ------------------------------------------------------
 
@@ -113,6 +116,12 @@ _STDOUT_TASK_RE = re.compile(
     r"(?P<event>Submitted|Cached|Re-submitted)\s+process\s+>\s+(?P<name>.+?)\s*$"
 )
 _DURATION_PART_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|d|h|m|s)")
+
+
+def _process_path(name: str) -> str:
+    """``ANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE (12)`` → without the task tag."""
+    text = _ANSI_ESCAPE_RE.sub("", str(name or "")).strip()
+    return re.sub(r"\s*\(.*\)\s*$", "", text)
 
 
 def simple_process_name(name: str) -> str:
@@ -215,25 +224,102 @@ def _ema(old: float | None, new: float) -> float:
     return (1 - EMA_ALPHA) * float(old) + EMA_ALPHA * float(new)
 
 
-def phase_seconds_per_sample(profile: dict, kind: str, phase: str) -> float:
-    value = (((profile.get("kinds") or {}).get(kind) or {}).get("phases") or {}).get(phase)
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        value = 0.0
-    return value if value > 0 else DEFAULT_PHASE_SECONDS_PER_SAMPLE[phase]
+def fit_linear(observations, default: tuple[float, float]) -> tuple[float, float]:
+    """Fit ``seconds = fixed + per_sample * n`` to ``[[n, seconds], ...]``.
+
+    With observations at a single batch size the default's shape is kept and
+    scaled to match; with two or more sizes it is a least-squares fit, with
+    negative coefficients clamped to zero.
+    """
+    obs = []
+    for item in observations or []:
+        try:
+            n, seconds = float(item[0]), float(item[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if n > 0 and seconds >= 0 and math.isfinite(seconds):
+            obs.append((n, seconds))
+    a0, b0 = default
+    if not obs:
+        return a0, b0
+    sizes = {round(n, 3) for n, _s in obs}
+    if len(sizes) < 2:
+        n_mean = sum(n for n, _s in obs) / len(obs)
+        s_mean = sum(sec for _n, sec in obs) / len(obs)
+        base = a0 + b0 * n_mean
+        scale = s_mean / base if base > 0 else 1.0
+        return a0 * scale, b0 * scale
+    count = len(obs)
+    mean_n = sum(n for n, _s in obs) / count
+    mean_s = sum(sec for _n, sec in obs) / count
+    var = sum((n - mean_n) ** 2 for n, _s in obs)
+    b = sum((n - mean_n) * (sec - mean_s) for n, sec in obs) / var if var > 0 else 0.0
+    a = mean_s - b * mean_n
+    if b < 0:
+        return mean_s, 0.0
+    if a < 0:
+        return 0.0, sum(n * sec for n, sec in obs) / sum(n * n for n, _s in obs)
+    return a, b
 
 
-def postprocessing_step_seconds(profile: dict, kind: str) -> dict[str, float]:
-    learned = (((profile.get("kinds") or {}).get(kind) or {}).get("postprocessing_batch_steps") or {})
-    out = dict(DEFAULT_POSTPROCESSING_STEP_SECONDS)
-    for step, seconds in learned.items():
+def _entry(profile: dict, kind: str) -> dict:
+    return ((profile.get("kinds") or {}).get(kind) or {})
+
+
+def estimate_seconds(profile: dict, kind: str, key: str, n: float) -> float:
+    """Expected wall seconds of ``key`` (``phase:…`` / ``step:…``) for n samples."""
+    if n <= 0:
+        return 0.0
+    observations = (_entry(profile, kind).get("observations") or {}).get(key)
+    a, b = fit_linear(observations, DEFAULT_LINEAR[key])
+    return max(0.0, a + b * n)
+
+
+def sample_step_seconds(profile: dict, kind: str) -> dict[str, float]:
+    out = dict(DEFAULT_SAMPLE_STEP_SECONDS)
+    for step, seconds in (_entry(profile, kind).get("sample_steps") or {}).items():
         try:
             if float(seconds) > 0:
                 out[step] = float(seconds)
         except (TypeError, ValueError):
             continue
     return out
+
+
+def process_seconds(profile: dict, kind: str, process: str) -> float:
+    item = (_entry(profile, kind).get("processes") or {}).get(process) or {}
+    try:
+        value = float(item.get("seconds") or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    return value if value > 0 else DEFAULT_PROCESS_SECONDS.get(process, UNKNOWN_PROCESS_SECONDS)
+
+
+def noncached_share(profile: dict, kind: str, trace_rows: list[dict]) -> float:
+    """Share of this run's Nextflow work that actually executed (by time).
+
+    Counting tasks is misleading: dozens of quick cached tasks can hide that
+    the expensive VEP/Pangolin chain re-ran. Each task is weighted by its
+    process's expected duration instead.
+    """
+    ran = cached = 0.0
+    for row in trace_rows:
+        status = str(row.get("status") or "").upper()
+        weight = process_seconds(profile, kind, simple_process_name(row.get("name", "")))
+        if status == "CACHED":
+            cached += weight
+        elif status in {"COMPLETED", "FAILED"}:
+            ran += weight
+    total = ran + cached
+    return ran / total if total > 0 else 0.0
+
+
+def _observe(entry: dict, key: str, n: float, seconds: float | None) -> None:
+    if seconds is None or n <= 0 or not math.isfinite(seconds) or seconds < 0:
+        return
+    observations = entry.setdefault("observations", {}).setdefault(key, [])
+    observations.append([round(float(n), 3), round(float(seconds), 1)])
+    del observations[:-MAX_OBSERVATIONS]
 
 
 def update_profile(
@@ -244,10 +330,19 @@ def update_profile(
     sample_count: int = 0,
     nextflow_seconds: float | None = None,
     postprocessing_seconds: float | None = None,
-    step_seconds: dict[str, list[float]] | None = None,
+    promote_seconds: float | None = None,
+    step_observations: list[tuple[str, float, float]] | None = None,
+    sample_step_seconds_seen: dict[str, list[float]] | None = None,
 ) -> dict:
-    """Fold one successful job's measurements into ``profile`` (in place)."""
+    """Fold one successful job's measurements into ``profile`` (in place).
+
+    Per-task process durations are smoothed (EMA). Phase and batch-step wall
+    times are stored as ``[n, seconds]`` observations for the
+    ``fixed + per_sample * n`` fit; the Nextflow phase uses the effective
+    number of samples that really ran (time-weighted, cached work excluded).
+    """
     entry = profile.setdefault("kinds", {}).setdefault(kind, {})
+    share = noncached_share(profile, kind, trace_rows or []) if trace_rows else 1.0
     if trace_rows and sample_count > 0:
         durations: dict[str, list[float]] = {}
         counts: dict[str, int] = {}
@@ -270,16 +365,25 @@ def update_profile(
                 item["seconds"] = round(_ema(item.get("seconds"), sum(values) / len(values)), 2)
             item["tasks_per_sample"] = round(_ema(item.get("tasks_per_sample"), count / sample_count), 3)
     if sample_count > 0:
-        phases = entry.setdefault("phases", {})
-        for phase, seconds in (("nextflow", nextflow_seconds), ("postprocessing", postprocessing_seconds)):
-            # Sub-second phases (dry runs, everything cached) carry no signal.
-            if seconds and seconds / sample_count >= 1.0:
-                phases[phase] = round(_ema(phases.get(phase), seconds / sample_count), 2)
-    if step_seconds:
-        steps = entry.setdefault("postprocessing_batch_steps", {})
-        for step, values in step_seconds.items():
+        effective = sample_count * share
+        # A (nearly) fully cached run says nothing about real Nextflow time.
+        if nextflow_seconds and effective >= 0.5:
+            _observe(entry, "phase:nextflow", effective, nextflow_seconds)
+        if postprocessing_seconds and postprocessing_seconds >= 1:
+            _observe(entry, "phase:postprocessing", sample_count, postprocessing_seconds)
+        if promote_seconds is not None:
+            _observe(entry, "phase:promote", sample_count, promote_seconds)
+    for step, n, seconds in step_observations or []:
+        if f"step:{step}" in DEFAULT_LINEAR:
+            _observe(entry, f"step:{step}", n, seconds)
+    if sample_step_seconds_seen:
+        steps = entry.setdefault("sample_steps", {})
+        for step, values in sample_step_seconds_seen.items():
             if values:
                 steps[step] = round(_ema(steps.get(step), sum(values) / len(values)), 2)
+    # Superseded per-sample averages from the first implementation.
+    entry.pop("phases", None)
+    entry.pop("postprocessing_batch_steps", None)
     entry["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     entry["jobs"] = int(entry.get("jobs") or 0) + 1
     return profile
@@ -287,23 +391,36 @@ def update_profile(
 
 # ---- phase bands --------------------------------------------------------
 
-def phase_bands(profile: dict, kinds: list[str], *, with_prs: bool) -> dict[str, tuple[float, float]]:
-    """Split 0-100% into phases by expected wall time.
+def _kind_counts(kinds: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for kind in kinds:
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
-    ``kinds`` has one entry per sample.  Fixed bands: start 0-2%, and the
-    promote / PRS tail.  Nextflow and post-processing share the rest in
-    proportion to their learned per-sample wall time.
+
+def phase_bands(profile: dict, kinds: list[str], *, with_prs: bool) -> dict[str, tuple[float, float]]:
+    """Split 0-100% into phases by expected wall time for this batch size.
+
+    ``kinds`` has one entry per sample. 0-2% covers start-up and the PRS tail
+    keeps 95-99%; Nextflow, post-processing and promotion share the rest in
+    proportion to their ``fixed + per_sample * n`` estimates, so a single
+    sample (fixed costs dominate) and a large batch get different splits.
     """
-    nf = sum(phase_seconds_per_sample(profile, kind, "nextflow") for kind in kinds) or 1.0
-    pp = sum(phase_seconds_per_sample(profile, kind, "postprocessing") for kind in kinds) or 1.0
+    counts = _kind_counts(kinds)
+    est = {
+        phase: sum(estimate_seconds(profile, kind, f"phase:{phase}", n) for kind, n in counts.items()) or 1.0
+        for phase in ("nextflow", "postprocessing", "promote")
+    }
     start = 2.0
-    work_end = 94.0 if with_prs else 97.0
-    split = start + (work_end - start) * nf / (nf + pp)
+    end = 95.0 if with_prs else 99.0
+    total = sum(est.values())
+    nf_end = start + (end - start) * est["nextflow"] / total
+    pp_end = nf_end + (end - start) * est["postprocessing"] / total
     bands = {
         "pre": (0.0, start),
-        "nextflow": (start, split),
-        "postprocessing": (split, work_end),
-        "promote": (work_end, 95.0 if with_prs else 99.0),
+        "nextflow": (start, nf_end),
+        "postprocessing": (nf_end, pp_end),
+        "promote": (pp_end, end),
     }
     if with_prs:
         bands["prs"] = (95.0, 99.0)
@@ -322,6 +439,7 @@ def band_pct(bands: dict[str, tuple[float, float]], phase: str, fraction: float)
 class _Process:
     seconds: float
     expected: float  # expected task count for this batch
+    full_name: str = ""
     submitted: int = 0
     completed: int = 0
     cached: int = 0
@@ -400,12 +518,14 @@ class NextflowProgress:
         if parsed is None:
             return []
         task_hash, event, name = parsed
+        full = _STDOUT_TASK_RE.search(_ANSI_ESCAPE_RE.sub("", line))["name"]
         now = time.monotonic() if now is None else now
         events: list[dict] = []
         with self._lock:
             if task_hash in self._finished:
                 return []
             proc = self._proc(name)
+            proc.full_name = proc.full_name or _process_path(full)
             if proc.first_seen is None:
                 proc.first_seen = now
                 events.append({"process": name, "event": "start"})
@@ -432,6 +552,7 @@ class NextflowProgress:
             self._finished.add(task_hash)
             started = self._running.pop(task_hash, None)
             proc = self._proc(name)
+            proc.full_name = proc.full_name or _process_path(row.get("name", ""))
             if proc.first_seen is None:
                 proc.first_seen = started[1] if started else now
             if status == "CACHED":
@@ -504,6 +625,47 @@ class NextflowProgress:
                     }
             return best
 
+    def snapshot(self, *, finished: bool = False) -> list[dict]:
+        """Per-process status rows, in pipeline order, for the live block.
+
+        Mirrors Nextflow's console block: one row per process with
+        ``done of total`` (cached included), running and failed counts.
+        Processes expected for this batch but not started yet appear as
+        pending; after the run (``finished``) those never started are dropped.
+        """
+        order = {name: index for index, name in enumerate(DEFAULT_PROCESS_SECONDS)}
+        with self._lock:
+            running: dict[str, int] = {}
+            for name, _started in self._running.values():
+                running[name] = running.get(name, 0) + 1
+            rows = []
+            for seen_index, (name, proc) in enumerate(self._processes.items()):
+                if proc.first_seen is None and (finished or proc.expected <= 0):
+                    continue
+                done = proc.completed + proc.cached
+                total = int(round(max(proc.expected, proc.submitted + proc.cached + proc.failed, done)))
+                if proc.failed:
+                    status = "failed"
+                elif proc.first_seen is None:
+                    status = "pending"
+                elif done >= total and not running.get(name):
+                    status = "done"
+                else:
+                    status = "running"
+                rows.append({
+                    "process": name,
+                    "name": proc.full_name or name,
+                    "done": done,
+                    "total": total,
+                    "cached": proc.cached,
+                    "running": running.get(name, 0),
+                    "failed": proc.failed,
+                    "status": status,
+                    "_order": (order.get(name, 1000 + seen_index)),
+                })
+            rows.sort(key=lambda row: row.pop("_order"))
+            return rows
+
     def finish_events(self, now: float | None = None) -> list[dict]:
         """Close out processes whose done event never fired (e.g. fewer tasks)."""
         now = time.monotonic() if now is None else now
@@ -527,40 +689,50 @@ class PostprocessingProgress:
     """Batch post-processing progress weighted by expected step time.
 
     ``chunks`` holds the sample kinds of each chunk run by one orchestrator
-    call. Batch-wide steps (``[post-processing-step]`` markers) cost their
-    per-sample estimate times the chunk size; sample steps
-    (``[sample-step] … sample=SID``) may run in parallel and are credited per
-    sample. ``step_seconds`` collects learned per-sample seconds.
+    call. A batch-wide step (``[post-processing-step]``) costs
+    ``fixed + per_sample * n`` for the chunk; per-sample steps
+    (``[sample-step] … sample=SID``) run ``workers`` at a time, so the chunk
+    spends ``n * seconds / workers`` of wall time on them.
     """
 
     chunks: list[list[str]]
     profile: dict
     research_only: bool = False
     dragen: bool = False
-    step_seconds: dict[str, list[float]] = field(default_factory=dict)
+    workers: int = 1
+    step_observations: list[tuple[str, float, float]] = field(default_factory=list)
+    sample_seconds: dict[str, list[float]] = field(default_factory=dict)
     _chunk: int = 0
     _done: float = 0.0
     _running: dict[tuple[str, str], float] = field(default_factory=dict)
     _lock: threading.RLock = field(default_factory=threading.RLock)
 
-    def _weights(self, kind: str) -> dict[str, float]:
-        weights = postprocessing_step_seconds(self.profile, kind)
-        if not self.research_only:
-            weights.pop("spliceai", None)
-        if not self.dragen:
-            weights.pop("cnv-rescue", None)
-        return weights
+    def _steps(self) -> tuple[list[str], list[str]]:
+        batch = [s for s in BATCH_STEPS if self.research_only or s != "spliceai"]
+        sample = [s for s in SAMPLE_STEPS if self.dragen or s != "cnv-rescue"]
+        return batch, sample
 
-    def _chunk_weights(self, index: int) -> dict[str, float]:
-        """Summed per-step seconds for every sample of one chunk."""
-        total: dict[str, float] = {}
-        for kind in self.chunks[index] if index < len(self.chunks) else []:
-            for step, seconds in self._weights(kind).items():
-                total[step] = total.get(step, 0.0) + seconds
-        return total
+    def _chunk_plan(self, index: int) -> dict[str, tuple[float, float]]:
+        """{step: (wall seconds for the whole chunk, seconds per sample run)}."""
+        kinds = self.chunks[index] if index < len(self.chunks) else []
+        counts = _kind_counts(kinds)
+        size = max(1, len(kinds))
+        parallel = max(1, min(self.workers, size))
+        batch, sample = self._steps()
+        plan: dict[str, tuple[float, float]] = {}
+        for step in batch:
+            wall = sum(estimate_seconds(self.profile, kind, f"step:{step}", n) for kind, n in counts.items())
+            plan[step] = (wall, wall)
+        for step in sample:
+            per = sum(sample_step_seconds(self.profile, kind)[step] * n for kind, n in counts.items()) / size
+            plan[step] = (per * size / parallel, per)
+        return plan
+
+    def _size(self, index: int) -> int:
+        return max(1, len(self.chunks[index]) if index < len(self.chunks) else 1)
 
     def _total(self) -> float:
-        return sum(sum(self._chunk_weights(i).values()) for i in range(len(self.chunks))) or 1.0
+        return sum(sum(w for w, _p in self._chunk_plan(i).values()) for i in range(len(self.chunks))) or 1.0
 
     def start_chunk(self, index: int) -> None:
         with self._lock:
@@ -570,7 +742,7 @@ class PostprocessingProgress:
     def finish_chunk(self, index: int) -> None:
         """Credit whatever a chunk did not report (skipped/absent steps)."""
         with self._lock:
-            before = sum(sum(self._chunk_weights(i).values()) for i in range(index + 1))
+            before = sum(sum(w for w, _p in self._chunk_plan(i).values()) for i in range(index + 1))
             self._done = max(self._done, before)
             self._running.clear()
 
@@ -579,33 +751,35 @@ class PostprocessingProgress:
         now = time.monotonic() if now is None else now
         with self._lock:
             key = (step, sample or "")
-            chunk = self._chunk_weights(self._chunk)
-            size = max(1, len(self.chunks[self._chunk]) if self._chunk < len(self.chunks) else 1)
             if state == "start":
                 self._running[key] = now
                 return
             started = self._running.pop(key, None)
             if elapsed is None and started is not None:
                 elapsed = now - started
+            wall, _per = self._chunk_plan(self._chunk).get(step, (0.0, 0.0))
+            size = self._size(self._chunk)
             if sample:
-                self._done += chunk.get(step, 0.0) / size
+                self._done += wall / size
                 if elapsed is not None:
-                    self.step_seconds.setdefault(step, []).append(float(elapsed))
+                    self.sample_seconds.setdefault(step, []).append(float(elapsed))
             else:
-                self._done += chunk.get(step, 0.0)
+                self._done += wall
                 if elapsed is not None:
-                    self.step_seconds.setdefault(step, []).append(float(elapsed) / size)
+                    self.step_observations.append((step, float(size), float(elapsed)))
 
     def fraction(self, now: float | None = None) -> float:
         now = time.monotonic() if now is None else now
         with self._lock:
-            chunk = self._chunk_weights(self._chunk)
-            size = max(1, len(self.chunks[self._chunk]) if self._chunk < len(self.chunks) else 1)
+            plan = self._chunk_plan(self._chunk)
+            size = self._size(self._chunk)
             done = self._done
             for (step, sample), started in self._running.items():
-                expected = chunk.get(step, 0.0) / (size if sample else 1)
+                wall, per = plan.get(step, (0.0, 0.0))
+                expected = per if sample else wall
+                credit = wall / size if sample else wall
                 if expected > 0:
-                    done += min(RUNNING_CREDIT_CAP, (now - started) / expected) * expected
+                    done += min(RUNNING_CREDIT_CAP, (now - started) / expected) * credit
             return max(0.0, min(1.0, done / self._total()))
 
 

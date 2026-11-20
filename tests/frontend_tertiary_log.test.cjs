@@ -36,3 +36,26 @@ test('selected PRS reserves postprocessing progress and reaches 100 only at pare
   assert.equal(context._dragenProgressPercent({state:'running',step:'promote-output',with_prs:false}),99);
   assert.match(context._dragenJobStepLabel({step:'post-processing:prs',prs_sample:'S1',prs_phase:'祖源與品質檢查'}),/PRS 後處理 · S1 · 祖源與品質檢查/);
 });
+
+test('live Nextflow block mirrors the console layout and hides after the Nextflow phase', () => {
+  const code = source.slice(source.indexOf('function _dragenNextflowStatusText('), source.indexOf('function _dragenFmtEta('));
+  const el = {hidden: true, children: [], replaceChildren(...nodes) { this.children = nodes; }};
+  const context = {
+    document: {getElementById: () => el, createElement: () => ({className: '', textContent: ''})},
+  };
+  vm.runInNewContext(code, context);
+  const rows = [
+    {process: 'ADD_CALLERS_TAG', name: 'PREPARE_VCF:ADD_CALLERS_TAG', done: 36, total: 36, cached: 36, running: 0, status: 'done'},
+    {process: 'VEP_ANNOTATE', name: 'ANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE', done: 12, total: 36, cached: 0, running: 4, status: 'running'},
+    {process: 'ACMG_CLASSIFY', name: 'ANNOTATE_SNV:ACMG_CLASSIFY', done: 0, total: 36, cached: 0, running: 0, status: 'pending'},
+  ];
+  const lines = context._dragenNextflowStatusText(rows);
+  assert.equal(lines[0].text, '[  ✔ ] PREPARE_VCF:ADD_CALLERS_TAG            | 36 of 36, cached: 36 ✔');
+  assert.equal(lines[1].text, '[  4 ] ANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE | 12 of 36');
+  assert.equal(lines[2].text, '[  - ] ANNOTATE_SNV:ACMG_CLASSIFY             | 0 of 36');
+  context._dragenRenderNextflowStatus({state: 'running', step: 'nextflow', progress_phase: 'nextflow', nextflow_processes: rows});
+  assert.equal(el.hidden, false);
+  assert.deepEqual(el.children.map(c => c.className), ['nf-done', 'nf-running', 'nf-pending']);
+  context._dragenRenderNextflowStatus({state: 'running', step: 'post-processing:genebe', progress_phase: 'postprocessing', nextflow_processes: rows});
+  assert.equal(el.hidden, true);
+});

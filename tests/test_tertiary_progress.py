@@ -95,40 +95,77 @@ def test_default_table_matches_pipeline_and_seq_type():
     assert not names & {"ANNOTSV_CNV_DRAGEN", "ANNOTSV_CNV_NCKUH_WGS", "CNVKIT_TO_BED", "PGX_PHARMCAT"}
 
 
-def test_postprocessing_progress_scales_batch_steps_by_chunk_size():
-    pp = tp.PostprocessingProgress(chunks=[["nckuh:WES"] * 3, ["nckuh:WES"]], profile={"version": 1, "kinds": {}})
-    w = pp._weights("nckuh:WES")
-    assert "spliceai" not in w and "cnv-rescue" not in w
-    total = sum(w.values()) * 4
+def test_fit_linear_separates_fixed_and_per_sample_cost():
+    default = (100.0, 10.0)
+    assert tp.fit_linear([], default) == default
+    # one batch size: keep the default shape, scale to the observation
+    a, b = tp.fit_linear([[10, 400]], default)
+    assert a + 10 * b == pytest.approx(400) and a / b == pytest.approx(10)
+    # two sizes: least squares (GeneBe: 330 s for 1 sample, 843 s for 36)
+    a, b = tp.fit_linear([[1, 330], [36, 843]], default)
+    assert (round(a), round(b, 2)) == (315, 14.66)
+    # never negative
+    assert tp.fit_linear([[1, 500], [10, 100]], default) == (300.0, 0.0)
+
+
+def test_phase_bands_depend_on_batch_size():
+    empty = {"version": 1, "kinds": {}}
+    one = tp.phase_bands(empty, ["nckuh:WES"], with_prs=False)
+    many = tp.phase_bands(empty, ["nckuh:WES"] * 36, with_prs=False)
+    assert one["pre"] == (0.0, 2.0) and one["promote"][1] == 99.0
+    # 1 sample: fixed post-processing costs dominate; 36: Nextflow dominates
+    assert 40 < one["nextflow"][1] < 50
+    assert 80 < many["nextflow"][1] < 86
+    with_prs = tp.phase_bands(empty, ["nckuh:WES"] * 36, with_prs=True)
+    assert with_prs["promote"][1] == 95.0 and with_prs["prs"] == (95.0, 99.0)
+    learned = {"version": 1, "kinds": {"nckuh:WES": {"observations": {
+        "phase:nextflow": [[1, 600], [36, 17000]], "phase:postprocessing": [[1, 100], [36, 400]],
+        "phase:promote": [[1, 5], [36, 100]]}}}}
+    bands = tp.phase_bands(learned, ["nckuh:WES"] * 36, with_prs=False)
+    assert bands["nextflow"][1] == pytest.approx(2 + 97 * 17000 / 17500, abs=0.2)
+    assert tp.band_pct(bands, "postprocessing", 0.5) == pytest.approx(
+        round((bands["postprocessing"][0] + bands["postprocessing"][1]) / 2, 1))
+
+
+def test_postprocessing_progress_uses_chunk_cost_and_parallel_sample_steps():
+    pp = tp.PostprocessingProgress(chunks=[["nckuh:WES"] * 4], profile={"version": 1, "kinds": {}}, workers=2)
+    plan = pp._chunk_plan(0)
+    assert "spliceai" not in plan and "cnv-rescue" not in plan
+    genebe = tp.estimate_seconds({}, "nckuh:WES", "step:genebe", 4)
+    assert plan["genebe"] == (genebe, genebe)
+    assert plan["review-tsv"] == (2.0 * 4 / 2, 2.0)  # 4 samples, 2 at a time
+    total = sum(w for w, _p in plan.values())
     pp.start_chunk(0)
     pp.on_marker("genebe", "start", now=0)
-    assert pp.fraction(now=w["genebe"] * 3 * 0.5) == pytest.approx(w["genebe"] * 3 * 0.5 / total)
-    pp.on_marker("genebe", "done", elapsed=30, now=30)
-    assert pp.step_seconds["genebe"] == [10.0]  # per-sample amortised
-    # parallel per-sample steps each earn one sample's share
-    pp.on_marker("review-tsv", "start", sample="A", now=30)
-    pp.on_marker("review-tsv", "start", sample="B", now=30)
-    pp.on_marker("review-tsv", "done", sample="A", elapsed=6, now=36)
-    expected_done = w["genebe"] * 3 + w["review-tsv"] + min(0.9, 6 / w["review-tsv"]) * w["review-tsv"]
-    assert pp.fraction(now=36) == pytest.approx(expected_done / total)
+    assert pp.fraction(now=genebe / 2) == pytest.approx(genebe / 2 / total)
+    pp.on_marker("genebe", "done", elapsed=300, now=300)
+    assert pp.step_observations == [("genebe", 4.0, 300.0)]
+    pp.on_marker("review-tsv", "start", sample="A", now=300)
+    pp.on_marker("review-tsv", "done", sample="A", elapsed=3, now=303)
+    assert pp.sample_seconds["review-tsv"] == [3.0]
+    assert pp.fraction(now=303) == pytest.approx((genebe + 4.0 / 4) / total)
     pp.finish_chunk(0)
-    assert pp.fraction(now=36) == pytest.approx(0.75)
-    pp.start_chunk(1)
-    pp.finish_chunk(1)
     assert pp.fraction() == pytest.approx(1.0)
 
 
-def test_phase_bands_follow_learned_wall_time():
-    default = tp.phase_bands({"version": 1, "kinds": {}}, ["nckuh:WES"] * 10, with_prs=False)
-    assert default["pre"] == (0.0, 2.0)
-    assert default["promote"] == (97.0, 99.0)
-    # Nextflow 483 s/sample vs. the batch post-processing estimate of 90 s/sample.
-    assert default["nextflow"][1] == pytest.approx(2 + 95 * 483 / 573)
-    learned = {"version": 1, "kinds": {"nckuh:WES": {"phases": {"nextflow": 900, "postprocessing": 100}}}}
-    bands = tp.phase_bands(learned, ["nckuh:WES"] * 10, with_prs=True)
-    assert bands["nextflow"][1] == pytest.approx(2 + 92 * 0.9)
-    assert bands["prs"] == (95.0, 99.0)
-    assert tp.band_pct(bands, "postprocessing", 0.5) == pytest.approx(round((bands["postprocessing"][0] + 94) / 2, 1))
+def _row(name, status, realtime="10m"):
+    return {"name": f"A:{name} (1)", "status": status, "realtime": realtime}
+
+
+def test_cached_share_is_weighted_by_time_not_task_count():
+    profile = {"version": 1, "kinds": {}}
+    rows = [_row(p, "CACHED") for p in ("ADD_CALLERS_TAG", "MITO_VEP", "MITO_PARSE", "STR_PARSE_NCKUH",
+                                        "ANNOTSV_SV_NCKUH", "FILTER_FOR_ANNOTATION", "ANNOTSV_CNV_NCKUH_WES",
+                                        "STR_PREPARE_NCKUH")]
+    rows += [_row(p, "COMPLETED") for p in ("VEP_ANNOTATE", "PANGOLIN_SCORE", "PARSE_CSQ", "ACMG_CLASSIFY")]
+    # 8 of 12 tasks were cached, but almost all of the expected time really ran.
+    assert tp.noncached_share(profile, "nckuh:WES", rows) > 0.8
+    tp.update_profile(profile, "nckuh:WES", trace_rows=rows, sample_count=1, nextflow_seconds=587)
+    obs = profile["kinds"]["nckuh:WES"]["observations"]["phase:nextflow"]
+    assert len(obs) == 1 and obs[0][1] == 587.0 and 0.8 < obs[0][0] <= 1
+    all_cached = [_row("VEP_ANNOTATE", "CACHED")]
+    tp.update_profile(profile, "nckuh:WES", trace_rows=all_cached, sample_count=1, nextflow_seconds=6)
+    assert len(profile["kinds"]["nckuh:WES"]["observations"]["phase:nextflow"]) == 1
 
 
 def test_update_profile_learns_from_trace_and_round_trips(tmp_path):
@@ -137,18 +174,26 @@ def test_update_profile_learns_from_trace_and_round_trips(tmp_path):
         {"name": "A:VEP_ANNOTATE (2)", "status": "COMPLETED", "realtime": "20m"},
         {"name": "A:MITO_VEP (1)", "status": "CACHED", "realtime": "1m"},
     ]
-    profile = tp.update_profile({"version": 1, "kinds": {}}, "nckuh:WES", trace_rows=rows, sample_count=2,
-                                nextflow_seconds=2000, postprocessing_seconds=400,
-                                step_seconds={"genebe": [100, 140]})
+    old = {"version": 1, "kinds": {"nckuh:WES": {"phases": {"nextflow": 1}, "postprocessing_batch_steps": {}}}}
+    profile = tp.update_profile(old, "nckuh:WES", trace_rows=rows, sample_count=2,
+                                nextflow_seconds=2000, postprocessing_seconds=400, promote_seconds=20,
+                                step_observations=[("genebe", 2, 330.0), ("bogus", 2, 1.0)],
+                                sample_step_seconds_seen={"review-tsv": [2, 4]})
     entry = profile["kinds"]["nckuh:WES"]
     assert entry["processes"]["VEP_ANNOTATE"] == {"seconds": 900.0, "tasks_per_sample": 1.0}
     assert "seconds" not in entry["processes"]["MITO_VEP"]  # cached tasks carry no timing
-    assert entry["phases"] == {"nextflow": 1000.0, "postprocessing": 200.0}
-    assert entry["postprocessing_batch_steps"]["genebe"] == 120.0
+    assert entry["observations"]["phase:postprocessing"] == [[2.0, 400.0]]
+    assert entry["observations"]["phase:promote"] == [[2.0, 20.0]]
+    assert entry["observations"]["step:genebe"] == [[2.0, 330.0]]
+    assert "step:bogus" not in entry["observations"]
+    assert entry["sample_steps"]["review-tsv"] == 3.0
+    assert "phases" not in entry and "postprocessing_batch_steps" not in entry  # superseded keys dropped
     path = tmp_path / "_timing_profile.json"
     tp.save_profile(path, profile)
-    again = tp.update_profile(tp.load_profile(path), "nckuh:WES", sample_count=2, nextflow_seconds=1000)
-    assert again["kinds"]["nckuh:WES"]["phases"]["nextflow"] == pytest.approx(750.0)  # EMA
+    loaded = tp.load_profile(path)
+    for _ in range(20):
+        tp.update_profile(loaded, "nckuh:WES", sample_count=1, postprocessing_seconds=700)
+    assert len(loaded["kinds"]["nckuh:WES"]["observations"]["phase:postprocessing"]) == tp.MAX_OBSERVATIONS
     assert tp.load_profile(tmp_path / "missing.json") == {"version": 1, "kinds": {}}
 
 
@@ -205,3 +250,23 @@ def test_log_summary_attributes_sample_steps_inside_a_batch():
     assert "sample=batch 1/1 (2 samples) step=genebe status=done elapsed=4.0s" in events[1]
     assert any("sample=S1 step=review-tsv status=done elapsed=3.0s" in e for e in events)
     assert any("sample=S2 step=review-tsv status=done" in e for e in events)
+
+
+def test_snapshot_lists_processes_in_pipeline_order_like_the_console_block():
+    profile = _profile({"ADD_CALLERS_TAG": 10, "VEP_ANNOTATE": 800, "ACMG_CLASSIFY": 100})
+    nf = tp.NextflowProgress(kinds=["nckuh:WES"] * 2, profile=profile, with_pgx=False)
+    nf.on_stdout("[aa/000001] Cached process > PREPARE_VCF:ADD_CALLERS_TAG (1)", 0)
+    nf.on_stdout("[aa/000002] Cached process > PREPARE_VCF:ADD_CALLERS_TAG (2)", 0)
+    nf.on_stdout("[bb/000001] Submitted process > ANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE (1)", 0)
+    rows = nf.snapshot()
+    assert [r["process"] for r in rows] == ["ADD_CALLERS_TAG", "VEP_ANNOTATE", "ACMG_CLASSIFY"]
+    assert rows[0] | {} == {"process": "ADD_CALLERS_TAG", "name": "PREPARE_VCF:ADD_CALLERS_TAG", "done": 2,
+                            "total": 2, "cached": 2, "running": 0, "failed": 0, "status": "done"}
+    assert (rows[1]["name"], rows[1]["running"], rows[1]["status"]) == (
+        "ANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE", 1, "running")
+    assert rows[2]["status"] == "pending" and rows[2]["total"] == 2
+    nf.on_trace_row({"hash": "bb/000001", "name": "ANNOTATE_SNV:SNV_ANNOTATE:VEP_ANNOTATE (1)",
+                     "status": "FAILED"}, 5)
+    assert nf.snapshot()[1]["status"] == "failed"
+    # after the run, processes that never started are dropped
+    assert [r["process"] for r in nf.snapshot(finished=True)] == ["ADD_CALLERS_TAG", "VEP_ANNOTATE"]

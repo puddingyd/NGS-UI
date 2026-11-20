@@ -13234,10 +13234,49 @@ function _dragenSetJob(state) {
       logToggle.textContent = "▶ Log";
       logToggle.setAttribute("aria-expanded", "false");
     }
+    _dragenRenderNextflowStatus(state);
     if (logEl)   logEl.textContent   = state.log_tail || "";
     if (logEl)   logEl.scrollTop     = logEl.scrollHeight;
     _dragenRenderBatch();
   }
+}
+
+function _dragenNextflowStatusText(rows) {
+  const width = Math.max(...rows.map(r => String(r.name || r.process || "").length), 10);
+  return rows.map(row => {
+    const name = String(row.name || row.process || "").padEnd(width);
+    const done = Number(row.done) || 0;
+    const total = Number(row.total) || 0;
+    let mark = "-";
+    if (row.status === "done") mark = "✔";
+    else if (row.status === "failed") mark = "✘";
+    else if (row.status === "running") mark = String(Number(row.running) || 0);
+    const extras = [];
+    if (Number(row.cached)) extras.push(`cached: ${row.cached}`);
+    if (Number(row.failed)) extras.push(`failed: ${row.failed}`);
+    const tail = `${done} of ${total}${extras.length ? ", " + extras.join(", ") : ""}${row.status === "done" ? " ✔" : ""}`;
+    return { text: `[${mark.padStart(3)} ] ${name} | ${tail}`, status: row.status || "pending" };
+  });
+}
+
+function _dragenRenderNextflowStatus(state) {
+  const el = document.getElementById("dragen-nf-status");
+  if (!el) return;
+  const rows = Array.isArray(state?.nextflow_processes) ? state.nextflow_processes : [];
+  const running = state?.state === "queued" || state?.state === "running";
+  const inNextflow = String(state?.step || "").startsWith("nextflow") || state?.progress_phase === "nextflow";
+  if (!rows.length || !running || !inNextflow) {
+    el.hidden = true;
+    el.replaceChildren();
+    return;
+  }
+  el.hidden = false;
+  el.replaceChildren(..._dragenNextflowStatusText(rows).map(line => {
+    const span = document.createElement("span");
+    span.className = `nf-${line.status}`;
+    span.textContent = line.text + "\n";
+    return span;
+  }));
 }
 
 function _dragenFmtEta(state) {

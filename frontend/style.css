@@ -4205,6 +4205,23 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
   white-space: pre;
   margin: 0;
 }
+/* Live Nextflow process block (worker-side snapshot, Nextflow console style). */
+.dragen-nf-status {
+  background: #1f2328;
+  color: #e6edf3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin: 6px 0 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+.dragen-nf-status .nf-done { color: #3fb950; }
+.dragen-nf-status .nf-running { color: #e3b341; }
+.dragen-nf-status .nf-failed { color: #f85149; }
+.dragen-nf-status .nf-pending { color: #8b949e; }
 .pipeline-log-actions {
   display: flex;
   align-items: center;

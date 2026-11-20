@@ -58,6 +58,7 @@ from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
 from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, gba, specialized
 from ..services import nextflow_work, tertiary_workspace, postprocessing_log, tertiary_progress
+from ..services import parallel_tsv
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -1554,14 +1555,17 @@ def _record_timing_profile(
     trace_path: Path,
     nextflow_elapsed: float | None,
     postprocessing_elapsed: float | None,
-    step_seconds: dict[str, list[float]],
+    promote_elapsed: float | None,
+    pp_progress: "tertiary_progress.PostprocessingProgress | None",
 ) -> None:
     """Learn per-process / per-step / per-phase durations for the progress bar.
 
     Only homogeneous batches (one pipeline_type + seq_type) update the
     profile: trace rows carry no sample tag, so a mixed WES/WGS batch cannot
-    be attributed.  A mostly cached Nextflow run says nothing about its real
-    duration, so its phase time is not learned.  Never fails the job.
+    be attributed. Phase and batch-step times are stored as (batch size,
+    seconds) observations for the ``fixed + per_sample * n`` fit; cached
+    Nextflow work is excluded by expected time, not task count. Never fails
+    the job.
     """
     kinds = set(sample_kinds)
     if len(kinds) != 1 or not sample_kinds:
@@ -1570,21 +1574,23 @@ def _record_timing_profile(
     kind = next(iter(kinds))
     try:
         rows, _offset = tertiary_progress.read_trace(trace_path, 0)
-        statuses = [str(r.get("status") or "").upper() for r in rows]
-        cached_share = statuses.count("CACHED") / len(statuses) if statuses else 1.0
         with _STATE_LOCK:
             profile = tertiary_progress.load_profile(_timing_profile_path())
+            share = tertiary_progress.noncached_share(profile, kind, rows) if rows else 0.0
             tertiary_progress.update_profile(
                 profile,
                 kind,
                 trace_rows=rows,
                 sample_count=len(sample_kinds),
-                nextflow_seconds=nextflow_elapsed if cached_share < 0.5 else None,
+                nextflow_seconds=nextflow_elapsed,
                 postprocessing_seconds=postprocessing_elapsed,
-                step_seconds=step_seconds,
+                promote_seconds=promote_elapsed,
+                step_observations=pp_progress.step_observations if pp_progress else None,
+                sample_step_seconds_seen=pp_progress.sample_seconds if pp_progress else None,
             )
             tertiary_progress.save_profile(_timing_profile_path(), profile)
-        _log(f"[progress] timing profile updated for {kind} ({len(rows)} trace rows)")
+        _log(f"[progress] timing profile updated for {kind} "
+             f"({len(rows)} trace rows, Nextflow work actually run {share:.0%})")
     except Exception as exc:  # noqa: BLE001 — progress learning is best-effort
         _log(f"[progress] warning: timing profile not updated: {exc}")
 
@@ -1844,17 +1850,20 @@ def main() -> int:
                         "nextflow",
                         nf_progress.fraction(),
                         nextflow_current=nf_progress.current(),
+                        nextflow_processes=nf_progress.snapshot(),
                     )
 
                 def track_nextflow(line: str) -> None:
-                    events = nf_progress.on_stdout(line)
-                    if events:
-                        emit_nextflow_events(events)
-                        set_progress(
-                            "nextflow",
-                            nf_progress.fraction(),
-                            nextflow_current=nf_progress.current(),
-                        )
+                    if tertiary_progress.parse_stdout_task(line) is None:
+                        return
+                    emit_nextflow_events(nf_progress.on_stdout(line))
+                    # Every submitted/cached task updates the live block.
+                    set_progress(
+                        "nextflow",
+                        nf_progress.fraction(),
+                        nextflow_current=nf_progress.current(),
+                        nextflow_processes=nf_progress.snapshot(),
+                    )
 
                 _log(
                     f"[nextflow] waiting for shared {pipeline_type} cache lineage"
@@ -1934,7 +1943,7 @@ def main() -> int:
                     nextflow_elapsed = time.monotonic() - nextflow_started
                     emit_nextflow_events(nf_progress.poll_trace(trace_path))
                     emit_nextflow_events(nf_progress.finish_events())
-                    set_progress("nextflow", 1.0)
+                    set_progress("nextflow", 1.0, nextflow_processes=nf_progress.snapshot(finished=True))
                 finally:
                     try:
                         snapshot = dragen_jobs.snapshot_nextflow_log(
@@ -2151,6 +2160,7 @@ def main() -> int:
             profile=timing_profile,
             research_only=bool(args.research_only),
             dragen=(mode == "dragen"),
+            workers=parallel_tsv.default_workers(),
         )
 
         def publish_postprocessing_progress() -> None:
@@ -2272,6 +2282,9 @@ def main() -> int:
         # earlier samples from the same job.
         _set_step(job_id, "promote-output")
         set_progress("promote", 0.0)
+        promote_started = time.monotonic()
+        promote_units = max(1, 2 * len(samples))  # copy + activate per sample
+        promote_done = 0
         publication_samples: dict[str, Path] = {}
         # Transfer and verify the entire batch before replacing any live data.
         for sample in samples:
@@ -2288,6 +2301,8 @@ def main() -> int:
             )
             publication_samples[sid] = destination
             _log(f'[publish-copy] {sid}: verified {stats["files"]} files, {stats["bytes"]} bytes')
+            promote_done += 1
+            set_progress("promote", promote_done / promote_units)
         promoted_batches: list[list[tuple[Path | None, Path, Path]]] = []
         try:
             for sample in samples:
@@ -2303,6 +2318,8 @@ def main() -> int:
                 for stale_work in live_post.glob(".snv_indel.*.working.tsv"):
                     stale_work.unlink(missing_ok=True)
                 _log(f"[promote] {sid}: staged generation activated")
+                promote_done += 1
+                set_progress("promote", promote_done / promote_units)
         except BaseException:
             rollback_errors = []
             for operations in reversed(promoted_batches):
@@ -2331,7 +2348,8 @@ def main() -> int:
             trace_path=TERTIARY_JOBS_DIR / job_id / "trace.txt",
             nextflow_elapsed=nextflow_elapsed,
             postprocessing_elapsed=postprocessing_elapsed,
-            step_seconds=pp_progress.step_seconds,
+            promote_elapsed=time.monotonic() - promote_started,
+            pp_progress=pp_progress,
         )
 
         if args.with_prs:

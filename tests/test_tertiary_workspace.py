@@ -277,8 +277,10 @@ def test_worker_transfers_entire_batch_before_atomic_publication(tmp_path, monke
         assert state['progress_pct'] == (100.0 if not cancelled else 95.0)
         learned = json.loads(profile_path.read_text())['kinds']['nckuh:WGS']
         assert learned['processes']['VEP_ANNOTATE'] == {'seconds': 1800.0, 'tasks_per_sample': 1.0}
-        assert learned['postprocessing_batch_steps']['genebe'] == 2.0  # 4 s for 2 samples
-        assert learned['postprocessing_batch_steps']['review-tsv'] == 3.0
+        assert learned['observations']['step:genebe'] == [[2.0, 4.0]]  # 4 s for a chunk of 2
+        assert learned['sample_steps']['review-tsv'] == 3.0
+        assert [n for n, _s in learned['observations']['phase:promote']] == [2.0]
+        assert learned['observations']['phase:nextflow'][0][0] == 2.0  # both VEP tasks really ran
         assert post_calls == ['post-processing batch 1/1 (2 samples)']
     else:
         assert not profile_path.exists()
