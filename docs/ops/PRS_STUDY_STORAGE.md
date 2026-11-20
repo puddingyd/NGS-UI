@@ -102,4 +102,4 @@ BASH
 - bind已成功但fstab／daemon-reload失敗：SSD備份保留，未允許release；以`--apply`完成永久設定，衝突時停止，不覆寫其他管理者設定。
 - 若日後需移除研究study，必須先解除其掛載並移除這次fstab專屬列；不可直接刪除/home目標目錄或對掛載點rmtree。此工具不提供研究資料最終刪除功能。
 - 搬到HDD不等於完成封存或自動清理。大型祖源參考重複檔仍保留；共享參考、暫存清理與長期datalake證據封存是後續工作。全量祖源維持暫緩，不把每案約15 GiB的祖源工作複製擴到1516份。
-- 本輪相關測試66項通過、5項選配工具檢查未執行。合成測試涵蓋實際rsync的隱藏／hardlink／symlink／sparse複製、同大小同mtime內容損壞、額外檔案、鎖衝突／其他scope可執行、mount失敗回復、fstab衝突及失敗保留、精確備份刪除與中斷接續、目標改變拒刪、流程冪等、程序引用與bind alias。沒有在本機執行真實Linux mount、fstab或院內WGS搬移；需以上院內驗收。
+- 本輪相關測試67項通過、5項選配工具檢查未執行。合成測試涵蓋實際rsync的隱藏／hardlink／symlink／sparse複製、同大小同mtime內容損壞、額外檔案、鎖衝突／其他scope可執行、mount失敗回復、fstab衝突及失敗保留、精確備份刪除與中斷接續、目標改變拒刪、流程冪等、程序引用與bind alias，並實際從私人工具目錄載入既有repo鎖模組啟動CLI。沒有在本機執行真實Linux mount、fstab或院內WGS搬移；需以上院內驗收。

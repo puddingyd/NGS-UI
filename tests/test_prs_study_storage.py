@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -346,3 +347,13 @@ def test_fstab_conflict_is_not_overwritten(study):
     source, target, _, _ = study
     old = f'/different/device {source} ext4 defaults 0 0\n'
     with pytest.raises(RuntimeError, match='fstab'): m.fstab_text(old, source, target)
+
+
+def test_standalone_copy_uses_existing_repo_guard_without_checkout_update(tmp_path):
+    repo = Path(__file__).parents[1]
+    private = tmp_path / '.prs_storage_tool'; private.mkdir(mode=0o700)
+    script = private / 'migrate_prs_study_storage.py'
+    shutil.copyfile(repo / 'scripts/migrate_prs_study_storage.py', script)
+    result = subprocess.run([sys.executable, '-B', str(script), '--help'], cwd=repo,
+                            capture_output=True, text=True, check=True)
+    assert '--release-ssd' in result.stdout and '--apply' in result.stdout

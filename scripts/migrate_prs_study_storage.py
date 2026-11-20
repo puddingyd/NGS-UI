@@ -46,10 +46,13 @@ def run(argv, *, capture=False):
         return out or ''
     finally:
         if child.poll() is None:
-            os.killpg(child.pid, signal.SIGTERM)
-            try: child.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL); child.wait()
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+                try: child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid, signal.SIGKILL); child.wait()
+            except ProcessLookupError:
+                child.wait()  # Child exited between poll and the group signal.
 
 
 def digest(path):
