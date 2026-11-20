@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**PRS搬移proc相容性修正（v10.43補記，2026-11-20）**：院內第一段檢查讀`/proc/2/environ`回ESRCH而停，尚未複製study或切換掛載。`process_users`逐欄處理ENOENT／ESRCH（核心執行緒無userspace環境或程序退出競爭），仍繼續核其餘cmdline／env／cwd／fd，不整個跳過PID；PermissionError與其他I/O仍拒絕。合成重現該錯誤、消失欄位／fd及活躍study引用仍阻擋；只更新獨立搬移工具，不改原study／核心科學簽章、不SSH／部署。須重新fetch取出新版工具，舊1891e1b指令不可原封不動重貼。
+
 **PRS研究工作區搬HDD（v10.43，2026-11-20）**：`scripts/migrate_prs_study_storage.py`提供唯讀檢查／`--apply`複製核對bind／獨立`--release-ssd`，只處理`nf_work/prs/_validation_*/study`，預設cohort_v1→本機`NGS_UI_HOME/prs_validation_work/_validation_20261114/cohort_v1`，原logical路徑／plan／模型／核心簽章不改。操作者回報根碟剩23G、study581G（祖源約411／其餘170），第504筆中斷；迴圈序號不冒稱總完成數。rsync保留hardlink／symlink／metadata／sparse，checksum dry-run＋凍結hash核對後改名SSD備份、bind原路徑、備份並追加fstab，daemon-reload不重啟。持study／全站PRS執行鎖／shared cleanup lease，切換兩份execution鎖防inode空窗，其他三級scope不受此鎖排除；掃程序原路徑及SSD alias、不列秘密。release再核內容／目標簽章／備份inode／永久掛載後僅刪記錄中SSD副本，可接續部分清除；目標改變／子掛載／不明來源拒絕。缺bind時000空掛載點使研究停止，不回落SSD；研究退役須管理移除永久掛載列。可從/tmp執行並從repo cwd載入舊guard，fetch單檔不用pull／restart干擾活躍三級。實際搬檔由操作者執行，不SSH；合成rsync／故障與鎖測試，未做真實Linux掛載驗收。操作`docs/ops/PRS_STUDY_STORAGE.md`；不是自動封存／清理或全量祖源快取改造，原gVCF／其他PRS／contexts保留。
 
 **個案分類管理（v10.42，2026-11-20）**：「載入新個案」與基本資料的 Category／分類灰色標籤文字旁有小齒輪，共用管理分類 modal，可新增／改名／移除，按儲存才套用。改名同步修改所有已登錄個案；移除將原使用個案設為未分類。`services/category_store.py` 以 `DATA_ROOT/categories.json` 保存共用清單，初始沿用原15項並納入既有自訂分類；`GET /api/options` 回分類、使用個案數與版本，按已登錄個案數降序，同數沿原清單順序，新項目放最後，不以分析版本或瀏覽次數計數。`PUT /api/options/categories` 要求清單版本及 original/name 對應，禁止空白／重複；清單版本衝突回409；分類不再取得整個分析期間的 sample locks，因此 PRS／PGx／三級分析中仍可改分類。metadata 寫入、三級結果實際發布／回復及刪除登錄／輸出，共用短暫的跨 worker metadata 鎖，避免搬動檔案與分類更新競爭；原子換檔＋pending journal，寫入失敗回復，中斷則下次存取先恢復，保留其他判讀欄位並使個案表快取失效。舊頁面不得寫回已移除／改名分類。管理視窗在新個案 modal 上層，Esc 只關上層，保留未送出資料與判讀編輯；僅以合成個案測試，不操作院內資料、不部署。

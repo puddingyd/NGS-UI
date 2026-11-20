@@ -2,6 +2,8 @@
 
 更新：2026-11-20，v10.43。此工具只搬既有 `nf_work/prs/_validation_*/study`，不搬整個 nf_work、不啟停服務。由操作者在院內 Linux 主機執行；本機只有合成資料測試，沒有連入院內搬檔。
 
+同日修正：初次院內檢查讀`/proc/2/environ`回傳ESRCH（No such process）而停，尚未執行複製或掛載。新版逐欄容忍ENOENT／ESRCH，涵蓋核心執行緒沒有使用者環境、程序／fd在掃描中退出的情況，同時繼續檢查其餘cmdline／env／cwd／fd；權限不足及其他I/O錯誤仍停止。請重新執行第二節取得新版工具，不要重貼固定舊commit `1891e1b` 的取檔命令。原study不需修復或重建。
+
 ## 一、為什麼搬，以及保留什麼
 
 操作者回報根磁碟只剩23 GiB，nf_work約831 GiB，其中PRS約736 GiB；本次cohort_v1約581 GiB，排除ancestry約170 GiB，祖源約411 GiB。批次在第504筆途中正常Ctrl-C；迴圈序號不是重新核對後的完成檢體總數，先前試跑也可能包含排序較後的檢體。
@@ -102,4 +104,4 @@ BASH
 - bind已成功但fstab／daemon-reload失敗：SSD備份保留，未允許release；以`--apply`完成永久設定，衝突時停止，不覆寫其他管理者設定。
 - 若日後需移除研究study，必須先解除其掛載並移除這次fstab專屬列；不可直接刪除/home目標目錄或對掛載點rmtree。此工具不提供研究資料最終刪除功能。
 - 搬到HDD不等於完成封存或自動清理。大型祖源參考重複檔仍保留；共享參考、暫存清理與長期datalake證據封存是後續工作。全量祖源維持暫緩，不把每案約15 GiB的祖源工作複製擴到1516份。
-- 本輪相關測試67項通過、5項選配工具檢查未執行。合成測試涵蓋實際rsync的隱藏／hardlink／symlink／sparse複製、同大小同mtime內容損壞、額外檔案、鎖衝突／其他scope可執行、mount失敗回復、fstab衝突及失敗保留、精確備份刪除與中斷接續、目標改變拒刪、流程冪等、程序引用與bind alias，並實際從私人工具目錄載入既有repo鎖模組啟動CLI。沒有在本機執行真實Linux mount、fstab或院內WGS搬移；需以上院內驗收。
+- 本輪相關測試76項通過、5項選配工具檢查未執行。合成測試涵蓋實際rsync的隱藏／hardlink／symlink／sparse複製、同大小同mtime內容損壞、額外檔案、鎖衝突／其他scope可執行、mount失敗回復、fstab衝突及失敗保留、精確備份刪除與中斷接續、目標改變拒刪、流程冪等、程序引用與bind alias，並實際從私人工具目錄載入既有repo鎖模組啟動CLI。新增重現ESRCH／ENOENT、欄位／fd消失仍檢出其他活躍引用，以及EACCES／EPERM／EIO仍拒絕的測試。沒有在本機執行真實Linux mount、fstab或院內WGS搬移；需以上院內驗收。

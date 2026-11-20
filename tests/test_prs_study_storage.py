@@ -1,5 +1,6 @@
 """Storage cutover safeguards: synthetic trees, real rsync, no actual mounts."""
 import importlib.util
+import errno
 import json
 import os
 from pathlib import Path
@@ -253,6 +254,69 @@ def test_unrelated_nckuh_and_similar_prefix_are_not_busy(tmp_path):
     fake_process(proc, 777777, args=b'java nextflow -work-dir /work/contexts/shared-nckuh\0')
     fake_process(proc, 777778, args=os.fsencode(str(source) + '0/file'))
     m.process_users({source}, proc)
+
+
+@pytest.mark.parametrize('code', [errno.ESRCH, errno.ENOENT])
+def test_kernel_or_exiting_process_environment_does_not_abort_scan(tmp_path, monkeypatch, code):
+    proc = tmp_path.resolve() / 'proc'; proc.mkdir()
+    fake_process(proc, 2)  # Present /proc/2, empty cmdline, no userspace environment.
+    original = Path.read_bytes
+    def read(path):
+        if path == proc / '2/environ': raise OSError(code, 'No such process', str(path))
+        return original(path)
+    monkeypatch.setattr(Path, 'read_bytes', read)
+    m.process_users({tmp_path.resolve() / 'cohort_v1'}, proc)
+
+
+@pytest.mark.parametrize('missing', ['cmdline', 'environ'])
+def test_unavailable_proc_field_does_not_hide_other_live_study_evidence(tmp_path, monkeypatch, missing):
+    proc = tmp_path.resolve() / 'proc'; proc.mkdir()
+    source = tmp_path.resolve() / 'cohort_v1'; source.mkdir()
+    fake_process(proc, 777777, env=b'TMPDIR=' + os.fsencode(source), fd=source)
+    original = Path.read_bytes
+    def read(path):
+        if path == proc / ('777777/' + missing): raise ProcessLookupError(errno.ESRCH, 'exiting mm')
+        return original(path)
+    monkeypatch.setattr(Path, 'read_bytes', read)
+    with pytest.raises(RuntimeError, match='777777'): m.process_users({source}, proc)
+
+
+def test_disappearing_fd_directory_does_not_hide_live_cwd(tmp_path, monkeypatch):
+    proc = tmp_path.resolve() / 'proc'; proc.mkdir()
+    source = tmp_path.resolve() / 'cohort_v1'; source.mkdir()
+    fake_process(proc, 777777, cwd=source)
+    original = Path.iterdir
+    def listing(path):
+        if path == proc / '777777/fd': raise ProcessLookupError(errno.ESRCH, 'fd table disappeared')
+        return original(path)
+    monkeypatch.setattr(Path, 'iterdir', listing)
+    with pytest.raises(RuntimeError, match='777777'): m.process_users({source}, proc)
+
+
+def test_disappearing_fd_link_does_not_hide_another_open_study_file(tmp_path, monkeypatch):
+    proc = tmp_path.resolve() / 'proc'; proc.mkdir()
+    source = tmp_path.resolve() / 'cohort_v1'; source.mkdir()
+    fake_process(proc, 777777, fd='/unrelated/file')
+    (proc / '777777/fd/4').symlink_to(source)
+    original = os.readlink
+    def link(path):
+        if Path(path) == proc / '777777/fd/3': raise ProcessLookupError(errno.ESRCH, 'fd gone')
+        return original(path)
+    monkeypatch.setattr(os, 'readlink', link)
+    with pytest.raises(RuntimeError, match='777777'): m.process_users({source}, proc)
+
+
+@pytest.mark.parametrize('code', [errno.EACCES, errno.EPERM, errno.EIO])
+def test_proc_permission_and_unexpected_io_errors_still_stop(tmp_path, monkeypatch, code):
+    proc = tmp_path.resolve() / 'proc'; proc.mkdir()
+    fake_process(proc, 777777)
+    original = Path.read_bytes
+    def read(path):
+        if path == proc / '777777/environ': raise OSError(code, 'not readable')
+        return original(path)
+    monkeypatch.setattr(Path, 'read_bytes', read)
+    expected = RuntimeError if code in {errno.EACCES, errno.EPERM} else OSError
+    with pytest.raises(expected): m.process_users({tmp_path.resolve() / 'cohort_v1'}, proc)
 
 
 def test_bind_alias_and_nested_mount_detection(study):

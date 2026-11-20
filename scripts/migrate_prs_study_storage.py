@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
+import errno
 import hashlib
 import json
 import os
@@ -152,17 +153,31 @@ def process_users(paths, proc=Path('/proc')):
     needles = [str(p).encode() for p in paths]
     def mentions(raw):
         return any(re.search(re.escape(p) + rb'(?=$|[/\x00\s])', raw) for p in needles)
+    def optional_read(path):
+        try: return path.read_bytes()
+        except OSError as error:
+            # Kernel threads can have a proc entry but no userspace mm/environ
+            # (ESRCH). A normal task can also exit between directory and file
+            # reads (ENOENT/ESRCH). Still inspect the remaining evidence: an
+            # unavailable environ must not hide a live cwd/fd in this study.
+            if error.errno in {errno.ENOENT, errno.ESRCH}: return b''
+            raise
     busy = []
     for entry in proc.iterdir():
         if not entry.name.isdigit() or int(entry.name) in exempt: continue
         try:
-            hit = mentions((entry / 'cmdline').read_bytes()) or mentions((entry / 'environ').read_bytes())
+            hit = mentions(optional_read(entry / 'cmdline')) or mentions(optional_read(entry / 'environ'))
             if not hit:
-                links = [entry / 'cwd', *list((entry / 'fd').iterdir())]
+                try: fds = list((entry / 'fd').iterdir())
+                except OSError as error:
+                    if error.errno not in {errno.ENOENT, errno.ESRCH}: raise
+                    fds = []
+                links = [entry / 'cwd', *fds]
                 for link in links:
                     try:
                         if mentions(os.fsencode(os.readlink(link))): hit = True; break
-                    except FileNotFoundError: continue
+                    except OSError as error:
+                        if error.errno not in {errno.ENOENT, errno.ESRCH}: raise
             if hit: busy.append(entry.name)
         except FileNotFoundError: continue  # Process exited during the scan.
         except PermissionError:
