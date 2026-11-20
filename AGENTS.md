@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**WES診斷報告基因清單（v10.41，2026-11-20）**：只在診斷報告的「本次檢測基因包括」排除 HGNC `MT-*` 粒線體基因及 SMN1／SMN2、STRC、CYP21A2、NCF1、IKBKG、OPN1LW／OPN1MW、MUC1；`report_gene_scope` 共用於 DOCX 與 PDF 清單，分組／合併皆套用。依個案 Test 判斷 WES，WGS／TITAN-WGS 不套用。匯出 modal 按鈕上方新增同提示字級／灰色的靠左排除清單，桌面加寬以容納單行、窄螢幕自然換行。其他報告文字、變異結果、HPO／panel 定義與分析流程不改。實驗室已確認 Illumina Exome Panel v1.2、無已確效特殊基因分析；這是本實驗室報告範圍規則，非所有 WES 的通用不可檢測清單。
+
 **PRS祖源試跑回傳（v10.37補記，2026-11-17）**：使用者summary37計分＝27健康候選＋10標準、1489未計分，模型hash／27初步分數分布同前；六病eligible均同23run且各n1，正好觀測門檻pass23，decile／stratum總數各23。摘要不足另判4份祖源，不宣稱27全EAS。23份平均分數相對EAS偏移−0.106～+0.099 SD，非分布等價／常模或臨床確效。原摘要含每run單人分數不進Git；PRS_ANCESTRY_PILOT_2026-11-17.md與cohort_ancestry_pilot_aggregate_20261117.json存去run彙整、來源SHA及限制。試跑計分／QC／EAS納入可追溯，下一步可擴至1516健康候選score-only（既有27接續），不一次跑全祖源；新增未確認EAS只列初步分布，eligible可能仍23，後續依品質與資源分批祖源。逐病門檻不改，4份不強行納入、不刪除換來源；個人/親緣、完整補值/GIAB、原WGS QC/block MIN_DP/未知GT及癌症HR方向不結案。workflow／ops／索引更新，科學程式／設定與study簽章不變、不SSH／部署，直接貼server命令。
 
 **PRS已知子集回傳（v10.37補記，2026-11-16）**：known_subset一人／37mask，六病答案覆蓋99.9156～99.9254%，未知452～785位點；不是大部分資料失敗，但完整真值仍partial。核n=observed+missing、fraction、masked範圍、有限error與max≥MAE≥abs偏差。EAS在5病已知子集MAE較小／全部癌症較大，非每mask更好、非37人、非全分數或pct確效，不據此換補值。原JSON及receipt存cohort_reference_known_subset*_20261116.json，review第六節／workflow／ops同步。保留3330補值及99.5%觀測門檻；先沿原study跑27候選ancestry並report以做研究分布，4份即使EAS仍逐病QC不過，全1516仍暫緩等pilot祖源與資源。完整補值確效／未知GT根因／原WGS QC／GIAB及癌症HR方向不結案；更多參考者與保留資料另設計，不反覆要求同一人資料。科學程式／設定與study簽章不變、不SSH／部署，直接貼下一步server命令。

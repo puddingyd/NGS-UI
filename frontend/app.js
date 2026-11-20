@@ -4292,12 +4292,13 @@ async function printReportCards() {
 // Small inline modal asking how the 檢測基因清單 should appear in §五.4.
 // Returns "grouped" | "merged" | null (cancelled).
 function _pickGeneListMode(opts = {}) {
+  const isWes = currentSampleTestType() === "WES";
   return new Promise((resolve) => {
     // One-shot modal — built on the fly, removed after pick.
     const wrap = document.createElement("div");
     wrap.className = "modal";
     wrap.innerHTML = `
-      <div class="modal-card" style="max-width:520px">
+      <div class="modal-card" style="max-width:${isWes ? "800px" : "520px"}">
         <h2>${escapeHtml(opts.title || "匯出診斷報告")}</h2>
         <p style="margin:8px 0 12px;font-size:13px;color:#555">
           「本次檢測基因包括」要怎麼呈現？
@@ -4312,6 +4313,7 @@ function _pickGeneListMode(opts = {}) {
           <strong>全部合併（去重）</strong>
           <div style="font-size:12px;color:#777;margin-left:22px">所有 HPO + panel 的基因取聯集，去重後列成一行</div>
         </label>
+        ${isWes ? `<p class="wes-gene-list-exclusions" style="margin:12px 0 0;font-size:13px;color:#555;text-align:left">WES 基因清單排除：mtDNA、SMN1/SMN2、STRC、CYP21A2、NCF1、IKBKG、OPN1LW/OPN1MW、MUC1</p>` : ""}
         <div class="dragen-actions" style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
           <button type="button" class="btn btn-ghost" data-act="cancel">取消</button>
           <button type="button" class="btn btn-primary" data-act="ok">${escapeHtml(opts.okLabel || "匯出")}</button>

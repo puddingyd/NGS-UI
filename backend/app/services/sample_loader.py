@@ -58,6 +58,7 @@ from . import (
     panel_deadzone,
     phenotype_scorer,
     ploidy,
+    report_gene_scope,
     roh,
     sample_layout,
     snv_gene_index,
@@ -498,7 +499,7 @@ def _selected_snv_hgvs(variant: dict, edits: dict) -> str:
     return str(variant.get("HGVS") or "")
 
 
-def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
+def _report_gene_list(hpo_rows: list, panel_entries: list, *, test_type: str = "WES") -> dict:
     phenotype_scorer.load()
     sections: list[dict] = []
 
@@ -507,7 +508,8 @@ def _report_gene_list(hpo_rows: list, panel_entries: list) -> dict:
         entry = phenotype_scorer.genes_for_key(key, kind=kind)
         for raw in entry.get("genes") or []:
             gene = panel_deadzone.canonical_panel_gene_symbol(raw)
-            if panel_deadzone.is_disease_associated_gene(gene):
+            if (panel_deadzone.is_disease_associated_gene(gene)
+                    and report_gene_scope.include_in_gene_list(gene, test_type)):
                 genes.append(gene)
         return sorted(set(genes))
 
@@ -537,7 +539,11 @@ def load_report_gene_list(sample_id: str, version: str | None = None) -> dict | 
     if ctx is None:
         return None
     _sub, _sidecar_dir, hpo_list, panels_list, _pheno_by_gene = ctx
-    return _report_gene_list(_normalize_phenotype(hpo_list), panels_list)
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
+    return _report_gene_list(
+        _normalize_phenotype(hpo_list), panels_list,
+        test_type=_effective_test_type(meta, sample_id, default="WES"),
+    )
 
 
 def _case_selected_diseases(variant: dict, edits: dict) -> list[str]:

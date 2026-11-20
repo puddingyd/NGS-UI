@@ -42,6 +42,7 @@ from . import (
     ploidy,
     prs,
     prs_presentation,
+    report_gene_scope,
     report_store,
     sample_loader,
     test_types,
@@ -1826,7 +1827,12 @@ def _report_scope_sections(sample: dict) -> list[tuple[str, list[str]]]:
             phenotype_scorer.panel_output_name(panel_name),
             _genes_for_term_or_panel(panel_name),
         ))
-    return sections
+    test_type = (sample.get("meta") or {}).get("Test") or "WES"
+    return [
+        (name, [gene for gene in genes
+                if report_gene_scope.include_in_gene_list(gene, test_type)])
+        for name, genes in sections
+    ]
 
 
 def _add_dead_zone_gene_list_note(doc, threshold: int) -> None:
