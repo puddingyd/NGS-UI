@@ -84,26 +84,6 @@ def _finish(transaction):
 
 
 @contextmanager
-def _sample_locks(changes):
-    # Pipeline publication replaces whole state directories. Share its locks
-    # so a completed analysis cannot publish an older copy of the category.
-    if not changes:
-        yield
-        return
-    from ..workers.dragen_run import _acquire_sample_locks, _release_sample_locks
-    ids = {change["sample_id"] for change in changes}
-    ids.update(sample_layout.source_sample_id(sid) for sid in list(ids))
-    try:
-        handles = _acquire_sample_locks(list(ids))
-    except RuntimeError as exc:
-        raise HTTPException(409, "部分受影響個案正在分析或更新，請稍後再儲存分類") from exc
-    try:
-        yield
-    finally:
-        _release_sample_locks(handles)
-
-
-@contextmanager
 def locked():
     """Serialize category transactions with all metadata read/modify/writes."""
     with _LOCK:
@@ -118,8 +98,7 @@ def locked():
                 pending = _path("categories.pending.json")
                 if pending.exists():
                     transaction = _read(pending)
-                    with _sample_locks(transaction["changes"]):
-                        _finish(transaction)
+                    _finish(transaction)
                 yield
             finally:
                 _LOCAL.active = False
@@ -224,15 +203,14 @@ def save(payload, *, user=None):
     changes = [{"sample_id": sid, "old": meta.get("category"), "new": mapping[meta["category"]]}
                for sid, meta in samples if meta.get("category") and mapping[meta["category"]] != meta["category"]]
     transaction = {"before": before, "after": after, "changes": changes}
-    with _sample_locks(changes):
+    _write(_path("categories.pending.json"), transaction)
+    try:
+        _finish(transaction)
+    except OSError:
+        transaction["rollback"] = True
         _write(_path("categories.pending.json"), transaction)
-        try:
-            _finish(transaction)
-        except OSError:
-            transaction["rollback"] = True
-            _write(_path("categories.pending.json"), transaction)
-            _finish(transaction)
-            raise
+        _finish(transaction)
+        raise
     result = _snapshot()[3]
     result.update(category_changes=mapping, updated_samples=len(changes))
     return result

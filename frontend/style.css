@@ -4683,9 +4683,9 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 .omim-no-relationships { color: var(--muted, #59636e); font-size: 12px; font-style: italic; margin: 2px 0 4px; }
 
 /* Shared case-category editor, including when opened above the new-case form. */
-.category-select-tools { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.category-select-tools select { flex: 1; min-width: 0; }
-.category-manage-btn { flex: 0 0 26px; width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--muted); cursor: pointer; font-size: 16px; }
+.category-label-tools { display: inline-flex; align-items: center; align-self: center; gap: 3px; }
+.form-grid .category-label-tools { align-self: flex-start; }
+.category-manage-btn { flex: 0 0 16px; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; line-height: 1; }
 .category-manage-btn:hover { color: var(--accent); background: #f1f5f9; }
 .category-manage-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #category-manager-modal { z-index: 180; }

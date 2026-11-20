@@ -79,6 +79,7 @@ def delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
         _release_sample_locks(handles)
 
 
+@category_store.serialized
 def _delete(lis_id: str, *, delete_pipeline_output: bool = False) -> dict:
     """Delete or unregister one sample.
 

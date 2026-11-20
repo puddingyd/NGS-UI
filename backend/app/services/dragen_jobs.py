@@ -33,7 +33,7 @@ from ..config import (DRAGEN_VCF_ROOTS, INHOUSE_VCF_ROOTS,
                        PIPELINE_VCF_INDEX_TTL_HOURS, PIPELINE_OUT_ROOT,
                        LEGACY_PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_NF_WORK_ROOT)
-from . import sample_layout, nextflow_work
+from . import sample_layout, nextflow_work, category_store
 
 # Final pipeline steps, in order — the worker writes the current one
 # into state.json so the UI can show progress.
@@ -789,6 +789,7 @@ def delete_pipeline_output(sample_id: str) -> dict:
         _release_sample_locks(handles)
 
 
+@category_store.serialized
 def _delete_pipeline_output(sample_id: str) -> dict:
     """Delete UI/pipeline output and all NGS-UI job logs unless one is active."""
     _validate_sample_id(sample_id)

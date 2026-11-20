@@ -214,16 +214,83 @@ def test_authenticated_api_updates_old_cases_and_retains_tag_options(cases, monk
     assert client.get("/api/options").json()["tag_suggestions"] == ["keep tag"]
 
 
-def test_active_analysis_prevents_changes_before_any_write(cases):
+def test_active_analysis_allows_category_changes(cases):
     from app.workers.dragen_run import _acquire_sample_locks, _release_sample_locks
     path = cases("A", "GI")
     payload = edit(categories.options(), {"GI": "Gastro"})
     handles = _acquire_sample_locks(["A"])
     try:
-        with pytest.raises(HTTPException) as exc:
-            categories.save(payload)
-        assert exc.value.status_code == 409
-        assert json.loads(path.read_text())["category"] == "GI"
+        result = categories.save(payload)
+        assert result["updated_samples"] == 1
+        assert json.loads(path.read_text())["category"] == "Gastro"
         assert not (config.DATA_ROOT / "categories.pending.json").exists()
     finally:
         _release_sample_locks(handles)
+
+
+@pytest.mark.parametrize("layout_version", [2, 3])
+def test_active_analysis_publication_and_rollback_preserve_category_changes(cases, tmp_path, layout_version):
+    from app.workers import dragen_run
+    path = cases("A", "GI", unified=True)
+    post = path.parent
+    marker = post / "A.layout.json"
+    marker.write_text(json.dumps({"layout_version": layout_version}))
+    if layout_version == 2:
+        path.rename(post / "sample_metadata.json")
+    staged = tmp_path / "staged" / "A"
+    staged_post = staged / "08_postprocessing"
+    staged_post.mkdir(parents=True)
+    (staged_post / "A.layout.json").write_text('{"layout_version": 3}')
+    handles = dragen_run._acquire_sample_locks(["A"])
+    try:
+        categories.save(edit(categories.options(), {"GI": "Gastro"}))
+        operations = dragen_run._promote_staged_generation(
+            sample_id="A", staged_sample_dir=staged,
+            live_sample_dir=config.PIPELINE_OUT_ROOT / "A",
+            rollback_sample_dir=tmp_path / "rollback" / "A",
+        )
+        assert report_store.load("A")["category"] == "Gastro"
+        categories.save(edit(categories.options(), {"Gastro": None}))
+        dragen_run._rollback_promotion_operations(operations)
+        assert report_store.load("A")["category"] == ""
+        assert report_store.load("A")["comment"] == "keep"
+    finally:
+        dragen_run._release_sample_locks(handles)
+
+
+def test_publication_waits_for_category_commit_instead_of_whole_analysis(cases, tmp_path):
+    from app.workers import dragen_run
+    cases("A", "GI", unified=True)
+    staged = tmp_path / "staged" / "A"
+    staged_post = staged / "08_postprocessing"
+    staged_post.mkdir(parents=True)
+    staged_marker = staged_post / "A.layout.json"
+    staged_marker.write_text('{"layout_version": 3}')
+    started, done = threading.Event(), threading.Event()
+    failures = []
+
+    def publish():
+        started.set()
+        try:
+            dragen_run._promote_staged_generation(
+                sample_id="A", staged_sample_dir=staged,
+                live_sample_dir=config.PIPELINE_OUT_ROOT / "A",
+                rollback_sample_dir=tmp_path / "rollback" / "A",
+            )
+        except Exception as exc:
+            failures.append(exc)
+        finally:
+            done.set()
+
+    with categories.locked():
+        thread = threading.Thread(target=publish)
+        thread.start()
+        assert started.wait(1)
+        assert not done.wait(0.05)
+        assert staged_marker.exists()
+        categories.save(edit(categories.options(), {"GI": "Gastro"}))
+    thread.join(2)
+    assert done.is_set()
+    assert not failures
+    assert not staged_marker.exists()
+    assert report_store.load("A")["category"] == "Gastro"

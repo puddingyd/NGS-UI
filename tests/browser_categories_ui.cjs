@@ -41,9 +41,19 @@ const server=http.createServer((req,res)=>{
     page.on('pageerror',e=>errors.push(String(e)));
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.waitForFunction(()=>window.categoryTest?.state.options);
+    const checkLabelButton=async button=>{
+      const layout=await button.evaluate(el=>{
+        const label=el.previousElementSibling.getBoundingClientRect(),icon=el.getBoundingClientRect();
+        return {gap:icon.left-label.right,center:Math.abs((icon.top+icon.bottom-label.top-label.bottom)/2),
+          nextToLabel:el.parentElement.classList.contains('category-label-tools'),width:icon.width};
+      });
+      assert(layout.nextToLabel);assert(layout.gap>=0&&layout.gap<=4);assert(layout.center<=2);assert(layout.width<=18);
+    };
     const modal=page.locator('#category-manager-modal');
     const open=async()=>{await page.locator('#new-case-modal [data-manage-categories]').click();await page.waitForFunction(()=>!document.getElementById('category-manager-save').disabled);};
     await page.locator('#btn-new-case').click();
+    await checkLabelButton(page.locator('#new-case-modal [data-manage-categories]'));
+    await page.locator('#new-case-modal').screenshot({path:'/private/tmp/ngs-category-new-case-label.png'});
     await page.locator('#new-case-name').fill('保留未送出的姓名');
     await page.locator('#new-case-category').selectOption('GI');
     await open();
@@ -91,6 +101,8 @@ const server=http.createServer((req,res)=>{
     // The basic-info button opens the same editor; deletion translates the active selection to blank.
     await page.locator('#new-case-modal [data-close="new-case-modal"]').first().click();
     await page.evaluate(()=>document.getElementById('sample-card').classList.remove('hidden'));
+    await checkLabelButton(page.locator('#sample-card [data-manage-categories]'));
+    await page.locator('#sample-card').screenshot({path:'/private/tmp/ngs-category-basic-label.png'});
     await page.locator('#sample-card [data-manage-categories]').click();
     await page.waitForFunction(()=>!document.getElementById('category-manager-save').disabled);
     await modal.locator('[data-remove-category="0"]').click();

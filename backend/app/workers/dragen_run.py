@@ -58,7 +58,7 @@ from ..config import (NGS_UI_HOME, PIPELINE_OUT_ROOT, REPO_ROOT,
                        TERTIARY_JOBS_DIR, TERTIARY_NF_WORK_ROOT)
 from ..services import dragen_jobs, mitomap_mito, roh, sample_layout, dragen_cnv_rescue, gba, specialized
 from ..services import nextflow_work, tertiary_workspace, postprocessing_log, tertiary_progress
-from ..services import parallel_tsv
+from ..services import parallel_tsv, category_store
 
 TERTIARY_NEXTFLOW_CONFIG = Path(os.environ.get(
     "NGS_UI_TERTIARY_CONFIG",
@@ -952,6 +952,7 @@ def _path_exists(path: Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
+@category_store.serialized
 def _promote_staged_generation(
     *,
     sample_id: str,
@@ -1026,6 +1027,7 @@ def _promote_staged_generation(
     return operations
 
 
+@category_store.serialized
 def _rollback_promotion_operations(
     operations: list[tuple[Path | None, Path, Path]],
 ) -> None:
