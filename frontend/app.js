@@ -4294,7 +4294,7 @@ function _pickGeneListMode(opts = {}) {
     const wrap = document.createElement("div");
     wrap.className = "modal";
     wrap.innerHTML = `
-      <div class="modal-card" style="max-width:${isWes ? "800px" : "520px"}">
+      <div class="modal-card" style="max-width:520px">
         <h2>${escapeHtml(opts.title || "匯出診斷報告")}</h2>
         <p style="margin:8px 0 12px;font-size:13px;color:#555">
           「本次檢測基因包括」要怎麼呈現？

@@ -47,13 +47,15 @@ const harness = `
         leftDelta: el.getBoundingClientRect().left - question.getBoundingClientRect().left,
         aboveButtons: el.getBoundingClientRect().bottom <= buttons.getBoundingClientRect().top,
         lines: range.getClientRects().length,
+        modalWidth: el.parentElement.getBoundingClientRect().width,
       };
     });
     assert.equal(layout.font, layout.questionFont);
     assert.equal(layout.color, layout.questionColor);
     assert.equal(layout.leftDelta, 0);
     assert.equal(layout.aboveButtons, true);
-    assert.equal(layout.lines, 1);
+    assert(layout.lines > 1);
+    assert.equal(layout.modalWidth, 520);
     await page.screenshot({ path: '/private/tmp/wes-report-modal-desktop.png' });
     await page.locator('input[value="merged"]').check();
     await page.locator('[data-act="ok"]').click();
