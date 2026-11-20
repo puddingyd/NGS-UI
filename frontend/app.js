@@ -13281,19 +13281,19 @@ function _dragenRenderNextflowStatus(state) {
   _dragenSyncOutputFrame();
 }
 
-// One dark frame holds the Nextflow block and the Log; mirror each <pre>'s
-// visibility onto its section and hide the frame when both are hidden.
+// One dark frame holds the Nextflow block and the Log; both are "the log",
+// so the ▶ Log toggle (the job-log <pre>'s hidden flag) opens and closes the
+// whole frame. Inside, the Nextflow section shows only while it has rows.
 function _dragenSyncOutputFrame() {
-  let anyVisible = false;
+  const log = document.getElementById("dragen-job-log");
+  const open = !!log && !log.hidden;
   for (const [sectionId, preId] of [["dragen-nf-section", "dragen-nf-status"], ["dragen-log-section", "dragen-job-log"]]) {
     const section = document.getElementById(sectionId);
     const pre = document.getElementById(preId);
-    if (!section || !pre) continue;
-    section.hidden = pre.hidden;
-    anyVisible = anyVisible || !pre.hidden;
+    if (section && pre) section.hidden = pre.hidden;
   }
   const frame = document.getElementById("dragen-job-output");
-  if (frame) frame.hidden = !anyVisible;
+  if (frame) frame.hidden = !open;
 }
 
 function _dragenFmtEta(state) {

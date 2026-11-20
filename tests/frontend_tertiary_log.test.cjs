@@ -59,3 +59,28 @@ test('live Nextflow block mirrors the console layout and hides after the Nextflo
   context._dragenRenderNextflowStatus({state: 'running', step: 'post-processing:genebe', progress_phase: 'postprocessing', nextflow_processes: rows});
   assert.equal(el.hidden, true);
 });
+
+test('the Log toggle opens and closes the Nextflow block and the log together', () => {
+  const code = source.slice(source.indexOf('function _dragenNextflowStatusText('), source.indexOf('function _dragenFmtEta('))
+    + source.slice(source.indexOf('function _toggleDragenLog('), source.indexOf('function _dragenStartPolling('));
+  const els = {};
+  for (const id of ['dragen-job-output', 'dragen-nf-section', 'dragen-nf-status', 'dragen-log-section', 'dragen-job-log'])
+    els[id] = {hidden: true, scrollTop: 0, scrollHeight: 10, replaceChildren() {}};
+  els['dragen-job-log-toggle'] = {textContent: '▶ Log', setAttribute() {}};
+  const context = {document: {getElementById: id => els[id], createElement: () => ({})}};
+  vm.runInNewContext(code, context);
+  const running = {state: 'running', step: 'nextflow', progress_phase: 'nextflow',
+    nextflow_processes: [{process: 'VEP_ANNOTATE', done: 1, total: 2, status: 'running', running: 1}]};
+  context._dragenRenderNextflowStatus(running);
+  assert.equal(els['dragen-job-output'].hidden, true);            // collapsed by default
+  context._toggleDragenLog();
+  assert.equal(els['dragen-job-output'].hidden, false);           // both shown
+  assert.equal(els['dragen-nf-section'].hidden, false);
+  assert.equal(els['dragen-log-section'].hidden, false);
+  context._toggleDragenLog();
+  assert.equal(els['dragen-job-output'].hidden, true);            // both hidden together
+  context._toggleDragenLog();
+  context._dragenRenderNextflowStatus({...running, step: 'post-processing:genebe', progress_phase: 'postprocessing'});
+  assert.equal(els['dragen-job-output'].hidden, false);           // log stays open after Nextflow
+  assert.equal(els['dragen-nf-section'].hidden, true);
+});
