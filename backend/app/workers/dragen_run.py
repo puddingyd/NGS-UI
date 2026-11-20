@@ -1731,13 +1731,21 @@ def main() -> int:
     nextflow_elapsed: float | None = None
     postprocessing_elapsed: float | None = None
 
-    def set_progress(phase: str, fraction: float, **extra) -> None:
+    # ETA baseline: (monotonic time, pct) where real work started. Cached
+    # Nextflow tasks move it, so a resumed run's instant jump is not speed.
+    eta_baseline = [job_started, 0.0]
+
+    def set_progress(phase: str, fraction: float, *, rebase_eta: bool = False, **extra) -> None:
         pct = tertiary_progress.band_pct(progress_bands, phase, fraction)
+        if rebase_eta:
+            eta_baseline[:] = [time.monotonic(), pct]
         _update(
             job_id,
             progress_pct=pct,
             progress_phase=phase,
-            progress_eta_seconds=tertiary_progress.eta_seconds(job_started, pct),
+            progress_eta_seconds=tertiary_progress.eta_seconds(
+                eta_baseline[0], pct, base_pct=eta_baseline[1],
+            ),
             **extra,
         )
 
@@ -1856,13 +1864,15 @@ def main() -> int:
                     )
 
                 def track_nextflow(line: str) -> None:
-                    if tertiary_progress.parse_stdout_task(line) is None:
+                    parsed = tertiary_progress.parse_stdout_task(line)
+                    if parsed is None:
                         return
                     emit_nextflow_events(nf_progress.on_stdout(line))
                     # Every submitted/cached task updates the live block.
                     set_progress(
                         "nextflow",
                         nf_progress.fraction(),
+                        rebase_eta=parsed[1] == "cached",
                         nextflow_current=nf_progress.current(),
                         nextflow_processes=nf_progress.snapshot(),
                     )

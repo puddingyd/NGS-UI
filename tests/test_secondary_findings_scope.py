@@ -148,6 +148,8 @@ def test_secondary_candidates_use_main_snv_retrieval_tiers_but_default_clinvar_o
     assert "return _isClinvarPlp(v);" in selected
 
 
-def test_tertiary_log_height_is_about_122_percent_of_original():
+def test_tertiary_log_section_is_about_half_its_former_height():
+    # The Nextflow status block now sits above the log in one frame, so the
+    # log section was halved from 342 px at the user's request (2026-11-20).
     style = (REPO_ROOT / "frontend" / "style.css").read_text(encoding="utf-8")
-    assert "#dragen-job-log {\n  max-height: 342px;\n}" in style
+    assert "#dragen-job-log {\n  /* About ten lines: the Nextflow section above now carries the overview. */\n  max-height: 170px;\n}" in style

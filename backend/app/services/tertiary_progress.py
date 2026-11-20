@@ -595,9 +595,12 @@ class NextflowProgress:
                 running_by_proc.setdefault(name, []).append(now - started)
             for name, proc in self._processes.items():
                 expected = max(proc.expected, proc.submitted + proc.cached + proc.failed)
-                # Cached tasks cost nothing in this run: drop them from both sides.
-                total += max(0.0, expected - proc.cached) * proc.seconds
-                done += (proc.completed + proc.failed) * proc.seconds
+                # Progress is "how much of this batch's work is done": a task
+                # Nextflow reuses from an earlier run (-resume) counts as done.
+                # A re-run after a failure therefore starts where the cache
+                # left off, for whatever subset/superset of samples is run.
+                total += expected * proc.seconds
+                done += (proc.completed + proc.failed + proc.cached) * proc.seconds
                 for elapsed in running_by_proc.get(name, []):
                     done += min(RUNNING_CREDIT_CAP, elapsed / max(1.0, proc.seconds)) * proc.seconds
             if total <= 0:
@@ -818,10 +821,16 @@ class Ticker:
         return False
 
 
-def eta_seconds(started: float, pct: float, now: float | None = None) -> int | None:
-    """Remaining seconds from elapsed time and a time-calibrated percentage."""
+def eta_seconds(started: float, pct: float, now: float | None = None,
+                base_pct: float = 0.0) -> int | None:
+    """Remaining seconds from the progress rate since a baseline.
+
+    ``started``/``base_pct`` mark where real work began: job start, or the
+    moment cached Nextflow tasks were last credited (a resumed run jumps
+    ahead instantly; that jump must not be read as speed).
+    """
     now = time.monotonic() if now is None else now
-    if pct < 5 or pct >= 100:
+    if pct < 5 or pct >= 100 or pct - base_pct < 2:
         return None
     elapsed = now - started
-    return int(elapsed * (100.0 - pct) / pct)
+    return int(elapsed * (100.0 - pct) / (pct - base_pct))

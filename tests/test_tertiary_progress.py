@@ -76,16 +76,49 @@ def test_vep_dominates_nextflow_progress_and_running_tasks_earn_partial_credit()
     assert nf.current()["done"] == 1 and nf.current()["total"] == 2
 
 
-def test_cached_tasks_leave_the_denominator_and_done_event_fires_once():
+def test_cached_tasks_count_as_done_and_done_event_fires_once():
     nf = tp.NextflowProgress(kinds=["nckuh:WES"] * 2, profile=_profile({"VEP_ANNOTATE": 100}), with_pgx=False)
     first = nf.on_stdout("[aa/000001] Cached process > S:VEP_ANNOTATE (1)", 0)
     assert [e["event"] for e in first] == ["start"]
     nf.on_stdout("[bb/000002] Submitted process > S:VEP_ANNOTATE (2)", 0)
-    assert nf.fraction(0) == 0.0
+    assert nf.fraction(0) == 0.5  # the resumed sample's task is already done
     events = nf.on_trace_row({"hash": "bb/000002", "name": "S:VEP_ANNOTATE (2)", "status": "COMPLETED"}, 60)
     assert events == [{"process": "VEP_ANNOTATE", "event": "done", "done": 2, "total": 2, "elapsed": 60}]
     assert nf.fraction(60) == pytest.approx(0.99)  # capped until the phase ends
     assert nf.on_trace_row({"hash": "bb/000002", "name": "S:VEP_ANNOTATE (2)", "status": "COMPLETED"}, 61) == []
+
+
+def _resumed(cached_samples: int, total_samples: int) -> tp.NextflowProgress:
+    """A re-run where the first ``cached_samples`` samples hit Nextflow's cache."""
+    profile = _profile({"MITO_VEP": 10, "VEP_ANNOTATE": 900, "ACMG_CLASSIFY": 90})
+    nf = tp.NextflowProgress(kinds=["nckuh:WES"] * total_samples, profile=profile, with_pgx=False)
+    for sample in range(1, total_samples + 1):
+        for index, name in enumerate(("MITO_VEP", "VEP_ANNOTATE", "ACMG_CLASSIFY")):
+            event = "Cached" if sample <= cached_samples else None
+            if event:
+                nf.on_stdout(f"[{index}{sample:x}/000000] Cached process > X:{name} ({sample})", 0)
+    return nf
+
+
+def test_resumed_batches_start_at_their_cached_share_for_any_subset():
+    # same batch re-run after it failed in post-processing: all of Nextflow is cached
+    assert _resumed(4, 4).fraction(0) == pytest.approx(0.99)
+    # half of the samples were done before (subset of an earlier batch + new samples)
+    assert _resumed(2, 4).fraction(0) == pytest.approx(0.5)
+    # a brand-new batch starts from zero
+    assert _resumed(0, 4).fraction(0) == 0.0
+    # partial cache inside one sample: cheap steps reused, VEP chain re-runs
+    nf = _resumed(0, 1)
+    nf.on_stdout("[0a/000000] Cached process > X:MITO_VEP (1)", 0)
+    assert nf.fraction(0) == pytest.approx(10 / 1000)
+
+
+def test_eta_ignores_the_instant_jump_from_cached_work():
+    # 60% reached at once from the cache, then 10 more points in 600 s
+    assert tp.eta_seconds(1000, 70, now=1600, base_pct=60) == 600 * 30 // 10
+    assert tp.eta_seconds(1000, 61, now=1010, base_pct=60) is None  # too little real progress yet
+    # without a rebased baseline the jump would look like ~10 s of work
+    assert tp.eta_seconds(0, 61, now=10) == 6
 
 
 def test_default_table_matches_pipeline_and_seq_type():
