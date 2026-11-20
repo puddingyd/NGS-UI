@@ -1089,8 +1089,16 @@
           </div>
           <span id="dragen-job-progress-text" class="dragen-progress-text">0%</span>
         </div>
-        <pre id="dragen-nf-status" class="dragen-nf-status" hidden aria-label="Nextflow process status"></pre>
-        <pre id="dragen-job-log" class="dragen-job-log" hidden></pre>
+        <div id="dragen-job-output" class="dragen-job-output" hidden>
+          <section id="dragen-nf-section" class="dragen-output-section" aria-label="Nextflow 狀態" hidden>
+            <div class="dragen-output-label">Nextflow</div>
+            <pre id="dragen-nf-status" class="dragen-nf-status" hidden></pre>
+          </section>
+          <section id="dragen-log-section" class="dragen-output-section" aria-label="Log" hidden>
+            <div class="dragen-output-label">Log</div>
+            <pre id="dragen-job-log" class="dragen-job-log" hidden></pre>
+          </section>
+        </div>
       </div>
     </div>
   </div>

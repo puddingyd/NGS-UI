@@ -4205,16 +4205,48 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
   white-space: pre;
   margin: 0;
 }
+/* Tertiary job output: one dark frame, Nextflow status above Log. Each
+   section shows only while its <pre> is visible; the divider appears only
+   when both are shown. */
+.dragen-job-output {
+  background: #1f2328;
+  border-radius: 6px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.dragen-output-section:not([hidden]) ~ .dragen-output-section:not([hidden]) {
+  border-top: 1px solid #30363d;
+}
+.dragen-output-label {
+  color: #8b949e;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 7px 10px 0;
+}
+.dragen-job-output .dragen-job-log,
+.dragen-job-output .dragen-nf-status {
+  background: transparent;
+  border-radius: 0;
+  padding: 4px 10px 8px;
+}
+.dragen-job-output pre {
+  /* Dark, thin scrollbar so it blends into the frame instead of a light gutter. */
+  scrollbar-width: thin;
+  scrollbar-color: #484f58 transparent;
+}
+.dragen-job-output pre::-webkit-scrollbar { width: 8px; height: 8px; }
+.dragen-job-output pre::-webkit-scrollbar-track { background: transparent; }
+.dragen-job-output pre::-webkit-scrollbar-thumb { background: #484f58; border-radius: 4px; }
+.dragen-job-output pre::-webkit-scrollbar-corner { background: transparent; }
 /* Live Nextflow process block (worker-side snapshot, Nextflow console style). */
 .dragen-nf-status {
-  background: #1f2328;
   color: #e6edf3;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   line-height: 1.45;
-  padding: 8px 10px;
-  border-radius: 6px;
-  margin: 6px 0 0;
+  margin: 0;
   overflow-x: auto;
   white-space: pre;
 }
@@ -4229,7 +4261,8 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
   white-space: nowrap;
 }
 #dragen-job-log {
-  max-height: 342px;
+  /* About ten lines: the Nextflow section above now carries the overview. */
+  max-height: 170px;
 }
 
 .dragen-caller-block {

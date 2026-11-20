@@ -13268,6 +13268,7 @@ function _dragenRenderNextflowStatus(state) {
   if (!rows.length || !running || !inNextflow) {
     el.hidden = true;
     el.replaceChildren();
+    _dragenSyncOutputFrame();
     return;
   }
   el.hidden = false;
@@ -13277,6 +13278,22 @@ function _dragenRenderNextflowStatus(state) {
     span.textContent = line.text + "\n";
     return span;
   }));
+  _dragenSyncOutputFrame();
+}
+
+// One dark frame holds the Nextflow block and the Log; mirror each <pre>'s
+// visibility onto its section and hide the frame when both are hidden.
+function _dragenSyncOutputFrame() {
+  let anyVisible = false;
+  for (const [sectionId, preId] of [["dragen-nf-section", "dragen-nf-status"], ["dragen-log-section", "dragen-job-log"]]) {
+    const section = document.getElementById(sectionId);
+    const pre = document.getElementById(preId);
+    if (!section || !pre) continue;
+    section.hidden = pre.hidden;
+    anyVisible = anyVisible || !pre.hidden;
+  }
+  const frame = document.getElementById("dragen-job-output");
+  if (frame) frame.hidden = !anyVisible;
 }
 
 function _dragenFmtEta(state) {
@@ -13383,6 +13400,7 @@ function _toggleDragenLog() {
   const btn = document.getElementById("dragen-job-log-toggle");
   if (!log || !btn) return;
   log.hidden = !log.hidden;
+  _dragenSyncOutputFrame();
   btn.textContent = log.hidden ? "▶ Log" : "▼ Log";
   btn.setAttribute("aria-expanded", log.hidden ? "false" : "true");
   if (!log.hidden) log.scrollTop = log.scrollHeight;
