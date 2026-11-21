@@ -194,6 +194,7 @@ UI 流程：
 | `migrate_report_disease_picks.py` | 一次性把舊 SNV 疾病勾選（slot 編號）轉成 `report_disease_picks`；預設 dry-run，`--apply` 寫入 |
 | `omim_db.py` | 平台 OMIM 資料庫：`init`（固定舊勾選後從 OMIM.xlsx 建庫）、`status`、`reviews`、`export --out` |
 | `probe_emr_api.py` | NCKU EMR API 診斷（urllib，dump 到 /tmp/emr_probe/；用內建 14 筆 MRN 清單，不讀 argv） |
+| `docs/ops/pangolin_cache/` | **正式 pipeline 用**（不在 NGS-UI 內執行，部署到 `/home/pipeline/tertiary_code/`）：`pangolin_cache.py` 跨 sample 的 Pangolin 分數 SQLite 快取（split → 只送沒算過的變異給 GPU → merge 依原順序組回；依容器/DB/參考序列/參數分區；`seed` 匯入既有 `02_pangolin` 輸出並跳過衝突值、`compare` 驗證、`stats`）+ 替換用 `PANGOLIN_SCORE.nf`（`params.pangolin_cache_db` 空字串＝舊行為；同時把 `params.containsKey` 改成直接讀屬性）+ README 部署/驗證步驟。cohort 重複率 98.4%，WES 每例 Pangolin 由 ~8 分鐘降到 <1 分鐘。測試：`tests/test_pangolin_cache.py` |
 
 `mito.annotated.tsv` adapter 同時支援舊欄位（22）：`CHROM POS REF ALT HGVS_M GENE LOCUS_TYPE CONSEQUENCE AA_CHANGE HETEROPLASMY AD DEPTH FILTER TLOD MITOMAP_DISEASE MITOMAP_STATUS MITOMAP_PLASMY MITOMAP_GB_FREQ MITOMAP_GB_SEQS MITOMAP_REFS MITOTIP_SCORE MITOMAP_ALLELE`，以及 v3.2 pipeline mito 欄位：`CHROM POS REF ALT GENE HGVS_C HGVS_P CONSEQUENCE IMPACT BIOTYPE GENOTYPE DP AF_SAMPLE GNOMAD_MITO_AF CLINVAR_SIG CLINVAR_DN GNOMAD_MITO_AF_HOM GNOMAD_MITO_AF_HET GNOMAD_MITO_AN CLINVAR_VARIATION_ID OMIM_IDS PIPELINE`。`AF_SAMPLE→heteroplasmy`、`DP→depth`、`HGVS_P→aa_change`（清成 `p.xxx`），`HGVS_C` 是 transcript `c.`，不拿來當卡片標題；adapter 會用 `POS/REF/ALT` 產生 `m.{pos}{ref}>{alt}`。若 TSV 含 `FILTER`，adapter 會照舊先保留 PASS；若沒有 `FILTER`，不做後端 FILTER 篩選，UI 也不顯示 Filter 欄。v3.2 TSV 複製後可由 `mitomap_mito.annotate_mito_tsv()` 精確 `(POS,REF,ALT)` 回補 MITOMAP 欄位；UI/報告卡片不呈現 MITOMAP，但 tier 1 會使用 MITOMAP confirmed/pathogenic 狀態。
 
@@ -249,6 +250,7 @@ CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一
 - `tier-tab` 的 click dispatch 用 `data-tier` 值判斷 SNV / CNV-SV / Mito 哪一組（`CNV_SV_TIER_ORDER`、`MITO_TIER_ORDER` 的 includes 檢查）。
 - ACMG 五級色 class `.sig-p/.sig-lp/.sig-vus/.sig-lb/.sig-b` 是全域的；CNV/SV 的 ACMG 下拉用它們但**不要**加 `.acmg-class` class（會觸發 SNV 的 change handler 寫錯 state）。
 - Mito tier 1/2/3 是「有 FILTER 則先 PASS 過濾，無 FILTER 則全收」；MITOMAP 只回補欄位與輔助 tier 分類，不做 disease-relevant 預篩，也不顯示在卡片。其他 PASS mtDNA variants 會進 `MITO-3`。
+- Nextflow process 的 script 區塊裡**不要對 `params` 呼叫方法**（`params.containsKey(...)`、`params.get(...)`、`params[...]`）：Nextflow 會把整個 params 算進 task hash，而 NGS-UI 每個 job 的 `out_dir` / `samplesheet` 都不同 → 該 process 永遠無法 `-resume`（正式 PANGOLIN_SCORE 曾因此每次重跑）。直接讀 `params.xxx ?: default`。
 - 別 commit 沒被 `.gitignore` 排除的患者資料 / 大檔。
 
 ---
