@@ -163,3 +163,51 @@ def test_seed_skips_conflicting_keys(tmp_path):
 ])
 def test_with_pangolin(info, value, expected):
     assert pc.with_pangolin(_row("chr1", 1, "G", info), value).split("\t")[7] == expected
+
+
+def test_apply_to_pipeline_previews_then_installs_with_backups(tmp_path):
+    import subprocess
+    import sys
+
+    tool = TOOL.parent / "apply_to_pipeline.py"
+    process = (TOOL.parent / "PANGOLIN_SCORE.nf").read_text(encoding="utf-8")
+    process = process[process.index("process PANGOLIN_SCORE {"):]
+    # A production-like module: the old (v3.6) process between two other blocks.
+    old = (process.replace("${run_block}", "        pangolin \\\\\n            splice_for_pangolin.vcf \\\\\n")
+                  .replace("pangolin_cache.py", "OLD"))
+    code = tmp_path / "tertiary_code"
+    (code / "modules").mkdir(parents=True)
+    (code / "scripts").mkdir()
+    module = code / "modules" / "snv_annotation.nf"
+    module.write_text("process VEP_ANNOTATE {\n}\n\n" + old + "\nworkflow SNV_ANNOTATE {\n}\n",
+                      encoding="utf-8")
+    config = code / "nextflow_tertiary.config"
+    config.write_text('params {\n    pangolin_db  = "x.db"\n}\n', encoding="utf-8")
+    original = module.read_text(encoding="utf-8")
+    stage = tmp_path / "stage"
+
+    def run(*extra):
+        return subprocess.run([sys.executable, str(tool), "--tertiary-code", str(code),
+                               "--stage-dir", str(stage), *extra],
+                              capture_output=True, text=True)
+
+    preview = run()
+    assert preview.returncode == 0, preview.stderr
+    assert "PREVIEW ONLY" in preview.stdout
+    assert module.read_text(encoding="utf-8") == original  # untouched
+
+    assert run("--install").returncode == 1  # scripts/pangolin_cache.py missing
+    (code / "scripts" / "pangolin_cache.py").write_bytes(TOOL.read_bytes())
+    install = run("--install")
+    assert install.returncode == 0, install.stderr
+    new_module = module.read_text(encoding="utf-8")
+    assert new_module.count("process PANGOLIN_SCORE {") == 1
+    assert "pangolin_cache.py split" in new_module
+    assert new_module.startswith("process VEP_ANNOTATE {") and "workflow SNV_ANNOTATE" in new_module
+    assert 'pangolin_cache_db = "${params.ref_dir}/tertiary/pangolin/cache/pangolin_scores.sqlite"' \
+        in config.read_text(encoding="utf-8")
+    backups = sorted(p.name for p in code.rglob("*.bak-*"))
+    assert len(backups) == 2
+    assert (code / "modules" / backups[1]).read_text(encoding="utf-8") == original
+    # Already installed: refuses instead of applying twice.
+    assert run().returncode == 1

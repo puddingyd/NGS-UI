@@ -13,7 +13,8 @@ DGM 的 RTX 2000 Ada 在跑 Pangolin 時，GPU 已經跑滿（功耗約 66 W，�
 | 檔案 | 內容 |
 |---|---|
 | `pangolin_cache.py` | 快取工具（只用 Python 標準庫加 SQLite，在 Pangolin 容器裡或主機上都能跑） |
-| `PANGOLIN_SCORE.nf` | 取代 `modules/snv_annotation.nf` 裡的 `PANGOLIN_SCORE` |
+| `PANGOLIN_SCORE.nf` | 取代 `modules/snv_annotation.nf` 裡的 `PANGOLIN_SCORE`（以正式版為底，只改必要部分） |
+| `apply_to_pipeline.py` | 預覽 diff → 確認後安裝（自動備份、可還原） |
 
 `PANGOLIN_SCORE.nf` 和正式版相比有三點不同：
 
@@ -53,27 +54,27 @@ apptainer exec /home/pipeline/nextflow_containers/pangolin_cu121_1.0.0.sif pytho
 cp docs/ops/pangolin_cache/pangolin_cache.py /home/pipeline/tertiary_code/scripts/
 ```
 
-### 2. 在 config 宣告快取位置
+### 2–3. 修改 config 與 PANGOLIN_SCORE（用 `apply_to_pipeline.py`，不手動編輯）
 
-在 `nextflow_tertiary.config` 從 `ref_dir` 推導路徑的全域 params 區塊（`pangolin_db` 那一帶）加上：
+```bash
+python3 docs/ops/pangolin_cache/apply_to_pipeline.py
+```
+
+預設只**預覽**：把改好的 `snv_annotation.nf` 與 `nextflow_tertiary.config` 寫到 `~/pangolin_cache_deploy/`，並印出和正式檔的 diff，正式檔完全不動。檔案和預期不符（找不到 process、已經裝過等）會直接拒絕。
+
+確認 diff 後才安裝：
+
+```bash
+python3 docs/ops/pangolin_cache/apply_to_pipeline.py --install
+```
+
+安裝前會確認正式檔在預覽之後沒有被改過，並在旁邊留下 `*.bak-時間` 備份，最後印出還原用的 `cp` 指令。config 只多一行（加一行註解）：
 
 ```groovy
 pangolin_cache_db = "${params.ref_dir}/tertiary/pangolin/cache/pangolin_scores.sqlite"
 ```
 
-用執行 Nextflow 的帳號（也就是跑 NGS-UI 服務的帳號）確認有寫入權限：
-
-```bash
-mkdir -p /home/pipeline/reference/hg38/tertiary/pangolin/cache && touch /home/pipeline/reference/hg38/tertiary/pangolin/cache/.write_test && rm /home/pipeline/reference/hg38/tertiary/pangolin/cache/.write_test && echo ok
-```
-
-### 3. 替換 PANGOLIN_SCORE
-
-```bash
-cp /home/pipeline/tertiary_code/modules/snv_annotation.nf /home/pipeline/tertiary_code/modules/snv_annotation.nf.bak
-```
-
-把 `snv_annotation.nf` 裡從 `process PANGOLIN_SCORE {` 到對應的 `}` 換成 `PANGOLIN_SCORE.nf` 裡的 process（檔頭說明可以不貼）。
+快取目錄要讓執行 Nextflow 的帳號（跑 NGS-UI 服務的帳號）可以寫入。
 
 ### 4.（建議）用現有結果預先建立快取
 
@@ -119,7 +120,7 @@ python3 /home/pipeline/tertiary_code/scripts/pangolin_cache.py seed --dry-run --
 ### 停用 / 回復
 
 - 暫時停用：config 改成 `pangolin_cache_db = ''`，或在命令列加 `--pangolin_cache_db ''`。
-- 完全回復：還原 `snv_annotation.nf.bak`。
+- 完全回復：執行 `apply_to_pipeline.py --install` 最後印出的兩行 `cp` 指令，還原 `*.bak-時間` 備份。
 
 ## 建議一併設定（非必要）
 
