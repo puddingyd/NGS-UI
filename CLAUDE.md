@@ -257,6 +257,7 @@ CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一
 
 ## 12. TODO / 還沒做
 
+- **HPO → 疾病／基因表型排序引擎**（取代現行 `phenotype_scorer` 的有或無查表）：研究與實作計畫見 `docs/research/HPO_Disease_Gene_Prioritization_Plan_v2.md`，尚未實作。計畫 §10.7 指出現行 `phenotype_to_genes.txt` 含 `NOT`（明確排除）與非表型 term，會被計入 pheno_score，可獨立先修。
 - **STR / ROH 卡片**（目前還是「（無資料）」placeholder；STRchive / ROH summary 還沒接）。
 - mito **haplogroup**（Haplogrep2 sidecar）—— 沒做。
 - PharmCAT / PGx 卡片（payload 裡 `pharmcat: {}` 是空的）。
