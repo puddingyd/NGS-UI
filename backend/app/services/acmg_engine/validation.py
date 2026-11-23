@@ -40,6 +40,26 @@ SOURCES = ("engine", "pipeline", "genebe")
 RANK_SOURCES = ("engine", "engine_evidence", "pipeline", "genebe", "platform_current")
 RECURRENCE_THRESHOLDS = (0.03, 0.05, 0.10)
 MASKED_CLINVAR = {"category": None, "stars": 0, "conflict": False, "source": "masked"}
+PREDICTOR_COLUMNS = ("SPLICEAI_MAX", "PANGOLIN_SCORE", "PKNN_EVIDENCE", "PKNN_LLR", "BAYESDEL_NOAF", "PHYLOP100")
+_DIGITS = re.compile(r"\d+(?:\.\d+)?(?:e-?\d+)?%?")
+
+
+def af_bin(value) -> str:
+    if value is None:
+        return "no AF"
+    for limit, label in ((0.001, "<0.1%"), (0.005, "0.1–0.5%"), (0.05, "0.5–5%")):
+        if value < limit:
+            return label
+    return ">5%"
+
+
+def stars_label(info: dict) -> str:
+    if info.get("conflict"):
+        return "conflicting"
+    category = info.get("category")
+    if not category:
+        return "none"
+    return f"{category} {int(info.get('stars') or 0)}★"
 
 _CODE_RE = re.compile(
     r"(?<![A-Z0-9])(PVS1|PS[1-4]|PM[1-6]|PP[1-5]|BA1|BS[1-4]|BP[1-7])"
@@ -362,8 +382,11 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
     rank_counts = Counter()
     pheno_missing = 0
     coverage = defaultdict(lambda: {"occurrences": 0, "classes": Counter(), "not_evaluated": Counter(),
-                                    "flags": Counter(), "lof": defaultdict(Counter),
+                                    "reasons": Counter(), "flags": Counter(), "lof": defaultdict(Counter),
+                                    "predictors": defaultdict(Counter), "columns_absent": Counter(),
                                     "vs_pipeline": _Confusion(), "vs_genebe": _Confusion()})
+    vcep_frequency = Counter()
+    causal_detail: list[dict] = []
     flagged: dict[str, dict] = {}
     wes_info: dict[str, dict] = {}
 
@@ -385,6 +408,7 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
         case_manual = {normalize_variant_id(v): a for v, a in manual.get(sid, {}).items()}
         case_causal = {normalize_variant_id(v) for v in causative.get(sid, ())}
         want_rank = bool(case_causal)
+        case_causal_info: dict[str, dict] = {}
         pheno = pheno_fn(sid) if want_rank else {}
         if want_rank and pheno is None:
             pheno_missing += 1
@@ -415,6 +439,14 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
             cov["classes"][class_code(result.get("classification")) or "none"] += 1
             for item in result.get("not_evaluated") or []:
                 cov["not_evaluated"][item.get("code")] += 1
+                cov["reasons"][f"{item.get('code')}: {_DIGITS.sub('#', item.get('reason') or '')}"] += 1
+            pred = cov["predictors"][conseq]
+            pred["n"] += 1
+            for column in PREDICTOR_COLUMNS:
+                if column not in row:
+                    cov["columns_absent"][column] += 1
+                elif P.text(row.get(column)):
+                    pred[column] += 1
             for flag in result.get("flags") or []:
                 cov["flags"][flag.get("code")] += 1
             cov["vs_pipeline"].add(class_code(first_value(rows, "ACMG_CLASS")), class_code(result.get("classification")))
@@ -464,8 +496,14 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
             if vcep_text and key not in vcep_seen:
                 vcep_seen.add(key)
                 masked_result = masked_result or masked(rows, gene)
-                vcep.add(parse_criteria(vcep_text),
-                         {c: v.get("strength") for c, v in masked_result["criteria"].items()})
+                expert_codes = parse_criteria(vcep_text)
+                masked_codes = {c: v.get("strength") for c, v in masked_result["criteria"].items()}
+                vcep.add(expert_codes, masked_codes)
+                engine_freq = "BA1" if "BA1" in masked_codes else ("BS1" if "BS1" in masked_codes else "neither")
+                for code in ("BA1", "BS1"):
+                    if code in expert_codes:
+                        vcep_frequency[(code, engine_freq, af_bin((masked_result.get("frequency") or {})
+                                                                  .get("max_af")))] += 1
                 vcep_class.add(class_code(first_value(rows, "CLINGEN_VCEP_CLASS")),
                                class_code(masked_result["engine_classification"]))
 
@@ -489,6 +527,13 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
                 for source, pts in points.items():
                     rank_scores[source][nid] = geno_score(pts) + pheno_score
                     acmg_only[source][nid] = float(pts) if pts is not None else -99.0
+                if nid in case_causal:
+                    case_causal_info[nid] = {
+                        "test_type": test_type, "clinvar": stars_label(clinvar_label(row)),
+                        "consequence": conseq, "points": points,
+                        "engine": set(engine_codes),
+                        "genebe": set(parse_criteria(first_value(rows, "GENEBE_ACMG_CRITERIA"))),
+                        "pipeline": set(parse_criteria(first_value(rows, "ACMG_CRITERIA")))}
 
         manual_counts["not_in_results"] += len(case_manual)
         if want_rank:
@@ -497,9 +542,15 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
                     rank_counts["causative_not_in_review"] += 1
                     continue
                 rank_counts[f"causative_{test_type}"] += 1
+                detail = dict(case_causal_info.get(target, {}), ranks={}, ties={})
                 for source in RANK_SOURCES:
-                    ranks[test_type]["with_pheno"][source].append(_rank(rank_scores[source], target))
+                    with_pheno = _rank(rank_scores[source], target)
+                    ranks[test_type]["with_pheno"][source].append(with_pheno)
                     ranks[test_type]["acmg_only"][source].append(_rank(acmg_only[source], target))
+                    detail["ranks"][source] = with_pheno
+                    mine = acmg_only[source][target]
+                    detail["ties"][source] = sum(1 for v, s in acmg_only[source].items() if v != target and s == mine)
+                causal_detail.append(detail)
     # leftover manual assertions whose source case had no results
     manual_counts["source_case_missing"] = sum(
         len(v) for sid, v in manual.items() if sid not in set(sample_ids)) if manual else 0
@@ -513,7 +564,8 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
         "time_split": bool(t0),
         "cases": dict(cases),
         "clinvar": _clinvar_metrics(labelled, t0 is not None),
-        "vcep": dict(vcep.table(), classes=vcep_class.table()),
+        "vcep": dict(vcep.table(), classes=vcep_class.table(),
+                     frequency_crosstab={f"{a}|{b}|{c}": n for (a, b, c), n in sorted(vcep_frequency.items())}),
         "manual": dict(manual_agree.table(), counts=dict(manual_counts),
                        classes_evidence_only=manual_class.table(), classes_final=manual_class_final.table(),
                        points_difference=_describe(manual_diff)),
@@ -521,6 +573,8 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
                     "by_test_type": {tt: {mode: {s: _rank_summary(v) for s, v in by_src.items()}
                                           for mode, by_src in modes.items()} for tt, modes in ranks.items()}},
         "coverage": {tt: _coverage_summary(c) for tt, c in coverage.items()},
+        "ranking_breakdown": _ranking_breakdown(causal_detail),
+        "criteria_usage": _criteria_usage(labelled),
         "recurrence": _recurrence_summary(flagged, wes_candidates, wes_patients, wes_info, rb),
     }
     _write_tsv(out_dir / "clinvar_labelled.tsv", list(labelled.values()))
@@ -578,12 +632,58 @@ def _label_block(items: list[dict]) -> dict:
     return block
 
 
+def _ranking_breakdown(details: list[dict]) -> dict:
+    """Where the engine ranks the causative variant worse than the current platform source."""
+    out = {}
+    for test_type in sorted({d.get("test_type") for d in details if d.get("test_type")}):
+        items = [d for d in details if d.get("test_type") == test_type and d.get("ranks")]
+        worse = [d for d in items if d["ranks"]["engine"] > d["ranks"]["platform_current"]]
+        better = [d for d in items if d["ranks"]["engine"] < d["ranks"]["platform_current"]]
+        only_genebe, only_engine = Counter(), Counter()
+        for d in worse:
+            only_genebe.update(d.get("genebe", set()) - d.get("engine", set()))
+            only_engine.update(d.get("engine", set()) - d.get("genebe", set()))
+        out[test_type] = {
+            "n": len(items), "engine_better": len(better), "engine_worse": len(worse),
+            "same": len(items) - len(better) - len(worse),
+            "worse_by_clinvar": dict(Counter(d.get("clinvar", "none") for d in worse).most_common()),
+            "worse_by_consequence": dict(Counter(d.get("consequence", "") for d in worse).most_common()),
+            "worse_points": _describe([float(d["points"]["engine"] or 0) for d in worse]),
+            "worse_platform_points": _describe([float(d["points"]["platform_current"] or 0) for d in worse
+                                                if d["points"].get("platform_current") is not None]),
+            "worse_genebe_only_criteria": dict(only_genebe.most_common()),
+            "worse_engine_only_criteria": dict(only_engine.most_common()),
+            "acmg_only_ties": {s: _describe([float(d["ties"][s]) for d in items]) for s in ("engine", "platform_current")},
+        }
+    return out
+
+
+def _criteria_usage(labelled: dict[str, dict]) -> dict:
+    """How often each source uses each criterion on ClinVar P/LP vs B/LB variants (PP5/BP6 = ClinVar reuse)."""
+    out = {}
+    for source, column in (("engine", "engine_criteria"), ("pipeline", "pipeline_criteria"),
+                           ("genebe", "genebe_criteria")):
+        block = {}
+        for label in ("PLP", "BLB"):
+            items = [v for v in labelled.values() if v["label"] == label]
+            counts = Counter()
+            for item in items:
+                counts.update(parse_criteria(item.get(column)).keys())
+            block[label] = {"n": len(items), "criteria": {c: _rate(n, len(items)) for c, n in counts.most_common(12)}}
+        out[source] = block
+    return out
+
+
 def _coverage_summary(c: dict) -> dict:
     occ = c["occurrences"]
     return {
         "occurrences": occ,
         "classes": dict(c["classes"]),
         "not_evaluated": {k: {"n": n, "rate": _rate(n, occ)} for k, n in c["not_evaluated"].most_common()},
+        "not_evaluated_reasons": dict(c["reasons"].most_common(15)),
+        "predictor_presence": {cls: {col: _rate(b[col], b["n"]) for col in PREDICTOR_COLUMNS} | {"n": b["n"]}
+                               for cls, b in sorted(c["predictors"].items())},
+        "columns_absent": dict(c["columns_absent"]),
         "flags": dict(c["flags"]),
         "lof_hc_pvs1": {group: {"n": b["n"], **{s: _rate(b[s], b["n"]) for s in SOURCES}}
                         for group, b in sorted(c["lof"].items())},
@@ -669,7 +769,12 @@ def render_markdown(report: dict) -> str:
               "| 條目 | 雙方都給 | 只有引擎 | 只有專家 | precision | recall | 強度一致 |", "|---|---|---|---|---|---|---|"]
     lines += [f"| {c} | {s['tp']} | {s['fp']} | {s['fn']} | {_pct(s['precision'])} | {_pct(s['recall'])} | "
               f"{_pct(s['same_strength'])} |" for c, s in v["criteria"].items()]
-    lines += ["", f"專家用了但引擎不評的條目：{v['reference_only_criteria']}", ""]
+    lines += ["", f"專家用了但引擎不評的條目：{v['reference_only_criteria']}", "",
+              "專家給 BA1／BS1 的變異，引擎給了什麼（依最大 AF 分組）：", "",
+              "| 專家 | 引擎 | 最大 AF | n |", "|---|---|---|---|"]
+    lines += [f"| {k.split('|')[0]} | {k.split('|')[1]} | {k.split('|')[2]} | {n} |"
+              for k, n in v.get("frequency_crosstab", {}).items()]
+    lines.append("")
 
     m = report["manual"]
     lines += [f"## 3. 對照判讀者手動 ACMG（{m['n']} 個變異，只比可重複使用的條目）", "",
@@ -692,6 +797,20 @@ def render_markdown(report: dict) -> str:
                                  f"{_pct(s['top5'])} | {_pct(s['top10'])} | {_pct(s['top20'])} | {s['mrr']} |")
             lines.append("")
 
+    lines += ["### 引擎名次比平台現行差的致病變異", ""]
+    for tt, b in report.get("ranking_breakdown", {}).items():
+        lines += [f"- {tt}：共 {b['n']}，引擎較好 {b['engine_better']}、相同 {b['same']}、較差 {b['engine_worse']}",
+                  f"  - 較差者的 ClinVar：{b['worse_by_clinvar']}",
+                  f"  - 較差者的變異類型：{b['worse_by_consequence']}",
+                  f"  - 較差者的點數（引擎）：{b['worse_points']}；（平台現行）：{b['worse_platform_points']}",
+                  f"  - 較差者 GeneBe 有、引擎沒有的條目：{b['worse_genebe_only_criteria']}",
+                  f"  - 較差者引擎有、GeneBe 沒有的條目：{b['worse_engine_only_criteria']}",
+                  f"  - 只看 ACMG 點數時，與致病變異同分的變異數：{b['acmg_only_ties']}"]
+    lines += ["", "### 各來源在 ClinVar P/LP 與 B/LB 變異上用了哪些條目（比例）", ""]
+    for source, block in report.get("criteria_usage", {}).items():
+        lines.append(f"- {_SOURCE_NAMES[source]}：P/LP {block['PLP']['criteria']}；B/LB {block['BLB']['criteria']}")
+    lines.append("")
+
     lines += ["## 5. 覆蓋率", ""]
     for tt, c in report["coverage"].items():
         lines += [f"### {tt}（{c['occurrences']} 個變異次）", "", f"分類：{c['classes']}", "",
@@ -699,7 +818,15 @@ def render_markdown(report: dict) -> str:
                   "| 遺傳模式 | n | 規則引擎 | pipeline | GeneBe |", "|---|---|---|---|---|"]
         lines += [f"| {g} | {b['n']} | {_pct(b['engine'])} | {_pct(b['pipeline'])} | {_pct(b['genebe'])} |"
                   for g, b in c["lof_hc_pvs1"].items()]
-        lines += ["", f"無法評估：{ {k: v['n'] for k, v in c['not_evaluated'].items()} }", f"旗標：{c['flags']}", ""]
+        lines += ["", f"無法評估：{ {k: v['n'] for k, v in c['not_evaluated'].items()} }", f"旗標：{c['flags']}", "",
+                  "無法評估的原因（前 15）：", ""]
+        lines += [f"- {reason}：{n}" for reason, n in c["not_evaluated_reasons"].items()]
+        lines += ["", f"TSV 沒有這些欄位的變異次：{c['columns_absent']}", "",
+                  "| 變異類型 | n | " + " | ".join(PREDICTOR_COLUMNS) + " |",
+                  "|---|---|" + "---|" * len(PREDICTOR_COLUMNS)]
+        lines += [f"| {cls} | {b['n']} | " + " | ".join(_pct(b[col]) for col in PREDICTOR_COLUMNS) + " |"
+                  for cls, b in c["predictor_presence"].items()]
+        lines.append("")
 
     rec = report["recurrence"]
     lines += ["## 6. 院內重複出現的檢查", "",

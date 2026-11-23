@@ -133,6 +133,13 @@ def test_run_reports_every_section(tmp_path, monkeypatch):
     assert ranking["n"] == 1 and ranking["top1"] == 1.0
     lof = report["coverage"]["WES"]["lof_hc_pvs1"]["recessive"]
     assert lof["n"] == 2 and lof["engine"] == 1.0 and lof["pipeline"] == 1.0
+    breakdown = report["ranking_breakdown"]["WES"]
+    assert breakdown["n"] == 1 and breakdown["engine_better"] + breakdown["same"] + breakdown["engine_worse"] == 1
+    assert report["criteria_usage"]["genebe"]["PLP"]["criteria"]["PVS1"] == 1.0
+    assert report["vcep"]["frequency_crosstab"] == {}
+    presence = report["coverage"]["WES"]["predictor_presence"]["truncating"]
+    assert presence["n"] == 2 and presence["PANGOLIN_SCORE"] == 1.0
+    assert report["coverage"]["WES"]["columns_absent"]["SPLICEAI_MAX"] > 0
     assert report["recurrence"]["wes_patients"] == 2
     assert report["recurrence"]["wes_thresholds"]["5%"]["variants"] == 1
 
