@@ -246,8 +246,8 @@ PYTHONPATH=backend NGS_UI_HOME=/path/to/NGS_UI python3 -m app.workers.run   # �
 | `NGS_UI_TERTIARY_ROOT` | `/home/datalake_Intermediate/pipeline/tertiary_output` | 新三級分析統一 root（Nextflow 00-07 + UI `08_postprocessing`） |
 | `NGS_UI_AUTOMAP_SIF` | `/home/datalake_Intermediate/pipeline/nextflow_containers/automap_1.3.sif` | in-house 缺 AutoMap 且勾 Research-only 時，三級補跑 AutoMap 使用的 Apptainer image；未設定且主路徑不存在時嘗試舊 `/home/pipeline/nextflow_containers/automap_1.3.sif` |
 | `NGS_UI_PIPELINE_OUT_ROOT` | 同上 | `NGS_UI_TERTIARY_ROOT` 的相容 alias |
-| `NGS_UI_LEGACY_TERTIARY_OUTPUT_ROOT` | `$NGS_UI_HOME/tertiary_output` | 遷移前 UI sample root；`TERTIARY_OUTPUT_ROOT` 仍可作舊 alias |
-| `NGS_UI_LEGACY_PIPELINE_OUT_ROOT` | `/home/pipeline/tertiary_output` | 遷移前 Nextflow output root（read-only fallback） |
+| `NGS_UI_LEGACY_TERTIARY_OUTPUT_ROOT` | `$NGS_UI_HOME/tertiary_output` | 遷移前 UI sample root（目錄已移除，程式只在存在時讀取）；`TERTIARY_OUTPUT_ROOT` 仍可作舊 alias |
+| `NGS_UI_LEGACY_PIPELINE_OUT_ROOT` | `/home/pipeline/tertiary_output` | 遷移前 Nextflow output root（目錄已移除；read-only fallback 只在存在時讀取） |
 | `NGS_UI_DATA_ROOT` | `$NGS_UI_HOME/data` | users.db, jobs/ |
 | `NGS_UI_MANUAL_ACMG_DB` | `$NGS_UI_HOME/data/manual_acmg.sqlite` | hg38 + normalized chr-pos-ref-alt 全域 manual ACMG revisions/current 與 active Causative/Other observations |
 | `NGS_UI_SNV_CACHE_MAX` | `2` | uvicorn process 內保留的 SNV review payload LRU 筆數；設 `0` 可關閉 |
@@ -450,7 +450,7 @@ python scripts/backfill_gpn_star.py --root /path/to/tertiary_output \
 
 Star 補分工具會分別補 V/M，並回傳各模型狀態；任一未成功時回傳 `incomplete`／exit 1，但保留另一套成功結果。工具必須明確指定 `--research-only`，並將個案記為 Star research opt-in；預設 dry-run，`--apply` 取得三級共用 sample lock，只修改現有 review 與其 manifest。其他欄位、reviewer state、raw、overlay、gene index 及原有 signatures（包括 stale）保留；缺 review 的個案略過，需先重建 post-processing。每案輸出 JSON 狀態，失敗或略過回傳非零 exit code。失敗補分保留原分數並記錄失敗；manifest 發布失敗會還原 review。更新 review mtime 使執行中服務的 SNV cache 自動失效，重新載入個案即可看到結果。MSA 與 Star 分數各自保留、同時顯示；MSA reference 是一般三級及 Somatic 的必要補分來源，不應移除。若前次只補了 Star，可用 `python scripts/backfill_gpn_msa.py SAMPLE_ID` 補回既有 review 的 MSA，無需 Research-only。
 
-正式 output 仍以 UI sample ID（例如 `VAL-57-dragen` / `VAL-57-nckuh`）管理；Nextflow staging 先依 samplesheet 的原始 `source_sample_id` 接收產物，通過驗證後才 promotion 到 UI sample 目錄。legacy `/home/pipeline/tertiary_output` 僅作過渡讀取，不參與新的 cache／切換判斷。
+正式 output 仍以 UI sample ID（例如 `VAL-57-dragen` / `VAL-57-nckuh`）管理；Nextflow staging 先依 samplesheet 的原始 `source_sample_id` 接收產物，通過驗證後才 promotion 到 UI sample 目錄。legacy `/home/pipeline/tertiary_output` 已移除；程式保留的 fallback 只在目錄存在時讀取，不參與 cache／切換判斷。
 
 舊個案請先 dry-run，再挑 1–2 個 canary；工具永遠保留舊資料，`{LIS_ID}.layout.json` 也只在 prefixed overlay/review/index 與 metadata checksum 驗證通過後才寫入：
 
@@ -468,7 +468,7 @@ PYTHONPATH=backend python scripts/migrate_tertiary_output_layout.py --sample SAM
 PYTHONPATH=backend python scripts/migrate_tertiary_output_layout.py --all --apply
 ```
 
-批次完成後先不要刪 `/home/n102968/NGS_UI/tertiary_output` 或 `/home/pipeline/tertiary_output`；待所有個案抽查完成再另排清理。遷移程式會略過舊 `snv_indel.annotated.tsv`、CNV/SV/STR/PGx 純複本，以 03 raw + 舊 enriched TSV 建 sparse overlay，因此 target 不會永久多留一份完整 SNV TSV。
+遷移已完成：`/home/n102968/NGS_UI/tertiary_output` 與 `/home/pipeline/tertiary_output` 已移除，所有個案都在 `/home/datalake_Intermediate/pipeline/tertiary_output/{LIS_ID}/`。遷移程式會略過舊 `snv_indel.annotated.tsv`、CNV/SV/STR/PGx 純複本，以 03 raw + 舊 enriched TSV 建 sparse overlay，因此 target 不會永久多留一份完整 SNV TSV。
 
 三級分析進度條為時間加權：Nextflow 以 `-ansi-log false -with-trace` 執行，worker 依 task 送出（純文字 stdout，完整 process 名稱）與完成（`data/jobs/tertiary/{job}/trace.txt`）以及每個 process 的預估秒數計算進度，執行中的 task 依已執行時間給部分分數；post-processing 依各子步驟的預估秒數推進。Nextflow、post-processing、寫回正式目錄三段的比例依「固定成本 + 每例成本 × 樣本數」估計，因此單一樣本與大批次的切法不同；每次成功 job 後自動記錄各段與各步驟的實際耗時到 `data/jobs/tertiary/_timing_profile.json`（依 `pipeline_type:seq_type` 分開，Nextflow 只計實際重跑的工作）。Nextflow 執行期間，進度面板會顯示 Nextflow console 風格的即時狀態區塊（每個 process 一列：完成數/總數、cached、執行中）。進度面板另顯示預估剩餘時間，且百分比單調不倒退。（舊版解析 Nextflow ANSI 畫面時，長 process 名稱被左截，VEP / Pangolin / PARSE_CSQ 從未計入，造成跑 VEP 時停在約 16%、Nextflow 結束才跳到 82%。）
 
@@ -550,8 +550,10 @@ Mito 卡片若 TSV 沒有 AD，載入時會從同一 `04_mito/` 資料夾、與 
 scripts/annotate_mito_vcf.sh \
   --in   /path/to/{LIS_ID}.mito.vcf.gz \
   --sample {LIS_ID} \
-  --outdir tertiary_output/{LIS_ID}/
-# → tertiary_output/{LIS_ID}/mito.annotated.tsv
+  --outdir ~/legacy_mito/{LIS_ID}/
+# → ~/legacy_mito/{LIS_ID}/mito.annotated.tsv
+# 要讓 UI 使用時，複製成
+#   /home/datalake_Intermediate/pipeline/tertiary_output/{LIS_ID}/08_postprocessing/{LIS_ID}.mito.annotated.tsv
 ```
 
 DRAGEN run 若 mtDNA calls 直接包在 `{sample}.hard-filtered.vcf.gz` 的 `chrM/MT` rows，可在 dev 機用專用 wrapper 跑同一套 MITOMAP-only 流程：
@@ -560,7 +562,7 @@ DRAGEN run 若 mtDNA calls 直接包在 `{sample}.hard-filtered.vcf.gz` 的 `chr
 scripts/annotate_dragen_mito_vcf.sh \
   --in /home/datalake_Raw/Novaseq/20260428_LH00873_0015_B23NG3WLT4/vcf.gz/VAL-33.hard-filtered.vcf.gz \
   --sample VAL-33 \
-  --outdir /home/n102968/NGS_UI/tertiary_output/VAL-33_legacy_mito
+  --outdir ~/legacy_mito/VAL-33
 ```
 
 批次：
