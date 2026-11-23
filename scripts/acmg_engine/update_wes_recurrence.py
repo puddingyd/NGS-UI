@@ -3,12 +3,13 @@
 
 Each WES case contributes the distinct variants of its 08 review TSV; a
 re-run replaces the old contribution.  Registered cases merge by MRN, others
-by sample ID without caller and ``_1``…``_N`` suffixes; ``…T`` test samples
-are never added.  Safe to run repeatedly — unchanged cases are skipped.
+by sample ID without caller and ``_1``…``_N`` suffixes; ``…T`` test samples,
+``VAL-…`` validation runs and ``NA…`` reference standards are never added.  Safe to run repeatedly — unchanged cases are skipped.
 
     python3 scripts/acmg_engine/update_wes_recurrence.py --all            # scan every case
     python3 scripts/acmg_engine/update_wes_recurrence.py --sample 24WE0001-nckuh
     python3 scripts/acmg_engine/update_wes_recurrence.py --remove 24WE0001-nckuh
+    python3 scripts/acmg_engine/update_wes_recurrence.py --list         # cases in the table
 Add ``--dry-run`` to only report what would change.
 """
 from __future__ import annotations
@@ -40,8 +41,20 @@ def main(argv=None) -> int:
     ap.add_argument("--all", action="store_true", help="scan every case and drop cases that no longer qualify")
     ap.add_argument("--force", action="store_true", help="rebuild even when the review TSV is unchanged")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--list", action="store_true", help="print the cases in the table (TSV) and exit")
     ap.add_argument("--verbose", action="store_true", help="list skipped cases and their reasons")
     args = ap.parse_args(argv)
+    if args.list:
+        store = WesRecurrence(args.db, readonly=True)
+        try:
+            rows = store.listing()
+        finally:
+            store.close()
+        print("sample_id\tpatient\tvariants\tupdated_at")
+        for row in rows:
+            print("\t".join(str(v) for v in row))
+        print(f"# {len(rows)} 個檢體，{len({r[1] for r in rows})} 位病人", file=sys.stderr)
+        return 0
     if not (args.all or args.sample or args.remove):
         ap.error("give --all, --sample or --remove")
     args.db.parent.mkdir(parents=True, exist_ok=True)

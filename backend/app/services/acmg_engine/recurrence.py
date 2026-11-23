@@ -7,7 +7,8 @@ old WES cases can be added later as their tertiary analysis is re-run.
 
 Patients: registered cases merge by MRN; otherwise the sample ID with its
 caller suffix and ``_1``…``_N`` replicate suffix removed.  Sample IDs ending in
-``T`` (test samples) are never added.  WGS cases use the in-house AF instead.
+``T`` (test samples), validation runs ``VAL-…`` and Coriell reference
+standards ``NA…`` are never added.  WGS cases use the in-house AF instead.
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from . import parse as P
 _CALLER_SUFFIX = re.compile(r"-(nckuh|dragen|inhouse)$", re.IGNORECASE)
 _REPLICATE_SUFFIX = re.compile(r"_\d+$")
 _TEST_SAMPLE = re.compile(r"\d+T$")
+_REFERENCE_SAMPLE = re.compile(r"^(VAL-|NA\d{4,})", re.IGNORECASE)
 
 
 def base_sample_id(sample_id: str) -> str:
@@ -32,6 +34,11 @@ def base_sample_id(sample_id: str) -> str:
 def is_test_sample(sample_id: str) -> bool:
     """``23WE0044T`` style IDs are test samples (TITAN ``26T00970`` is not)."""
     return bool(_TEST_SAMPLE.search(base_sample_id(sample_id)))
+
+
+def is_reference_sample(sample_id: str) -> bool:
+    """Validation runs (``VAL-…``) and Coriell reference standards (``NA12878``…)."""
+    return bool(_REFERENCE_SAMPLE.search(base_sample_id(sample_id)))
 
 
 def patient_key(sample_id: str, mrn: str = "") -> str:
@@ -124,6 +131,10 @@ class WesRecurrence:
             "WHERE v.variant_key=?", (variant_key,)).fetchone()
         return int(hit[0] or 0), self.patient_count()
 
+    def listing(self) -> list[tuple[str, str, int, str]]:
+        return list(self.conn.execute(
+            "SELECT sample_id, patient_key, variant_count, updated_at FROM samples ORDER BY sample_id"))
+
     def signature(self) -> dict:
         row = self.conn.execute("SELECT COUNT(*), MAX(updated_at) FROM samples").fetchone()
         return {"path": str(self.path), "samples": row[0], "patients": self.patient_count(),
@@ -175,8 +186,12 @@ def case_contribution(sample_dir: Path, sample_id: str, roster: dict | None = No
     from ..test_types import normalize_test_type  # local import: keeps engine core standalone
 
     post = Path(sample_dir) / "08_postprocessing"
+    if is_reference_sample(sample_id):
+        return {"status": "skip", "reason": "標準品／確效檢體（VAL-、NA）"}
     if is_test_sample(sample_id):
         return {"status": "skip", "reason": "測試檢體（T）"}
+    if not post.is_dir():
+        return {"status": "skip", "reason": "不是個案目錄"}
     manifest = _load_json(_scoped(post, sample_id, "snv_indel.review.tsv.source.json"))
     source = _load_json(_scoped(post, sample_id, "pipeline_source.json"))
     test_type = normalize_test_type(str(manifest.get("test_type") or source.get("seq_type") or ""),

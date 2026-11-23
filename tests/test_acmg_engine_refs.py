@@ -244,6 +244,9 @@ def test_patient_keys():
     assert R.is_test_sample("23WE0044T-nckuh")
     assert not R.is_test_sample("26T00970-dragen")      # TITAN IDs contain T but do not end with it
     assert not R.is_test_sample("24WE0001_2-nckuh")
+    assert R.is_reference_sample("VAL-23-WGS-nckuh") and R.is_reference_sample("VAL-2")
+    assert R.is_reference_sample("NA12878-dragen") and R.is_reference_sample("NA10080-WGS-dragen")
+    assert not R.is_reference_sample("26NGS-02-dragen") and not R.is_reference_sample("24WE0001-nckuh")
 
 
 SHARED = ("chr1", 1000, "C", "T")
@@ -379,3 +382,20 @@ def test_gtf_unquoted_exon_number_and_minus_strand(tmp_path):
     assert exons[("ENST00000000009", 2)] == {"cds_length": 101, "frameshift": True,
                                               "fraction": pytest.approx(101 / 203), "last_exon": False}
     assert exons[("ENST00000000009", 3)]["last_exon"] is True
+
+
+def test_reference_samples_are_excluded_and_removed(tmp_path):
+    root = tmp_path / "tertiary_output"
+    make_case(root, "24WE0001-nckuh", [SHARED])
+    make_case(root, "VAL-2", [SHARED])
+    make_case(root, "NA12878-nckuh", [SHARED])
+    (root / "pipeline_info").mkdir()
+    store = R.WesRecurrence(tmp_path / "rec.sqlite")
+    store.upsert_sample("VAL-2", "id:VAL-2", {"old": 1}, ["chr1-1000-C-T"])   # added by an older version
+    summary = R.sync_cases(store, root, roster={})
+    assert summary["added"] == ["24WE0001-nckuh"]
+    assert summary["removed"] == ["VAL-2"]
+    assert summary["skipped"]["NA12878-nckuh"].startswith("標準品")
+    assert summary["skipped"]["pipeline_info"] == "不是個案目錄"
+    assert [r[0] for r in store.listing()] == ["24WE0001-nckuh"]
+    store.close()
