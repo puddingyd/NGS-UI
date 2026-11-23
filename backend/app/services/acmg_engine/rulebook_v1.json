@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.1",
+  "version": "ngsui-acmg-v1.2",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -103,18 +103,17 @@
   "pm1_clinvar": {
     "window": 10,
     "min_stars": 2,
-    "supporting_residues": 3,
-    "moderate_residues": 6,
+    "supporting_residues": 6,
+    "moderate_residues": null,
     "benign_min_stars": 1,
     "provisional": [
       "window",
-      "supporting_residues",
-      "moderate_residues"
+      "supporting_residues"
     ]
   },
   "pp2": {
-    "min_plp": 10,
-    "max_benign_fraction": 0.1,
+    "min_plp": 25,
+    "max_benign_fraction": 0.05,
     "provisional": [
       "min_plp",
       "max_benign_fraction"

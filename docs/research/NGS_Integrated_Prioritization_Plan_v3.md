@@ -1133,11 +1133,11 @@ $$
 | **BP3**（−1） | in-frame indel 落在重複區域，且該位置不保守；與 PM4 互斥 | `GIAB_STRATA`、`PHYLOP100` | Richards 2015 | 修正（現行規則用蛋白質結構域的關鍵字判斷重複區，而且可以和 PM4 同時成立） |
 | **PS1**（+4） | 和一個 ClinVar ≥2★ P/LP 的 missense 造成相同的胺基酸改變、但核苷酸改變不同；已知變異的致病機轉不能是剪接 | ClinVar 蛋白質位置表 | Richards 2015 | 新增 |
 | **PM5**（+2／+1） | 同一個胺基酸位置上，另有一個不同的 ClinVar ≥2★ P/LP missense；參考變異是 P 給 Moderate，只有 LP 給 Supporting（2026-11-23） | 同上 | Richards 2015 | 新增 |
-| **PM1**（+1／+2） | 有 VCEP 規格的基因用其熱點或關鍵區域（區域外不給）；其他基因用 ClinVar 推算：前後 10 個胺基酸內，除本位置外有 ≥3 個位置有 ≥2★ P/LP missense 給 Supporting、≥6 個給 Moderate，窗口內有任何 ≥1★ B/LB missense 就不給（**暫定**，2026-11-23）。PM1 與 PP3 合計不超過 4 點 | VCEP 區域；ClinVar 蛋白質位置表、良性 missense 表 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增 |
+| **PM1**（+1／+2） | 有 VCEP 規格的基因用其熱點或關鍵區域給 Moderate（區域外不給）；其他基因用 ClinVar 推算，只給 Supporting：前後 10 個胺基酸內，除本位置外有 ≥6 個位置有 ≥2★ P/LP missense，窗口內有任何 ≥1★ B/LB missense 就不給（**暫定**；v1.1 為 ≥3 個 Supporting、≥6 個 Moderate，第二次驗證和專家一致度僅 4%，v1.2 收緊）。PM1 與 PP3 合計不超過 4 點 | VCEP 區域；ClinVar 蛋白質位置表、良性 missense 表 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增 |
 | **PS2、PM6、PP1、BS4、BP2、PS3、BS3、PS4** | 需要家族、功能實驗或病例對照資料，由判讀者在 `manual_acmg` 填寫 | — | — | 不自動給 |
 | **PM3** | 只計入**其他病人**的證據，由判讀者填寫。以這位病人自己的另一個變異為依據的 PM3 不計入 $V'$，因為隱性成對（第 5.3 節）與遺傳模式（第 6 章）已經處理了這件事 | — | — | 不自動給 |
 | **BS2** | 需要 gnomAD 健康同型合子的人數；目前 TSV 沒有這個欄位 | — | — | 不自動給（缺欄位） |
-| **PP2**（+1） | 基因的 MANE 轉錄本上 ≥1★ ClinVar missense 至少 10 個 P/LP，且 B/LB 占 ≤10%（**暫定**，2026-11-23）；常被 VCEP 停用，也和 PP3 的全基因組校準部分重疊，驗證時需單獨看 | ClinVar 基因 missense 計數表 | — | 新增 |
+| **PP2**（+1） | 基因的 MANE 轉錄本上 ≥1★ ClinVar missense 至少 25 個 P/LP，且 B/LB 占 ≤5%（**暫定**；v1.1 為 10 個、≤10%，第二次驗證和專家一致度僅 1.8%，v1.2 收緊）；常被 VCEP 停用，也和 PP3 的全基因組校準部分重疊，驗證時需單獨看 | ClinVar 基因 missense 計數表 | — | 新增 |
 | **BP1** | 基因層級的 missense 良性證據 | — | — | 不自動給 |
 | **PP4、BP5** | 與表型重複計分，或推論循環（第 5.2.8 節） | — | — | 排除 |
 | **PP5、BP6** | ClinGen SVI 建議停用：拿別人的分類當證據會變成循環論證。ClinVar 改用第 5.2.8 節的方式處理 | — | Biesecker & Harrison 2018 | 不使用（與現行規則相同） |
@@ -1356,6 +1356,14 @@ $$
 - WES 出現次數門檻 5% 會擋 3,690 個變異，其中 ClinVar 0–1★ P/LP 6 個、功能喪失 254 個。
 
 據此調整為規則 v1.1（`rulebook_v1.json` 版本 `ngsui-acmg-v1.1`）：ClinVar ≥2★ 直接採用；PM5 依參考變異等級分強度；新增 ClinVar 推算的 PM1 熱點與 PP2；BP7 缺 phyloP 時只依剪接預測。參考表 schema 2 新增良性 missense 與基因 missense 計數，需重建參考表並重算結果。filtering AF 由 pipeline 補（第 5.2.11 節）。
+
+**第二次院內結果（v1.1，2026-11-23）**：
+
+- 時間切分 AUC 0.962（v1.0 0.960），新規則沒有引入 ClinVar 洩漏；不切分 0.973。
+- 判讀者標為致病的變異名次：WES 規則引擎 MRR 0.452、前 20 名 82%，平台現行 0.449、74%（引擎較好 21 例、相同 17、較差 24，較差者 GeneBe 多出的條目為 PP5 9、PM5 5、PM1 5）；WGS 0.758 對 0.824，4 個較差者都是 ClinVar 1–2★ LP，GeneBe 多給 PP5、PS3、PM1。PP5／PS3 引擎刻意不給。
+- ClinGen 專家 337 個變異：ClinVar 推算的 PM1 precision 4%（25 次中 1 次一致），PP2 1.8%（55 次中 1 次）；判讀者手動給的 PP2 引擎都有給到。這些變異都在 VCEP 基因上，多數 VCEP 停用 PP2、PM1 只限指定區域，引擎尚未載入 VCEP 規格。BP7 precision 59%／recall 55%，BP4 recall 因同義變異改給 BP7 降到 33%。PM5 precision 仍 19%。
+
+據此調整為規則 v1.2（版本 `ngsui-acmg-v1.2`）：ClinVar 推算的 PM1 改為 ≥6 個位置才給，且只給 Supporting（Moderate 只留給 VCEP 區域）；PP2 改為 ≥25 個 P/LP、B/LB ≤5%；BP4／BP7 不變（同義變異只計一次）。參考表 schema 不變，不需重建參考表，只需 `build_engine_results.py --all` 重算（規則檔 hash 改變，舊結果自動視為過期）。載入 ClinGen CSpec 的基因專屬規格（停用 PP2、PM1 區域、BA1／BS1 門檻）留待之後決定。
 
 **避免循環。** 院內個案的致病變異可能由本實驗室提交到 ClinVar。回溯驗證時，ClinVar 規則與所有由 ClinVar 整理出來的參考表（功能喪失基因表、蛋白質位置表、截斷變異位置表），都必須使用個案簽收日之前的 ClinVar 版本。
 

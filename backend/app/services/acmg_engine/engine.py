@@ -462,7 +462,8 @@ def _pm1(row: dict, ctx: Context, rb: dict) -> Evidence | None:
     where = f"p.{pos} 前後 {window} 個胺基酸內有 {len(residues)} 個位置有 ClinVar ≥{cfg['min_stars']}★ 致病 missense"
     if benign:
         return Evidence("PM1", "not_met", reason=f"{where}，但也有 {len(benign)} 個良性 missense")
-    strength = "moderate" if len(residues) >= cfg["moderate_residues"] else "supporting"
+    moderate_at = cfg.get("moderate_residues")    # None (v1.2): ClinVar hotspots stay Supporting
+    strength = "moderate" if moderate_at and len(residues) >= moderate_at else "supporting"
     return _met("PM1", strength, f"ClinVar 突變熱點：{where}，沒有良性 missense", rb)
 
 
