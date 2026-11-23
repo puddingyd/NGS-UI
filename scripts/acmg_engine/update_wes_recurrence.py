@@ -15,7 +15,6 @@ Add ``--dry-run`` to only report what would change.
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import sys
 from pathlib import Path
@@ -24,7 +23,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "backend"))
 
 from app import config  # noqa: E402
-from app.services.acmg_engine.recurrence import WesRecurrence, load_roster, sync_cases  # noqa: E402
+from app.services.acmg_engine.recurrence import WesRecurrence, load_roster, update_locked  # noqa: E402
 
 
 def _progress(index: int, total: int, sample_id: str) -> None:
@@ -57,25 +56,13 @@ def main(argv=None) -> int:
         return 0
     if not (args.all or args.sample or args.remove):
         ap.error("give --all, --sample or --remove")
-    args.db.parent.mkdir(parents=True, exist_ok=True)
-    with open(str(args.db) + ".lock", "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        store = WesRecurrence(args.db)
-        try:
-            removed = []
-            for sid in args.remove:
-                if args.dry_run or store.remove_sample(sid):
-                    removed.append(sid)
-            summary = {"removed": removed, "patients": store.patient_count()}
-            roster = None
-            if args.all or args.sample:
-                roster = load_roster() or {}
-                summary = sync_cases(store, args.root, None if args.all else args.sample,
-                                     force=args.force, prune=args.all, dry_run=args.dry_run, roster=roster,
-                                     progress=_progress)
-                summary["removed"] = removed + summary["removed"]
-        finally:
-            store.close()
+    roster = None
+    if args.all or args.sample:
+        roster = load_roster() or {}
+    summary = update_locked(
+        (None if args.all else args.sample) if (args.all or args.sample) else [],
+        remove=args.remove, db=args.db, root=args.root, prune=args.all,
+        force=args.force, dry_run=args.dry_run, roster=roster, progress=_progress)
     skipped = summary.get("skipped", {})
     reasons: dict = {}
     for reason in skipped.values():

@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.45 補記：三級後處理新增 ACMG 規則引擎計算，結果存於 `08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`，目前只供驗證、不顯示也不改變報告；既有個案以 `scripts/acmg_engine/build_engine_results.py --all` 補算（見計畫書 §5.2.11）。
+
 v10.45 補記：檢體編號「年份＋G＋數字」（如 25G00002）一律視為 WGS，個案清單檢驗名稱未寫 WGS 時不再預設成 WES；已登錄成 WES 的這類個案重新載入即改用 WGS 規則。
 
 v10.43：新增[PRS研究工作區搬HDD](docs/ops/PRS_STUDY_STORAGE.md)工具，完整複製與核對既有study後掛回原路徑，保留已完成計分進度；另以專用指令核對並釋放SSD副本。只取獨立工具即可操作，不必更新或重啟正在跑三級的服務；其他三級工作區及原始gVCF不搬移。院內初次檢查遇`/proc/2/environ`的ESRCH而停，尚未搬檔；已修正程序退出／核心執行緒讀取，仍保留權限與活躍工作檢查，需重新取新版工具。這次不更動計分／模型；長期封存與大型暫存清理另行設計。

@@ -111,7 +111,7 @@ _GENERIC_CNV = {"ANNOTSV_CNV_NCKUH"}  # superseded by the _WES/_WGS variants
 # (1 sample and 36 samples, 2026-11-20); the learned profile replaces them.
 BATCH_STEPS = ("clinvar-latest", "genebe", "spliceai", "giab-strata", "inhouse-af",
                "mane-refseq", "litvar2", "gpn-prefetch")
-SAMPLE_STEPS = ("snv-overlay", "review-tsv", "gene-index", "cnv-rescue")
+SAMPLE_STEPS = ("snv-overlay", "review-tsv", "gene-index", "acmg-engine", "cnv-rescue")
 DEFAULT_LINEAR: dict[str, tuple[float, float]] = {
     "phase:nextflow": (114.0, 473.0),
     "phase:postprocessing": (650.0, 60.0),
@@ -130,6 +130,7 @@ DEFAULT_SAMPLE_STEP_SECONDS: dict[str, float] = {
     "snv-overlay": 2.0,
     "review-tsv": 2.0,
     "gene-index": 1.0,
+    "acmg-engine": 3.0,
     "cnv-rescue": 60.0,
 }
 # WGS starting point (same 2026-11-22 batch; post-processing figures assume
@@ -150,7 +151,8 @@ DEFAULT_LINEAR_BY_SEQ: dict[str, dict[str, tuple[float, float]]] = {
     },
 }
 DEFAULT_SAMPLE_STEP_SECONDS_BY_SEQ: dict[str, dict[str, float]] = {
-    "WGS": {"snv-overlay": 120.0, "review-tsv": 180.0, "gene-index": 90.0, "cnv-rescue": 60.0},
+    "WGS": {"snv-overlay": 120.0, "review-tsv": 180.0, "gene-index": 90.0, "acmg-engine": 60.0,
+            "cnv-rescue": 60.0},
 }
 
 

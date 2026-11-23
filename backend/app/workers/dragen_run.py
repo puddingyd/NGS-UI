@@ -85,6 +85,7 @@ MANAGED_POSTPROCESSING_NAMES = {
     "snv_indel.review.tsv.source.json",
     "snv_gene_index.sqlite",
     "litvar2_annotation.json",
+    "snv_acmg_engine.sqlite",
     "clinvar_comparison.json",
     "mito.annotated.tsv",
     "ploidy.vcf.gz",
@@ -2401,6 +2402,17 @@ def main() -> int:
                 sample_loader.update_case_table_row(sid)
             except Exception as cache_error:
                 _log(f"[cache] {sid}: refresh failed: {cache_error}")
+        # WES recurrence table for the ACMG rule engine (plan §5.2): add or
+        # replace each published WES case; non-WES/test samples are skipped.
+        try:
+            from ..services.acmg_engine import recurrence as acmg_recurrence
+            rec = acmg_recurrence.update_locked(list(sample_ids))
+            changed = rec.get("added", []) + rec.get("updated", [])
+            if changed or rec.get("removed"):
+                _log(f"[acmg-recurrence] added/updated {len(changed)}, removed {len(rec.get('removed', []))}; "
+                     f"{rec.get('patients')} WES patients")
+        except Exception as rec_error:  # noqa: BLE001 — never fail a published job
+            _log(f"[acmg-recurrence] update failed: {rec_error}")
 
         set_progress("promote", 1.0)
         _record_timing_profile(

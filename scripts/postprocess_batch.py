@@ -18,7 +18,8 @@ Order (unchanged from the per-sample chain):
     6. mane-refseq      Ensembl → MANE RefSeq IDs
     7. litvar2          local LitVar2 literature lookup
     8. gpn-prefetch     GPN-MSA / GPN-Star scores for all review keys
-    then per sample, in parallel: snv-overlay → review-tsv → gene-index
+    then per sample, in parallel: snv-overlay → review-tsv → gene-index → acmg-engine
+    (acmg-engine is best-effort: a failure is logged and does not fail the batch)
 
 Single-sample use (``run_stopgaps.sh`` is a thin wrapper around this)::
 
@@ -138,6 +139,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--litvar2-db", type=Path,
                     default=Path(os.environ.get("NGS_UI_LITVAR2_DB") or home / "biotools/litvar2/litvar2.sqlite"))
     ap.add_argument("--skip-litvar2", action="store_true")
+    ap.add_argument("--skip-acmg-engine", action="store_true",
+                    help="do not run the ACMG rule engine (plan §5.2)")
     ap.add_argument("--gpn-msa-db", type=Path,
                     default=Path(os.environ.get("NGS_UI_GPN_MSA_DB") or home / "biotools/gpn_msa/scores.tsv.bgz"))
     ap.add_argument("--gpn-star-dir", type=Path,
@@ -365,7 +368,7 @@ def _capture(cmd: list[str], env: dict) -> tuple[int, str]:
 
 
 def sample_tail(args: argparse.Namespace, s: dict, env: dict, raw_log_lock: threading.Lock) -> None:
-    """snv-overlay → review-tsv → gene-index for one sample."""
+    """snv-overlay → review-tsv → gene-index → acmg-engine for one sample."""
     sid, post = s["sample"], s["post"]
     overlay = post / f"{sid}.snv_annotations.sqlite"
     review_python = os.environ.get("NGS_UI_PYTHON_BIN") or sys.executable
@@ -383,7 +386,27 @@ def sample_tail(args: argparse.Namespace, s: dict, env: dict, raw_log_lock: thre
         ("gene-index", [sys.executable, str(SCRIPT_DIR / "build_snv_gene_index.py"),
                         "--tsv", str(s["raw"]), "--out", str(post / f"{sid}.snv_gene_index.sqlite")]),
     ]
+    if not args.skip_acmg_engine:
+        steps.append(("acmg-engine", [sys.executable, str(SCRIPT_DIR / "acmg_engine" / "build_engine_results.py"),
+                                      "--review", str(post / f"{sid}.snv_indel.review.tsv"),
+                                      "--out", str(post / f"{sid}.snv_acmg_engine.sqlite"),
+                                      "--sample", sid, "--test-type", s["seq"]]))
     for name, cmd in steps:
+        if name == "acmg-engine":
+            # New rule engine: never block publication of the case.
+            with Step(name, marker="sample-step", sample=sid):
+                code, output = _capture(cmd, env)
+                if args.raw_log is not None:
+                    with raw_log_lock, args.raw_log.open("a", encoding="utf-8") as handle:
+                        handle.write(f"\n[{_stamp()}] {sid} {name}\n$ {' '.join(cmd)}\n{output}")
+                for line in output.splitlines():
+                    if line.startswith("[acmg-engine]"):
+                        emit(line)
+                if code != 0:
+                    emit(f"[acmg-engine] WARNING sample={sid} failed (exit {code}); "
+                         "results can be rebuilt with scripts/acmg_engine/build_engine_results.py")
+                    emit(output.rstrip("\n")[-2000:])
+            continue
         with Step(name, marker="sample-step", sample=sid):
             code, output = _capture(cmd, env)
             if args.raw_log is not None:

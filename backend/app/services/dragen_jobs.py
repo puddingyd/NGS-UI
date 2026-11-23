@@ -784,9 +784,15 @@ def delete_pipeline_output(sample_id: str) -> dict:
         from . import pgx_reannotation
         if {sample_id, sample_layout.source_sample_id(sample_id)} & pgx_reannotation.active_ids():
             raise RuntimeError("此個案的 PGx 更新仍在執行中，請先恢復原結果")
-        return _delete_pipeline_output(sample_id)
+        result = _delete_pipeline_output(sample_id)
     finally:
         _release_sample_locks(handles)
+    try:
+        from .acmg_engine import recurrence
+        recurrence.update_locked([], remove=[sample_id])
+    except Exception:  # noqa: BLE001 — the recurrence table is rebuilt by its CLI
+        pass
+    return result
 
 
 @category_store.serialized

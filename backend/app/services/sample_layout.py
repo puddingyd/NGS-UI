@@ -305,6 +305,11 @@ def snv_gene_index_path(sample_id: str, *, for_write: bool = False) -> Path:
     return state_file(sample_id, "snv_gene_index.sqlite", for_write=for_write)
 
 
+def acmg_engine_path(sample_id: str, *, for_write: bool = False) -> Path:
+    """Rule engine results (plan §5.2): one row per review-TSV variant."""
+    return state_file(sample_id, "snv_acmg_engine.sqlite", for_write=for_write)
+
+
 def litvar2_marker_path(sample_id: str, *, for_write: bool = False) -> Path:
     return state_file(sample_id, "litvar2_annotation.json", for_write=for_write)
 

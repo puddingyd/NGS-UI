@@ -126,8 +126,25 @@ class WesRecurrence:
             self._patients = self.conn.execute("SELECT COUNT(DISTINCT patient_key) FROM samples").fetchone()[0]
         return self._patients
 
-    def lookup(self, variant_key: str) -> tuple[int, int]:
-        """(patients carrying the variant, patients in the table)."""
+    def patient_of(self, sample_id: str) -> str | None:
+        hit = self.conn.execute("SELECT patient_key FROM samples WHERE sample_id=?", (sample_id,)).fetchone()
+        return hit[0] if hit else None
+
+    def has_patient(self, patient: str) -> bool:
+        return bool(self.conn.execute("SELECT 1 FROM samples WHERE patient_key=? LIMIT 1", (patient,)).fetchone())
+
+    def lookup(self, variant_key: str, exclude_patient: str | None = None) -> tuple[int, int]:
+        """(patients carrying the variant, patients in the table).
+
+        ``exclude_patient`` leaves the case's own patient out of both counts,
+        so a case is never counted as evidence that its own variant recurs.
+        """
+        if exclude_patient:
+            hit = self.conn.execute(
+                "SELECT COUNT(DISTINCT s.patient_key) FROM sample_variants v JOIN samples s USING (sample_id) "
+                "WHERE v.variant_key=? AND s.patient_key<>?", (variant_key, exclude_patient)).fetchone()
+            total = self.patient_count() - (1 if self.has_patient(exclude_patient) else 0)
+            return int(hit[0] or 0), total
         hit = self.conn.execute(
             "SELECT COUNT(DISTINCT s.patient_key) FROM sample_variants v JOIN samples s USING (sample_id) "
             "WHERE v.variant_key=?", (variant_key,)).fetchone()
@@ -252,4 +269,30 @@ def sync_cases(store: WesRecurrence, root: Path, sample_ids=None, *, force: bool
                 store.remove_sample(sid)
             summary["removed"].append(sid)
     summary["patients"] = store.patient_count()
+    return summary
+
+
+def update_locked(sample_ids=None, *, remove=(), db: Path | None = None, root: Path | None = None,
+                  prune: bool = False, force: bool = False, dry_run: bool = False,
+                  roster: dict | None = None, progress=None) -> dict:
+    """Add/refresh/remove cases under the table's file lock (CLI and worker hook)."""
+    import fcntl
+
+    from ... import config
+    db = Path(db or config.ACMG_WES_RECURRENCE_DB)
+    root = Path(root or config.PIPELINE_OUT_ROOT)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    with open(str(db) + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        store = WesRecurrence(db)
+        try:
+            removed = [sid for sid in remove if dry_run or store.remove_sample(sid)]
+            summary = {"added": [], "updated": [], "unchanged": [], "skipped": {}, "removed": removed,
+                       "patients": store.patient_count()}
+            if sample_ids is None or sample_ids:
+                summary = sync_cases(store, root, sample_ids, force=force, prune=prune, dry_run=dry_run,
+                                     roster=roster, progress=progress)
+                summary["removed"] = removed + summary["removed"]
+        finally:
+            store.close()
     return summary

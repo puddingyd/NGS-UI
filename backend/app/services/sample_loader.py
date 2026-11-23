@@ -969,6 +969,7 @@ def _load_enriched_snv_cached(
         _file_signature(pheno_path),
         _file_signature(exo_path),
         _file_signature(lir_path),
+        _file_signature(sample_layout.acmg_engine_path(sample_id)),
         (test_type or "WES").upper(),
         omim_sig,
         gene_disease_sig,
@@ -1231,7 +1232,26 @@ def _enrich_snv_variants(
             v["Inheritance"] = "AR"
     litvar2_on_demand.apply_cached(variants, sample_id)
     roh.annotate_variants(variants, sample_id)
+    _attach_engine_acmg(variants, sample_id)
     return pheno_by_gene
+
+
+def _attach_engine_acmg(variants: dict, sample_id: str, *, rows=None, test_type: str = "WES") -> None:
+    """ACMG rule engine results (plan §5.2); never blocks loading."""
+    if not variants:
+        return
+    try:
+        from .acmg_engine import runner as acmg_engine_runner
+        acmg_engine_runner.attach(
+            variants,
+            results_path=sample_layout.acmg_engine_path(sample_id),
+            review_tsv=sample_layout.review_tsv(sample_id),
+            rows=rows,
+            test_type=test_type,
+            sample_id=sample_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[acmg-engine] attach failed sample={sample_id}: {type(exc).__name__}: {exc}", flush=True)
 
 
 def load_sample_roh(sample_id: str, version: str | None = None) -> dict | None:
@@ -2469,6 +2489,7 @@ def search_snv_by_genes(
         ) as overlay:
             indexed_rows = overlay.apply_many(indexed_rows)
         variants = _variants_from_rows(indexed_rows, test_type=test_type)
+        _attach_engine_acmg(variants, sample_id, rows=indexed_rows, test_type=test_type)
         _enrich_snv_variants(variants, sample_id, sidecar_dir)
         matches = variants
         search_source = "gene_index"
@@ -2480,6 +2501,7 @@ def search_snv_by_genes(
         ) as overlay:
             indexed_rows = overlay.apply_many(indexed_rows)
         variants = _variants_from_rows(indexed_rows, test_type=test_type)
+        _attach_engine_acmg(variants, sample_id, rows=indexed_rows, test_type=test_type)
         _enrich_snv_variants(variants, sample_id, sidecar_dir)
         matches = variants
         search_source = "raw_stream_fallback"

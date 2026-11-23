@@ -109,9 +109,13 @@ def _files(root: Path) -> dict:
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
         rel = str(path.relative_to(root))
         if path.suffix == ".sqlite":
+            # The rule-engine manifest carries the write time and review mtime;
+            # compare its results only.
+            skip = {"meta"} if path.name.endswith(".snv_acmg_engine.sqlite") else set()
             with sqlite3.connect(path) as conn:
                 out[rel] = [(name, sorted(map(repr, conn.execute(f"SELECT * FROM '{name}'"))))
-                            for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+                            for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                            if name not in skip]
         elif path.suffix == ".json":
             out[rel] = _scrub(json.loads(path.read_text()))
         else:
@@ -158,4 +162,7 @@ def test_batch_matches_one_sample_at_a_time(tmp_path):
     log = proc.stdout
     assert log.count("[post-processing-step] genebe start") == 1
     assert log.count("[sample-step] review-tsv done sample=") == 3
+    assert log.count("[sample-step] acmg-engine done sample=") == 3
+    assert "[acmg-engine] sample=S1 variants=" in log
+    assert (cases / "S1/08_postprocessing/S1.snv_acmg_engine.sqlite").is_file()
     assert "[gpn-msa] status=complete" in log

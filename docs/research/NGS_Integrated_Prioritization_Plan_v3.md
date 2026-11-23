@@ -1359,6 +1359,15 @@ $$
 - `build_references.py`：把 ClinGen dosage、MANE summary、ClinVar 與 MANE GTF 建成單一 `acmg_refs.sqlite`（功能喪失機轉基因表、截斷變異位置表、missense 位置表、exon 表與版本資訊），整份建好並檢查後才替換舊檔。ClinVar 版本日期取下載時的 Last-Modified。
 - `update_wes_recurrence.py`：`--all` 掃描所有個案並移除已不符合的個案，`--sample` 加入或更新指定個案，`--remove` 移除，`--dry-run` 只列出會變動的內容。只納入 WES、有 08 review TSV、檢體編號為兩位數年份加 `W`／`WE` 開頭、不是 `T` 測試檢體的個案；`--list` 列出已納入的檢體；review TSV 沒變的個案略過。病人合併順序：已登錄的病歷號 → 個案清單（roster）上的病歷號 → 去掉 caller 後綴與 `_N` 的檢體編號。資料庫預設在 `NGS_UI_HOME/data/acmg_wes_recurrence.sqlite`（`NGS_UI_ACMG_WES_RECURRENCE_DB`）。
 
+**接進三級後處理（2026-11-23，實作步驟 4）**：
+
+- 每個個案在 review TSV 建好後多一步 `acmg-engine`（`scripts/acmg_engine/build_engine_results.py`，核心在 `runner.py`）：逐一評估 review TSV 的每個變異，結果存成 `08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`（每個變異一列：分類、點數、criteria 文字、摘要，以及完整的逐條證據與理由）。這一步失敗只記警告，不影響個案發布。
+- 結果檔記錄 review TSV、參考表、引擎程式與規則檔的簽章；任一改變就視為過期。WES 出現次數表與 OMIM 遺傳模式不列入（它們隨任何個案或 OMIM 更新而變），出現次數表大幅更新後用 `--force` 重算。
+- 評估 WES 個案的出現次數時，排除個案本人（同一位病人的其他檢體也一併排除），避免自己的變異被算成「院內常見」。
+- 三級分析發布個案後自動把 WES 個案加入或更新出現次數表；從三級分析清單完整刪除個案時同步移除。
+- 主畫面載入個案時，把結果檔的摘要附到每個變異（`engine_acmg`，狀態 current／stale）；gene search 查到 review TSV 以外的變異時當場計算（狀態 on_demand）。畫面尚未顯示，留待步驟 7 取代 pipeline ACMG。
+- 既有個案用 `build_engine_results.py --all` 補算（只算缺少或過期的個案，取得三級 sample lock，執行中的個案會略過）。
+
 功能喪失機轉的判斷：ClinGen HI=3 → 是；HI=40 → 否（即使 ClinVar 有截斷變異）；其餘依 ClinVar ≥1★ P/LP 截斷或典型剪接位變異的個數（任何轉錄本，≥2 個）→ 是；都沒有 → 未確立（PVS1 不評估）。
 
 **建議 pipeline 補的欄位**：gnomAD v4.1 的 filtering AF（`fafmax_faf95_max`，ClinGen 建議用於 BA1／BS1 的頻率）與各來源的 AN（確認資料量足夠），以及健康同型合子人數 `nhomalt`（BS2）。補上後，第 5.2.4 節的頻率規則改用 filtering AF，BS2 也可以自動評估。
