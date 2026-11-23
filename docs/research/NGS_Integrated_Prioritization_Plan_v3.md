@@ -1371,7 +1371,7 @@ $$
 **接進三級後處理（2026-11-23，實作步驟 4）**：
 
 - 每個個案在 review TSV 建好後多一步 `acmg-engine`（`scripts/acmg_engine/build_engine_results.py`，核心在 `runner.py`）：逐一評估 review TSV 的每個變異，結果存成 `08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`（每個變異一列：分類、點數、criteria 文字、摘要，以及完整的逐條證據與理由）。這一步失敗只記警告，不影響個案發布。
-- 結果檔記錄 review TSV、參考表、引擎程式與規則檔的簽章；任一改變就視為過期。WES 出現次數表與 OMIM 遺傳模式不列入（它們隨任何個案或 OMIM 更新而變），出現次數表大幅更新後用 `--force` 重算。
+- 結果檔記錄 review TSV、參考表、引擎程式（engine／parse／refs／ref_store）與規則檔的簽章；任一改變就視為過期（runner、recurrence、validation 等工具程式不列入，改動不會讓結果過期；若改到 runner 內影響結果的評估邏輯，須調升 FORMAT_VERSION）。WES 出現次數表與 OMIM 遺傳模式不列入（它們隨任何個案或 OMIM 更新而變），出現次數表大幅更新後用 `--force` 重算。
 - 評估 WES 個案的出現次數時，排除個案本人（同一位病人的其他檢體也一併排除），避免自己的變異被算成「院內常見」。
 - 三級分析發布個案後自動把 WES 個案加入或更新出現次數表；從三級分析清單完整刪除個案時同步移除。
 - 主畫面載入個案時，把結果檔的摘要附到每個變異（`engine_acmg`，狀態 current／stale）；gene search 查到 review TSV 以外的變異時當場計算（狀態 on_demand）。畫面尚未顯示，留待步驟 7 取代 pipeline ACMG。

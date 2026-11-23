@@ -35,12 +35,22 @@ FORMAT_VERSION = 1
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
+_RESULT_CODE_FILES = ("engine.py", "parse.py", "refs.py", "ref_store.py")
+
+
 @lru_cache(maxsize=1)
 def code_signature() -> str:
-    """Hash of the engine code, rulebook and BA1 exception list."""
+    """Hash of the files that decide results: engine, parsers, reference lookups,
+    rulebook and BA1 exception list.
+
+    Tooling in the package (this runner's storage/attach code, recurrence
+    maintenance, validation) is left out so editing it does not mark every
+    stored result stale.  A change to ``evaluate_rows``, ``CaseRecurrence`` or
+    ``omim_moi`` here that alters results must bump ``FORMAT_VERSION``.
+    """
     digest = hashlib.sha256()
     for path in sorted(_PACKAGE_DIR.iterdir()):
-        if path.suffix in (".py", ".json", ".tsv") and path.is_file():
+        if path.is_file() and (path.name in _RESULT_CODE_FILES or path.suffix in (".json", ".tsv")):
             digest.update(path.name.encode())
             digest.update(path.read_bytes())
     return digest.hexdigest()[:16]

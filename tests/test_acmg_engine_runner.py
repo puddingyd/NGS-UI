@@ -214,3 +214,10 @@ def test_sample_loader_attaches_published_results(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "shared_references", lambda: (_ for _ in ()).throw(OSError("boom")))
     sample_loader._attach_engine_acmg(broken, "24WE0001-nckuh")      # never raises into loading
     assert broken == {"chr1-1000-C-T": {}}
+
+
+def test_code_signature_ignores_tooling_files():
+    names = {p.name for p in runner._PACKAGE_DIR.iterdir() if p.is_file()}
+    assert {"engine.py", "rulebook_v1.json"} <= names
+    hashed = {n for n in names if n in runner._RESULT_CODE_FILES or n.endswith((".json", ".tsv"))}
+    assert "validation.py" not in hashed and "runner.py" not in hashed and "recurrence.py" not in hashed
