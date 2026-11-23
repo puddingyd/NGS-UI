@@ -38,7 +38,7 @@ $$
 
 **表型證據怎麼來。** 先用 HPO 語意相似度把約 4,900 個疾病基因排序（第 4 章，原第二版表型計畫的全部內容），再用已知答案的病例校準「致病基因落在各名次的機率」與「隨機基因落在同名次的機率」之比，換成點數。例如真正答案排第 1 名的機率約 39%，隨機基因只有 1/4,888，倍數約 1,900 倍，相當於 +10 點；這些數字在另一組獨立病例上幾乎完全重現。
 
-**變異證據怎麼來。** SNV/Indel 的 ACMG 點數改由平台自建的規則引擎計算（第 5.2 節）：依 ClinGen SVI 的公開規格逐條判斷，每一點都能追溯依據；ClinVar 3–4★ 直接採用分類、2★ P/LP 至少給到 LP（6 點）；判讀者可以覆寫。規則引擎直接取代平台上 pipeline 的 ACMG，平台的 ACMG 來源維持三個（判讀者手動、GeneBe、規則引擎）。
+**變異證據怎麼來。** SNV/Indel 的 ACMG 點數改由平台自建的規則引擎計算（第 5.2 節）：依 ClinGen SVI 的公開規格逐條判斷，每一點都能追溯依據；ClinVar ≥2★ 直接採用分類（2026-11-23 起由 3–4★ 放寬到 2★）；判讀者可以覆寫。規則引擎直接取代平台上 pipeline 的 ACMG，平台的 ACMG 來源維持三個（判讀者手動、GeneBe、規則引擎）。
 
 **初步結果（文獻病例與模擬，院內尚未驗證）。**
 
@@ -277,7 +277,7 @@ $$
 
 | 證據 | 回答的問題 | 來源 | 章節 |
 |---|---|---|---|
-| 變異證據 $V'$ | 這個變異（或這對變異）本身有沒有害？ | 平台規則引擎的 ACMG 點數（ClinGen SVI 規格；ClinVar 3–4★ 採用、2★ P/LP 下限 6 點；判讀者可覆寫），排除 PP4 與 BP5 | 第 5 章 |
+| 變異證據 $V'$ | 這個變異（或這對變異）本身有沒有害？ | 平台規則引擎的 ACMG 點數（ClinGen SVI 規格；ClinVar ≥2★ 採用；判讀者可覆寫），排除 PP4 與 BP5 | 第 5 章 |
 | 表型證據 $P$ | 這個基因造成的疾病，符不符合病人的表現？ | 表型引擎的基因排名，經校準換成點數 | 第 4 章 |
 | 遺傳模式相容性 $C$ | 病人的基因型符不符合疾病的遺傳模式？ | 疾病的遺傳模式、變異接合型、性別 | 第 6 章 |
 
@@ -359,7 +359,7 @@ flowchart TD
 | **設計選擇（實測比較後選定）** | 表型最多扣 3.1 點、最多加 13 點 | 與其他上下限比較後選出（第 4.8.4 節） |
 | | 旁系配對係數 0.5 × min(1, lift)、基準分校正 | 與其他配對方式比較後選出（第 4.4、4.5 節） |
 | | PP4 建議只在「表型第 1 名且明顯領先」時給，最多 +2 | 開發資料選定，院內驗證通過前關閉（第 9 章） |
-| | ClinVar 3–4★ 直接採用、2★ P/LP 下限 6 點、不加點 | 團隊討論決定（第 5.2.8 節） |
+| | ClinVar ≥2★ 直接採用、不加點（2026-11-23 由「3–4★ 採用、2★ P/LP 下限 6 點」放寬） | 團隊討論決定（第 5.2.8 節），依第一次院內驗證調整 |
 | **暫定值（尚無資料依據）** | 遺傳模式扣分（例如隱性只有一個異合子：WES −3、WGS −4，分別對應「第二個變異被漏掉的機率」約 10% 與 5%） | 待院內已解個案估計（第 6.4 節） |
 | | 規則引擎的通用頻率門檻（BS1 顯性 0.1%／其他 0.5%；PM2 隱性 ≤0.01%）；Pangolin 沿用 SpliceAI 的門檻；院內重複出現門檻（WES 5%、WGS 院內 AF 2.5%） | 待 ClinVar 時間切分與院內資料驗證（第 5.2.10 節） |
 | | CNV、粒線體分級換算成點數 | 依分級邊界暫定對應，待校準（第 5.4、5.5 節） |
@@ -1128,16 +1128,17 @@ $$
 | **PVS1**（8、4、2） | 先做假象檢查（院內重複出現、剪接位兩種寫法、MANE 轉錄本），再依 Abou Tayoun 決策樹（第 5.2.5 節）；基因層級的條件改為「功能喪失是已知的致病機轉」 | `CONSEQUENCE`、`HGVS_C`、`TRANSCRIPT_TYPE`、`NMD`、`PROTEIN_POSITION`、`EXON`、`LOFTEE`、`LOFTEE_FILTER`；WES 出現次數表、院內 AF、功能喪失機轉基因表、MANE exon 表、ClinVar 截斷變異位置表 | Abou Tayoun 2018 | 修正 |
 | **PP3／BP4 missense**（±1 至 ±4） | 只用一個事先指定的工具：P-KNN；P-KNN 沒有值時才用 BayesDel_noAF。**工具有值但落在不確定區間時，不換下一個工具**。missense 要給 BP4，剪接預測也必須是無影響 | `PKNN_EVIDENCE`、`BAYESDEL_NOAF`、剪接分數 | Pejaver 2022、Bergquist 2025、Stenton 2024 | 修正（現行規則在不確定時改用下一個工具） |
 | **PP3／BP4 剪接**（+1／−1） | 不在 ±1、2 剪接位的變異：剪接分數 ≥0.2 給 PP3，≤0.1 給 BP4。有 SpliceAI 用 SpliceAI，沒有才用 Pangolin（**暫定**沿用同樣門檻，待驗證） | `SPLICEAI_MAX`、`PANGOLIN_SCORE` | Walker 2023 | 新增 |
-| **BP7**（−1） | 同義變異，或內含子 +7 以後、−21 以前的變異；剪接分數 ≤0.1；保守性條件沿用現行規則的 phyloP 參數，實作時依 Walker 2023 原文確認 | 同上、`PHYLOP100` | Walker 2023 | 修正（擴大到內含子） |
+| **BP7**（−1） | 同義變異，或內含子 +7 以後、−21 以前的變異；剪接分數 ≤0.1；保守性條件沿用現行規則的 phyloP 參數，實作時依 Walker 2023 原文確認。phyloP 來自 dbNSFP、同義與內含子變異幾乎都沒有，缺 phyloP 時只依剪接預測給（2026-11-23） | 同上、`PHYLOP100` | Walker 2023 | 修正（擴大到內含子） |
 | **PM4**（+2） | in-frame indel 不在重複區域，或 stop-loss；PVS1 成立時不給 | `CONSEQUENCE`、`GIAB_STRATA`（tandem repeat、homopolymer） | Richards 2015 | 修正（現行規則沒有檢查重複區域） |
 | **BP3**（−1） | in-frame indel 落在重複區域，且該位置不保守；與 PM4 互斥 | `GIAB_STRATA`、`PHYLOP100` | Richards 2015 | 修正（現行規則用蛋白質結構域的關鍵字判斷重複區，而且可以和 PM4 同時成立） |
 | **PS1**（+4） | 和一個 ClinVar ≥2★ P/LP 的 missense 造成相同的胺基酸改變、但核苷酸改變不同；已知變異的致病機轉不能是剪接 | ClinVar 蛋白質位置表 | Richards 2015 | 新增 |
-| **PM5**（+2） | 同一個胺基酸位置上，另有一個不同的 ClinVar ≥2★ P/LP missense | 同上 | Richards 2015 | 新增 |
-| **PM1**（+2） | 第一版只用於 VCEP 規格中定義了熱點或關鍵區域的基因；PM1 與 PP3 合計不超過 4 點 | 規則檔中的 VCEP 區域 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增（範圍有限） |
+| **PM5**（+2／+1） | 同一個胺基酸位置上，另有一個不同的 ClinVar ≥2★ P/LP missense；參考變異是 P 給 Moderate，只有 LP 給 Supporting（2026-11-23） | 同上 | Richards 2015 | 新增 |
+| **PM1**（+1／+2） | 有 VCEP 規格的基因用其熱點或關鍵區域（區域外不給）；其他基因用 ClinVar 推算：前後 10 個胺基酸內，除本位置外有 ≥3 個位置有 ≥2★ P/LP missense 給 Supporting、≥6 個給 Moderate，窗口內有任何 ≥1★ B/LB missense 就不給（**暫定**，2026-11-23）。PM1 與 PP3 合計不超過 4 點 | VCEP 區域；ClinVar 蛋白質位置表、良性 missense 表 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增 |
 | **PS2、PM6、PP1、BS4、BP2、PS3、BS3、PS4** | 需要家族、功能實驗或病例對照資料，由判讀者在 `manual_acmg` 填寫 | — | — | 不自動給 |
 | **PM3** | 只計入**其他病人**的證據，由判讀者填寫。以這位病人自己的另一個變異為依據的 PM3 不計入 $V'$，因為隱性成對（第 5.3 節）與遺傳模式（第 6 章）已經處理了這件事 | — | — | 不自動給 |
 | **BS2** | 需要 gnomAD 健康同型合子的人數；目前 TSV 沒有這個欄位 | — | — | 不自動給（缺欄位） |
-| **PP2、BP1** | 基因層級的 missense 證據；常被 VCEP 停用，也和 PP3 的全基因組校準部分重疊 | — | — | 不自動給 |
+| **PP2**（+1） | 基因的 MANE 轉錄本上 ≥1★ ClinVar missense 至少 10 個 P/LP，且 B/LB 占 ≤10%（**暫定**，2026-11-23）；常被 VCEP 停用，也和 PP3 的全基因組校準部分重疊，驗證時需單獨看 | ClinVar 基因 missense 計數表 | — | 新增 |
+| **BP1** | 基因層級的 missense 良性證據 | — | — | 不自動給 |
 | **PP4、BP5** | 與表型重複計分，或推論循環（第 5.2.8 節） | — | — | 排除 |
 | **PP5、BP6** | ClinGen SVI 建議停用：拿別人的分類當證據會變成循環論證。ClinVar 改用第 5.2.8 節的方式處理 | — | Biesecker & Harrison 2018 | 不使用（與現行規則相同） |
 
@@ -1225,8 +1226,7 @@ pipeline 現行規則只接受第 1 項，所以隱性基因的功能喪失變�
 | ClinVar | 處理 |
 |---|---|
 | 3★、4★（專家小組、實務指引），或 TSV 的 ClinGen 專家判讀 `CLINGEN_VCEP_CLASS` | **直接採用分類**：點數夾到該分類的範圍內。例如規則引擎算出 7 點、專家小組判 P → 10 點；算出 12 點、專家小組判 LP → 9 點。良性方向也一樣 |
-| 2★ P/LP（多位提交者、沒有衝突） | **下限 6 點**：取規則點數與 6 的較大者，至少是 LP |
-| 2★ B/LB | 只顯示、不設上限，避免把真正的答案壓下去；判讀者可以覆寫 |
+| 2★（多位提交者、沒有衝突） | **直接採用分類**（2026-11-23 起；原為 P/LP 下限 6 點、B/LB 只顯示）。第一次院內驗證中，引擎名次輸給平台現行的 WES 致病變異有 9 個是 ClinVar 2★ P/LP |
 | 0–1★，或有衝突（`CLINVAR_SIGCONF`） | 只顯示 |
 | 低外顯、risk factor、drug response 等 | 不採用 |
 
@@ -1270,8 +1270,8 @@ $$
 | 剪接 PP3／BP4 | 沒有（只有 BP7） | SpliceAI，沒有才用 Pangolin：≥0.2 PP3、≤0.1 BP4 |
 | PM4／BP3 | PM4 不檢查重複區；BP3 用蛋白質結構域關鍵字；兩者可同時成立 | 用 GIAB 的 tandem repeat、homopolymer 判斷；兩者互斥 |
 | BP7 | 只限同義變異 | 加上內含子 +7 以後、−21 以前 |
-| PS1、PM5、PM1 | 沒有 | PS1、PM5 由 ClinVar 蛋白質位置表判斷；PM1 只用 VCEP 規格 |
-| ClinVar | 不使用（不實作 PP5） | 3–4★ 直接採用；2★ P/LP 下限 6 點；不加點 |
+| PS1、PM5、PM1、PP2 | 沒有 | PS1、PM5 由 ClinVar 蛋白質位置表判斷；PM1 用 VCEP 規格，沒有規格的基因用 ClinVar 熱點推算；PP2 用 ClinVar 基因 missense 計數 |
+| ClinVar | 不使用（不實作 PP5） | ≥2★ 直接採用；不加點 |
 | 缺值 | 當作不成立 | 另列「無法評估」 |
 | 遺傳模式來源 | pipeline 自己的基因遺傳模式表 | 平台 OMIM 資料庫（與第 6 章相同） |
 | 假象檢查 | 沒有 | 院內重複出現、剪接位兩種寫法、MANE 轉錄本（第 5.2.5 節第 0 步） |
@@ -1347,6 +1347,16 @@ $$
 - 驗證 6：被擋下的變異清單，以及 WES 門檻 3%、5%、10% 下會被擋的變異數、其中 ClinVar 0–1★ P/LP 與功能喪失變異數。IGV 人工核對需另外抽樣進行。
 - 診斷（2026-11-23 第一次院內結果後加入）：專家給 BA1／BS1 時引擎給了什麼（依最大 AF 分組）；引擎名次比平台現行差的致病變異依 ClinVar 星等、變異類型、雙方條目差異彙總；各來源在 ClinVar P/LP 與 B/LB 上使用各條目的比例（檢查是否重用 ClinVar 分類）；無法評估的原因與各預測分數欄位的有值比例。
 
+**第一次院內結果（2026-11-23，1,222 例：WES 668、WGS 554）**：
+
+- ClinVar ≥2★ 標籤（遮住 ClinVar 後重新評估）：規則引擎 AUC 0.97、pipeline 0.84。時間切分（2024-01 的 ClinVar 建參考表，只評之後才有定論的 408 個 P/LP、9,421 個 B/LB）引擎 AUC 0.96，和不切分幾乎相同。只看序列證據時引擎沒有 P/LP 達 10 點（PVS1＋PM2 Supporting 最多 9 點，需要個案層級證據才到 P），符合規則設計。GeneBe 在 90% 的 P/LP 給 PP5、89% 的 B/LB 給 BP6（直接引用 ClinVar），AUC 1.0 不能作為公平比較。
+- ClinGen 專家 337 個變異：PVS1 precision 94%／recall 83%；BA1 recall 7%（專家多用基因專屬的較低門檻，引擎給 BS1；另約 48 個 AF <0.1% 的專家 BA1／BS1 推測用了族群別 filtering AF，TSV 沒有此欄）；PM5 precision 19%；BP7 0 次（剪接預測與 phyloP 缺值）。
+- 判讀者標為致病的變異名次（平台公式）：WES 62 個，MRR 規則引擎 0.42、平台現行（GeneBe→pipeline）0.45、pipeline 0.39；WGS 21 個，0.76、0.82、0.59。引擎較差的 31 個 WES 變異中，GeneBe 多出的條目以 PP5（12）、PM1（8）、PM5（5）、PP2（5）為主。
+- 隱性基因 LOFTEE HC 功能喪失變異給 PVS1：WES 引擎 61%、GeneBe 78%、pipeline 1%。
+- WES 出現次數門檻 5% 會擋 3,690 個變異，其中 ClinVar 0–1★ P/LP 6 個、功能喪失 254 個。
+
+據此調整為規則 v1.1（`rulebook_v1.json` 版本 `ngsui-acmg-v1.1`）：ClinVar ≥2★ 直接採用；PM5 依參考變異等級分強度；新增 ClinVar 推算的 PM1 熱點與 PP2；BP7 缺 phyloP 時只依剪接預測。參考表 schema 2 新增良性 missense 與基因 missense 計數，需重建參考表並重算結果。filtering AF 由 pipeline 補（第 5.2.11 節）。
+
 **避免循環。** 院內個案的致病變異可能由本實驗室提交到 ClinVar。回溯驗證時，ClinVar 規則與所有由 ClinVar 整理出來的參考表（功能喪失基因表、蛋白質位置表、截斷變異位置表），都必須使用個案簽收日之前的 ClinVar 版本。
 
 #### 5.2.11 參考表與需要 pipeline 補的欄位
@@ -1358,7 +1368,7 @@ $$
 | 遺傳模式 | 基因 → 各疾病的遺傳模式 | 平台 OMIM 資料庫 | 隨 OMIM 資料庫 |
 | ClinGen dosage | 基因的 haploinsufficiency、triplosensitivity 分數 | ClinGen Dosage Sensitivity | 定期下載 |
 | 功能喪失機轉基因表 | 第 5.2.5 節第一步的結果 | ClinGen dosage + ClinVar | 隨 ClinVar 快照 |
-| ClinVar 蛋白質位置表 | ≥2★ P/LP missense 的胺基酸位置與改變；P/LP 截斷變異的位置 | ClinVar `variant_summary` 的 HGVS 名稱，只取 MANE RefSeq 轉錄本上的變異（不另跑 VEP） | 隨 ClinVar 快照 |
+| ClinVar 蛋白質位置表 | ≥2★ P/LP missense 的胺基酸位置、改變與等級（P／LP）；B/LB missense 的位置；每個基因 ≥1★ P/LP 與 B/LB missense 數；P/LP 截斷變異的位置 | ClinVar `variant_summary` 的 HGVS 名稱，只取 MANE RefSeq 轉錄本上的變異（不另跑 VEP） | 隨 ClinVar 快照 |
 | MANE exon 表 | 每個 exon 的編碼長度、跳過後是否 frameshift、佔整個蛋白質的比例、是否為最後一個 exon | MANE Ensembl GTF | 隨 MANE 版本 |
 | BA1／BS1 例外清單 | ClinGen BA1 例外 + 東亞常見的已知致病變異 | Ghosh 2018 + 院內整理 | 手動維護，放在 repo |
 | VCEP 規格 | 基因專屬的門檻、熱點區域 | ClinGen Criteria Specification Registry | 從院內常見基因開始逐步加入 |
@@ -2297,8 +2307,8 @@ $$
 
 第一版規則引擎（第 5.2 節）之後，依驗證結果逐項評估：
 
-- **資料導向的 PM1 熱點**：以 ClinVar P/LP missense 的聚集位置、且窗口內沒有 B/LB missense，定義熱點區域，取代只用 VCEP 規格；
-- **PP2／BP1**：依基因的 missense 致病比例與 constraint 給點，需確認不和 PP3 重複；
+- **資料導向的 PM1 熱點**：2026-11-23 已以簡化版實作（第 5.2.3 節表格），窗口與門檻待驗證與校準；
+- **PP2／BP1**：PP2 已以 ClinVar 基因 missense 計數簡化實作；BP1 與加入 constraint 仍待評估，需確認不和 PP3 重複；
 - **院內頻率門檻的校準**：第一版已把院內 AF 與 WES 出現次數表納入（第 5.2.4、5.2.5 節）；之後依院內資料調整重複出現門檻（WES 5%、WGS 院內 AF 2.5%）、「遠低於 gnomAD」的倍數與院內 AF 的最低 allele 數，並評估排除親屬重複後的影響；
 - **院內校準的 PP3／BP4**：以院內資料局部校準的預測門檻（GPN-Star 的研究文件），與 ClinGen 的全基因組門檻比較；
 - **Pangolin 門檻的校準**：以 ClinVar 剪接變異校準 Pangolin，取代暫定沿用的 SpliceAI 門檻；
@@ -2609,7 +2619,7 @@ $$
 | 表型分數的用途 | 疾病與基因排名 | 基因排名與 `in_panel` | 名次經校準換成似然比與點數 $P$，同基因內依疾病分配，進入總分 |
 | 與變異的合併 | 未處理 | 未處理（total_score 換算待驗證） | 總分 $V'+P+C$；排序層、絕對層、分類層分開 |
 | 遺傳模式 | 未處理 | 未處理 | 遺傳模式相容性 $C$；隱性成對組合 |
-| 變異證據的來源 | 未處理 | 未處理 | 平台自建的變異規則引擎（ClinGen SVI 規格；ClinVar 3–4★ 採用、2★ P/LP 下限 6 點）；直接取代 pipeline 的 ACMG，平台維持判讀者、GeneBe、規則引擎三個來源 |
+| 變異證據的來源 | 未處理 | 未處理 | 平台自建的變異規則引擎（ClinGen SVI 規格；ClinVar ≥2★ 採用）；直接取代 pipeline 的 ACMG，平台維持判讀者、GeneBe、規則引擎三個來源 |
 | 先驗與 negative 個案 | 未處理 | 未處理 | 診斷率 0.4 與「答案不在已知基因」；negative 誤報納入驗證 |
 | 表型系列（Noonan 等） | 未處理 | 未處理 | 放寬表型下限；介面分組；依分數落差切分與系列合併列入院內再測 |
 | 驗證 | 確診病例 | time-split、LOPO、院內鎖定測試 | 另加候選層級名次、院內 negative 個案、絕對機率校準 |

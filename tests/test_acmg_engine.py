@@ -298,8 +298,11 @@ def test_clinvar_adopt_and_floor():
     over_result = evaluate_variant(over, Context(refs=refs(missense_by_residue={("GENE1", 34): [
         {"alt_aa": "Trp", "variant_key": "chr1-1000-C-A", "stars": 3}]})))
     assert over_result["engine_points"] == 9 and over_result["points"] == 9
-    floor = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2"), Context())
-    assert floor["points"] == 6 and floor["clinvar_rule"]["action"] == "floor"
+    two_star = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2"), Context())
+    assert two_star["points"] == 6 and two_star["clinvar_rule"]["action"] == "adopt"   # 2★ adopted (v1.1)
+    assert two_star["classification"] == "Likely pathogenic"
+    one_star = evaluate_variant(row(CLINVAR_SIG="Pathogenic", CLINVAR_STARS="1"), Context())
+    assert one_star["clinvar_rule"]["action"] == "none"
     conflict = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2",
                                     CLINVAR_SIGCONF="Pathogenic(1)|Uncertain_significance(1)"), Context())
     assert conflict["clinvar_rule"]["action"] == "none"
@@ -325,3 +328,62 @@ def test_criteria_text_round_trips_through_manual_acmg():
     assert not unknown
     assert parsed == result["criteria"]
     assert manual_acmg.calculate(parsed)["score"] == result["engine_points"]
+
+
+# ── v1.1: PM5 grade, ClinVar-derived PM1 / PP2, BP7 without phyloP ────────
+def missense_row(**values):
+    base = dict(CONSEQUENCE="missense_variant", IMPACT="MODERATE", HGVS_P="ENSP1:p.Arg34Trp", LOFTEE=".")
+    base.update(values)
+    return row(**base)
+
+
+def test_pm5_strength_follows_reference_grade():
+    lp_only = refs(missense_by_residue={("GENE1", 34): [
+        {"alt_aa": "Gln", "variant_key": "chr1-1001-G-A", "stars": 2, "category": "LP"}]})
+    with_p = refs(missense_by_residue={("GENE1", 34): [
+        {"alt_aa": "Gln", "variant_key": "chr1-1001-G-A", "stars": 2, "category": "LP"},
+        {"alt_aa": "Gly", "variant_key": "chr1-1001-G-C", "stars": 2, "category": "P"}]})
+    assert met(evaluate_variant(missense_row(), Context(refs=lp_only)), "PM5")[0]["strength"] == "supporting"
+    assert met(evaluate_variant(missense_row(), Context(refs=with_p)), "PM5")[0]["strength"] == "moderate"
+
+
+def _hotspot(positions, benign=()):
+    residues = {("GENE1", p): [{"alt_aa": "Gln", "variant_key": f"chr1-{p}-G-A", "stars": 2, "category": "P"}]
+                for p in positions}
+    return refs(missense_by_residue=residues, benign_missense={"GENE1": [
+        {"protein_pos": p, "variant_key": f"chr1-{p}-A-G", "stars": 2} for p in benign]})
+
+
+def test_pm1_from_clinvar_hotspot():
+    variant = missense_row()                       # residue 34; own residue never counts
+    assert not met(evaluate_variant(variant, Context(refs=_hotspot([30, 34]))), "PM1")
+    supporting = met(evaluate_variant(variant, Context(refs=_hotspot([30, 32, 40]))), "PM1")
+    assert supporting and supporting[0]["strength"] == "supporting"
+    moderate = met(evaluate_variant(variant, Context(refs=_hotspot([25, 28, 30, 32, 40, 44]))), "PM1")
+    assert moderate and moderate[0]["strength"] == "moderate"
+    blocked = evaluate_variant(variant, Context(refs=_hotspot([30, 32, 40], benign=[36])))
+    assert not met(blocked, "PM1") and by_code(blocked, "PM1")[0]["status"] == "not_met"
+    far = evaluate_variant(variant, Context(refs=_hotspot([1, 2, 3])))
+    assert not met(far, "PM1")
+    vcep_outside = refs(missense_by_residue=_hotspot([30, 32, 40]).missense_by_residue, benign_missense={},
+                        vcep_specs={"GENE1": {"pm1_regions": [[100, 120]]}})
+    assert not met(evaluate_variant(variant, Context(refs=vcep_outside)), "PM1")
+
+
+def test_pp2_from_gene_missense_counts():
+    yes = refs(missense_genes={"GENE1": (20, 1)})
+    too_benign = refs(missense_genes={"GENE1": (20, 5)})
+    too_few = refs(missense_genes={"GENE1": (5, 0)})
+    assert met(evaluate_variant(missense_row(), Context(refs=yes)), "PP2")
+    assert not met(evaluate_variant(missense_row(), Context(refs=too_benign)), "PP2")
+    assert not met(evaluate_variant(missense_row(), Context(refs=too_few)), "PP2")
+    assert not met(evaluate_variant(lof_row(), Context(refs=yes)), "PP2")      # not missense
+    assert "PP2" in evaluate_variant(missense_row(), Context(refs=yes))["criteria_text"]
+
+
+def test_bp7_without_phylop_uses_splice_prediction():
+    syn = row(CONSEQUENCE="synonymous_variant", HGVS_P="ENSP1:p.Arg34=", PANGOLIN_SCORE="0.01", PHYLOP100=".")
+    bp7 = met(evaluate_variant(syn, Context()), "BP7")
+    assert bp7 and "缺 phyloP" in bp7[0]["reason"]
+    no_splice = row(CONSEQUENCE="synonymous_variant", HGVS_P="ENSP1:p.Arg34=", PANGOLIN_SCORE=".", PHYLOP100=".")
+    assert by_code(evaluate_variant(no_splice, Context()), "BP7")[0]["status"] == "not_evaluated"

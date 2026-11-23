@@ -34,7 +34,7 @@ from . import parse as P
 from . import runner
 from .engine import Context, _clinvar, _primary_row, evaluate_variant, load_rulebook
 
-ENGINE_CODES = ("PVS1", "PS1", "PM1", "PM2", "PM4", "PM5", "PP3", "BA1", "BS1", "BP3", "BP4", "BP7")
+ENGINE_CODES = ("PVS1", "PS1", "PM1", "PM2", "PM4", "PM5", "PP2", "PP3", "BA1", "BS1", "BP3", "BP4", "BP7")
 CLASSES = ("P", "LP", "VUS", "LB", "B")
 SOURCES = ("engine", "pipeline", "genebe")
 RANK_SOURCES = ("engine", "engine_evidence", "pipeline", "genebe", "platform_current")

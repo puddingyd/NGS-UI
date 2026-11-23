@@ -50,6 +50,7 @@ VS_ROWS = [
     vs("NM_000001.3(GENE1):c.101G>A (p.Arg34Gln)", "Pathogenic", "reviewed by expert panel", pos="1001",
        ref="G", alt="A"),
     vs("NM_000001.3(GENE1):c.102G>A (p.Arg34=)", "Benign", TWO, pos="1002", ref="G", alt="A"),
+    vs("NM_000001.3(GENE1):c.110G>A (p.Gly37Asp)", "Likely benign", TWO, pos="1010", ref="G", alt="A"),
     vs("NM_000001.3(GENE1):c.600C>T (p.Arg200Ter)", "Pathogenic", TWO, assembly="GRCh37", pos="9"),
     vs("NM_000001.3(GENE1):c.700C>T (p.Arg234Ter)", "Pathogenic", NONE, pos="1700"),
     vs("NM_000001.3(GENE1):c.800C>T (p.Arg267Ter)", "Conflicting classifications of pathogenicity", ONE,
@@ -136,6 +137,7 @@ def test_build_reference_db(tmp_path, sources):
     counts, db = build(tmp_path, sources)
     assert counts["truncating"] == 4          # GENE1 ×2 + GENE_HI40 ×2 (MANE, ≥1★); 0★ and non-MANE excluded
     assert counts["missense"] == 1
+    assert counts["benign_missense"] == 1 and counts["missense_genes"] == 1
     assert counts["exons"] == 3
     conn = sqlite3.connect(db)
     lof = {g: (d, n) for g, d, n in conn.execute("SELECT gene, decision, truncating_count FROM lof_genes")}
@@ -155,13 +157,21 @@ def test_build_reference_db(tmp_path, sources):
 def test_sqlite_references(tmp_path, sources):
     _, db = build(tmp_path, sources)
     refs = S.SqliteReferences(db, ba1_exceptions={"chr9-9-A-G"})
-    assert refs.available == {"lof_genes", "truncating_positions", "missense_by_residue", "exons"}
+    assert refs.available == {"lof_genes", "truncating_positions", "missense_by_residue", "exons",
+                              "missense_window", "missense_genes"}
     assert refs.lof_mechanism("GENE1")[0] == "yes"
     assert refs.lof_mechanism("GENE_HI40")[0] == "no"
     assert refs.lof_mechanism("GENE9") is None
     assert refs.truncating_downstream("GENE1", 100) is True
     assert refs.truncating_downstream("GENE1", 200) is False
-    assert refs.clinvar_missense("GENE1", 34) == [{"alt_aa": "Gln", "variant_key": "chr1-1001-G-A", "stars": 3}]
+    assert refs.clinvar_missense("GENE1", 34) == [{"alt_aa": "Gln", "variant_key": "chr1-1001-G-A", "stars": 3,
+                                                   "category": "P"}]
+    assert [e["protein_pos"] for e in refs.clinvar_missense_window("GENE1", 30, 40)] == [34]
+    assert refs.clinvar_missense_window("GENE1", 35, 40) == []
+    assert refs.benign_missense_window("GENE1", 30, 40) == [{"protein_pos": 37, "variant_key": "chr1-1010-G-A",
+                                                            "stars": 2}]
+    assert refs.missense_gene_counts("GENE1") == (1, 1)
+    assert refs.missense_gene_counts("GENE_NONE") == (0, 0)
     assert refs.exon_skip("ENST00000000001.1", 2) == {"frameshift": True, "fraction": pytest.approx(1 / 3),
                                                        "last_exon": False}
     assert refs.exon_skip("ENST00000000001", 9) is None

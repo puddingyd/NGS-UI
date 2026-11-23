@@ -31,7 +31,7 @@ from .ref_store import SqliteReferences, load_ba1_exceptions
 from .refs import References
 
 RESULTS_NAME = "snv_acmg_engine.sqlite"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2          # 2: CaseRecurrence delegates the missense window / gene count lookups
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
@@ -112,6 +112,15 @@ class CaseRecurrence(References):
 
     def clinvar_missense(self, gene, protein_pos):
         return self._refs.clinvar_missense(gene, protein_pos)
+
+    def clinvar_missense_window(self, gene, start, end):
+        return self._refs.clinvar_missense_window(gene, start, end)
+
+    def benign_missense_window(self, gene, start, end):
+        return self._refs.benign_missense_window(gene, start, end)
+
+    def missense_gene_counts(self, gene):
+        return self._refs.missense_gene_counts(gene)
 
     def exon_skip(self, transcript, exon_number):
         return self._refs.exon_skip(transcript, exon_number)

@@ -29,6 +29,18 @@ class References:
         """ClinVar P/LP missense at this residue: [{alt_aa, variant_key, stars}]."""
         return None
 
+    def clinvar_missense_window(self, gene: str, start: int, end: int) -> list[dict] | None:
+        """ClinVar P/LP missense between two residues: [{protein_pos, alt_aa, variant_key, stars, category}]."""
+        return None
+
+    def benign_missense_window(self, gene: str, start: int, end: int) -> list[dict] | None:
+        """ClinVar B/LB missense between two residues: [{protein_pos, variant_key, stars}]."""
+        return None
+
+    def missense_gene_counts(self, gene: str) -> tuple[int, int] | None:
+        """(P/LP, B/LB) ≥1★ missense variants of the gene on its MANE transcript."""
+        return None
+
     def exon_skip(self, transcript: str, exon_number: int) -> dict | None:
         """{"frameshift": bool, "fraction": float, "last_exon": bool} for skipping an exon."""
         return None
@@ -51,7 +63,9 @@ class StaticReferences(References):
 
     lof_genes: dict | None = None            # gene -> ("yes"|"no", reason)
     truncating_positions: dict | None = None  # gene -> sorted protein positions
-    missense_by_residue: dict | None = None   # (gene, pos) -> [ {alt_aa, variant_key, stars} ]
+    missense_by_residue: dict | None = None   # (gene, pos) -> [ {alt_aa, variant_key, stars, category?} ]
+    benign_missense: dict | None = None       # gene -> [ {protein_pos, variant_key, stars} ]
+    missense_genes: dict | None = None        # gene -> (P/LP count, B/LB count)
     exons: dict | None = None                 # (transcript, exon) -> {frameshift, fraction, last_exon}
     ba1_exceptions: set = field(default_factory=set)
     recurrence: dict | None = None            # variant_key -> patients
@@ -67,6 +81,8 @@ class StaticReferences(References):
             "missense_by_residue": self.missense_by_residue,
             "exons": self.exons,
             "recurrence": self.recurrence,
+            "missense_window": self.benign_missense if self.missense_by_residue is not None else None,
+            "missense_genes": self.missense_genes,
         }
         return frozenset(name for name, value in tables.items() if value is not None)
 
@@ -84,6 +100,22 @@ class StaticReferences(References):
         if self.missense_by_residue is None:
             return None
         return list(self.missense_by_residue.get((gene, protein_pos), ()))
+
+    def clinvar_missense_window(self, gene, start, end):
+        if self.missense_by_residue is None or self.benign_missense is None:
+            return None
+        return [dict(e, protein_pos=pos) for (g, pos), entries in self.missense_by_residue.items()
+                if g == gene and start <= pos <= end for e in entries]
+
+    def benign_missense_window(self, gene, start, end):
+        if self.benign_missense is None:
+            return None
+        return [e for e in self.benign_missense.get(gene, ()) if start <= e["protein_pos"] <= end]
+
+    def missense_gene_counts(self, gene):
+        if self.missense_genes is None:
+            return None
+        return tuple(self.missense_genes.get(gene, (0, 0)))
 
     def exon_skip(self, transcript, exon_number):
         if self.exons is None:

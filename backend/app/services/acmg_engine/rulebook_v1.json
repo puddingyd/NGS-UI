@@ -1,11 +1,27 @@
 {
-  "version": "ngsui-acmg-v1",
+  "version": "ngsui-acmg-v1.1",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
-  "points": {"supporting": 1, "moderate": 2, "strong": 4, "very_strong": 8, "stand_alone": 8},
+  "points": {
+    "supporting": 1,
+    "moderate": 2,
+    "strong": 4,
+    "very_strong": 8,
+    "stand_alone": 8
+  },
   "frequency": {
-    "large_sources": ["GNOMAD_E_AF", "GNOMAD_E_EAS_AF", "GNOMAD_E_AF_DBNSFP", "GNOMAD_E_EAS_AF_DBNSFP",
-                      "GNOMAD_G_AF", "GNOMAD41_JOINT_AF", "GNOMAD41_JOINT_EAS_AF"],
-    "display_only_sources": ["GNOMAD_G_EAS_AF", "TG_EAS_AF"],
+    "large_sources": [
+      "GNOMAD_E_AF",
+      "GNOMAD_E_EAS_AF",
+      "GNOMAD_E_AF_DBNSFP",
+      "GNOMAD_E_EAS_AF_DBNSFP",
+      "GNOMAD_G_AF",
+      "GNOMAD41_JOINT_AF",
+      "GNOMAD41_JOINT_EAS_AF"
+    ],
+    "display_only_sources": [
+      "GNOMAD_G_EAS_AF",
+      "TG_EAS_AF"
+    ],
     "ba1": 0.05,
     "bs1_ad_like": 0.001,
     "bs1_other": 0.005,
@@ -13,8 +29,19 @@
     "pm2_other_max": 0.0001,
     "inhouse_min_an": 2000,
     "inhouse_min_ac": 5,
-    "ad_like_moi": ["AD", "XL", "XLD", "XLR", "YL"],
-    "provisional": ["bs1_ad_like", "bs1_other", "pm2_other_max", "inhouse_min_ac"]
+    "ad_like_moi": [
+      "AD",
+      "XL",
+      "XLD",
+      "XLR",
+      "YL"
+    ],
+    "provisional": [
+      "bs1_ad_like",
+      "bs1_other",
+      "pm2_other_max",
+      "inhouse_min_ac"
+    ]
   },
   "recurrence": {
     "wes_fraction": 0.05,
@@ -22,32 +49,109 @@
     "wgs_inhouse_af": 0.025,
     "wgs_min_an": 2000,
     "gnomad_ratio": 0.1,
-    "provisional": ["wes_fraction", "wgs_inhouse_af", "gnomad_ratio"]
+    "provisional": [
+      "wes_fraction",
+      "wgs_inhouse_af",
+      "gnomad_ratio"
+    ]
   },
   "pvs1": {
-    "truncation_fraction": 0.10
+    "truncation_fraction": 0.1
   },
   "missense": {
     "primary": "PKNN_EVIDENCE",
     "fallback": "BAYESDEL_NOAF",
-    "bayesdel_pp3": [[0.41, "strong"], [0.27, "moderate"], [0.13, "supporting"]],
-    "bayesdel_bp4": [[-0.36, "moderate"], [-0.18, "supporting"]]
+    "bayesdel_pp3": [
+      [
+        0.41,
+        "strong"
+      ],
+      [
+        0.27,
+        "moderate"
+      ],
+      [
+        0.13,
+        "supporting"
+      ]
+    ],
+    "bayesdel_bp4": [
+      [
+        -0.36,
+        "moderate"
+      ],
+      [
+        -0.18,
+        "supporting"
+      ]
+    ]
   },
   "splicing": {
     "pp3_min": 0.2,
     "bp4_max": 0.1,
     "deep_intron_donor": 7,
     "deep_intron_acceptor": -21,
-    "provisional": ["pangolin uses the SpliceAI thresholds"]
+    "provisional": [
+      "pangolin uses the SpliceAI thresholds"
+    ],
+    "bp7_without_phylop": true
   },
-  "conservation": {"phylop_not_conserved_below": 3.58},
+  "conservation": {
+    "phylop_not_conserved_below": 3.58
+  },
   "pm1_pp3_cap": 4,
-  "clinvar": {"adopt_min_stars": 3, "floor_min_stars": 2, "floor_points": 6},
+  "pm1_clinvar": {
+    "window": 10,
+    "min_stars": 2,
+    "supporting_residues": 3,
+    "moderate_residues": 6,
+    "benign_min_stars": 1,
+    "provisional": [
+      "window",
+      "supporting_residues",
+      "moderate_residues"
+    ]
+  },
+  "pp2": {
+    "min_plp": 10,
+    "max_benign_fraction": 0.1,
+    "provisional": [
+      "min_plp",
+      "max_benign_fraction"
+    ]
+  },
+  "pm5": {
+    "lp_strength": "supporting"
+  },
+  "clinvar": {
+    "adopt_min_stars": 2,
+    "floor_min_stars": 2,
+    "floor_points": 6,
+    "note": "2026-11-23: 2★ adopted directly (was 3★); floor kept for adopt_min_stars > floor_min_stars"
+  },
   "classes": [
-    {"name": "Pathogenic", "min": 10},
-    {"name": "Likely pathogenic", "min": 6, "max": 9},
-    {"name": "Uncertain significance", "min": 0, "max": 5},
-    {"name": "Likely benign", "min": -6, "max": -1},
-    {"name": "Benign", "max": -7}
+    {
+      "name": "Pathogenic",
+      "min": 10
+    },
+    {
+      "name": "Likely pathogenic",
+      "min": 6,
+      "max": 9
+    },
+    {
+      "name": "Uncertain significance",
+      "min": 0,
+      "max": 5
+    },
+    {
+      "name": "Likely benign",
+      "min": -6,
+      "max": -1
+    },
+    {
+      "name": "Benign",
+      "max": -7
+    }
   ]
 }

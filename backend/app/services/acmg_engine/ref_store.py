@@ -8,7 +8,9 @@ One SQLite file, ``acmg_refs.sqlite``, built atomically from:
 * MANE summary (RefSeq ↔ Ensembl MANE transcript per gene);
 * MANE Ensembl GTF (per-exon CDS length for splice-site exon skipping).
 
-Tables: ``lof_genes``, ``truncating``, ``missense``, ``exons``, ``meta``.
+Tables: ``lof_genes``, ``truncating``, ``missense`` (P/LP, with category),
+``benign_missense`` (B/LB), ``missense_genes`` (per-gene ≥1★ missense counts),
+``exons``, ``meta``.
 :class:`SqliteReferences` implements the :class:`References` interface on top
 of it and of the WES recurrence store.
 """
@@ -28,7 +30,8 @@ from pathlib import Path
 from . import parse as P
 from .refs import References
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+GENE_COUNT_MIN_STARS = 1      # missense_genes counts (PP2)
 REFS_DB_NAME = "acmg_refs.sqlite"
 BA1_EXCEPTIONS_PATH = Path(__file__).with_name("ba1_exceptions.tsv")
 
@@ -125,6 +128,11 @@ def _variant_key(row: dict) -> str:
 
 def iter_clinvar_plp(path: Path):
     """Yield GRCh38 ClinVar P/LP records with parsed HGVS (non-conflicting)."""
+    return iter_clinvar_records(path, ("P", "LP"))
+
+
+def iter_clinvar_records(path: Path, categories=("P", "LP", "LB", "B")):
+    """Yield GRCh38 ClinVar records of the given categories (non-conflicting)."""
     with _open(path) as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
@@ -132,7 +140,7 @@ def iter_clinvar_plp(path: Path):
             if (row.get("Assembly") or "") != "GRCh38":
                 continue
             category = P.clinvar_category(row.get("ClinicalSignificance"))
-            if category not in ("P", "LP"):
+            if category not in categories:
                 continue
             m = _NAME_RE.match((row.get("Name") or "").strip())
             if not m:
@@ -239,32 +247,53 @@ def build_reference_db(
             CREATE TABLE truncating (gene TEXT NOT NULL, protein_pos INTEGER NOT NULL,
                                      variant_key TEXT, stars INTEGER NOT NULL);
             CREATE TABLE missense (gene TEXT NOT NULL, protein_pos INTEGER NOT NULL, ref_aa TEXT NOT NULL,
-                                   alt_aa TEXT NOT NULL, variant_key TEXT, stars INTEGER NOT NULL);
+                                   alt_aa TEXT NOT NULL, variant_key TEXT, stars INTEGER NOT NULL,
+                                   category TEXT NOT NULL);
+            CREATE TABLE benign_missense (gene TEXT NOT NULL, protein_pos INTEGER NOT NULL,
+                                          variant_key TEXT, stars INTEGER NOT NULL);
+            CREATE TABLE missense_genes (gene TEXT PRIMARY KEY, plp INTEGER NOT NULL,
+                                         blb INTEGER NOT NULL) WITHOUT ROWID;
             CREATE TABLE exons (transcript TEXT NOT NULL, exon_number INTEGER NOT NULL, cds_length INTEGER NOT NULL,
                                 frameshift INTEGER NOT NULL, fraction REAL NOT NULL, last_exon INTEGER NOT NULL,
                                 PRIMARY KEY (transcript, exon_number)) WITHOUT ROWID;
             """
         )
         truncating_keys: dict[str, set] = {}
-        counts = {"clinvar_plp": 0, "truncating": 0, "missense": 0}
-        trunc_rows, missense_rows = [], []
-        for record in iter_clinvar_plp(clinvar_summary):
-            counts["clinvar_plp"] += 1
+        counts = {"clinvar_plp": 0, "truncating": 0, "missense": 0, "benign_missense": 0}
+        trunc_rows, missense_rows, benign_rows = [], [], []
+        gene_missense: dict[str, dict[str, set]] = {}
+        for record in iter_clinvar_records(clinvar_summary):
             kind, alt, pos = classify_clinvar(record)
             gene = record["gene"]
+            on_mane = record["nm"] in mane
+            if record["category"] in ("LB", "B"):
+                if on_mane and pos is not None and kind == "missense":
+                    benign_rows.append((gene, pos, record["variant_key"], record["stars"]))
+                    if record["stars"] >= GENE_COUNT_MIN_STARS:
+                        gene_missense.setdefault(gene, {"plp": set(), "blb": set()})["blb"].add(
+                            record["variant_key"] or record["hgvs_c"])
+                continue
+            counts["clinvar_plp"] += 1
             if kind in ("truncating", "splice") and record["stars"] >= 1:
                 truncating_keys.setdefault(gene, set()).add(record["variant_key"] or record["hgvs_c"])
-            on_mane = record["nm"] in mane
             if not on_mane or pos is None:
                 continue
             if kind == "truncating" and record["stars"] >= 1:
                 trunc_rows.append((gene, pos, record["variant_key"], record["stars"]))
             elif kind == "missense":
                 ref_aa = _P_RE.match(record["hgvs_p"]).group("ref")
-                missense_rows.append((gene, pos, ref_aa, alt, record["variant_key"], record["stars"]))
+                missense_rows.append((gene, pos, ref_aa, alt, record["variant_key"], record["stars"],
+                                      record["category"]))
+                if record["stars"] >= GENE_COUNT_MIN_STARS:
+                    gene_missense.setdefault(gene, {"plp": set(), "blb": set()})["plp"].add(
+                        record["variant_key"] or record["hgvs_c"])
         conn.executemany("INSERT INTO truncating VALUES (?,?,?,?)", trunc_rows)
-        conn.executemany("INSERT INTO missense VALUES (?,?,?,?,?,?)", missense_rows)
+        conn.executemany("INSERT INTO missense VALUES (?,?,?,?,?,?,?)", missense_rows)
+        conn.executemany("INSERT INTO benign_missense VALUES (?,?,?,?)", benign_rows)
+        conn.executemany("INSERT INTO missense_genes VALUES (?,?,?)",
+                         [(g, len(v["plp"]), len(v["blb"])) for g, v in sorted(gene_missense.items())])
         counts["truncating"], counts["missense"] = len(trunc_rows), len(missense_rows)
+        counts["benign_missense"], counts["missense_genes"] = len(benign_rows), len(gene_missense)
         lof_rows = []
         for gene in sorted(set(hi) | set(truncating_keys)):
             score = hi.get(gene, "")
@@ -286,6 +315,7 @@ def build_reference_db(
             """
             CREATE INDEX truncating_gene ON truncating(gene, protein_pos);
             CREATE INDEX missense_residue ON missense(gene, protein_pos);
+            CREATE INDEX benign_missense_residue ON benign_missense(gene, protein_pos);
             """
         )
         meta = {
@@ -300,6 +330,7 @@ def build_reference_db(
             }, ensure_ascii=False),
             "counts": json.dumps(counts),
             "min_truncating": str(min_truncating),
+            "gene_count_min_stars": str(GENE_COUNT_MIN_STARS),
         }
         conn.executemany("INSERT INTO meta VALUES (?,?)", sorted(meta.items()))
         conn.commit()
@@ -313,6 +344,13 @@ def build_reference_db(
 
 
 # ── read ───────────────────────────────────────────────────────────────────
+def _missense_entry(alt_aa, variant_key, stars, category) -> dict:
+    entry = {"alt_aa": alt_aa, "variant_key": variant_key, "stars": stars}
+    if category:
+        entry["category"] = category
+    return entry
+
+
 def load_ba1_exceptions(path: Path = BA1_EXCEPTIONS_PATH) -> set[str]:
     out: set[str] = set()
     try:
@@ -339,10 +377,16 @@ class SqliteReferences(References):
         self.recurrence = recurrence
         self._ba1 = load_ba1_exceptions() if ba1_exceptions is None else set(ba1_exceptions)
         self._tables = set()
+        self._missense_category = False
         if self._conn is not None:
             self._tables = {"lof_genes", "truncating_positions", "missense_by_residue"}
             if self._conn.execute("SELECT 1 FROM exons LIMIT 1").fetchone():
                 self._tables.add("exons")
+            names = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if {"benign_missense", "missense_genes"} <= names:      # schema ≥2
+                self._tables.update({"missense_window", "missense_genes"})
+            self._missense_category = "category" in {
+                r[1] for r in self._conn.execute("PRAGMA table_info(missense)")}
         if recurrence is not None:
             self._tables.add("recurrence")
         self.lof_mechanism = lru_cache(maxsize=None)(self._lof_mechanism)
@@ -377,10 +421,33 @@ class SqliteReferences(References):
     def clinvar_missense(self, gene, protein_pos):
         if self._conn is None:
             return None
+        category = "category" if self._missense_category else "NULL"
         rows = self._conn.execute(
-            "SELECT alt_aa, variant_key, stars FROM missense WHERE gene=? AND protein_pos=?",
+            f"SELECT alt_aa, variant_key, stars, {category} FROM missense WHERE gene=? AND protein_pos=?",
             (gene, int(protein_pos))).fetchall()
-        return [{"alt_aa": a, "variant_key": k, "stars": s} for a, k, s in rows]
+        return [_missense_entry(a, k, s, c) for a, k, s, c in rows]
+
+    def clinvar_missense_window(self, gene, start, end):
+        if self._conn is None or "missense_window" not in self._tables:
+            return None
+        rows = self._conn.execute(
+            "SELECT protein_pos, alt_aa, variant_key, stars, category FROM missense "
+            "WHERE gene=? AND protein_pos BETWEEN ? AND ?", (gene, int(start), int(end))).fetchall()
+        return [dict(_missense_entry(a, k, s, c), protein_pos=p) for p, a, k, s, c in rows]
+
+    def benign_missense_window(self, gene, start, end):
+        if self._conn is None or "missense_window" not in self._tables:
+            return None
+        rows = self._conn.execute(
+            "SELECT protein_pos, variant_key, stars FROM benign_missense "
+            "WHERE gene=? AND protein_pos BETWEEN ? AND ?", (gene, int(start), int(end))).fetchall()
+        return [{"protein_pos": p, "variant_key": k, "stars": s} for p, k, s in rows]
+
+    def missense_gene_counts(self, gene):
+        if self._conn is None or "missense_genes" not in self._tables or not gene:
+            return None
+        hit = self._conn.execute("SELECT plp, blb FROM missense_genes WHERE gene=?", (gene,)).fetchone()
+        return (int(hit[0]), int(hit[1])) if hit else (0, 0)
 
     def exon_skip(self, transcript, exon_number):
         if self._conn is None or "exons" not in self._tables or not exon_number:

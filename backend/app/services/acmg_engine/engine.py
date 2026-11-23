@@ -30,7 +30,7 @@ CRITERIA_ORDER = (
 )
 DEFAULT_STRENGTH = {
     "PVS1": "very_strong", "PS1": "strong", "PM1": "moderate", "PM2": "moderate",
-    "PM4": "moderate", "PM5": "moderate", "PP3": "supporting", "BA1": "stand_alone",
+    "PM4": "moderate", "PM5": "moderate", "PP2": "supporting", "PP3": "supporting", "BA1": "stand_alone",
     "BS1": "strong", "BP3": "supporting", "BP4": "supporting", "BP7": "supporting",
 }
 STRENGTH_LABEL = {
@@ -378,6 +378,8 @@ def _bp7(row: dict, rb: dict, splice: float | None, tool: str) -> Evidence | Non
     phylop = P.first_number(row.get("PHYLOP100"))
     limit = rb["conservation"]["phylop_not_conserved_below"]
     if phylop is None:
+        if rb["splicing"].get("bp7_without_phylop"):
+            return _met("BP7", "supporting", f"{where}；{tool} {splice:g}；缺 phyloP，只依剪接預測", rb)
         return Evidence("BP7", "not_evaluated", reason=f"{where}，缺 phyloP")
     if phylop >= limit:
         return Evidence("BP7", "not_met", reason=f"{where}，位置保守（phyloP {phylop:g}）")
@@ -420,22 +422,61 @@ def _same_residue(row: dict, ctx: Context, key: str, rb: dict) -> Evidence | Non
         return _met("PS1", "strong", f"與 ClinVar ≥2★ 致病變異 {same[0].get('variant_key')} 造成相同胺基酸改變 p.{ref_aa}{pos}{alt}", rb)
     other = [e for e in entries if e.get("alt_aa") != alt]
     if other:
-        return _met("PM5", "moderate", f"同一位置 p.{ref_aa}{pos} 另有 ClinVar ≥2★ 致病 missense（{other[0].get('alt_aa')}）", rb)
+        # Entries from schema-1 tables have no category: treat as pathogenic (previous behaviour).
+        pathogenic = [e for e in other if e.get("category", "P") == "P"]
+        best = (pathogenic or other)[0]
+        strength = "moderate" if pathogenic else rb.get("pm5", {}).get("lp_strength", "moderate")
+        grade = "致病" if pathogenic else "疑似致病"
+        return _met("PM5", strength, f"同一位置 p.{ref_aa}{pos} 另有 ClinVar ≥2★ {grade} missense（{best.get('alt_aa')}）", rb)
     return None
 
 
 def _pm1(row: dict, ctx: Context, rb: dict) -> Evidence | None:
     if not (P.consequences(row.get("CONSEQUENCE")) & P.MISSENSE):
         return None
-    spec = ctx.refs.vcep(P.text(row.get("GENE"))) or {}
+    gene = P.text(row.get("GENE"))
+    spec = ctx.refs.vcep(gene) or {}
     regions = spec.get("pm1_regions") or []
     parsed = P.hgvs_p(row.get("HGVS_P"))
-    if not regions or parsed is None:
+    if parsed is None:
         return None
     pos = parsed[1]
-    for start, end in regions:
-        if start <= pos <= end:
-            return _met("PM1", "moderate", f"位於 VCEP 定義的熱點區域 {start}–{end}", rb)
+    if regions:                                   # VCEP hotspots win; outside them no PM1
+        for start, end in regions:
+            if start <= pos <= end:
+                return _met("PM1", "moderate", f"位於 VCEP 定義的熱點區域 {start}–{end}", rb)
+        return None
+    cfg = rb.get("pm1_clinvar")
+    if not cfg:
+        return None
+    window = int(cfg["window"])
+    entries = ctx.refs.clinvar_missense_window(gene, pos - window, pos + window)
+    if entries is None:
+        return None
+    residues = {e["protein_pos"] for e in entries
+                if int(e.get("stars") or 0) >= cfg["min_stars"] and e["protein_pos"] != pos}
+    if len(residues) < cfg["supporting_residues"]:
+        return None
+    benign = [b for b in ctx.refs.benign_missense_window(gene, pos - window, pos + window) or []
+              if int(b.get("stars") or 0) >= cfg["benign_min_stars"]]
+    where = f"p.{pos} 前後 {window} 個胺基酸內有 {len(residues)} 個位置有 ClinVar ≥{cfg['min_stars']}★ 致病 missense"
+    if benign:
+        return Evidence("PM1", "not_met", reason=f"{where}，但也有 {len(benign)} 個良性 missense")
+    strength = "moderate" if len(residues) >= cfg["moderate_residues"] else "supporting"
+    return _met("PM1", strength, f"ClinVar 突變熱點：{where}，沒有良性 missense", rb)
+
+
+def _pp2(row: dict, ctx: Context, rb: dict) -> Evidence | None:
+    if not (P.consequences(row.get("CONSEQUENCE")) & P.MISSENSE):
+        return None
+    cfg = rb.get("pp2")
+    gene = P.text(row.get("GENE"))
+    counts = ctx.refs.missense_gene_counts(gene) if cfg else None
+    if counts is None:
+        return None
+    plp, blb = counts
+    if plp >= cfg["min_plp"] and blb / (plp + blb) <= cfg["max_benign_fraction"]:
+        return _met("PP2", "supporting", f"{gene} 的 ClinVar missense 以致病為主（致病 {plp}、良性 {blb}）", rb)
     return None
 
 
@@ -505,7 +546,8 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
                  _bp7(row, rb, splice, splice_tool),
                  _inframe(row, rb),
                  _same_residue(row, ctx, key, rb),
-                 _pm1(row, ctx, rb)):
+                 _pm1(row, ctx, rb),
+                 _pp2(row, ctx, rb)):
         if item is not None:
             evidence.append(item)
 
