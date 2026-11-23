@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "backend"))
 
 from app import config  # noqa: E402
-from app.services.acmg_engine.recurrence import WesRecurrence, sync_cases  # noqa: E402
+from app.services.acmg_engine.recurrence import WesRecurrence, load_roster, sync_cases  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -49,9 +49,11 @@ def main(argv=None) -> int:
                 if args.dry_run or store.remove_sample(sid):
                     removed.append(sid)
             summary = {"removed": removed, "patients": store.patient_count()}
+            roster = None
             if args.all or args.sample:
+                roster = load_roster() or {}
                 summary = sync_cases(store, args.root, None if args.all else args.sample,
-                                     force=args.force, prune=args.all, dry_run=args.dry_run)
+                                     force=args.force, prune=args.all, dry_run=args.dry_run, roster=roster)
                 summary["removed"] = removed + summary["removed"]
         finally:
             store.close()
@@ -68,6 +70,8 @@ def main(argv=None) -> int:
         "skipped": reasons,
         "patients": summary.get("patients"),
     }
+    if roster is not None:
+        report["roster_entries"] = len(roster)
     if args.verbose:
         report["skipped_cases"] = skipped
     print(json.dumps(report, ensure_ascii=False, indent=2))

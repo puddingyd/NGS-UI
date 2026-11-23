@@ -356,7 +356,7 @@ def test_update_wes_recurrence_cli(tmp_path):
                           env=env).stdout)
     assert dry["added"] == 1 and dry["skipped"] == {"測試檢體（T）": 1}
     report = json.loads(_run("update_wes_recurrence.py", "--all", "--root", root, "--db", db, env=env).stdout)
-    assert report["added"] == 1 and report["patients"] == 1
+    assert report["added"] == 1 and report["patients"] == 1 and report["roster_entries"] == 0
     removed = json.loads(_run("update_wes_recurrence.py", "--remove", "24WE0001-nckuh", "--db", db,
                               env=env).stdout)
     assert removed["removed"] == ["24WE0001-nckuh"] and removed["patients"] == 0
