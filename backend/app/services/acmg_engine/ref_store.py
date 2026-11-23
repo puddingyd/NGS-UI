@@ -165,9 +165,15 @@ def classify_clinvar(record: dict) -> tuple[str, str, int | None]:
 
 
 def parse_mane_gtf(path: Path) -> dict[tuple[str, int], dict]:
-    """(ENST unversioned, exon number) -> {cds_length, frameshift, fraction, last_exon}."""
-    exons: dict[str, int] = {}
-    cds: dict[tuple[str, int], int] = {}
+    """(ENST unversioned, exon number) -> {cds_length, frameshift, fraction, last_exon}.
+
+    Exons are numbered 5'→3' from their coordinates and strand (works whether
+    or not the GTF quotes ``exon_number`` or has it at all); CDS segments are
+    assigned to the exon that contains them.
+    """
+    exons: dict[str, list[tuple[int, int]]] = {}
+    strands: dict[str, str] = {}
+    cds: dict[str, list[tuple[int, int]]] = {}
     with _open(path) as handle:
         for line in handle:
             if line.startswith("#"):
@@ -175,30 +181,29 @@ def parse_mane_gtf(path: Path) -> dict[tuple[str, int], dict]:
             fields = line.rstrip("\n").split("\t")
             if len(fields) < 9 or fields[2] not in ("exon", "CDS"):
                 continue
-            attrs = dict(re.findall(r'(\S+) "([^"]*)"', fields[8]))
-            tx = attrs.get("transcript_id", "").split(".")[0]
-            number = attrs.get("exon_number", "")
-            if not tx.startswith("ENST") or not number.isdigit():
+            m = re.search(r'transcript_id\s+"?([^";\s]+)', fields[8])
+            tx = m.group(1).split(".")[0] if m else ""
+            if not tx.startswith("ENST"):
                 continue
-            number = int(number)
-            if fields[2] == "exon":
-                exons[tx] = max(exons.get(tx, 0), number)
-            else:
-                length = int(fields[4]) - int(fields[3]) + 1
-                cds[(tx, number)] = cds.get((tx, number), 0) + length
-    totals: dict[str, int] = {}
-    for (tx, _), length in cds.items():
-        totals[tx] = totals.get(tx, 0) + length
+            span = (int(fields[3]), int(fields[4]))
+            strands[tx] = fields[6]
+            (exons if fields[2] == "exon" else cds).setdefault(tx, []).append(span)
     out: dict[tuple[str, int], dict] = {}
-    for tx, n_exons in exons.items():
-        total = totals.get(tx, 0)
-        for number in range(1, n_exons + 1):
-            length = cds.get((tx, number), 0)
-            out[(tx, number)] = {
+    for tx, spans in exons.items():
+        ordered = sorted(set(spans), reverse=strands.get(tx) == "-")
+        lengths = [0] * len(ordered)
+        for c_start, c_end in cds.get(tx, ()):
+            for i, (e_start, e_end) in enumerate(ordered):
+                if e_start <= c_start and c_end <= e_end:
+                    lengths[i] += c_end - c_start + 1
+                    break
+        total = sum(lengths)
+        for i, length in enumerate(lengths):
+            out[(tx, i + 1)] = {
                 "cds_length": length,
                 "frameshift": length % 3 != 0,
                 "fraction": (length / total) if total else 0.0,
-                "last_exon": number == n_exons,
+                "last_exon": i == len(ordered) - 1,
             }
     return out
 

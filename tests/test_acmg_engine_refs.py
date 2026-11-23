@@ -360,3 +360,22 @@ def test_update_wes_recurrence_cli(tmp_path):
     removed = json.loads(_run("update_wes_recurrence.py", "--remove", "24WE0001-nckuh", "--db", db,
                               env=env).stdout)
     assert removed["removed"] == ["24WE0001-nckuh"] and removed["patients"] == 0
+
+
+def test_gtf_unquoted_exon_number_and_minus_strand(tmp_path):
+    attrs = 'gene_id "ENSG9"; transcript_id "ENST00000000009.2"; exon_number {n};'
+    lines = [
+        # minus strand: exon 1 is the rightmost; exon_number unquoted (GENCODE style)
+        ["chr2", "MANE", "exon", "900", "1000", ".", "-", ".", attrs.format(n=1)],
+        ["chr2", "MANE", "CDS", "900", "950", ".", "-", ".", attrs.format(n=1)],
+        ["chr2", "MANE", "exon", "500", "600", ".", "-", ".", attrs.format(n=2)],
+        ["chr2", "MANE", "CDS", "500", "600", ".", "-", ".", attrs.format(n=2)],
+        ["chr2", "MANE", "exon", "100", "200", ".", "-", ".", attrs.format(n=3)],
+        ["chr2", "MANE", "CDS", "150", "200", ".", "-", ".", attrs.format(n=3)],
+    ]
+    gtf = write_gz(tmp_path / "x.gtf.gz", tsv(lines))
+    exons = S.parse_mane_gtf(gtf)
+    assert exons[("ENST00000000009", 1)]["cds_length"] == 51
+    assert exons[("ENST00000000009", 2)] == {"cds_length": 101, "frameshift": True,
+                                              "fraction": pytest.approx(101 / 203), "last_exon": False}
+    assert exons[("ENST00000000009", 3)]["last_exon"] is True

@@ -26,6 +26,11 @@ from app import config  # noqa: E402
 from app.services.acmg_engine.recurrence import WesRecurrence, load_roster, sync_cases  # noqa: E402
 
 
+def _progress(index: int, total: int, sample_id: str) -> None:
+    if index == 1 or index % 25 == 0 or index == total:
+        print(f"[{index}/{total}] {sample_id}", file=sys.stderr, flush=True)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Maintain the WES recurrence table")
     ap.add_argument("--root", type=Path, default=Path(config.PIPELINE_OUT_ROOT))
@@ -53,7 +58,8 @@ def main(argv=None) -> int:
             if args.all or args.sample:
                 roster = load_roster() or {}
                 summary = sync_cases(store, args.root, None if args.all else args.sample,
-                                     force=args.force, prune=args.all, dry_run=args.dry_run, roster=roster)
+                                     force=args.force, prune=args.all, dry_run=args.dry_run, roster=roster,
+                                     progress=_progress)
                 summary["removed"] = removed + summary["removed"]
         finally:
             store.close()

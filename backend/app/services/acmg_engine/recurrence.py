@@ -199,7 +199,8 @@ def case_contribution(sample_dir: Path, sample_id: str, roster: dict | None = No
 
 
 def sync_cases(store: WesRecurrence, root: Path, sample_ids=None, *, force: bool = False,
-               prune: bool = False, dry_run: bool = False, roster: dict | None = None) -> dict:
+               prune: bool = False, dry_run: bool = False, roster: dict | None = None,
+               progress=None) -> dict:
     """Add/replace the given WES cases (all directories under ``root`` when None)."""
     root = Path(root)
     if roster is None:
@@ -209,7 +210,9 @@ def sync_cases(store: WesRecurrence, root: Path, sample_ids=None, *, force: bool
                             if p.is_dir() and not p.name.startswith((".", "_")))
     summary = {"added": [], "updated": [], "unchanged": [], "skipped": {}, "removed": []}
     seen = set()
-    for sid in sample_ids:
+    for index, sid in enumerate(sample_ids, 1):
+        if progress:
+            progress(index, len(sample_ids), sid)
         info = case_contribution(root / sid, sid, roster)
         if info["status"] != "ok":
             summary["skipped"][sid] = info["reason"]
