@@ -3,8 +3,8 @@
 
 Each WES case contributes the distinct variants of its 08 review TSV; a
 re-run replaces the old contribution.  Registered cases merge by MRN, others
-by sample ID without caller and ``_1``…``_N`` suffixes; ``…T`` test samples,
-``VAL-…`` validation runs and ``NA…`` reference standards are never added.  Safe to run repeatedly — unchanged cases are skipped.
+by sample ID without caller and ``_1``…``_N`` suffixes; only IDs starting
+with a two-digit year plus ``W``/``WE`` are counted, ``…T`` test samples never.  Safe to run repeatedly — unchanged cases are skipped.
 
     python3 scripts/acmg_engine/update_wes_recurrence.py --all            # scan every case
     python3 scripts/acmg_engine/update_wes_recurrence.py --sample 24WE0001-nckuh

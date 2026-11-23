@@ -1146,7 +1146,7 @@ $$
 **院內頻率。** 平台有兩種院內頻率資料，用途不同：
 
 - **院內 AF**（nckuh-af，`INHOUSE_AF`，由院內 WGS 世代建立，約 1,400 人，平台已在 post-processing 補入）：每人兩個 allele，所以 AN 最多約 2,800（2026-11-23 檢查：抽樣位點中位數 2,784）。該位點 AN ≥2,000（約 1,000 人以上在此位點有資料）且 AC ≥5 時（**暫定**；避免 2–4 個人就觸發 BS1），和 gnomAD 一樣納入 BA1、BS1、PM2 的「最大 AF」。
-- **WES 出現次數表**（新建，第 5.2.11 節）：統計每個變異出現在多少院內 WES 個案，用於 WES 個案的假象檢查（第 5.2.5 節第 0 步）。必須可以**增量更新**：舊 WES 個案的三級分析還沒全部補完，每個個案的貢獻單獨記錄，三級後處理完成時自動加入、重跑時整筆替換、刪除個案時移除，另有補算工具可分批加入舊個案；同一位病人的多個檢體只算一次：已登錄個案以病歷號合併（未登錄者用個案清單上的病歷號），檢體編號 `_1`～`_N` 視為同一位病人；結尾 `T` 的檢體是測試用，不納入（2026-11-23 確認）；`VAL-` 開頭的確效檢體與 `NA` 加數字的 Coriell 標準品也不納入（2026-11-23）。WGS 個案不另建表，直接使用院內 AF（2026-11-23 決定）。
+- **WES 出現次數表**（新建，第 5.2.11 節）：統計每個變異出現在多少院內 WES 個案，用於 WES 個案的假象檢查（第 5.2.5 節第 0 步）。必須可以**增量更新**：舊 WES 個案的三級分析還沒全部補完，每個個案的貢獻單獨記錄，三級後處理完成時自動加入、重跑時整筆替換、刪除個案時移除，另有補算工具可分批加入舊個案；同一位病人的多個檢體只算一次：已登錄個案以病歷號合併（未登錄者用個案清單上的病歷號），檢體編號 `_1`～`_N` 視為同一位病人；結尾 `T` 的檢體是測試用，不納入（2026-11-23 確認）；只納入檢體編號為兩位數年份加 `W` 或 `WE` 開頭的個案（例如 23W、24WE、以後的 27WE），`WA`、`25G`、`VAL-`、`NA` 標準品及其他編號都不納入（2026-11-23）。WGS 個案不另建表，直接使用院內 AF（2026-11-23 決定）。
 
 院內個案都是病人，常見的致病變異（例如 *GJB2*）在院內會比一般族群多，所以頻率規則的例外清單與 ClinVar ≥2★ 保護同樣適用於院內頻率。院內頻率原本列為研究項目、只顯示不計分；第 5.2.9 節的院內實測顯示大量重複出現的假象會被當成罕見變異，因此提前進第一版。
 
@@ -1357,7 +1357,7 @@ $$
 
 - `download_references.py`：下載 ClinVar `variant_summary.txt.gz` 與最新的 MANE Ensembl GTF 到 `NGS_UI_ACMG_REFS_DIR/raw/`（預設 `NGS_UI_HOME/biotools/acmg_refs/raw/`），旁邊的 `.json` 記錄來源網址與 Last-Modified；檔案沒變就跳過。驗證用的舊月份 ClinVar 以 `--clinvar-url` 指定封存檔。
 - `build_references.py`：把 ClinGen dosage、MANE summary、ClinVar 與 MANE GTF 建成單一 `acmg_refs.sqlite`（功能喪失機轉基因表、截斷變異位置表、missense 位置表、exon 表與版本資訊），整份建好並檢查後才替換舊檔。ClinVar 版本日期取下載時的 Last-Modified。
-- `update_wes_recurrence.py`：`--all` 掃描所有個案並移除已不符合的個案，`--sample` 加入或更新指定個案，`--remove` 移除，`--dry-run` 只列出會變動的內容。只納入 WES、有 08 review TSV、不是 `T` 測試檢體、`VAL-` 確效檢體或 `NA` 標準品的個案；`--list` 列出已納入的檢體；review TSV 沒變的個案略過。病人合併順序：已登錄的病歷號 → 個案清單（roster）上的病歷號 → 去掉 caller 後綴與 `_N` 的檢體編號。資料庫預設在 `NGS_UI_HOME/data/acmg_wes_recurrence.sqlite`（`NGS_UI_ACMG_WES_RECURRENCE_DB`）。
+- `update_wes_recurrence.py`：`--all` 掃描所有個案並移除已不符合的個案，`--sample` 加入或更新指定個案，`--remove` 移除，`--dry-run` 只列出會變動的內容。只納入 WES、有 08 review TSV、檢體編號為兩位數年份加 `W`／`WE` 開頭、不是 `T` 測試檢體的個案；`--list` 列出已納入的檢體；review TSV 沒變的個案略過。病人合併順序：已登錄的病歷號 → 個案清單（roster）上的病歷號 → 去掉 caller 後綴與 `_N` 的檢體編號。資料庫預設在 `NGS_UI_HOME/data/acmg_wes_recurrence.sqlite`（`NGS_UI_ACMG_WES_RECURRENCE_DB`）。
 
 功能喪失機轉的判斷：ClinGen HI=3 → 是；HI=40 → 否（即使 ClinVar 有截斷變異）；其餘依 ClinVar ≥1★ P/LP 截斷或典型剪接位變異的個數（任何轉錄本，≥2 個）→ 是；都沒有 → 未確立（PVS1 不評估）。
 

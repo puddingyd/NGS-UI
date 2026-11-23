@@ -7,8 +7,8 @@ old WES cases can be added later as their tertiary analysis is re-run.
 
 Patients: registered cases merge by MRN; otherwise the sample ID with its
 caller suffix and ``_1``…``_N`` replicate suffix removed.  Sample IDs ending in
-``T`` (test samples), validation runs ``VAL-…`` and Coriell reference
-standards ``NA…`` are never added.  WGS cases use the in-house AF instead.
+``T`` (test samples) are never added, and only IDs starting with a two-digit
+year plus ``W`` or ``WE`` (not ``WA``) are considered.  WGS cases use the in-house AF instead.
 """
 from __future__ import annotations
 
@@ -24,7 +24,9 @@ from . import parse as P
 _CALLER_SUFFIX = re.compile(r"-(nckuh|dragen|inhouse)$", re.IGNORECASE)
 _REPLICATE_SUFFIX = re.compile(r"_\d+$")
 _TEST_SAMPLE = re.compile(r"\d+T$")
-_REFERENCE_SAMPLE = re.compile(r"^(VAL-|NA\d{4,})", re.IGNORECASE)
+# Only WES sample IDs: two-digit year + "W" or "WE", not followed by another
+# letter (23W0012, 24WE0001, 27WE…); excludes WA/WG, 25G…, VAL-…, NA…, 20-27174…
+_WES_SAMPLE = re.compile(r"^\d{2}WE?(?![A-Za-z])")
 
 
 def base_sample_id(sample_id: str) -> str:
@@ -36,9 +38,9 @@ def is_test_sample(sample_id: str) -> bool:
     return bool(_TEST_SAMPLE.search(base_sample_id(sample_id)))
 
 
-def is_reference_sample(sample_id: str) -> bool:
-    """Validation runs (``VAL-…``) and Coriell reference standards (``NA12878``…)."""
-    return bool(_REFERENCE_SAMPLE.search(base_sample_id(sample_id)))
+def is_wes_sample_id(sample_id: str) -> bool:
+    """``YYW…``／``YYWE…`` sample IDs are the only ones counted."""
+    return bool(_WES_SAMPLE.match(base_sample_id(sample_id)))
 
 
 def patient_key(sample_id: str, mrn: str = "") -> str:
@@ -186,8 +188,8 @@ def case_contribution(sample_dir: Path, sample_id: str, roster: dict | None = No
     from ..test_types import normalize_test_type  # local import: keeps engine core standalone
 
     post = Path(sample_dir) / "08_postprocessing"
-    if is_reference_sample(sample_id):
-        return {"status": "skip", "reason": "標準品／確效檢體（VAL-、NA）"}
+    if not is_wes_sample_id(sample_id):
+        return {"status": "skip", "reason": "檢體編號不在納入範圍（只收 YYW／YYWE）"}
     if is_test_sample(sample_id):
         return {"status": "skip", "reason": "測試檢體（T）"}
     if not post.is_dir():

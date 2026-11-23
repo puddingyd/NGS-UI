@@ -244,9 +244,11 @@ def test_patient_keys():
     assert R.is_test_sample("23WE0044T-nckuh")
     assert not R.is_test_sample("26T00970-dragen")      # TITAN IDs contain T but do not end with it
     assert not R.is_test_sample("24WE0001_2-nckuh")
-    assert R.is_reference_sample("VAL-23-WGS-nckuh") and R.is_reference_sample("VAL-2")
-    assert R.is_reference_sample("NA12878-dragen") and R.is_reference_sample("NA10080-WGS-dragen")
-    assert not R.is_reference_sample("26NGS-02-dragen") and not R.is_reference_sample("24WE0001-nckuh")
+    for sid in ("23W0012-nckuh", "24WE0001-nckuh", "26WE0052", "27WE0001_2-dragen", "23WE0044T-nckuh"):
+        assert R.is_wes_sample_id(sid), sid
+    for sid in ("26WA0001-nckuh", "25G00002-dragen", "VAL-2", "VAL-23-WGS-nckuh", "NA10080-1-nckuh",
+                "20-27174-nckuh", "26-26859-1-nckuh", "26T00970-dragen", "26NGS-02-dragen", "pipeline_info"):
+        assert not R.is_wes_sample_id(sid), sid
 
 
 SHARED = ("chr1", 1000, "C", "T")
@@ -384,18 +386,20 @@ def test_gtf_unquoted_exon_number_and_minus_strand(tmp_path):
     assert exons[("ENST00000000009", 3)]["last_exon"] is True
 
 
-def test_reference_samples_are_excluded_and_removed(tmp_path):
+def test_only_wes_sample_ids_are_kept(tmp_path):
     root = tmp_path / "tertiary_output"
     make_case(root, "24WE0001-nckuh", [SHARED])
     make_case(root, "VAL-2", [SHARED])
     make_case(root, "NA12878-nckuh", [SHARED])
+    make_case(root, "26WA0001-nckuh", [SHARED])
+    make_case(root, "25G00002-dragen", [SHARED])          # labelled WES but not a WES ID
     (root / "pipeline_info").mkdir()
     store = R.WesRecurrence(tmp_path / "rec.sqlite")
     store.upsert_sample("VAL-2", "id:VAL-2", {"old": 1}, ["chr1-1000-C-T"])   # added by an older version
     summary = R.sync_cases(store, root, roster={})
     assert summary["added"] == ["24WE0001-nckuh"]
     assert summary["removed"] == ["VAL-2"]
-    assert summary["skipped"]["NA12878-nckuh"].startswith("標準品")
-    assert summary["skipped"]["pipeline_info"] == "不是個案目錄"
+    for sid in ("NA12878-nckuh", "26WA0001-nckuh", "25G00002-dragen", "pipeline_info"):
+        assert summary["skipped"][sid].startswith("檢體編號不在納入範圍"), sid
     assert [r[0] for r in store.listing()] == ["24WE0001-nckuh"]
     store.close()
