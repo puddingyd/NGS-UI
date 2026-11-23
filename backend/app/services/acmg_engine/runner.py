@@ -318,6 +318,52 @@ def lookup_many(path: Path, variant_ids, *, detail: bool = False) -> dict[str, d
     return out
 
 
+def iter_results(path: Path, *, detail: bool = True):
+    """Yield ``(variant_id, result)`` for every stored variant (full result when ``detail``)."""
+    path = Path(path)
+    if not path.is_file():
+        return
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        zdict = b""
+        if detail:
+            hit = conn.execute("SELECT data FROM zdict WHERE id=1").fetchone()
+            zdict = bytes(hit[0]) if hit else b""
+        column = "detail" if detail else "summary"
+        for vid, value in conn.execute(f"SELECT variant_id, {column} FROM results"):
+            yield vid, json.loads(_decompress(value, zdict).decode("utf-8") if detail else value)
+    finally:
+        conn.close()
+
+
+def _load_json(path: Path) -> dict:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def case_inputs(sample_id: str) -> dict:
+    """Review TSV, results paths, effective test type (WES/WGS) and MRN of a published case."""
+    from .. import sample_layout, test_types
+
+    manifest = _load_json(sample_layout.review_manifest(sample_id))
+    meta = _load_json(sample_layout.state_file(sample_id, "sample_metadata.json"))
+    source = _load_json(sample_layout.state_file(sample_id, "pipeline_source.json"))
+    identity = str(meta.get("lis_id") or meta.get("sample_id") or sample_id)
+    test_type = test_types.normalize_test_type(
+        meta.get("test_type") or manifest.get("test_type") or source.get("seq_type") or "",
+        sample_id=identity, default="WES")
+    return {
+        "review": sample_layout.review_tsv(sample_id),
+        "out": sample_layout.state_file(sample_id, RESULTS_NAME, for_write=True),
+        "existing": sample_layout.state_file(sample_id, RESULTS_NAME),
+        "test_type": "WGS" if test_types.is_wgs_type(test_type) else "WES",
+        "mrn": str(meta.get("mrn") or "").strip(),
+    }
+
+
 # ── one case ───────────────────────────────────────────────────────────────
 def open_references(refs_dir: Path | None = None) -> SqliteReferences:
     from .ref_store import REFS_DB_NAME, default_refs_dir

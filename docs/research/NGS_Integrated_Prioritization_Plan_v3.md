@@ -1337,6 +1337,15 @@ $$
 | 5. 覆蓋率 | 隱性基因中 LOFTEE HC 的功能喪失變異拿到 PVS1 的比例；各條目「無法評估」的比例 | 「常沒被評到」的問題改善多少？ |
 | 6. 假象檢查 | 對被第 0 步擋下的變異抽樣，以 IGV、gnomAD 原始位點與 ClinVar 人工核對；比較 3%、5%、10% 門檻下被擋下的變異中真正致病者的比例 | 5% 門檻會不會誤擋真的致病變異？ |
 
+**實作（2026-11-23，實作步驟 5）**：`scripts/acmg_engine/validate_engine.py`（核心 `validation.py`）一次讀完所有個案的 review TSV 與規則引擎結果，輸出 `report.md`、`summary.json` 與三份變異表（ClinVar 已定論變異、被院內重複出現擋下的變異、WES 門檻候選），只寫彙總數字與變異座標／基因，不含檢體編號、病人或判讀者名稱；不改任何個案檔案。
+
+- 驗證 1：ClinVar ≥2★、無衝突的 P/LP 與 B/LB（每個變異只算一次），以遮住 ClinVar 與 VCEP 分類後重新評估的點數，和 pipeline、GeneBe 的點數比較（各自有分數者，以及三者皆有分數的共同集合）。時間切分：以舊版 `variant_summary` 另建參考表（`build_references.py --clinvar 舊檔 --out 另一個目錄`），再以 `--refs-dir` 與 `--t0-clinvar` 執行，只評 T0 之後才達 ≥2★ 的變異。
+- 驗證 2：`CLINGEN_VCEP_CRITERIA` 逐條比較引擎可評的 12 個條目（同樣遮住 ClinVar）；另列專家用了但引擎不評的條目。
+- 驗證 3：`manual_acmg` 目前版本的可重複使用條目，對到來源個案的引擎結果。
+- 驗證 4：`observations` 中狀態 1 的變異，在各自個案所有 review 變異中的名次；分別以平台現行公式（ACMG 換算分數＋表型分數）與只看 ACMG 點數，比較規則引擎、規則引擎（不含 ClinVar 採用）、pipeline、GeneBe 與平台現行來源。
+- 驗證 5：依 OMIM 遺傳模式分組，LOFTEE HC 功能喪失變異拿到 PVS1 的比例；各條目無法評估的次數；引擎與 pipeline、GeneBe 分類的對照。
+- 驗證 6：被擋下的變異清單，以及 WES 門檻 3%、5%、10% 下會被擋的變異數、其中 ClinVar 0–1★ P/LP 與功能喪失變異數。IGV 人工核對需另外抽樣進行。
+
 **避免循環。** 院內個案的致病變異可能由本實驗室提交到 ClinVar。回溯驗證時，ClinVar 規則與所有由 ClinVar 整理出來的參考表（功能喪失基因表、蛋白質位置表、截斷變異位置表），都必須使用個案簽收日之前的 ClinVar 版本。
 
 #### 5.2.11 參考表與需要 pipeline 補的欄位

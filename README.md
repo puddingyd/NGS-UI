@@ -1,6 +1,6 @@
 # NGS 分析平台 (NGS-UI)
 
-v10.45 補記：三級後處理新增 ACMG 規則引擎計算，結果存於 `08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`，目前只供驗證、不顯示也不改變報告；既有個案以 `scripts/acmg_engine/build_engine_results.py --all` 補算（見計畫書 §5.2.11）；補算不需 fastapi，但讀不到 OMIM 遺傳模式時會拒絕執行（`--allow-no-omim` 可強制），請用 ngs-ui 服務的 Python 執行。
+v10.45 補記：三級後處理新增 ACMG 規則引擎計算，結果存於 `08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`，目前只供驗證、不顯示也不改變報告；既有個案以 `scripts/acmg_engine/build_engine_results.py --all` 補算（見計畫書 §5.2.11）；補算不需 fastapi，但讀不到 OMIM 遺傳模式時會拒絕執行（`--allow-no-omim` 可強制），請用 ngs-ui 服務的 Python 執行。離線驗證以 `scripts/acmg_engine/validate_engine.py` 產生彙總報告（不含檢體編號、病人或判讀者名稱；見計畫書 §5.2.10）。
 
 v10.45 補記：檢體編號「年份＋G＋數字」（如 25G00002）一律視為 WGS，個案清單檢驗名稱未寫 WGS 時不再預設成 WES；已登錄成 WES 的這類個案重新載入即改用 WGS 規則。
 
