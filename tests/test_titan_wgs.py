@@ -23,6 +23,18 @@ def test_year_t_sample_ids_are_titan_wgs():
     assert patient_list_store._test_type_from_name("WES", "26T00039") == "TITAN-WGS"
 
 
+def test_year_g_sample_ids_are_wgs():
+    for sample_id in ("25G00002", "25G00002-dragen", "26G00132-dragen", "25G00125R-dragen"):
+        assert test_types.is_wgs_sample_id(sample_id)
+        assert test_types.normalize_test_type("WES", sample_id=sample_id) == "WGS"
+        assert sample_loader._effective_test_type({"lis_id": sample_id, "test_type": "WES"}, sample_id) == "WGS"
+    for sample_id in ("26WE0001", "26NGS-02-dragen", "26GA0001", "VAL-1"):
+        assert not test_types.is_wgs_sample_id(sample_id)
+    assert test_types.normalize_test_type("WES", sample_id="26WE0001") == "WES"
+    assert patient_list_store._test_type_from_name("全外顯子", "25G00002") == "WGS"
+    assert '/^\\d{2}G\\d/i.test(id)' in APP_JS
+
+
 def test_titan_wgs_uses_wgs_report_wording():
     assert test_types.is_wgs_type("TITAN-WGS")
     doc = Document()

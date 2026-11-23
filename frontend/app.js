@@ -25,7 +25,9 @@ const sampleTestFilters = new Set(SAMPLE_TEST_TYPES);
 let activeRohFilter = "default";
 
 function normalizeSampleTestType(value = "", sampleId = "") {
-  if (/^\d{2}T/i.test(String(sampleId || "").trim())) return "TITAN-WGS";
+  const id = String(sampleId || "").trim();
+  if (/^\d{2}T/i.test(id)) return "TITAN-WGS";
+  if (/^\d{2}G\d/i.test(id)) return "WGS";
   return String(value || "").trim().toUpperCase();
 }
 
@@ -11503,6 +11505,9 @@ function inferNewCaseTestType(entry) {
   const sampleIds = [entry.lis_id, entry.source_sample_id].filter(Boolean);
   if (sampleIds.some(sampleId => normalizeSampleTestType("", sampleId) === "TITAN-WGS")) {
     return "TITAN-WGS";
+  }
+  if (sampleIds.some(sampleId => normalizeSampleTestType("", sampleId) === "WGS")) {
+    return "WGS";
   }
   const pipelineType = String(entry.pipeline_type || "").toLowerCase();
   const sourcePath = String(entry.source_vcf_path || "").toLowerCase();

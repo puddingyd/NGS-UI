@@ -232,6 +232,8 @@ def _test_type_from_name(test_name: str, lis_id: str = "") -> str:
     """檢驗名稱/LIS ID → WES, WGS, or TITAN-WGS."""
     if test_types.is_titan_sample_id(lis_id):
         return test_types.TITAN_WGS
+    if test_types.is_wgs_sample_id(lis_id):
+        return test_types.WGS
     n = (test_name or "").upper()
     if "WGS" in n:
         return test_types.WGS
