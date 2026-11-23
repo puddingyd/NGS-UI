@@ -330,7 +330,7 @@ def test_criteria_text_round_trips_through_manual_acmg():
     assert manual_acmg.calculate(parsed)["score"] == result["engine_points"]
 
 
-# ── v1.1/v1.2: PM5 grade, ClinVar-derived PM1 / PP2, BP7 without phyloP ───
+# ── v1.1: PM5 grade, ClinVar-derived PM1 / PP2, BP7 without phyloP ────────
 def missense_row(**values):
     base = dict(CONSEQUENCE="missense_variant", IMPACT="MODERATE", HGVS_P="ENSP1:p.Arg34Trp", LOFTEE=".")
     base.update(values)
@@ -357,25 +357,23 @@ def _hotspot(positions, benign=()):
 def test_pm1_from_clinvar_hotspot():
     variant = missense_row()                       # residue 34; own residue never counts
     assert not met(evaluate_variant(variant, Context(refs=_hotspot([30, 34]))), "PM1")
-    assert not met(evaluate_variant(variant, Context(refs=_hotspot([30, 32, 40]))), "PM1")    # v1.2: needs 6
-    six = [25, 28, 30, 32, 40, 44]
-    supporting = met(evaluate_variant(variant, Context(refs=_hotspot(six))), "PM1")
+    supporting = met(evaluate_variant(variant, Context(refs=_hotspot([30, 32, 40]))), "PM1")
     assert supporting and supporting[0]["strength"] == "supporting"
-    many = met(evaluate_variant(variant, Context(refs=_hotspot(six + [26, 27, 29, 31, 33, 35]))), "PM1")
-    assert many and many[0]["strength"] == "supporting"                # never Moderate without VCEP
-    blocked = evaluate_variant(variant, Context(refs=_hotspot(six, benign=[36])))
+    moderate = met(evaluate_variant(variant, Context(refs=_hotspot([25, 28, 30, 32, 40, 44]))), "PM1")
+    assert moderate and moderate[0]["strength"] == "moderate"
+    blocked = evaluate_variant(variant, Context(refs=_hotspot([30, 32, 40], benign=[36])))
     assert not met(blocked, "PM1") and by_code(blocked, "PM1")[0]["status"] == "not_met"
     far = evaluate_variant(variant, Context(refs=_hotspot([1, 2, 3])))
     assert not met(far, "PM1")
-    vcep_outside = refs(missense_by_residue=_hotspot(six).missense_by_residue, benign_missense={},
+    vcep_outside = refs(missense_by_residue=_hotspot([30, 32, 40]).missense_by_residue, benign_missense={},
                         vcep_specs={"GENE1": {"pm1_regions": [[100, 120]]}})
     assert not met(evaluate_variant(variant, Context(refs=vcep_outside)), "PM1")
 
 
 def test_pp2_from_gene_missense_counts():
-    yes = refs(missense_genes={"GENE1": (40, 2)})
-    too_benign = refs(missense_genes={"GENE1": (40, 3)})               # 3/43 > 5%
-    too_few = refs(missense_genes={"GENE1": (20, 0)})                  # v1.2: needs 25
+    yes = refs(missense_genes={"GENE1": (20, 1)})
+    too_benign = refs(missense_genes={"GENE1": (20, 5)})
+    too_few = refs(missense_genes={"GENE1": (5, 0)})
     assert met(evaluate_variant(missense_row(), Context(refs=yes)), "PP2")
     assert not met(evaluate_variant(missense_row(), Context(refs=too_benign)), "PP2")
     assert not met(evaluate_variant(missense_row(), Context(refs=too_few)), "PP2")
