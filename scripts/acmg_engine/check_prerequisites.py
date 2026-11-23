@@ -104,6 +104,15 @@ def first_lines(path: str, n: int = 3) -> list[str]:
     return out
 
 
+def header_columns(path: str) -> list:
+    """Full first line split on tabs (never truncated)."""
+    try:
+        with open_text(path) as handle:
+            return handle.readline().rstrip("\n").split("\t")
+    except OSError:
+        return []
+
+
 def walk_limited(root: str, depth: int):
     root = root.rstrip("/")
     base = root.count(os.sep)
@@ -349,6 +358,8 @@ def check_cases(paths: dict, n_recent: int) -> None:
     with_review = collections.Counter()
     raw_cols = collections.defaultdict(collections.Counter)
     recent = collections.defaultdict(list)
+    wes_patients: set = set()
+    wes_test = 0
     for sid in sorted(os.listdir(root)):
         sample_dir = os.path.join(root, sid)
         if sid.startswith((".", "_")) or not os.path.isdir(sample_dir):
@@ -360,10 +371,22 @@ def check_cases(paths: dict, n_recent: int) -> None:
         acmg_dir = os.path.join(sample_dir, "03_acmg")
         raws = sorted(f for f in os.listdir(acmg_dir) if f.endswith(".snv_indel.acmg.tsv")) if os.path.isdir(acmg_dir) else []
         if raws:
-            cols = first_lines(os.path.join(acmg_dir, raws[0]), 1)[0].count("\t") + 1
-            raw_cols[group][cols] += 1
+            raw_cols[group][len(header_columns(os.path.join(acmg_dir, raws[0])))] += 1
         else:
-            raw_cols[group]["沒有 03_acmg"] += 1
+            raw_value = str(load_json(scoped(post, sid, "layout.json")).get("raw_tsv")
+                            or load_json(scoped(post, sid, "pipeline_source.json")).get("source_path") or "")
+            if raw_value and not os.path.isabs(raw_value):
+                raw_value = os.path.join(sample_dir, raw_value)
+            if raw_value and os.path.isfile(raw_value):
+                raw_cols[group][f"沒有 03_acmg（原始檔在別處，{len(header_columns(raw_value))} 欄）"] += 1
+            else:
+                raw_cols[group]["沒有 03_acmg（找不到原始檔）"] += 1
+        if group == "WES":
+            base = re.sub(r"-(nckuh|dragen|inhouse)$", "", sid)
+            if re.search(r"\d+T$", base):
+                wes_test += 1
+            else:
+                wes_patients.add(re.sub(r"_\d+$", "", base))
         review = scoped(post, sid, "snv_indel.review.tsv")
         if os.path.isfile(review):
             with_review[group] += 1
@@ -371,6 +394,8 @@ def check_cases(paths: dict, n_recent: int) -> None:
     for group in sorted(by_type):
         cols = "、".join(f"{k} 欄 {v} 例" if isinstance(k, int) else f"{k} {v} 例" for k, v in sorted(raw_cols[group].items(), key=str))
         show(group, f"{by_type[group]} 例；有 review TSV {with_review[group]} 例；03_acmg 欄位數：{cols}")
+    if by_type.get("WES"):
+        show("WES 出現次數表的基數", f"排除 T（test）{wes_test} 例、合併 _1～_N 後約 {len(wes_patients)} 位病人（尚未用病歷號合併）")
     for group in sorted(recent):
         picks = sorted(recent[group], reverse=True)[:n_recent]
         if not picks:
@@ -379,7 +404,7 @@ def check_cases(paths: dict, n_recent: int) -> None:
         print(f"      個案：{', '.join(sid for _, sid, _ in picks)}")
         counts = collections.Counter()
         for _, _, review in picks:
-            header = set(first_lines(review, 1)[0].split("\t"))
+            header = set(header_columns(review))
             for col in REVIEW_COLUMNS:
                 counts[col] += col in header
         for col in REVIEW_COLUMNS:
@@ -411,9 +436,14 @@ def main(argv=None) -> int:
     ap.add_argument("--home", help="NGS_UI_HOME (default $NGS_UI_HOME or ~/NGS_UI)")
     ap.add_argument("--cases", type=int, default=10, help="recent cases per test type to inspect")
     ap.add_argument("--no-network", action="store_true", help="skip download reachability checks")
+    ap.add_argument("--only-cases", action="store_true", help="run only the case section (section 5)")
     args = ap.parse_args(argv)
     print("ACMG 規則引擎前提檢查（只讀，不寫入任何檔案）")
     paths = check_environment(args)
+    if args.only_cases:
+        check_cases(paths, max(1, args.cases))
+        print("\n完成。請把以上輸出整段貼回。")
+        return 0
     check_classifier(paths)
     check_pipeline_refs(paths)
     check_resources(paths)
