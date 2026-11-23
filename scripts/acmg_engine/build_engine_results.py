@@ -66,9 +66,41 @@ def _count_reasons(skipped: dict) -> dict:
     return counts
 
 
-def backfill(sample_ids, *, force: bool, dry_run: bool, refs, recurrence) -> dict:
-    from app.workers.dragen_run import _acquire_sample_locks, _release_sample_locks
+def _acquire_sample_lock(sample_id: str):
+    """Same non-blocking lock file the tertiary worker uses (dragen_run).
 
+    Re-implemented here so the backfill needs only the standard library and
+    does not import the web stack (fastapi) through dragen_run.
+    """
+    import fcntl
+    import os
+    from app import config
+
+    lock_dir = config.TERTIARY_JOBS_DIR / ".sample_locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    handle = (lock_dir / f"{sample_id}.lock").open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        handle.close()
+        raise RuntimeError(f"三級分析正在處理 {sample_id}") from exc
+    handle.seek(0)
+    handle.truncate()
+    handle.write(f"pid={os.getpid()} acmg_engine_backfill\n")
+    handle.flush()
+    return handle
+
+
+def _release_sample_lock(handle) -> None:
+    import fcntl
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def backfill(sample_ids, *, force: bool, dry_run: bool, refs, recurrence) -> dict:
     report = {"built": [], "current": [], "skipped": {}, "failed": {}}
     for index, sid in enumerate(sample_ids, 1):
         if index == 1 or index % 25 == 0 or index == len(sample_ids):
@@ -84,7 +116,7 @@ def backfill(sample_ids, *, force: bool, dry_run: bool, refs, recurrence) -> dic
             report["built"].append(sid)
             continue
         try:
-            locks = _acquire_sample_locks([sid])
+            lock = _acquire_sample_lock(sid)
         except RuntimeError as exc:
             report["skipped"][sid] = str(exc)
             continue
@@ -97,7 +129,7 @@ def backfill(sample_ids, *, force: bool, dry_run: bool, refs, recurrence) -> dic
         except Exception as exc:  # noqa: BLE001 — report and continue with the next case
             report["failed"][sid] = f"{type(exc).__name__}: {exc}"
         finally:
-            _release_sample_locks(locks)
+            _release_sample_lock(lock)
     return report
 
 
@@ -113,7 +145,16 @@ def main(argv=None) -> int:
     ap.add_argument("--recurrence-db", type=Path, default=None)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--allow-no-omim", action="store_true",
+                    help="build even when OMIM inheritance cannot be read (recessive rules skipped)")
     args = ap.parse_args(argv)
+
+    omim = runner.omim_status()
+    if omim != "loaded" and not args.review and not args.dry_run and not args.allow_no_omim:
+        print(f"讀不到 OMIM 遺傳模式（{sys.executable}）。這樣算出的結果會漏掉隱性遺傳規則，"
+              "所以停止。請改用 ngs-ui 服務的 Python 執行（它裝有 openpyxl），"
+              "或確認 OMIM.xlsx／omim.sqlite 存在；確定要略過請加 --allow-no-omim。", file=sys.stderr)
+        return 2
 
     started = time.time()
     refs = runner.open_references(args.refs_dir)
@@ -127,6 +168,7 @@ def main(argv=None) -> int:
                                       test_type=test_type, refs=refs, recurrence=recurrence, mrn=args.mrn)
             print(f"[acmg-engine] sample={stats['sample_id']} variants={stats['variants']} "
                   f"seconds={stats['seconds']} tables={','.join(stats['reference_tables']) or 'none'} "
+                  f"omim={stats['omim']} "
                   f"classes={json.dumps(stats['classes'], ensure_ascii=False)}", flush=True)
             return 0
         if not (args.all or args.sample):
@@ -144,6 +186,8 @@ def main(argv=None) -> int:
         "skipped": _count_reasons(report["skipped"]),
         "failed": report["failed"],
         "reference_tables": sorted(refs.available),
+        "omim": omim,
+        "python": sys.executable,
         "seconds": round(time.time() - started),
     }, ensure_ascii=False, indent=2))
     return 1 if report["failed"] else 0

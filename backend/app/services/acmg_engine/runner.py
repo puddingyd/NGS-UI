@@ -131,6 +131,19 @@ def omim_moi(gene: str) -> set | None:
     return codes or None
 
 
+def omim_status() -> str:
+    """"loaded" when OMIM inheritance can be read, else "unavailable".
+
+    omim_store fails silently (missing openpyxl, unreadable workbook), which
+    would quietly drop every recessive-gene rule; callers check this first.
+    """
+    try:
+        from .. import omim_store
+        return "loaded" if omim_store.is_loaded() else "unavailable"
+    except Exception:
+        return "unavailable"
+
+
 # ── evaluation ─────────────────────────────────────────────────────────────
 def evaluate_rows(groups: dict[str, list[dict]], *, test_type: str, refs: References,
                   moi_fn=omim_moi, rulebook: dict | None = None):
@@ -270,7 +283,10 @@ def read_manifest(path: Path) -> dict | None:
 
 def is_current(path: Path, review_tsv: Path, refs: References) -> bool:
     manifest = read_manifest(path)
-    return bool(manifest) and manifest.get("core") == core_signature(review_tsv, refs)
+    if not manifest or manifest.get("core") != core_signature(review_tsv, refs):
+        return False
+    # Built while OMIM could not be read: recessive rules were skipped.
+    return manifest.get("omim") != "unavailable"
 
 
 def lookup_many(path: Path, variant_ids, *, detail: bool = False) -> dict[str, dict]:
@@ -351,15 +367,17 @@ def build_case(*, review_tsv: Path, out: Path, sample_id: str, test_type: str,
             classes[result["classification"]] = classes.get(result["classification"], 0) + 1
             yield vid, result
 
+    omim = omim_status() if moi_fn is omim_moi else ("custom" if moi_fn else "none")
     manifest = {
         "sample_id": sample_id,
         "test_type": test_type,
         "core": core_signature(review_tsv, refs),
         "recurrence": recurrence.signature() if recurrence is not None and test_type == "WES" else None,
         "reference_tables": sorted(refs.available),
+        "omim": omim,
     }
     count = write_results(out, _results(), manifest)
-    return {"sample_id": sample_id, "variants": count, "classes": classes,
+    return {"sample_id": sample_id, "variants": count, "classes": classes, "omim": omim,
             "seconds": round(time.time() - started, 1), "reference_tables": sorted(refs.available)}
 
 

@@ -1366,7 +1366,7 @@ $$
 - 評估 WES 個案的出現次數時，排除個案本人（同一位病人的其他檢體也一併排除），避免自己的變異被算成「院內常見」。
 - 三級分析發布個案後自動把 WES 個案加入或更新出現次數表；從三級分析清單完整刪除個案時同步移除。
 - 主畫面載入個案時，把結果檔的摘要附到每個變異（`engine_acmg`，狀態 current／stale）；gene search 查到 review TSV 以外的變異時當場計算（狀態 on_demand）。畫面尚未顯示，留待步驟 7 取代 pipeline ACMG。
-- 既有個案用 `build_engine_results.py --all` 補算（只算缺少或過期的個案，取得三級 sample lock，執行中的個案會略過）。
+- 既有個案用 `build_engine_results.py --all` 補算（只算缺少或過期的個案，取得三級 sample lock，執行中的個案會略過）。補算只需標準函式庫加讀 OMIM 的套件，不載入網頁服務（fastapi）；讀不到 OMIM 遺傳模式時拒絕執行（否則會靜默漏掉隱性遺傳規則），可用 `--allow-no-omim` 強制。結果檔記錄當時 OMIM 是否可讀，讀不到時產生的結果一律視為過期，下次補算重做。
 
 功能喪失機轉的判斷：ClinGen HI=3 → 是；HI=40 → 否（即使 ClinVar 有截斷變異）；其餘依 ClinVar ≥1★ P/LP 截斷或典型剪接位變異的個數（任何轉錄本，≥2 個）→ 是；都沒有 → 未確立（PVS1 不評估）。
 

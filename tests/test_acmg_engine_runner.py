@@ -126,8 +126,14 @@ def _env(tmp_path):
 
 
 def _cli(tmp_path, *args):
+    # A fastapi that cannot be imported: the backfill must not need the web stack.
+    blocker = tmp_path / "no_web"
+    (blocker / "fastapi").mkdir(parents=True, exist_ok=True)
+    (blocker / "fastapi" / "__init__.py").write_text("raise ImportError('fastapi blocked in test')\n")
+    env = _env(tmp_path)
+    env["PYTHONPATH"] = os.pathsep.join([str(blocker), env["PYTHONPATH"]])
     return subprocess.run([sys.executable, str(REPO / "scripts/acmg_engine/build_engine_results.py"), *map(str, args)],
-                          capture_output=True, text=True, env=_env(tmp_path))
+                          capture_output=True, text=True, env=env)
 
 
 def test_cli_staged_case(tmp_path):
@@ -151,13 +157,28 @@ def test_cli_backfill_only_rebuilds_stale(tmp_path):
     root = tmp_path / "root"
     post = _published_case(root, "24WE0001-nckuh", [LOF])
     (root / "24WE0002-nckuh" / "08_postprocessing").mkdir(parents=True)    # no review TSV
-    first = json.loads(_cli(tmp_path, "--all").stdout)
+    refused = _cli(tmp_path, "--all")                                     # no OMIM in this sandbox
+    assert refused.returncode == 2 and "OMIM" in refused.stderr
+    assert not (post / "24WE0001-nckuh.snv_acmg_engine.sqlite").exists()
+    first = json.loads(_cli(tmp_path, "--all", "--allow-no-omim").stdout)
     assert first["built"] == 1 and first["skipped"] == {"沒有 review TSV": 1}
+    assert first["omim"] == "unavailable"
     assert (post / "24WE0001-nckuh.snv_acmg_engine.sqlite").is_file()
-    second = json.loads(_cli(tmp_path, "--all").stdout)
-    assert second["built"] == 0 and second["current"] == 1
-    forced = json.loads(_cli(tmp_path, "--sample", "24WE0001-nckuh", "--force").stdout)
+    second = json.loads(_cli(tmp_path, "--all", "--allow-no-omim").stdout)
+    assert second["built"] == 1                    # built without OMIM → never counted as current
+    assert (tmp_path / "data" / "jobs" / "tertiary" / ".sample_locks" / "24WE0001-nckuh.lock").is_file()
+    forced = json.loads(_cli(tmp_path, "--sample", "24WE0001-nckuh", "--force", "--allow-no-omim").stdout)
     assert forced["built"] == 1
+
+
+def test_results_current_only_when_omim_was_read(tmp_path):
+    review = write_review(tmp_path / "S1.snv_indel.review.tsv", [LOF])
+    out = tmp_path / "S1.snv_acmg_engine.sqlite"
+    runner.build_case(review_tsv=review, out=out, sample_id="S1", test_type="WES", refs=refs(),
+                      recurrence=None, moi_fn=lambda gene: {"AD"})
+    assert runner.read_manifest(out)["omim"] == "custom" and runner.is_current(out, review, refs())
+    runner.write_results(out, iter(()), dict(runner.read_manifest(out), omim="unavailable"))
+    assert not runner.is_current(out, review, refs())
 
 
 def test_update_locked_adds_and_removes(tmp_path, monkeypatch):
