@@ -1,0 +1,7 @@
+# BA1/BS1 exception list for the NGS-UI ACMG rule engine (plan §5.2.4).
+# Variants listed here never receive BA1 or BS1 even when common; the engine
+# flags the frequency conflict instead. Most common-but-pathogenic variants
+# are already protected because ClinVar >=2-star P/LP is exempt.
+# Fill from Ghosh et al. 2018 (Hum Mutat 39:1525, Table) and in-house review;
+# one variant per line, key = chrN-POS-REF-ALT (GRCh38, VCF representation).
+variant_key	source	note

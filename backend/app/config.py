@@ -291,6 +291,19 @@ INHOUSE_AF_DB = Path(os.environ.get(
     BIOTOOLS_DIR / "inhouse_af" / "inhouse_af.hg38.vcf.gz",
 ))
 
+# ACMG rule engine (docs/research/NGS_Integrated_Prioritization_Plan_v3.md
+# §5.2). Reference tables built by scripts/acmg_engine/build_references.py
+# (ClinVar variant_summary + ClinGen HI + MANE); the WES recurrence table is
+# patient-derived server state, updated incrementally per WES case.
+ACMG_REFS_DIR = Path(os.environ.get(
+    "NGS_UI_ACMG_REFS_DIR",
+    BIOTOOLS_DIR / "acmg_refs",
+))
+ACMG_WES_RECURRENCE_DB = Path(os.environ.get(
+    "NGS_UI_ACMG_WES_RECURRENCE_DB",
+    DATA_ROOT / "acmg_wes_recurrence.sqlite",
+))
+
 # OMIM annotation table (xlsx). Loaded once at first use and lazily
 # reloaded when the file mtime changes. Empty value or missing file
 # disables OMIM annotation; variants render with empty Disease lists.
