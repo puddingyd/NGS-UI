@@ -1086,19 +1086,19 @@ $$
 
 #### 5.2.2 放在哪裡：NGS-UI 的後處理
 
-規則引擎放在 NGS-UI 的三級分析後處理（`scripts/postprocess_batch.py` 的一個步驟），不放在 pipeline 裡。理由：
+規則引擎放在 NGS-UI 的三級分析後處理（`scripts/postprocess_batch.py` 的一個步驟），不放在 pipeline 裡。三級輸出統一放在 `/home/datalake_Intermediate/pipeline/tertiary_output/{LIS_ID}/`：pipeline 寫 `00`–`07`，NGS-UI 的衍生檔與判讀狀態寫在 `08_postprocessing/`。理由：
 
 1. **改規則不用重跑 pipeline。** 規則或參考表更新時，只要重跑規則引擎（每個個案幾秒到一分鐘），不必重跑 VEP 與 Nextflow。
 2. **舊個案可以一起更新。** 每個個案的結果都記錄規則版本；版本改變時可以批次重算，並列出分類改變的變異。
 3. **平台已有的資料可以直接用。** 平台 OMIM 資料庫的遺傳模式（與第 6 章同一個來源）、每週更新的 ClinVar 快照、GIAB 困難區域標記（`GIAB_STRATA`）、dead-zone 資訊都在 NGS-UI 這一端。
-4. **pipeline 與 GeneBe 的結果保留作對照。** TSV 中的 `ACMG_*` 與 `GENEBE_ACMG_*` 欄位不刪，用來比較與除錯。
+4. **pipeline 與 GeneBe 的結果保留作對照。** pipeline 的 `ACMG_*` 欄位與 GeneBe 的 `GENEBE_ACMG_*` 欄位不刪，用來比較與除錯。
 
 **輸入與輸出：**
 
 | 項目 | 內容 |
 |---|---|
-| 輸入 | `snv_indel.annotated.tsv`（pipeline v3.6 的 81 欄，加上 NGS-UI 補的 `SPLICEAI_MAX`、`GIAB_STRATA` 等欄位）、版本化的規則檔、參考表（第 5.2.11 節） |
-| 輸出 | 每個個案一個附屬檔 `snv_acmg_auto.tsv`（以變異 id 對應），以及記錄規則版本與參考表版本的 manifest。**不改寫原始 TSV**：改寫會讓 gene index 的位置全部錯開，必須重建（GIAB 回補就遇過這個問題） |
+| 輸入 | `03_acmg/{source}.snv_indel.acmg.tsv`（完整 SNV 來源，不可改寫；v3.6 起 81 欄，v3.8 起 82 欄，一律依欄名讀取）＋ `08_postprocessing/{LIS_ID}.snv_annotations.sqlite`（NGS-UI 補的 SpliceAI、GIAB、GeneBe、院內 AF 等 sparse overlay）、版本化的規則檔、參考表（第 5.2.11 節） |
+| 輸出 | 每個個案一個附屬檔 `08_postprocessing/{LIS_ID}.snv_acmg_auto.tsv`（以變異 id 對應），以及記錄規則版本與參考表版本的 manifest。`03_acmg` 的原始 TSV 是唯一完整來源，不改寫；gene index 也依它的位置建立 |
 | 每個變異的欄位 | `AUTO_ACMG_POINTS`（點數）、`AUTO_ACMG_CLASS`（分類）、`AUTO_ACMG_CRITERIA`（成立的條目與強度，如 `PVS1_Strong,PM2_Supporting`）、`AUTO_ACMG_NOT_EVALUATED`（因缺資料而無法評估的條目）、`AUTO_ACMG_NOTES`（每一條的判斷依據與數值）、`CLINVAR_RULE`（採用、下限或無） |
 | 何時計算 | 三級分析後處理時，對整份 TSV 計算。manifest 記錄的規則或參考表版本改變時，載入個案會自動重算（比照現行 review TSV 的 signature 機制） |
 
@@ -1141,7 +1141,7 @@ $$
 | **PP4、BP5** | 與表型重複計分，或推論循環（第 5.2.8 節） | — | — | 排除 |
 | **PP5、BP6** | ClinGen SVI 建議停用：拿別人的分類當證據會變成循環論證。ClinVar 改用第 5.2.8 節的方式處理 | — | Biesecker & Harrison 2018 | 不使用（與 v3.1 相同） |
 
-**「大型族群資料」指哪些。** Ghosh 2018 要求族群資料至少有 2,000 個 allele，否則少數幾個人帶就可能讓頻率超過門檻。TSV 中符合的是 gnomAD v2.1.1 exome（全體、東亞）、gnomAD v2.1.1 genome（全體）、gnomAD v4.1 joint（全體、東亞，約 80 萬人；v3.6 標為「參考用」，規則引擎改為正式使用）。gnomAD v2.1.1 genome 東亞（約 1,560 個 allele）與 1000 Genomes 東亞（約 1,000 個 allele）樣本太小，只顯示、不用於 BA1、BS1、PM2：在 1,560 個 allele 中看到 2 個，頻率就是 0.13%，已經超過 0.1% 的 BS1 門檻。
+**「大型族群資料」指哪些。** Ghosh 2018 要求族群資料至少有 2,000 個 allele，否則少數幾個人帶就可能讓頻率超過門檻。TSV 中符合的是 gnomAD v2.1.1 exome（全體、東亞）、gnomAD v2.1.1 genome（全體）、gnomAD v4.1 joint（全體、東亞，約 80 萬人；pipeline 說明文件標為「參考用」，規則引擎改為正式使用）。gnomAD v2.1.1 genome 東亞（約 1,560 個 allele）與 1000 Genomes 東亞（約 1,000 個 allele）樣本太小，只顯示、不用於 BA1、BS1、PM2：在 1,560 個 allele 中看到 2 個，頻率就是 0.13%，已經超過 0.1% 的 BS1 門檻。
 
 TSV 沒有各位點實際的 allele 數（AN），所以無法排除「這個位點在 gnomAD 覆蓋不足」的情況；這是第一版的已知限制，建議 pipeline 補欄位（第 5.2.11 節）。
 
