@@ -7,15 +7,26 @@ process pool. ``fork`` lets workers inherit the parent's already-resolved
 lookup tables without pickling them; only the per-sample return values travel
 back. Forking a multi-threaded process is unsafe, so ``fork_map`` quietly
 runs serially whenever other threads exist (results are identical).
+
+Workers run under ``concurrent.futures.ProcessPoolExecutor`` rather than
+``multiprocessing.Pool``: when a worker is killed (e.g. by the kernel OOM
+killer on a WGS batch) the pool raises ``WorkerDied`` immediately instead of
+waiting forever for a result that will never arrive.
 """
 from __future__ import annotations
 
 import multiprocessing
 import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 
 _FN = None
 _ITEMS: list = []
+
+
+class WorkerDied(RuntimeError):
+    """A forked worker exited abnormally (killed, out of memory, crashed)."""
 
 
 def default_workers() -> int:
@@ -46,7 +57,8 @@ def _invoke(index: int):
 def fork_map(fn, items, workers: int | None = None) -> list:
     """``[fn(item) for item in items]``, in parallel when worthwhile.
 
-    Results keep the input order. Any worker exception is re-raised.
+    Results keep the input order. Any worker exception is re-raised; a
+    worker that dies without raising (SIGKILL / OOM) raises ``WorkerDied``.
     """
     global _FN, _ITEMS
     items = list(items)
@@ -60,7 +72,14 @@ def fork_map(fn, items, workers: int | None = None) -> list:
     _FN, _ITEMS = fn, items
     try:
         context = multiprocessing.get_context("fork")
-        with context.Pool(min(workers, len(items))) as pool:
-            return pool.map(_invoke, range(len(items)), chunksize=1)
+        try:
+            with ProcessPoolExecutor(max_workers=min(workers, len(items)), mp_context=context) as pool:
+                return list(pool.map(_invoke, range(len(items))))
+        except BrokenProcessPool as exc:
+            raise WorkerDied(
+                f"a post-processing worker process died ({len(items)} items, {workers} workers); "
+                "it was most likely killed for running out of memory — "
+                "lower NGS_UI_POSTPROC_WORKERS and retry"
+            ) from exc
     finally:
         _FN, _ITEMS = None, []

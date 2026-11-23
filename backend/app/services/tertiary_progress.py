@@ -61,7 +61,9 @@ DEFAULT_PROCESS_SECONDS: dict[str, float] = {
     "ANNOTSV_SV_DRAGEN": 480.0,
     "ANNOTSV_SV_NCKUH": 480.0,
     "VEP_ANNOTATE": 1920.0,
-    "PANGOLIN_SCORE": 1200.0,
+    # With the pipeline's Pangolin score cache (2026-11-21) nearly every
+    # splice candidate is a lookup: ~30-80 s per sample instead of ~8 min.
+    "PANGOLIN_SCORE": 60.0,
     "PARSE_CSQ": 960.0,
     "ACMG_CLASSIFY": 480.0,
     "PGX_STELLARPGX": 60.0,
@@ -71,6 +73,30 @@ DEFAULT_PROCESS_SECONDS: dict[str, float] = {
     "PGX_PARSE": 120.0,
 }
 UNKNOWN_PROCESS_SECONDS = 60.0
+
+# WGS differs mostly in size: ~6M SNV rows per sample instead of ~0.1M.
+# Measured on a 9-sample DRAGEN WGS Research-only batch (2026-11-22); used
+# until the profile has learned the WGS kind.
+DEFAULT_PROCESS_SECONDS_BY_SEQ: dict[str, dict[str, float]] = {
+    "WGS": {
+        "VEP_ANNOTATE": 3000.0,
+        "PANGOLIN_SCORE": 70.0,
+        "PARSE_CSQ": 510.0,
+        "ACMG_CLASSIFY": 62.0,
+        "PGX_OPTITYPE": 1100.0,
+    },
+}
+
+
+def _seq_of(kind: str) -> str:
+    return (kind or "").partition(":")[2].upper()
+
+
+def default_process_seconds(name: str, seq_type: str = "") -> float:
+    by_seq = DEFAULT_PROCESS_SECONDS_BY_SEQ.get((seq_type or "").upper(), {})
+    if name in by_seq:
+        return by_seq[name]
+    return DEFAULT_PROCESS_SECONDS.get(name, UNKNOWN_PROCESS_SECONDS)
 
 # Processes that only exist for one pipeline type / sequencing type.  Used to
 # keep the default (no-profile) denominator close to what will really run.
@@ -106,6 +132,32 @@ DEFAULT_SAMPLE_STEP_SECONDS: dict[str, float] = {
     "gene-index": 1.0,
     "cnv-rescue": 60.0,
 }
+# WGS starting point (same 2026-11-22 batch; post-processing figures assume
+# the sorted GeneBe lookup and streaming GIAB pass). Replaced by learning.
+DEFAULT_LINEAR_BY_SEQ: dict[str, dict[str, tuple[float, float]]] = {
+    "WGS": {
+        "phase:nextflow": (600.0, 3150.0),
+        "phase:postprocessing": (1000.0, 330.0),
+        "phase:promote": (5.0, 60.0),
+        "step:clinvar-latest": (30.0, 39.0),
+        "step:genebe": (120.0, 90.0),
+        "step:spliceai": (98.0, 53.0),
+        "step:giab-strata": (10.0, 20.0),
+        "step:inhouse-af": (300.0, 30.0),
+        "step:mane-refseq": (1.0, 15.0),
+        "step:litvar2": (20.0, 15.0),
+        "step:gpn-prefetch": (141.0, 40.0),
+    },
+}
+DEFAULT_SAMPLE_STEP_SECONDS_BY_SEQ: dict[str, dict[str, float]] = {
+    "WGS": {"snv-overlay": 120.0, "review-tsv": 180.0, "gene-index": 90.0, "cnv-rescue": 60.0},
+}
+
+
+def default_linear(kind: str, key: str) -> tuple[float, float]:
+    return DEFAULT_LINEAR_BY_SEQ.get(_seq_of(kind), {}).get(key, DEFAULT_LINEAR[key])
+
+
 MAX_OBSERVATIONS = 12
 
 # ---- small helpers ------------------------------------------------------
@@ -271,12 +323,13 @@ def estimate_seconds(profile: dict, kind: str, key: str, n: float) -> float:
     if n <= 0:
         return 0.0
     observations = (_entry(profile, kind).get("observations") or {}).get(key)
-    a, b = fit_linear(observations, DEFAULT_LINEAR[key])
+    a, b = fit_linear(observations, default_linear(kind, key))
     return max(0.0, a + b * n)
 
 
 def sample_step_seconds(profile: dict, kind: str) -> dict[str, float]:
     out = dict(DEFAULT_SAMPLE_STEP_SECONDS)
+    out.update(DEFAULT_SAMPLE_STEP_SECONDS_BY_SEQ.get(_seq_of(kind), {}))
     for step, seconds in (_entry(profile, kind).get("sample_steps") or {}).items():
         try:
             if float(seconds) > 0:
@@ -292,7 +345,7 @@ def process_seconds(profile: dict, kind: str, process: str) -> float:
         value = float(item.get("seconds") or 0)
     except (TypeError, ValueError):
         value = 0.0
-    return value if value > 0 else DEFAULT_PROCESS_SECONDS.get(process, UNKNOWN_PROCESS_SECONDS)
+    return value if value > 0 else default_process_seconds(process, _seq_of(kind))
 
 
 def noncached_share(profile: dict, kind: str, trace_rows: list[dict]) -> float:
@@ -469,14 +522,14 @@ class NextflowProgress:
             learned = (((self.profile.get("kinds") or {}).get(kind) or {}).get("processes") or {})
             if learned:
                 table = {
-                    name: (float(item.get("seconds") or DEFAULT_PROCESS_SECONDS.get(name, UNKNOWN_PROCESS_SECONDS)),
+                    name: (float(item.get("seconds") or default_process_seconds(name, seq_type)),
                            float(item.get("tasks_per_sample") or 1.0))
                     for name, item in learned.items()
                 }
             else:
                 table = {
-                    name: (secs, 1.0)
-                    for name, secs in DEFAULT_PROCESS_SECONDS.items()
+                    name: (default_process_seconds(name, seq_type), 1.0)
+                    for name in DEFAULT_PROCESS_SECONDS
                     if self._default_applies(name, pipeline_type, seq_type)
                 }
             for name, (secs, per_sample) in table.items():

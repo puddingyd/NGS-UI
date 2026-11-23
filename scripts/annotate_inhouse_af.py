@@ -316,12 +316,48 @@ def annotate(tsv: Path, db: str) -> int:
     return annotate_many([(tsv, "")], db)
 
 
+# Measured: ~335 bytes per indexed key (packed-int index) plus the shared
+# union/value tables; 400 is a safe round figure.
+_BYTES_PER_KEY = 400
+_MIN_MAX_KEYS = 8_000_000
+
+
+def _mem_available_bytes() -> int | None:
+    try:
+        with open("/proc/meminfo", encoding="ascii") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def default_max_keys() -> int:
+    """Per-sample keys held before one DB scan (env NGS_UI_POSTPROC_BATCH_MAX_KEYS).
+
+    Without the env override the budget is ~30% of available memory, never
+    below 8M. A fixed 8M meant one ~57M-line DB scan per WGS sample (~6M keys
+    each); a 125 GB server can index a whole 9-WGS batch (~53M keys, ~21 GB)
+    and scan once.
+    """
+    raw = os.environ.get("NGS_UI_POSTPROC_BATCH_MAX_KEYS", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    available = _mem_available_bytes()
+    if not available:
+        return _MIN_MAX_KEYS
+    return max(_MIN_MAX_KEYS, int(available * 0.30) // _BYTES_PER_KEY)
+
+
 def annotate_many(items, db: str, *, max_keys: int | None = None, workers: int = 1) -> int:
     """Annotate several TSVs with one DB pass per chunk of samples.
 
     ``items`` are ``(tsv_path, label)``. TSVs are grouped until their key
-    indexes reach ``max_keys`` (memory bound; env
-    ``NGS_UI_POSTPROC_BATCH_MAX_KEYS``, default 8M), then the ~57M-line sites
+    indexes reach ``max_keys`` (memory bound; see ``default_max_keys``), then the ~57M-line sites
     VCF is streamed once for the whole group instead of once per sample.
     With ``workers`` > 1 the per-TSV indexing and rewriting run in forked
     worker processes (``workers`` TSVs are indexed at a time).
@@ -330,10 +366,7 @@ def annotate_many(items, db: str, *, max_keys: int | None = None, workers: int =
         print(f"[inhouse-af] DB not found: {db} — skipping (no-op)", file=sys.stderr)
         return 0
     if max_keys is None:
-        try:
-            max_keys = int(os.environ.get("NGS_UI_POSTPROC_BATCH_MAX_KEYS", "8000000"))
-        except ValueError:
-            max_keys = 8_000_000
+        max_keys = default_max_keys()
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
     from app.services.parallel_tsv import fork_map  # noqa: PLC0415
 

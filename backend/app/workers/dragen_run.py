@@ -485,6 +485,38 @@ def _copy_ploidy_artifacts(
     return copied_vcf, copied_qc
 
 
+def _precompute_specialized(jobs: dict[str, dict], workers: int) -> dict[str, dict]:
+    """Run ``specialized.prepare_outputs`` for several samples in parallel.
+
+    Each call streams the sample's whole raw SNV TSV in Python (~33 s for a
+    WGS), so a batch was ~5 minutes of serial CPU. Calls run in spawned
+    processes (the worker may have threads, so no fork) and write only into
+    their own job-private post_dir. Returns ``{sid: result}`` for the calls
+    that succeeded; the caller computes any missing sample inline, so a
+    failure here (pickling, a broken pool, a real error) changes nothing but
+    timing -- a genuine error is then raised by the inline call as before.
+    """
+    if len(jobs) <= 1 or workers <= 1:
+        return {}
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    results: dict[str, dict] = {}
+    try:
+        with ProcessPoolExecutor(max_workers=min(workers, len(jobs)),
+                                 mp_context=multiprocessing.get_context("spawn")) as pool:
+            futures = {sid: pool.submit(specialized.prepare_outputs, **kwargs)
+                       for sid, kwargs in jobs.items()}
+            for sid, future in futures.items():
+                try:
+                    results[sid] = future.result()
+                except Exception:  # noqa: BLE001 — recomputed inline by the caller
+                    pass
+    except Exception:  # noqa: BLE001 — e.g. spawn unavailable; inline fallback
+        pass
+    return results
+
+
 def _pipeline_outputs_for(
     sample_id: str,
     source_sample_id: str,
@@ -1996,6 +2028,21 @@ def main() -> int:
         raw_tsv_by_sid: dict[str, Path] = {}
         staged_sample_dir_by_sid: dict[str, Path] = {}
         final_raw_tsv_by_sid: dict[str, Path] = {}
+        specialized_precomputed = _precompute_specialized(
+            {
+                sample["sample_id"]: dict(
+                    mode=mode,
+                    source_vcf=sample["vcf_path"],
+                    source_sample_id=sample["source_sample_id"],
+                    sample_id=sample["sample_id"],
+                    post_dir=staging_root / sample["source_sample_id"] / sample_layout.POSTPROCESSING_DIRNAME,
+                    raw_tsv=(existing_by_sid.get(sample["sample_id"]) or {})["snv_indel.acmg.tsv"],
+                )
+                for sample in samples
+                if (existing_by_sid.get(sample["sample_id"]) or {}).get("snv_indel.acmg.tsv") is not None
+            },
+            parallel_tsv.default_workers(),
+        )
         for sample in samples:
             sid = sample["sample_id"]
             prepare_started = time.monotonic()
@@ -2036,10 +2083,12 @@ def main() -> int:
                 research_only=bool(args.research_only), job_id=job_id,
             )
             _log(f"[source] {sid}: staged immutable SNV TSV {existing}")
-            specialized_result = specialized.prepare_outputs(
-                mode=mode, source_vcf=source_vcf, source_sample_id=source_sid,
-                sample_id=sid, post_dir=post_dir, raw_tsv=existing,
-            )
+            specialized_result = specialized_precomputed.get(sid)
+            if specialized_result is None:
+                specialized_result = specialized.prepare_outputs(
+                    mode=mode, source_vcf=source_vcf, source_sample_id=source_sid,
+                    sample_id=sid, post_dir=post_dir, raw_tsv=existing,
+                )
             specialized_warnings = list(dict.fromkeys(
                 w for loc in specialized_result.get("loci", {}).values() for w in loc.get("warnings", [])
             ))

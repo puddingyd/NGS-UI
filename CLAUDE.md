@@ -251,6 +251,7 @@ CNV/SV 是 AnnotSV 標準輸出（128 欄；`Annotation_mode` full=一個 SV 一
 - ACMG 五級色 class `.sig-p/.sig-lp/.sig-vus/.sig-lb/.sig-b` 是全域的；CNV/SV 的 ACMG 下拉用它們但**不要**加 `.acmg-class` class（會觸發 SNV 的 change handler 寫錯 state）。
 - Mito tier 1/2/3 是「有 FILTER 則先 PASS 過濾，無 FILTER 則全收」；MITOMAP 只回補欄位與輔助 tier 分類，不做 disease-relevant 預篩，也不顯示在卡片。其他 PASS mtDNA variants 會進 `MITO-3`。
 - Nextflow process 的 script 區塊裡**不要對 `params` 呼叫方法**（`params.containsKey(...)`、`params.get(...)`、`params[...]`）：Nextflow 會把整個 params 算進 task hash，而 NGS-UI 每個 job 的 `out_dir` / `samplesheet` 都不同 → 該 process 永遠無法 `-resume`（正式 PANGOLIN_SCORE 曾因此每次重跑）。直接讀 `params.xxx ?: default`。
+- 後處理任何步驟都**不可把整份 SNV TSV 讀進記憶體**（WGS 一例約 600 萬列）；用 `csv.reader` 串流。SQLite「暫存表 JOIN 大表」的外層要依 key 順序掃描（`WITHOUT ROWID` + 排序後插入），否則大表變成隨機讀（GeneBe 曾因此一批 WGS 花 10 小時）。
 - 別 commit 沒被 `.gitignore` 排除的患者資料 / 大檔。
 
 ---

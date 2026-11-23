@@ -191,11 +191,12 @@ def test_cached_share_is_weighted_by_time_not_task_count():
                                         "ANNOTSV_SV_NCKUH", "FILTER_FOR_ANNOTATION", "ANNOTSV_CNV_NCKUH_WES",
                                         "STR_PREPARE_NCKUH")]
     rows += [_row(p, "COMPLETED") for p in ("VEP_ANNOTATE", "PANGOLIN_SCORE", "PARSE_CSQ", "ACMG_CLASSIFY")]
-    # 8 of 12 tasks were cached, but almost all of the expected time really ran.
-    assert tp.noncached_share(profile, "nckuh:WES", rows) > 0.8
+    # 8 of 12 tasks were cached (task share 0.33), but most of the expected
+    # time really ran.
+    assert tp.noncached_share(profile, "nckuh:WES", rows) > 0.7
     tp.update_profile(profile, "nckuh:WES", trace_rows=rows, sample_count=1, nextflow_seconds=587)
     obs = profile["kinds"]["nckuh:WES"]["observations"]["phase:nextflow"]
-    assert len(obs) == 1 and obs[0][1] == 587.0 and 0.8 < obs[0][0] <= 1
+    assert len(obs) == 1 and obs[0][1] == 587.0 and 0.7 < obs[0][0] <= 1
     all_cached = [_row("VEP_ANNOTATE", "CACHED")]
     tp.update_profile(profile, "nckuh:WES", trace_rows=all_cached, sample_count=1, nextflow_seconds=6)
     assert len(profile["kinds"]["nckuh:WES"]["observations"]["phase:nextflow"]) == 1
@@ -303,3 +304,16 @@ def test_snapshot_lists_processes_in_pipeline_order_like_the_console_block():
     assert nf.snapshot()[1]["status"] == "failed"
     # after the run, processes that never started are dropped
     assert [r["process"] for r in nf.snapshot(finished=True)] == ["ADD_CALLERS_TAG", "VEP_ANNOTATE"]
+
+
+def test_wgs_kind_uses_wgs_defaults_until_learned():
+    profile = {"version": 1, "kinds": {}}
+    wes = tp.estimate_seconds(profile, "nckuh:WES", "phase:nextflow", 9)
+    wgs = tp.estimate_seconds(profile, "dragen:WGS", "phase:nextflow", 9)
+    assert wgs > 5 * wes
+    assert tp.process_seconds(profile, "dragen:WGS", "VEP_ANNOTATE") > tp.process_seconds(profile, "nckuh:WES", "VEP_ANNOTATE")
+    assert tp.sample_step_seconds(profile, "dragen:WGS")["review-tsv"] > tp.sample_step_seconds(profile, "nckuh:WES")["review-tsv"]
+    # Learning the WGS kind replaces the WGS default and leaves WES alone.
+    tp.update_profile(profile, "dragen:WGS", sample_count=9, postprocessing_seconds=1800)
+    assert tp.estimate_seconds(profile, "dragen:WGS", "phase:postprocessing", 9) == pytest.approx(1800)
+    assert tp.estimate_seconds(profile, "nckuh:WES", "phase:postprocessing", 9) == pytest.approx(650 + 60 * 9)

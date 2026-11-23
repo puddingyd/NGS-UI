@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import csv
+from array import array
 import gzip
 import json
 import os
@@ -61,7 +62,10 @@ DEFAULT_COLUMN = "GIAB_STRATA"
 MANIFEST_NAME = "strata_manifest.json"
 
 # (sorted-starts, merged-intervals) per normalised chromosome.
-BedIndex = dict[str, "tuple[list[int], list[tuple[int, int]]]"]
+# chrom -> (starts, ends) of merged, sorted intervals. Plain arrays (not lists
+# of tuples) keep a whole-genome stratum to a few bytes per interval and give
+# forked batch workers nothing to copy-on-write through reference counts.
+BedIndex = dict[str, "tuple[array, array]"]
 
 
 def _norm_chrom(chrom: str) -> str:
@@ -107,7 +111,7 @@ def load_bed(path: Path) -> BedIndex:
                 merged.append((start, end))
             else:
                 merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-        out[chrom] = ([s for s, _ in merged], merged)
+        out[chrom] = (array("q", (s for s, _ in merged)), array("q", (e for _, e in merged)))
     return out
 
 
@@ -129,12 +133,12 @@ def _overlaps(bed: BedIndex, chrom: str, pos: str, ref: str) -> bool:
     item = bed.get(_norm_chrom(chrom))
     if not item:
         return False
-    starts, intervals = item
+    starts, ends = item
     i = bisect.bisect_right(starts, start) - 1
-    if i >= 0 and intervals[i][1] > start:
+    if i >= 0 and ends[i] > start:
         return True
     j = i + 1
-    return j < len(intervals) and intervals[j][0] < end
+    return j < len(starts) and starts[j] < end
 
 
 def _label_from_filename(name: str) -> str:
@@ -210,38 +214,60 @@ def load_strata(strat_dir: Path, manifest_path: Path | None) -> list[tuple[str, 
 
 
 def annotate_with(tsv: Path, beds: list[tuple[str, BedIndex]], column: str) -> None:
-    with open(tsv, "r", encoding="utf-8", newline="") as fi:
-        reader = csv.DictReader(fi, delimiter="\t")
-        fieldnames = list(reader.fieldnames or [])
-        if not fieldnames:
-            print(f"[giab-strata] empty TSV: {tsv}", file=sys.stderr)
-            return
-        if column not in fieldnames:
-            fieldnames.append(column)
-        rows = list(reader)
+    """Rewrite ``tsv`` with ``column`` filled, streaming one row at a time.
 
-    n_hit = 0
-    for r in rows:
-        chrom = (r.get("CHROM") or "").strip()
-        pos = (r.get("POS") or "").strip()
-        ref = (r.get("REF") or "").strip()
-        labels = [label for label, bed in beds if _overlaps(bed, chrom, pos, ref)]
-        r[column] = ",".join(labels)
-        if labels:
-            n_hit += 1
-
-    # Atomic replace so a crash can't leave a half-written TSV.
+    Memory does not grow with the TSV (a WGS TSV is ~6M rows; holding them as
+    dicts took ~50 GB per sample). Output is identical to the former
+    DictReader/DictWriter rewrite: blank lines are dropped, short rows are
+    padded with empty cells and cells beyond the header are discarded.
+    """
     fd, tmp_name = tempfile.mkstemp(
         dir=str(tsv.parent), prefix=tsv.name + ".", suffix=".tmp"
     )
+    n_rows = n_hit = 0
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fo:
-            writer = csv.DictWriter(
-                fo, fieldnames=fieldnames, delimiter="\t",
-                extrasaction="ignore", lineterminator="\n",
-            )
-            writer.writeheader()
-            writer.writerows(rows)
+        with open(tsv, "r", encoding="utf-8", newline="") as fi, \
+                os.fdopen(fd, "w", encoding="utf-8", newline="") as fo:
+            reader = csv.reader(fi, delimiter="\t")
+            header = next(reader, None)
+            if not header:
+                print(f"[giab-strata] empty TSV: {tsv}", file=sys.stderr)
+                fo.close()
+                os.unlink(tmp_name)
+                return
+            width = len(header)
+            out_header = list(header)
+            if column in header:
+                col_idx = header.index(column)
+            else:
+                col_idx = width
+                out_header.append(column)
+            ic = header.index("CHROM") if "CHROM" in header else None
+            ip = header.index("POS") if "POS" in header else None
+            ir = header.index("REF") if "REF" in header else None
+            writer = csv.writer(fo, delimiter="\t", lineterminator="\n")
+            writer.writerow(out_header)
+            for row in reader:
+                if not row:
+                    continue
+                if len(row) < width:
+                    row = row + [""] * (width - len(row))
+                elif len(row) > width:
+                    row = row[:width]
+                chrom = row[ic].strip() if ic is not None else ""
+                pos = row[ip].strip() if ip is not None else ""
+                ref = row[ir].strip() if ir is not None else ""
+                labels = [label for label, bed in beds if _overlaps(bed, chrom, pos, ref)]
+                value = ",".join(labels)
+                if col_idx == width:
+                    row.append(value)
+                else:
+                    row[col_idx] = value
+                writer.writerow(row)
+                n_rows += 1
+                if labels:
+                    n_hit += 1
+        # Atomic replace so a crash can't leave a half-written TSV.
         os.replace(tmp_name, tsv)
     except BaseException:
         try:
@@ -251,7 +277,7 @@ def annotate_with(tsv: Path, beds: list[tuple[str, BedIndex]], column: str) -> N
         raise
 
     print(
-        f"[giab-strata] {len(rows)} variants, {n_hit} in >=1 stratum, "
+        f"[giab-strata] {n_rows} variants, {n_hit} in >=1 stratum, "
         f"{len(beds)} BEDs: {', '.join(label for label, _ in beds)}"
     )
 

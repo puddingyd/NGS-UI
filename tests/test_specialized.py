@@ -331,3 +331,38 @@ def test_hba_reachable_in_real_carrier_panel_and_inherited_manual_acmg(monkeypat
     assert variants[vid]["effective_acmg_class"] == "Pathogenic"
     cats = sample_loader._build_secondary_snv_categories(variants)
     assert vid in cats["carrier"] and vid not in cats["acmg_sf"]
+
+
+def _bundle_inputs(tmp_path, name):
+    root = tmp_path / name
+    root.mkdir()
+    (root / "SOURCE.targeted.json").write_text(json.dumps(payload()))
+    vcf = root / "SOURCE.hard-filtered.vcf.gz"
+    with gzip.open(vcf, "wt") as f:
+        f.write("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSOURCE\n")
+        f.write(record(155235252, "chr1", "A", "G", "NM_000157.4:c.1448T>C", joint=True)["raw"] + "\n")
+    raw = root / "raw.tsv"
+    raw.write_text("CHROM\tPOS\tREF\tALT\tGENE\nchr1\t155235252\tA\tG\tGBA1\n")
+    return dict(mode="dragen", source_vcf=vcf, source_sample_id="SOURCE", sample_id=name,
+                post_dir=root / "08_postprocessing", raw_tsv=raw)
+
+
+def _comparable(result):
+    return json.dumps({"status": result["status"], "variants": result["variants"]}, sort_keys=True, default=str)
+
+
+def test_parallel_specialized_precompute_matches_inline(tmp_path, monkeypatch):
+    from app.workers import dragen_run
+
+    jobs = {name: _bundle_inputs(tmp_path, name) for name in ("CASE1", "CASE2")}
+    parallel = dragen_run._precompute_specialized(jobs, workers=2)
+    assert set(parallel) == {"CASE1", "CASE2"}
+    for name, kwargs in jobs.items():
+        inline = sp.prepare_outputs(**kwargs)
+        assert _comparable(parallel[name]) == _comparable(inline)
+
+    # A stand-in that cannot be sent to a worker (tests monkeypatch a lambda)
+    # simply yields nothing, and the worker then computes each sample inline.
+    monkeypatch.setattr(dragen_run.specialized, "prepare_outputs", lambda **kw: {"status": "stub"})
+    assert dragen_run._precompute_specialized(jobs, workers=2) == {}
+    assert dragen_run._precompute_specialized({"CASE1": jobs["CASE1"]}, workers=4) == {}

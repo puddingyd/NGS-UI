@@ -615,9 +615,15 @@ def sqlite_lookup(sqlite_path: Path, wanted: set[str]) -> dict[str, tuple[str, s
         # and mmap let neighbouring keys share B-tree pages.
         conn.execute("PRAGMA cache_size=-262144")
         conn.execute("PRAGMA mmap_size=1073741824")
-        conn.execute("CREATE TEMP TABLE wanted (vkey TEXT PRIMARY KEY)")
+        # The probe order must follow the variants B-tree. A plain rowid temp
+        # table is scanned in insertion order, which for a Python set is
+        # effectively random: 10M+ WGS keys then cost one random disk read
+        # each (~300/s, ~10 h). A WITHOUT ROWID table filled with sorted keys
+        # is scanned in key order, so the join walks the (key-ordered)
+        # variants pages almost sequentially.
+        conn.execute("CREATE TEMP TABLE wanted (vkey TEXT PRIMARY KEY) WITHOUT ROWID")
         batch: list[tuple[str]] = []
-        for key in wanted:
+        for key in sorted(wanted):
             batch.append((key,))
             if len(batch) >= 50000:
                 conn.executemany("INSERT OR IGNORE INTO wanted(vkey) VALUES (?)", batch)
@@ -625,7 +631,7 @@ def sqlite_lookup(sqlite_path: Path, wanted: set[str]) -> dict[str, tuple[str, s
         if batch:
             conn.executemany("INSERT OR IGNORE INTO wanted(vkey) VALUES (?)", batch)
         for key, score, crit in conn.execute(
-            # Drive the join from the (sorted) wanted keys.
+            # Drive the join from the wanted keys in key order.
             "SELECT v.vkey, v.acmg_score, v.acmg_criteria "
             "FROM wanted w CROSS JOIN variants v ON v.vkey = w.vkey"
         ):
