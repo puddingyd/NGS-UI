@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.64：候選診斷清單（計畫階段 5a，SNV/Indel）：`prioritization.gene_candidates()` 列出每個基因所有疾病×遺傳模式×基因型組合（隱性配對只算一次、ref 不成候選），取最高者並保留前 5 個其他組合；`annotate()` 在有 HPO 時把每基因一列、競賽名次排序的前 200 列放進 payload `prioritization.candidates`（`candidate_count` 為總數）。SNV/Indel 標題列「候選診斷」按鈕（無 HPO 停用）開啟沿用搜尋視窗的清單，預設 20 列、「顯示更多」每次 20 列。
+
 v10.63：In-house prioritization（計畫階段 3–4）：`services/prioritization.py` 對每個 SNV/Indel 算 V′（`prio_v_points`＝排序點數含院內常見扣分；無則 0）＋P(g,d)（表型引擎，基因無疾病 −3.1）＋C（OMIM 每個疾病的遺傳模式：AD／XLD／未知 0、AR 同型合子 0、成對 V′_pair −1、單一異合子 WES −3／WGS −4、XLR 男性 0／女性異合子 −3），每個變異取最佳候選；載入時附 `prio`、`prio_total`、`old_rank`，payload `prioritization.mode`＝prio 才依新分數排 tier，沒有 HPO（只有 panel）退回 Score (old)。卡片第一欄「In-house prioritization」＋「Score (old)（rank）」。`validate_engine.py --rule-variants` 以 ClinVar 標籤比較 PM1／PP2 規則調整。
 
 v10.62：ACMG 規則 v1.7：PM3 依 ClinVar 提交描述的同型合子／複合異型合子病人（結構化計數或文字逐句比對，附原文片段；AR 基因、1 個提交者 Supporting、≥2 Moderate；與 PS4 只計較強者），由 `build_clinvar_cases.py` 同一次建置寫入；排序點數 `rank_points` 以 P-KNN LLR 實際值取代 PP3／BP4 點數（分類不變）。計畫第 15 章改為先上線 In-house prioritization（V′＋P＋C，卡片第一欄、直接用於 tier 內排序，原分數改名 Score (old)），院內驗證移到上線後。

@@ -173,3 +173,47 @@ def test_loader_applies_prioritization_and_sorts(omim, eng, monkeypatch):
     info = sample_loader._apply_prioritization(variants, cats, sample_id="S1", meta={}, hpo_list=["HP:1"],
                                                test_type="WES")
     assert info["mode"] == "old" and "失敗" in info["reason"]
+
+
+def test_gene_candidates_one_row_per_gene_and_pairs_once():
+    a, b, r = PR.Var("a", 7, "het"), PR.Var("b", 7, "het"), PR.Var("r", 10, "ref")
+    dis = [PR.Disease(id="OMIM:1", name="AR disease", P=8, moi={"ar"}),
+           PR.Disease(id="OMIM:2", name="AD disease", P=2, moi={"dominant"})]
+    cand = PR.gene_candidates([a, b, r], dis, sex="XX", test_type="WES")
+    assert cand["mode"] == "pair" and cand["variants"] in (["a", "b"], ["b", "a"])
+    assert cand["total"] == pytest.approx(PR.pair_points(7, 7) - 1 + 8)
+    assert set(cand["v_each"]) == {"a", "b"}
+    # the pair appears once; ref calls never form a candidate
+    idents = [(o["disease_id"], o["mode"], tuple(sorted(o["variants"]))) for o in [cand, *cand["others"]]]
+    assert len(idents) == len(set(idents))
+    assert all("r" not in o["variants"] for o in [cand, *cand["others"]])
+    assert PR.gene_candidates([r], dis, sex="XX", test_type="WES") is None
+    assert PR.gene_candidates([a, b, r], dis, sex="XX", test_type="WES") == cand      # deterministic
+
+
+def test_case_candidate_list(omim, eng):
+    variants = {
+        "a": {"gene_symbol": "GENEB", "zygosity": "het", "prio_v_points": 2},
+        "b": {"gene_symbol": "GENEA", "zygosity": "het", "prio_v_points": 4},
+        "c": {"gene_symbol": "GENEA", "zygosity": "het", "prio_v_points": 3},
+        "d": {"gene_symbol": "NODISEASE", "zygosity": "hom", "prio_v_points": 10},
+    }
+    info = PR.annotate(variants, hpo=["HP:0002197"], sex="F", test_type="WES", engine=eng)
+    cands = info["candidates"]
+    assert info["candidate_count"] == 3 and [c["gene"] for c in cands].count("GENEA") == 1
+    assert cands[0]["rank"] == 1 and cands == sorted(cands, key=lambda c: -c["total"])
+    assert all(c["rank"] <= c2["rank"] for c, c2 in zip(cands, cands[1:]))
+    nod = next(c for c in cands if c["gene"] == "NODISEASE")
+    assert nod["p"] == PR.P_FLOOR and nod["no_disease"]
+    # panel only: no list
+    info = PR.annotate(variants, hpo=[], engine=eng)
+    assert "candidates" not in info
+    # search / secondary (rank=False): no list
+    assert "candidates" not in PR.annotate(variants, hpo=["HP:0002197"], engine=eng, rank=False)
+
+
+def test_candidate_limit():
+    genes = [{"gene": f"G{i}", "total": float(i % 7), "p": 1.0, "v": 1.0} for i in range(30)]
+    shown, total = PR.rank_candidates(genes, limit=10)
+    assert total == 30 and len(shown) == 10 and shown[0]["rank"] == 1
+    assert [g["rank"] for g in shown[:5]] == [1, 1, 1, 1, 5]

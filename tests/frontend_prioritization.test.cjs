@@ -51,3 +51,29 @@ test('panel-only cases sort by Score (old)', () => {
   assert.equal(prio._snvSortScore({ total_score: 80, prio: {}, prio_total: 12 }), 12);
   assert.equal(prio._snvSortScore({ total_score: 80 }), 80);
 });
+
+test('candidate header: score, disease with rank, inheritance mode; button disabled without HPO', () => {
+  const start = source.indexOf('const PRIO_MODE_ZH =');
+  const end = source.indexOf('};', start) + 2;
+  const context = vm.createContext({
+    state: { data: { prioritization: { mode: 'old', reason: '沒有 HPO' } } },
+    document: { getElementById: () => button },
+  });
+  const button = { disabled: false, title: '' };
+  vm.runInContext(source.slice(start, end) + fn('_prioNum') + fn('_prioSigned') + fn('_prioCandidateSummary') +
+    fn('updatePrioCandidatesButton') + fn('_prioDiseaseLink'), context);
+  const s = context._prioCandidateSummary({ total: 13.54, v: 6, p: 8.5, c: -1, mode: 'pair', moi_class: 'ar',
+    disease_id: 'OMIM:100003', disease_name: 'Broad syndrome C', disease_rank: 2 });
+  assert.equal(s.score, '13.5 (6 + 8.5 − 1)');
+  assert.equal(s.disease, 'Broad syndrome C（OMIM:100003，疾病第 2 名）');
+  assert.match(s.mode, /^AR：隱性，與同基因另一個變異配成一對/);
+  assert.match(context._prioCandidateSummary({ total: 6.9, v: 10, p: -3.1, c: 0, mode: 'dominant', moi_class: 'unknown', no_disease: true }).disease, /沒有已知疾病/);
+  context.updatePrioCandidatesButton();
+  assert.equal(button.disabled, true);
+  assert.equal(button.title, '沒有 HPO');
+  context.state.data.prioritization = { mode: 'prio', candidates: [] };
+  context.updatePrioCandidatesButton();
+  assert.equal(button.disabled, false);
+  assert.equal(context._prioDiseaseLink('ORPHA:5'), 'https://www.orpha.net/en/disease/detail/5');
+  assert.equal(context._prioDiseaseLink(''), '');
+});

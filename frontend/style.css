@@ -2634,6 +2634,22 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
   margin-bottom: 12px;
 }
 #gene-search-results { max-height: 70vh; overflow-y: auto; }
+.ac-tool-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* In-house prioritization candidate diagnoses (one gene per row). */
+.prio-cand-note { font-size: 12px; margin: 0 0 10px; }
+.prio-cand { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+.prio-cand-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
+.prio-cand-rank { font-weight: 700; font-size: 15px; }
+.prio-cand-gene { font-weight: 700; font-size: 15px; font-style: italic; }
+.prio-cand-score { font-family: ui-monospace, monospace; font-weight: 600; }
+.prio-cand-disease a { color: inherit; }
+.prio-cand-mode { color: #5b21b6; }
+.prio-cand-others { font-size: 12px; margin: 0 0 6px; }
+.prio-cand-others summary { cursor: pointer; color: var(--muted); }
+.prio-cand-others ul { margin: 4px 0 0 18px; padding: 0; }
+.prio-cand-others .prio-cand-score { font-weight: 400; }
+.prio-cand-cards > .variant-card:last-child { margin-bottom: 0; }
+.prio-cand-more { display: block; margin: 4px auto 12px; }
 .analysis-card-empty {
   padding: 14px 14px 18px;
   text-align: center;

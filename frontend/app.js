@@ -3528,6 +3528,122 @@ function openToolRankModal(tool) {
   showModal("gene-search-modal");
 }
 
+// In-house prioritization candidate diagnoses (plan §10.11, phase 5a): one
+// row per gene — its best combination of disease, inheritance mode and
+// variant(s); a recessive pair shows both cards under one header.
+const PRIO_CAND_PAGE = 20;
+let _prioCandShown = PRIO_CAND_PAGE;
+
+function updatePrioCandidatesButton() {
+  const btn = document.getElementById("btn-prio-candidates");
+  if (!btn) return;
+  const info = state.data?.prioritization || {};
+  const ok = info.mode === "prio" && Array.isArray(info.candidates);
+  btn.disabled = !ok;
+  btn.title = ok
+    ? "In-house prioritization 候選診斷（一個基因一列，依總分排序）"
+    : (info.reason || "需要 HPO 才能列出候選診斷");
+}
+
+function _prioDiseaseLink(id) {
+  const m = String(id || "").match(/^(OMIM|ORPHA):(\d+)$/);
+  if (!m) return "";
+  return m[1] === "OMIM"
+    ? `https://omim.org/entry/${m[2]}`
+    : `https://www.orpha.net/en/disease/detail/${m[2]}`;
+}
+
+function _prioCandidateSummary(c) {
+  const MOI_LABEL = { dominant: "AD", ar: "AR", xlr: "XLR", xld: "XLD", other: "MT/YL", unknown: "未知" };
+  const parts = `${_prioNum(c.v)}${_prioSigned(c.p)}${_prioSigned(c.c)}`;
+  const disease = c.no_disease
+    ? "沒有已知疾病（表型給最低分）"
+    : `${c.disease_name || c.disease_id}${c.disease_id ? `（${c.disease_id}${c.disease_rank ? `，疾病第 ${Math.round(c.disease_rank)} 名` : ""}）` : ""}`;
+  return {
+    score: `${_prioNum(c.total)} (${parts})`,
+    disease,
+    mode: `${MOI_LABEL[c.moi_class] || c.moi_class || ""}：${PRIO_MODE_ZH[c.mode] || c.mode}`,
+  };
+}
+
+function _prioVariantLabel(id) {
+  const v = state.data?.variants?.[id];
+  return v ? displaySnvHgvs(v, id) : id;
+}
+
+function renderPrioCandidates() {
+  const host = document.getElementById("gene-search-results");
+  const titleEl = document.getElementById("gene-search-title");
+  const info = state.data?.prioritization || {};
+  const list = Array.isArray(info.candidates) ? info.candidates : [];
+  const total = Number(info.candidate_count) || list.length;
+  const shown = list.slice(0, _prioCandShown);
+  if (titleEl) titleEl.textContent = `候選診斷（${shown.length}／${total} 個基因）`;
+  if (!host) return;
+  host.innerHTML = "";
+  if (!list.length) {
+    host.innerHTML = `<div class="muted" style="padding:12px">沒有候選診斷。</div>`;
+    return;
+  }
+  const note = document.createElement("div");
+  note.className = "prio-cand-note muted";
+  note.textContent = "總分 = 變異 V′ + 表型 P + 遺傳模式 C（暫定參數，尚未以院內個案校準）；一個基因一列，取該基因最高分的疾病與基因型組合。";
+  host.appendChild(note);
+  for (const c of shown) {
+    const box = document.createElement("section");
+    box.className = "prio-cand";
+    const sum = _prioCandidateSummary(c);
+    const link = _prioDiseaseLink(c.disease_id);
+    const others = (c.others || []).map(o => {
+      const s = _prioCandidateSummary(o);
+      const vars = (o.variants || []).map(_prioVariantLabel).join(" ＋ ");
+      return `<li><span class="prio-cand-score">${escapeHtml(s.score)}</span> ${escapeHtml(s.disease)} · ${escapeHtml(s.mode)} · <span class="muted">${escapeHtml(vars)}</span></li>`;
+    }).join("");
+    const more = Number(c.n_combinations) - 1;
+    box.innerHTML = `
+      <div class="prio-cand-head">
+        <span class="prio-cand-rank">#${escapeHtml(c.rank)}</span>
+        <span class="prio-cand-gene">${escapeHtml(c.gene)}</span>
+        <span class="prio-cand-score">${escapeHtml(sum.score)}</span>
+        <span class="prio-cand-disease">${link ? `<a href="${escapeAttr(link)}" target="_blank" rel="noopener">${escapeHtml(sum.disease)}</a>` : escapeHtml(sum.disease)}</span>
+        <span class="prio-cand-mode">${escapeHtml(sum.mode)}</span>
+        ${c.gene_rank ? `<span class="prio-cand-generank muted">表型排名第 ${escapeHtml(c.gene_rank)}</span>` : ""}
+      </div>
+      ${others ? `<details class="prio-cand-others"><summary>其他組合（${more}）</summary><ul>${others}</ul>${more > (c.others || []).length ? `<div class="muted">只列前 ${(c.others || []).length} 個</div>` : ""}</details>` : ""}
+      <div class="prio-cand-cards"></div>`;
+    const cards = box.querySelector(".prio-cand-cards");
+    for (const id of c.variants || []) {
+      const v = state.data?.variants?.[id];
+      if (v) cards.appendChild(renderVariantCard(v, id, "candidate", { index: c.rank, diseaseCheckbox: true }));
+    }
+    host.appendChild(box);
+  }
+  if (shown.length < list.length) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-ghost prio-cand-more";
+    btn.textContent = `顯示更多（再 ${Math.min(PRIO_CAND_PAGE, list.length - shown.length)} 個）`;
+    host.appendChild(btn);
+  } else if (total > list.length) {
+    const tail = document.createElement("div");
+    tail.className = "muted prio-cand-note";
+    tail.textContent = `只列出前 ${list.length} 個基因；其餘請用 tier 清單或搜尋基因。`;
+    host.appendChild(tail);
+  }
+}
+
+function openPrioCandidatesModal() {
+  if (state.data?.prioritization?.mode !== "prio") return;
+  const inp = document.getElementById("gene-search-modal-input");
+  document.getElementById("gene-search-filter-row")?.classList.remove("hidden");
+  document.getElementById("gene-search-filter-gnomad-label")?.classList.add("hidden");
+  if (inp) inp.style.display = "none";
+  _prioCandShown = PRIO_CAND_PAGE;
+  renderPrioCandidates();
+  document.getElementById("gene-search-results")?.scrollTo?.(0, 0);
+  showModal("gene-search-modal");
+}
+
 function setupGeneSearch() {
   // Delegated: per-card "搜尋同基因" buttons (SNV + CNV/SV cards live
   // both in the main view and in the modal, plus they're re-rendered
@@ -3549,7 +3665,15 @@ function setupGeneSearch() {
     });
   });
   document.querySelectorAll(".ac-tool-btn").forEach(btn => {
-    btn.addEventListener("click", () => openToolRankModal(btn.dataset.tool || "exomiser"));
+    btn.addEventListener("click", () => {
+      if (btn.dataset.tool === "prio") openPrioCandidatesModal();
+      else openToolRankModal(btn.dataset.tool || "exomiser");
+    });
+  });
+  document.getElementById("gene-search-results")?.addEventListener("click", ev => {
+    if (!ev.target.closest(".prio-cand-more")) return;
+    _prioCandShown += PRIO_CAND_PAGE;
+    renderPrioCandidates();
   });
   document.getElementById("gene-search-modal-input")?.addEventListener("keydown", ev => {
     if (ev.key !== "Enter") return;
@@ -6479,6 +6603,7 @@ const TIER_ORDER = ["1A", "1B", "1C", "2"];
 let activeTierTab = null;
 
 function renderTierTabBar() {
+  updatePrioCandidatesButton();
   const bar = document.getElementById("tier-tab-bar");
   if (!bar) return;
   // Old-format TSV banner — sample_loader couldn't parse the SNV TSV

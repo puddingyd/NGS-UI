@@ -40,6 +40,7 @@ PAIR_PHASE_UNKNOWN = -1.0
 XLR_FEMALE_HET = -3.0
 P_FLOOR = -3.1
 VERSION = "prio-v1"
+CANDIDATE_LIMIT = 200          # candidate rows sent to the browser (20 shown, "顯示更多")
 
 _MIM = re.compile(r"\((\d{6})\)")
 _INH = re.compile(r"\(([^()]*)\)\s*$")
@@ -56,6 +57,8 @@ def pair_points(v1: float, v2: float) -> float:
 
 def norm_zygosity(value) -> str:
     text = str(value or "").strip().lower()
+    if text in {"ref", "hom_ref", "homref", "hom-ref", "reference", "0/0", "0|0"}:
+        return "ref"
     if text.startswith("hemi"):
         return "hemi"
     if text.startswith("hom"):
@@ -246,31 +249,69 @@ def _options(var: Var, cls: str, *, sex: str, test_type: str, partner: Var | Non
     return out
 
 
-def evaluate_gene(variants: list[Var], diseases: list[Disease], *, sex: str, test_type: str) -> dict[str, dict]:
-    """Best candidate per variant of one gene."""
-    test_type = norm_test_type(test_type)
-    hets = sorted((x for x in variants if not x.somatic and x.zygosity not in {"hom", "hemi"}),
+def _hets(variants: list[Var]) -> list[Var]:
+    """Possible second alleles, strongest first (somatic, homozygous and ref calls never pair)."""
+    return sorted((x for x in variants if not x.somatic and x.zygosity not in {"hom", "hemi", "ref"}),
                   key=lambda x: (-x.v, x.id))
-    out = {}
+
+
+def _enumerate(variants: list[Var], diseases: list[Disease], *, sex: str, test_type: str):
+    """Every (variant, candidate) pair: each disease × inheritance class × genotype option."""
+    test_type = norm_test_type(test_type)
+    hets = _hets(variants)
+    by_id = {x.id: x for x in variants}
     for var in variants:
-        partner = next((x for x in hets if x.id != var.id), None)
-        best = None
+        partner = None if var.zygosity == "ref" else next((x for x in hets if x.id != var.id), None)
         for d_order, dis in enumerate(diseases):
-            classes = sorted(dis.moi) or ["unknown"]
-            for cls in classes:
+            for cls in sorted(dis.moi) or ["unknown"]:
                 for v_combo, c, mode, partner_id in _options(var, cls, sex=sex, test_type=test_type, partner=partner):
                     p = dis.P
                     total = v_combo + (p or 0.0) + c
                     key = (round(total, 6), -1e9 if p is None else round(p, 6), round(v_combo, 6), -d_order)
-                    if best is None or key > best[0]:
-                        best = (key, {"total": total, "v": v_combo, "p": p, "c": c, "mode": mode, "moi_class": cls,
-                                      "disease_id": dis.id, "disease_name": dis.name, "disease_rank": dis.rank,
-                                      "moi": sorted(dis.moi), "moi_source": dis.moi_source,
-                                      "partner": partner_id,
-                                      "partner_v": partner.v if partner_id and partner else None,
-                                      "v_single": var.v, "v_missing": var.v_missing})
-        out[var.id] = best[1]
-    return out
+                    cand = {"total": total, "v": v_combo, "p": p, "c": c, "mode": mode, "moi_class": cls,
+                            "disease_id": dis.id, "disease_name": dis.name, "disease_rank": dis.rank,
+                            "moi": sorted(dis.moi), "moi_source": dis.moi_source,
+                            "partner": partner_id,
+                            "partner_v": by_id[partner_id].v if partner_id else None,
+                            "v_single": var.v, "v_missing": var.v_missing}
+                    yield var, key, cand
+
+
+def evaluate_gene(variants: list[Var], diseases: list[Disease], *, sex: str, test_type: str) -> dict[str, dict]:
+    """Best candidate per variant of one gene."""
+    best: dict[str, tuple] = {}
+    for var, key, cand in _enumerate(variants, diseases, sex=sex, test_type=test_type):
+        if var.id not in best or key > best[var.id][0]:
+            best[var.id] = (key, cand)
+    return {vid: item[1] for vid, item in best.items()}
+
+
+def gene_candidates(variants: list[Var], diseases: list[Disease], *, sex: str, test_type: str,
+                    others: int = 5) -> dict | None:
+    """The gene's candidate diagnosis (plan §6.5): its best combination, plus the next few.
+
+    A recessive pair is one candidate (both variants), not two.  Reference
+    calls never form a candidate.  None when the gene has no usable variant."""
+    seen: dict[tuple, tuple] = {}
+    for var, key, cand in _enumerate(variants, diseases, sex=sex, test_type=test_type):
+        if var.zygosity == "ref":
+            continue
+        ids = tuple(sorted(filter(None, (var.id, cand["partner"]))))
+        ident = (cand["disease_id"], cand["moi_class"], cand["mode"], ids)
+        if ident not in seen:
+            item = dict(cand, variants=[var.id] + ([cand["partner"]] if cand["partner"] else []))
+            item.pop("partner", None)
+            item["v_each"] = {var.id: var.v, **({cand["partner"]: cand["partner_v"]} if cand["partner"] else {})}
+            seen[ident] = (key, item)
+    if not seen:
+        return None
+    # highest total → P → V′ → disease order, then variant IDs for a fixed order
+    ranked = [item for _, item in sorted(seen.values(),
+                                         key=lambda x: (tuple(-k for k in x[0]), ",".join(sorted(x[1]["variants"]))))]
+    best = dict(ranked[0])
+    best["others"] = ranked[1:1 + others]
+    best["n_combinations"] = len(ranked)
+    return best
 
 
 # ── case level ─────────────────────────────────────────────────────────────
@@ -359,6 +400,7 @@ def annotate(variants: dict, *, hpo, sex: str = "", test_type: str = "WES", rank
         by_gene.setdefault(gene, []).append(
             Var(id=vid, v=v, zygosity=norm_zygosity(variant.get("zygosity")),
                 somatic=bool(variant.get("somatic")), v_missing=missing))
+    genes = []
     for gene in sorted(by_gene):
         diseases, ginfo = _gene_diseases(gene, engine, result)
         best = evaluate_gene(by_gene[gene], diseases, sex=sex, test_type=test_type)
@@ -370,9 +412,29 @@ def annotate(variants: dict, *, hpo, sex: str = "", test_type: str = "WES", rank
                 cand["p"] = None
             variants[vid]["prio"] = cand
             variants[vid]["prio_total"] = round(cand["total"], 3)
+        if rank and result is not None and gene:
+            cand = gene_candidates(by_gene[gene], diseases, sex=sex, test_type=test_type)
+            if cand is not None:
+                cand.update(ginfo, gene=gene)
+                genes.append(cand)
     if rank:
         _rank(variants)
+        if result is not None:
+            info["candidates"], info["candidate_count"] = rank_candidates(genes)
     return info
+
+
+def rank_candidates(genes: list[dict], limit: int = CANDIDATE_LIMIT) -> tuple[list[dict], int]:
+    """One row per gene, ordered as plan §7.4 (total, P, V′, gene); competition ranks on the shown total."""
+    genes = sorted(genes, key=lambda g: (-round(g["total"], 3), -(g["p"] if g["p"] is not None else -1e9),
+                                         -round(g["v"], 3), g["gene"]))
+    prev, pos = None, 0
+    for i, g in enumerate(genes):
+        shown = round(g["total"], 1)
+        if prev is None or shown != prev:
+            pos, prev = i + 1, shown
+        g["rank"] = pos
+    return genes[:limit], len(genes)
 
 
 def sort_key(variant: dict, vid: str, mode: str):

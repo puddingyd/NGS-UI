@@ -2510,7 +2510,7 @@ $p_g=1-(1-p_{\min})^k$ 在實作上數值退化（基因 top-10 只剩 11%）；
 | V. 變異規則引擎（In-house ACMG） | 第 5.2 節規則、ClinVar 規則、VCEP 規格、PS4／PM3（ClinVar）、排序點數用 P-KNN LLR | 否（已以院內結果驗證過一輪） | ✔ v10.46–10.62 |
 | **3. 整合排序引擎** | 每個 SNV/Indel 候選算 $V'$（In-house 排序點數，含 ClinVar 規則、P-KNN LLR、院內常見扣分；無引擎結果時用 GeneBe）、$P(g,d)$（第 4.8.7 節；無 HPO 只有 panel 時 $P$ 不計、標「—」；基因沒有任何疾病對應時給下限 −3.1）、$C$（第 6.3 節暫定點數；性別取基本資料／ploidy）；依第 6.5 節組合候選（顯性單一變異、隱性同型合子或成對 $V'_{pair}$、單一異合子 WES −3／WGS −4、XLR 女性 −3），每個變異取它所參與的最佳候選；結果附最佳疾病、遺傳模式判斷與配對變異 | 否 | ✔ v10.63（`services/prioritization.py`；臨床邏輯單元測試通過） |
 | **4. 介面上線與切換** | 卡片第一欄改為上表格式，ⓘ 列出 $V'$／$P$（表型名次、最佳疾病）／$C$（理由、配對變異）；**tier 內排序改用 In-house prioritization**；Score (old) 保留並顯示名次；版本紀錄說明 | 否 | ✔ v10.63（無 HPO、只有 panel 的個案排序退回 Score (old)）；待判讀者回饋 |
-| 5. 候選診斷清單 | 分析區上方「候選診斷」卡片（第 10.11 節），先 SNV/Indel，再加 CNV/SV（點數對應暫定）、粒線體，CNV deletion＋SNV 隱性組合 | 否（點數暫定） | 介面與測試完成 |
+| 5. 候選診斷清單 | SNV/Indel 標題列「候選診斷」按鈕（與 LIRICAL、Exomiser 同一排），一個基因一列、預設前 20 名＋「顯示更多」，沒有 HPO 時停用（2026-11-24 使用者決定）；5a 先 SNV/Indel，5b 加 CNV/SV（點數對應暫定）與 CNV deletion＋SNV 隱性組合，5c 粒線體 | 否（點數暫定） | 5a ✔ v10.64；5b／5c 待確認點數規則 |
 | 6. 表型驗證平台（文獻） | `scripts/benchmark_pheno.py` 擴充：time-split、LOPO、LIRICAL／Exomiser 對照、統計報告 | 否 | phenopacket-store 測試組評估一次並報告 |
 | ——— 以下需要院內資料 ——— | | | |
 | 7. 院內個案登錄與資料整備 | 補登錄舊個案；擷取已解與 negative 個案；確認 HPO 早於簽收；保存當時候選清單與 ClinVar 版本；估計診斷率 | 是 | 資料筆數與排除原因清楚記錄 |
