@@ -238,9 +238,9 @@ def test_rankings_points_and_explanation(eng):
 
 
 def test_points_tables():
-    assert E.gene_points(1) == 10.2 and E.gene_points(1.5) == 7.5 and E.gene_points(10) == 6.0
+    assert E.gene_points(1) == 10.2 and E.gene_points(1.5) == 7.5 and E.gene_points(10) == 6.1
     assert E.gene_points(11) == 4.3 and E.gene_points(5000) == -6.1
-    assert E.disease_points(3) == 8.9 and E.disease_points(2000) == -3.1
+    assert E.disease_points(3) == 8.5 and E.disease_points(2000) == -4.8
 
 
 def test_weights_scale_contributions(eng):

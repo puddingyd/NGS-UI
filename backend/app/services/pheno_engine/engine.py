@@ -42,13 +42,15 @@ from . import kb as K
 ENGINE_VERSION = "pheno-engine-v1"
 LEAD_NATS = 3.0          # §4.8.5 "rank 1 and clearly ahead"
 NEAR_TIE_NATS = 1.0      # §4.8.6 near-tie group
-# 2026-11-24 (user decision): no −3.1 floor, and the gene bins are estimated on
-# the development (396) and the independent (481) case sets pooled, 877 cases
-# (plan §4.8.3); the >1000 bin −6.1 is also the lowest P.
+# 2026-11-24 (user decision): no −3.1 floor; both tables are estimated with this
+# engine on the development (400) and second (481) time-split case sets pooled
+# (stage 6, ``scripts/benchmark_pheno.py run``; plan §4.8.3, §4.8.7): genes over
+# 4,888 genes, diseases by MONDO-group rank over 10,308 groups.  The gene >1000
+# bin −6.1 is also the lowest P.
 P_MIN, P_MAX = -6.1, 13.0
 INF = float("inf")
-GENE_POINTS = ((1, 10.2), (5, 7.5), (10, 6.0), (50, 4.3), (200, 1.6), (1000, -1.3), (INF, -6.1))
-DISEASE_POINTS = ((1, 11.1), (5, 8.9), (10, 7.6), (50, 5.4), (200, 3.1), (1000, 0.2), (INF, -3.1))
+GENE_POINTS = ((1, 10.2), (5, 7.5), (10, 6.1), (50, 4.3), (200, 1.6), (1000, -1.5), (INF, -6.1))
+DISEASE_POINTS = ((1, 11.1), (5, 8.5), (10, 7.3), (50, 5.2), (200, 2.8), (1000, -0.1), (INF, -4.8))
 CALIBRATION = "provisional (plan §4.8.3, phenopacket-store time-split development set)"
 EXPLAIN_TOP = 50
 ROUND = 9                # S*, G rounded for tie detection only
@@ -173,7 +175,7 @@ class Engine:
             if prev is None:
                 by_pair[key] = {"source": row.get("source", ""), "flags": set(filter(None, str(row.get("flags") or "").split(",")))}
             else:
-                prev["source"] = ",".join(sorted(set(prev["source"].split(",")) | {row.get("source", "")}) - {""})
+                prev["source"] = ",".join(sorted((set(prev["source"].split(",")) | {row.get("source", "")}) - {""}))
                 prev["flags"] |= set(filter(None, str(row.get("flags") or "").split(",")))
         self.link_info = by_pair
         genes = sorted({g for _, g in by_pair})
