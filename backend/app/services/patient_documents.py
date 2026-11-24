@@ -6,6 +6,7 @@ files use UUID names, so renaming never rewrites a large medical record.
 """
 from __future__ import annotations
 
+import codecs
 import hashlib
 import io
 import json
@@ -38,6 +39,12 @@ _CHUNK_SIZE = 1024 * 1024
 _PREVIEW_MAX_SIDE = 2400
 
 _FORMATS = {
+    "TXT": {
+        "extension": ".txt",
+        "extensions": {".txt"},
+        "content_type": "text/plain; charset=utf-8",
+        "image": False,
+    },
     "PDF": {
         "extension": ".pdf",
         "extensions": {".pdf"},
@@ -290,7 +297,32 @@ def _stored_path(row: sqlite3.Row | dict) -> Path:
     return path
 
 
-def _detect(path: Path) -> dict:
+def _detect(path: Path, *, filename: str = "") -> dict:
+    if Path(_clean_leaf_name(filename)).suffix.lower() == ".txt":
+        # Validate incrementally so uploaded text keeps the same streaming
+        # memory use as other documents, including split UTF-8 characters.
+        decoder = codecs.getincrementaldecoder("utf-8-sig")()
+        has_text = False
+        try:
+            with path.open("rb") as fh:
+                for chunk in iter(lambda: fh.read(_CHUNK_SIZE), b""):
+                    text = decoder.decode(chunk)
+                    if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", text):
+                        raise InvalidDocument("TXT 檔案須為 UTF-8 純文字")
+                    has_text = has_text or bool(text.strip())
+                decoder.decode(b"", final=True)
+        except UnicodeDecodeError as exc:
+            raise InvalidDocument("TXT 檔案須為 UTF-8 純文字") from exc
+        if not has_text:
+            raise InvalidDocument("文字內容不可為空白")
+        return {
+            "file_format": "TXT",
+            "content_type": _FORMATS["TXT"]["content_type"],
+            "extension": ".txt",
+            "image_width": None,
+            "image_height": None,
+            "image_pages": None,
+        }
     with path.open("rb") as fh:
         prefix = fh.read(8)
     if prefix.startswith(b"%PDF-"):
@@ -424,7 +456,7 @@ async def save_upload(
                 size += len(chunk)
         if size <= 0:
             raise InvalidDocument("空白檔案")
-        detected = _detect(incoming)
+        detected = _detect(incoming, filename=upload.filename or "")
         original_name = _clean_leaf_name(upload.filename or "") or (
             "Document" + detected["extension"]
         )

@@ -50,6 +50,23 @@
 .pdoc-error { color: #b42318 !important; }
 .pdoc-section { padding: 16px 18px; }
 .pdoc-existing-section { border-top: 1px solid #d8dee4; }
+.pdoc-text-section { border-top: 1px solid #d8dee4; }
+#pdoc-text-form { display: grid; gap: 10px; }
+#pdoc-text-form > .pdoc-name-field:first-child { max-width: 520px; }
+#pdoc-text-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #afb8c1;
+  border-radius: 6px;
+  background: #fff;
+  color: #24292f;
+  font: inherit;
+  line-height: 1.5;
+}
+#pdoc-text-status { margin-right: auto; overflow-wrap: anywhere; }
 .pdoc-section-head {
   display: flex;
   align-items: center;

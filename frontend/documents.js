@@ -2,7 +2,7 @@
   "use strict";
 
   const API = "/api/documents";
-  const ACCEPT = ".pdf,.jpg,.jpeg,.png,.tif,.tiff,application/pdf,image/jpeg,image/png,image/tiff";
+  const ACCEPT = ".pdf,.jpg,.jpeg,.png,.tif,.tiff,.txt,application/pdf,image/jpeg,image/png,image/tiff,text/plain";
   const MRN_RE = /^[A-Za-z0-9_-]{1,32}$/;
   const PREVIEW_ZOOM_MIN = 0.5;
   const PREVIEW_ZOOM_MAX = 4;
@@ -59,7 +59,7 @@
 
   function fileExtension(file) {
     const name = String(file?.name || "").toLowerCase();
-    for (const ext of [".jpeg", ".tiff", ".jpg", ".png", ".tif", ".pdf"]) {
+    for (const ext of [".jpeg", ".tiff", ".jpg", ".png", ".tif", ".pdf", ".txt"]) {
       if (name.endsWith(ext)) return ext;
     }
     const type = String(file?.type || "").toLowerCase();
@@ -67,6 +67,7 @@
     if (type === "image/jpeg") return ".jpg";
     if (type === "image/tiff") return ".tiff";
     if (type === "application/pdf") return ".pdf";
+    if (type === "text/plain") return ".txt";
     return "";
   }
 
@@ -118,13 +119,31 @@
               </div>
               <div id="pdoc-paste-zone" class="pdoc-paste-zone" tabindex="0">
                 <strong>拖曳檔案或貼上截圖到這裡</strong>
-                <span>可拖入 PDF / JPG / PNG / TIFF，或點一下後按 Ctrl+V / ⌘V 貼圖</span>
+                <span>可拖入 PDF / JPG / PNG / TIFF / TXT，或點一下後按 Ctrl+V / ⌘V 貼圖</span>
               </div>
               <div id="pdoc-pending" class="pdoc-pending"></div>
               <div class="pdoc-upload-actions">
                 <span id="pdoc-upload-status" class="pdoc-muted" aria-live="polite"></span>
                 <button id="pdoc-upload-all" type="button" class="btn btn-primary" hidden>儲存全部</button>
               </div>
+            </section>
+
+            <section class="pdoc-section pdoc-text-section">
+              <div class="pdoc-section-head"><h3>貼上文字，儲存為 TXT</h3></div>
+              <form id="pdoc-text-form">
+                <label class="pdoc-name-field" for="pdoc-text-name">
+                  <span>檔名</span>
+                  <span class="pdoc-name-control"><input id="pdoc-text-name" type="text" maxlength="180" placeholder="例如：門診摘要" required><b>.txt</b></span>
+                </label>
+                <label class="pdoc-name-field" for="pdoc-text-content">
+                  <span>文字內容</span>
+                  <textarea id="pdoc-text-content" rows="6" placeholder="在這裡貼上或輸入文字…" required></textarea>
+                </label>
+                <div class="pdoc-upload-actions">
+                  <span id="pdoc-text-status" class="pdoc-muted" aria-live="polite"></span>
+                  <button id="pdoc-save-text" type="submit" class="btn btn-primary">儲存 TXT</button>
+                </div>
+              </form>
             </section>
 
             <section class="pdoc-section pdoc-existing-section">
@@ -238,7 +257,7 @@
       };
       pending.push(record);
     });
-    if (rejected.length) alert(`不支援以下檔案：\n${rejected.join("\n")}\n\n只支援 PDF、JPG、PNG、TIF、TIFF。`);
+    if (rejected.length) alert(`不支援以下檔案：\n${rejected.join("\n")}\n\n只支援 PDF、JPG、PNG、TIF、TIFF、TXT（UTF-8）。`);
     renderPending();
   }
 
@@ -253,7 +272,7 @@
     host.innerHTML = pending.map(item => {
       const thumb = item.previewUrl
         ? `<img src="${esc(item.previewUrl)}" alt="待上傳圖片預覽">`
-        : `<span class="pdoc-file-kind">${item.ext === ".pdf" ? "PDF" : "TIFF"}</span>`;
+        : `<span class="pdoc-file-kind">${esc(item.ext.slice(1).toUpperCase())}</span>`;
       return `<div class="pdoc-pending-row" data-pending-key="${esc(item.key)}">
         <div class="pdoc-pending-thumb">${thumb}</div>
         <label class="pdoc-name-field">
@@ -316,6 +335,49 @@
     if (failure) setStatus("pdoc-upload-status", `上傳停止：${failure}`, true);
     else setStatus("pdoc-upload-status", "文件已儲存");
     await loadList();
+  }
+
+  async function saveText(event) {
+    event.preventDefault();
+    if (!context) return;
+    const currentContext = context;
+    const name = document.getElementById("pdoc-text-name");
+    const content = document.getElementById("pdoc-text-content");
+    const button = document.getElementById("pdoc-save-text");
+    if (button.disabled) return;
+    const base = name.value.trim().replace(/\.txt$/i, "").trim();
+    if (!base || !content.value.trim()) {
+      setStatus("pdoc-text-status", !base ? "檔名不可為空" : "文字內容不可為空白", true);
+      return;
+    }
+    const filename = `${base}.txt`;
+    const data = new FormData();
+    data.append("mrn", currentContext.mrn);
+    data.append("source_sample_id", currentContext.sourceSampleId || "");
+    data.append("display_name", filename);
+    data.append("file", new Blob([content.value], { type: "text/plain;charset=utf-8" }), filename);
+    name.disabled = content.disabled = button.disabled = true;
+    setStatus("pdoc-text-status", "儲存中…");
+    try {
+      await jsonRequest(API, { method: "POST", body: data });
+      if (context !== currentContext) return;
+      name.value = content.value = "";
+      setStatus("pdoc-text-status", `已儲存 ${filename}，可在下方清單修改檔名`);
+      await loadList();
+    } catch (error) {
+      if (context === currentContext) setStatus("pdoc-text-status", `儲存失敗：${error.message || error}`, true);
+    } finally {
+      if (context === currentContext) name.disabled = content.disabled = button.disabled = false;
+    }
+  }
+
+  function resetTextForm() {
+    document.getElementById("pdoc-text-form")?.reset();
+    for (const id of ["pdoc-text-name", "pdoc-text-content", "pdoc-save-text"]) {
+      const element = document.getElementById(id);
+      if (element) element.disabled = false;
+    }
+    setStatus("pdoc-text-status", "");
   }
 
   function existingExtension(documentInfo) {
@@ -635,6 +697,7 @@
     });
     document.getElementById("pdoc-file-input")?.addEventListener("change", event => addFiles(event.target.files));
     document.getElementById("pdoc-upload-all")?.addEventListener("click", uploadAll);
+    document.getElementById("pdoc-text-form")?.addEventListener("submit", saveText);
     document.getElementById("pdoc-refresh")?.addEventListener("click", loadList);
 
     const pasteZone = document.getElementById("pdoc-paste-zone");
@@ -806,6 +869,7 @@
       mrn,
       sourceSampleId: String(raw?.sourceSampleId || "").trim(),
     };
+    resetTextForm();
     renderList([]);
     document.getElementById("pdoc-patient").textContent = `MRN：${mrn}`;
     document.getElementById("patient-documents-modal").hidden = false;
@@ -818,6 +882,7 @@
     closePreview();
     clearPending();
     context = null;
+    resetTextForm();
     previewDocuments = [];
     const modal = document.getElementById("patient-documents-modal");
     if (modal) modal.hidden = true;
