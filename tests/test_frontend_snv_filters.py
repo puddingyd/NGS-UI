@@ -49,7 +49,8 @@ def test_nckuh_common_filter_defaults_hidden_for_snv_and_mito():
     assert INDEX_HTML.index('id="filter-in-panel-only"') < INDEX_HTML.index(
         'id="filter-nckuh-common"'
     ) < INDEX_HTML.index('id="filter-vaf"')
-    assert "AF_NCKUH ≥ 0.05 &amp; AC ≥ 50" in INDEX_HTML
+    assert "<span>院內常見</span>" in INDEX_HTML
+    assert "v?.inhouse_common?.hide_wes" in APP_JS
     assert "const NCKUH_COMMON_AF_THRESHOLD = 0.05;" in APP_JS
     assert "const NCKUH_COMMON_AC_THRESHOLD = 50;" in APP_JS
 

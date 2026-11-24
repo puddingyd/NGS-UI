@@ -53,6 +53,7 @@ from . import (
     gba,
     specialized,
     hpo_ontology,
+    inhouse_common,
     litvar2_on_demand,
     manual_acmg,
     omim_store,
@@ -1303,6 +1304,28 @@ def _promote_engine_to_inhouse(variants: dict) -> None:
             variant["tier"] = "1C" if points_trigger or variant.get("predicted_suspect_non_acmg") else "2"
 
 
+def _apply_inhouse_common_search(variants: dict, *, sample_id: str, test_type: str, meta: dict) -> None:
+    """Gene search: mark 院內常見 and apply the ranking penalty to In-house → GeneBe points."""
+    try:
+        inhouse_common.annotate(variants, sample_id=sample_id, test_type=test_type, mrn=meta.get("mrn") or "")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[inhouse-common] search annotate failed sample={sample_id}: {type(exc).__name__}: {exc}", flush=True)
+        return
+    for variant in variants.values():
+        if not isinstance(variant, dict) or not variant.get("inhouse_common"):
+            continue
+        if variant.get("ACMG_classification") or not variant.get("genebe_acmg_class"):
+            score, criteria = variant.get("ACMG_score"), variant.get("ACMG_criteria")
+        else:
+            score, criteria = variant.get("genebe_acmg_score"), variant.get("genebe_acmg_criteria")
+        points = inhouse_common.apply_penalty(variant, scope="in_house", score=score, criteria_text=criteria)
+        if not variant["inhouse_common"].get("penalty"):
+            continue
+        geno = manual_acmg.acmg_to_variant_score(points)
+        variant["geno_score"] = geno
+        variant["total_score"] = (geno or 0) + (variant.get("pheno_score") or 0)
+
+
 def load_sample_roh(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader for normalized ROH regions and provenance summary."""
     return roh.load_sample_roh(sample_id)
@@ -1358,9 +1381,15 @@ def _apply_effective_acmg(
         current = {}
         observed = {}
     edits = meta.get("edits") if isinstance(meta.get("edits"), dict) else {}
-    for variant_id, original in list(variants.items()):
-        variant = dict(original)
-        variants[variant_id] = variant
+    for variant_id in list(variants):
+        variants[variant_id] = dict(variants[variant_id])
+    inhouse_common.annotate(
+        variants,
+        sample_id=sample_id,
+        test_type=_effective_test_type(meta, sample_id, default="WES"),
+        mrn=meta.get("mrn") or "",
+    )
+    for variant_id, variant in list(variants.items()):
         sample_snapshot = _legacy_manual_snapshot(edits.get(variant_id) or {})
         global_assertion = current.get(manual_acmg.normalize_variant_id(variant_id))
 
@@ -1415,7 +1444,14 @@ def _apply_effective_acmg(
             observed.get(manual_acmg.normalize_variant_id(variant_id), 0)
         )
 
-        geno_score = manual_acmg.acmg_to_variant_score(selected.get("score"))
+        # 院內常見: the ranking points (not the class or tier) drop by 4/8.
+        ranking_points = inhouse_common.apply_penalty(
+            variant, scope=source_scope, score=selected.get("score"),
+            criteria_text=selected.get("criteria_text"),
+        )
+        geno_score = manual_acmg.acmg_to_variant_score(
+            ranking_points if ranking_points is not None else selected.get("score")
+        )
         variant["geno_score"] = geno_score
         pheno_score = variant.get("pheno_score")
         if geno_score is not None or pheno_score is not None:
@@ -2566,6 +2602,7 @@ def search_snv_by_genes(
     if gba_additions:
         _enrich_snv_variants(gba_additions, sample_id, sidecar_dir)
     snv_zygosity.normalize_loaded_variants(matches, sample_id)
+    _apply_inhouse_common_search(matches, sample_id=sample_id, test_type=test_type, meta=meta)
     _log_perf(
         "sample.snv_search",
         started,

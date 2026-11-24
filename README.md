@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.47 補記：主畫面「院內常見」勾選合併本院 WGS AF ≥ 0.05＆AC ≥ 50 與（WES 個案）≥ 5% 院內 WES 病人帶有（`services/inhouse_common.py`，WES 出現次數表滿 100 位病人才用，排除本個案病人）；卡片 AF 欄加 `WES_nckuh`、灰色「院內常見」標籤。排序點數扣分（分類與 tier 不變）：WES ≥ 5%／WGS AF ≥ 2.5% 扣 4 點、≥ 10%／AF ≥ 5% 扣 8 點，已有 BS1／BA1 點數抵扣，手動判讀與 ClinVar ≥2★ P/LP 不扣。`diff_replacement.py` 報告新增第一類（Causative）段落。
+
 v10.46 補記：ACMG 規則引擎（`08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`）正式取代 pipeline `ACMG_*` 成為「In-house」，有效分類順序改為判讀者 → In-house → GeneBe，tier 1C、排序分數（V）、DOCX 與個案清單都跟著改；pipeline 值保留為 `pipeline_acmg_*` 只供離線比較。沒有規則引擎結果的變異（Somatic、GBA1／specialized、尚未重算的個案）沿用原值。取代前可用 `scripts/acmg_engine/diff_replacement.py` 檢查分類與排序改變（`marked_variants.tsv` 含檢體編號，只在伺服器上核對）。
 
 v10.45 補記：三級後處理新增 ACMG 規則引擎計算，結果存於 `08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`，目前只供驗證、不顯示也不改變報告；既有個案以 `scripts/acmg_engine/build_engine_results.py --all` 補算（見計畫書 §5.2.11）；補算不需 fastapi，但讀不到 OMIM 遺傳模式時會拒絕執行（`--allow-no-omim` 可強制），請用 ngs-ui 服務的 Python 執行。離線驗證以 `scripts/acmg_engine/validate_engine.py` 產生彙總報告（不含檢體編號、病人或判讀者名稱；見計畫書 §5.2.10）。依第一次院內驗證改為規則 v1.1（ClinVar ≥2★ 採用、PM5 分強度、ClinVar 推算 PM1／PP2、BP7 缺 phyloP 只看剪接預測），參考表 schema 2，需重建參考表並 `build_engine_results.py --all` 重算。第二次驗證後曾收緊為規則 v1.2，致病變異名次略降，規則 v1.3 將 PM1／PP2 門檻改回 v1.1（VCEP 基因留待載入 CSpec 規格）；參考表不變，只需 `build_engine_results.py --all` 重算。取代 pipeline ACMG 前，以 `scripts/acmg_engine/diff_replacement.py` 產生前後差異報告（分類、tier、排序；`marked_variants.tsv` 含檢體編號，只在伺服器上核對）。

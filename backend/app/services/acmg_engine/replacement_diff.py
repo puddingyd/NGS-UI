@@ -174,6 +174,7 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
     marked = defaultdict(lambda: {
         "n": 0, "by_status": Counter(), "class_changed": Counter(), "class_transition": Counter(),
         "tier_transition": Counter(), "report_class_changed": 0,
+        "status_class": defaultdict(Counter), "status_tier": defaultdict(Counter), "causative_tier2": [],
         "ranks": {"before": [], "A": [], "B": []}, "rank_move": {"A": Counter(), "B": Counter()}})
     top_overlap = defaultdict(lambda: {"A": [], "B": []})
     tier_variants: dict[tuple, dict] = {}
@@ -278,6 +279,15 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
                 if status in ("1", "2"):
                     m["report_class_changed"] += 1
             m["tier_transition"][f"{item['tier_before']}→{item['tier_after']}"] += 1
+            m["status_class"][status][f"{before['class'] or '—'}→{after['class'] or '—'}"] += 1
+            m["status_tier"][status][f"{item['tier_before']}→{item['tier_after']}"] += 1
+            if status == "1" and item["tier_after"] == "2":
+                m["causative_tier2"].append({
+                    "gene": item["gene"], "hgvs_c": P.text(item["row"].get("HGVS_C")).split(":")[-1],
+                    "hgvs_p": P.text(item["row"].get("HGVS_P")).split(":")[-1],
+                    "tier_before": item["tier_before"], "class_before": before["class"],
+                    "points_before": before["points"], "source_before": before["source"],
+                    "class_after": after["class"], "points_after": after["points"], "source_after": after["source"]})
             ranks = {s: _rank(scores[s], vid) for s in ("before", "A", "B")}
             for s, r in ranks.items():
                 m["ranks"][s].append(r)
@@ -308,6 +318,9 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
             "n": m["n"], "by_status": dict(m["by_status"]), "class_changed": dict(m["class_changed"]),
             "class_transition": dict(m["class_transition"]), "tier_transition": dict(m["tier_transition"]),
             "report_class_changed": m["report_class_changed"],
+            "by_status_class": {k: dict(c) for k, c in m["status_class"].items()},
+            "by_status_tier": {k: dict(c) for k, c in m["status_tier"].items()},
+            "causative_tier2": m["causative_tier2"],
             "ranks": {s: _rank_summary(v) for s, v in m["ranks"].items()},
             "rank_move": {s: dict(c) for s, c in m["rank_move"].items()}} for tt, m in marked.items()},
         "top20_overlap": {tt: {s: (round(statistics.mean(v), 4) if v else None) for s, v in d.items()}
@@ -395,7 +408,38 @@ def render_markdown(report: dict) -> str:
     out.append("改變 tier 的變異列在 `tier_changes.tsv`（只有變異座標與基因，沒有檢體編號）。")
     out.append("")
 
-    out.append("## 4. 判讀者已標記的變異（1／2／C）")
+    out.append("## 4. 第一類（Causative，狀態 1）")
+    out.append("")
+    for tt, m in sorted(report["marked"].items()):
+        cls = m.get("by_status_class", {}).get("1", {})
+        tiers = m.get("by_status_tier", {}).get("1", {})
+        n = sum(cls.values())
+        if not n:
+            continue
+        changed = {k: v for k, v in cls.items() if k.split("→")[0] != k.split("→")[1]}
+        out.append(f"### {tt}（{n} 個）")
+        out.append("")
+        out.append(f"- 分類改變 **{sum(changed.values())}** 個（{_pct(sum(changed.values()), n)}）："
+                   f"{_counter_line(changed) if changed else '沒有'}")
+        out.append(f"- Tier（取代前→後）：{_counter_line(tiers)}")
+        drops = m.get("causative_tier2") or []
+        newly = [d for d in drops if d["tier_before"] != "2"]
+        out.append(f"- 取代後在分析區 tier 2（Other）：**{len(drops)}** 個，其中原本不在 tier 2 者 **{len(newly)}** 個")
+        if drops:
+            out.append("")
+            out.append("| 基因 | HGVS | 原 tier | 取代前分類（點數，來源） | 取代後分類（點數，來源） |")
+            out.append("|---|---|---|---|---|")
+            for d in drops:
+                hgvs = " ".join(x for x in (d["hgvs_c"], d["hgvs_p"]) if x)
+                out.append(f"| {d['gene']} | {hgvs} | {d['tier_before']} | {d['class_before'] or '—'}"
+                           f"（{d['points_before']}，{_SOURCE_NAMES.get(d['source_before'], d['source_before'])}） | "
+                           f"{d['class_after'] or '—'}（{d['points_after']}，"
+                           f"{_SOURCE_NAMES.get(d['source_after'], d['source_after'])}） |")
+        out.append("")
+    out.append("第一類以外（2／C）不在此列；這張表只有基因與 HGVS，沒有檢體編號。")
+    out.append("")
+
+    out.append("## 5. 判讀者已標記的變異（1／2／C）")
     out.append("")
     for tt, m in sorted(report["marked"].items()):
         out.append(f"### {tt}（{m['n']} 個）")
@@ -426,7 +470,7 @@ def render_markdown(report: dict) -> str:
                "逐筆明細在 `marked_variants.tsv`，**含檢體編號，只供在伺服器上核對，請勿複製或貼出**。")
     out.append("")
 
-    out.append("## 5. 每個個案前 20 名和取代前相同的比例（有標記變異的個案）")
+    out.append("## 6. 每個個案前 20 名和取代前相同的比例（有標記變異的個案）")
     out.append("")
     for tt, d in sorted(report["top20_overlap"].items()):
         out.append(f"- {tt}（{d['cases']} 例）：{_pct(d['A'] or 0, 1)}")

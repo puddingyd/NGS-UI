@@ -4578,12 +4578,37 @@ function _isClinvarPlp(v) {
 const NCKUH_COMMON_AF_THRESHOLD = 0.05;
 const NCKUH_COMMON_AC_THRESHOLD = 50;
 
+// 院內常見: AF_NCKUH ≥ 0.05 & AC ≥ 50, or (WES cases) ≥ 5% of WES patients
+// carry the variant (backend sets inhouse_common.hide_wes).
 function _isNckuhCommon(v) {
+  if (v?.inhouse_common?.hide_wes) return true;
   const af = _numericValue(v?.inhouse_af);
   const ac = _numericValue(v?.inhouse_ac);
   return af != null && ac != null
     && af >= NCKUH_COMMON_AF_THRESHOLD
     && ac >= NCKUH_COMMON_AC_THRESHOLD;
+}
+
+function _wesRecurrenceText(rec) {
+  const pct = (Number(rec.fraction) * 100).toFixed(1);
+  return `${rec.count}/${rec.patients} (${pct}%)`;
+}
+
+function _inhouseCommonTip(v) {
+  const info = v.inhouse_common || {};
+  const lines = [`院內常見：${info.basis || ""}`];
+  if (info.exempt) lines.push(`排序不扣分（${info.exempt}）`);
+  else if (Number(info.penalty) > 0) lines.push(`排序扣 ${info.penalty} 點（ACMG 分類不變）`);
+  else lines.push(`已含 BS1／BA1 ${info.already || 0} 點，排序不再另扣`);
+  return lines.join("\n");
+}
+
+function _inhouseCommonScoreLines(v) {
+  const info = v.inhouse_common;
+  if (!info) return [];
+  const head = `院內常見（${info.basis || ""}）：排序點數扣 4 點（WES ≥5% 病人／WGS AF ≥2.5%）或 8 點（≥10%／AF ≥5%），已含的 BS1／BA1 點數抵扣`;
+  if (info.exempt) return [head, `本變異不扣分：${info.exempt}`];
+  return [head, `本變異扣 ${Number(info.penalty) || 0} 點；ACMG 分類與 tier 不變`];
 }
 
 function _hasPrimaryReviewerStatus(id) {
@@ -4861,6 +4886,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     "Total score = Variant score + Phenotype score",
     "Variant score：ACMG score 轉換成 0–100",
     "Phenotype score：100 ×（此 gene 命中的 HPO/panel 權重總和）÷（全部有效輸入的 HPO/panel 權重總和）",
+    ..._inhouseCommonScoreLines(v),
   ]);
   const hgvsLabel = displaySnvHgvs(v, id);
 
@@ -5006,6 +5032,10 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <span class="k">AF_nckuh</span><span class="v">${fmtNum(v.inhouse_af, 5)}${
           (v.inhouse_af != null && v.inhouse_ac != null && v.inhouse_an != null)
             ? ` (${v.inhouse_ac}/${v.inhouse_an})` : ""}</span>
+        ${v.wes_recurrence
+          ? `<span class="k">WES_nckuh</span><span class="v" title="院內 WES 個案中帶有此變異的病人數（不含本個案病人）">${
+              escapeHtml(_wesRecurrenceText(v.wes_recurrence))}</span>`
+          : ""}
         ${Number.isFinite(Number(v.TG_eas_af))
           ? `<div class="more-extras hidden">
               <span class="k">1000G EAS</span><span class="v">${fmtNum(v.TG_eas_af, 5)}</span>
@@ -5150,6 +5180,9 @@ function renderVariantBadges(v, id) {
   }
   if (v.low_alt_support) {
     chips.push(`<span class="badge badge-alt-support" title="${escapeAttr(`ALT AD ${v.alt_depth ?? "?"} < 10；建議 IGV 複核，必要時 Sanger 確認`)}">Low ALT support</span>`);
+  }
+  if (v.inhouse_common) {
+    chips.push(`<span class="badge badge-inhouse-common" title="${escapeAttr(_inhouseCommonTip(v))}">院內常見</span>`);
   }
   if (Number(v.observed_count) > 0) {
     chips.push(`<button type="button" class="badge badge-observed js-observed-open" data-id="${escapeAttr(id)}">Observed (${Number(v.observed_count)})</button>`);
@@ -5597,6 +5630,9 @@ async function saveAcmgEditor() {
           ((Math.max(-10, Math.min(10, Number(saved.score))) + 10) / 20) * 100,
         );
         existing.total_score = (existing.geno_score || 0) + (Number(existing.pheno_score) || 0);
+        if (existing.inhouse_common) {
+          existing.inhouse_common = { ...existing.inhouse_common, penalty: 0, exempt: "判讀者已手動判讀 ACMG" };
+        }
         if (!["1A", "1B"].includes(existing.tier)) {
           existing.tier = Number(saved.score) >= 4 || existing.predicted_suspect_non_acmg
             ? "1C" : "2";

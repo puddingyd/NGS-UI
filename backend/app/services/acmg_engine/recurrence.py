@@ -150,6 +150,23 @@ class WesRecurrence:
             "WHERE v.variant_key=?", (variant_key,)).fetchone()
         return int(hit[0] or 0), self.patient_count()
 
+    def lookup_many(self, variant_keys, exclude_patient: str | None = None) -> dict[str, int]:
+        """{variant_key: patients carrying it} for many keys (keys never seen are left out)."""
+        keys = sorted(set(variant_keys))
+        out: dict[str, int] = {}
+        for start in range(0, len(keys), 500):
+            chunk = keys[start:start + 500]
+            marks = ",".join("?" * len(chunk))
+            sql = ("SELECT v.variant_key, COUNT(DISTINCT s.patient_key) FROM sample_variants v "
+                   f"JOIN samples s USING (sample_id) WHERE v.variant_key IN ({marks})")
+            params = list(chunk)
+            if exclude_patient:
+                sql += " AND s.patient_key<>?"
+                params.append(exclude_patient)
+            for key, count in self.conn.execute(sql + " GROUP BY v.variant_key", params):
+                out[key] = int(count or 0)
+        return out
+
     def listing(self) -> list[tuple[str, str, int, str]]:
         return list(self.conn.execute(
             "SELECT sample_id, patient_key, variant_count, updated_at FROM samples ORDER BY sample_id"))

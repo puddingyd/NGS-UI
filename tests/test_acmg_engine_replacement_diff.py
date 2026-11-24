@@ -57,6 +57,10 @@ def test_run(tmp_path, monkeypatch):
     assert marked["ranks"]["before"]["n"] == 2
     assert sum(marked["rank_move"]["A"].values()) == 2
     assert report["top20_overlap"]["WES"]["cases"] == 1
+    assert marked["by_status_tier"]["1"] == {"1C→2": 1}
+    assert sum(marked["by_status_class"]["1"].values()) == 1
+    assert len(marked["causative_tier2"]) == 1 and marked["causative_tier2"][0]["tier_before"] == "1C"
+    assert "sample" not in marked["causative_tier2"][0]
 
     with open(out / "marked_variants.tsv", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
@@ -71,6 +75,7 @@ def test_run(tmp_path, monkeypatch):
     assert len(tiers) == 1 and "sample" not in tiers[0]
     text = (out / "report.md").read_text(encoding="utf-8")
     assert "24WE0001" not in text and "會出現在診斷報告" in text and "新 In-house" in text
+    assert "第一類（Causative" in text and "原本不在 tier 2 者 **1** 個" in text
 
 
 def test_stale_results_are_skipped(tmp_path, monkeypatch):
