@@ -9,10 +9,14 @@ compared side by side::
     .venv/bin/python scripts/acmg_engine/explain_marked.py ~/NGS_UI/acmg_validation/diff2/marked_variants.tsv
     .venv/bin/python scripts/acmg_engine/explain_marked.py TSV --status 1 --to VUS     # default
     .venv/bin/python scripts/acmg_engine/explain_marked.py TSV --status 1,2 --to any
+    .venv/bin/python scripts/acmg_engine/explain_marked.py TSV --tsv ~/NGS_UI/acmg_validation/causative_vus.tsv
 
 Read-only.  Output has no sample IDs (the same variant in several cases is
 shown once with a case count) unless ``--with-sample`` is given; output with
-sample IDs is for checking on the server only.
+sample IDs is for checking on the server only.  ``--tsv`` writes a record with
+one row per case *including sample IDs* (class at the time of that diff run,
+the case's current In-house class and criteria, blank columns for the
+reviewer); keep it on the server.
 """
 from __future__ import annotations
 
@@ -65,7 +69,10 @@ def main(argv=None) -> int:
     ap.add_argument("--status", default="1", help="comma-separated reviewer statuses (default 1)")
     ap.add_argument("--to", default="VUS", help="class after replacement (P/LP/VUS/LB/B) or 'any' (default VUS)")
     ap.add_argument("--with-sample", action="store_true", help="also print sample IDs (server only)")
+    ap.add_argument("--tsv", type=Path, default=None,
+                    help="write a per-case record WITH sample IDs to this file (server only)")
     args = ap.parse_args(argv)
+    records: list[dict] = []
 
     by_sample: dict[str, list[dict]] = {}
     for row in _selected(args.marked_tsv, {s.strip() for s in args.status.split(",") if s.strip()}, args.to):
@@ -84,7 +91,33 @@ def main(argv=None) -> int:
             item = merged.setdefault(f"{row['test_type']}|{key}", {
                 "row": row, "result": stored.get(key), "tsv": review.get(key), "samples": []})
             item["samples"].append(sid)
+            result = stored.get(key) or {}
+            tsv = review.get(key)
+            records.append({
+                "sample": sid, "test_type": row["test_type"], "status": row["status"],
+                "gene": row["gene"], "hgvs_c": row["hgvs_c"], "hgvs_p": row["hgvs_p"], "variant": row["variant"],
+                "consequence": _first(tsv, "CONSEQUENCE"),
+                "class_before": f"{row['class_before']}（{row['points_before']}，{row['source_before']}）",
+                "class_in_diff_run": f"{row['class_after']}（{row['points_after']}）",
+                "inhouse_now": (f"{result.get('classification', '')}（{result.get('points', '')}）" if result else "找不到結果"),
+                "inhouse_version": result.get("version", ""),
+                "inhouse_criteria": result.get("criteria_text", ""),
+                "not_evaluated": "；".join(f"{e['code']}：{e['reason']}" for e in result.get("not_evaluated") or []),
+                "clinvar": (_first(tsv, "CLINVAR_SIG") or "—") + (f"（{_first(tsv, 'CLINVAR_STARS')}★）"
+                                                                  if _first(tsv, "CLINVAR_STARS") else ""),
+                "genebe_criteria": _first(tsv, "GENEBE_ACMG_CRITERIA"),
+                "manual_acmg_done": "", "case_evidence_added": "", "reviewer_note": "",
+            })
 
+    if args.tsv:
+        args.tsv.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.tsv, "w", encoding="utf-8-sig", newline="") as handle:
+            fields = list(records[0]) if records else ["sample"]
+            writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
+            writer.writeheader()
+            for rec in sorted(records, key=lambda r: (r["test_type"], r["gene"], r["sample"])):
+                writer.writerow(rec)
+        print(f"已寫出 {len(records)} 列（含檢體編號，只留在伺服器上）：{args.tsv}")
     if not merged:
         print("沒有符合條件的點位。")
         return 0

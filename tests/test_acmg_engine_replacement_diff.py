@@ -121,5 +121,12 @@ def test_explain_marked_lists_changed_causative_without_sample_ids(tmp_path, mon
     assert "chr1-1000-C-T" in text and "chr1-4000-T-C" not in text     # class unchanged → skipped
     assert "In-house criteria" in text and "GeneBe criteria" in text and "+ PVS1" in text
     assert sid not in text
+    record = tmp_path / "record.tsv"
+    assert module.main([str(out / "marked_variants.tsv"), "--status", "C", "--to", "any", "--tsv", str(record)]) == 0
+    with open(record, encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert len(rows) == 1 and rows[0]["sample"] == sid and rows[0]["variant"] == "chr1-1000-C-T"
+    assert rows[0]["inhouse_criteria"] and "manual_acmg_done" in rows[0]
+    capsys.readouterr()
     assert module.main([str(out / "marked_variants.tsv"), "--status", "C", "--to", "P", "--with-sample"]) == 0
     assert sid in capsys.readouterr().out
