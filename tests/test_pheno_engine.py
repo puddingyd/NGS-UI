@@ -225,7 +225,7 @@ def test_rankings_points_and_explanation(eng):
     assert res.gene("GENEZ")["status"] == "na" and res.gene("NOPE") is None
     lead = res.lead_nats()
     assert genes[0]["lead"] == (lead >= E.LEAD_NATS)
-    # P(g, d): best disease keeps P(g); the gene's other disease is reduced but not below −3.1
+    # P(g, d): best disease keeps P(g); the gene's other disease is reduced but not below −5.4
     pts = {x["disease_id"]: x for x in res.gene_disease_points("GENEA")}
     assert pts["OMIM:100001"]["P"] == 10.3 and pts["OMIM:100001"]["best"]
     assert E.P_MIN <= pts["OMIM:100003"]["P"] <= 10.3
@@ -239,7 +239,7 @@ def test_rankings_points_and_explanation(eng):
 
 def test_points_tables():
     assert E.gene_points(1) == 10.3 and E.gene_points(1.5) == 7.5 and E.gene_points(10) == 5.7
-    assert E.gene_points(11) == 4.2 and E.gene_points(5000) == -3.1
+    assert E.gene_points(11) == 4.2 and E.gene_points(5000) == -5.4
     assert E.disease_points(3) == 8.9 and E.disease_points(2000) == -3.1
 
 

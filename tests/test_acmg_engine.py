@@ -372,10 +372,12 @@ def test_pm1_from_clinvar_hotspot():
 
 def test_pp2_from_gene_missense_counts():
     yes = refs(missense_genes={"GENE1": (20, 1)})
-    too_benign = refs(missense_genes={"GENE1": (20, 5)})
+    too_benign = refs(missense_genes={"GENE1": (20, 7)})     # 26% benign > 20%
+    edge = refs(missense_genes={"GENE1": (20, 5)})           # exactly 20% (v1.8)
     too_few = refs(missense_genes={"GENE1": (5, 0)})
     assert met(evaluate_variant(missense_row(), Context(refs=yes)), "PP2")
     assert not met(evaluate_variant(missense_row(), Context(refs=too_benign)), "PP2")
+    assert met(evaluate_variant(missense_row(), Context(refs=edge)), "PP2")
     assert not met(evaluate_variant(missense_row(), Context(refs=too_few)), "PP2")
     assert not met(evaluate_variant(lof_row(), Context(refs=yes)), "PP2")      # not missense
     assert "PP2" in evaluate_variant(missense_row(), Context(refs=yes))["criteria_text"]

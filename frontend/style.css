@@ -2616,6 +2616,7 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
    that the SNV variant card's info-grid (ACMG dropdown column etc.)
    isn't clipped. */
 .gene-search-card { width: 95%; max-width: 1100px; }
+.gene-search-card.prio-wide { width: 97%; max-width: 1560px; }
 .gene-search-head {
   display: flex; align-items: center; gap: 12px;
   margin-bottom: 8px;
@@ -2637,13 +2638,14 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 .ac-tool-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* In-house prioritization candidate diagnoses (one gene per row). */
 .prio-cand-note { font-size: 12px; margin: 0 0 10px; }
-.prio-cand { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+.prio-cand { border: 1px solid var(--border); border-radius: 8px; padding: 8px 8px; margin-bottom: 12px; }
 .prio-cand-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 6px; }
 .prio-cand-rank { font-weight: 700; font-size: 15px; }
 .prio-cand-gene { font-weight: 700; font-size: 15px; font-style: italic; }
-.prio-cand-score { font-family: ui-monospace, monospace; font-weight: 600; }
+.prio-cand-score { font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; }
 .prio-cand-disease a { color: inherit; }
-.prio-cand-mode { color: #5b21b6; }
+.prio-cand-mode { color: #5b21b6; white-space: nowrap; }
+.prio-cand-rank, .prio-cand-gene, .prio-cand-generank { white-space: nowrap; }
 .prio-cand-others { font-size: 12px; margin: 0 0 6px; }
 .prio-cand-others summary { cursor: pointer; color: var(--muted); }
 .prio-cand-others ul { margin: 4px 0 0 18px; padding: 0; }

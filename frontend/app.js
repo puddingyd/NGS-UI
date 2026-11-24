@@ -3483,6 +3483,7 @@ function openSameGeneModal(gene) {
 }
 
 function openGeneSearchModal(kind, gene) {
+  document.querySelector("#gene-search-modal .gene-search-card")?.classList.remove("prio-wide");
   const inp = document.getElementById("gene-search-modal-input");
   document.getElementById("gene-search-filter-row")
     ?.classList.toggle("hidden", kind === "cnv-sv");
@@ -3502,6 +3503,7 @@ function openGeneSearchModal(kind, gene) {
 // shell. Variants with a per-variant rank 1–20 for the chosen tool,
 // sorted by rank ascending; the card's #N marker shows the rank.
 function openToolRankModal(tool) {
+  document.querySelector("#gene-search-modal .gene-search-card")?.classList.remove("prio-wide");
   const titleEl = document.getElementById("gene-search-title");
   const host    = document.getElementById("gene-search-results");
   const inp      = document.getElementById("gene-search-modal-input");
@@ -3553,16 +3555,35 @@ function _prioDiseaseLink(id) {
     : `https://www.orpha.net/en/disease/detail/${m[2]}`;
 }
 
+// Short inheritance labels for the candidate list (the ⓘ keeps the long text).
+const PRIO_MODE_SHORT = {
+  dominant: "AD",
+  xld: "XLD",
+  other: "MT/YL",
+  unknown: "遺傳模式未知",
+  hom: "AR，同型合子",
+  pair: "AR，兩個變異",
+  single: "AR，一個變異",
+  hemi: "XLR，男性半合子",
+  xlr_female_single: "XLR，一個變異",
+  somatic: "Somatic",
+};
+
+function _prioModeShort(c) {
+  if (c.mode === "pair" && c.moi_class === "xlr") return "XLR，兩個變異";
+  if (c.mode === "hom" && c.moi_class === "xlr") return "XLR，同型合子";
+  return PRIO_MODE_SHORT[c.mode] || c.mode || "";
+}
+
 function _prioCandidateSummary(c) {
-  const MOI_LABEL = { dominant: "AD", ar: "AR", xlr: "XLR", xld: "XLD", other: "MT/YL", unknown: "未知" };
   const parts = `${_prioNum(c.v)}${_prioSigned(c.p)}${_prioSigned(c.c)}`;
   const disease = c.no_disease
-    ? "沒有已知疾病（表型給最低分）"
+    ? "沒有已知疾病"
     : `${c.disease_name || c.disease_id}${c.disease_id ? `（${c.disease_id}${c.disease_rank ? `，疾病第 ${Math.round(c.disease_rank)} 名` : ""}）` : ""}`;
   return {
     score: `${_prioNum(c.total)} (${parts})`,
     disease,
-    mode: `${MOI_LABEL[c.moi_class] || c.moi_class || ""}：${PRIO_MODE_ZH[c.mode] || c.mode}`,
+    mode: _prioModeShort(c),
   };
 }
 
@@ -3638,6 +3659,7 @@ function openPrioCandidatesModal() {
   document.getElementById("gene-search-filter-row")?.classList.remove("hidden");
   document.getElementById("gene-search-filter-gnomad-label")?.classList.add("hidden");
   if (inp) inp.style.display = "none";
+  document.querySelector("#gene-search-modal .gene-search-card")?.classList.add("prio-wide");
   _prioCandShown = PRIO_CAND_PAGE;
   renderPrioCandidates();
   document.getElementById("gene-search-results")?.scrollTo?.(0, 0);

@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.65：ACMG 規則 v1.8（`pm1_clinvar.min_stars=1`、`pp2.max_benign_fraction=0.2`，依 ClinVar 標籤驗證：PM1 LR+ 102→137、PP2 LR+ 25→16）；表型引擎 `P_MIN` 由 −3.1 改 −5.4（>1000 名區間的估計值，不再截到 −3.1；`prioritization.P_FLOOR` 同步）；候選診斷視窗 `.prio-wide`（最寬 1560px）、遺傳模式短標籤 `PRIO_MODE_SHORT`。
+
 v10.64：候選診斷清單（計畫階段 5a，SNV/Indel）：`prioritization.gene_candidates()` 列出每個基因所有疾病×遺傳模式×基因型組合（隱性配對只算一次、ref 不成候選），取最高者並保留前 5 個其他組合；`annotate()` 在有 HPO 時把每基因一列、競賽名次排序的前 200 列放進 payload `prioritization.candidates`（`candidate_count` 為總數）。SNV/Indel 標題列「候選診斷」按鈕（無 HPO 停用）開啟沿用搜尋視窗的清單，預設 20 列、「顯示更多」每次 20 列。
 
 v10.63：In-house prioritization（計畫階段 3–4）：`services/prioritization.py` 對每個 SNV/Indel 算 V′（`prio_v_points`＝排序點數含院內常見扣分；無則 0）＋P(g,d)（表型引擎，基因無疾病 −3.1）＋C（OMIM 每個疾病的遺傳模式：AD／XLD／未知 0、AR 同型合子 0、成對 V′_pair −1、單一異合子 WES −3／WGS −4、XLR 男性 0／女性異合子 −3），每個變異取最佳候選；載入時附 `prio`、`prio_total`、`old_rank`，payload `prioritization.mode`＝prio 才依新分數排 tier，沒有 HPO（只有 panel）退回 Score (old)。卡片第一欄「In-house prioritization」＋「Score (old)（rank）」。`validate_engine.py --rule-variants` 以 ClinVar 標籤比較 PM1／PP2 規則調整。

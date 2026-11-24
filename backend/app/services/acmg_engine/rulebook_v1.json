@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.7",
+  "version": "ngsui-acmg-v1.8",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -110,7 +110,7 @@
   "pm1_pp3_cap": 4,
   "pm1_clinvar": {
     "window": 10,
-    "min_stars": 2,
+    "min_stars": 1,
     "supporting_residues": 3,
     "moderate_residues": 6,
     "benign_min_stars": 1,
@@ -122,11 +122,12 @@
   },
   "pp2": {
     "min_plp": 10,
-    "max_benign_fraction": 0.1,
+    "max_benign_fraction": 0.2,
     "provisional": [
       "min_plp",
       "max_benign_fraction"
-    ]
+    ],
+    "note": "2026-11-24 v1.8: benign fraction ≤20% (was 10%); PM1 ClinVar hotspots count ≥1★ P/LP (was ≥2★). ClinVar-label check: PM1 LR+ 102→137, PP2 LR+ 25→16, AUC 0.976→0.976"
   },
   "pm5": {
     "lp_strength": "supporting",

@@ -13,8 +13,8 @@ per-term explanation.
 * §4.6 G(g) = max S* over the gene's diseases (``disease_gene.tsv`` use=1);
   order by G, then X of the best disease, then gene symbol.  Genes whose
   diseases have no annotations are listed separately (NA).
-* §4.8 P(g) from the gene's rank bin, clipped to [−3.1, 13];
-  P(g, d) = max(−3.1, P(g) − [P_dis(d*) − P_dis(d)]) with disease ranks taken
+* §4.8 P(g) from the gene's rank bin, clipped to [−5.4, 13];
+  P(g, d) = max(−5.4, P(g) − [P_dis(d*) − P_dis(d)]) with disease ranks taken
   per MONDO group (OMIM and Orphanet entries of one disease share the better
   rank).  The bin values are the provisional development-set numbers.
 * §4.7 output files ``pheno_engine_{diseases,genes,explain}.tsv`` and
@@ -42,9 +42,11 @@ from . import kb as K
 ENGINE_VERSION = "pheno-engine-v1"
 LEAD_NATS = 3.0          # §4.8.5 "rank 1 and clearly ahead"
 NEAR_TIE_NATS = 1.0      # §4.8.6 near-tie group
-P_MIN, P_MAX = -3.1, 13.0
+# 2026-11-24 (user decision): no −3.1 floor — the >1000 bin keeps its estimated
+# value −5.4 (plan §4.8.3 development set), which is also the lowest P.
+P_MIN, P_MAX = -5.4, 13.0
 INF = float("inf")
-GENE_POINTS = ((1, 10.3), (5, 7.5), (10, 5.7), (50, 4.2), (200, 1.6), (1000, -1.7), (INF, -3.1))
+GENE_POINTS = ((1, 10.3), (5, 7.5), (10, 5.7), (50, 4.2), (200, 1.6), (1000, -1.7), (INF, -5.4))
 DISEASE_POINTS = ((1, 11.1), (5, 8.9), (10, 7.6), (50, 5.4), (200, 3.1), (1000, 0.2), (INF, -3.1))
 CALIBRATION = "provisional (plan §4.8.3, phenopacket-store time-split development set)"
 EXPLAIN_TOP = 50

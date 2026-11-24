@@ -217,3 +217,7 @@ def test_candidate_limit():
     shown, total = PR.rank_candidates(genes, limit=10)
     assert total == 30 and len(shown) == 10 and shown[0]["rank"] == 1
     assert [g["rank"] for g in shown[:5]] == [1, 1, 1, 1, 5]
+
+
+def test_floor_matches_engine():
+    assert PR.P_FLOOR == E.P_MIN == E.gene_points(5000)

@@ -8,7 +8,7 @@ For every SNV/Indel candidate of a case::
   ≥2★ / VCEP adopt and the P-KNN LLR → GeneBe, minus the 院內常見 penalty);
   a recessive pair uses the combined points of plan §5.3.
 * P(g, d) — phenotype points of disease d in gene g from the phenotype engine
-  (plan §4.8.7).  Genes without a ranked disease get the floor −3.1.  With no
+  (plan §4.8.7).  Genes without a ranked disease get the lowest value −5.4.  With no
   usable HPO term (panel only, no knowledge base) P is not counted and the
   case keeps the old ordering (``mode == "old"``).
 * C — inheritance compatibility (plan §6.3, provisional): dominant / X-linked
@@ -38,7 +38,7 @@ K = 0.733                       # ln 2.08 — one ACMG point
 SINGLE_HET = {"WES": -3.0, "WGS": -4.0}
 PAIR_PHASE_UNKNOWN = -1.0
 XLR_FEMALE_HET = -3.0
-P_FLOOR = -3.1
+P_FLOOR = -5.4                 # = pheno_engine.engine.P_MIN (lowest phenotype points)
 VERSION = "prio-v1"
 CANDIDATE_LIMIT = 200          # candidate rows sent to the browser (20 shown, "顯示更多")
 
