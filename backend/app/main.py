@@ -15,6 +15,7 @@ from .services import (
     inhouse_af_mito,
     manual_acmg,
     omim_store,
+    patient_phenotype_store,
     phenotype_scorer,
     users,
     unregistered_samples,
@@ -41,6 +42,14 @@ app.add_middleware(
 
 
 def _warm_caches() -> None:
+    # Repair missing patient files from already-saved registrations before
+    # slow reference warm-up. The phenotype load endpoint can also recover
+    # one MRN immediately if it arrives before this background pass finishes.
+    try:
+        result = patient_phenotype_store.backfill_registered()
+        logger.info("patient phenotype backfill: created=%d errors=%d", result["created"], result["errors"])
+    except Exception:
+        logger.exception("patient phenotype backfill failed; lookup will retry")
     # Rebuild the small active Causative/Other registry from sample JSON before
     # the slower phenotype reference warm-up starts.
     try:

@@ -246,7 +246,8 @@ def load_phenotype_file(
 ):
     """Return an existing phenotype.txt for editing.
 
-    Lookup order: exact {mrn}_phenotype.txt → legacy LIS/MRN forms.
+    Lookup order: exact {mrn}_phenotype.txt → legacy LIS/MRN forms →
+    recover a missing MRN file from registered samples' saved default analysis.
     404 when nothing matches.
     """
     code = _check_token("LIS_ID", code or "", required=False)
@@ -257,6 +258,8 @@ def load_phenotype_file(
         data = patient_phenotype_store.load(mrn=mrn, code=code)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(500, "病人 phenotype 補建或讀取失敗，請稍後重試") from exc
     if not data:
         raise HTTPException(404, "找不到對應的 phenotype 檔")
     return data
