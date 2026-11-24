@@ -241,10 +241,14 @@ def test_utf8_text_round_trip_rename_archive_and_delete(document_store, monkeypa
     assert saved["display_name"] == "門診摘要.txt"
     assert saved["content_type"] == "text/plain; charset=utf-8"
     assert saved["size_bytes"] == len(content)
-    assert saved["previewable"] is False
+    assert saved["previewable"] is True
     assert store.list_documents("12345678") == [saved]
-    with pytest.raises(store.PreviewUnavailable):
-        store.render_preview(saved["id"])
+    preview_path, preview_info = store.render_preview(saved["id"])
+    assert isinstance(preview_path, Path)
+    assert preview_path.read_bytes() == content
+    assert preview_info["content_type"] == "text/plain; charset=utf-8"
+    with pytest.raises(store.InvalidDocument, match="頁碼"):
+        store.render_preview(saved["id"], page=1)
 
     renamed = store.rename_document(saved["id"], "追蹤紀錄.txt")
     path, info = store.document_file(saved["id"], action="download")
@@ -281,3 +285,31 @@ def test_text_duplicates_and_name_conflicts_preserve_original(document_store):
     assert len(original) == 1
     path, _ = store.document_file(original[0]["id"])
     assert path.read_text() == "第一份摘要"
+
+
+def test_text_preview_api_streams_plain_text_and_records_preview(document_store):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.auth import current_user
+    from app.routers.documents import router
+
+    documents, _ = document_store
+    content = "中文摘要\n<script>alert('plain text')</script>\n".encode("utf-8")
+    saved = _upload("preview.txt", content)
+    app = FastAPI()
+    app.dependency_overrides[current_user] = lambda: {"id": 7, "username": "reviewer"}
+    app.include_router(router)
+    with TestClient(app) as client:
+        response = client.get(f"/api/documents/{saved['id']}/preview")
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "content-disposition" not in response.headers
+    with sqlite3.connect(documents / "documents.sqlite") as conn:
+        actions = [row[0] for row in conn.execute(
+            "SELECT action FROM document_events WHERE document_id=? ORDER BY id",
+            (saved["id"],),
+        )]
+    assert actions == ["upload", "preview"]

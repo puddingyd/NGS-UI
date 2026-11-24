@@ -111,6 +111,7 @@
           </section>
 
           <div id="pdoc-content" hidden>
+            <div class="pdoc-add-sections">
             <section class="pdoc-section">
               <div class="pdoc-section-head">
                 <h3>新增文件</h3>
@@ -137,7 +138,7 @@
                 </label>
                 <label class="pdoc-name-field" for="pdoc-text-content">
                   <span>文字內容</span>
-                  <textarea id="pdoc-text-content" rows="6" placeholder="在這裡貼上或輸入文字…" required></textarea>
+                  <textarea id="pdoc-text-content" rows="4" placeholder="在這裡貼上或輸入文字…" required></textarea>
                 </label>
                 <div class="pdoc-upload-actions">
                   <span id="pdoc-text-status" class="pdoc-muted" aria-live="polite"></span>
@@ -145,6 +146,7 @@
                 </div>
               </form>
             </section>
+            </div>
 
             <section class="pdoc-section pdoc-existing-section">
               <div class="pdoc-section-head">
@@ -163,7 +165,7 @@
         <div class="pdoc-preview-card" role="dialog" aria-modal="true" aria-labelledby="pdoc-preview-title">
           <div class="pdoc-head">
             <div>
-              <h2 id="pdoc-preview-title">圖片預覽</h2>
+              <h2 id="pdoc-preview-title">文件預覽</h2>
               <div id="pdoc-preview-page-label" class="pdoc-muted"></div>
             </div>
             <button type="button" class="pdoc-icon-btn" data-pdoc-preview-close aria-label="關閉">&times;</button>
@@ -573,10 +575,12 @@
     previewController?.abort();
     previewController = new AbortController();
     const currentDocument = previewDocument;
+    const isText = currentDocument.file_format === "TXT";
     previewPage = page;
     resetPreviewViewport();
     renderPreviewControls();
     const body = document.getElementById("pdoc-preview-body");
+    body.classList.toggle("is-text", isText);
     body.innerHTML = `<span class="pdoc-muted">載入中…</span>`;
     renderPreviewViewportControls();
     releasePreviewUrl();
@@ -594,6 +598,16 @@
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.detail || `預覽失敗 (${response.status})`);
+      }
+      if (isText) {
+        const text = await response.text();
+        if (request !== previewRequest) return;
+        const pre = document.createElement("pre");
+        pre.className = "pdoc-text-preview";
+        pre.textContent = text;
+        body.replaceChildren(pre);
+        body.scrollTop = 0;
+        return;
       }
       const blob = await response.blob();
       if (request !== previewRequest) return;
@@ -614,6 +628,7 @@
     const controls = document.getElementById("pdoc-preview-controls");
     const label = document.getElementById("pdoc-preview-page-label");
     const index = previewDocuments.findIndex(row => row.id === previewDocument?.id);
+    document.getElementById("pdoc-view-controls").hidden = previewDocument?.file_format === "TXT";
     controls.hidden = pages <= 1;
     label.textContent = [
       index >= 0 ? `檔案 ${index + 1} / ${previewDocuments.length}` : "",
@@ -633,7 +648,7 @@
   function showPreviewDocument(documentInfo) {
     previewDocument = documentInfo;
     previewPage = 0;
-    document.getElementById("pdoc-preview-title").textContent = previewDocument.display_name || "圖片預覽";
+    document.getElementById("pdoc-preview-title").textContent = previewDocument.display_name || "文件預覽";
     document.getElementById("patient-document-preview").hidden = false;
     loadPreviewPage(0);
   }
@@ -814,7 +829,7 @@
     document.addEventListener("keydown", event => {
       const previewIsOpen = !document.getElementById("patient-document-preview")?.hidden;
       const isTyping = !!event.target.closest("input, textarea, select, [contenteditable]");
-      if (previewIsOpen && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (previewIsOpen && previewDocument?.file_format !== "TXT" && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
         if (event.shiftKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
           event.preventDefault();
           const movement = {

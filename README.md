@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.50：Documents 已儲存的 TXT 新增「預覽」，可直接讀取、選取複製文字並切換上一個／下一個文件。視窗加寬，上方「新增文件」與「貼上文字，儲存為 TXT」改為左右排列，減少查看已儲存文件前的捲動；窄螢幕自動上下排列。主畫面與輸入臨床表徵頁同步，更新服務並重新載入即可。
+
 v10.49：Clinical presentation 旁的 Documents 視窗新增「貼上文字，儲存為 TXT」，可輸入檔名與文字，按「儲存 TXT」加入該病人的文件清單，之後可用「修改檔名」更名。自動補 `.txt`，保留中文與換行；儲存失敗會保留輸入。也支援選擇／拖入 UTF-8 TXT，沿用下載、全部 ZIP 與刪除功能。主畫面與輸入臨床表徵頁共用，登入後使用；更新服務並重新載入即可，不需重跑分析。
 
 v10.48 補記：ACMG 規則 v1.4（`ngsui-acmg-v1.4`）—— PM5 參考變異放寬為 ClinVar ≥1★、只有隱性遺傳的基因 PM2 門檻改為 0.07%、膠原蛋白三股螺旋 Gly-X-Y 甘胺酸給 PM1_Moderate，並載入 ClinGen CSpec 的 VCEP 規格（133 個基因：條目適用性與強度上限、BA1／BS1／PM2 門檻、PM1 熱點）。表格由 `scripts/acmg_engine/update_vcep_specs.py` 產生，人工核對表在 `docs/research/acmg_vcep_specs_review.tsv`；部署後需 `build_engine_results.py --all --force` 重算。

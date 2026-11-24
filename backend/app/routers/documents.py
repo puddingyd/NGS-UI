@@ -143,6 +143,15 @@ def preview_patient_document(
             page=page,
             user=user,
         )
+        if info["file_format"] == "TXT":
+            return FileResponse(
+                content,
+                media_type=info["content_type"],
+                headers={
+                    "Cache-Control": "private, no-store",
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
         return Response(
             content=content,
             media_type="image/png",

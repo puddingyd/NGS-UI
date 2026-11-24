@@ -263,7 +263,9 @@ def _public(row: sqlite3.Row | dict) -> dict:
         "file_format": data["file_format"],
         "size_bytes": int(data["size_bytes"] or 0),
         "sha256": data["sha256"],
-        "previewable": bool(_FORMATS.get(data["file_format"], {}).get("image")),
+        "previewable": data["file_format"] == "TXT" or bool(
+            _FORMATS.get(data["file_format"], {}).get("image")
+        ),
         "image_width": data.get("image_width"),
         "image_height": data.get("image_height"),
         "image_pages": int(data.get("image_pages") or 1),
@@ -731,10 +733,15 @@ def render_preview(
     *,
     page: int = 0,
     user: dict | None = None,
-) -> tuple[bytes, dict]:
+) -> tuple[bytes | Path, dict]:
+    """Return rendered image bytes or the original TXT path for streaming."""
     if page < 0:
         raise InvalidDocument("預覽頁碼不合法")
     path, info = document_file(document_id, user=user, action="preview")
+    if info["file_format"] == "TXT":
+        if page != 0:
+            raise InvalidDocument("預覽頁碼不合法")
+        return path, info
     if not info["previewable"]:
         raise PreviewUnavailable("這個檔案格式不支援圖片預覽")
     try:

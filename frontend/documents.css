@@ -22,6 +22,13 @@
   color: #24292f;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.25);
 }
+.pdoc-card { width: min(1240px, 96vw); }
+.pdoc-add-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pdoc-add-sections > .pdoc-section { min-width: 0; }
+.pdoc-add-sections .pdoc-pending { max-height: 190px; overflow: auto; }
+.pdoc-add-sections .pdoc-pending-row { grid-template-columns: 48px minmax(0, 1fr) auto; }
+.pdoc-add-sections .pdoc-pending-thumb { width: 46px; height: 44px; }
+.pdoc-add-sections .pdoc-pending-row > button { grid-column: 2 / -1; justify-self: end; }
 .pdoc-head {
   position: sticky;
   top: 0;
@@ -50,7 +57,7 @@
 .pdoc-error { color: #b42318 !important; }
 .pdoc-section { padding: 16px 18px; }
 .pdoc-existing-section { border-top: 1px solid #d8dee4; }
-.pdoc-text-section { border-top: 1px solid #d8dee4; }
+.pdoc-text-section { border-left: 1px solid #d8dee4; }
 #pdoc-text-form { display: grid; gap: 10px; }
 #pdoc-text-form > .pdoc-name-field:first-child { max-width: 520px; }
 #pdoc-text-content {
@@ -253,6 +260,23 @@
 .pdoc-preview-body.is-zoomed { cursor: grab; }
 .pdoc-preview-body.is-dragging { cursor: grabbing; }
 .pdoc-preview-body.is-dragging img { transition: none; }
+.pdoc-preview-body.is-text {
+  display: block;
+  overflow: auto;
+  background: #fff;
+  color: #24292f;
+  touch-action: auto;
+  user-select: text;
+  cursor: text;
+}
+.pdoc-text-preview {
+  margin: 0;
+  padding: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.6;
+}
 .pdoc-view-controls {
   display: flex;
   align-items: center;
@@ -311,6 +335,8 @@
 .documents-title-row .section-title { margin: 0; }
 
 @media (max-width: 720px) {
+  .pdoc-add-sections { grid-template-columns: minmax(0, 1fr); }
+  .pdoc-text-section { border-left: 0; border-top: 1px solid #d8dee4; }
   .pdoc-preview-stage { grid-template-columns: 36px minmax(0, 1fr) 36px; }
   .pdoc-preview-body { height: calc(96vh - 260px); min-height: 280px; padding: 8px; }
   .pdoc-view-controls { gap: 7px 10px; padding: 7px 8px; }
