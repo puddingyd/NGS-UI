@@ -288,3 +288,34 @@ def test_inhouse_shows_own_call_but_ranks_with_clinvar_adopt(monkeypatch):
     assert runner.own_call({"classification": "Pathogenic", "points": 10}) == ("Pathogenic", 10)   # old summary
     assert runner.own_call({"points": 6, "engine_points": 7, "engine_classification": "Likely pathogenic"}) \
         == ("Likely pathogenic", 7)
+
+
+def test_vcep_call_shown_and_manual_does_not_move_ranking(monkeypatch):
+    from app.services import manual_acmg, sample_loader
+
+    monkeypatch.setattr(manual_acmg, "bulk_current", lambda *a, **k: {})
+    monkeypatch.setattr(manual_acmg, "bulk_observed_counts", lambda *a, **k: {})
+    variants = {
+        # ClinGen VCEP P (summary without clinvar_source: falls back to the variant's VCEP class)
+        "chr1-1-A-G": {"tier": "2", "pheno_score": 0, "clingen_vcep_class": "Pathogenic",
+                       "engine_acmg": {"classification": "Pathogenic", "points": 10, "engine_points": 3,
+                                       "criteria_text": "PM2_Supporting,PP3_Moderate", "clinvar_action": "adopt"}},
+        # reviewer says P (10); In-house own 2 points → ranking stays 2
+        "chr1-2-A-G": {"tier": "2", "pheno_score": 0,
+                       "engine_acmg": {"classification": "Uncertain significance", "points": 2, "engine_points": 2,
+                                       "criteria_text": "PM2_Supporting,PP3_Supporting", "clinvar_action": "none",
+                                       "clinvar_source": "ClinVar"}},
+    }
+    sample_loader._promote_engine_to_inhouse(variants)
+    meta = {"edits": {"chr1-2-A-G": {"manual_acmg": {"classification": "Pathogenic", "score": 10,
+                                                     "criteria_text": "PVS1,PM2_Supporting", "criteria": {}}}}}
+    categories = {"1A": [], "1B": [], "1C": [], "2": list(variants)}
+    sample_loader._apply_effective_acmg(variants, categories, sample_id="S", genome_build="hg38", meta=meta)
+    vcep = variants["chr1-1-A-G"]
+    assert vcep["effective_acmg_class"] == "Pathogenic" and vcep["effective_acmg_score"] == 10
+    assert vcep["effective_acmg_source"] == "ClinGen 專家小組"
+    manual = variants["chr1-2-A-G"]
+    assert manual["effective_acmg_source"] == "manual" and manual["effective_acmg_score"] == 10
+    assert manual["effective_rank_score"] == 2 and manual["geno_score"] == manual_acmg.acmg_to_variant_score(2)
+    assert manual["tier"] == "1C"                        # tier follows the shown (manual) class
+    assert runner.expert_adopted({"clinvar_action": "adopt", "clinvar_source": "ClinVar"}, "Pathogenic") is False

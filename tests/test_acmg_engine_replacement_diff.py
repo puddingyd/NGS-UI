@@ -132,3 +132,30 @@ def test_explain_marked_lists_changed_causative_without_sample_ids(tmp_path, mon
     capsys.readouterr()
     assert module.main([str(out / "marked_variants.tsv"), "--status", "C", "--to", "LP", "--with-sample"]) == 0
     assert sid in capsys.readouterr().out
+
+
+def test_show_variant_prints_stored_and_recomputed(tmp_path, monkeypatch, capsys):
+    import importlib.util
+    from pathlib import Path
+
+    from app import config
+    from app.services.acmg_engine import runner
+
+    root = tmp_path / "root"
+    monkeypatch.setattr(config, "PIPELINE_OUT_ROOT", root)
+    monkeypatch.setattr(config, "LEGACY_TERTIARY_OUTPUT_ROOT", tmp_path / "legacy_ui")
+    monkeypatch.setattr(config, "LEGACY_PIPELINE_OUT_ROOT", tmp_path / "legacy_pipe")
+    shared = refs()
+    sid = "24WE0001-nckuh"
+    publish(root, sid, [LOF, OTHER], shared)
+    monkeypatch.setattr(runner, "shared_references", lambda: shared)
+    monkeypatch.setattr(runner, "shared_recurrence", lambda: None)
+    spec = importlib.util.spec_from_file_location(
+        "show_variant", Path(__file__).resolve().parents[1] / "scripts/acmg_engine/show_variant.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.main([sid, "1-1000-C-T", "--recompute"]) == 0
+    text = capsys.readouterr().out
+    assert "已存結果" in text and "目前程式重算" in text and "+ PVS1" in text and "PM2" in text
+    assert "規則自算分類" in text and "review TSV 頻率欄" in text
+    assert module.main([sid, "chr9-1-A-G"]) == 1

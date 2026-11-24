@@ -246,3 +246,31 @@ def test_loader_recomputes_pheno_table_after_switch(tmp_path, monkeypatch):
     table["id"] = "hpo-gene-clean-v1:2026-09-01_2026-09-01"
     sample_loader._ensure_pheno_table("S1", vdir, [("HP:1", 1)], [])
     assert calls == [{"GENEA": 100.0}]                # table switched → recomputed
+
+
+def test_release_download_and_obo_install(sources, tmp_path, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "build_hpo", Path(__file__).resolve().parents[1] / "scripts/hpo/build_hpo_gene_table.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    data = tmp_path / "pd"
+    calls = []
+
+    def fake_download(url, dest):
+        calls.append(url)
+        dest.write_bytes((sources / dest.name).read_bytes())
+
+    monkeypatch.setattr(module, "_download", fake_download)
+    folder = module.fetch_release("latest", data)
+    assert folder.name == "hpo_release_2026-09-01" and (folder / "phenotype.hpoa").is_file()
+    assert all("latest/download" in u for u in calls)
+    calls.clear()
+    assert module.fetch_release("v2026-09-01", data) == folder and calls == []     # already there
+    (data / "hp.obo").write_text("old", encoding="utf-8")
+    assert module.install_obo(folder / "hp.obo", data) == data / "hp.obo"
+    assert (data / "hp.obo").read_text(encoding="utf-8") == OBO
+    assert len(list(data.glob("hp.obo.bak-*"))) == 1
+    assert module.install_obo(folder / "hp.obo", data) is None                     # identical → no-op

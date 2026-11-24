@@ -1282,10 +1282,16 @@ def _promote_engine_to_inhouse(variants: dict) -> None:
             variant["pipeline_acmg_class"] = variant.get("ACMG_classification") or ""
             variant["pipeline_acmg_score"] = variant.get("ACMG_score")
             variant["pipeline_acmg_criteria"] = variant.get("ACMG_criteria") or ""
-        # Shown: the rule's own call.  Ranked: with the ClinVar ≥2★ / VCEP
+        # Shown: a ClinGen expert panel (VCEP) call as is; otherwise the rule's
+        # own call (a ClinVar ≥2★ adopt moves ranking only).  Ranked: with the
         # adopt applied (``inhouse_rank_score``; plan §5.2.2).
         from .acmg_engine import runner as acmg_engine_runner
-        own_class, own_points = acmg_engine_runner.own_call(engine)
+        expert = acmg_engine_runner.expert_adopted(engine, variant.get("clingen_vcep_class") or "")
+        if expert:
+            own_class, own_points = engine.get("classification") or "", engine.get("points")
+        else:
+            own_class, own_points = acmg_engine_runner.own_call(engine)
+        variant["inhouse_from_vcep"] = expert
         variant["ACMG_classification"] = _normalize_acmg_class(own_class or "")
         variant["ACMG_score"] = own_points
         variant["ACMG_criteria"] = engine.get("criteria_text") or ""
@@ -1423,7 +1429,8 @@ def _apply_effective_acmg(
             source_scope = "global"
         elif variant.get("ACMG_classification") not in (None, "") or variant.get("genebe_acmg_class") in (None, ""):
             # In-house (the rule engine where it has a result) first, then GeneBe.
-            source = "GBA1 allele curation" if (variant.get("gba") or {}).get("clinical_assertion") else "in-house"
+            source = ("GBA1 allele curation" if (variant.get("gba") or {}).get("clinical_assertion")
+                      else "ClinGen 專家小組" if variant.get("inhouse_from_vcep") else "in-house")
             selected = {
                 "classification": variant.get("ACMG_classification") or "",
                 "score": variant.get("ACMG_score"),
@@ -1454,14 +1461,23 @@ def _apply_effective_acmg(
         )
 
         # 院內常見: the ranking points (not the class or tier) drop by 4/8.
-        # In-house ranks with the ClinVar ≥2★ adopt; the shown class stays its own.
-        rank_base = selected.get("score")
-        if source_scope == "in_house" and variant.get("inhouse_rank_score") is not None:
-            rank_base = variant.get("inhouse_rank_score")
+        # Ranking is fixed: In-house (with the ClinVar ≥2★ / VCEP adopt) →
+        # GeneBe, whatever the reviewer shows; manual ACMG changes the shown
+        # class (and tier) only.
+        if variant.get("ACMG_classification") not in (None, "") or variant.get("genebe_acmg_class") in (None, ""):
+            rank_scope = "in_house"
+            rank_base = variant.get("ACMG_score")
+            if variant.get("inhouse_rank_score") is not None:
+                rank_base = variant.get("inhouse_rank_score")
+            rank_criteria = variant.get("ACMG_criteria") or ""
+        else:
+            rank_scope = "genebe"
+            rank_base = variant.get("genebe_acmg_score")
+            rank_criteria = variant.get("genebe_acmg_criteria") or ""
         variant["effective_rank_score"] = rank_base
+        variant["effective_rank_source"] = rank_scope
         ranking_points = inhouse_common.apply_penalty(
-            variant, scope=source_scope, score=rank_base,
-            criteria_text=selected.get("criteria_text"),
+            variant, scope=rank_scope, score=rank_base, criteria_text=rank_criteria,
         )
         geno_score = manual_acmg.acmg_to_variant_score(
             ranking_points if ranking_points is not None else rank_base

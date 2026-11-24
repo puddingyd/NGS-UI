@@ -214,7 +214,7 @@ def test_observed_registry_only_keeps_active_causative_and_other(tmp_path):
     ) == []
 
 
-def test_effective_overlay_prefers_sample_snapshot_and_reorders(monkeypatch):
+def test_effective_overlay_prefers_sample_snapshot_but_keeps_ranking(monkeypatch):
     variants = {
         "chr1-100-A-G": {
             "tier": "2",
@@ -267,8 +267,11 @@ def test_effective_overlay_prefers_sample_snapshot_and_reorders(monkeypatch):
     assert variants["chr1-100-A-G"]["effective_acmg_source"] == "manual"
     assert variants["chr1-100-A-G"]["effective_acmg_scope"] == "sample"
     assert variants["chr1-100-A-G"]["effective_acmg_vus_subclass"] == ""
-    assert variants["chr1-100-A-G"]["geno_score"] == 100
-    assert variants["chr1-100-A-G"]["total_score"] == 120
+    assert variants["chr1-100-A-G"]["effective_acmg_score"] == 10
+    # ranking stays on In-house (1 point → 55), not the reviewer's 10 points
+    assert variants["chr1-100-A-G"]["geno_score"] == 55
+    assert variants["chr1-100-A-G"]["total_score"] == 75
+    assert variants["chr1-100-A-G"]["effective_rank_score"] == 1
     assert variants["chr1-100-A-G"]["observed_count"] == 3
     assert variants["chr1-100-A-G"]["tier"] == "1C"
     assert categories["1C"] == ["chr1-100-A-G"]

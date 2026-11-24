@@ -4644,12 +4644,21 @@ function _inhouseCommonScoreLines(v) {
 }
 
 function _clinvarRankScoreLines(v) {
-  const action = v?.inhouse_clinvar_action;
-  if (v?.effective_acmg_scope !== "in_house" || !["adopt", "floor"].includes(action)) return [];
-  const rank = _numericValue(v.inhouse_rank_score);
-  const own = _numericValue(v.effective_acmg_score);
-  if (rank == null || rank === own) return [];
-  return [`排序採用 ClinVar ≥2★／ClinGen VCEP 分級換算的 ${rank} 點；畫面 ACMG 為 In-house 規則自行計算的 ${own ?? "—"} 點`];
+  // Ranking is fixed (In-house incl. the ClinVar ≥2★ / VCEP adopt → GeneBe);
+  // reviewer ACMG and the shown In-house class do not move it.
+  const rank = _numericValue(v?.effective_rank_score);
+  const shown = _numericValue(v?.effective_acmg_score);
+  if (rank == null || rank === shown) return [];
+  const adopted = ["adopt", "floor"].includes(v?.inhouse_clinvar_action);
+  const src = v?.effective_rank_source === "genebe" ? "GeneBe"
+    : (adopted ? "In-house（含 ClinVar ≥2★ 分級）" : "In-house");
+  if (["sample", "global"].includes(v?.effective_acmg_scope)) {
+    return [`排序固定採用 ${src} 的 ${rank} 點，不隨手動判讀改變；畫面 ACMG 為手動判讀的 ${shown ?? "—"} 點`];
+  }
+  if (v?.effective_acmg_scope === "in_house" && adopted) {
+    return [`排序採用 ClinVar ≥2★ 分級換算的 ${rank} 點；畫面 ACMG 為 In-house 規則自行計算的 ${shown ?? "—"} 點`];
+  }
+  return [];
 }
 
 function _hasPrimaryReviewerStatus(id) {
@@ -5668,13 +5677,7 @@ async function saveAcmgEditor() {
         existing.effective_acmg_criteria = saved.criteria_text;
         existing.effective_acmg_vus_subclass = saved.vus_subclass
           || vusSubclassForScore(saved.classification, saved.score);
-        existing.geno_score = Math.round(
-          ((Math.max(-10, Math.min(10, Number(saved.score))) + 10) / 20) * 100,
-        );
-        existing.total_score = (existing.geno_score || 0) + (Number(existing.pheno_score) || 0);
-        if (existing.inhouse_common) {
-          existing.inhouse_common = { ...existing.inhouse_common, penalty: 0, exempt: "判讀者已手動判讀 ACMG" };
-        }
+        // ranking (geno_score / total_score) stays fixed; manual changes the shown class only
         if (!["1A", "1B"].includes(existing.tier)) {
           existing.tier = Number(saved.score) >= 4 || existing.predicted_suspect_non_acmg
             ? "1C" : "2";

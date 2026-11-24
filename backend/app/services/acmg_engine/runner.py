@@ -190,9 +190,25 @@ def summary(result: dict) -> dict:
         "engine_classification": result.get("engine_classification") or "",
         "criteria_text": result.get("criteria_text") or "",
         "clinvar_action": (result.get("clinvar_rule") or {}).get("action") or "none",
+        "clinvar_source": (result.get("clinvar_rule") or {}).get("source") or "",
         "flags": [f.get("code") for f in result.get("flags") or [] if isinstance(f, dict)],
         "version": result.get("version") or "",
     }
+
+
+def expert_adopted(engine: dict, vcep_class: str = "") -> bool:
+    """The stored class was adopted from a ClinGen expert panel (VCEP) call.
+
+    Summaries written before ``clinvar_source`` was kept fall back to the
+    variant's own ``CLINGEN_VCEP_CLASS`` (the engine prefers it over ClinVar).
+    """
+    engine = engine or {}
+    if (engine.get("clinvar_action") or "none") != "adopt":
+        return False
+    source = engine.get("clinvar_source")
+    if source:
+        return source == "ClinGen VCEP"
+    return bool(str(vcep_class or "").strip()) and "conflict" not in str(vcep_class).lower()
 
 
 def own_call(engine: dict) -> tuple[str, object]:

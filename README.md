@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.55：變異排序改為固定（In-house，含 ClinVar ≥2★ 分級 → GeneBe），判讀者手動判讀 ACMG 只改變畫面與報告的分類，不再改變排序；ClinGen 專家小組（VCEP）的分級直接顯示為 In-house 分類並標明來源。新增 `scripts/acmg_engine/show_variant.py`，可查單一變異每條 ACMG 條目為何符合或不符合。HPO 版本更新改用 `scripts/hpo/build_hpo_gene_table.py --release latest --activate`，一次下載、建表、啟用並更新 hp.obo。
+
 v10.54：ACMG「In-house」改為一律顯示平台規則自行算出的分類與點數；ClinVar ≥2★（或 ClinGen 專家小組）的分級只用在排序的變異分數，不再取代畫面上的 In-house 分類。ClinVar 分級仍在卡片的 ClinVar 欄顯示；兩者不同時，Score 的 ⓘ 會說明排序用了 ClinVar。未手動判讀的變異，畫面與報告上的分類可能因此改變；更新服務並重新載入即可，不需重算。
 
 v10.53：既有已登錄個案會依病歷號與已保存的 default 分析 HPO／panel，自動補建缺少的病人 phenotype 清單。在「輸入臨床表徵」頁只填病歷號、按「載入既有資料」即可顯示；服務啟動時會背景補建，較早查詢也會即時補上。既有人工保存的清單（包含刻意清空）保留，同病歷號多檢體採最近保存的 default，不混合其他分析版本。不需重跑分析，更新並重啟服務即可。
