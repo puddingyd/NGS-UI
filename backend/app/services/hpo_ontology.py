@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -173,24 +174,59 @@ def _fuzzy_similarity(query: str, candidate: str) -> float:
     return max(full, (0.85 * token_score) + (0.15 * specificity))
 
 
+_OBO_SIG: tuple | None = None
+_OBO_PATH: Path | None = None
+_OBO_CHECKED = 0.0
+SIGNATURE_INTERVAL = 30.0     # seconds between checks for a new hp.obo ("更新 HPO")
+
+
+def _obo_signature(path: Path) -> tuple | None:
+    try:
+        st = path.stat()
+        return str(path), st.st_mtime_ns, st.st_size
+    except OSError:
+        return None
+
+
+def _obo_changed(path: Path) -> bool:
+    global _OBO_CHECKED
+    now = time.monotonic()
+    if now - _OBO_CHECKED < SIGNATURE_INTERVAL:
+        return False
+    _OBO_CHECKED = now
+    return _obo_signature(path) != _OBO_SIG
+
+
 def load(path: Path = HP_OBO_PATH) -> int:
-    """Idempotent loader. Returns the term count."""
-    if _TERMS:
+    """Idempotent loader; re-reads hp.obo by itself when the file changes.
+    Returns the term count."""
+    global _OBO_SIG, _OBO_PATH
+    if _TERMS and not _obo_changed(path):
         return len(_TERMS)
     with _LOAD_LOCK:
-        if _TERMS:
+        sig = _obo_signature(path)
+        if _TERMS and sig == _OBO_SIG:
             return len(_TERMS)
         if not path.exists():
-            return 0
+            return len(_TERMS)
         parsed = _parse_obo(path)
+        _TERMS.clear()
         _TERMS.update(parsed)
         _build_indexes(_TERMS)
+        _OBO_SIG = sig
+        _OBO_PATH = path
         return len(_TERMS)
+
+
+def _ensure_loaded() -> None:
+    if not _TERMS:
+        load()
+    elif _OBO_PATH is not None and _obo_changed(_OBO_PATH):
+        load(_OBO_PATH)
 
 
 def get(hpo_id: str) -> HpoTerm | None:
-    if not _TERMS:
-        load()
+    _ensure_loaded()
     return _TERMS.get(hpo_id)
 
 
@@ -211,8 +247,7 @@ def _normalize_hpo_id(q: str) -> str | None:
 
 def search(query: str, limit: int = 20) -> list[dict]:
     """Rank-order search; see module docstring for ranking."""
-    if not _TERMS:
-        load()
+    _ensure_loaded()
     q = (query or "").strip()
     if not q:
         return []

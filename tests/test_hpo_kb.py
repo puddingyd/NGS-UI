@@ -131,27 +131,81 @@ def _build_script():
     return module
 
 
-def test_build_script_end_to_end_and_reproducible(src, tmp_path, monkeypatch):
+def test_build_script_end_to_end_and_reproducible(src, tmp_path, monkeypatch, capsys):
+    from app.services.pheno_engine import build as B
     module = _build_script()
     rows = [{"gene_symbol": "GENEA", "OMIM_disease": "D1 (000001)(AD)"}]
-    monkeypatch.setattr(module, "_platform_omim_rows", lambda: (rows, {"source": "test"}))
+    monkeypatch.setattr(B, "platform_omim_rows", lambda: (rows, {"source": "test"}))
     (src / "mondo.obo").write_text("[Term]\nid: MONDO:1\nname: m\nxref: OMIM:1 {source=\"MONDO:equivalentTo\"}\n",
                                    encoding="utf-8")
     args = ["--hp-obo", str(src / "hp.obo"), "--hpoa", str(src / "phenotype.hpoa"), "--genes-to-disease",
-            str(src / "genes_to_disease.txt"), "--mondo", str(src / "mondo.obo"), "--allow-missing", "orphanet"]
+            str(src / "genes_to_disease.txt"), "--orphanet", str(src / "none.xml"), "--mondo", str(src / "mondo.obo")]
     assert module.main(args + ["--kb-root", str(tmp_path / "r1")]) == 0
     assert module.main(args + ["--kb-root", str(tmp_path / "r2")]) == 0
+    out = capsys.readouterr().out
+    assert "表型知識庫" in out and "QC 全部通過" in out                          # summary printed, no cat needed
     s1, s2 = (next((tmp_path / r).glob("2026-*")) for r in ("r1", "r2"))
     m1, m2 = (json.loads((s / "manifest.json").read_text(encoding="utf-8")) for s in (s1, s2))
     assert m1["kb"]["content_sha256"] == m2["kb"]["content_sha256"]           # same versions → identical files
     assert m1["kb"]["qc"]["passed"] and "hpo_gene.tsv" in m1["kb"]["content_sha256"]
+    assert m1["kb"]["sources"]["orphanet"]["fallback"] is True                # no product6 → genes_to_disease rows
+    gene_rows = (s1 / "disease_gene.tsv").read_text(encoding="utf-8")
+    assert "ORPHA:3" in gene_rows and "via_genes_to_disease" in gene_rows
     for name in ("terms.tsv", "ancestors.npz", "disease_closure.npz", "disease_baseline.tsv", "disease_gene.tsv",
                  "disease_gene_discordant.tsv", "disease_groups.tsv"):
         assert (s1 / name).is_file()
     assert "## 知識庫" in (s1 / "build_qc.md").read_text(encoding="utf-8")
     kb, mu = K.load_kb(s1)
     assert kb.N == 4 and len(mu) == 4
-    # missing sources refuse unless allowed
-    with pytest.raises(SystemExit):
-        module.main(args[:-2] + ["--kb-root", str(tmp_path / "r3")])
-    assert not list((tmp_path / "r3").glob("2026-*"))                        # nothing half-written
+    # MONDO missing and not allowed → refuse, nothing half-written
+    no_mondo = args[:-2] + ["--mondo", str(src / "absent.obo"), "--kb-root", str(tmp_path / "r3")]
+    monkeypatch.setattr(B, "default_mondo", lambda: None)
+    assert module.main(no_mondo) == 1
+    assert not list((tmp_path / "r3").glob("2026-*"))
+
+
+def test_update_job_downloads_builds_activates(src, tmp_path, monkeypatch):
+    from app.services import hpo_update as U
+    from app.services import phenotype_scorer
+    from app.services.pheno_engine import build as B
+    monkeypatch.setattr(B, "platform_omim_rows", lambda: ([{"gene_symbol": "GENEA",
+                                                            "OMIM_disease": "D1 (000001)(AD)"}], {}))
+    data, kb_root = tmp_path / "pd", tmp_path / "kb"
+    data.mkdir()
+
+    def fake_download(url, dest):
+        if "orphadata" in url:
+            raise OSError("Network is unreachable")
+        name = "mondo.obo" if "mondo" in url else dest.name
+        if name == "mondo.obo":
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text("[Term]\nid: MONDO:1\nname: m\nxref: OMIM:1 {source=\"MONDO:equivalentTo\"}\n",
+                            encoding="utf-8")
+        else:
+            dest.write_bytes((src / name).read_bytes())
+
+    result = U.run("latest", data_dir=data, kb_root=kb_root, download=fake_download, progress=lambda m: None)
+    assert result["activated"] and result["hp_obo_installed"]
+    assert any("Orphanet 下載失敗" in w for w in result["warnings"])
+    assert (data / "hp.obo").is_file() and json.loads((kb_root / "active.json").read_text())["snapshot"]
+    picker = json.loads((data / "hpo_data.json").read_text(encoding="utf-8"))
+    seizure = next(t for t in picker if t["id"] == "HP:0001250")
+    assert seizure["g"] >= 1 and seizure["n"] == 1250 and seizure["par"]
+    assert "表型知識庫" in result["summary"]
+    # the running scorer notices the switch without a restart
+    table = U.H.active_table(kb_root)
+    monkeypatch.setattr(phenotype_scorer, "_SIGNATURE", ("old",))
+    monkeypatch.setattr(phenotype_scorer, "_LOADED", True)
+    monkeypatch.setattr(phenotype_scorer.hpo_gene_table, "KB_ROOT", kb_root)
+    monkeypatch.setattr(phenotype_scorer, "_SIG_CHECKED", 0.0)
+    assert phenotype_scorer._table_changed() is True
+    assert phenotype_scorer._table_signature(table)[0] == table.table_id
+
+
+def test_reference_versions_panel_never_fails(monkeypatch, tmp_path):
+    from app.services import reference_versions
+    data = reference_versions.collect()
+    names = [i["name"] for i in data["pipeline"]]
+    assert "VEP" in names and "gnomAD" in names
+    assert any(i["key"] == "hpo" for i in data["platform"])
+    assert all(set(i) >= {"name", "version", "note"} for i in data["platform"])

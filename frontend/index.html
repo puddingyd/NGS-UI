@@ -107,6 +107,15 @@
       <section id="welcome-analysis-flow" class="welcome-analysis-flow hidden" aria-label="NGS 分析流程">
         <div id="analysis-flow-content"></div>
       </section>
+      <section id="welcome-references" class="welcome-references" aria-label="資料庫版本">
+        <div class="references-head">
+          <h2>資料庫版本</h2>
+          <button type="button" id="btn-hpo-update" class="btn btn-ghost" title="下載最新 HPO、重建表型查表與知識庫並啟用（需登入）">更新 HPO</button>
+          <span id="hpo-update-status" class="muted references-status"></span>
+        </div>
+        <pre id="hpo-update-result" class="references-result hidden"></pre>
+        <div id="reference-versions-content"><div class="muted">資料庫版本載入中…</div></div>
+      </section>
       <div id="welcome-version-content" class="welcome-version-content">
         <div class="muted">版本紀錄載入中…</div>
       </div>

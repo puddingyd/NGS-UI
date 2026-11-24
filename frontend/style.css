@@ -283,7 +283,74 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   border-bottom: 1px solid var(--border);
   background: #fcfcfc;
 }
-.welcome-analysis-flow + .welcome-version-content h2:first-child {
+.welcome-references {
+  padding: 18px 28px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.references-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.references-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.references-status {
+  font-size: 12px;
+}
+.references-result {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #f6f8fa;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.references-table {
+  width: 100%;
+  max-width: 1100px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.references-table th,
+.references-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.references-table th {
+  color: #57606a;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.references-table td:first-child,
+.references-table td:nth-child(2) {
+  white-space: nowrap;
+}
+.references-table tr.references-missing td {
+  color: #8c959f;
+}
+.references-pipeline {
+  margin-top: 10px;
+}
+.references-pipeline summary {
+  cursor: pointer;
+  color: #57606a;
+  font-size: 13px;
+}
+@media (max-width: 720px) {
+  .welcome-references { padding: 14px 16px; }
+  .references-table td:nth-child(3), .references-table th:nth-child(3) { display: none; }
+  .references-table td:first-child, .references-table td:nth-child(2) { white-space: normal; }
+}
+.welcome-analysis-flow + .welcome-version-content h2:first-child,
+.welcome-references + .welcome-version-content h2:first-child {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;

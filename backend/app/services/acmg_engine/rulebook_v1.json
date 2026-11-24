@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.4",
+  "version": "ngsui-acmg-v1.5",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -41,9 +41,12 @@
       "bs1_other",
       "pm2_other_max",
       "inhouse_min_ac",
-      "pm2_recessive_max"
+      "pm2_recessive_max",
+      "pm2_xlinked_max"
     ],
-    "pm2_recessive_max": 0.0007
+    "pm2_recessive_max": 0.0007,
+    "pm2_xlinked_moi": ["XL", "XLR"],
+    "pm2_xlinked_max": 0.0001
   },
   "recurrence": {
     "wes_fraction": 0.05,

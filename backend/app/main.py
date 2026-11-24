@@ -2,16 +2,17 @@ import logging
 import threading
 
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
-from .config import FRONTEND_DIR
-from .routers import acmg, analyses, auth, documents, dragen, emr, files, igv, jobs, omim_capture, phenotype, phenotype_tool, prs, samples, secondary, somatic
+from .config import FRONTEND_DIR, PHENO_DATA_DIR
+from .routers import acmg, analyses, auth, documents, dragen, emr, files, igv, jobs, omim_capture, phenotype, phenotype_tool, prs, references, samples, secondary, somatic
 from .services import (
     clinvar_mito,
     hpo_ontology,
+    hpo_update,
     inhouse_af_mito,
     manual_acmg,
     omim_store,
@@ -124,6 +125,7 @@ app.include_router(somatic.router)
 app.include_router(prs.router)
 app.include_router(prs.documentation_router)
 app.include_router(omim_capture.router)
+app.include_router(references.router)
 
 
 # Friendly direct URL for the standalone HPO/panel tool: /phenotype
@@ -133,6 +135,14 @@ app.include_router(omim_capture.router)
 @app.get("/phenotype")
 def _phenotype_tool_redirect():
     return RedirectResponse("/phenotype/")
+
+
+@app.get("/phenotype/hpo_data.json")
+def _phenotype_tool_hpo_data():
+    """The /phenotype/ term list: the copy rebuilt by "更新 HPO" when present."""
+    updated = PHENO_DATA_DIR / hpo_update.PICKER_DATA
+    path = updated if updated.is_file() else FRONTEND_DIR / "phenotype" / "hpo_data.json"
+    return FileResponse(path, media_type="application/json", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/omim")

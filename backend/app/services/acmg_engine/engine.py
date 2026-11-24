@@ -172,6 +172,17 @@ def _ad_like(ctx: Context, rb: dict) -> bool | None:
     return codes.issubset(set(rb["frequency"]["ad_like_moi"]))
 
 
+def _xlinked_recessive(ctx: Context, rb: dict) -> bool:
+    """OMIM lists only X-linked recessive (or unspecified X-linked) inheritance.
+
+    Female carriers are unaffected, so the variant may sit in population data
+    at a low frequency; PM2 then uses ``pm2_xlinked_max`` instead of 0.  The
+    annotation has no hemizygote (male) counts, so the threshold is on the
+    overall AF."""
+    codes = P.moi_codes(ctx.moi) if ctx.moi else set()
+    return bool(codes) and codes <= set(rb["frequency"].get("pm2_xlinked_moi") or ())
+
+
 def _recessive_only(ctx: Context) -> bool:
     """OMIM lists only autosomal recessive inheritance for the gene."""
     return bool(ctx.moi) and P.moi_codes(ctx.moi) <= {"AR"}
@@ -616,16 +627,19 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         limit = _vcep_threshold(spec, "pm2", ad_like, recessive)
         pm2_from = f"（{vlabel}）" if limit is not None else ""
         if limit is None:
-            limit = (cfg["pm2_ad_like_max"] if ad_like
+            xlr = _xlinked_recessive(ctx, rb) and "pm2_xlinked_max" in cfg
+            limit = (cfg["pm2_xlinked_max"] if xlr
+                     else cfg["pm2_ad_like_max"] if ad_like
                      else cfg.get("pm2_recessive_max", cfg["pm2_other_max"]) if recessive
                      else cfg["pm2_other_max"])
-            pm2_from = "（隱性遺傳）" if recessive and not ad_like else ""
+            pm2_from = ("（X 性聯隱性，女性可帶因）" if xlr
+                        else "（隱性遺傳）" if recessive and not ad_like else "")
         if max_af is None:
             evidence.append(_met("PM2", "supporting", "未在族群資料庫出現（可能也是覆蓋不足）", rb))
         elif max_af <= limit:
             evidence.append(_met("PM2", "supporting", f"最大 AF {_fmt_af(max_af)} ≤ {limit}{pm2_from}", rb))
         else:
-            evidence.append(Evidence("PM2", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {limit}"))
+            evidence.append(Evidence("PM2", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {limit}{pm2_from}"))
 
     # variant effect
     pvs1, splice_fallback = _pvs1(rows, row, ctx, rb, recurrent)

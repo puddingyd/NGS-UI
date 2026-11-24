@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.57：首頁在「NGS 分析流程」與「版本紀錄」之間新增「資料庫版本」，列出平台使用的各資料庫版本（從伺服器上實際安裝的檔案讀取）；旁邊的「更新 HPO」按鈕會自動下載最新版 HPO、重建表型查表與知識庫並啟用，服務不需重新啟動。In-house ACMG 規則 v1.5：X 性聯隱性基因的 PM2 放寬為整體 AF ≤ 0.01%（女性可能帶因）。
+
 v10.56：新增表型知識庫建置工具 `scripts/build_hpo_kb.py`（候選診斷排序計畫階段 1）：在清理後的 HPO 註記上計算每個 term 的資訊量、疾病基準分，整理平台 OMIM 與 Orphanet 的疾病–基因對應及 MONDO 疾病分組，連同 QC 報告寫成版本化快照；同版本重建結果完全相同。只建資料，不改變現行排序；需安裝 numpy。
 
 v10.55：變異排序改為固定（In-house，含 ClinVar ≥2★ 分級 → GeneBe），判讀者手動判讀 ACMG 只改變畫面與報告的分類，不再改變排序；ClinGen 專家小組（VCEP）的分級直接顯示為 In-house 分類並標明來源。新增 `scripts/acmg_engine/show_variant.py`，可查單一變異每條 ACMG 條目為何符合或不符合。HPO 版本更新改用 `scripts/hpo/build_hpo_gene_table.py --release latest --activate`，一次下載、建表、啟用並更新 hp.obo。

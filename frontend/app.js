@@ -9003,6 +9003,77 @@ async function loadWelcomeVersion() {
   }
 }
 
+// ---------- Reference database versions + HPO update -------------------
+
+async function loadReferenceVersions() {
+  const host = document.getElementById("reference-versions-content");
+  if (!host) return;
+  try {
+    const resp = await fetch(`${API_BASE}/references`, { cache: "no-store", credentials: "same-origin" });
+    if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+    const data = await resp.json();
+    const table = (rows) => `<table class="references-table"><thead><tr><th>資料庫</th><th>版本</th><th>用途</th><th>更新方式</th></tr></thead><tbody>${
+      rows.map((r) => `<tr class="${r.installed ? "" : "references-missing"}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.version)}</td><td>${escapeHtml(r.note || "")}</td><td>${escapeHtml(r.update || "")}</td></tr>`).join("")
+    }</tbody></table>`;
+    host.innerHTML = `${table(data.platform || [])}
+      <details class="references-pipeline"><summary>三級 pipeline 內建註解（隨 pipeline 版本固定，${(data.pipeline || []).length} 項）</summary>${table(data.pipeline || [])}</details>`;
+  } catch (e) {
+    host.innerHTML = `<div class="muted">資料庫版本載入失敗：${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+let _hpoUpdateTimer = null;
+
+function renderHpoUpdateState(st) {
+  const label = document.getElementById("hpo-update-status");
+  const out = document.getElementById("hpo-update-result");
+  const btn = document.getElementById("btn-hpo-update");
+  if (!label || !out || !btn) return;
+  btn.disabled = !!st.running;
+  if (st.running) {
+    label.textContent = `更新中：${st.step || "準備中"}`;
+  } else if (st.state === "done") {
+    const when = (st.finished_at || "").replace("T", " ").slice(0, 16);
+    label.textContent = `上次更新完成（${when} UTC）`;
+  } else if (st.state === "failed") {
+    label.textContent = `上次更新失敗：${st.error || ""}`;
+  } else {
+    label.textContent = "";
+  }
+  const summary = st.state === "done" ? (st.result && st.result.summary) : (st.running ? (st.log || []).slice(-6).join("\n") : "");
+  out.textContent = summary || "";
+  out.classList.toggle("hidden", !summary);
+}
+
+async function pollHpoUpdate() {
+  clearTimeout(_hpoUpdateTimer);
+  try {
+    const resp = await fetch(`${API_BASE}/references/hpo/update`, { cache: "no-store", credentials: "same-origin" });
+    if (!resp.ok) return;              // not logged in: keep quiet on the home page
+    const st = await resp.json();
+    const wasRunning = document.getElementById("btn-hpo-update")?.disabled;
+    renderHpoUpdateState(st);
+    if (st.running) {
+      _hpoUpdateTimer = setTimeout(pollHpoUpdate, 3000);
+    } else if (wasRunning) {
+      loadReferenceVersions();
+    }
+  } catch { /* offline */ }
+}
+
+async function startHpoUpdate() {
+  if (!confirm("下載最新版 HPO，重建表型查表與知識庫後直接啟用？\n約需數分鐘；完成後各個案下次開啟時會用新版重算表型分數。")) return;
+  const resp = await fetch(`${API_BASE}/references/hpo/update`, { method: "POST", credentials: "same-origin" });
+  if (resp.status === 401) { showLoginModal(); return; }
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    alert(typeof body.detail === "string" ? body.detail : `HPO 更新無法啟動（${resp.status}）`);
+    return;
+  }
+  renderHpoUpdateState(await resp.json());
+  _hpoUpdateTimer = setTimeout(pollHpoUpdate, 1500);
+}
+
 function splitWelcomeVersionMarkdown(text) {
   const normalized = String(text || "").replace(/\r\n/g, "\n");
   const marker = normalized.match(/^##\s+版本紀錄\s*$/m);
@@ -11169,6 +11240,9 @@ async function bootAfterAuth() {
   setupDiagnosticAnalysisToggle();
   loadWelcomeVersion();
   loadAnalysisFlow();
+  loadReferenceVersions();
+  pollHpoUpdate();
+  document.getElementById("btn-hpo-update")?.addEventListener("click", startHpoUpdate);
   updateWelcomeVisibility();
   setupSnvDisplayFilters();
   setupOmimFilter();

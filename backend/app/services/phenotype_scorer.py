@@ -25,6 +25,7 @@ import csv
 import json
 import re
 import threading
+import time
 from functools import lru_cache
 from collections import defaultdict
 from pathlib import Path
@@ -268,14 +269,41 @@ def _load_panels(panel_dirs: Iterable[Path] = (PANELS_DIR, CUSTOM_PANELS_DIR)) -
     return out
 
 
+_SIGNATURE: tuple | None = None
+_SIG_CHECKED = 0.0
+SIGNATURE_INTERVAL = 30.0     # seconds between checks for an HPO update
+
+
+def _table_signature(table: hpo_gene_table.ActiveTable) -> tuple:
+    try:
+        st = table.gene_table.stat()
+        return table.table_id, st.st_mtime_ns, st.st_size
+    except OSError:
+        return table.table_id, None, None
+
+
+def _table_changed(force: bool = False) -> bool:
+    """True when "更新 HPO" (or --activate) switched the table since load()."""
+    global _SIG_CHECKED
+    now = time.monotonic()
+    if not force and now - _SIG_CHECKED < SIGNATURE_INTERVAL:
+        return False
+    _SIG_CHECKED = now
+    return _table_signature(hpo_gene_table.active_table(legacy=PHENO_TO_GENES_PATH)) != _SIGNATURE
+
+
 def load() -> tuple[int, int]:
-    """Idempotent. Returns (n_hpo_terms_loaded, n_panels_loaded)."""
-    global _LOADED, _ACTIVE
-    if _LOADED:
+    """Idempotent; reloads by itself when the active HPO table changes.
+    Returns (n_hpo_terms_loaded, n_panels_loaded)."""
+    global _LOADED, _ACTIVE, _SIGNATURE
+    if _LOADED and not _table_changed():
         return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
     with _LOAD_LOCK:
-        if _LOADED:
+        if _LOADED and not _table_changed(force=True):
             return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
+        if _LOADED:
+            _canonical_gene.cache_clear()
+            _load_hpo_genes_for_key.cache_clear()
         table = hpo_gene_table.active_table(legacy=PHENO_TO_GENES_PATH)
         hpo_map = _load_phenotype_to_genes(table.gene_table)
         aliases, non_phenotype = hpo_gene_table.read_term_status(table.term_status)
@@ -300,6 +328,7 @@ def load() -> tuple[int, int]:
         _NON_PHENOTYPE.clear()
         _NON_PHENOTYPE.update(non_phenotype)
         _ACTIVE = table
+        _SIGNATURE = _table_signature(table)
         _LOADED = True
         return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
 

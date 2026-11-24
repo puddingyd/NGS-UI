@@ -149,3 +149,15 @@ def test_gly_xy_positions():
     assert cspec.gly_xy_positions(seq) == [5 + 3 * i for i in range(8)]
     assert cspec.gly_xy_positions(seq, helix=[(10, 20)]) == [11, 14, 17, 20]
     assert cspec.gly_xy_positions("MAAA" + "GPP" * 5 + "MKLM") == []     # run too short
+
+
+# ── PM2 for X-linked recessive genes (v1.5) ───────────────────────────────
+def test_pm2_xlinked_recessive_allows_low_frequency():
+    rare = missense_row(GNOMAD_E_AF="0.00005")
+    assert met(evaluate_variant(rare, Context(moi={"XLR"})), "PM2")          # female carriers: ≤ 0.0001
+    assert met(evaluate_variant(rare, Context(moi={"XL"})), "PM2")
+    assert not met(evaluate_variant(rare, Context(moi={"XLD"})), "PM2")      # dominant stays 0
+    assert not met(evaluate_variant(rare, Context(moi={"XLR", "AD"})), "PM2")
+    too_common = evaluate_variant(missense_row(GNOMAD_E_AF="0.0002"), Context(moi={"XLR"}))
+    assert not met(too_common, "PM2")
+    assert any("X 性聯隱性" in (e.get("reason") or "") for e in by_code(too_common, "PM2"))

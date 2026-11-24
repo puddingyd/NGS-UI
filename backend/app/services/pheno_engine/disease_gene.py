@@ -119,6 +119,23 @@ def orphanet_links(path: Path, canonical=_canonical) -> tuple[list[dict], dict]:
     return [out[k] for k in sorted(out)], info
 
 
+def orphanet_links_from_g2d(g2d: dict[str, dict[str, str]], canonical=_canonical) -> list[dict]:
+    """Orphanet links taken from HPO genes_to_disease.txt (fallback when product6 is unavailable).
+
+    HPO copies these rows from product6 but drops the association type, so
+    every row is used and flagged ``via_genes_to_disease``."""
+    out = {}
+    for disease, genes in g2d.items():
+        if not disease.startswith("ORPHA:"):
+            continue
+        for symbol in genes:
+            gene = canonical(symbol)
+            out[(disease, gene)] = {"disease_id": disease, "gene_symbol": gene, "source": "Orphanet",
+                                    "association_type": "unknown (HPO genes_to_disease)", "use": 1,
+                                    "flags": "via_genes_to_disease", "status": "", "source_gene": symbol}
+    return [out[k] for k in sorted(out)]
+
+
 def cross_check(links: list[dict], g2d: dict[str, dict[str, str]], universe: set[str],
                 canonical=_canonical) -> tuple[list[tuple], dict]:
     """Disagreements between the used links and HPO genes_to_disease, per disease prefix."""
