@@ -18,11 +18,11 @@ from pathlib import Path
 from .. import config
 
 PIPELINE = {
-    "VEP": "115（Ensembl／GENCODE 115）",
-    "gnomAD": "v4.1（exome／genome）＋ v4.1 joint",
+    "VEP": "115",
+    "gnomAD": "v4.1（含 joint）",
     "dbNSFP": "4.9c／5.3a",
     "ClinVar": "2026-07-20",
-    "1000 Genomes": "phase 3（popfreq_max_20150413）",
+    "1000 Genomes": "phase 3",
     "dbSNP": "v150",
     "gnomAD mito": "v3.1",
     "AnnotSV": "3.5.10",
@@ -137,13 +137,13 @@ def _litvar2_item() -> dict:
 def _gene_disease_item() -> dict:
     manifest = _json(Path(config.GENE_DISEASE_DB).parent / "source_manifest.json")
     if not manifest:
-        return _item("GenCC／ClinGen 基因–疾病", _mtime(config.GENE_DISEASE_DB), "卡片疾病清單補充來源", key="gencc")
+        return _item("GenCC／ClinGen", _mtime(config.GENE_DISEASE_DB), "卡片疾病清單補充來源", key="gencc")
     dates = []
     for source in manifest.get("source_files") or []:
         if isinstance(source, dict) and source.get("downloaded_at"):
             dates.append(str(source["downloaded_at"])[:10])
     version = max(dates) if dates else _mtime(Path(config.GENE_DISEASE_DB))
-    return _item("GenCC／ClinGen 基因–疾病", f"下載 {version}" if version else "", "卡片疾病清單補充來源",
+    return _item("GenCC／ClinGen", f"下載 {version}" if version else "", "卡片疾病清單補充來源",
                  key="gencc")
 
 

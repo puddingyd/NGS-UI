@@ -336,8 +336,23 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .references-table tr.references-missing td {
   color: #8c959f;
 }
-.references-table {
-  max-width: 760px;
+.references-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 28px;
+  max-width: 1200px;
+}
+.references-grid .references-table {
+  max-width: none;
+  table-layout: fixed;
+}
+.references-grid .references-table :is(th, td):nth-child(1) { width: 30%; }
+.references-grid .references-table :is(th, td):nth-child(2) { width: 48%; }
+.references-grid .references-table :is(th, td):nth-child(3) { width: 22%; }
+.references-grid .references-table td { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .references-grid { grid-template-columns: minmax(0, 1fr); }
+  .references-grid .references-table + .references-table thead { display: none; }
 }
 .references-table td {
   vertical-align: middle;

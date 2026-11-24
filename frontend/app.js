@@ -9015,9 +9015,12 @@ async function loadReferenceVersions() {
     const updateCell = (r) => r.action === "hpo_update"
       ? `<button type="button" id="btn-hpo-update" class="btn btn-ghost references-action" title="下載最新 HPO、重建表型查表與知識庫並啟用（需登入）">更新 HPO</button>`
       : escapeHtml(r.update || "");
-    host.innerHTML = `<table class="references-table"><thead><tr><th>資料庫</th><th>版本</th><th>更新方式</th></tr></thead><tbody>${
-      (data.items || []).map((r) => `<tr class="${r.installed ? "" : "references-missing"}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.version)}</td><td>${updateCell(r)}</td></tr>`).join("")
+    const items = data.items || [];
+    const half = Math.ceil(items.length / 2);
+    const table = (rows) => `<table class="references-table"><thead><tr><th>資料庫</th><th>版本</th><th>更新方式</th></tr></thead><tbody>${
+      rows.map((r) => `<tr class="${r.installed ? "" : "references-missing"}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.version)}</td><td>${updateCell(r)}</td></tr>`).join("")
     }</tbody></table>`;
+    host.innerHTML = `<div class="references-grid">${table(items.slice(0, half))}${table(items.slice(half))}</div>`;
     if (_hpoUpdateState) renderHpoUpdateState(_hpoUpdateState);
   } catch (e) {
     host.innerHTML = `<div class="muted">資料庫版本載入失敗：${escapeHtml(e.message || String(e))}</div>`;
