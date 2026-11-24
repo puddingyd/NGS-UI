@@ -11,7 +11,9 @@ the same lookup table by treating the panel name as a synthetic
 "hpo_id" (matching the R script's behaviour).
 
 Loaded once at startup:
-  - phenotype_data/phenotype_to_genes.txt  (~1M rows, 65 MB)
+  - the HPO → gene table: the cleaned snapshot activated in
+    phenotype_data/hpo_kb/active.json (hpo_gene_table.py, plan §10.7), or
+    phenotype_data/phenotype_to_genes.txt (~1M rows, 65 MB) when none is active
   - repo phenotype_data/gene_panels/*.txt  (fixed panels, versioned in git)
   - repo phenotype_data/custom_panels/*.txt  (custom panels, versioned in git)
 
@@ -34,7 +36,7 @@ from ..config import (
     GENE_PANELS_DIR,
     PHENO_DATA_DIR,
 )
-from . import panel_deadzone
+from . import hpo_gene_table, panel_deadzone
 
 PHENO_TO_GENES_PATH = PHENO_DATA_DIR / "phenotype_to_genes.txt"
 PANELS_DIR = GENE_PANELS_DIR
@@ -60,6 +62,39 @@ _FIXED_PANEL_OUTPUT_NAMES: dict[str, str] = {}
 _GENE_TO_KEYS: dict[str, dict[str, set[str]]] = {}
 _LOADED = False
 _LOAD_LOCK = threading.Lock()
+# Table in use (resolved at load) + alt/obsolete → current id and the ids that
+# are not phenotype terms (inheritance, onset, …).  The last two are empty for
+# the legacy phenotype_to_genes.txt so its behaviour is unchanged.
+_ACTIVE: hpo_gene_table.ActiveTable | None = None
+_HPO_ALIASES: dict[str, str] = {}
+_NON_PHENOTYPE: set[str] = set()
+PHENO_TABLE_STAMP = "pheno_score.table.json"
+
+
+def active_table() -> hpo_gene_table.ActiveTable:
+    """The HPO → gene table in use (resolved without loading it)."""
+    if _ACTIVE is not None:
+        return _ACTIVE
+    return hpo_gene_table.active_table(legacy=PHENO_TO_GENES_PATH)
+
+
+def table_id() -> str:
+    return active_table().table_id
+
+
+def normalize_hpo_id(hpo_id: str) -> str:
+    """alt_id / obsolete id → current id (only with the cleaned table)."""
+    key = (hpo_id or "").strip()
+    return _HPO_ALIASES.get(key, key)
+
+
+def excluded_from_scoring(hpo_id: str) -> bool:
+    """True for HPO ids that are not phenotype terms under the cleaned table
+    (inheritance, onset, frequency, root, obsolete without replacement).  They
+    carry no genes and are left out of the weight total (plan §10.9)."""
+    if not _LOADED:
+        load()
+    return normalize_hpo_id(hpo_id) in _NON_PHENOTYPE
 
 
 @lru_cache(maxsize=200_000)
@@ -82,7 +117,7 @@ def _load_phenotype_to_genes(path: Path = PHENO_TO_GENES_PATH) -> dict[str, set[
 
 
 @lru_cache(maxsize=4096)
-def _load_hpo_genes_for_key(hpo_id: str, path_str: str = str(PHENO_TO_GENES_PATH)) -> tuple[str, ...]:
+def _load_hpo_genes_for_key(hpo_id: str, path_str: str = "") -> tuple[str, ...]:
     """Fast path for the phenotype tool's one-HPO gene-list drawer.
 
     During startup the full phenotype score cache may still be warming.
@@ -90,7 +125,7 @@ def _load_hpo_genes_for_key(hpo_id: str, path_str: str = str(PHENO_TO_GENES_PATH
     so scan only the requested HPO term and cache that small result.
     """
     key = (hpo_id or "").strip()
-    path = Path(path_str)
+    path = Path(path_str) if path_str else active_table().gene_table
     if not key or not path.exists():
         return ()
     genes: set[str] = set()
@@ -235,13 +270,15 @@ def _load_panels(panel_dirs: Iterable[Path] = (PANELS_DIR, CUSTOM_PANELS_DIR)) -
 
 def load() -> tuple[int, int]:
     """Idempotent. Returns (n_hpo_terms_loaded, n_panels_loaded)."""
-    global _LOADED
+    global _LOADED, _ACTIVE
     if _LOADED:
         return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
     with _LOAD_LOCK:
         if _LOADED:
             return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
-        hpo_map = _load_phenotype_to_genes()
+        table = hpo_gene_table.active_table(legacy=PHENO_TO_GENES_PATH)
+        hpo_map = _load_phenotype_to_genes(table.gene_table)
+        aliases, non_phenotype = hpo_gene_table.read_term_status(table.term_status)
         panels = _load_panels()
         # Fold panels into the same lookup table — panel name acts as a
         # synthetic hpo_id, mirroring the R script's `rbind(custom_panels_df, hp_db)`.
@@ -258,13 +295,19 @@ def load() -> tuple[int, int]:
                 gene_to_keys[gene][bucket].add(key)
         _GENE_TO_KEYS.clear()
         _GENE_TO_KEYS.update(gene_to_keys)
+        _HPO_ALIASES.clear()
+        _HPO_ALIASES.update(aliases)
+        _NON_PHENOTYPE.clear()
+        _NON_PHENOTYPE.update(non_phenotype)
+        _ACTIVE = table
         _LOADED = True
         return len(_HPO_TO_GENES), len(_PANEL_TO_GENES)
 
 
 def reload_db() -> tuple[int, int]:
-    global _LOADED
+    global _LOADED, _ACTIVE
     _LOADED = False
+    _ACTIVE = None
     _canonical_gene.cache_clear()
     _load_hpo_genes_for_key.cache_clear()
     return load()
@@ -409,16 +452,18 @@ def genes_for_key(key: str, kind: str = "") -> dict:
             "output_name": panel_output_name(resolved_key),
         }
 
+    hpo_key = normalize_hpo_id(clean_key)
     if _LOADED:
-        genes = sorted(_HPO_TO_GENES.get(clean_key, ()))
+        genes = sorted(_HPO_TO_GENES.get(hpo_key, ()))
     else:
-        genes = list(_load_hpo_genes_for_key(clean_key))
+        genes = list(_load_hpo_genes_for_key(hpo_key))
     return {
         "kind": "hpo",
         "key": clean_key,
         "gene_count": len(genes),
         "genes": genes,
-        "source": "phenotype_to_genes.txt",
+        "source": active_table().label,
+        "excluded_from_scoring": hpo_key in _NON_PHENOTYPE,
     }
 
 
@@ -454,7 +499,10 @@ def gene_count(hpo_id: str) -> int:
     """Number of distinct genes annotated to this HPO term (or panel name)."""
     if not _LOADED:
         load()
-    return len(_HPO_TO_GENES.get(_resolve_panel_name(hpo_id), ()))
+    key = _resolve_panel_name(hpo_id)
+    if key not in _PANEL_TO_GENES:
+        key = normalize_hpo_id(key)
+    return len(_HPO_TO_GENES.get(key, ()))
 
 
 def compute_pheno_match(
@@ -483,7 +531,8 @@ def compute_pheno_match(
                 w = 1.0
         else:
             hid, w = entry[0], float(entry[1])
-        if hid:
+        hid = normalize_hpo_id(hid)
+        if hid and hid not in _NON_PHENOTYPE:
             pairs.append((hid, w))
     for entry in panels or []:
         if isinstance(entry, dict):
@@ -560,4 +609,22 @@ def write_pheno_table(
         f.write("gene_symbol\tpheno_score\n")
         for g, s in rows:
             f.write(f"{g}\t{s:.4f}\n")
+    try:
+        out.with_name(PHENO_TABLE_STAMP).write_text(
+            json.dumps({"table_id": table_id()}) + "\n", encoding="utf-8")
+    except OSError:
+        pass
     return out
+
+
+def pheno_table_is_current(pheno_tsv: Path) -> bool:
+    """Was this pheno_score.tsv computed with the table now in use?
+
+    Files written before the stamp existed were computed with the legacy
+    phenotype_to_genes.txt."""
+    stamp = Path(pheno_tsv).with_name(PHENO_TABLE_STAMP)
+    try:
+        written = json.loads(stamp.read_text(encoding="utf-8")).get("table_id")
+    except (OSError, ValueError, AttributeError):
+        written = hpo_gene_table.LEGACY_TABLE_ID
+    return written == table_id()

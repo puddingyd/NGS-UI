@@ -2958,7 +2958,9 @@ function _hpoSearchOptionHtml(term, { parent = false, newCase = false } = {}) {
   const name = term?.name || term?.label || id;
   if (!id) return "";
   const geneCount = Number(term?.gene_count || 0);
-  const geneLabel = geneCount > 0 ? `${geneCount} genes` : "";
+  const geneLabel = term?.excluded_from_scoring
+    ? "不參與表型排序"
+    : (geneCount > 0 ? `${geneCount} genes` : "");
   const parentClass = parent ? " hpo-parent-option" : "";
   const newCaseMarker = newCase ? ' data-nc-hpo-pick="1"' : "";
   const parentArrow = parent ? '<span class="hpo-parent-arrow" aria-hidden="true">⤴</span>' : "";

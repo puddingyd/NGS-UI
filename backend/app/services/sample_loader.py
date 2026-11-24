@@ -1852,6 +1852,35 @@ def _resolve_version(sample_id: str, requested: str | None,
     return None
 
 
+def _ensure_pheno_table(sample_id: str, sidecar_dir: Path, hpo_list, panels_list) -> None:
+    """Lazy backfill of pheno_score.tsv.
+
+    Recompute when the file is missing, older than its analysis.json (HPO /
+    panels touched by a tool that bypassed write_version), or was computed with
+    a different HPO → gene table than the one now active (the cleaned table of
+    plan §10.7 was activated) — so the SNV in-panel join agrees with the CNV/SV
+    scores, which are always computed live.  Best-effort: a failure leaves the
+    loader without a pheno column instead of failing the sample load.
+    """
+    pheno_path = _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
+    analysis_path = _sidecar_file(sample_id, sidecar_dir, "analysis.json")
+    if not analysis_path.is_file():
+        return
+    try:
+        stale = (
+            not pheno_path.exists()
+            or pheno_path.stat().st_mtime < analysis_path.stat().st_mtime
+            or (bool(hpo_list or panels_list) and not phenotype_scorer.pheno_table_is_current(pheno_path))
+        )
+        if not stale:
+            return
+        scores = phenotype_scorer.compute_pheno_score(hpo_list, panels_list)
+        if scores or (pheno_path.exists() and (hpo_list or panels_list)):
+            phenotype_scorer.write_pheno_table(sample_id, scores, target_dir=sidecar_dir)
+    except Exception:
+        pass
+
+
 def _read_pheno_by_gene(sample_id: str, sidecar_dir: Path) -> dict:
     """Read pheno_score.tsv → {gene_symbol: 0-100 score}. Empty if absent."""
     out: dict[str, float] = {}
@@ -1894,6 +1923,7 @@ def _load_pheno_context(sample_id: str, version: str | None):
         hpo_list    = meta.get("hpo") or meta.get("patient_phenotype") or []
         panels_list = meta.get("selected_panels") or []
     panels_list = phenotype_scorer.normalize_panel_entries(panels_list)
+    _ensure_pheno_table(sample_id, sidecar_dir, hpo_list, panels_list)
     return sub, sidecar_dir, hpo_list, panels_list, _read_pheno_by_gene(sample_id, sidecar_dir)
 
 
@@ -2281,28 +2311,7 @@ def load_sample(sample_id: str, version: str | None = None,
 
     pheno_path = _sidecar_file(sample_id, sidecar_dir, "pheno_score.tsv")
 
-    # Lazy backfill: legacy samples + any pheno_score.tsv predating its
-    # analysis.json (e.g. HPO/panels touched by a tool that bypassed
-    # write_version) get recomputed inline so the Clinical/in-panel
-    # consumers downstream always see a fresh table.
-    analysis_path = _sidecar_file(sample_id, sidecar_dir, "analysis.json")
-    needs_backfill = (
-        analysis_path.is_file() and (
-            not pheno_path.exists()
-            or pheno_path.stat().st_mtime < analysis_path.stat().st_mtime
-        )
-    )
-    if needs_backfill:
-        try:
-            scores = phenotype_scorer.compute_pheno_score(hpo_list, panels_list)
-            if scores:
-                phenotype_scorer.write_pheno_table(
-                    sample_id, scores, target_dir=sidecar_dir
-                )
-        except Exception:
-            # Backfill is best-effort; the loader still degrades to no
-            # pheno column rather than 5xx the whole sample load.
-            pass
+    _ensure_pheno_table(sample_id, sidecar_dir, hpo_list, panels_list)
 
     variants, categories, pheno_by_gene, old_format_error = (
         _load_enriched_snv_cached(

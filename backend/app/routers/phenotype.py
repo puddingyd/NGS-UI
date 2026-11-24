@@ -29,12 +29,16 @@ router = APIRouter(prefix="/api", tags=["phenotype"], dependencies=[Depends(curr
 @router.get("/hpo/search")
 def hpo_search(q: str = Query(""), limit: int = Query(20, ge=1, le=100)):
     results = hpo_ontology.search(q, limit=limit)
-    # Annotate with the per-term gene count from phenotype_to_genes.txt so
-    # the picker can show "Seizure (84 genes)" without a second round-trip.
+    # Annotate with the per-term gene count from the active HPO → gene table
+    # so the picker can show "Seizure (84 genes)" without a second round-trip,
+    # and flag terms the cleaned table leaves out of the score (inheritance,
+    # onset, …; plan §10.9).
     for r in results:
         r["gene_count"] = phenotype_scorer.gene_count(r["hpo_id"])
+        r["excluded_from_scoring"] = phenotype_scorer.excluded_from_scoring(r["hpo_id"])
         for parent in r.get("parents", []):
             parent["gene_count"] = phenotype_scorer.gene_count(parent["hpo_id"])
+            parent["excluded_from_scoring"] = phenotype_scorer.excluded_from_scoring(parent["hpo_id"])
     return results
 
 

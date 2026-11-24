@@ -1814,6 +1814,22 @@ LIRICAL 以似然比（likelihood ratio）處理表型證據，並使用疾病�
 
 第 1.2 節指出現行查表會替「明確排除」的註記與非表型 term 加分。不論新引擎何時上線，都可以先修正：依第 4.2.3 節規則 R1–R7 從 `phenotype.hpoa` 重建 HPO → 基因查表（含往上層傳遞），取代直接讀取官方 `phenotype_to_genes.txt`。修正後在既有個案上比較修正前後的基因清單差異，確認變動合理再上線。
 
+**實作（2026-11-24，v10.51）。** `backend/app/services/hpo_gene_table.py` 與 `scripts/hpo/build_hpo_gene_table.py` 依 R1–R7 重建查表並寫成快照（`phenotype_data/hpo_kb/{hp}_{hpoa}/`，含 negative 表與 `build_qc.md`）；疾病–基因暫時沿用 `genes_to_disease.txt`，與舊表是同一個基因全集，差異只來自註記清理。快照要以 `--activate` 啟用才生效。啟用後，病人選的非表型 term（遺傳方式、發病年齡等，第 10.9 節）同時移出分子與分母，舊版 HPO ID 先換成現行 ID。
+
+實際核對：官方 `phenotype_to_genes.txt`（2026-09）等於「所有 aspect、含 NOT、全部往上層傳遞」，以此規則重建的 term–基因配對與官方檔 99.9% 一致。清理後的差異如下：
+
+| 項目 | 數量 |
+|---|---|
+| term–基因配對 | 927,836 → 874,049（只移除，不新增） |
+| 非表型 term 移除的配對 | 約 4.7 萬（104 個 term，例如 Autosomal recessive inheritance 3,223 個基因、Autosomal dominant inheritance 2,055 個） |
+| 表型 term 移除的配對 | 約 7 千（例如 Intellectual disability 2,089 → 2,005，被移除的疾病只以 NOT 或 0/m 註記） |
+| R2 NOT／R4 合計為 0 的 0/m | 726 列／3,018 組（另有 54 列 0/m 與同一疾病的 n>0 列合併後保留） |
+| R3 Excluded | 2026-09 版 0 列；2023-10 版 705 列 |
+| R7 重複／頻率類別矛盾 | 446 組／202 組 |
+| R6 斷鏈 | HP:0012220 |
+
+既有個案的修正前後比較由 `scripts/hpo/compare_pheno_tables.py` 產生（表型相關基因數、使用非表型 term 的個案、判讀者標記變異的名次與「臨床表現相關」得失），待判讀者確認後啟用。
+
 ### 10.8 版本與重現性
 
 - `analysis.json` 記錄所使用的知識庫快照版本；
@@ -2465,7 +2481,7 @@ $p_g=1-(1-p_{\min})^k$ 在實作上數值退化（基因 top-10 只剩 11%）；
 
 | 階段 | 工作內容 | 交付成果 | 完成標準 |
 |---|---|---|---|
-| **0. 現行表型分數修正**（可獨立先做） | 依清理規則重建 HPO → 基因查表，排除 `NOT`、合計為 0 的 `0/m`、非表型 term | 新查表、修正前後差異報告 | 單元測試通過；差異經判讀者確認合理 |
+| **0. 現行表型分數修正**（可獨立先做） | 依清理規則重建 HPO → 基因查表，排除 `NOT`、合計為 0 的 `0/m`、非表型 term | 新查表、修正前後差異報告（v10.51 已完成工具，第 10.7 節） | 單元測試通過；差異經判讀者確認合理 |
 | **1. 知識庫建置** | `scripts/build_hpo_kb.py`：清理、IC、基準分、疾病–基因對應、MONDO 分組、manifest | 版本化快照與 QC 報告 | 第 4.2.5 節的 QC 檢查全部通過；同版本重建結果完全相同 |
 | **2. 表型引擎** | `backend/app/services/pheno_engine/`：前處理、配對、聚合、基準分、基因排名、表型點數、解釋輸出 | 引擎模組與輸出檔 | 表型單元測試通過；在 2023 快照的 400 例開發資料上重現第 12.1 節結果（MRR 誤差 ±0.01） |
 | **3. 表型驗證平台** | `scripts/benchmark_pheno.py`：time-split、LOPO、對照方法（含 LIRICAL、Exomiser）、統計報告 | 可重跑的表型驗證報告 | phenopacket-store 測試組評估一次並報告 |
