@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v10.63 — 2026-11-24
+
+- SNV/Indel 卡片第一欄新增「In-house prioritization」：總分 (變異 + 表型 + 遺傳模式) (rank 名次)，tier 內改依此排序。表型分數來自表型引擎（基因排名換成點數，再依最適合的疾病分配）；遺傳模式依 OMIM：顯性 0、隱性同型合子 0、隱性兩個變異配對 −1、隱性只有一個異合子 WES −3／WGS −4、X 性聯隱性女性異合子 −3。點 ⓘ 可看每一項怎麼來的；數值是暫定值，尚未以院內個案校準。
+- 原本的分數改名「Score (old)」，也加上名次方便比較。只有 panel、沒有 HPO 的個案，表型分數顯示「—」，排序沿用 Score (old)。
+- `validate_engine.py --rule-variants all` 可用 ClinVar 標籤比較 PM1 ≥1★、PP2 放寬等規則調整（每條規則的 LR+ 與整體 AUC）。
+
 ### v10.62 — 2026-11-24
 
 - In-house ACMG 新增 PM3：ClinVar 提交者描述同型合子或複合異型合子病人時給分（1 個提交者 Supporting、2 個以上 Moderate），並附原文片段供核對；需重建 ClinVar 病例表並重算。

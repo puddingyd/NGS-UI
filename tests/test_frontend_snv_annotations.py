@@ -8,7 +8,8 @@ INDEX_HTML = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
 
 
 def test_core_snv_fields_have_annotation_hints():
-    assert 'const scoreHint = _annotationHint("Score"' in APP_JS
+    assert 'const scoreHint = _annotationHint("Score (old)"' in APP_JS
+    assert 'const prioHint = _annotationHint("In-house prioritization"' in APP_JS
     assert 'ClinVar (2026-07-20)${clinvarExternalLink}${clinvarChange}' in APP_JS
     assert 'const clinvarHint = _annotationHint("ClinVar"' not in APP_JS
     assert 'class="v acmg-summary-btn js-acmg-open"' in APP_JS

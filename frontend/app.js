@@ -3241,6 +3241,18 @@ function _isReferenceZygosity(v) {
   );
 }
 
+// In-house prioritization (V′ + P + C) orders SNV/Indel when the case has
+// usable HPO terms; otherwise ("old" mode: panel only, no knowledge base) the
+// old total_score keeps the order. The backend sorts the tiers the same way.
+function _prioMode() {
+  return state.data?.prioritization?.mode === "prio";
+}
+
+function _snvSortScore(v) {
+  const n = Number(_prioMode() && v?.prio ? v.prio_total : v?.total_score);
+  return Number.isFinite(n) ? n : -Infinity;
+}
+
 async function _geneSearchSnv(genesUpper, { filterGnomad = true } = {}) {
   const sid = state.data?.sample_id || state.currentLIS;
   if (sid && genesUpper.length) {
@@ -3262,10 +3274,7 @@ async function _geneSearchSnv(genesUpper, { filterGnomad = true } = {}) {
   const matches = Object.entries(all)
     .filter(([, v]) => genes.has((v.gene_symbol || "").toUpperCase()))
     .filter(([, v]) => !filterGnomad || _passesGnomadAfFilter(v));
-  matches.sort((a, b) => {
-    const sa = Number(a[1].total_score), sb = Number(b[1].total_score);
-    return (Number.isFinite(sb) ? sb : -Infinity) - (Number.isFinite(sa) ? sa : -Infinity);
-  });
+  matches.sort((a, b) => _snvSortScore(b[1]) - _snvSortScore(a[1]));
   return matches;
 }
 
@@ -4678,6 +4687,72 @@ function _clinvarRankScoreLines(v) {
   return [];
 }
 
+const PRIO_MODE_ZH = {
+  dominant: "顯性，單一變異即相容",
+  xld: "X 性聯顯性，相容",
+  other: "粒線體／Y 性聯等，不扣分",
+  unknown: "遺傳模式未知，不扣分",
+  hom: "隱性，同型合子",
+  hemi: "X 性聯隱性，男性半合子",
+  pair: "隱性，與同基因另一個變異配成一對（phase 未知 −1）",
+  single: "隱性，只找到一個異合子；需找第二個變異（CNV、深層內含子、低覆蓋區、dead zone）",
+  xlr_female_single: "X 性聯隱性，女性異合子（保留 skewed X-inactivation 的可能）",
+  somatic: "Somatic 點位，不套遺傳模式",
+};
+
+function _prioNum(x) {
+  if (x === null || x === undefined || x === "" || !Number.isFinite(Number(x))) return "—";
+  const r = Math.round(Number(x) * 10) / 10;
+  return (Object.is(r, -0) ? 0 : r).toString();
+}
+
+function _prioSigned(x) {
+  const t = _prioNum(x);
+  if (t === "—") return " + —";
+  return Number(x) < 0 && t !== "0" ? ` − ${t.replace(/^-/, "")}` : ` + ${t}`;
+}
+
+function _prioScoreText(v) {
+  const p = v?.prio;
+  if (!p) return "—";
+  const parts = `${_prioNum(p.v)}${_prioSigned(p.p)}${_prioSigned(p.c)}`;
+  const rank = Number.isFinite(Number(p.rank)) && p.rank != null ? ` (rank ${Number(p.rank)})` : "";
+  return `${_prioNum(p.total)} (${parts})${rank}`;
+}
+
+function _prioHintLines(v) {
+  const p = v?.prio;
+  const info = state.data?.prioritization || {};
+  const lines = [
+    "總分 = 變異 V′ + 表型 P + 遺傳模式 C（1 點 ≈ 可能性 ×2.08；數值為暫定、尚未以院內個案校準）",
+  ];
+  if (!p) return lines.concat(["此點位沒有計算結果"]);
+  if (p.mode === "pair") {
+    const partner = state.data?.variants?.[p.partner] || state.snvSearchVariants?.[p.partner];
+    const label = partner ? displaySnvHgvs(partner, p.partner) : p.partner;
+    lines.push(`變異 V′ ${_prioNum(p.v)}：與 ${label} 配成隱性一對的合成點數（本變異 ${_prioNum(p.v_single)}、另一個 ${_prioNum(p.partner_v)}）`);
+  } else {
+    lines.push(`變異 V′ ${_prioNum(p.v)}：In-house 排序點數（含 ClinVar 規則、P-KNN LLR、院內常見扣分；無 In-house 時用 GeneBe）${p.v_missing ? "；沒有 ACMG 點數，以 0 計" : ""}`);
+  }
+  if (!p.pheno_counted) {
+    lines.push(`表型 P —：${info.reason || "表型分數不計"}`);
+  } else if (p.no_disease) {
+    lines.push(`表型 P ${_prioNum(p.p)}：${p.gene || "此基因"} 沒有已知疾病（或疾病沒有表型註記），給最低分`);
+  } else {
+    const gene = p.gene_rank ? `${p.gene} 表型排名第 ${p.gene_rank}（基因點數 ${_prioNum(p.gene_points)}）` : p.gene;
+    const dis = p.disease_name ? `${p.disease_name}（${p.disease_id}${p.disease_rank ? `，疾病第 ${Math.round(p.disease_rank)} 名` : ""}）` : p.disease_id;
+    lines.push(`表型 P ${_prioNum(p.p)}：${gene}；採用疾病 ${dis}`);
+  }
+  const MOI_LABEL = { dominant: "AD", ar: "AR", xlr: "XLR", xld: "XLD", other: "MT/YL" };
+  const moi = (p.moi || []).length
+    ? `${p.moi.map(m => MOI_LABEL[m] || m).join("/")}${p.moi_source ? `，來源 ${p.moi_source}` : ""}` : "未知";
+  lines.push(`遺傳模式 C ${_prioNum(p.c)}：${PRIO_MODE_ZH[p.mode] || p.mode}（遺傳模式 ${moi}）`);
+  lines.push(info.mode === "prio"
+    ? "tier 內依此總分排序；rank 為本個案全部 SNV/Indel 候選中的名次"
+    : "本個案排序沿用 Score (old)；rank 仍為依此總分的名次，供比較");
+  return lines;
+}
+
 function _hasPrimaryReviewerStatus(id) {
   return _statusValues(getStatus(id)).some(status =>
     status === "1" || status === "2" || status === "C"
@@ -4949,7 +5024,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     ].join("\n");
     return `<span class="clinvar-change ${isUp ? "upgrade" : "downgrade"}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}">${isUp ? "↑" : "↓"}</span>`;
   })();
-  const scoreHint = _annotationHint("Score", [
+  const prioHint = _annotationHint("In-house prioritization", _prioHintLines(v));
+  const scoreHint = _annotationHint("Score (old)", [
     "Total score = Variant score + Phenotype score",
     "Variant score：ACMG score 轉換成 0–100",
     "Phenotype score：100 ×（此 gene 命中的 HPO/panel 權重總和）÷（全部有效輸入的 HPO/panel 權重總和）",
@@ -5023,7 +5099,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
   const scoreLine = (() => {
     const t = v.total_score, g = v.geno_score, p = v.pheno_score;
     if (![t, g, p].some(_hasNum)) return "—";
-    return `${_i(t)} (${_i(g)} + ${_i(p)})`;
+    const rank = _hasNum(v.old_rank) ? ` (rank ${Number(v.old_rank)})` : "";
+    return `${_i(t)} (${_i(g)} + ${_i(p)})${rank}`;
   })();
   const fmtScoreRank = (score, rank) => {
     if (!_hasNum(score) && !_hasNum(rank)) return "—";
@@ -5052,7 +5129,8 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     </div>
     <div class="info-grid">
       <div>
-        <span class="k">Score${scoreHint}</span><span class="v">${escapeHtml(scoreLine)}</span>
+        <span class="k">In-house prioritization${prioHint}</span><span class="v prio-score">${escapeHtml(_prioScoreText(v))}</span>
+        <span class="k">Score (old)${scoreHint}</span><span class="v">${escapeHtml(scoreLine)}</span>
         <span class="k">Exomiser</span><span class="v">${escapeHtml(fmtScoreRank(v.total_score_exomiser_variant, v.rank_exomiser_variant))}</span>
         <span class="k">LIRICAL</span><span class="v">${escapeHtml(fmtScoreRank(v.lirical_variant_score, v.rank_lirical_variant))}</span>
       </div>
@@ -6142,8 +6220,7 @@ function _reportVariantSortScore(id) {
   const { v, kind } = lookupAnyVariant(id);
   if (kind === "ploidy") return 0;
   if (kind === "cnv" || kind === "sv") return _annotSvSortScore(v);
-  const n = Number(v?.total_score);
-  return Number.isFinite(n) ? n : -Infinity;
+  return _snvSortScore(v);
 }
 
 function _reportVariantKindRank(id) {

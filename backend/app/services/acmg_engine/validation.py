@@ -40,6 +40,26 @@ SOURCES = ("engine", "pipeline", "genebe")
 RANK_SOURCES = ("engine", "engine_evidence", "pipeline", "genebe", "platform_current")
 RECURRENCE_THRESHOLDS = (0.03, 0.05, 0.10)
 MASKED_CLINVAR = {"category": None, "stars": 0, "conflict": False, "source": "masked"}
+
+# Candidate rule changes compared on the ClinVar labels only (section 7 of the
+# report); the in-house comparison waits until the old cases are registered.
+RULE_VARIANTS = {
+    "pm1_1star": {"pm1_clinvar": {"min_stars": 1}},
+    "pp2_b20": {"pp2": {"max_benign_fraction": 0.2}},
+    "pp2_b35": {"pp2": {"max_benign_fraction": 0.35}},
+    "pm1_1star+pp2_b20": {"pm1_clinvar": {"min_stars": 1}, "pp2": {"max_benign_fraction": 0.2}},
+}
+VARIANT_CRITERIA = ("PM1", "PP2")
+
+
+def merge_rulebook(base: dict, override: dict) -> dict:
+    out = json.loads(json.dumps(base))
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = merge_rulebook(out[key], value)
+        else:
+            out[key] = value
+    return out
 PREDICTOR_COLUMNS = ("SPLICEAI_MAX", "PANGOLIN_SCORE", "PKNN_EVIDENCE", "PKNN_LLR", "BAYESDEL_NOAF", "PHYLOP100")
 _DIGITS = re.compile(r"\d+(?:\.\d+)?(?:e-?\d+)?%?")
 
@@ -348,7 +368,7 @@ def _rank_summary(ranks: list[float]) -> dict:
 # ── main pass ──────────────────────────────────────────────────────────────
 def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrence_db: Path | None = None,
         manual_db: Path | None = None, t0_clinvar: Path | None = None, moi_fn=runner.omim_moi,
-        pheno_fn=_default_pheno, progress=None) -> dict:
+        pheno_fn=_default_pheno, progress=None, rule_variants: dict | None = None) -> dict:
     from .. import sample_layout
 
     started = time.time()
@@ -356,6 +376,7 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
     out_dir.mkdir(parents=True, exist_ok=True)
     refs = refs if refs is not None else runner.open_references()
     rb = load_rulebook()
+    variant_rbs = {name: merge_rulebook(rb, override) for name, override in (rule_variants or {}).items()}
     t0 = load_t0_labels(t0_clinvar) if t0_clinvar else None
     wes_candidates, wes_patients = _wes_recurrence_candidates(recurrence_db)
     manual = _manual_assertions(manual_db)
@@ -417,10 +438,10 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
         acmg_only = {s: {} for s in RANK_SOURCES}
         cov = coverage[test_type]
 
-        def masked(rows, gene):
+        def masked(rows, gene, book=None):
             rows = [dict(r, CLINGEN_VCEP_CLASS="") for r in rows]
             ctx = Context(test_type=test_type, moi=moi(gene), refs=case_refs, clinvar=MASKED_CLINVAR)
-            return evaluate_variant(rows, ctx, rb)
+            return evaluate_variant(rows, ctx, book or rb)
 
         for vid, result in runner.iter_results(case["existing"], detail=True):
             rows = groups.get(vid)
@@ -489,7 +510,12 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
                     "pipeline_criteria": first_value(rows, "ACMG_CRITERIA"),
                     "genebe_criteria": first_value(rows, "GENEBE_ACMG_CRITERIA"),
                     "new_since_t0": (None if t0 is None else t0.get(key) != label["group"]),
+                    "fired": {"current": _fired(masked_result)},
                 }
+                for name, book in variant_rbs.items():
+                    alt = masked(rows, gene, book)
+                    labelled[key][f"engine@{name}"] = alt["engine_points"]
+                    labelled[key]["fired"][name] = _fired(alt)
 
             # 2. ClinGen VCEP criteria
             vcep_text = first_value(rows, "CLINGEN_VCEP_CRITERIA")
@@ -576,8 +602,10 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
         "ranking_breakdown": _ranking_breakdown(causal_detail),
         "criteria_usage": _criteria_usage(labelled),
         "recurrence": _recurrence_summary(flagged, wes_candidates, wes_patients, wes_info, rb),
+        "rule_variants": _rule_variant_summary(labelled, rule_variants or {}),
     }
-    _write_tsv(out_dir / "clinvar_labelled.tsv", list(labelled.values()))
+    _write_tsv(out_dir / "clinvar_labelled.tsv",
+               [{k: v for k, v in item.items() if k != "fired"} for item in labelled.values()])
     _write_tsv(out_dir / "recurrent_flagged.tsv",
                sorted(flagged.values(), key=lambda r: -(r["cases_wes"] + r["cases_wgs"])))
     _write_tsv(out_dir / "wes_recurrence_candidates.tsv", sorted(
@@ -587,6 +615,51 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
                                           encoding="utf-8")
     (out_dir / "report.md").write_text(render_markdown(report), encoding="utf-8")
     return report
+
+
+def _fired(result: dict) -> dict:
+    criteria = result.get("criteria") or {}
+    return {code: (criteria.get(code) or {}).get("strength") for code in VARIANT_CRITERIA if code in criteria}
+
+
+def _criterion_lr(items: list[dict], name: str, code: str) -> dict:
+    plp = [i for i in items if i["label"] == "PLP"]
+    blb = [i for i in items if i["label"] == "BLB"]
+    a = sum(1 for i in plp if code in (i["fired"].get(name) or {}))
+    b = sum(1 for i in blb if code in (i["fired"].get(name) or {}))
+    lr = None
+    if plp and blb and (a or b):
+        lr = round(((a + 0.5) / (len(plp) + 1)) / ((b + 0.5) / (len(blb) + 1)), 2)
+    return {"plp_fired": a, "plp_n": len(plp), "blb_fired": b, "blb_n": len(blb), "lr": lr}
+
+
+def _rule_variant_summary(labelled: dict[str, dict], rule_variants: dict) -> dict:
+    """Current rules vs candidate changes on the same ClinVar-labelled variants.
+
+    For each criterion the likelihood ratio LR+ = P(met | P/LP) / P(met | B/LB)
+    (0.5 smoothing) is what the strength should match: Supporting ≈ 2.08,
+    Moderate ≈ 4.33.  AUC and the P/LP ≥6 / B/LB ≤−1 rates show the net effect."""
+    if not rule_variants:
+        return {}
+    items = list(labelled.values())
+    names = ["current", *rule_variants]
+    subsets = {"all": items, "missense": [i for i in items if i["consequence"] == "missense"]}
+    out = {"variants": {n: rule_variants.get(n, {}) for n in names}, "subsets": {}}
+    for subset, group in subsets.items():
+        block = {}
+        for name in names:
+            field = "engine" if name == "current" else f"engine@{name}"
+            ps = [i[field] for i in group if i["label"] == "PLP" and i.get(field) is not None]
+            bs = [i[field] for i in group if i["label"] == "BLB" and i.get(field) is not None]
+            block[name] = {
+                "plp": len(ps), "blb": len(bs), "auc": auc(ps, bs),
+                "plp_ge6": _rate(sum(v >= 6 for v in ps), len(ps)),
+                "blb_le_minus1": _rate(sum(v <= -1 for v in bs), len(bs)),
+                "blb_ge6": _rate(sum(v >= 6 for v in bs), len(bs)),
+                "criteria": {code: _criterion_lr(group, name, code) for code in VARIANT_CRITERIA},
+            }
+        out["subsets"][subset] = block
+    return out
 
 
 def _describe(values: list[float]) -> dict:
@@ -745,6 +818,33 @@ def _num(value) -> str:
     return "—" if value is None else f"{value}"
 
 
+def render_rule_variants(report: dict) -> list[str]:
+    rv = report.get("rule_variants") or {}
+    if not rv:
+        return []
+    lines = ["## 7. 規則調整比較（只用 ClinVar 標籤；院內驗證等舊個案登錄後再做）", "",
+             "同一批 ClinVar ≥2★ 變異，遮住 ClinVar 後用不同規則重新評估。LR+ ＝ 致病變異符合比例 ÷ 良性變異符合比例，"
+             "Supporting 應約 2.1、Moderate 約 4.3；LR+ 遠低於所給強度代表條目太鬆。", ""]
+    for name, override in rv["variants"].items():
+        if name != "current":
+            lines.append(f"- {name}：{json.dumps(override, ensure_ascii=False)}")
+    lines.append("")
+    for subset, block in rv["subsets"].items():
+        lines += [f"### {'全部' if subset == 'all' else 'missense'}", "",
+                  "| 規則 | AUC | P/LP ≥6 | B/LB ≤−1 | B/LB ≥6（誤判） | PM1 致病／良性符合 | PM1 LR+ | PP2 致病／良性符合 | PP2 LR+ |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+        for name, s in block.items():
+            pm1, pp2 = s["criteria"]["PM1"], s["criteria"]["PP2"]
+            lines.append(f"| {name} | {_num(s['auc'])} | {_pct(s['plp_ge6'])} | {_pct(s['blb_le_minus1'])} | "
+                         f"{_pct(s['blb_ge6'])} | {pm1['plp_fired']}/{pm1['plp_n']}、{pm1['blb_fired']}/{pm1['blb_n']} | "
+                         f"{_num(pm1['lr'])} | {pp2['plp_fired']}/{pp2['plp_n']}、{pp2['blb_fired']}/{pp2['blb_n']} | "
+                         f"{_num(pp2['lr'])} |")
+        lines.append("")
+    lines += ["限制：PM1 與 PP2 本身就是從 ClinVar 算出來的（PP2 的基因計數包含這個變異自己），"
+              "所以這裡的數字偏樂觀；用 --refs-dir 指定較舊的參考表並加 --t0-clinvar 做時間切分較可靠。", ""]
+    return lines
+
+
 def render_markdown(report: dict) -> str:
     lines = [f"# ACMG 規則引擎離線驗證（{report['generated_at'][:10]}）", "",
              f"- 規則版本：{report['rulebook']}；參考表：{', '.join(report['reference_tables'])}",
@@ -836,7 +936,9 @@ def render_markdown(report: dict) -> str:
               "|---|---|---|---|---|"]
     lines += [f"| {t} | {s['variants']} | {s['would_block']} | {s['would_block_clinvar_plp_0_1_star']} | "
               f"{s['would_block_lof']} |" for t, s in rec["wes_thresholds"].items()]
-    lines += ["", "## 限制", "",
+    lines.append("")
+    lines += render_rule_variants(report)
+    lines += ["## 限制", "",
               "- 沒有時間切分時，PS1／PM5 與功能喪失基因表仍用目前的 ClinVar（變異本身已排除），結果偏樂觀。",
               "- pipeline 與 GeneBe 的分數可能已參考 ClinVar，和引擎遮住 ClinVar 後的分數相比對它們有利。",
               "- 名次中致病變異可能由本實驗室提交到 ClinVar，規則引擎會直接採用，所以另列不含 ClinVar 採用的版本。",

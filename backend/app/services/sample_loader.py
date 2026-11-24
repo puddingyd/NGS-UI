@@ -60,6 +60,7 @@ from . import (
     panel_deadzone,
     phenotype_scorer,
     ploidy,
+    prioritization,
     report_gene_scope,
     roh,
     sample_layout,
@@ -1326,9 +1327,8 @@ def _apply_inhouse_common_search(variants: dict, *, sample_id: str, test_type: s
         inhouse_common.annotate(variants, sample_id=sample_id, test_type=test_type, mrn=meta.get("mrn") or "")
     except Exception as exc:  # noqa: BLE001
         print(f"[inhouse-common] search annotate failed sample={sample_id}: {type(exc).__name__}: {exc}", flush=True)
-        return
     for variant in variants.values():
-        if not isinstance(variant, dict) or not variant.get("inhouse_common"):
+        if not isinstance(variant, dict):
             continue
         if variant.get("ACMG_classification") or not variant.get("genebe_acmg_class"):
             score, criteria = variant.get("ACMG_score"), variant.get("ACMG_criteria")
@@ -1336,12 +1336,47 @@ def _apply_inhouse_common_search(variants: dict, *, sample_id: str, test_type: s
                 score = variant.get("inhouse_rank_score")
         else:
             score, criteria = variant.get("genebe_acmg_score"), variant.get("genebe_acmg_criteria")
+        variant["prio_v_points"] = score
+        if not variant.get("inhouse_common"):
+            continue
         points = inhouse_common.apply_penalty(variant, scope="in_house", score=score, criteria_text=criteria)
+        variant["prio_v_points"] = points if points is not None else score
         if not variant["inhouse_common"].get("penalty"):
             continue
         geno = manual_acmg.acmg_to_variant_score(points)
         variant["geno_score"] = geno
         variant["total_score"] = (geno or 0) + (variant.get("pheno_score") or 0)
+
+
+
+def _apply_prioritization(variants: dict, categories: dict | None, *, sample_id: str, meta: dict,
+                          hpo_list, test_type: str, rank: bool = True) -> dict:
+    """In-house prioritization (V′ + P + C); never breaks the load."""
+    started = time.perf_counter()
+    try:
+        karyotype = ploidy.load_sample_ploidy(sample_id).get("karyotype") or ""
+    except Exception:  # noqa: BLE001
+        karyotype = ""
+    sex = prioritization.norm_sex(karyotype, meta.get("sex") or meta.get("Sex") or "")
+    try:
+        info = prioritization.annotate(variants, hpo=hpo_list, sex=sex, test_type=test_type, rank=rank)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[prioritization] failed sample={sample_id}: {type(exc).__name__}: {exc}", flush=True)
+        info = {"version": prioritization.VERSION, "mode": "old",
+                "reason": f"In-house prioritization 計算失敗（{type(exc).__name__}），排序沿用 Score (old)"}
+    info["sex"] = sex
+    if categories is not None:
+        prioritization.resort(categories, variants, info.get("mode") or "old")
+    _log_perf("sample.prioritization", started, sample=sample_id, mode=info.get("mode"),
+              variants=len(variants), terms=info.get("terms", 0))
+    return info
+
+
+def _case_hpo(sample_id: str, version: str | None, meta: dict) -> list:
+    chosen = _resolve_version(sample_id, requested=version, meta_active=meta.get("active_analysis"))
+    if chosen is not None:
+        return (analyses_store.read_version(sample_id, chosen) or {}).get("hpo") or []
+    return meta.get("hpo") or meta.get("patient_phenotype") or []
 
 
 def load_sample_roh(sample_id: str, version: str | None = None) -> dict | None:
@@ -1482,6 +1517,7 @@ def _apply_effective_acmg(
         ranking_points = inhouse_common.apply_penalty(
             variant, scope=rank_scope, score=rank_base, criteria_text=rank_criteria,
         )
+        variant["prio_v_points"] = ranking_points if ranking_points is not None else rank_base
         geno_score = manual_acmg.acmg_to_variant_score(
             ranking_points if ranking_points is not None else rank_base
         )
@@ -2229,6 +2265,9 @@ def load_sample_secondary_snv(
         genome_build=meta.get("genome_build") or "hg38",
         meta=meta,
     )
+    if not clinvar_baseline:
+        _apply_prioritization(all_variants, None, sample_id=sample_id, meta=meta,
+                              hpo_list=_case_hpo(sample_id, version, meta), test_type=test_type)
     if clinvar_baseline:
         all_variants = _pipeline_clinvar_secondary_variants(all_variants)
     categories = _build_secondary_snv_categories(all_variants)
@@ -2392,6 +2431,9 @@ def load_sample(sample_id: str, version: str | None = None,
         meta=meta,
     )
     roh.annotate_variants(variants, sample_id)
+    prioritization_info = _apply_prioritization(
+        variants, categories, sample_id=sample_id, meta=meta, hpo_list=hpo_list, test_type=_test_type,
+    )
     review_variants_for_secondary = variants
 
     # CNV / SV: load only when the AnnotSV outputs are present beside
@@ -2558,6 +2600,9 @@ def load_sample(sample_id: str, version: str | None = None,
         # frontend uses this to show a "Clinical 區塊空白是因為沒有
         # phenotype" hint instead of leaving the panel silently empty.
         "has_phenotype":     bool(hpo_list or panels_list),
+        # In-house prioritization (V′ + P + C): mode "prio" sorts the tiers by it,
+        # "old" (no HPO / no knowledge base) keeps Score (old).
+        "prioritization":    prioritization_info,
         "pharmcat":          {},
         # Active version metadata so the frontend can show a version
         # picker / detect when re-analysis should ask for a target.
@@ -2645,6 +2690,8 @@ def search_snv_by_genes(
         _enrich_snv_variants(gba_additions, sample_id, sidecar_dir)
     snv_zygosity.normalize_loaded_variants(matches, sample_id)
     _apply_inhouse_common_search(matches, sample_id=sample_id, test_type=test_type, meta=meta)
+    _apply_prioritization(matches, None, sample_id=sample_id, meta=meta,
+                          hpo_list=_case_hpo(sample_id, version, meta), test_type=test_type, rank=False)
     _log_perf(
         "sample.snv_search",
         started,

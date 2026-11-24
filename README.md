@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.63：In-house prioritization（計畫階段 3–4）：`services/prioritization.py` 對每個 SNV/Indel 算 V′（`prio_v_points`＝排序點數含院內常見扣分；無則 0）＋P(g,d)（表型引擎，基因無疾病 −3.1）＋C（OMIM 每個疾病的遺傳模式：AD／XLD／未知 0、AR 同型合子 0、成對 V′_pair −1、單一異合子 WES −3／WGS −4、XLR 男性 0／女性異合子 −3），每個變異取最佳候選；載入時附 `prio`、`prio_total`、`old_rank`，payload `prioritization.mode`＝prio 才依新分數排 tier，沒有 HPO（只有 panel）退回 Score (old)。卡片第一欄「In-house prioritization」＋「Score (old)（rank）」。`validate_engine.py --rule-variants` 以 ClinVar 標籤比較 PM1／PP2 規則調整。
+
 v10.62：ACMG 規則 v1.7：PM3 依 ClinVar 提交描述的同型合子／複合異型合子病人（結構化計數或文字逐句比對，附原文片段；AR 基因、1 個提交者 Supporting、≥2 Moderate；與 PS4 只計較強者），由 `build_clinvar_cases.py` 同一次建置寫入；排序點數 `rank_points` 以 P-KNN LLR 實際值取代 PP3／BP4 點數（分類不變）。計畫第 15 章改為先上線 In-house prioritization（V′＋P＋C，卡片第一欄、直接用於 tier 內排序，原分數改名 Score (old)），院內驗證移到上線後。
 
 v10.61：「預測基因／疾病」按鈕（主畫面 Patient phenotype 複製鍵右邊、`/phenotype/` HPO Terms 標題右側）呼叫 `POST /api/pheno-engine/predict`（免登入、不存資料），以表型引擎列出前 10 名基因與疾病及逐項配對；共用 `frontend/pheno_predict.{js,css}`。ACMG 規則 v1.6 新增 PS4（數病人，取代 PP5）：顯性基因且 PM2 成立時，A＝本平台其他無親緣病人判為致病（1／2–3／≥4 位 → Supporting／Moderate／Strong），B＝ClinVar 受影響個案的提交者（最多 Supporting），取較強者；ClinVar 病例表由 `scripts/acmg_engine/build_clinvar_cases.py` 下載 VCV XML 建置。部署後需 `build_engine_results.py --all --force` 重算。

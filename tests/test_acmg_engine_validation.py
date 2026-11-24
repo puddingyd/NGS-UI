@@ -117,8 +117,15 @@ def test_run_reports_every_section(tmp_path, monkeypatch):
     out = tmp_path / "out"
     report = validation.run(out_dir=out, refs=shared, recurrence=None, recurrence_db=rec_db, manual_db=db,
                             t0_clinvar=old, moi_fn=lambda gene: {"AR"},
-                            pheno_fn=lambda sid: {"GENE1": 50.0})
+                            pheno_fn=lambda sid: {"GENE1": 50.0},
+                            rule_variants={"pp2_loose": {"pp2": {"min_plp": 0, "max_benign_fraction": 1.0}}})
 
+    rv = report["rule_variants"]
+    assert set(rv["subsets"]["all"]) == {"current", "pp2_loose"}
+    cur = rv["subsets"]["all"]["current"]
+    assert cur["plp"] == 1 and cur["blb"] == 1 and set(cur["criteria"]) == {"PM1", "PP2"}
+    assert cur["criteria"]["PP2"]["plp_n"] == 1
+    assert "## 7." in validation.render_markdown(report)
     assert report["cases"] == {"WES": 2}
     labelled = report["clinvar"]["all"]["all"]
     assert labelled["plp"] == 1 and labelled["blb"] == 1

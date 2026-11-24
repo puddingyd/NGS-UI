@@ -42,11 +42,20 @@ def main(argv=None) -> int:
     ap.add_argument("--recurrence-db", type=Path, default=Path(config.ACMG_WES_RECURRENCE_DB))
     ap.add_argument("--manual-db", type=Path, default=Path(config.MANUAL_ACMG_DB))
     ap.add_argument("--allow-no-omim", action="store_true")
+    ap.add_argument("--rule-variants", default="",
+                    help="compare candidate rule changes on the ClinVar labels: "
+                         f"'all' or a comma list of {', '.join(validation.RULE_VARIANTS)}")
     args = ap.parse_args(argv)
 
     if runner.omim_status() != "loaded" and not args.allow_no_omim:
         print(f"讀不到 OMIM 遺傳模式（{sys.executable}）；請用 ngs-ui 服務的 Python 執行，"
               "或加 --allow-no-omim。", file=sys.stderr)
+        return 2
+    names = list(validation.RULE_VARIANTS) if args.rule_variants.strip() == "all" else \
+        [n.strip() for n in args.rule_variants.split(",") if n.strip()]
+    unknown = [n for n in names if n not in validation.RULE_VARIANTS]
+    if unknown:
+        print(f"不認得的規則調整：{unknown}；可用 {list(validation.RULE_VARIANTS)}", file=sys.stderr)
         return 2
     out = args.out or Path(config.NGS_UI_HOME) / "acmg_validation" / time.strftime("%Y%m%d-%H%M%S")
     refs = runner.open_references(args.refs_dir)
@@ -55,12 +64,15 @@ def main(argv=None) -> int:
         report = validation.run(
             out_dir=out, sample_ids=args.sample or None, refs=refs, recurrence=recurrence,
             recurrence_db=args.recurrence_db, manual_db=args.manual_db, t0_clinvar=args.t0_clinvar,
-            progress=lambda msg: print(msg, file=sys.stderr, flush=True))
+            progress=lambda msg: print(msg, file=sys.stderr, flush=True),
+            rule_variants={n: validation.RULE_VARIANTS[n] for n in names})
     finally:
         if recurrence is not None:
             recurrence.close()
     print(json.dumps({"out": str(out), "cases": report["cases"], "seconds": report["seconds"],
                       "time_split": report["time_split"]}, ensure_ascii=False, indent=2))
+    if report.get("rule_variants"):
+        print("\n".join(validation.render_rule_variants(report)))
     return 0
 
 
