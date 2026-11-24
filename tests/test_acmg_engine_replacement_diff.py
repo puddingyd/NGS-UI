@@ -91,3 +91,35 @@ def test_stale_results_are_skipped(tmp_path, monkeypatch):
     report = rd.run(out_dir=tmp_path / "out", refs=newer, meta_fn=lambda s: {}, manual_fn=lambda ids: {},
                     pheno_fn=lambda s: {})
     assert report["cases"] == {"skipped_stale": 1}
+
+
+def test_explain_marked_lists_changed_causative_without_sample_ids(tmp_path, monkeypatch, capsys):
+    import importlib.util
+    from pathlib import Path
+
+    from app import config
+
+    root = tmp_path / "root"
+    monkeypatch.setattr(config, "PIPELINE_OUT_ROOT", root)
+    monkeypatch.setattr(config, "LEGACY_TERTIARY_OUTPUT_ROOT", tmp_path / "legacy_ui")
+    monkeypatch.setattr(config, "LEGACY_PIPELINE_OUT_ROOT", tmp_path / "legacy_pipe")
+    shared = refs()
+    sid = "24WE0001-nckuh"
+    publish(root, sid, [LOF, OTHER, PIPE_ONLY], shared)
+    metas = {sid: {"status": {"chr1-4000-T-C": "1", "chr1-1000-C-T": "C"}, "edits": {}}}
+    out = tmp_path / "out"
+    rd.run(out_dir=out, refs=shared, meta_fn=lambda s: metas.get(s, {}), manual_fn=lambda ids: {},
+           pheno_fn=lambda s: {})
+    spec = importlib.util.spec_from_file_location(
+        "explain_marked", Path(__file__).resolve().parents[1] / "scripts/acmg_engine/explain_marked.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.main([str(out / "marked_variants.tsv")]) == 0          # status 1 → VUS: none here
+    assert "沒有符合條件" in capsys.readouterr().out
+    assert module.main([str(out / "marked_variants.tsv"), "--status", "1,C", "--to", "any"]) == 0
+    text = capsys.readouterr().out
+    assert "chr1-1000-C-T" in text and "chr1-4000-T-C" not in text     # class unchanged → skipped
+    assert "In-house criteria" in text and "GeneBe criteria" in text and "+ PVS1" in text
+    assert sid not in text
+    assert module.main([str(out / "marked_variants.tsv"), "--status", "C", "--to", "P", "--with-sample"]) == 0
+    assert sid in capsys.readouterr().out
