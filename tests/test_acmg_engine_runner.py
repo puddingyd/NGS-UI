@@ -256,3 +256,35 @@ def test_effective_acmg_prefers_inhouse_engine_over_genebe(monkeypatch):
     assert variants["chr1-2-A-G"]["effective_acmg_source"] == "GeneBe"     # no in-house value → GeneBe
     sample_loader._promote_engine_to_inhouse(variants)                      # idempotent
     assert variants["chr1-1-A-G"]["pipeline_acmg_class"] == "Uncertain significance"
+
+
+def test_inhouse_shows_own_call_but_ranks_with_clinvar_adopt(monkeypatch):
+    """ClinVar ≥2★ adopt moves ranking only; the shown In-house class is the rule's own."""
+    from app.services import manual_acmg, sample_loader
+
+    monkeypatch.setattr(manual_acmg, "bulk_current", lambda *a, **k: {})
+    monkeypatch.setattr(manual_acmg, "bulk_observed_counts", lambda *a, **k: {})
+    variants = {
+        # adopted LP from ClinVar 2★; rule's own call VUS (3 points), stored without engine_classification
+        "chr1-1-A-G": {"tier": "1A", "pheno_score": 0,
+                       "engine_acmg": {"classification": "Likely pathogenic", "points": 6, "engine_points": 3,
+                                       "criteria_text": "PM2_Supporting,PP3_Moderate", "clinvar_action": "adopt"}},
+        # BA1 met → own call Benign even with pathogenic points mixed in
+        "chr1-2-A-G": {"tier": "2", "pheno_score": 0,
+                       "engine_acmg": {"classification": "Benign", "points": -8, "engine_points": -4,
+                                       "criteria_text": "PVS1_Strong,BA1_Stand_alone", "clinvar_action": "none"}},
+    }
+    sample_loader._promote_engine_to_inhouse(variants)
+    first = variants["chr1-1-A-G"]
+    assert first["ACMG_classification"] == "Uncertain significance" and first["ACMG_score"] == 3
+    assert first["inhouse_rank_score"] == 6 and first["inhouse_clinvar_action"] == "adopt"
+    assert variants["chr1-2-A-G"]["ACMG_classification"] == "Benign"
+    categories = {"1A": ["chr1-1-A-G"], "1B": [], "1C": [], "2": ["chr1-2-A-G"]}
+    sample_loader._apply_effective_acmg(variants, categories, sample_id="S", genome_build="hg38", meta={})
+    first = variants["chr1-1-A-G"]
+    assert first["effective_acmg_class"] == "Uncertain significance" and first["effective_acmg_score"] == 3
+    assert first["effective_rank_score"] == 6
+    assert first["geno_score"] == manual_acmg.acmg_to_variant_score(6)
+    assert runner.own_call({"classification": "Pathogenic", "points": 10}) == ("Pathogenic", 10)   # old summary
+    assert runner.own_call({"points": 6, "engine_points": 7, "engine_classification": "Likely pathogenic"}) \
+        == ("Likely pathogenic", 7)

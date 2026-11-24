@@ -222,8 +222,10 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
                       if first_value(rows, "GENEBE_ACMG_CLASS") else None)
             pipeline = {"class": class_code(first_value(rows, "ACMG_CLASS")),
                         "points": _num(first_value(rows, "ACMG_SCORE") or first_value(rows, "ACMG_POINTS"))}
-            engine = ({"class": class_code(result.get("classification")), "points": _num(result.get("points"))}
-                      if result else None)
+            # shown class/points = the rule's own call; ranking = with the ClinVar ≥2★ adopt
+            own_class, own_points = runner.own_call(result) if result else ("", None)
+            engine = ({"class": class_code(own_class), "points": _num(own_points),
+                       "rank": _num(result.get("points"))} if result else None)
             if result:
                 versions[result.get("version") or "?"] += 1
             else:
@@ -254,8 +256,8 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
             if want_rank:
                 pheno_score = float(pheno.get(_canonical(gene), 0) or 0)
                 scores["before"][vid] = total_score(before["points"], pheno_score)
-                scores["A"][vid] = total_score(after["points"], pheno_score)
-                scores["B"][vid] = total_score(ranking_b["points"], pheno_score)
+                scores["A"][vid] = total_score(after.get("rank", after["points"]), pheno_score)
+                scores["B"][vid] = total_score(ranking_b.get("rank", ranking_b["points"]), pheno_score)
             if vid in statuses:
                 info[vid] = {"row": row, "gene": gene, "before": before, "after": after, "B": ranking_b,
                              "tier_before": tier_before, "tier_after": tier_after}
@@ -301,7 +303,7 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
                 "hgvs_p": P.text(row.get("HGVS_P")).split(":")[-1],
                 "source_before": before["source"], "class_before": before["class"], "points_before": before["points"],
                 "source_after": after["source"], "class_after": after["class"], "points_after": after["points"],
-                "ranking_points_B": item["B"]["points"],
+                "ranking_points_B": item["B"].get("rank", item["B"]["points"]),
                 "tier_before": item["tier_before"], "tier_after": item["tier_after"],
                 "rank_before": ranks["before"], "rank_A": ranks["A"], "rank_B": ranks["B"],
                 "class_changed": before["class"] != after["class"]})

@@ -187,11 +187,32 @@ def summary(result: dict) -> dict:
         "classification": result.get("classification") or "",
         "points": result.get("points"),
         "engine_points": result.get("engine_points"),
+        "engine_classification": result.get("engine_classification") or "",
         "criteria_text": result.get("criteria_text") or "",
         "clinvar_action": (result.get("clinvar_rule") or {}).get("action") or "none",
         "flags": [f.get("code") for f in result.get("flags") or [] if isinstance(f, dict)],
         "version": result.get("version") or "",
     }
+
+
+def own_call(engine: dict) -> tuple[str, object]:
+    """(class, points) from the rule's own criteria, before the ClinVar adopt/floor.
+
+    ``classification``/``points`` already carry the ClinVar ≥2★ (or ClinGen
+    VCEP) call; the platform ranks with those but shows this one.  Results
+    stored before ``engine_classification`` was kept are derived the same way
+    as the engine: BA1 met → Benign, otherwise the Tavtigian bins.
+    """
+    engine = engine or {}
+    points = engine.get("engine_points")
+    if points is None:
+        return engine.get("classification") or "", engine.get("points")
+    name = engine.get("engine_classification")
+    if not name:
+        from .engine import _class_for
+        criteria = {c.strip().split("_")[0] for c in str(engine.get("criteria_text") or "").split(",") if c.strip()}
+        name = "Benign" if "BA1" in criteria else _class_for(int(points))
+    return name, points
 
 
 # ── storage ────────────────────────────────────────────────────────────────

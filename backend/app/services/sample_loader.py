@@ -1282,15 +1282,22 @@ def _promote_engine_to_inhouse(variants: dict) -> None:
             variant["pipeline_acmg_class"] = variant.get("ACMG_classification") or ""
             variant["pipeline_acmg_score"] = variant.get("ACMG_score")
             variant["pipeline_acmg_criteria"] = variant.get("ACMG_criteria") or ""
-        variant["ACMG_classification"] = _normalize_acmg_class(engine.get("classification") or "")
-        variant["ACMG_score"] = engine.get("points")
+        # Shown: the rule's own call.  Ranked: with the ClinVar ≥2★ / VCEP
+        # adopt applied (``inhouse_rank_score``; plan §5.2.2).
+        from .acmg_engine import runner as acmg_engine_runner
+        own_class, own_points = acmg_engine_runner.own_call(engine)
+        variant["ACMG_classification"] = _normalize_acmg_class(own_class or "")
+        variant["ACMG_score"] = own_points
         variant["ACMG_criteria"] = engine.get("criteria_text") or ""
         variant["ACMG_notes"] = ""
         variant["inhouse_acmg_source"] = "engine"
+        variant["inhouse_rank_score"] = engine.get("points")
+        variant["inhouse_clinvar_action"] = engine.get("clinvar_action") or "none"
         points = variant.get("ACMG_score")
         if points is None and variant.get("genebe_acmg_class"):
             points = variant.get("genebe_acmg_score")
-        geno = manual_acmg.acmg_to_variant_score(points)
+        rank_points = variant["inhouse_rank_score"] if variant["inhouse_rank_score"] is not None else points
+        geno = manual_acmg.acmg_to_variant_score(rank_points)
         variant["geno_score"] = geno
         pheno = variant.get("pheno_score")
         if geno is not None or pheno is not None:
@@ -1316,6 +1323,8 @@ def _apply_inhouse_common_search(variants: dict, *, sample_id: str, test_type: s
             continue
         if variant.get("ACMG_classification") or not variant.get("genebe_acmg_class"):
             score, criteria = variant.get("ACMG_score"), variant.get("ACMG_criteria")
+            if variant.get("inhouse_rank_score") is not None:
+                score = variant.get("inhouse_rank_score")
         else:
             score, criteria = variant.get("genebe_acmg_score"), variant.get("genebe_acmg_criteria")
         points = inhouse_common.apply_penalty(variant, scope="in_house", score=score, criteria_text=criteria)
@@ -1445,12 +1454,17 @@ def _apply_effective_acmg(
         )
 
         # 院內常見: the ranking points (not the class or tier) drop by 4/8.
+        # In-house ranks with the ClinVar ≥2★ adopt; the shown class stays its own.
+        rank_base = selected.get("score")
+        if source_scope == "in_house" and variant.get("inhouse_rank_score") is not None:
+            rank_base = variant.get("inhouse_rank_score")
+        variant["effective_rank_score"] = rank_base
         ranking_points = inhouse_common.apply_penalty(
-            variant, scope=source_scope, score=selected.get("score"),
+            variant, scope=source_scope, score=rank_base,
             criteria_text=selected.get("criteria_text"),
         )
         geno_score = manual_acmg.acmg_to_variant_score(
-            ranking_points if ranking_points is not None else selected.get("score")
+            ranking_points if ranking_points is not None else rank_base
         )
         variant["geno_score"] = geno_score
         pheno_score = variant.get("pheno_score")

@@ -4643,6 +4643,15 @@ function _inhouseCommonScoreLines(v) {
   return [head, `本變異扣 ${Number(info.penalty) || 0} 點；ACMG 分類與 tier 不變`];
 }
 
+function _clinvarRankScoreLines(v) {
+  const action = v?.inhouse_clinvar_action;
+  if (v?.effective_acmg_scope !== "in_house" || !["adopt", "floor"].includes(action)) return [];
+  const rank = _numericValue(v.inhouse_rank_score);
+  const own = _numericValue(v.effective_acmg_score);
+  if (rank == null || rank === own) return [];
+  return [`排序採用 ClinVar ≥2★／ClinGen VCEP 分級換算的 ${rank} 點；畫面 ACMG 為 In-house 規則自行計算的 ${own ?? "—"} 點`];
+}
+
 function _hasPrimaryReviewerStatus(id) {
   return _statusValues(getStatus(id)).some(status =>
     status === "1" || status === "2" || status === "C"
@@ -4918,6 +4927,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     "Total score = Variant score + Phenotype score",
     "Variant score：ACMG score 轉換成 0–100",
     "Phenotype score：100 ×（此 gene 命中的 HPO/panel 權重總和）÷（全部有效輸入的 HPO/panel 權重總和）",
+    ..._clinvarRankScoreLines(v),
     ..._inhouseCommonScoreLines(v),
   ]);
   const hgvsLabel = displaySnvHgvs(v, id);

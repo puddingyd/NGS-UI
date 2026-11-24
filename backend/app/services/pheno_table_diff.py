@@ -180,6 +180,7 @@ def _case_variants(sample_id: str, meta: dict):
         row = _primary_row(rows)
         manual = manual_choice(_sample_snapshot(edits.get(vid)), global_manual.get(normalize_variant_id(vid)))
         result = results.get(vid)
+        # ranking uses the ClinVar-adopted points, as the loader does
         inhouse = ({"class": class_code(result.get("classification")), "points": _num(result.get("points"))}
                    if result else {"class": class_code(first_value(rows, "ACMG_CLASS")),
                                    "points": _num(first_value(rows, "ACMG_SCORE") or first_value(rows, "ACMG_POINTS"))})

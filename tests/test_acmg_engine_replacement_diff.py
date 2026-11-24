@@ -105,7 +105,9 @@ def test_explain_marked_lists_changed_causative_without_sample_ids(tmp_path, mon
     monkeypatch.setattr(config, "LEGACY_PIPELINE_OUT_ROOT", tmp_path / "legacy_pipe")
     shared = refs()
     sid = "24WE0001-nckuh"
-    publish(root, sid, [LOF, OTHER, PIPE_ONLY], shared)
+    # GeneBe VUS → In-house LP (the rule's own call; the ClinVar adopt only moves ranking)
+    lof = dict(LOF, GENEBE_ACMG_CLASS="Uncertain_significance", GENEBE_ACMG_SCORE="3")
+    publish(root, sid, [lof, OTHER, PIPE_ONLY], shared)
     metas = {sid: {"status": {"chr1-4000-T-C": "1", "chr1-1000-C-T": "C"}, "edits": {}}}
     out = tmp_path / "out"
     rd.run(out_dir=out, refs=shared, meta_fn=lambda s: metas.get(s, {}), manual_fn=lambda ids: {},
@@ -128,5 +130,5 @@ def test_explain_marked_lists_changed_causative_without_sample_ids(tmp_path, mon
     assert len(rows) == 1 and rows[0]["sample"] == sid and rows[0]["variant"] == "chr1-1000-C-T"
     assert rows[0]["inhouse_criteria"] and "manual_acmg_done" in rows[0]
     capsys.readouterr()
-    assert module.main([str(out / "marked_variants.tsv"), "--status", "C", "--to", "P", "--with-sample"]) == 0
+    assert module.main([str(out / "marked_variants.tsv"), "--status", "C", "--to", "LP", "--with-sample"]) == 0
     assert sid in capsys.readouterr().out
