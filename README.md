@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.56：新增表型知識庫建置工具 `scripts/build_hpo_kb.py`（候選診斷排序計畫階段 1）：在清理後的 HPO 註記上計算每個 term 的資訊量、疾病基準分，整理平台 OMIM 與 Orphanet 的疾病–基因對應及 MONDO 疾病分組，連同 QC 報告寫成版本化快照；同版本重建結果完全相同。只建資料，不改變現行排序；需安裝 numpy。
+
 v10.55：變異排序改為固定（In-house，含 ClinVar ≥2★ 分級 → GeneBe），判讀者手動判讀 ACMG 只改變畫面與報告的分類，不再改變排序；ClinGen 專家小組（VCEP）的分級直接顯示為 In-house 分類並標明來源。新增 `scripts/acmg_engine/show_variant.py`，可查單一變異每條 ACMG 條目為何符合或不符合。HPO 版本更新改用 `scripts/hpo/build_hpo_gene_table.py --release latest --activate`，一次下載、建表、啟用並更新 hp.obo。
 
 v10.54：ACMG「In-house」改為一律顯示平台規則自行算出的分類與點數；ClinVar ≥2★（或 ClinGen 專家小組）的分級只用在排序的變異分數，不再取代畫面上的 In-house 分類。ClinVar 分級仍在卡片的 ClinVar 欄顯示；兩者不同時，Score 的 ⓘ 會說明排序用了 ClinVar。未手動判讀的變異，畫面與報告上的分類可能因此改變；更新服務並重新載入即可，不需重算。

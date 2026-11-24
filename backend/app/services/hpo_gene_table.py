@@ -371,8 +371,13 @@ def snapshot_name(result: dict) -> str:
     return f"{_date_version(result['ontology'].version)}_{result['hpoa_version']}"
 
 
-def write_snapshot(result: dict, out_root: Path, sources: dict[str, Path]) -> Path:
-    """Write the snapshot directory atomically; returns its path."""
+def write_snapshot(result: dict, out_root: Path, sources: dict[str, Path], extra=None) -> Path:
+    """Write the snapshot directory atomically; returns its path.
+
+    ``extra(tmp_dir, manifest) -> str`` (the phase-1 knowledge base) may add
+    files and manifest keys before the swap; its return value is appended to
+    ``build_qc.md``.  It may raise to abort the whole snapshot.
+    """
     onto: Ontology = result["ontology"]
     out_root.mkdir(parents=True, exist_ok=True)
     final = out_root / snapshot_name(result)
@@ -423,13 +428,14 @@ def write_snapshot(result: dict, out_root: Path, sources: dict[str, Path]) -> Pa
             "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "hp_version": onto.version, "hpoa_version": result["hpoa_version"],
             "sources": {k: {"path": str(p), "sha256": _sha256(p), "size": p.stat().st_size}
-                        for k, p in sources.items()},
+                        for k, p in sources.items() if p and Path(p).is_file()},
             "qc": dict(result["qc"]),
             "disease_gene_source": "genes_to_disease.txt (all association types, unchanged from the old table)",
         }
+        qc_extra = extra(tmp, manifest) if extra else ""
         (tmp / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1) + "\n",
                                            encoding="utf-8")
-        (tmp / "build_qc.md").write_text(render_qc(result, manifest), encoding="utf-8")
+        (tmp / "build_qc.md").write_text(render_qc(result, manifest) + (qc_extra or ""), encoding="utf-8")
         if final.exists():
             backup = final.with_name(f"{final.name}.replaced-{int(time.time())}")
             final.rename(backup)
