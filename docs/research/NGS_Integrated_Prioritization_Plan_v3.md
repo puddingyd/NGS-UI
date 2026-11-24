@@ -1382,6 +1382,8 @@ $$
 
 規則版本 `ngsui-acmg-v1.4`，新的表格放在引擎資料夾，舊結果自動視為過期，需 `build_engine_results.py --all --force` 重算，再跑驗證與差異報告。11 個降為 VUS 的第一類點位都不在有 VCEP 規格的基因；COL4A4 p.Gly816Glu 與 COL7A1 p.Gly1752Glu 會因膠原蛋白規則多得 PM1。
 
+**第四次院內結果（v1.4，2026-11-24）**：WES 判讀者狀態 1 的 62 個變異，前 20 名 82.3% → 83.9%、前 10 名 77.4%、MRR 0.452 → 0.447（平台取代前 0.449）；ClinVar ≥2★ 標籤 AUC 0.973 → 0.970。和專家比，載入 CSpec 後 PM1 由 1 一致／24 多給改為 5／10（precision 33%、recall 63%），PP2 由 1／54 改為 1／5；PM5 放寬為 ≥1★ 後 4 一致／25 多給（precision 14%），是這版主要的代價。第一類點位中，取代後降為 VUS 的 11 個點位：KIF5A p.Thr88Ile 回到 LP（多得 PM5）；SLC12A3 p.Arg862His 3 → 5（隱性 PM2、PM5）、COL4A4 p.Gly816Glu 2 → 5、COL7A1 p.Gly1752Glu 3 → 5（膠原蛋白 PM1）、KCNQ2 p.Ile540Leu 4 → 5（PM5）；其餘不變。仍是 VUS 的點位，差距主要是 GeneBe 的 PP5 與 PM2 Moderate（依 ClinGen 建議不採用），以及 de novo、共分離等個案證據（KCNQ2、PCDH19、TSC1 為 de novo 常見基因），需由判讀者手動判讀補上；TMEM151A 功能喪失機轉未確立的 PVS1 缺口維持。WGS 狀態 1 的 21 個變異 MRR 0.758（平台取代前 0.824），依 2026-11-24 決定暫不作依據。
+
 **取代前後差異報告（實作步驟 6，2026-11-23）**：`scripts/acmg_engine/diff_replacement.py`（核心 `replacement_diff.py`）讀各個案已存的規則引擎結果、review TSV、判讀者狀態與手動 ACMG、表型分數，模擬兩種情境，不改任何個案檔案：
 
 - **A（取代 pipeline）**：有效分類改為「判讀者 → GeneBe → 規則引擎」；只有取代前落到 pipeline ACMG 的變異會改變，分類、tier 1C（點數 ≥4）與 total_score 都跟著新的有效點數。
