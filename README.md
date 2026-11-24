@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.60：新增表型引擎（候選診斷排序計畫階段 2，`backend/app/services/pheno_engine/engine.py`）：病人 HPO 前處理（alt_id／obsolete 換算、只留表型 term、去除冗餘上層並保留較大權重）、逐項配對、基準分校正的疾病排名、基因排名、表型點數 P（暫定校準）與逐項解釋。`scripts/pheno_engine.py --sample 檢體編號` 在分析版本資料夾寫出 `pheno_engine_{diseases,genes,explain}.tsv` 與 `pheno_engine_run.json` 並印出摘要；`scripts/benchmark_pheno.py` 以 phenopacket 病例評估。2023 版知識庫重現計畫第 12.1 節的開發資料結果（疾病 MRR 0.382、基因 0.486，計畫 0.377／0.481）。不改變現行表型分數與排序。
+
 v10.59：首頁「資料庫版本」改為左右兩欄，減少佔用的高度。
 
 v10.58：首頁「資料庫版本」改為單一表格（資料庫／版本／更新方式），「更新 HPO」按鈕放在 HPO 那一列；Orphanet 疾病–基因資料在連不到官網時改從 Orphanet 官方 GitHub 下載。
