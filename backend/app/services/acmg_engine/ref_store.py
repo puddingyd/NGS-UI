@@ -34,6 +34,8 @@ SCHEMA_VERSION = 2
 GENE_COUNT_MIN_STARS = 1      # missense_genes counts (PP2)
 REFS_DB_NAME = "acmg_refs.sqlite"
 BA1_EXCEPTIONS_PATH = Path(__file__).with_name("ba1_exceptions.tsv")
+VCEP_SPECS_PATH = Path(__file__).with_name("vcep_specs.json")
+COLLAGEN_PATH = Path(__file__).with_name("collagen_gly.json")
 
 _NAME_RE = re.compile(r"^(?P<nm>N[MR]_\d+)(?:\.\d+)?\((?P<gene>[^)]+)\):(?P<c>c\.[^ ]+)(?:\s+\((?P<p>p\.[^)]+)\))?")
 _P_RE = re.compile(r"^p\.(?P<ref>[A-Z][a-z]{2})(?P<pos>\d+)(?P<alt>[A-Z][a-z]{2}|fs|\*|=)")
@@ -351,6 +353,27 @@ def _missense_entry(alt_aa, variant_key, stars, category) -> dict:
     return entry
 
 
+@lru_cache(maxsize=4)
+def _load_gene_table(path: Path) -> dict:
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8")).get("genes") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def load_vcep_specs(path: Path = VCEP_SPECS_PATH) -> dict:
+    """gene -> VCEP spec (built by scripts/acmg_engine/update_vcep_specs.py)."""
+    return _load_gene_table(Path(path))
+
+
+def load_collagen(path: Path = COLLAGEN_PATH) -> dict:
+    """gene -> {"accession", "length", "positions"} with positions as a frozenset."""
+    out = {}
+    for gene, entry in _load_gene_table(Path(path)).items():
+        out[gene] = dict(entry, positions=frozenset(entry.get("positions") or ()))
+    return out
+
+
 def load_ba1_exceptions(path: Path = BA1_EXCEPTIONS_PATH) -> set[str]:
     out: set[str] = set()
     try:
@@ -376,6 +399,8 @@ class SqliteReferences(References):
             self._conn = sqlite3.connect(f"file:{self.refs_db}?mode=ro", uri=True, check_same_thread=False)
         self.recurrence = recurrence
         self._ba1 = load_ba1_exceptions() if ba1_exceptions is None else set(ba1_exceptions)
+        self._vcep = load_vcep_specs()
+        self._collagen = load_collagen()
         self._tables = set()
         self._missense_category = False
         if self._conn is not None:
@@ -461,6 +486,12 @@ class SqliteReferences(References):
 
     def ba1_exception(self, variant_key):
         return variant_key in self._ba1
+
+    def vcep(self, gene):
+        return self._vcep.get(gene)
+
+    def collagen_gly(self, gene):
+        return self._collagen.get(gene)
 
     def wes_recurrence(self, variant_key):
         if self.recurrence is None:

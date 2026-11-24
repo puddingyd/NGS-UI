@@ -1132,8 +1132,8 @@ $$
 | **PM4**（+2） | in-frame indel 不在重複區域，或 stop-loss；PVS1 成立時不給 | `CONSEQUENCE`、`GIAB_STRATA`（tandem repeat、homopolymer） | Richards 2015 | 修正（現行規則沒有檢查重複區域） |
 | **BP3**（−1） | in-frame indel 落在重複區域，且該位置不保守；與 PM4 互斥 | `GIAB_STRATA`、`PHYLOP100` | Richards 2015 | 修正（現行規則用蛋白質結構域的關鍵字判斷重複區，而且可以和 PM4 同時成立） |
 | **PS1**（+4） | 和一個 ClinVar ≥2★ P/LP 的 missense 造成相同的胺基酸改變、但核苷酸改變不同；已知變異的致病機轉不能是剪接 | ClinVar 蛋白質位置表 | Richards 2015 | 新增 |
-| **PM5**（+2／+1） | 同一個胺基酸位置上，另有一個不同的 ClinVar ≥2★ P/LP missense；參考變異是 P 給 Moderate，只有 LP 給 Supporting（2026-11-23） | 同上 | Richards 2015 | 新增 |
-| **PM1**（+1／+2） | 有 VCEP 規格的基因用其熱點或關鍵區域給 Moderate（區域外不給）；其他基因用 ClinVar 推算：前後 10 個胺基酸內，除本位置外有 ≥3 個位置有 ≥2★ P/LP missense 給 Supporting、≥6 個給 Moderate，窗口內有任何 ≥1★ B/LB missense 就不給（**暫定**；v1.2 曾收緊為 ≥6 個且只給 Supporting，致病變異名次略降，v1.3 改回）。PM1 與 PP3 合計不超過 4 點 | VCEP 區域；ClinVar 蛋白質位置表、良性 missense 表 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增 |
+| **PM5**（+2／+1） | 同一個胺基酸位置上，另有一個不同的 ClinVar ≥1★ P/LP missense（v1.4 由 ≥2★ 放寬，PS1 仍要 ≥2★）；參考變異是 P 給 Moderate，只有 LP 給 Supporting（2026-11-23） | 同上 | Richards 2015 | 新增 |
+| **PM1**（+1／+2／+4） | 有 VCEP 規格的基因用 CSpec 的熱點或關鍵區域，強度照規格（區域外不給；熱點表無法自動讀取的基因改用 ClinVar 推算）；膠原蛋白基因三股螺旋 Gly-X-Y 的甘胺酸被取代給 Moderate（v1.4，UniProt 序列）；其他基因用 ClinVar 推算：前後 10 個胺基酸內，除本位置外有 ≥3 個位置有 ≥2★ P/LP missense 給 Supporting、≥6 個給 Moderate，窗口內有任何 ≥1★ B/LB missense 就不給（**暫定**；v1.2 曾收緊為 ≥6 個且只給 Supporting，致病變異名次略降，v1.3 改回）。PM1 與 PP3 合計不超過 4 點 | VCEP 區域；ClinVar 蛋白質位置表、良性 missense 表 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增 |
 | **PS2、PM6、PP1、BS4、BP2、PS3、BS3、PS4** | 需要家族、功能實驗或病例對照資料，由判讀者在 `manual_acmg` 填寫 | — | — | 不自動給 |
 | **PM3** | 只計入**其他病人**的證據，由判讀者填寫。以這位病人自己的另一個變異為依據的 PM3 不計入 $V'$，因為隱性成對（第 5.3 節）與遺傳模式（第 6 章）已經處理了這件事 | — | — | 不自動給 |
 | **BS2** | 需要 gnomAD 健康同型合子的人數；目前 TSV 沒有這個欄位 | — | — | 不自動給（缺欄位） |
@@ -1263,7 +1263,7 @@ $$
 |---|---|---|
 | BA1 | 只看全體 AF > 5%，沒有例外 | 全體與東亞的最大值；ClinGen 例外清單 + ClinVar ≥2★ P/LP 例外 |
 | BS1 | 一律 1% | 有 VCEP 規格用規格；否則依遺傳模式：顯性／X 性聯 0.1%，其他 0.5% |
-| PM2 | 顯性用全體 AF < 0.01%；隱性用各東亞來源的**最小值** < 0.001%（任一來源低就成立） | 大型資料的**最大值**；顯性完全沒出現，隱性 ≤ 0.01% |
+| PM2 | 顯性用全體 AF < 0.01%；隱性用各東亞來源的**最小值** < 0.001%（任一來源低就成立） | 大型資料的**最大值**；顯性完全沒出現，只有隱性遺傳 ≤ 0.07%（v1.4，原 0.01%），遺傳模式未知或混合 ≤ 0.01%；有 VCEP 規格的基因用規格門檻 |
 | PVS1 基因條件 | 只有 ClinGen HI = 3 | HI = 3，或 ClinVar 有 ≥2 個 P/LP 截斷變異（含隱性基因） |
 | PVS1 細節 | LOFTEE LC 一律排除；「重要區域」用 `DOMAINS` | LC 依過濾原因處理；「重要區域」用下游 ClinVar 截斷變異；剪接位用 MANE exon 表判斷 frameshift |
 | PP3／BP4 missense | 依序嘗試五個工具，前一個落在不確定區間就換下一個 | 事先指定一個工具，只有缺值才換；不確定就是不確定 |
@@ -1369,6 +1369,19 @@ $$
 
 據此改為規則 v1.3（版本 `ngsui-acmg-v1.3`）：PM1／PP2 門檻改回 v1.1，其餘與 v1.2 相同。VCEP 基因的處理留待載入 CSpec 規格後再做。同樣只需重算結果。院內重算後的驗證數字與 v1.1 相同（WES 前 20 名 82.3%、MRR 0.452；AUC 0.973；PM1 1／24、PP2 1／54），確認改回無誤。
 
+**規則 v1.4（2026-11-24）**：判讀者標為第一類的點位中，有 11 個在取代後由 LP／P 降為 VUS（`explain_marked.py` 逐點比較）。主要差距是 GeneBe 的 PM2 Moderate 與 PP5（依 ClinGen 建議維持不用），其次是平台規則缺少的三項知識，依使用者決定一起補上：
+
+1. **PM5 放寬為另一個 missense 在 ClinVar ≥1★**（強度仍依參考變異 P／LP）；PS1 維持 ≥2★。
+2. **只有隱性遺傳（OMIM 只列 AR）的基因，PM2 門檻改為最大 AF ≤ 0.07%**（聽損等專家小組對隱性基因常用的門檻；原 0.01%）。顯性維持完全沒出現；遺傳模式未知或混合維持 0.01%。
+3. **膠原蛋白 Gly-X-Y**：COL1A1／1A2／2A1／3A1／4A1–4A6／5A1／5A2／6A1–6A3／7A1／9A1–9A3／10A1／11A1／11A2／17A1 的三股螺旋甘胺酸被取代給 PM1_Moderate。位置由 UniProt 序列計算（連續 ≥6 個 Gly-X-Y 重複；有 UniProt 三股螺旋註記時只取註記範圍，沒有時只取成熟鏈），蛋白質長度須與 MANE 轉錄本一致。
+4. **ClinGen CSpec（VCEP 規格）**：133 個基因（129 份 Released／Approved For Release 規格；RYR1、VWF、ITGA2B、ITGB3、ACTA1 有多份不同疾病的規格，無法依變異選擇，略過）。套用方式：
+   - 規格標為不適用的條目不給（例如多數 VCEP 停用 PP2、GOF 基因停用 PVS1）；強度超過規格上限的降到上限。
+   - BA1／BS1／PM2 門檻改用規格數字。規格為自由文字，只讀比較符號旁的數字；同一條列出多個值時，BA1 取最大、BS1 取最小（「≥X 且 <Y」的下限）、PM2 取最小；分別寫出隱性與顯性門檻的（聽損規格），依 OMIM 遺傳模式選用。規格多以 gnomAD FAF 定義，平台以最大 AF（含東亞與院內）近似，略為保守。
+   - PM1 用規格列出的胺基酸範圍與位置（67 個基因讀得出來），強度照規格；以附件表格、exon 或 cDNA 位置定義的 21 個基因讀不出來，改用 ClinVar 推算。多基因規格中只寫給其中某些基因的熱點，不套用到其他基因。
+   - 自由文字讀取可能有誤，`docs/research/acmg_vcep_specs_review.tsv` 列出每個基因採用的門檻、PM1 範圍與原文，供人工核對。
+
+規則版本 `ngsui-acmg-v1.4`，新的表格放在引擎資料夾，舊結果自動視為過期，需 `build_engine_results.py --all --force` 重算，再跑驗證與差異報告。11 個降為 VUS 的第一類點位都不在有 VCEP 規格的基因；COL4A4 p.Gly816Glu 與 COL7A1 p.Gly1752Glu 會因膠原蛋白規則多得 PM1。
+
 **取代前後差異報告（實作步驟 6，2026-11-23）**：`scripts/acmg_engine/diff_replacement.py`（核心 `replacement_diff.py`）讀各個案已存的規則引擎結果、review TSV、判讀者狀態與手動 ACMG、表型分數，模擬兩種情境，不改任何個案檔案：
 
 - **A（取代 pipeline）**：有效分類改為「判讀者 → GeneBe → 規則引擎」；只有取代前落到 pipeline ACMG 的變異會改變，分類、tier 1C（點數 ≥4）與 total_score 都跟著新的有效點數。
@@ -1392,7 +1405,7 @@ $$
 | ClinVar 蛋白質位置表 | ≥2★ P/LP missense 的胺基酸位置、改變與等級（P／LP）；B/LB missense 的位置；每個基因 ≥1★ P/LP 與 B/LB missense 數；P/LP 截斷變異的位置 | ClinVar `variant_summary` 的 HGVS 名稱，只取 MANE RefSeq 轉錄本上的變異（不另跑 VEP） | 隨 ClinVar 快照 |
 | MANE exon 表 | 每個 exon 的編碼長度、跳過後是否 frameshift、佔整個蛋白質的比例、是否為最後一個 exon | MANE Ensembl GTF | 隨 MANE 版本 |
 | BA1／BS1 例外清單 | ClinGen BA1 例外 + 東亞常見的已知致病變異 | Ghosh 2018 + 院內整理 | 手動維護，放在 repo |
-| VCEP 規格 | 基因專屬的門檻、熱點區域 | ClinGen Criteria Specification Registry | 從院內常見基因開始逐步加入 |
+| VCEP 規格 | 基因專屬的條目適用性與強度上限、BA1／BS1／PM2 門檻、PM1 熱點 | ClinGen Criteria Specification Registry（CSpec API） | v1.4 載入全部 Released／Approved For Release 規格：`scripts/acmg_engine/update_vcep_specs.py` 產生 `vcep_specs.json`，人工核對表 `docs/research/acmg_vcep_specs_review.tsv` |
 
 **實作（2026-11-23）**：程式在 `backend/app/services/acmg_engine/`（`ref_store.py` 建置與讀取參考表，`recurrence.py` 為 WES 出現次數表），工具在 `scripts/acmg_engine/`：
 

@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.48 補記：ACMG 規則 v1.4（`ngsui-acmg-v1.4`）—— PM5 參考變異放寬為 ClinVar ≥1★、只有隱性遺傳的基因 PM2 門檻改為 0.07%、膠原蛋白三股螺旋 Gly-X-Y 甘胺酸給 PM1_Moderate，並載入 ClinGen CSpec 的 VCEP 規格（133 個基因：條目適用性與強度上限、BA1／BS1／PM2 門檻、PM1 熱點）。表格由 `scripts/acmg_engine/update_vcep_specs.py` 產生，人工核對表在 `docs/research/acmg_vcep_specs_review.tsv`；部署後需 `build_engine_results.py --all --force` 重算。
+
 v10.47 補記：主畫面「院內常見」勾選合併本院 WGS AF ≥ 0.05＆AC ≥ 50 與（WES 個案）≥ 5% 院內 WES 病人帶有（`services/inhouse_common.py`，WES 出現次數表滿 100 位病人才用，排除本個案病人）；卡片 AF 欄加 `WES_nckuh`、灰色「院內常見」標籤。排序點數扣分（分類與 tier 不變）：WES ≥ 5%／WGS AF ≥ 2.5% 扣 4 點、≥ 10%／AF ≥ 5% 扣 8 點，已有 BS1／BA1 點數抵扣，手動判讀與 ClinVar ≥2★ P/LP 不扣。`diff_replacement.py` 報告新增第一類（Causative）段落。
 
 v10.46 補記：ACMG 規則引擎（`08_postprocessing/{LIS_ID}.snv_acmg_engine.sqlite`）正式取代 pipeline `ACMG_*` 成為「In-house」，有效分類順序改為判讀者 → In-house → GeneBe，tier 1C、排序分數（V）、DOCX 與個案清單都跟著改；pipeline 值保留為 `pipeline_acmg_*` 只供離線比較。沒有規則引擎結果的變異（Somatic、GBA1／specialized、尚未重算的個案）沿用原值。取代前可用 `scripts/acmg_engine/diff_replacement.py` 檢查分類與排序改變（`marked_variants.tsv` 含檢體編號，只在伺服器上核對）。

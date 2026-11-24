@@ -31,7 +31,8 @@ from .ref_store import SqliteReferences, load_ba1_exceptions
 from .refs import References
 
 RESULTS_NAME = "snv_acmg_engine.sqlite"
-FORMAT_VERSION = 2          # 2: CaseRecurrence delegates the missense window / gene count lookups
+FORMAT_VERSION = 3          # 2: CaseRecurrence delegates the missense window / gene count lookups
+                            # 3: CaseRecurrence delegates the collagen Gly-X-Y lookup
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
@@ -130,6 +131,9 @@ class CaseRecurrence(References):
 
     def vcep(self, gene):
         return self._refs.vcep(gene)
+
+    def collagen_gly(self, gene):
+        return self._refs.collagen_gly(gene)
 
     def wes_recurrence(self, variant_key):
         if self._store is None:

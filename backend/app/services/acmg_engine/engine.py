@@ -172,6 +172,60 @@ def _ad_like(ctx: Context, rb: dict) -> bool | None:
     return codes.issubset(set(rb["frequency"]["ad_like_moi"]))
 
 
+def _recessive_only(ctx: Context) -> bool:
+    """OMIM lists only autosomal recessive inheritance for the gene."""
+    return bool(ctx.moi) and P.moi_codes(ctx.moi) <= {"AR"}
+
+
+def _vcep_label(spec: dict) -> str:
+    if not spec:
+        return ""
+    name = (spec.get("vcep") or "VCEP").replace("Variant Curation Expert Panel", "VCEP").strip()
+    ident = " ".join(x for x in (spec.get("svi"), f"v{spec['version']}" if spec.get("version") else "") if x)
+    return f"ClinGen {name}（{ident}）" if ident else f"ClinGen {name}"
+
+
+def _vcep_allows(spec: dict, code: str) -> bool:
+    """False only when the VCEP marks every strength of ``code`` not applicable."""
+    criteria = (spec or {}).get("criteria") or {}
+    return code not in criteria or bool(criteria[code])
+
+
+def _vcep_threshold(spec: dict, name: str, ad_like, recessive: bool):
+    thr = (spec or {}).get("thresholds") or {}
+    if ad_like and f"{name}_ad" in thr:
+        return thr[f"{name}_ad"]
+    if recessive and f"{name}_ar" in thr:
+        return thr[f"{name}_ar"]
+    if name in thr:
+        return thr[name]
+    if name == "bs1":
+        return (spec or {}).get("bs1")          # older spec format
+    return None
+
+
+def _apply_vcep(evidence: list, spec: dict, rb: dict) -> None:
+    """Drop criteria the VCEP does not use for this gene; cap strengths above its maximum."""
+    criteria = (spec or {}).get("criteria") or {}
+    if not criteria:
+        return
+    label = _vcep_label(spec)
+    rank = {"supporting": 1, "moderate": 2, "strong": 3, "very_strong": 4, "stand_alone": 5}
+    for e in evidence:
+        if e.status != "met" or e.code in ("BA1",) or e.code not in criteria:
+            continue
+        allowed = criteria[e.code]
+        if not allowed:
+            e.status, e.points = "not_met", 0
+            e.reason += f"（{label} 規格不使用 {e.code}）"
+            continue
+        top = max(allowed, key=lambda k: rank.get(k, 0))
+        if rank.get(e.strength, 0) > rank.get(top, 0):
+            sign = -1 if e.code.startswith(("BA", "BS", "BP")) else 1
+            e.reason += f"（{label} 規格最高 {STRENGTH_LABEL[top]}，原為 {STRENGTH_LABEL[e.strength]}）"
+            e.strength, e.points = top, sign * int(rb["points"][top])
+
+
 def _fmt_af(value) -> str:
     return "缺值" if value is None else f"{value:.5g}"
 
@@ -415,19 +469,21 @@ def _same_residue(row: dict, ctx: Context, key: str, rb: dict) -> Evidence | Non
     entries = ctx.refs.clinvar_missense(gene, pos)
     if entries is None:
         return Evidence("PS1", "not_evaluated", reason="ClinVar 蛋白質位置表未載入")
-    entries = [e for e in entries if int(e.get("stars") or 0) >= 2 and e.get("variant_key") != key
-               and not e.get("splicing")]
-    same = [e for e in entries if e.get("alt_aa") == alt]
+    entries = [e for e in entries if e.get("variant_key") != key and not e.get("splicing")]
+    ps1_min = int((rb.get("ps1") or {}).get("min_stars", 2))
+    pm5_min = int((rb.get("pm5") or {}).get("min_stars", 2))
+    same = [e for e in entries if e.get("alt_aa") == alt and int(e.get("stars") or 0) >= ps1_min]
     if same:
-        return _met("PS1", "strong", f"與 ClinVar ≥2★ 致病變異 {same[0].get('variant_key')} 造成相同胺基酸改變 p.{ref_aa}{pos}{alt}", rb)
-    other = [e for e in entries if e.get("alt_aa") != alt]
+        return _met("PS1", "strong", f"與 ClinVar ≥{ps1_min}★ 致病變異 {same[0].get('variant_key')} 造成相同胺基酸改變 p.{ref_aa}{pos}{alt}", rb)
+    other = [e for e in entries if e.get("alt_aa") != alt and int(e.get("stars") or 0) >= pm5_min]
     if other:
         # Entries from schema-1 tables have no category: treat as pathogenic (previous behaviour).
         pathogenic = [e for e in other if e.get("category", "P") == "P"]
         best = (pathogenic or other)[0]
         strength = "moderate" if pathogenic else rb.get("pm5", {}).get("lp_strength", "moderate")
         grade = "致病" if pathogenic else "疑似致病"
-        return _met("PM5", strength, f"同一位置 p.{ref_aa}{pos} 另有 ClinVar ≥2★ {grade} missense（{best.get('alt_aa')}）", rb)
+        stars = int(best.get("stars") or 0)
+        return _met("PM5", strength, f"同一位置 p.{ref_aa}{pos} 另有 ClinVar {grade} missense（{best.get('alt_aa')}，{stars}★）", rb)
     return None
 
 
@@ -436,16 +492,33 @@ def _pm1(row: dict, ctx: Context, rb: dict) -> Evidence | None:
         return None
     gene = P.text(row.get("GENE"))
     spec = ctx.refs.vcep(gene) or {}
-    regions = spec.get("pm1_regions") or []
     parsed = P.hgvs_p(row.get("HGVS_P"))
     if parsed is None:
         return None
-    pos = parsed[1]
-    if regions:                                   # VCEP hotspots win; outside them no PM1
-        for start, end in regions:
-            if start <= pos <= end:
-                return _met("PM1", "moderate", f"位於 VCEP 定義的熱點區域 {start}–{end}", rb)
-        return None
+    ref_aa, pos, alt = parsed
+    label = _vcep_label(spec)
+    if spec and not _vcep_allows(spec, "PM1"):
+        return Evidence("PM1", "not_met", reason=f"{label} 規格不使用 PM1")
+    if spec.get("pm1_other_gene"):
+        return Evidence("PM1", "not_met", reason=f"{label} 的 PM1 熱點只定義給同規格的其他基因")
+    rules = spec.get("pm1") or ([{"strength": "moderate", "ranges": spec["pm1_regions"]}]
+                                if spec.get("pm1_regions") else [])
+    if rules:                                     # VCEP hotspots win; outside them no PM1
+        rank = {"supporting": 1, "moderate": 2, "strong": 3, "very_strong": 4}
+        hits = [(r["strength"], a, b) for r in rules for a, b in r["ranges"] if a <= pos <= b]
+        if hits:
+            strength, a, b = max(hits, key=lambda h: rank.get(h[0], 0))
+            where = f"p.{a}" if a == b else f"p.{a}–{b}"
+            return _met("PM1", strength, f"位於 {label} 定義的 PM1 熱點／重要區域（{where}）", rb)
+        return Evidence("PM1", "not_met", reason=f"不在 {label} 定義的 PM1 熱點／重要區域")
+    collagen = ctx.refs.collagen_gly(gene)
+    cfg_col = rb.get("pm1_collagen")
+    if collagen and cfg_col and ref_aa == "Gly" and alt not in ("=", "Gly") and pos in collagen["positions"]:
+        _, length = P.fraction(row.get("PROTEIN_POSITION"))
+        if not length or int(length) == int(collagen.get("length") or 0):
+            return _met("PM1", cfg_col["strength"],
+                        f"膠原蛋白三股螺旋 Gly-X-Y 的甘胺酸被取代（p.Gly{pos}；UniProt {collagen.get('accession')}）", rb)
+    note = f"（{label} 的 PM1 熱點表無法自動讀取，改用 ClinVar 推算）" if spec.get("pm1_unparsed") else ""
     cfg = rb.get("pm1_clinvar")
     if not cfg:
         return None
@@ -464,7 +537,7 @@ def _pm1(row: dict, ctx: Context, rb: dict) -> Evidence | None:
         return Evidence("PM1", "not_met", reason=f"{where}，但也有 {len(benign)} 個良性 missense")
     moderate_at = cfg.get("moderate_residues")    # None (v1.2): ClinVar hotspots stay Supporting
     strength = "moderate" if moderate_at and len(residues) >= moderate_at else "supporting"
-    return _met("PM1", strength, f"ClinVar 突變熱點：{where}，沒有良性 missense", rb)
+    return _met("PM1", strength, f"ClinVar 突變熱點：{where}，沒有良性 missense{note}", rb)
 
 
 def _pp2(row: dict, ctx: Context, rb: dict) -> Evidence | None:
@@ -505,34 +578,52 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
     cfg = rb["frequency"]
     max_af = freq["max_af"]
     ad_like = _ad_like(ctx, rb)
+    recessive = _recessive_only(ctx)
     exempt = protected or ctx.refs.ba1_exception(key)
+    spec = ctx.refs.vcep(P.text(row.get("GENE"))) or {}
+    vlabel = _vcep_label(spec)
+    if spec:
+        flags.append({"code": "vcep", "message": f"套用 {vlabel} 規格（{spec.get('url') or ''}）"})
     ba1 = bs1 = False
-    if max_af is not None and max_af > cfg["ba1"]:
+    ba1_threshold = _vcep_threshold(spec, "ba1", ad_like, recessive)
+    ba1_from = f"（{vlabel}）" if ba1_threshold is not None else ""
+    ba1_threshold = cfg["ba1"] if ba1_threshold is None else ba1_threshold
+    if max_af is not None and max_af > ba1_threshold and _vcep_allows(spec, "BA1"):
         if exempt:
-            evidence.append(Evidence("BA1", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {cfg['ba1']}，但為已知致病變異或例外清單"))
+            evidence.append(Evidence("BA1", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {ba1_threshold}{ba1_from}，但為已知致病變異或例外清單"))
             flags.append({"code": "frequency_conflict", "message": "族群頻率高但 ClinVar ≥2★ 致病或列於例外清單"})
         else:
-            evidence.append(_met("BA1", "stand_alone", f"最大 AF {_fmt_af(max_af)} > {cfg['ba1']}", rb))
+            evidence.append(_met("BA1", "stand_alone", f"最大 AF {_fmt_af(max_af)} > {ba1_threshold}{ba1_from}", rb))
             ba1 = True
-    spec = ctx.refs.vcep(P.text(row.get("GENE"))) or {}
-    bs1_threshold = spec.get("bs1") or (cfg["bs1_ad_like"] if ad_like else cfg["bs1_other"])
-    if not ba1 and max_af is not None and max_af > bs1_threshold:
+    bs1_threshold = _vcep_threshold(spec, "bs1", ad_like, recessive)
+    bs1_from = f"（{vlabel}）" if bs1_threshold is not None else ""
+    if bs1_threshold is None:
+        bs1_threshold = cfg["bs1_ad_like"] if ad_like else cfg["bs1_other"]
+    if not ba1 and max_af is not None and max_af > bs1_threshold and _vcep_allows(spec, "BS1"):
         if exempt:
             evidence.append(Evidence("BS1", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {bs1_threshold}，但為已知致病變異或例外清單"))
         else:
             mode = "顯性／X 性聯" if ad_like else ("遺傳模式未知" if ad_like is None else "隱性或混合")
-            evidence.append(_met("BS1", "strong", f"最大 AF {_fmt_af(max_af)} > {bs1_threshold}（{mode}）", rb))
+            evidence.append(_met("BS1", "strong", f"最大 AF {_fmt_af(max_af)} > {bs1_threshold}（{mode}）{bs1_from}", rb))
             bs1 = True
     if ba1 or bs1:
         evidence.append(Evidence("PM2", "not_met", reason="族群頻率過高"))
     elif recurrent:
         evidence.append(Evidence("PM2", "not_met", reason="院內重複出現"))
+    elif not _vcep_allows(spec, "PM2"):
+        evidence.append(Evidence("PM2", "not_met", reason=f"{vlabel} 規格不使用 PM2"))
     else:
-        limit = cfg["pm2_ad_like_max"] if ad_like else cfg["pm2_other_max"]
+        limit = _vcep_threshold(spec, "pm2", ad_like, recessive)
+        pm2_from = f"（{vlabel}）" if limit is not None else ""
+        if limit is None:
+            limit = (cfg["pm2_ad_like_max"] if ad_like
+                     else cfg.get("pm2_recessive_max", cfg["pm2_other_max"]) if recessive
+                     else cfg["pm2_other_max"])
+            pm2_from = "（隱性遺傳）" if recessive and not ad_like else ""
         if max_af is None:
             evidence.append(_met("PM2", "supporting", "未在族群資料庫出現（可能也是覆蓋不足）", rb))
         elif max_af <= limit:
-            evidence.append(_met("PM2", "supporting", f"最大 AF {_fmt_af(max_af)} ≤ {limit}", rb))
+            evidence.append(_met("PM2", "supporting", f"最大 AF {_fmt_af(max_af)} ≤ {limit}{pm2_from}", rb))
         else:
             evidence.append(Evidence("PM2", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {limit}"))
 
@@ -551,6 +642,8 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
                  _pp2(row, ctx, rb)):
         if item is not None:
             evidence.append(item)
+
+    _apply_vcep(evidence, spec, rb)
 
     # double counting
     met = [e for e in evidence if e.status == "met"]
@@ -625,6 +718,8 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         "not_evaluated": not_evaluated,
         "flags": flags,
         "clinvar_rule": action,
+        "vcep": ({"svi": spec.get("svi"), "version": spec.get("version"), "vcep": spec.get("vcep"),
+                  "url": spec.get("url")} if spec else None),
         "frequency": {"max_af": max_af, "gnomad_max": freq["gnomad_max"],
                       "inhouse_af": freq["inhouse_af"], "inhouse_used": freq["inhouse_used"]},
     }

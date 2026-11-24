@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.3",
+  "version": "ngsui-acmg-v1.4",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -40,8 +40,10 @@
       "bs1_ad_like",
       "bs1_other",
       "pm2_other_max",
-      "inhouse_min_ac"
-    ]
+      "inhouse_min_ac",
+      "pm2_recessive_max"
+    ],
+    "pm2_recessive_max": 0.0007
   },
   "recurrence": {
     "wes_fraction": 0.05,
@@ -121,7 +123,9 @@
     ]
   },
   "pm5": {
-    "lp_strength": "supporting"
+    "lp_strength": "supporting",
+    "min_stars": 1,
+    "note": "2026-11-24 v1.4: other missense at the residue needs ClinVar ≥1★ (was ≥2★); PS1 stays ≥2★"
   },
   "clinvar": {
     "adopt_min_stars": 2,
@@ -153,5 +157,15 @@
       "name": "Benign",
       "max": -7
     }
-  ]
+  ],
+  "ps1": {
+    "min_stars": 2
+  },
+  "pm1_collagen": {
+    "strength": "moderate",
+    "note": "Gly of a Gly-X-Y triple-helix run (collagen_gly.json from UniProt) → PM1_Moderate"
+  },
+  "vcep": {
+    "note": "ClinGen CSpec specs in vcep_specs.json (scripts/acmg_engine/update_vcep_specs.py): per-gene criteria applicability and strength caps, BA1/BS1/PM2 thresholds, PM1 hotspots"
+  }
 }

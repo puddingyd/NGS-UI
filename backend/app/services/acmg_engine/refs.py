@@ -53,7 +53,14 @@ class References:
         return None
 
     def vcep(self, gene: str) -> dict | None:
-        """Gene-specific VCEP specification (thresholds, PM1 regions)."""
+        """Gene-specific ClinGen VCEP specification (cspec.build_vcep_specs entry):
+        ``criteria`` {code: allowed strengths}, ``thresholds`` {ba1, bs1, pm2},
+        ``pm1`` [{strength, ranges}], ``pm1_unparsed``; older ``bs1`` /
+        ``pm1_regions`` keys are still honoured."""
+        return None
+
+    def collagen_gly(self, gene: str) -> dict | None:
+        """{"accession", "length", "positions"} of Gly-X-Y triple-helix glycines."""
         return None
 
 
@@ -71,6 +78,7 @@ class StaticReferences(References):
     recurrence: dict | None = None            # variant_key -> patients
     recurrence_patients: int = 0
     vcep_specs: dict = field(default_factory=dict)
+    collagen: dict = field(default_factory=dict)     # gene -> {"length", "positions"}
     version: dict = field(default_factory=dict)
 
     @property
@@ -132,3 +140,6 @@ class StaticReferences(References):
 
     def vcep(self, gene):
         return self.vcep_specs.get(gene)
+
+    def collagen_gly(self, gene):
+        return self.collagen.get(gene)
