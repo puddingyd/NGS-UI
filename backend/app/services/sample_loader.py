@@ -1996,6 +1996,51 @@ def _load_pheno_context(sample_id: str, version: str | None):
     return sub, sidecar_dir, hpo_list, panels_list, _read_pheno_by_gene(sample_id, sidecar_dir)
 
 
+def _aux_sex_test_type(sample_id: str) -> tuple[str, str]:
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
+    try:
+        karyotype = ploidy.load_sample_ploidy(sample_id).get("karyotype") or ""
+    except Exception:  # noqa: BLE001
+        karyotype = ""
+    sex = prioritization.norm_sex(karyotype, meta.get("sex") or meta.get("Sex") or "")
+    return sex, _effective_test_type(meta, sample_id, default="WES")
+
+
+def _prioritize_events(sample_id: str, hpo_list, variants: dict, categories: dict, source: str) -> dict:
+    """In-house prioritization of CNV/SV events (cards + tier order); never breaks the load."""
+    started = time.perf_counter()
+    try:
+        sex, test_type = _aux_sex_test_type(sample_id)
+        info = prioritization.annotate_events(variants, hpo=hpo_list, sex=sex, test_type=test_type,
+                                              source=source)
+        info["sex"] = sex
+        prioritization.resort_events(categories, variants, info.get("mode") or "old")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[prioritization] {source} failed sample={sample_id}: {type(exc).__name__}: {exc}", flush=True)
+        info = {"version": prioritization.VERSION, "mode": "old", "source": source,
+                "reason": f"In-house prioritization 計算失敗（{type(exc).__name__}）"}
+    for v in variants.values():
+        if isinstance(v, dict):
+            v.pop("_prio_genes", None)
+    _log_perf(f"sample.{source}_prioritization", started, sample=sample_id, mode=info.get("mode"),
+              variants=len(variants))
+    return info
+
+
+def _prioritize_mito(sample_id: str, hpo_list, variants: dict, categories: dict) -> dict:
+    started = time.perf_counter()
+    try:
+        info = prioritization.annotate_mito(variants, hpo=hpo_list)
+        prioritization.resort_events(categories, variants, info.get("mode") or "old")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[prioritization] mito failed sample={sample_id}: {type(exc).__name__}: {exc}", flush=True)
+        info = {"version": prioritization.VERSION, "mode": "old", "source": "mito",
+                "reason": f"In-house prioritization 計算失敗（{type(exc).__name__}）"}
+    _log_perf("sample.mito_prioritization", started, sample=sample_id, mode=info.get("mode"),
+              variants=len(variants))
+    return info
+
+
 def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader: just the CNV/SV side-channels for a sample.
     {cnv_variants, cnv_categories, sv_variants, sv_categories} or None."""
@@ -2012,12 +2057,14 @@ def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | Non
     sv_path  = sample_layout.sv_tsv(sample_id)
     cnv_variants, cnv_categories = (
         load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only,
+                         prio_genes=True)
         if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
     )
     sv_variants, sv_categories = (
         load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only,
+                         prio_genes=True)
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
     _log_perf(
@@ -2029,9 +2076,12 @@ def load_sample_cnv_sv(sample_id: str, version: str | None = None) -> dict | Non
         sv_size=_fmt_size(sv_path),
         sv_variants=len(sv_variants),
     )
+    cnv_prio = _prioritize_events(sample_id, hpo_list, cnv_variants, cnv_categories, "cnv")
+    sv_prio = _prioritize_events(sample_id, hpo_list, sv_variants, sv_categories, "sv")
     return {
         "cnv_variants": cnv_variants, "cnv_categories": cnv_categories,
         "sv_variants": sv_variants,   "sv_categories": sv_categories,
+        "cnv_prioritization": cnv_prio, "sv_prioritization": sv_prio,
     }
 
 
@@ -2049,7 +2099,8 @@ def load_sample_cnv(sample_id: str, version: str | None = None) -> dict | None:
     cnv_path = sample_layout.cnv_tsv(sample_id)
     cnv_variants, cnv_categories = (
         load_annotsv_tsv(cnv_path, source="cnv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only,
+                         prio_genes=True)
         if cnv_path.exists() else ({}, {t: [] for t in CNV_TIERS})
     )
     _log_perf(
@@ -2059,7 +2110,8 @@ def load_sample_cnv(sample_id: str, version: str | None = None) -> dict | None:
         size=_fmt_size(cnv_path),
         variants=len(cnv_variants),
     )
-    return {"cnv_variants": cnv_variants, "cnv_categories": cnv_categories}
+    cnv_prio = _prioritize_events(sample_id, hpo_list, cnv_variants, cnv_categories, "cnv")
+    return {"cnv_variants": cnv_variants, "cnv_categories": cnv_categories, "cnv_prioritization": cnv_prio}
 
 
 def load_sample_sv(sample_id: str, version: str | None = None) -> dict | None:
@@ -2076,7 +2128,8 @@ def load_sample_sv(sample_id: str, version: str | None = None) -> dict | None:
     sv_path = sample_layout.sv_tsv(sample_id)
     sv_variants, sv_categories = (
         load_annotsv_tsv(sv_path, source="sv", pheno_by_gene=pheno_by_gene,
-                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only)
+                         pheno_matched=pheno_matched, pheno_total=pheno_total, hpo_by_gene=hpo_only,
+                         prio_genes=True)
         if sv_path.exists() else ({}, {t: [] for t in SV_TIERS})
     )
     _log_perf(
@@ -2086,7 +2139,8 @@ def load_sample_sv(sample_id: str, version: str | None = None) -> dict | None:
         size=_fmt_size(sv_path),
         variants=len(sv_variants),
     )
-    return {"sv_variants": sv_variants, "sv_categories": sv_categories}
+    sv_prio = _prioritize_events(sample_id, hpo_list, sv_variants, sv_categories, "sv")
+    return {"sv_variants": sv_variants, "sv_categories": sv_categories, "sv_prioritization": sv_prio}
 
 
 def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
@@ -2097,7 +2151,7 @@ def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
     from ..adapters.mito_tsv import load_mito_tsv, MITO_TIERS
     if ctx is None:
         return None
-    sub, _sd, _h, _p, pheno_by_gene = ctx
+    sub, _sd, hpo_list, _p, pheno_by_gene = ctx
     mito_path = sample_layout.mito_tsv(sample_id)
     mv, mc = (
         load_mito_tsv(
@@ -2114,7 +2168,8 @@ def load_sample_mito(sample_id: str, version: str | None = None) -> dict | None:
         size=_fmt_size(mito_path),
         variants=len(mv),
     )
-    return {"mito_variants": mv, "mito_categories": mc}
+    mito_prio = _prioritize_mito(sample_id, hpo_list, mv, mc)
+    return {"mito_variants": mv, "mito_categories": mc, "mito_prioritization": mito_prio}
 
 
 def load_sample_str(sample_id: str, version: str | None = None) -> dict | None:

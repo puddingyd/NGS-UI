@@ -8,12 +8,12 @@ For every SNV/Indel candidate of a case::
   ≥2★ / VCEP adopt and the P-KNN LLR → GeneBe, minus the 院內常見 penalty);
   a recessive pair uses the combined points of plan §5.3.
 * P(g, d) — phenotype points of disease d in gene g from the phenotype engine
-  (plan §4.8.7).  Genes without a ranked disease get the lowest value −5.4.  With no
+  (plan §4.8.7).  Genes without a ranked disease get the lowest value −6.1.  With no
   usable HPO term (panel only, no knowledge base) P is not counted and the
   case keeps the old ordering (``mode == "old"``).
 * C — inheritance compatibility (plan §6.3, provisional): dominant / X-linked
-  dominant / unknown 0; recessive homozygous 0, two different variants −1
-  (phase unknown), a single heterozygote −3 (WES) / −4 (WGS); X-linked
+  dominant / unknown 0; recessive homozygous 0, two different variants 0
+  (phase unknown; user decision 2026-11-24, no deduction), a single heterozygote −3 (WES) / −4 (WGS); X-linked
   recessive male 0, female heterozygote −3 (two female hets pair like AR).
 
 Each variant takes the best candidate it takes part in (plan §6.5): over the
@@ -36,9 +36,9 @@ from dataclasses import dataclass, field
 L0 = math.log(0.1 / 0.9)
 K = 0.733                       # ln 2.08 — one ACMG point
 SINGLE_HET = {"WES": -3.0, "WGS": -4.0}
-PAIR_PHASE_UNKNOWN = -1.0
+PAIR_PHASE_UNKNOWN = 0.0       # two variants, phase unknown: no deduction (2026-11-24)
 XLR_FEMALE_HET = -3.0
-P_FLOOR = -5.4                 # = pheno_engine.engine.P_MIN (lowest phenotype points)
+P_FLOOR = -6.1                 # = pheno_engine.engine.P_MIN (lowest phenotype points)
 VERSION = "prio-v1"
 CANDIDATE_LIMIT = 200          # candidate rows sent to the browser (20 shown, "顯示更多")
 
@@ -363,6 +363,27 @@ def _gene_diseases(gene: str, engine, result) -> tuple[list[Disease], dict]:
     return [Disease(id="", moi=set(union), moi_source="OMIM（基因）" if union else "")], info
 
 
+def _context(hpo, engine=None, old_label: str = "Score (old)"):
+    """(case info, engine, phenotype result or None when P is not counted)."""
+    info = {"version": VERSION, "mode": "old", "reason": "", "snapshot": "", "terms": 0}
+    try:
+        engine, result = pheno_result(hpo, engine=engine)
+    except Exception as exc:  # noqa: BLE001
+        engine, result = None, None
+        info["reason"] = f"表型引擎無法計算（{type(exc).__name__}）"
+    if result is not None and not result.empty:
+        info.update(mode="prio", snapshot=engine.snapshot, terms=len(result.q))
+        return info, engine, result
+    if not info["reason"]:
+        if not hpo_items(hpo):
+            info["reason"] = f"沒有 HPO（只有 panel 或未設定），表型分數不計，排序沿用 {old_label}"
+        elif engine is None:
+            info["reason"] = f"尚未啟用表型知識庫，排序沿用 {old_label}"
+        else:
+            info["reason"] = f"HPO 都被移除（非表型或無效），排序沿用 {old_label}"
+    return info, engine, None
+
+
 def annotate(variants: dict, *, hpo, sex: str = "", test_type: str = "WES", rank: bool = True,
              engine=None) -> dict:
     """Add ``variant['prio']`` (and ``old_rank``) to every SNV/Indel variant; return case info.
@@ -373,22 +394,7 @@ def annotate(variants: dict, *, hpo, sex: str = "", test_type: str = "WES", rank
     info = {"version": VERSION, "mode": "old", "reason": "", "snapshot": "", "terms": 0}
     if not variants:
         return info
-    try:
-        engine, result = pheno_result(hpo, engine=engine)
-    except Exception as exc:  # noqa: BLE001
-        engine, result = None, None
-        info["reason"] = f"表型引擎無法計算（{type(exc).__name__}）"
-    if result is not None and not result.empty:
-        info.update(mode="prio", snapshot=engine.snapshot, terms=len(result.q))
-    else:
-        result = None if result is None or result.empty else result
-        if not info["reason"]:
-            if not hpo_items(hpo):
-                info["reason"] = "沒有 HPO（只有 panel 或未設定），表型分數不計，排序沿用 Score (old)"
-            elif engine is None:
-                info["reason"] = "尚未啟用表型知識庫，排序沿用 Score (old)"
-            else:
-                info["reason"] = "HPO 都被移除（非表型或無效），排序沿用 Score (old)"
+    info, engine, result = _context(hpo, engine)
     sex = norm_sex(sex)
     test_type = norm_test_type(test_type)
     by_gene: dict[str, list[Var]] = {}
@@ -485,3 +491,186 @@ def resort(categories: dict, variants: dict, mode: str, tiers=("1A", "1B", "1C",
         ids = categories.get(tier)
         if ids:
             categories[tier] = sorted(set(ids), key=lambda i: sort_key(variants.get(i, {}), i, mode))
+
+
+# ── CNV / SV events (plan §5.4, phase 5b; 2026-11-24 user decision) ─────────
+# Scores are shown on the cards and order the CNV/SV tiers.  The candidate
+# list stays SNV-based: a CNV deletion enters it only as the second allele of
+# a recessive gene with an SNV (``ar_genes`` below; paired in the browser).
+#
+# V′ from the AnnotSV ranking score (ACMG CNV points) — piecewise linear:
+#   ≥0.99 → +10, 0.90–0.98 → +6…+9, 0…0.89 → 0…+5,
+#   −0.89…0 → −1…0, −0.90…−0.98 → −1…−6, ≤−0.99 → −7.
+CNV_KNOTS = ((-0.99, -7.0), (-0.98, -6.0), (-0.90, -1.0), (0.0, 0.0),
+             (0.89, 5.0), (0.90, 6.0), (0.98, 9.0), (0.99, 10.0))
+CNV_AR_GENE_LIMIT = 200         # recessive genes kept per deletion for SNV pairing
+X_PAR = ((10_001, 2_781_479), (155_701_383, 156_030_895))
+
+
+def annotsv_points(score) -> float | None:
+    """V′ of a CNV/SV from its AnnotSV ranking score (None when missing)."""
+    try:
+        s = float(score)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(s):
+        return None
+    if s <= CNV_KNOTS[0][0]:
+        return CNV_KNOTS[0][1]
+    if s >= CNV_KNOTS[-1][0]:
+        return CNV_KNOTS[-1][1]
+    for (x0, y0), (x1, y1) in zip(CNV_KNOTS, CNV_KNOTS[1:]):
+        if x0 <= s <= x1:
+            return round(y0 + (y1 - y0) * (s - x0) / (x1 - x0), 3)
+    return 0.0
+
+
+def _x_non_par(chrom, start, end) -> bool:
+    c = str(chrom or "").lower().removeprefix("chr")
+    if c != "x":
+        return False
+    try:
+        a, b = int(start), int(end if end not in (None, "") else start)
+    except (TypeError, ValueError):
+        return True
+    return not any(a <= pe and b >= ps for ps, pe in X_PAR)
+
+
+def event_zygosity(event: dict, sex: str) -> str:
+    """hom (CN 0 / homozygous deletion), hemi (male chrX outside PAR) or het."""
+    sv_type = str(event.get("sv_type") or "").upper()
+    cn = event.get("copy_number")
+    if sv_type == "DEL" and (cn == 0 or str(event.get("zygosity") or "").lower().startswith("hom")):
+        return "hom"
+    if sex == "XY" and _x_non_par(event.get("CHROM"), event.get("POS"), event.get("END")):
+        return "hemi"
+    return "het"
+
+
+def _better(key_a, key_b) -> bool:
+    return key_b is None or key_a > key_b
+
+
+def annotate_events(events: dict, *, hpo, sex: str = "", test_type: str = "WES", source: str = "cnv",
+                    engine=None) -> dict:
+    """``event['prio']`` for every CNV/SV event; ranks are competition ranks per source.
+
+    The genes scored are those the event affects (``_prio_genes`` from the
+    adapter: coding / splice / unclear impact; pure UTR or intronic genes are
+    left out).  An event without such a gene gets the lowest phenotype points.
+    """
+    info, engine, result = _context(hpo, engine, old_label="原本 CNV/SV 排序")
+    info["source"] = source
+    sex = norm_sex(sex)
+    test_type = norm_test_type(test_type)
+    gene_cache: dict[str, tuple] = {}
+    totals = []
+    for eid, ev in events.items():
+        if not isinstance(ev, dict):
+            continue
+        genes = ev.pop("_prio_genes", None) or []
+        score = ev.get("ranking_score")
+        v = annotsv_points(score)
+        missing = v is None
+        v = 0.0 if v is None else v
+        zyg = event_zygosity(ev, sex)
+        best, best_key, ar_genes = None, None, []
+        for order, (gene, impact) in enumerate(genes):
+            if gene not in gene_cache:
+                gene_cache[gene] = _gene_diseases(gene, engine, result)
+            diseases, ginfo = gene_cache[gene]
+            cand = evaluate_gene([Var(id=eid, v=v, zygosity=zyg, v_missing=missing)], diseases,
+                                 sex=sex, test_type=test_type)[eid]
+            p = cand["p"]
+            key = (round(cand["total"], 6), -1e9 if p is None else round(p, 6), -order)
+            if _better(key, best_key):
+                best, best_key = dict(cand, gene=gene, impact=impact, **ginfo), key
+            # a heterozygous deletion can be the second allele of a recessive SNV
+            if (source == "cnv" and result is not None and zyg == "het" and impact == "functional"
+                    and str(ev.get("sv_type") or "").upper() == "DEL" and len(ar_genes) < CNV_AR_GENE_LIMIT):
+                rec = [{"disease_id": d.id, "disease_name": d.name, "p": d.P, "disease_rank": d.rank,
+                        "moi_class": cls, "moi": sorted(d.moi), "moi_source": d.moi_source}
+                       for d in diseases for cls in ("ar", "xlr") if cls in d.moi
+                       and (cls == "ar" or sex != "XY") and d.id]
+                if rec:
+                    ar_genes.append({"gene": gene, "diseases": rec, **ginfo})
+        if best is None:
+            p = P_FLOOR if result is not None else None
+            best = {"total": v + (p or 0.0), "v": v, "p": p, "c": 0.0, "mode": "no_gene", "moi_class": "",
+                    "disease_id": "", "disease_name": "", "disease_rank": None, "moi": [], "moi_source": "",
+                    "partner": "", "partner_v": None, "v_single": v, "v_missing": missing,
+                    "gene": "", "impact": "", "no_disease": True, "gene_points": p}
+        best.update(annotsv_score=score, zygosity=zyg, n_genes=len(genes), pheno_counted=result is not None)
+        if result is None:
+            best["p"] = None
+        if ar_genes:
+            best["ar_genes"] = ar_genes
+        ev["prio"] = best
+        ev["prio_total"] = round(best["total"], 3)
+        totals.append((round(best["total"], 1), eid))
+    ranks = _competition(totals)
+    for eid, r in ranks.items():
+        events[eid]["prio"]["rank"] = r
+    return info
+
+
+def resort_events(categories: dict, events: dict, mode: str) -> None:
+    if mode != "prio":
+        return
+    for tier, ids in categories.items():
+        categories[tier] = sorted(ids, key=lambda i: sort_key(events.get(i, {}), i, mode))
+
+
+# ── mitochondrial variants (plan §5.5, phase 5c) ───────────────────────────
+MITO_COMMON_AF = 0.01
+
+
+def mito_points(variant: dict) -> tuple[float, str]:
+    """V′ of an mtDNA variant (ClinVar + MITOMAP + gnomAD-mito); heteroplasmy is display only."""
+    clinvar_plp = bool(variant.get("clinvar_pathogenic"))
+    mitomap_p = bool(variant.get("mitomap_pathogenic"))
+    if variant.get("clinvar_benign"):
+        return -7.0, "ClinVar B/LB"
+    if clinvar_plp and mitomap_p:
+        return 10.0, "ClinVar P/LP＋MITOMAP 確認致病"
+    if clinvar_plp:
+        return 7.0, "ClinVar P/LP"
+    if mitomap_p:
+        return 7.0, "MITOMAP 確認致病"
+    af = variant.get("gnomad_mito_af_max")
+    if isinstance(af, (int, float)) and af >= MITO_COMMON_AF:
+        return -4.0, "gnomAD-mito ≥1%"
+    sig = str(variant.get("CLNSIG") or "").lower()
+    if "uncertain" in sig or "conflicting" in sig or variant.get("mitomap_reported"):
+        return 2.0, "ClinVar VUS／MITOMAP 有報告"
+    return 1.0, "罕見（gnomAD-mito <1%），無報告"
+
+
+def annotate_mito(variants: dict, *, hpo, engine=None) -> dict:
+    """``variant['prio']`` for every mtDNA variant: V′ + P(g, d), inheritance C = 0."""
+    info, engine, result = _context(hpo, engine, old_label="原本粒線體排序")
+    info["source"] = "mito"
+    gene_cache: dict[str, tuple] = {}
+    totals = []
+    for vid, variant in variants.items():
+        if not isinstance(variant, dict):
+            continue
+        v, basis = mito_points(variant)
+        gene = canonical_gene(variant.get("gene_symbol") or "")
+        if gene not in gene_cache:
+            gene_cache[gene] = _gene_diseases(gene, engine, result)
+        diseases, ginfo = gene_cache[gene]
+        best = max(enumerate(diseases),
+                   key=lambda x: (-1e9 if x[1].P is None else x[1].P, -x[0]))[1] if diseases else Disease(id="")
+        p = best.P if result is not None else None
+        cand = {"total": v + (p or 0.0), "v": v, "p": p, "c": 0.0, "mode": "mito", "moi_class": "other",
+                "disease_id": best.id, "disease_name": best.name, "disease_rank": best.rank,
+                "moi": sorted(best.moi), "moi_source": best.moi_source, "partner": "", "partner_v": None,
+                "v_single": v, "v_missing": False, "v_basis": basis, "gene": gene,
+                "pheno_counted": result is not None, **ginfo}
+        variant["prio"] = cand
+        variant["prio_total"] = round(cand["total"], 3)
+        totals.append((round(cand["total"], 1), vid))
+    for vid, r in _competition(totals).items():
+        variants[vid]["prio"]["rank"] = r
+    return info

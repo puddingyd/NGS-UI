@@ -63,16 +63,16 @@ def test_inheritance_compatibility_points():
 def test_recessive_pair_and_best_partner():
     a, b, c = PR.Var("a", 10, "het"), PR.Var("b", 4, "het"), PR.Var("c", 1, "het")
     res = PR.evaluate_gene([a, b, c], [PR.Disease(id="OMIM:1", P=5, moi={"ar"})], sex="XX", test_type="WGS")
-    # a: pair with b (4 + −1) beats single (10 − 4)? pair 4.0 − 1 = 3.0 < 6 → single
+    # a: pair with b (≈4.0, C 0) vs single (10 − 4 = 6) → single
     assert res["a"]["mode"] == "single" and res["a"]["total"] == pytest.approx(11)
-    # b pairs with the strongest other het (a): 4.0 − 1 > 4 − 4
+    # b pairs with the strongest other het (a): 4.0 + 0 > 4 − 4
     assert res["b"]["mode"] == "pair" and res["b"]["partner"] == "a"
     assert res["b"]["v"] == pytest.approx(PR.pair_points(4, 10))
     assert res["c"]["partner"] == "a"
     two_lp = PR.evaluate_gene([PR.Var("x", 7, "het"), PR.Var("y", 7, "het")],
                               [PR.Disease(id="d", P=0, moi={"ar"})], sex="XX", test_type="WGS")
-    assert two_lp["x"]["mode"] == "pair" and two_lp["x"]["c"] == -1
-    assert two_lp["x"]["total"] == pytest.approx(PR.pair_points(7, 7) - 1)
+    assert two_lp["x"]["mode"] == "pair" and two_lp["x"]["c"] == 0
+    assert two_lp["x"]["total"] == pytest.approx(PR.pair_points(7, 7))
 
 
 def test_best_disease_by_total(omim, eng):
@@ -181,7 +181,7 @@ def test_gene_candidates_one_row_per_gene_and_pairs_once():
            PR.Disease(id="OMIM:2", name="AD disease", P=2, moi={"dominant"})]
     cand = PR.gene_candidates([a, b, r], dis, sex="XX", test_type="WES")
     assert cand["mode"] == "pair" and cand["variants"] in (["a", "b"], ["b", "a"])
-    assert cand["total"] == pytest.approx(PR.pair_points(7, 7) - 1 + 8)
+    assert cand["total"] == pytest.approx(PR.pair_points(7, 7) + 8)
     assert set(cand["v_each"]) == {"a", "b"}
     # the pair appears once; ref calls never form a candidate
     idents = [(o["disease_id"], o["mode"], tuple(sorted(o["variants"]))) for o in [cand, *cand["others"]]]
@@ -221,3 +221,71 @@ def test_candidate_limit():
 
 def test_floor_matches_engine():
     assert PR.P_FLOOR == E.P_MIN == E.gene_points(5000)
+
+
+# ── CNV / SV and mtDNA (phase 5b / 5c) ─────────────────────────────────────
+def test_annotsv_points_piecewise():
+    assert PR.annotsv_points(1.0) == 10 and PR.annotsv_points(0.99) == 10
+    assert PR.annotsv_points(0.90) == 6 and PR.annotsv_points(0.98) == 9
+    assert PR.annotsv_points(0.0) == 0 and PR.annotsv_points(0.89) == 5
+    assert PR.annotsv_points(-0.90) == -1 and PR.annotsv_points(-0.98) == -6
+    assert PR.annotsv_points(-1.2) == -7 and PR.annotsv_points(None) is None
+    assert PR.annotsv_points(0.45) == pytest.approx(0.45 / 0.89 * 5, abs=1e-3)
+
+
+def test_event_zygosity():
+    assert PR.event_zygosity({"sv_type": "DEL", "copy_number": 0, "CHROM": "chr1"}, "XX") == "hom"
+    assert PR.event_zygosity({"sv_type": "DEL", "copy_number": 1, "CHROM": "chr1"}, "XY") == "het"
+    assert PR.event_zygosity({"sv_type": "DUP", "CHROM": "chrX", "POS": 5_000_000, "END": 6_000_000}, "XY") == "hemi"
+    assert PR.event_zygosity({"sv_type": "DEL", "CHROM": "chrX", "POS": 20_000, "END": 30_000}, "XY") == "het"
+
+
+def test_cnv_events_scored_ranked_and_ar_genes(omim, eng):
+    hpo = [{"phenotype": "HP:0007359", "weight": 1}]
+    events = {
+        "e1": {"sv_type": "DEL", "copy_number": 1, "CHROM": "chr1", "POS": 1, "END": 9, "ranking_score": 0.99,
+               "_prio_genes": [("GENEA", "functional"), ("GENED", "functional")]},
+        "e2": {"sv_type": "DUP", "copy_number": 3, "CHROM": "chr2", "POS": 1, "END": 9, "ranking_score": 0.0,
+               "_prio_genes": []},
+        "e3": {"sv_type": "DEL", "copy_number": 0, "CHROM": "chr3", "POS": 1, "END": 9, "ranking_score": 0.45,
+               "_prio_genes": [("GENED", "unknown")]},
+    }
+    cats = {"CNV-1A": ["e2", "e3", "e1"]}
+    info = PR.annotate_events(events, hpo=hpo, sex="XX", test_type="WES", source="cnv", engine=eng)
+    PR.resort_events(cats, events, info["mode"])
+    assert info["mode"] == "prio" and all("_prio_genes" not in e for e in events.values())
+    e1 = events["e1"]["prio"]
+    # GENEA's AD disease matches the phenotype: V′ 10 + P, C 0
+    assert e1["gene"] == "GENEA" and e1["mode"] == "dominant" and e1["v"] == 10 and e1["c"] == 0
+    assert e1["rank"] == 1 and cats["CNV-1A"][0] == "e1"
+    # heterozygous deletion: recessive genes (GENEA's AR disease, GENED) kept for SNV pairing
+    assert {g["gene"] for g in e1["ar_genes"]} == {"GENEA", "GENED"}
+    assert all(d["moi_class"] == "ar" for g in e1["ar_genes"] for d in g["diseases"])
+    # no affected gene → lowest phenotype points
+    assert events["e2"]["prio"]["p"] == PR.P_FLOOR and events["e2"]["prio"]["mode"] == "no_gene"
+    # homozygous deletion of an AR gene: C 0, not paired with SNVs
+    e3 = events["e3"]["prio"]
+    assert e3["mode"] == "hom" and e3["c"] == 0 and "ar_genes" not in e3
+    # SV source never offers SNV pairing; no HPO → old mode, P not counted
+    sv = {"s": {"sv_type": "DEL", "copy_number": 1, "CHROM": "chr1", "POS": 1, "END": 2, "ranking_score": 0.9,
+                "_prio_genes": [("GENED", "functional")]}}
+    info = PR.annotate_events(sv, hpo=[], source="sv", engine=eng)
+    assert info["mode"] == "old" and sv["s"]["prio"]["p"] is None and "ar_genes" not in sv["s"]["prio"]
+
+
+def test_mito_points_and_scores(omim, eng):
+    assert PR.mito_points({"clinvar_pathogenic": True, "mitomap_pathogenic": True})[0] == 10
+    assert PR.mito_points({"clinvar_pathogenic": True})[0] == 7
+    assert PR.mito_points({"mitomap_pathogenic": True})[0] == 7
+    assert PR.mito_points({"clinvar_benign": True, "mitomap_pathogenic": True})[0] == -7
+    assert PR.mito_points({"gnomad_mito_af_max": 0.02, "mitomap_reported": True})[0] == -4
+    assert PR.mito_points({"CLNSIG": "Uncertain_significance"})[0] == 2
+    assert PR.mito_points({"gnomad_mito_af_max": 0.001})[0] == 1
+    variants = {"m1": {"gene_symbol": "MT-ND4", "clinvar_pathogenic": True},
+                "m2": {"gene_symbol": "MT-ND5", "gnomad_mito_af_max": 0.3}}
+    cats = {"MITO-3": ["m2", "m1"]}
+    info = PR.annotate_mito(variants, hpo=["HP:0007359"], engine=eng)
+    PR.resort_events(cats, variants, info["mode"])
+    assert info["mode"] == "prio" and variants["m1"]["prio"]["c"] == 0
+    assert variants["m1"]["prio"]["p"] == PR.P_FLOOR          # gene without a ranked disease
+    assert variants["m1"]["prio"]["rank"] == 1 and cats["MITO-3"] == ["m1", "m2"]

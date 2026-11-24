@@ -102,6 +102,10 @@ def test_adapter_computes_before_trim_and_preserves_out_of_order_split_rows(tmp_
     assert v["acmg_class"] == 3
     assert categories["CNV-1A" if source == "cnv" else "SV-2A"] == ["test"]
     assert categories["CNV-1B" if source == "cnv" else "SV-2B"] == []
+    assert "_prio_genes" not in v
+    variants, _ = load_annotsv_tsv(path, source=source, prio_genes=True)
+    # all split rows before trimming; pure-intron genes are left out
+    assert variants["test"]["_prio_genes"] == [("G11", "functional")]
 
 
 def test_adapter_uses_omim_workbook_diseases_and_splits_pathogenic_overlap(

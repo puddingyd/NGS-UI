@@ -416,8 +416,13 @@ def load_annotsv_tsv(
     pheno_matched: dict[str, float] | None = None,
     pheno_total: float = 0.0,
     hpo_by_gene: dict[str, float] | None = None,
+    prio_genes: bool = False,
 ) -> tuple[dict[str, dict], dict[str, list[str]]]:
     """Read AnnotSV output → ({annotsv_id: variant}, {tier: [ids]}).
+
+    ``prio_genes`` keeps ``_prio_genes`` = [(gene, impact)] of the genes the
+    event affects (all split rows, before trimming) for In-house prioritization;
+    the caller pops it before the payload is sent.
 
     Tier ordering inside each list follows
     max_pheno_score + scaled AnnotSV_ranking_score desc, then AnnotSV_ID
@@ -508,6 +513,18 @@ def load_annotsv_tsv(
         for tier in _classify(v, source):
             categories[tier].append(aid)
         cnv_sv_impact.attach(v)
+        if prio_genes:
+            seen_genes: dict[str, str] = {}
+            for g in v["genes"]:
+                name = g.get("gene") or ""
+                if not name:
+                    continue
+                impact = cnv_sv_impact.gene_impact(g, v.get("sv_type", ""))[0]
+                if impact == "noncoding":
+                    continue
+                if seen_genes.get(name) != "functional":
+                    seen_genes[name] = impact
+            v["_prio_genes"] = list(seen_genes.items())
         # Trim the gene array. Without this, a 1518-gene SV carries
         # 600 KB of per-gene records all the way to the browser.
         visible, ov_full, ov_compact, total = _trim_genes(v["genes"])

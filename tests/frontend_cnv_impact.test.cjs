@@ -19,6 +19,7 @@ function fixture(render = false) {
     _statusValues: raw => String(raw || '').split(','),
     _cnvSvAcmgClassValue: (id, v) => Number(state.reports.edits[id]?.ACMG_class_sv ?? v.acmg_class),
     renderCnvSvCard: (v, id) => ({ ...element(), variantId: id }),
+    _prioInfo: kind => state.data?.[`${kind}_prioritization`] || {},
     panels, bar,
     escapeHtml: value => String(value).replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
   });
@@ -220,4 +221,24 @@ test('chromosome dosage tab shows active findings and flags obsolete review IDs'
   assert.equal(c.panels.PLOIDY.children[0].children[1].variantId, id);
   assert.deepEqual(Array.from(c._stalePloidyFindingIds()), ['PLOIDY-chr21-GAIN-old']);
   assert.match(c.panels.PLOIDY.children[0].children[0].innerHTML, /清除舊標記/);
+});
+
+
+test('with HPO the In-house prioritization total replaces the CNV order; merged parents take the best segment', () => {
+  const c = fixture();
+  const prio = (total, p, v) => ({ prio: { total, p, v, c: 0 } });
+  c.state.data.cnv_variants = {
+    plp: variant('plp', 'functional', { acmg_class: 5, POS: 1000000, END: 1000100, ...prio(3, 1, 2) }),
+    hi: variant('hi', 'noncoding', { POS: 5000000, END: 5000100, ...prio(12, 5, 7) }),
+    tie: variant('tie', 'functional', { POS: 9000000, END: 9000100, ...prio(12, 6, 6) }),
+  };
+  c.state.data.cnv_categories = { 'CNV-1A': ['plp', 'hi', 'tie'] };
+  const ids = ['plp', 'hi', 'tie'];
+  // no HPO: the old order (P/LP first)
+  assert.equal(ids.slice().sort((a, b) => c._cnvSvCompareImpact(a, b, 'CNV-1A'))[0], 'plp');
+  c.state.data.cnv_prioritization = { mode: 'prio' };
+  assert.deepEqual(ids.slice().sort((a, b) => c._cnvSvCompareImpact(a, b, 'CNV-1A')), ['tie', 'hi', 'plp']);
+  assert.equal(c._cnvSvPrioRank('tie'), 1);
+  assert.equal(c._cnvSvPrioRank('hi'), 1);       // same 1-decimal total → same competition rank
+  assert.equal(c._cnvSvPrioRank('plp'), 3);
 });

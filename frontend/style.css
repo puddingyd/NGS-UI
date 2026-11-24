@@ -4821,3 +4821,7 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
   color: #4b5563;
   border-color: #d1d5db;
 }
+
+/* In-house prioritization row on CNV/SV and mitochondrial cards (same text as SNV). */
+.cnv-sv-prio { font-size: 13px; margin: 0 0 4px; }
+.cnv-sv-prio .prio-score { white-space: nowrap; }

@@ -6,6 +6,14 @@
 
 ## 版本紀錄
 
+### v10.66 — 2026-11-24
+
+- 表型點數改用兩組文獻病例合併（877 例）重新估計：第 1 名 +10.2、2–5 名 +7.5、6–10 名 +6.0、11–50 名 +4.3、51–200 名 +1.6、201–1000 名 −1.3、1000 名以後與沒有已知疾病的基因 −6.1。
+- 隱性疾病的兩個變異（phase 未知）不再扣遺傳模式分數，C 改為 0。
+- CNV／SV 卡片顯示 In-house prioritization（AnnotSV 分數換算＋受影響基因的表型＋遺傳模式，格式同 SNV），有 HPO 時取代 CNV／SV tier 內原本的排序。
+- 粒線體卡片顯示 In-house prioritization（ClinVar／MITOMAP／gnomAD-mito 換算＋表型），有 HPO 時決定 tier 內排序。
+- 候選診斷清單仍以 SNV/Indel 為主；只有 CNV 缺失與同一隱性基因的 SNV 配成一對時才列入。SV 與粒線體暫不列入。
+
 ### v10.65 — 2026-11-24
 
 - In-house ACMG 規則 v1.8：PM1 的 ClinVar 熱點改計 ≥1★ 的致病 missense（原 ≥2★），PP2 的基因良性 missense 比例放寬到 ≤20%（原 10%）；需重算 In-house 結果。

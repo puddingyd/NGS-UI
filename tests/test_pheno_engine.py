@@ -220,15 +220,15 @@ def test_rankings_points_and_explanation(eng):
     assert [d["rank"] for d in top] == list(range(1, len(top) + 1))
     genes = res.top_genes(5)
     assert genes[0]["gene"] == "GENEA" and genes[0]["best_disease"] == "OMIM:100001"
-    assert genes[0]["P"] == 10.3 and genes[0]["rank"] == 1
+    assert genes[0]["P"] == 10.2 and genes[0]["rank"] == 1
     assert {g["gene"] for g in genes} == {"GENEA", "GENEB", "GENED"}
     assert res.gene("GENEZ")["status"] == "na" and res.gene("NOPE") is None
     lead = res.lead_nats()
     assert genes[0]["lead"] == (lead >= E.LEAD_NATS)
-    # P(g, d): best disease keeps P(g); the gene's other disease is reduced but not below −5.4
+    # P(g, d): best disease keeps P(g); the gene's other disease is reduced but not below −6.1
     pts = {x["disease_id"]: x for x in res.gene_disease_points("GENEA")}
-    assert pts["OMIM:100001"]["P"] == 10.3 and pts["OMIM:100001"]["best"]
-    assert E.P_MIN <= pts["OMIM:100003"]["P"] <= 10.3
+    assert pts["OMIM:100001"]["P"] == 10.2 and pts["OMIM:100001"]["best"]
+    assert E.P_MIN <= pts["OMIM:100003"]["P"] <= 10.2
     # OMIM:100001 and ORPHA:5 are one MONDO group: same group rank
     i1, i5 = eng.did["OMIM:100001"], eng.did["ORPHA:5"]
     assert res.d_group_rank[i1] == res.d_group_rank[i5] == 1.0
@@ -238,8 +238,8 @@ def test_rankings_points_and_explanation(eng):
 
 
 def test_points_tables():
-    assert E.gene_points(1) == 10.3 and E.gene_points(1.5) == 7.5 and E.gene_points(10) == 5.7
-    assert E.gene_points(11) == 4.2 and E.gene_points(5000) == -5.4
+    assert E.gene_points(1) == 10.2 and E.gene_points(1.5) == 7.5 and E.gene_points(10) == 6.0
+    assert E.gene_points(11) == 4.3 and E.gene_points(5000) == -6.1
     assert E.disease_points(3) == 8.9 and E.disease_points(2000) == -3.1
 
 

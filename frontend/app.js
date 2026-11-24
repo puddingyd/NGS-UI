@@ -342,6 +342,10 @@ async function _loadSample(LIS_ID) {
         if (aux) Object.assign(state.data, aux);
         state.cnvPending = false;
         try { renderCnvSvTabBar(); } catch (_e) {}
+        try {
+          if (document.querySelector("#gene-search-modal .gene-search-card.prio-wide")
+              && !document.getElementById("gene-search-modal")?.classList.contains("hidden")) renderPrioCandidates();
+        } catch (_e) {}
         // Causative / Other sections may carry CNV/SV ids from
         // state.reports.status that were rendered as "missing
         // variant" while the aux payload was still empty.
@@ -3570,6 +3574,7 @@ const PRIO_MODE_SHORT = {
 };
 
 function _prioModeShort(c) {
+  if (c.cnv_pair) return c.moi_class === "xlr" ? "XLR，SNV＋CNV 缺失" : "AR，SNV＋CNV 缺失";
   if (c.mode === "pair" && c.moi_class === "xlr") return "XLR，兩個變異";
   if (c.mode === "hom" && c.moi_class === "xlr") return "XLR，同型合子";
   return PRIO_MODE_SHORT[c.mode] || c.mode || "";
@@ -3589,15 +3594,98 @@ function _prioCandidateSummary(c) {
 
 function _prioVariantLabel(id) {
   const v = state.data?.variants?.[id];
-  return v ? displaySnvHgvs(v, id) : id;
+  if (v) return displaySnvHgvs(v, id);
+  const ev = state.data?.cnv_variants?.[id];
+  if (ev) return `CNV ${ev.sv_type || ""} ${ev.CHROM || ""}:${ev.POS ?? ""}-${ev.END ?? ""}${ev.copy_number != null ? ` (CN ${ev.copy_number})` : ""}`;
+  return id;
+}
+
+// Combined points of two recessive alleles (plan §5.3; same as prioritization.pair_points).
+function _prioPairPoints(v1, v2) {
+  const L0 = Math.log(0.1 / 0.9), K = 0.733;
+  const p = Math.min(Math.max((1 / (1 + Math.exp(-(L0 + K * v1)))) * (1 / (1 + Math.exp(-(L0 + K * v2)))), 1e-300), 1 - 1e-15);
+  return (Math.log(p / (1 - p)) - L0) / K;
+}
+
+// CNV deletions enter the candidate list only as the second allele of a
+// recessive gene with an SNV (2026-11-24 user decision): pair the deletion
+// with the strongest heterozygous SNV of that gene; C = 0 as for SNV pairs.
+function _prioCnvPairs() {
+  const hets = {};
+  for (const [id, v] of Object.entries(state.data?.variants || {})) {
+    const p = v?.prio;
+    if (!p || !p.gene || v.somatic || p.mode === "somatic") continue;
+    if (!String(v.zygosity || "").toLowerCase().startsWith("het")) continue;
+    const val = Number(p.v_single ?? p.v);
+    if (!Number.isFinite(val)) continue;
+    if (!hets[p.gene] || val > hets[p.gene].v || (val === hets[p.gene].v && id < hets[p.gene].id)) hets[p.gene] = { id, v: val };
+  }
+  const best = {};
+  for (const [eid, ev] of Object.entries(state.data?.cnv_variants || {})) {
+    const ep = ev?.prio;
+    if (!ep || !Array.isArray(ep.ar_genes)) continue;
+    for (const ag of ep.ar_genes) {
+      const snv = hets[ag.gene];
+      if (!snv) continue;
+      const vc = Number(ep.v) || 0;
+      const pairV = _prioPairPoints(snv.v, vc);
+      for (const d of ag.diseases || []) {
+        const p = Number(d.p);
+        if (!Number.isFinite(p)) continue;
+        const cand = {
+          gene: ag.gene, total: pairV + p, v: pairV, p, c: 0, mode: "pair", moi_class: d.moi_class,
+          disease_id: d.disease_id, disease_name: d.disease_name, disease_rank: d.disease_rank,
+          moi: d.moi, moi_source: d.moi_source, variants: [snv.id, eid], v_each: { [snv.id]: snv.v, [eid]: vc },
+          cnv_pair: true, gene_rank: ag.gene_rank, gene_points: ag.gene_points, others: [], n_combinations: 1,
+        };
+        const cur = best[ag.gene];
+        if (!cur || cand.total > cur.total + 1e-9 || (Math.abs(cand.total - cur.total) < 1e-9 && cand.p > cur.p)) best[ag.gene] = cand;
+      }
+    }
+  }
+  return best;
+}
+
+function _prioCandidateList() {
+  const info = state.data?.prioritization || {};
+  const base = Array.isArray(info.candidates) ? info.candidates : [];
+  let total = Number(info.candidate_count) || base.length;
+  const pairs = _prioCnvPairs();
+  if (!Object.keys(pairs).length) return { list: base, total };
+  const list = base.map(c => ({ ...c }));
+  for (const [gene, pc] of Object.entries(pairs)) {
+    const i = list.findIndex(c => c.gene === gene);
+    if (i < 0) {
+      list.push(pc);
+      total += 1;
+      continue;
+    }
+    const row = list[i];
+    const n = (Number(row.n_combinations) || 1) + 1;
+    if (pc.total > row.total + 1e-9) {
+      const { others = [], ...prev } = row;
+      list[i] = { ...pc, others: [prev, ...others].slice(0, 5), n_combinations: n };
+    } else {
+      const others = [...(row.others || []), pc].sort((a, b) => b.total - a.total).slice(0, 5);
+      list[i] = { ...row, others, n_combinations: n };
+    }
+  }
+  list.sort((a, b) => Math.round(b.total * 1000) - Math.round(a.total * 1000)
+    || (b.p ?? -1e9) - (a.p ?? -1e9) || Math.round(b.v * 1000) - Math.round(a.v * 1000)
+    || String(a.gene).localeCompare(String(b.gene)));
+  let prev = null, pos = 0;
+  list.forEach((c, i) => {
+    const shown = Math.round(c.total * 10) / 10;
+    if (prev === null || shown !== prev) { pos = i + 1; prev = shown; }
+    c.rank = pos;
+  });
+  return { list, total };
 }
 
 function renderPrioCandidates() {
   const host = document.getElementById("gene-search-results");
   const titleEl = document.getElementById("gene-search-title");
-  const info = state.data?.prioritization || {};
-  const list = Array.isArray(info.candidates) ? info.candidates : [];
-  const total = Number(info.candidate_count) || list.length;
+  const { list, total } = _prioCandidateList();
   const shown = list.slice(0, _prioCandShown);
   if (titleEl) titleEl.textContent = `候選診斷（${shown.length}／${total} 個基因）`;
   if (!host) return;
@@ -3608,7 +3696,9 @@ function renderPrioCandidates() {
   }
   const note = document.createElement("div");
   note.className = "prio-cand-note muted";
-  note.textContent = "總分 = 變異 V′ + 表型 P + 遺傳模式 C（暫定參數，尚未以院內個案校準）；一個基因一列，取該基因最高分的疾病與基因型組合。";
+  note.textContent = "總分 = 變異 V′ + 表型 P + 遺傳模式 C（暫定參數，尚未以院內個案校準）；一個基因一列，取該基因最高分的疾病與基因型組合。"
+    + "CNV 只有與 SNV 配成隱性一對的缺失會列入；SV、粒線體暫不列入。"
+    + (state.cnvPending ? "（CNV 仍在載入，載入後會補上 SNV＋CNV 配對）" : "");
   host.appendChild(note);
   for (const c of shown) {
     const box = document.createElement("section");
@@ -3635,7 +3725,12 @@ function renderPrioCandidates() {
     const cards = box.querySelector(".prio-cand-cards");
     for (const id of c.variants || []) {
       const v = state.data?.variants?.[id];
-      if (v) cards.appendChild(renderVariantCard(v, id, "candidate", { index: c.rank, diseaseCheckbox: true }));
+      if (v) {
+        cards.appendChild(renderVariantCard(v, id, "candidate", { index: c.rank, diseaseCheckbox: true }));
+        continue;
+      }
+      const ev = state.data?.cnv_variants?.[id];
+      if (ev) cards.appendChild(renderCnvSvCard(ev, id, { index: c.rank }));
     }
     host.appendChild(box);
   }
@@ -4840,11 +4935,20 @@ const PRIO_MODE_ZH = {
   unknown: "遺傳模式未知，不扣分",
   hom: "隱性，同型合子",
   hemi: "X 性聯隱性，男性半合子",
-  pair: "隱性，與同基因另一個變異配成一對（phase 未知 −1）",
+  pair: "隱性，與同基因另一個變異配成一對（phase 未知，不扣分）",
   single: "隱性，只找到一個異合子；需找第二個變異（CNV、深層內含子、低覆蓋區、dead zone）",
   xlr_female_single: "X 性聯隱性，女性異合子（保留 skewed X-inactivation 的可能）",
   somatic: "Somatic 點位，不套遺傳模式",
+  no_gene: "沒有受影響的基因，不扣分",
+  mito: "粒線體變異，不套遺傳模式",
 };
+
+const PRIO_KIND_LABEL = { snv: "SNV/Indel", cnv: "CNV", sv: "SV", mito: "粒線體" };
+
+function _prioInfo(kind = "snv") {
+  if (kind === "snv") return state.data?.prioritization || {};
+  return state.data?.[`${kind}_prioritization`] || {};
+}
 
 function _prioNum(x) {
   if (x === null || x === undefined || x === "" || !Number.isFinite(Number(x))) return "—";
@@ -4858,22 +4962,30 @@ function _prioSigned(x) {
   return Number(x) < 0 && t !== "0" ? ` − ${t.replace(/^-/, "")}` : ` + ${t}`;
 }
 
-function _prioScoreText(v) {
+function _prioScoreText(v, rankOverride) {
   const p = v?.prio;
   if (!p) return "—";
   const parts = `${_prioNum(p.v)}${_prioSigned(p.p)}${_prioSigned(p.c)}`;
-  const rank = Number.isFinite(Number(p.rank)) && p.rank != null ? ` (rank ${Number(p.rank)})` : "";
+  const r = rankOverride !== undefined ? rankOverride : p.rank;
+  const rank = r != null && Number.isFinite(Number(r)) ? ` (rank ${Number(r)})` : "";
   return `${_prioNum(p.total)} (${parts})${rank}`;
 }
 
-function _prioHintLines(v) {
+function _prioHintLines(v, kind = "snv") {
   const p = v?.prio;
-  const info = state.data?.prioritization || {};
+  const info = _prioInfo(kind);
   const lines = [
     "總分 = 變異 V′ + 表型 P + 遺傳模式 C（1 點 ≈ 可能性 ×2.08；數值為暫定、尚未以院內個案校準）",
   ];
   if (!p) return lines.concat(["此點位沒有計算結果"]);
-  if (p.mode === "pair") {
+  if (kind === "cnv" || kind === "sv") {
+    const score = p.annotsv_score == null ? "—" : Number(p.annotsv_score).toFixed(2);
+    lines.push(`變異 V′ ${_prioNum(p.v)}：AnnotSV ranking score ${score} 換算（≥0.99 → 10、0.90–0.98 → 6–9、0–0.89 → 0–5、負分 → −1 到 −7）${p.v_missing ? "；沒有 AnnotSV 分數，以 0 計" : ""}`);
+    if (v.is_merged_parent) lines.push("合併事件：取各片段中總分最高者");
+    if (p.n_genes) lines.push(`受影響基因 ${p.n_genes} 個（編碼／剪接或位置不明，不含只影響 UTR／內含子者），取總分最高的 ${p.gene || "—"}`);
+  } else if (kind === "mito") {
+    lines.push(`變異 V′ ${_prioNum(p.v)}：${p.v_basis || ""}（ClinVar P/LP＋MITOMAP 確認 10、其一 7、VUS／有報告 2、罕見無報告 1、gnomAD-mito ≥1% −4、ClinVar B/LB −7；heteroplasmy 只供參考，不計分）`);
+  } else if (p.mode === "pair") {
     const partner = state.data?.variants?.[p.partner] || state.snvSearchVariants?.[p.partner];
     const label = partner ? displaySnvHgvs(partner, p.partner) : p.partner;
     lines.push(`變異 V′ ${_prioNum(p.v)}：與 ${label} 配成隱性一對的合成點數（本變異 ${_prioNum(p.v_single)}、另一個 ${_prioNum(p.partner_v)}）`);
@@ -4882,6 +4994,8 @@ function _prioHintLines(v) {
   }
   if (!p.pheno_counted) {
     lines.push(`表型 P —：${info.reason || "表型分數不計"}`);
+  } else if (p.mode === "no_gene") {
+    lines.push(`表型 P ${_prioNum(p.p)}：事件沒有影響任何基因的編碼或剪接位置，給最低分`);
   } else if (p.no_disease) {
     lines.push(`表型 P ${_prioNum(p.p)}：${p.gene || "此基因"} 沒有已知疾病（或疾病沒有表型註記），給最低分`);
   } else {
@@ -4893,9 +5007,11 @@ function _prioHintLines(v) {
   const moi = (p.moi || []).length
     ? `${p.moi.map(m => MOI_LABEL[m] || m).join("/")}${p.moi_source ? `，來源 ${p.moi_source}` : ""}` : "未知";
   lines.push(`遺傳模式 C ${_prioNum(p.c)}：${PRIO_MODE_ZH[p.mode] || p.mode}（遺傳模式 ${moi}）`);
+  const what = PRIO_KIND_LABEL[kind] || kind;
   lines.push(info.mode === "prio"
-    ? "tier 內依此總分排序；rank 為本個案全部 SNV/Indel 候選中的名次"
-    : "本個案排序沿用 Score (old)；rank 仍為依此總分的名次，供比較");
+    ? `tier 內依此總分排序；rank 為本個案全部 ${what} 中的名次`
+    : `本個案排序沿用${kind === "snv" ? " Score (old)" : "原本排序"}；rank 仍為依此總分的名次，供比較`);
+  if (kind !== "snv") lines.push(`${what} 暫不列入候選診斷清單${kind === "cnv" ? "（只有與 SNV 配成隱性一對的缺失會列入）" : ""}`);
   return lines;
 }
 
@@ -6793,6 +6909,7 @@ function _cnvSvBuildParent(merge) {
   const bestScaledRank = Math.max(0, ...segments.map(v => Number(v.ranking_score_scaled)).filter(Number.isFinite));
   const bestPheno = Math.max(0, ...segments.map(v => Number(v.max_pheno_score)).filter(Number.isFinite));
   const bestCombined = Math.max(...segments.map(v => Number(v.cnv_sv_sort_score)).filter(Number.isFinite));
+  const prioSeg = segments.filter(v => v.prio).sort((a, b) => Number(b.prio.total) - Number(a.prio.total))[0];
   const genes = [];
   const seenGenes = new Set();
   segments.forEach(seg => [...(seg.genes || []), ...(seg.genes_overflow || [])].forEach(g => {
@@ -6811,6 +6928,8 @@ function _cnvSvBuildParent(merge) {
     cnv_sv_sort_score: Number.isFinite(bestCombined) ? bestCombined : rep.cnv_sv_sort_score,
     genes_total: genes.length, merged_segment_ids: segments.map(v => v.id),
     is_merged_parent: true,
+    prio: prioSeg ? prioSeg.prio : undefined,
+    prio_total: prioSeg ? prioSeg.prio_total : undefined,
     impact_all: _cnvSvMergeImpacts(segments.map(s => s.impact_all || { category: "unknown" })),
     impact_clinical: _cnvSvMergeImpacts(segments.filter(s => s.in_panel)
       .map(s => s.impact_clinical || { category: "unknown" })),
@@ -6846,8 +6965,46 @@ function _cnvSvMergeView() {
     const parent = _cnvSvBuildParent(merge);
     if (parent) parents[parent.id] = parent;
   });
-  _cnvSvMergeViewCache = { cnvVariants, svVariants, savedMerges, merges, parents };
+  // In-house prioritization ranks over the events as displayed (merged
+  // parents replace their segments): competition ranks on 1-decimal totals.
+  const prioRanks = {};
+  [["cnv", cnvVariants], ["sv", svVariants]].forEach(([source, base]) => {
+    const values = [];
+    Object.entries(base || {}).forEach(([id, v]) => {
+      if (!consumed.has(id) && v?.prio) values.push([Math.round(Number(v.prio.total) * 10) / 10, id]);
+    });
+    Object.values(parents).forEach(parent => {
+      if (parent.source === source && parent.prio) {
+        values.push([Math.round(Number(parent.prio.total) * 10) / 10, parent.id]);
+      }
+    });
+    values.sort((a, b) => b[0] - a[0] || String(a[1]).localeCompare(String(b[1])));
+    let prev = null, pos = 0;
+    values.forEach(([value, id], i) => {
+      if (prev === null || value !== prev) { pos = i + 1; prev = value; }
+      prioRanks[id] = pos;
+    });
+  });
+  _cnvSvMergeViewCache = { cnvVariants, svVariants, savedMerges, merges, parents, prioRanks };
   return _cnvSvMergeViewCache;
+}
+
+function _cnvSvPrioRank(id) {
+  const rank = _cnvSvMergeView().prioRanks?.[id];
+  return rank === undefined ? null : rank;
+}
+
+function _cnvSvPrioMode(tier) {
+  const kind = String(tier || "").startsWith("SV-") ? "sv" : "cnv";
+  return _prioInfo(kind).mode === "prio";
+}
+
+function _cnvSvComparePrio(a, b) {
+  const pa = _cnvSvVariantById(a)?.prio, pb = _cnvSvVariantById(b)?.prio;
+  const t = x => (x ? Math.round(Number(x.total) * 1000) / 1000 : -Infinity);
+  const n = (x, key) => (x && x[key] != null && Number.isFinite(Number(x[key])) ? Number(x[key]) : -Infinity);
+  return (t(pb) - t(pa)) || (n(pb, "p") - n(pa, "p")) || (n(pb, "v") - n(pa, "v"))
+    || String(a).localeCompare(String(b));
 }
 
 function _cnvSvVirtualParents() {
@@ -6906,6 +7063,8 @@ function _cnvSvPassesImpact(v, tier) {
 }
 
 function _cnvSvCompareImpact(a, b, tier) {
+  // With usable HPO the In-house prioritization total replaces the old order.
+  if (_cnvSvPrioMode(tier)) return _cnvSvComparePrio(a, b);
   const av = _cnvSvVariantById(a), bv = _cnvSvVariantById(b);
   const ai = _cnvSvImpact(av, tier), bi = _cnvSvImpact(bv, tier);
   const order = { functional: 0, unknown: 1, noncoding: 2 };
@@ -7631,7 +7790,11 @@ function _renderMitoDetailBox(v, id) {
     <select class="mito-acmg-select ${mitoAcmgSig}" data-id="${escapeAttr(id)}">
       ${acmgOpts.map(o => `<option value="${escapeAttr(o)}" ${o===mitoAcmg?"selected":""}>${o || "—"}</option>`).join("")}
     </select>`;
+  const prioRow = v.prio
+    ? `<div class="cnv-sv-prio"><strong>In-house prioritization</strong>${_annotationHint("In-house prioritization", _prioHintLines(v, "mito"))}<strong>:</strong> <span class="prio-score">${escapeHtml(_prioScoreText(v))}</span></div>`
+    : "";
   return `<div class="cnv-sv-detail-box">
+    ${prioRow}
     <div class="cnv-sv-detail-row">
       <span><strong>ACMG:</strong> ${acmgSelect}</span>
       <span><strong>變化:</strong> ${escapeHtml(v.REF || "?")}→${escapeHtml(v.ALT || "?")}</span>
@@ -7867,7 +8030,12 @@ function _renderCnvSvDetailBox(v, id) {
     ? `${totalGenes}（疾病相關：${diseaseGenes}）`
     : "—";
 
+  const prioKind = String(v.source || "cnv").toLowerCase() === "sv" ? "sv" : "cnv";
+  const prioRow = v.prio
+    ? `<div class="cnv-sv-prio"><strong>In-house prioritization</strong>${_annotationHint("In-house prioritization", _prioHintLines(v, prioKind))}<strong>:</strong> <span class="prio-score">${escapeHtml(_prioScoreText(v, _cnvSvPrioRank(id)))}</span></div>`
+    : "";
   return `<div class="cnv-sv-detail-box">
+    ${prioRow}
     <div class="cnv-sv-detail-row">
       <span><strong>ACMG:</strong> ${acmgSelect}</span>
       <span><strong>涵蓋基因數:</strong> ${escapeHtml(geneCountText)}</span>

@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.66：表型基因名次點數改用 396＋481 例合併估計（`GENE_POINTS` +10.2／7.5／6.0／4.3／1.6／−1.3／−6.1，`P_MIN`＝`P_FLOOR`＝−6.1）；隱性兩個變異 `PAIR_PHASE_UNKNOWN`＝0；CNV／SV（`prioritization.annotate_events`：`annotsv_points` 分段換算、`_prio_genes` 受影響基因各算 P＋C 取最高、`event_zygosity`）與粒線體（`annotate_mito`、`mito_points`）In-house prioritization，staged `/cnv`、`/sv`、`/mito` 回 `{cnv,sv,mito}_prioritization` 並重排 tier；前端卡片分數列 `.cnv-sv-prio`、CNV 合併後事件名次 `_cnvSvPrioRank`、`_cnvSvCompareImpact` 在 prio 模式改用總分；候選清單 `_prioCandidateList()` 併入 CNV 缺失＋SNV 隱性配對（`ar_genes`、`_prioCnvPairs`）。
+
 v10.65：ACMG 規則 v1.8（`pm1_clinvar.min_stars=1`、`pp2.max_benign_fraction=0.2`，依 ClinVar 標籤驗證：PM1 LR+ 102→137、PP2 LR+ 25→16）；表型引擎 `P_MIN` 由 −3.1 改 −5.4（>1000 名區間的估計值，不再截到 −3.1；`prioritization.P_FLOOR` 同步）；候選診斷視窗 `.prio-wide`（最寬 1560px）、遺傳模式短標籤 `PRIO_MODE_SHORT`。
 
 v10.64：候選診斷清單（計畫階段 5a，SNV/Indel）：`prioritization.gene_candidates()` 列出每個基因所有疾病×遺傳模式×基因型組合（隱性配對只算一次、ref 不成候選），取最高者並保留前 5 個其他組合；`annotate()` 在有 HPO 時把每基因一列、競賽名次排序的前 200 列放進 payload `prioritization.candidates`（`candidate_count` 為總數）。SNV/Indel 標題列「候選診斷」按鈕（無 HPO 停用）開啟沿用搜尋視窗的清單，預設 20 列、「顯示更多」每次 20 列。

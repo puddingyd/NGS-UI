@@ -13,7 +13,9 @@ function setup(data) {
   const context = vm.createContext({ state: { data } });
   const start = source.indexOf('const PRIO_MODE_ZH =');
   const end = source.indexOf('};', start) + 2;
-  vm.runInContext(source.slice(start, end) + fn('_prioNum') + fn('_prioSigned') + fn('_prioScoreText') +
+  const k = source.indexOf('const PRIO_KIND_LABEL =');
+  vm.runInContext(source.slice(start, end) + source.slice(k, source.indexOf(';', k) + 1) + fn('_prioInfo') +
+    fn('_prioNum') + fn('_prioSigned') + fn('_prioScoreText') +
     fn('_prioHintLines') + fn('_prioMode') + fn('_snvSortScore') +
     '\nconst displaySnvHgvs = (v, id) => v.hgvs || id;\n', context);
   return context;
@@ -81,4 +83,59 @@ test('candidate header: score, disease with rank, inheritance mode; button disab
   assert.equal(button.disabled, false);
   assert.equal(context._prioDiseaseLink('ORPHA:5'), 'https://www.orpha.net/en/disease/detail/5');
   assert.equal(context._prioDiseaseLink(''), '');
+});
+
+
+test('CNV and mito hints, rank override', () => {
+  const c = setup({ cnv_prioritization: { mode: 'prio' }, mito_prioritization: { mode: 'old', reason: '沒有 HPO' } });
+  const ev = { prio: { total: 15.2, v: 10, p: 5.2, c: 0, rank: 4, annotsv_score: 0.99, n_genes: 3, gene: 'GENEA',
+    mode: 'dominant', pheno_counted: true, moi: ['dominant'] } };
+  assert.equal(c._prioScoreText(ev, 2), '15.2 (10 + 5.2 + 0) (rank 2)');
+  const text = c._prioHintLines(ev, 'cnv').join('\n');
+  assert.match(text, /AnnotSV ranking score 0\.99/);
+  assert.match(text, /受影響基因 3 個/);
+  assert.match(text, /全部 CNV 中的名次/);
+  assert.match(text, /與 SNV 配成隱性一對的缺失會列入/);
+  const mito = c._prioHintLines({ prio: { total: 7, v: 7, p: null, c: 0, mode: 'mito', v_basis: 'ClinVar P/LP',
+    pheno_counted: false, moi: [] } }, 'mito').join('\n');
+  assert.match(mito, /ClinVar P\/LP（ClinVar P\/LP＋MITOMAP/);
+  assert.match(mito, /表型 P —：沒有 HPO/);
+  assert.match(mito, /沿用原本排序/);
+});
+
+test('candidate list: CNV deletion pairs with the strongest het SNV of a recessive gene', () => {
+  const data = {
+    prioritization: { mode: 'prio', candidate_count: 2, candidates: [
+      { gene: 'GENEA', total: 9, v: 4, p: 5, c: 0, mode: 'dominant', rank: 1, variants: ['a'], others: [], n_combinations: 1 },
+      { gene: 'GENED', total: 2, v: 6, p: 0, c: -4, mode: 'single', rank: 2, variants: ['d'], others: [], n_combinations: 2 },
+    ] },
+    variants: {
+      a: { zygosity: 'het', prio: { gene: 'GENEA', v_single: 4, v: 4 } },
+      d: { zygosity: 'heterozygous', prio: { gene: 'GENED', v_single: 6, v: 6 } },
+      d2: { zygosity: 'het', prio: { gene: 'GENED', v_single: 2, v: 2 } },
+      h: { zygosity: 'hom', prio: { gene: 'GENEQ', v_single: 9, v: 9 } },
+    },
+    cnv_variants: {
+      e1: { prio: { v: 10, ar_genes: [
+        { gene: 'GENED', gene_rank: 7, diseases: [{ disease_id: 'OMIM:4', disease_name: 'Eye', p: 5, moi_class: 'ar' }] },
+        { gene: 'GENEQ', diseases: [{ disease_id: 'OMIM:9', p: 9, moi_class: 'ar' }] },
+      ] } },
+    },
+  };
+  const context = vm.createContext({ state: { data } });
+  vm.runInContext(fn('_prioPairPoints') + fn('_prioCnvPairs') + fn('_prioCandidateList'), context);
+  const { list, total } = context._prioCandidateList();
+  assert.equal(total, 2);                                      // GENEQ has no het SNV → no row
+  const pairV = context._prioPairPoints(6, 10);
+  assert.ok(Math.abs(pairV - 6.0) < 0.2);
+  assert.equal(list[0].gene, 'GENED');                          // 6.x + 5 > 9 → new top row
+  assert.deepEqual(Array.from(list[0].variants), ['d', 'e1']);
+  assert.equal(list[0].cnv_pair, true);
+  assert.equal(list[0].c, 0);
+  assert.equal(list[0].others[0].mode, 'single');              // the old best moves to 其他組合
+  assert.equal(list[0].n_combinations, 3);
+  assert.deepEqual(list.map(c => c.rank), [1, 2]);
+  assert.equal(data.prioritization.candidates[1].gene, 'GENED'); // payload not mutated
+  data.cnv_variants = {};
+  assert.equal(context._prioCandidateList().list, data.prioritization.candidates);
 });
