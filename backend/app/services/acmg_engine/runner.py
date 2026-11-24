@@ -31,8 +31,9 @@ from .ref_store import SqliteReferences, load_ba1_exceptions
 from .refs import References
 
 RESULTS_NAME = "snv_acmg_engine.sqlite"
-FORMAT_VERSION = 3          # 2: CaseRecurrence delegates the missense window / gene count lookups
+FORMAT_VERSION = 4          # 2: CaseRecurrence delegates the missense window / gene count lookups
                             # 3: CaseRecurrence delegates the collagen Gly-X-Y lookup
+                            # 4: CaseRecurrence answers PS4 lookups (in-house probands, ClinVar cases)
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
@@ -78,15 +79,104 @@ def group_variant_rows(rows) -> dict[str, list[dict]]:
     return groups
 
 
+# ── PS4 A: in-house probands ───────────────────────────────────────────────
+def _sample_mrn(sample_id: str) -> str:
+    try:
+        from .. import sample_layout
+        meta = json.loads(sample_layout.state_file(sample_id, "sample_metadata.json").read_text(encoding="utf-8"))
+        return str(meta.get("mrn") or "").strip() if isinstance(meta, dict) else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+class InhouseProbands:
+    """Variants marked Causative (status 1) in other patients' cases.
+
+    Read from the observation registry in ``manual_acmg.sqlite`` (Causative /
+    Other statuses that reviewers save).  Samples of the same patient (same
+    MRN, or the same base sample ID) count once, and the case being scored is
+    never counted."""
+
+    def __init__(self, by_variant: dict[str, set], patient_of=None, signature: str = ""):
+        self.by_variant = by_variant
+        self._patient_of = patient_of
+        self._patients: dict[str, str] = {}
+        self._signature = signature
+
+    @classmethod
+    def from_db(cls, db: Path, patient_of=None) -> "InhouseProbands | None":
+        db = Path(db)
+        if not db.is_file():
+            return None
+        by_variant: dict[str, set] = {}
+        try:
+            conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            try:
+                rows = conn.execute("SELECT variant_id, sample_id FROM observations "
+                                    "WHERE status='1' AND genome_build IN ('hg38', 'GRCh38')").fetchall()
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return None
+        for vid, sid in rows:
+            by_variant.setdefault(str(vid), set()).add(str(sid))
+        return cls(by_variant, patient_of, signature=_db_signature(db))
+
+    def signature(self) -> str:
+        return self._signature
+
+    def patient(self, sample_id: str) -> str:
+        if sample_id not in self._patients:
+            from .recurrence import patient_key
+            fn = self._patient_of or _sample_mrn
+            self._patients[sample_id] = patient_key(sample_id, fn(sample_id))
+        return self._patients[sample_id]
+
+    def count(self, variant_key: str, sample_id: str = "") -> int:
+        try:
+            from ..manual_acmg import normalize_variant_id
+            key = normalize_variant_id(variant_key)
+        except Exception:  # noqa: BLE001
+            key = variant_key
+        samples = self.by_variant.get(key)
+        if not samples:
+            return 0
+        own = self.patient(sample_id) if sample_id else None
+        return len({self.patient(s) for s in samples if s != sample_id} - {own})
+
+
+def _db_signature(db: Path) -> str:
+    parts = []
+    for path in (Path(db), Path(f"{db}-wal")):
+        try:
+            st = path.stat()
+            parts.append(f"{st.st_size}:{st.st_mtime_ns}")
+        except OSError:
+            parts.append("-")
+    return "|".join(parts)
+
+
+def open_probands(db: Path | None = None):
+    if db is None:
+        try:
+            from ... import config
+            db = Path(config.MANUAL_ACMG_DB)
+        except Exception:  # noqa: BLE001
+            return None
+    return InhouseProbands.from_db(db)
+
+
 # ── per-case context ───────────────────────────────────────────────────────
 class CaseRecurrence(References):
     """Delegates to shared references; WES recurrence excludes the case's own patient."""
 
-    def __init__(self, refs: References, store=None, sample_id: str = "", patient: str = ""):
+    def __init__(self, refs: References, store=None, sample_id: str = "", patient: str = "",
+                 probands: "InhouseProbands | None" = None):
         self._refs = refs
         self._store = store
         self._sample_id = sample_id
         self._patient = patient
+        self._probands = probands
 
     @property
     def available(self):  # type: ignore[override]
@@ -140,6 +230,14 @@ class CaseRecurrence(References):
             return None
         return self._store.lookup(variant_key, exclude_patient=self._patient or None)
 
+    def inhouse_probands(self, variant_key):
+        if self._probands is None:
+            return self._refs.inhouse_probands(variant_key)
+        return self._probands.count(variant_key, self._sample_id)
+
+    def clinvar_affected(self, variation_id):
+        return self._refs.clinvar_affected(variation_id)
+
 
 def omim_moi(gene: str) -> set | None:
     """Gene-level OMIM inheritance codes, or None when unknown."""
@@ -192,6 +290,7 @@ def summary(result: dict) -> dict:
         "clinvar_action": (result.get("clinvar_rule") or {}).get("action") or "none",
         "clinvar_source": (result.get("clinvar_rule") or {}).get("source") or "",
         "flags": [f.get("code") for f in result.get("flags") or [] if isinstance(f, dict)],
+        "ps4_inhouse": result.get("ps4_inhouse"),
         "version": result.get("version") or "",
     }
 
@@ -457,13 +556,14 @@ def case_patient(store, sample_id: str, mrn: str = "") -> str:
 
 def build_case(*, review_tsv: Path, out: Path, sample_id: str, test_type: str,
                refs: SqliteReferences | None = None, recurrence=None, mrn: str = "",
-               moi_fn=omim_moi) -> dict:
+               moi_fn=omim_moi, probands=None) -> dict:
     """Evaluate every variant in ``review_tsv`` and write ``out``; returns stats."""
     started = time.time()
     refs = refs if refs is not None else open_references()
     test_type = (test_type or "WES").upper()
+    probands = open_probands() if probands is None else probands
     case_refs = CaseRecurrence(refs, recurrence if test_type == "WES" else None,
-                               sample_id, case_patient(recurrence, sample_id, mrn))
+                               sample_id, case_patient(recurrence, sample_id, mrn), probands)
     with open(review_tsv, encoding="utf-8", errors="replace", newline="") as handle:
         groups = group_variant_rows(csv.DictReader(handle, delimiter="\t"))
     classes: dict[str, int] = {}
@@ -481,6 +581,7 @@ def build_case(*, review_tsv: Path, out: Path, sample_id: str, test_type: str,
         "recurrence": recurrence.signature() if recurrence is not None and test_type == "WES" else None,
         "reference_tables": sorted(refs.available),
         "omim": omim,
+        "probands": probands.signature() if probands is not None else None,
     }
     count = write_results(out, _results(), manifest)
     return {"sample_id": sample_id, "variants": count, "classes": classes, "omim": omim,
@@ -521,6 +622,34 @@ def shared_recurrence():
     return _shared("recurrence", path, lambda: open_recurrence(path))
 
 
+def shared_probands():
+    try:
+        from ... import config
+        db = Path(config.MANUAL_ACMG_DB)
+    except Exception:  # noqa: BLE001
+        return None
+    sig = _db_signature(db)
+    hit = _SHARED.get("probands")
+    if hit and hit[0] == sig:
+        return hit[1]
+    value = InhouseProbands.from_db(db)
+    _SHARED["probands"] = (sig, value)
+    return value
+
+
+def _review_rows(review_tsv: Path, wanted: set) -> list[dict]:
+    """Rows of the review TSV whose UI variant id is in ``wanted``."""
+    out = []
+    try:
+        with open(review_tsv, encoding="utf-8", errors="replace", newline="") as handle:
+            for row in csv.DictReader(handle, delimiter="\t"):
+                if ui_variant_id(row) in wanted:
+                    out.append(row)
+    except OSError:
+        return []
+    return out
+
+
 def attach(variants: dict, *, results_path: Path, review_tsv: Path, rows=None,
            test_type: str = "WES", sample_id: str = "", mrn: str = "") -> dict:
     """Add ``variant["engine_acmg"]`` (summary + status) where missing.
@@ -534,20 +663,40 @@ def attach(variants: dict, *, results_path: Path, review_tsv: Path, rows=None,
     if not missing:
         return counts
     refs = shared_references()
+    probands = shared_probands()
+    test_type = "WGS" if str(test_type).upper() in ("WGS", "TITAN-WGS") else "WES"
+    _case_refs = []
+
+    def case_refs():
+        if not _case_refs:
+            recurrence = shared_recurrence() if test_type == "WES" else None
+            _case_refs.append(CaseRecurrence(refs, recurrence, sample_id,
+                                             case_patient(recurrence, sample_id, mrn), probands))
+        return _case_refs[0]
+
     stored = lookup_many(results_path, missing)
     if stored:
         status = "current" if is_current(results_path, review_tsv, refs) else "stale"
         for vid, value in stored.items():
             variants[vid]["engine_acmg"] = dict(value, status=status)
             counts[status] = counts.get(status, 0) + 1
+        # PS4 A changes whenever a reviewer marks the variant Causative in another
+        # case: re-evaluate just those variants instead of waiting for a rebuild.
+        if probands is not None:
+            changed = {vid for vid, value in stored.items()
+                       if value.get("ps4_inhouse") is not None
+                       and probands.count(vid, sample_id) != value.get("ps4_inhouse")}
+            if changed:
+                groups = group_variant_rows(_review_rows(review_tsv, changed))
+                for vid, result in evaluate_rows(groups, test_type=test_type, refs=case_refs(),
+                                                 moi_fn=lambda gene: omim_moi(gene)):
+                    variants[vid]["engine_acmg"] = dict(summary(result), status=status, ps4_refreshed=True)
+                    counts["ps4_refreshed"] = counts.get("ps4_refreshed", 0) + 1
     if rows:
         wanted = {vid for vid in missing if vid not in stored}
         groups = {vid: grp for vid, grp in group_variant_rows(rows).items() if vid in wanted}
         if groups:
-            test_type = "WGS" if str(test_type).upper() in ("WGS", "TITAN-WGS") else "WES"
-            recurrence = shared_recurrence() if test_type == "WES" else None
-            case_refs = CaseRecurrence(refs, recurrence, sample_id, case_patient(recurrence, sample_id, mrn))
-            for vid, result in evaluate_rows(groups, test_type=test_type, refs=case_refs):
+            for vid, result in evaluate_rows(groups, test_type=test_type, refs=case_refs()):
                 variants[vid]["engine_acmg"] = dict(summary(result), status="on_demand")
                 counts["on_demand"] = counts.get("on_demand", 0) + 1
     return counts

@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.5",
+  "version": "ngsui-acmg-v1.6",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -45,7 +45,10 @@
       "pm2_xlinked_max"
     ],
     "pm2_recessive_max": 0.0007,
-    "pm2_xlinked_moi": ["XL", "XLR"],
+    "pm2_xlinked_moi": [
+      "XL",
+      "XLR"
+    ],
     "pm2_xlinked_max": 0.0001
   },
   "recurrence": {
@@ -170,5 +173,39 @@
   },
   "vcep": {
     "note": "ClinGen CSpec specs in vcep_specs.json (scripts/acmg_engine/update_vcep_specs.py): per-gene criteria applicability and strength caps, BA1/BS1/PM2 thresholds, PM1 hotspots"
+  },
+  "ps4": {
+    "dominant_moi": [
+      "AD",
+      "XLD"
+    ],
+    "inhouse_strength": [
+      [
+        4,
+        "strong"
+      ],
+      [
+        2,
+        "moderate"
+      ],
+      [
+        1,
+        "supporting"
+      ]
+    ],
+    "clinvar_min_submitters": 1,
+    "clinvar_strength": "supporting",
+    "clinvar_methods": [
+      "clinical testing",
+      "research",
+      "provider interpretation",
+      "case-control"
+    ],
+    "requires_pm2": true,
+    "provisional": [
+      "inhouse_strength",
+      "clinvar_min_submitters"
+    ],
+    "note": "2026-11-24 v1.6: PS4 by proband counting (ClinGen VCEP style) instead of PP5; dominant genes with PM2 met only (recessive cases go to PM3). A: other unrelated patients marked Causative on this platform, 1 Supporting / 2-3 Moderate / >=4 Strong. B: ClinVar submitters reporting the variant in affected individuals (clinical testing, research, provider interpretation, case-control; literature-only and curation excluded; B/LB submissions excluded), capped at Supporting because case details and independence cannot be checked. The stronger of A and B is used (not added: the same patient may be in both)."
   }
 }

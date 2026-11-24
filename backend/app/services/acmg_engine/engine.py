@@ -566,6 +566,58 @@ def _pp2(row: dict, ctx: Context, rb: dict) -> Evidence | None:
 
 
 # ── main entry ─────────────────────────────────────────────────────────────
+# ── PS4 (proband counting) ─────────────────────────────────────────────────
+def _ps4(row: dict, key: str, ctx: Context, rb: dict, pm2_met: bool) -> tuple[Evidence | None, int | None]:
+    """PS4 from reported affected probands instead of PP5 (ClinGen SVI 2018).
+
+    Dominant disorders only (recessive cases are PM3) and only when PM2 is met:
+    a variant seen in affected people means little if it is also common.
+    A: other unrelated patients on this platform whose case marked the
+    variant Causative.  B: ClinVar submitters reporting it in affected
+    individuals, capped at Supporting.  The stronger of the two counts.
+    Returns (evidence or None when PS4 does not apply, in-house count used)."""
+    cfg = rb.get("ps4")
+    if not cfg:
+        return None, None
+    if not ctx.moi:
+        return Evidence("PS4", "not_evaluated", reason="遺傳模式未知"), None
+    codes = P.moi_codes(ctx.moi)
+    if not codes & set(cfg["dominant_moi"]):
+        return Evidence("PS4", "not_met", reason="隱性疾病以 PM3（與致病變異 trans）評估，不用 PS4"), None
+    if cfg.get("requires_pm2", True) and not pm2_met:
+        return Evidence("PS4", "not_met", reason="PM2 不成立（族群資料庫中不夠罕見）"), None
+    inhouse = ctx.refs.inhouse_probands(key)
+    variation = P.text(row.get("CLINVAR_VARIATION_ID")) or P.text(row.get("CLINVAR_LATEST_VARIATION_ID"))
+    # without a Variation ID ClinVar has no record: {} when the case table is loaded, else None
+    clinvar = ctx.refs.clinvar_affected(variation.split(",")[0].strip() if variation else "")
+    rank = {"supporting": 1, "moderate": 2, "strong": 3}
+    options, parts = [], []
+    if inhouse is None:
+        parts.append("院內判讀紀錄未載入")
+    elif inhouse:
+        strength = next((s for n, s in cfg["inhouse_strength"] if inhouse >= n), None)
+        parts.append(f"院內另有 {inhouse} 位無親緣病人判為致病（Causative）")
+        if strength:
+            options.append(strength)
+    else:
+        parts.append("院內沒有其他病人判為致病")
+    if clinvar is None:
+        parts.append("ClinVar 病例資料未載入")
+    elif clinvar.get("submitters", 0) >= cfg["clinvar_min_submitters"]:
+        n, m = clinvar.get("submitters", 0), clinvar.get("individuals") or 0
+        extra = f"、至少 {m} 位個案" if m else ""
+        parts.append(f"ClinVar {n} 個提交者在受影響個案中報告{extra}（最多 {STRENGTH_LABEL[cfg['clinvar_strength']]}）")
+        options.append(cfg["clinvar_strength"])
+    else:
+        parts.append("ClinVar 沒有受影響個案的提交")
+    reason = "；".join(parts)
+    if options:
+        return _met("PS4", max(options, key=lambda x: rank[x]), reason, rb), inhouse
+    if inhouse is None and clinvar is None:
+        return Evidence("PS4", "not_evaluated", reason=reason), None
+    return Evidence("PS4", "not_met", reason=reason), inhouse
+
+
 def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None = None) -> dict:
     rows = [rows] if isinstance(rows, dict) else list(rows)
     if not rows:
@@ -659,6 +711,12 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
 
     _apply_vcep(evidence, spec, rb)
 
+    pm2_met = any(e.code == "PM2" and e.status == "met" for e in evidence)
+    ps4, ps4_inhouse = _ps4(row, key, ctx, rb, pm2_met)
+    if ps4 is not None:
+        _apply_vcep([ps4], spec, rb)
+        evidence.append(ps4)
+
     # double counting
     met = [e for e in evidence if e.status == "met"]
     if pvs1_met:
@@ -734,6 +792,7 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         "clinvar_rule": action,
         "vcep": ({"svi": spec.get("svi"), "version": spec.get("version"), "vcep": spec.get("vcep"),
                   "url": spec.get("url")} if spec else None),
+        "ps4_inhouse": ps4_inhouse,
         "frequency": {"max_af": max_af, "gnomad_max": freq["gnomad_max"],
                       "inhouse_af": freq["inhouse_af"], "inhouse_used": freq["inhouse_used"]},
     }

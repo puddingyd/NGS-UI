@@ -6,6 +6,7 @@
   <title>成大基醫部 NGS 分析平台</title>
   <link rel="stylesheet" href="./style.css" />
   <link rel="stylesheet" href="./documents.css" />
+  <link rel="stylesheet" href="./pheno_predict.css" />
   <link rel="stylesheet" href="./prs.css" />
   <link rel="stylesheet" href="./files.css" />
 </head>
@@ -245,7 +246,7 @@
     <!-- Patient phenotype + panels (editable) -->
     <section id="phenotype-card" class="card hidden">
       <div class="phenotype-header">
-        <h2>Patient phenotype<button id="phenotype-copy" class="btn-copy" type="button" title="複製已選 HPO 與 panel" aria-label="複製已選 HPO 與 panel" hidden></button></h2>
+        <h2>Patient phenotype<button id="phenotype-copy" class="btn-copy" type="button" title="複製已選 HPO 與 panel" aria-label="複製已選 HPO 與 panel" hidden></button><button id="phenotype-predict" class="btn-pheno-predict" type="button" title="依目前的 HPO 預測前 10 名基因與疾病" hidden>預測基因／疾病</button></h2>
         <span id="phenotype-stats" class="muted"></span>
         <span class="version-picker">
           版本
@@ -1223,6 +1224,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <!-- IGV.js (loaded lazily — see openIgvModal). -->
   <script src="./documents.js"></script>
+  <script src="./pheno_predict.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

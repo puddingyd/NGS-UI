@@ -1136,7 +1136,8 @@ $$
 | **PS1**（+4） | 和一個 ClinVar ≥2★ P/LP 的 missense 造成相同的胺基酸改變、但核苷酸改變不同；已知變異的致病機轉不能是剪接 | ClinVar 蛋白質位置表 | Richards 2015 | 新增 |
 | **PM5**（+2／+1） | 同一個胺基酸位置上，另有一個不同的 ClinVar ≥1★ P/LP missense（v1.4 由 ≥2★ 放寬，PS1 仍要 ≥2★）；參考變異是 P 給 Moderate，只有 LP 給 Supporting（2026-11-23） | 同上 | Richards 2015 | 新增 |
 | **PM1**（+1／+2／+4） | 有 VCEP 規格的基因用 CSpec 的熱點或關鍵區域，強度照規格（區域外不給；熱點表無法自動讀取的基因改用 ClinVar 推算）；膠原蛋白基因三股螺旋 Gly-X-Y 的甘胺酸被取代給 Moderate（v1.4，UniProt 序列）；其他基因用 ClinVar 推算：前後 10 個胺基酸內，除本位置外有 ≥3 個位置有 ≥2★ P/LP missense 給 Supporting、≥6 個給 Moderate，窗口內有任何 ≥1★ B/LB missense 就不給（**暫定**；v1.2 曾收緊為 ≥6 個且只給 Supporting，致病變異名次略降，v1.3 改回）。PM1 與 PP3 合計不超過 4 點 | VCEP 區域；ClinVar 蛋白質位置表、良性 missense 表 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增 |
-| **PS2、PM6、PP1、BS4、BP2、PS3、BS3、PS4** | 需要家族、功能實驗或病例對照資料，由判讀者在 `manual_acmg` 填寫 | — | — | 不自動給 |
+| **PS2、PM6、PP1、BS4、BP2、PS3、BS3** | 需要家族、功能實驗或病例對照資料，由判讀者在 `manual_acmg` 填寫 | — | — | 不自動給 |
+| **PS4**（v1.6，取代 PP5） | 數病人（ClinGen 專家小組做法，SVI 2018 建議以實際證據取代 PP5）：只用於 OMIM 列有顯性（AD／XLD）且 PM2 成立的變異（隱性以 PM3 評估）。A＝本平台其他無親緣病人（MRN 或檢體編號去重、不含本人）把此變異判為致病（Causative）：1 位 Supporting、2–3 位 Moderate、≥4 位 Strong。B＝ClinVar VCV XML 中在受影響個案報告的提交者（clinical testing／research／provider interpretation／case-control；排除 literature only、curation、B/LB 提交與體細胞樣本），最多 Supporting。A、B 取較強者，不相加 | `manual_acmg.sqlite` observations；`clinvar_cases.sqlite` | 院內門檻、ClinVar 最少提交者數 | 院內判讀紀錄與 ClinVar 病例表都未載入時「未評估」 |
 | **PM3** | 只計入**其他病人**的證據，由判讀者填寫。以這位病人自己的另一個變異為依據的 PM3 不計入 $V'$，因為隱性成對（第 5.3 節）與遺傳模式（第 6 章）已經處理了這件事 | — | — | 不自動給 |
 | **BS2** | 需要 gnomAD 健康同型合子的人數；目前 TSV 沒有這個欄位 | — | — | 不自動給（缺欄位） |
 | **PP2**（+1） | 基因的 MANE 轉錄本上 ≥1★ ClinVar missense 至少 10 個 P/LP，且 B/LB 占 ≤10%（**暫定**；v1.2 曾收緊為 25 個、≤5%，v1.3 改回）；常被 VCEP 停用，也和 PP3 的全基因組校準部分重疊，驗證時需單獨看 | ClinVar 基因 missense 計數表 | — | 新增 |

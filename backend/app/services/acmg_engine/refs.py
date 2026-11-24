@@ -63,6 +63,15 @@ class References:
         """{"accession", "length", "positions"} of Gly-X-Y triple-helix glycines."""
         return None
 
+    def inhouse_probands(self, variant_key: str) -> int | None:
+        """Other unrelated patients whose case marked this variant Causative (PS4 A)."""
+        return None
+
+    def clinvar_affected(self, variation_id: str) -> dict | None:
+        """ClinVar affected-case evidence for a Variation ID (PS4 B):
+        {"submitters": n, "individuals": m}; ``{}`` when ClinVar has none."""
+        return None
+
 
 @dataclass
 class StaticReferences(References):
@@ -79,6 +88,8 @@ class StaticReferences(References):
     recurrence_patients: int = 0
     vcep_specs: dict = field(default_factory=dict)
     collagen: dict = field(default_factory=dict)     # gene -> {"length", "positions"}
+    probands: dict | None = None             # variant_key -> other unrelated Causative patients
+    clinvar_cases: dict | None = None        # variation_id -> {"submitters", "individuals"}
     version: dict = field(default_factory=dict)
 
     @property
@@ -143,3 +154,15 @@ class StaticReferences(References):
 
     def collagen_gly(self, gene):
         return self.collagen.get(gene)
+
+    def inhouse_probands(self, variant_key):
+        if self.probands is None:
+            return None
+        return int(self.probands.get(variant_key, 0))
+
+    def clinvar_affected(self, variation_id):
+        if self.clinvar_cases is None:
+            return None
+        if not variation_id:
+            return {}
+        return dict(self.clinvar_cases.get(str(variation_id), {}))

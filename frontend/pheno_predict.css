@@ -1,0 +1,104 @@
+/* Phenotype prediction popup (shared by / and /phenotype/). */
+.btn-pheno-predict {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  border: 1px solid #c4b5fd;
+  border-radius: 6px;
+  background: #f5f3ff;
+  color: #5b21b6;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.btn-pheno-predict:hover { background: #ede9fe; }
+.btn-pheno-predict[hidden] { display: none; }
+
+.ppred-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.ppred-modal[hidden] { display: none; }
+.ppred-card {
+  background: #fff;
+  color: #0a0a0a;
+  border-radius: 10px;
+  width: min(1100px, 100%);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+}
+.ppred-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e5e5;
+}
+.ppred-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.ppred-close {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #737373;
+  padding: 0 4px;
+}
+.ppred-body { padding: 12px 16px 16px; }
+.ppred-section { margin-bottom: 16px; }
+.ppred-label { font-weight: 600; margin-bottom: 6px; }
+.ppred-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ppred-chip {
+  background: #f4f4f5;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  padding: 2px 8px;
+}
+.ppred-id { color: #737373; font-size: 11px; }
+.ppred-muted { color: #737373; font-weight: 400; }
+.ppred-error { color: #cf222e; }
+.ppred-removed { margin-top: 6px; color: #737373; }
+.ppred-removed ul { margin: 4px 0 0 18px; padding: 0; }
+.ppred-table { width: 100%; border-collapse: collapse; }
+.ppred-table th, .ppred-table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+.ppred-table th { font-weight: 600; color: #525252; background: #fafafa; white-space: nowrap; }
+.ppred-num { text-align: right !important; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ppred-gene { font-weight: 600; white-space: nowrap; }
+.ppred-disease-row { cursor: pointer; }
+.ppred-disease-row:hover, .ppred-disease-row.open { background: #f5f3ff; }
+.ppred-explain > td { background: #fafafa; padding: 6px 10px 10px; }
+.ppred-subtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ppred-subtable th, .ppred-subtable td { padding: 3px 6px; border-bottom: 1px solid #ececec; text-align: left; }
+.ppred-subtable th:nth-child(n+4), .ppred-subtable td:nth-child(n+4) { text-align: right; }
+.ppred-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #fef3c7;
+  color: #92400e;
+}
+.ppred-tag-lead { background: #dcfce7; color: #166534; }
+.ppred-note { color: #737373; font-size: 12px; margin: 8px 0 0; }
+@media (max-width: 720px) {
+  .ppred-modal { padding: 12px 8px; }
+  .ppred-table { display: block; overflow-x: auto; }
+}
+#phenotype-predict { margin-left: 8px; }

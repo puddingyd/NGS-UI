@@ -299,3 +299,17 @@ def test_run_for_analysis_writes_prefixed_files(eng, tmp_path, monkeypatch):
     assert sorted(p.name for p in (tmp_path / "default").iterdir()) == sorted(f"S9.{n}" for n in E.FILES)
     run = json.loads((tmp_path / "default" / "S9.pheno_engine_run.json").read_text(encoding="utf-8"))
     assert run["sample_id"] == "S9" and run["analysis_version"] == "default"
+
+
+def test_predict_api(eng):
+    from fastapi import HTTPException
+    from app.routers import pheno_engine as R
+    items = R._items([{"phenotype": "hp:0007359", "weight": 2}, "HP:0001249", "not-an-id", {"name": "panel"}])
+    assert items == [("HP:0007359", 2), ("HP:0001249", 1)]
+    out = R.predict(items, top=3, engine=eng)
+    assert out["genes"][0]["gene"] == "GENEA" and len(out["diseases"]) == 3
+    assert out["diseases"][0]["explain"][0]["relation_zh"] in E.RELATION_ZH.values()
+    assert {t["hpo_id"] for t in out["terms"]} == {"HP:0007359", "HP:0001249"}
+    with pytest.raises(HTTPException) as err:
+        R.post_predict(R.PredictRequest(hpo=["junk"]))
+    assert err.value.status_code == 400

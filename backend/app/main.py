@@ -8,7 +8,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import FRONTEND_DIR, PHENO_DATA_DIR
-from .routers import acmg, analyses, auth, documents, dragen, emr, files, igv, jobs, omim_capture, phenotype, phenotype_tool, prs, references, samples, secondary, somatic
+from .routers import acmg, analyses, auth, documents, dragen, emr, files, igv, jobs, omim_capture, phenotype, phenotype_tool, pheno_engine, prs, references, samples, secondary, somatic
 from .services import (
     clinvar_mito,
     hpo_ontology,
@@ -69,6 +69,13 @@ def _warm_caches() -> None:
         omim_store._ensure_loaded()
     except Exception:
         pass
+    # Phenotype engine (knowledge base + match kernel, a few seconds): load
+    # it here so the first "預測" click does not wait for it.
+    try:
+        from .services.pheno_engine import engine as pheno_engine_service
+        pheno_engine_service.load_engine()
+    except Exception:
+        logger.exception("phenotype engine warm-up failed; it will load on first use")
     # Cache the chrM-only ClinVar VCF (~3 k rows) so the first Mito
     # variant load doesn't pay the ~100 ms parse cost. Silent on
     # failure — variants just get blank ClinVar fields until the
@@ -126,6 +133,7 @@ app.include_router(prs.router)
 app.include_router(prs.documentation_router)
 app.include_router(omim_capture.router)
 app.include_router(references.router)
+app.include_router(pheno_engine.router)
 
 
 # Friendly direct URL for the standalone HPO/panel tool: /phenotype

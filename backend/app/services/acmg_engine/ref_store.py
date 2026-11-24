@@ -392,11 +392,20 @@ def load_ba1_exceptions(path: Path = BA1_EXCEPTIONS_PATH) -> set[str]:
 class SqliteReferences(References):
     """References backed by ``acmg_refs.sqlite`` (+ optional WES recurrence store)."""
 
-    def __init__(self, refs_db: Path | None, recurrence=None, ba1_exceptions: set | None = None):
+    def __init__(self, refs_db: Path | None, recurrence=None, ba1_exceptions: set | None = None,
+                 cases_db: Path | None = None):
         self.refs_db = Path(refs_db) if refs_db else None
         self._conn = None
         if self.refs_db and self.refs_db.is_file():
             self._conn = sqlite3.connect(f"file:{self.refs_db}?mode=ro", uri=True, check_same_thread=False)
+        # PS4 B: ClinVar affected cases (clinvar_cases.sqlite next to the refs DB, optional)
+        if cases_db is None and self.refs_db is not None:
+            from .clinvar_cases import CASES_DB_NAME
+            cases_db = self.refs_db.with_name(CASES_DB_NAME)
+        self.cases_db = Path(cases_db) if cases_db else None
+        self._cases = None
+        if self.cases_db and self.cases_db.is_file():
+            self._cases = sqlite3.connect(f"file:{self.cases_db}?mode=ro", uri=True, check_same_thread=False)
         self.recurrence = recurrence
         self._ba1 = load_ba1_exceptions() if ba1_exceptions is None else set(ba1_exceptions)
         self._vcep = load_vcep_specs()
@@ -414,6 +423,8 @@ class SqliteReferences(References):
                 r[1] for r in self._conn.execute("PRAGMA table_info(missense)")}
         if recurrence is not None:
             self._tables.add("recurrence")
+        if self._cases is not None:
+            self._tables.add("clinvar_cases")
         self.lof_mechanism = lru_cache(maxsize=None)(self._lof_mechanism)
 
     @property
@@ -426,9 +437,23 @@ class SqliteReferences(References):
         if self._conn is not None:
             info.update(dict(self._conn.execute("SELECT key, value FROM meta WHERE key IN "
                                                 "('schema_version','built_at','clinvar_release')")))
+        if self._cases is not None:
+            info["clinvar_cases"] = file_signature(self.cases_db)
+            release = self._cases.execute("SELECT value FROM meta WHERE key='release'").fetchone()
+            if release:
+                info["clinvar_cases_release"] = release[0]
         if self.recurrence is not None:
             info["wes_recurrence"] = self.recurrence.signature()
         return info
+
+    def clinvar_affected(self, variation_id):
+        if self._cases is None:
+            return None
+        if not variation_id:
+            return {}
+        hit = self._cases.execute("SELECT submitters, individuals FROM cases WHERE variation_id=?",
+                                  (str(variation_id),)).fetchone()
+        return {"submitters": int(hit[0]), "individuals": int(hit[1])} if hit else {}
 
     def _lof_mechanism(self, gene):
         if self._conn is None or not gene:

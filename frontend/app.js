@@ -2649,7 +2649,21 @@ function patientPhenotypeCopyText() {
   return lines.join("\n");
 }
 
+function patientPhenotypePredictTerms() {
+  return phenoEdit.hpo.filter(row => row.phenotype).map(row => ({
+    phenotype: row.phenotype,
+    weight: Number(row.weight) > 0 ? Number(row.weight) : 1,
+  }));
+}
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("#phenotype-predict")) return;
+  if (window.PhenoPredict) window.PhenoPredict.open(patientPhenotypePredictTerms());
+});
+
 function updatePhenotypeCopy() {
+  const predict = document.getElementById("phenotype-predict");
+  if (predict) predict.hidden = !patientPhenotypePredictTerms().length;
   const button = document.getElementById("phenotype-copy");
   if (!button) return;
   const text = patientPhenotypeCopyText();

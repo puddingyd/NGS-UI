@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.61：「預測基因／疾病」按鈕（主畫面 Patient phenotype 複製鍵右邊、`/phenotype/` HPO Terms 標題右側）呼叫 `POST /api/pheno-engine/predict`（免登入、不存資料），以表型引擎列出前 10 名基因與疾病及逐項配對；共用 `frontend/pheno_predict.{js,css}`。ACMG 規則 v1.6 新增 PS4（數病人，取代 PP5）：顯性基因且 PM2 成立時，A＝本平台其他無親緣病人判為致病（1／2–3／≥4 位 → Supporting／Moderate／Strong），B＝ClinVar 受影響個案的提交者（最多 Supporting），取較強者；ClinVar 病例表由 `scripts/acmg_engine/build_clinvar_cases.py` 下載 VCV XML 建置。部署後需 `build_engine_results.py --all --force` 重算。
+
 v10.60：新增表型引擎（候選診斷排序計畫階段 2，`backend/app/services/pheno_engine/engine.py`）：病人 HPO 前處理（alt_id／obsolete 換算、只留表型 term、去除冗餘上層並保留較大權重）、逐項配對、基準分校正的疾病排名、基因排名、表型點數 P（暫定校準）與逐項解釋。`scripts/pheno_engine.py --sample 檢體編號` 在分析版本資料夾寫出 `pheno_engine_{diseases,genes,explain}.tsv` 與 `pheno_engine_run.json` 並印出摘要；`scripts/benchmark_pheno.py` 以 phenopacket 病例評估。2023 版知識庫重現計畫第 12.1 節的開發資料結果（疾病 MRR 0.382、基因 0.486，計畫 0.377／0.481）。不改變現行表型分數與排序。
 
 v10.59：首頁「資料庫版本」改為左右兩欄，減少佔用的高度。

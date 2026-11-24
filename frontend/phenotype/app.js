@@ -122,6 +122,16 @@ function renumberRows() {
     row.querySelector(".row-num").textContent = i + 1;
   });
 }
+function openPhenoPredict() {
+  const terms = [];
+  document.querySelectorAll(".phenotype-row:not(.panel-row)").forEach((row) => {
+    const id = (row.dataset.hpId || "").trim();
+    if (!id) return;
+    const weight = Number(row.querySelector(".weight-input")?.value);
+    terms.push({ phenotype: id, weight: Number.isFinite(weight) && weight > 0 ? weight : 1 });
+  });
+  if (window.PhenoPredict) window.PhenoPredict.open(terms);
+}
 function clearAllRows() { document.getElementById("phenotype-rows").innerHTML = ""; rowCount = 0; }
 
 // ============================================================
