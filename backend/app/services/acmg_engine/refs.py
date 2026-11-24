@@ -72,6 +72,11 @@ class References:
         {"submitters": n, "individuals": m}; ``{}`` when ClinVar has none."""
         return None
 
+    def clinvar_biallelic(self, variation_id: str) -> dict | None:
+        """ClinVar submitters describing homozygous / compound-heterozygous patients (PM3):
+        {"submitters", "hom", "comphet", "detail": [{"scv", "snippet"}]}; ``{}`` when none."""
+        return None
+
 
 @dataclass
 class StaticReferences(References):
@@ -90,6 +95,7 @@ class StaticReferences(References):
     collagen: dict = field(default_factory=dict)     # gene -> {"length", "positions"}
     probands: dict | None = None             # variant_key -> other unrelated Causative patients
     clinvar_cases: dict | None = None        # variation_id -> {"submitters", "individuals"}
+    biallelic: dict | None = None            # variation_id -> {"submitters", "hom", "comphet", "detail"}
     version: dict = field(default_factory=dict)
 
     @property
@@ -166,3 +172,10 @@ class StaticReferences(References):
         if not variation_id:
             return {}
         return dict(self.clinvar_cases.get(str(variation_id), {}))
+
+    def clinvar_biallelic(self, variation_id):
+        if self.biallelic is None:
+            return None
+        if not variation_id:
+            return {}
+        return dict(self.biallelic.get(str(variation_id), {}))

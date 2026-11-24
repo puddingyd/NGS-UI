@@ -4672,6 +4672,9 @@ function _clinvarRankScoreLines(v) {
   if (v?.effective_acmg_scope === "in_house" && adopted) {
     return [`排序採用 ClinVar ≥2★ 分級換算的 ${rank} 點；畫面 ACMG 為 In-house 規則自行計算的 ${shown ?? "—"} 點`];
   }
+  if (v?.effective_rank_source !== "genebe") {
+    return [`排序以 P-KNN LLR 實際數值取代 PP3／BP4 點數：排序 ${rank} 點；畫面 ACMG ${shown ?? "—"} 點`];
+  }
   return [];
 }
 

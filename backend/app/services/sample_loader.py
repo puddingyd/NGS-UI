@@ -1297,7 +1297,10 @@ def _promote_engine_to_inhouse(variants: dict) -> None:
         variant["ACMG_criteria"] = engine.get("criteria_text") or ""
         variant["ACMG_notes"] = ""
         variant["inhouse_acmg_source"] = "engine"
-        variant["inhouse_rank_score"] = engine.get("points")
+        # ranking: the ClinVar adopt applied and the P-KNN PP3/BP4 strength replaced
+        # by its LLR (``rank_points``, rule v1.7); older results fall back to points
+        variant["inhouse_rank_score"] = (engine.get("rank_points") if engine.get("rank_points") is not None
+                                         else engine.get("points"))
         variant["inhouse_clinvar_action"] = engine.get("clinvar_action") or "none"
         points = variant.get("ACMG_score")
         if points is None and variant.get("genebe_acmg_class"):

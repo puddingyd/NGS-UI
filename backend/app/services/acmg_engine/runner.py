@@ -238,6 +238,9 @@ class CaseRecurrence(References):
     def clinvar_affected(self, variation_id):
         return self._refs.clinvar_affected(variation_id)
 
+    def clinvar_biallelic(self, variation_id):
+        return self._refs.clinvar_biallelic(variation_id)
+
 
 def omim_moi(gene: str) -> set | None:
     """Gene-level OMIM inheritance codes, or None when unknown."""
@@ -291,6 +294,7 @@ def summary(result: dict) -> dict:
         "clinvar_source": (result.get("clinvar_rule") or {}).get("source") or "",
         "flags": [f.get("code") for f in result.get("flags") or [] if isinstance(f, dict)],
         "ps4_inhouse": result.get("ps4_inhouse"),
+        "rank_points": result.get("rank_points"),
         "version": result.get("version") or "",
     }
 

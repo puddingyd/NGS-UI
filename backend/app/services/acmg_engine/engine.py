@@ -587,9 +587,8 @@ def _ps4(row: dict, key: str, ctx: Context, rb: dict, pm2_met: bool) -> tuple[Ev
     if cfg.get("requires_pm2", True) and not pm2_met:
         return Evidence("PS4", "not_met", reason="PM2 不成立（族群資料庫中不夠罕見）"), None
     inhouse = ctx.refs.inhouse_probands(key)
-    variation = P.text(row.get("CLINVAR_VARIATION_ID")) or P.text(row.get("CLINVAR_LATEST_VARIATION_ID"))
     # without a Variation ID ClinVar has no record: {} when the case table is loaded, else None
-    clinvar = ctx.refs.clinvar_affected(variation.split(",")[0].strip() if variation else "")
+    clinvar = ctx.refs.clinvar_affected(_variation_id(row))
     rank = {"supporting": 1, "moderate": 2, "strong": 3}
     options, parts = [], []
     if inhouse is None:
@@ -616,6 +615,66 @@ def _ps4(row: dict, key: str, ctx: Context, rb: dict, pm2_met: bool) -> tuple[Ev
     if inhouse is None and clinvar is None:
         return Evidence("PS4", "not_evaluated", reason=reason), None
     return Evidence("PS4", "not_met", reason=reason), inhouse
+
+
+def _variation_id(row: dict) -> str:
+    variation = P.text(row.get("CLINVAR_VARIATION_ID")) or P.text(row.get("CLINVAR_LATEST_VARIATION_ID"))
+    return variation.split(",")[0].strip() if variation else ""
+
+
+def _pm3(row: dict, ctx: Context, rb: dict, too_common: bool) -> Evidence | None:
+    """PM3 from ClinVar submissions describing homozygous / compound-heterozygous patients.
+
+    Recessive (AR) genes only.  The partner variant and the phase cannot be
+    verified from ClinVar text, so the strength is capped (rulebook ``pm3``)."""
+    cfg = rb.get("pm3")
+    if not cfg:
+        return None
+    if not ctx.moi:
+        return Evidence("PM3", "not_evaluated", reason="遺傳模式未知")
+    if not P.moi_codes(ctx.moi) & set(cfg["recessive_moi"]):
+        return None                                   # dominant-only genes: PM3 does not apply
+    if too_common:
+        return Evidence("PM3", "not_met", reason="族群頻率過高（BA1／BS1）")
+    found = ctx.refs.clinvar_biallelic(_variation_id(row))
+    if found is None:
+        return Evidence("PM3", "not_evaluated", reason="ClinVar 病例資料未載入（或為舊版，未含同型合子／複合異型合子）")
+    n = int(found.get("submitters") or 0)
+    if not n:
+        return Evidence("PM3", "not_met", reason="ClinVar 沒有提交者描述同型合子或複合異型合子病人")
+    strength = next((st for k, st in cfg["clinvar_strength"] if n >= k), None)
+    kinds = "、".join(x for x, on in (("同型合子", found.get("hom")), ("複合異型合子／in trans", found.get("comphet")))
+                     if on)
+    quotes = "；".join(f"{d.get('scv') or 'SCV'}：「{d.get('snippet')}」" for d in (found.get("detail") or [])[:2])
+    reason = f"ClinVar {n} 個提交者描述{kinds}病人（另一個變異的分類與相位無法確認，請核對）"
+    if quotes:
+        reason += f"；{quotes}"
+    if not strength:
+        return Evidence("PM3", "not_met", reason=reason)
+    return _met("PM3", strength, reason, rb)
+
+
+def _rank_points(evidence: list, row: dict, rb: dict, engine_points: int) -> float:
+    """Ranking points: the P-KNN PP3/BP4 strength is replaced by the P-KNN LLR itself.
+
+    The LLR is calibrated on the same points scale (±1 Supporting, ±2
+    Moderate, ±4 Strong), so 3.442 ranks above 2.1 although both are
+    PP3_Moderate.  An indeterminate P-KNN call (−1 < LLR < 1) adds its LLR
+    when no other PP3/BP4 counted and PVS1 is not met.  Classification is
+    unchanged."""
+    llr = P.first_number(row.get("PKNN_LLR"))
+    if llr is None or not (P.consequences(row.get("CONSEQUENCE")) & P.MISSENSE):
+        return float(engine_points)
+    pknn = [e for e in evidence if e.code in ("PP3", "BP4") and e.reason.startswith("missense：P-KNN")]
+    met = [e for e in pknn if e.status == "met"]
+    if met:
+        return float(engine_points - met[0].points + llr)
+    indeterminate = any(e.code == "PP3" and e.status == "not_met" and e.reason.startswith("P-KNN 不確定")
+                        for e in evidence)
+    others = any(e.status == "met" and e.code in ("PP3", "BP4", "PVS1") for e in evidence)
+    if indeterminate and not others:
+        return float(engine_points + llr)
+    return float(engine_points)
 
 
 def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None = None) -> dict:
@@ -716,6 +775,14 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
     if ps4 is not None:
         _apply_vcep([ps4], spec, rb)
         evidence.append(ps4)
+    pm3 = _pm3(row, ctx, rb, ba1 or bs1)
+    if pm3 is not None:
+        _apply_vcep([pm3], spec, rb)
+        evidence.append(pm3)
+        if ps4 is not None and ps4.status == "met" and pm3.status == "met":
+            weaker = min((ps4, pm3), key=lambda e: (e.points, e.code == "PS4"))
+            weaker.reason += "（PS4 與 PM3 可能描述同一批病人，只計較強者）"
+            weaker.status, weaker.points = "not_met", 0
 
     # double counting
     met = [e for e in evidence if e.status == "met"]
@@ -743,6 +810,7 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
     met = [e for e in evidence if e.status == "met"]
     engine_points = sum(e.points for e in met)
     engine_class = "Benign" if ba1 else _class_for(engine_points)
+    rank = _rank_points(evidence, row, rb, engine_points)
 
     # ClinVar: adopt (3–4★ / VCEP) or floor (2★ P/LP); never additive
     points, classification = engine_points, engine_class
@@ -758,14 +826,17 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         name, low, high = CLASS_RANGES[adopt]
         if low is not None:
             points = max(points, low)
+            rank = max(rank, low)
         if high is not None:
             points = min(points, high)
+            rank = min(rank, high)
         classification = name
         action["action"] = "adopt"
     elif (clinvar.get("category") in ("P", "LP") and not clinvar.get("conflict")
           and int(clinvar.get("stars") or 0) >= rb["clinvar"]["floor_min_stars"]
           and points < rb["clinvar"]["floor_points"]):
         points = rb["clinvar"]["floor_points"]
+        rank = max(rank, float(points))
         classification = _class_for(points)
         action["action"] = "floor"
 
@@ -793,6 +864,7 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         "vcep": ({"svi": spec.get("svi"), "version": spec.get("version"), "vcep": spec.get("vcep"),
                   "url": spec.get("url")} if spec else None),
         "ps4_inhouse": ps4_inhouse,
+        "rank_points": round(rank, 3),
         "frequency": {"max_af": max_af, "gnomad_max": freq["gnomad_max"],
                       "inhouse_af": freq["inhouse_af"], "inhouse_used": freq["inhouse_used"]},
     }

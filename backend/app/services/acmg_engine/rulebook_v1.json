@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.6",
+  "version": "ngsui-acmg-v1.7",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -206,6 +206,25 @@
       "inhouse_strength",
       "clinvar_min_submitters"
     ],
-    "note": "2026-11-24 v1.6: PS4 by proband counting (ClinGen VCEP style) instead of PP5; dominant genes with PM2 met only (recessive cases go to PM3). A: other unrelated patients marked Causative on this platform, 1 Supporting / 2-3 Moderate / >=4 Strong. B: ClinVar submitters reporting the variant in affected individuals (clinical testing, research, provider interpretation, case-control; literature-only and curation excluded; B/LB submissions excluded), capped at Supporting because case details and independence cannot be checked. The stronger of A and B is used (not added: the same patient may be in both)."
+    "note": "2026-11-24 v1.6: PS4 by proband counting (ClinGen VCEP style) instead of PP5; dominant genes with PM2 met only (recessive cases go to PM3). A: other unrelated patients marked Causative on this platform, 1 Supporting / 2-3 Moderate / >=4 Strong. B: ClinVar submitters reporting the variant in affected individuals (clinical testing, research, provider interpretation, case-control; literature-only and curation excluded; B/LB submissions excluded), capped at Supporting because case details and independence cannot be checked. The stronger of A and B is used (not added: the same patient may be in both). v1.7: when PM3 (ClinVar biallelic) is also met, only the stronger of PS4 and PM3 counts."
+  },
+  "pm3": {
+    "recessive_moi": [
+      "AR"
+    ],
+    "clinvar_strength": [
+      [
+        2,
+        "moderate"
+      ],
+      [
+        1,
+        "supporting"
+      ]
+    ],
+    "provisional": [
+      "clinvar_strength"
+    ],
+    "note": "2026-11-24 v1.7: PM3 from ClinVar submissions that describe homozygous or compound-heterozygous / in-trans / biallelic patients (structured ObservedData counts or the submitter's comment text, clinvar_cases.sqlite). Genes with AR inheritance only; not when BA1/BS1 is met. The partner variant's classification and the phase cannot be checked and several submitters may describe the same published patients, so 1 submitter gives Supporting and >=2 give Moderate (ClinGen SVI PM3 would allow up to Very strong with verified cases). In a gene with both AD and AR inheritance PM3 and PS4 can describe the same patients: only the stronger is kept."
   }
 }

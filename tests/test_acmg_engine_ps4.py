@@ -186,3 +186,102 @@ def test_attach_refreshes_ps4_when_inhouse_count_changes(tmp_path, monkeypatch):
     engine = variants[vid]["engine_acmg"]
     assert counts.get("ps4_refreshed") == 1 and engine["ps4_inhouse"] == 2
     assert "PS4_Moderate" in engine["criteria_text"] and engine["status"] == "current"
+
+
+# ── v1.7: PM3 from ClinVar biallelic reports ───────────────────────────────
+def _bi(n, hom=1, comphet=0):
+    return {"123": {"submitters": n, "hom": hom, "comphet": comphet,
+                    "detail": [{"scv": "SCV000389235", "snippet": "including in a homozygous state in one individual"}]}}
+
+
+def test_pm3_from_clinvar_biallelic():
+    variant = missense_row(CLINVAR_VARIATION_ID="123")
+    one = evaluate_variant(variant, Context(moi={"AR"}, refs=refs(biallelic=_bi(1))))
+    pm3 = met(one, "PM3")
+    assert pm3 and pm3[0]["strength"] == "supporting"
+    assert "SCV000389235" in pm3[0]["reason"] and "homozygous state" in pm3[0]["reason"]
+    two = evaluate_variant(variant, Context(moi={"AR"}, refs=refs(biallelic=_bi(3))))
+    assert met(two, "PM3")[0]["strength"] == "moderate" and "PM3" in two["criteria_text"]
+    assert not by_code(evaluate_variant(variant, Context(moi={"AD"}, refs=refs(biallelic=_bi(3)))), "PM3")
+    common = evaluate_variant(missense_row(CLINVAR_VARIATION_ID="123", GNOMAD_E_AF="0.02"),
+                              Context(moi={"AR"}, refs=refs(biallelic=_bi(3))))
+    assert by_code(common, "PM3")[0]["status"] == "not_met"
+    assert by_code(evaluate_variant(variant, Context(moi={"AR"}, refs=refs())), "PM3")[0]["status"] == "not_evaluated"
+    none = evaluate_variant(variant, Context(moi={"AR"}, refs=refs(biallelic={})))
+    assert by_code(none, "PM3")[0]["status"] == "not_met"
+
+
+def test_pm3_and_ps4_keep_only_the_stronger():
+    variant = missense_row(CLINVAR_VARIATION_ID="123")
+    r = evaluate_variant(variant, Context(moi={"AD", "AR"}, refs=refs(biallelic=_bi(2), probands={},
+                                                                         clinvar_cases={"123": {"submitters": 3}})))
+    assert met(r, "PM3") and not met(r, "PS4")                         # Moderate PM3 beats Supporting PS4
+    assert "只計較強者" in by_code(r, "PS4")[0]["reason"]
+    r = evaluate_variant(variant, Context(moi={"AD", "AR"}, refs=refs(biallelic=_bi(1),
+                                                                         probands={"chr1-1000-C-T": 4})))
+    assert met(r, "PS4") and not met(r, "PM3")                         # Strong in-house PS4 wins
+
+
+XML_PM3 = """<ClinVarVariationRelease>
+ <VariationArchive VariationID="225368">
+  <ClassifiedRecord><ClinicalAssertionList>
+   <ClinicalAssertion ID="1">
+    <ClinVarAccession Accession="SCV000389235" OrgID="500031"/>
+    <Classification><GermlineClassification>Pathogenic</GermlineClassification>
+     <Comment>The GALC c.1901T&gt;C (p.Leu634Ser) variant has been identified in 12 individuals affected with Krabbe disease, including in a homozygous state in one individual and in a compound heterozygous state in eight individuals. It is reported in gnomAD with no homozygotes.</Comment>
+    </Classification>
+    <ObservedInList><ObservedIn><Sample><Origin>germline</Origin><AffectedStatus>yes</AffectedStatus></Sample>
+     <Method><MethodType>literature only</MethodType></Method></ObservedIn></ObservedInList>
+   </ClinicalAssertion>
+   <ClinicalAssertion ID="2">
+    <ClinVarAccession Accession="SCV2" OrgID="77"/>
+    <Classification><GermlineClassification>Likely pathogenic</GermlineClassification></Classification>
+    <ObservedInList><ObservedIn><Sample><Origin>germline</Origin><AffectedStatus>yes</AffectedStatus></Sample>
+     <Method><MethodType>clinical testing</MethodType></Method>
+     <ObservedData><Attribute Type="CompoundHeterozygote" integerValue="2"/></ObservedData></ObservedIn></ObservedInList>
+   </ClinicalAssertion>
+   <ClinicalAssertion ID="3">
+    <ClinVarAccession Accession="SCV3" OrgID="88"/>
+    <Classification><GermlineClassification>Uncertain significance</GermlineClassification>
+     <Comment>No homozygous individuals were observed in population databases. Unaffected carrier parents were heterozygous.</Comment></Classification>
+   </ClinicalAssertion>
+  </ClinicalAssertionList></ClassifiedRecord>
+ </VariationArchive>
+</ClinVarVariationRelease>"""
+
+
+def test_parser_collects_biallelic_text_and_counts(tmp_path):
+    records = list(CC.iter_records(io.BytesIO(XML_PM3.encode())))
+    assert len(records) == 1
+    vid, ps4_found, biallelic = records[0]
+    assert vid == "225368" and ps4_found == {"77": 1}                 # literature-only is not a PS4 case
+    assert set(biallelic) == {"500031", "77"}                          # SCV3 only negations / population text
+    assert biallelic["500031"]["hom"] and biallelic["500031"]["comphet"]
+    assert "homozygous state" in biallelic["500031"]["snippet"]
+    assert biallelic["77"]["comphet"] and "compound heterozygote" in biallelic["77"]["snippet"]
+    xml = tmp_path / "v.xml"
+    xml.write_text(XML_PM3, encoding="utf-8")
+    out = tmp_path / CC.CASES_DB_NAME
+    assert CC.build(xml, out, progress=lambda *_: None)["pm3_variants"] == 1
+    r = ref_store.SqliteReferences(tmp_path / ref_store.REFS_DB_NAME, cases_db=out, ba1_exceptions=set())
+    got = r.clinvar_biallelic("225368")
+    assert got["submitters"] == 2 and got["hom"] == 1 and got["comphet"] == 2
+    assert got["detail"][0]["scv"] and r.clinvar_biallelic("1") == {}
+    assert r.clinvar_affected("225368") == {"submitters": 1, "individuals": 1}
+
+
+# ── v1.7: ranking uses the P-KNN LLR ──────────────────────────────────────
+def test_rank_points_use_pknn_llr():
+    pp3 = evaluate_variant(missense_row(PKNN_EVIDENCE="PP3_Moderate", PKNN_LLR="3.442"), Context(refs=refs()))
+    assert met(pp3, "PP3")[0]["points"] == 2
+    assert pp3["rank_points"] == pp3["engine_points"] - 2 + 3.442 and pp3["classification"] == pp3["engine_classification"]
+    weak = evaluate_variant(missense_row(PKNN_EVIDENCE=".", PKNN_LLR="0.6"), Context(refs=refs()))
+    assert weak["rank_points"] == weak["engine_points"] + 0.6
+    bp4 = evaluate_variant(missense_row(PKNN_EVIDENCE="BP4_Supporting", PKNN_LLR="-1.5"), Context(refs=refs()))
+    assert met(bp4, "BP4") and bp4["rank_points"] == bp4["engine_points"] + 1 - 1.5
+    no_llr = evaluate_variant(missense_row(PKNN_EVIDENCE="PP3_Moderate"), Context(refs=refs()))
+    assert no_llr["rank_points"] == no_llr["engine_points"]
+    adopted = evaluate_variant(missense_row(PKNN_EVIDENCE="PP3_Moderate", PKNN_LLR="3.442",
+                                            CLINVAR_SIG="Pathogenic", CLINVAR_STARS="2"), Context(refs=refs()))
+    assert adopted["points"] >= 10 and adopted["rank_points"] >= 10
+    assert runner.summary(pp3)["rank_points"] == pp3["rank_points"]

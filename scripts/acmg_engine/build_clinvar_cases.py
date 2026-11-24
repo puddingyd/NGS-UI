@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Build the ClinVar affected-case table for PS4 (rule engine v1.6, part B).
+"""Build the ClinVar case table for PS4 (affected cases) and PM3 (biallelic patients), rule engine v1.6–1.7.
 
 Downloads the ClinVar VCV XML release (about 5 GB; unchanged files are
 skipped) to ``<NGS_UI_ACMG_REFS_DIR>/raw/`` and writes
 ``<NGS_UI_ACMG_REFS_DIR>/clinvar_cases.sqlite``: per Variation ID, how many
 submitters reported the variant in affected individuals (clinical testing,
 research, provider interpretation, case-control; literature-only, curation,
-benign submissions and somatic samples are left out).  Parsing takes roughly
+benign submissions and somatic samples are left out), and which submissions
+describe homozygous / compound-heterozygous patients (structured counts or
+the comment text, with quoted snippets for PM3).  Parsing takes roughly
 30–60 minutes; the old table stays in use until the new one is complete.
 
     .venv/bin/python scripts/acmg_engine/build_clinvar_cases.py
@@ -63,7 +65,8 @@ def main(argv=None) -> int:
 
     stats = CC.build(args.xml, args.out, release=release, progress=progress)
     print("\n" + "=" * 60)
-    print(f"完成：{stats['variants']:,} 個 ClinVar 變異有受影響個案的提交，耗時 {stats['seconds'] / 60:.0f} 分鐘")
+    print(f"完成：{stats['variants']:,} 個 ClinVar 變異有病例資料（其中 {stats['pm3_variants']:,} 個有同型合子／"
+          f"複合異型合子病人的描述，供 PM3），耗時 {stats['seconds'] / 60:.0f} 分鐘")
     print(f"寫入 {stats['path']}")
     print("接著重算 In-house 結果：.venv/bin/python scripts/acmg_engine/build_engine_results.py --all --force")
     print("=" * 60)
