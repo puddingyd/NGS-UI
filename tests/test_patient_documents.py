@@ -227,4 +227,57 @@ def test_invalid_and_unsupported_uploads_are_rejected(document_store):
     with pytest.raises(store.InvalidDocument, match="病歷號"):
         _upload("scan.png", _image_bytes(), mrn="bad/mrn")
     with pytest.raises(store.InvalidDocument, match="有效"):
-        _upload("notes.txt", b"not an image", mrn="12345678")
+        _upload("notes.bin", b"not an image", mrn="12345678")
+
+
+@pytest.mark.parametrize("bom", [b"", b"\xef\xbb\xbf"])
+def test_utf8_text_round_trip_rename_archive_and_delete(document_store, monkeypatch, bom):
+    documents, _ = document_store
+    # Exercise UTF-8 characters split between chunks, as well as exact whitespace.
+    monkeypatch.setattr(store, "_CHUNK_SIZE", 7)
+    content = bom + "  門診摘要\r\nClinical presentation\n\t發展遲緩 🧬\n".encode("utf-8")
+    saved = _upload("貼上文字.txt", content, display_name="門診摘要")
+    assert saved["file_format"] == "TXT"
+    assert saved["display_name"] == "門診摘要.txt"
+    assert saved["content_type"] == "text/plain; charset=utf-8"
+    assert saved["size_bytes"] == len(content)
+    assert saved["previewable"] is False
+    assert store.list_documents("12345678") == [saved]
+    with pytest.raises(store.PreviewUnavailable):
+        store.render_preview(saved["id"])
+
+    renamed = store.rename_document(saved["id"], "追蹤紀錄.txt")
+    path, info = store.document_file(saved["id"], action="download")
+    assert info["display_name"] == renamed["display_name"] == "追蹤紀錄.txt"
+    assert path.read_bytes() == content
+    chunks, count = store.stream_archive("12345678")
+    with zipfile.ZipFile(io.BytesIO(b"".join(chunks))) as archive:
+        assert count == 1
+        assert archive.read("追蹤紀錄.txt") == content
+    store.delete_document(saved["id"])
+    assert not store.list_documents("12345678")
+    assert (documents / "trash" / path.name).read_bytes() == content
+
+
+@pytest.mark.parametrize("content", [b"", b" \r\n\t", b"\xef\xbb\xbf", b"\xff", b"abc\xe4", b"hello\x00world", b"\x89PNG\r\n\x1a\n"])
+def test_invalid_text_is_rejected_without_leaving_files(document_store, content):
+    documents, _ = document_store
+    with pytest.raises(store.InvalidDocument):
+        _upload("notes.txt", content)
+    assert not store.list_documents("12345678")
+    assert not list((documents / ".incoming").iterdir())
+    assert not list((documents / "files").rglob("*.txt"))
+
+
+def test_text_duplicates_and_name_conflicts_preserve_original(document_store):
+    _upload("notes.txt", "第一份摘要".encode(), display_name="摘要.txt")
+    with pytest.raises(store.DocumentConflict):
+        _upload("another.txt", "第一份摘要".encode(), display_name="另一份.txt")
+    with pytest.raises(store.DocumentConflict):
+        _upload("other.txt", "不同內容".encode(), display_name="摘要.txt")
+    with pytest.raises(store.InvalidDocument, match="副檔名"):
+        _upload("other.txt", b"content", display_name="text.pdf")
+    original = store.list_documents("12345678")
+    assert len(original) == 1
+    path, _ = store.document_file(original[0]["id"])
+    assert path.read_text() == "第一份摘要"
