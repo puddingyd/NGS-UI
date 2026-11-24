@@ -2608,6 +2608,7 @@ function renderHpoChips() {
       <button class="chip-remove" data-idx="${idx}" type="button" title="移除">×</button>`;
     ul.appendChild(li);
   });
+  updatePhenotypeCopy();
 }
 
 function renderPanelChips() {
@@ -2630,6 +2631,35 @@ function renderPanelChips() {
   });
   // Fixed-panel chip-checkbox state mirrors phenoEdit.panels — keep in sync.
   syncFixedPanelChipState();
+  updatePhenotypeCopy();
+}
+
+// Match the standalone phenotype tool's reviewer-facing preview: one
+// name + HP:ID per line, then fixed panel display names and other panels.
+function patientPhenotypeCopyText() {
+  const lines = phenoEdit.hpo.filter(row => row.phenotype).map(row =>
+    row.label && row.label !== row.phenotype ? `${row.label} ${row.phenotype}` : row.phenotype);
+  const panels = phenoEdit.panels.filter(row => row.name);
+  for (const row of panels.filter(row => _fixedPanelMeta.has(row.name))) {
+    lines.push(_fixedPanelDisplayName(row.name));
+  }
+  for (const row of panels.filter(row => !_fixedPanelMeta.has(row.name))) {
+    lines.push(row.name);
+  }
+  return lines.join("\n");
+}
+
+function updatePhenotypeCopy() {
+  const button = document.getElementById("phenotype-copy");
+  if (!button) return;
+  const text = patientPhenotypeCopyText();
+  button.hidden = !text;
+  if (text) {
+    button.dataset.copy = text;
+    button.innerHTML = COPY_ICON_SVG;
+  } else {
+    delete button.dataset.copy;
+  }
 }
 
 // Cached panel list from /api/panels — fetched once per session.

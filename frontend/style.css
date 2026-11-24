@@ -1459,6 +1459,7 @@ body.titan-diagnostic-analysis-hidden #card-roh {
   vertical-align: -3px;
 }
 .btn-copy svg { display: block; }
+#phenotype-copy[hidden] { display: none; }
 .btn-copy:hover { background: #eaeef2; color: var(--fg); }
 
 /* Per-variant 'More' toggle + the extras subgrid it controls. */
