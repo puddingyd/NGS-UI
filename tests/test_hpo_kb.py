@@ -204,8 +204,17 @@ def test_update_job_downloads_builds_activates(src, tmp_path, monkeypatch):
 
 def test_reference_versions_panel_never_fails(monkeypatch, tmp_path):
     from app.services import reference_versions
-    data = reference_versions.collect()
-    names = [i["name"] for i in data["pipeline"]]
-    assert "VEP" in names and "gnomAD" in names
-    assert any(i["key"] == "hpo" for i in data["platform"])
-    assert all(set(i) >= {"name", "version", "note"} for i in data["platform"])
+    items = reference_versions.collect()["items"]
+    names = [i["name"] for i in items]
+    assert "VEP" in names and "gnomAD" in names and "ClinVar" in names
+    for removed in ("ClinVar（每週比對）", "In-house ACMG 規則", "LOFTEE", "Pangolin", "P-KNN", "ClinGen ERepo",
+                    "STRchive"):
+        assert removed not in names
+    assert next(i for i in items if i["key"] == "hpo")["action"] == "hpo_update"
+    assert all(set(i) >= {"name", "version", "update"} for i in items)
+
+
+def test_orphanet_has_github_fallback():
+    from app.services import hpo_update as U
+    assert U.ORPHANET_URLS[0].startswith("https://www.orphadata.com/")
+    assert "raw.githubusercontent.com/Orphanet/" in U.ORPHANET_URLS[1]

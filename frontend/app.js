@@ -9012,31 +9012,38 @@ async function loadReferenceVersions() {
     const resp = await fetch(`${API_BASE}/references`, { cache: "no-store", credentials: "same-origin" });
     if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
     const data = await resp.json();
-    const table = (rows) => `<table class="references-table"><thead><tr><th>資料庫</th><th>版本</th><th>用途</th><th>更新方式</th></tr></thead><tbody>${
-      rows.map((r) => `<tr class="${r.installed ? "" : "references-missing"}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.version)}</td><td>${escapeHtml(r.note || "")}</td><td>${escapeHtml(r.update || "")}</td></tr>`).join("")
+    const updateCell = (r) => r.action === "hpo_update"
+      ? `<button type="button" id="btn-hpo-update" class="btn btn-ghost references-action" title="下載最新 HPO、重建表型查表與知識庫並啟用（需登入）">更新 HPO</button>`
+      : escapeHtml(r.update || "");
+    host.innerHTML = `<table class="references-table"><thead><tr><th>資料庫</th><th>版本</th><th>更新方式</th></tr></thead><tbody>${
+      (data.items || []).map((r) => `<tr class="${r.installed ? "" : "references-missing"}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.version)}</td><td>${updateCell(r)}</td></tr>`).join("")
     }</tbody></table>`;
-    host.innerHTML = `${table(data.platform || [])}
-      <details class="references-pipeline"><summary>三級 pipeline 內建註解（隨 pipeline 版本固定，${(data.pipeline || []).length} 項）</summary>${table(data.pipeline || [])}</details>`;
+    if (_hpoUpdateState) renderHpoUpdateState(_hpoUpdateState);
   } catch (e) {
     host.innerHTML = `<div class="muted">資料庫版本載入失敗：${escapeHtml(e.message || String(e))}</div>`;
   }
 }
 
 let _hpoUpdateTimer = null;
+let _hpoUpdateState = null;
 
 function renderHpoUpdateState(st) {
+  _hpoUpdateState = st;
   const label = document.getElementById("hpo-update-status");
   const out = document.getElementById("hpo-update-result");
   const btn = document.getElementById("btn-hpo-update");
-  if (!label || !out || !btn) return;
-  btn.disabled = !!st.running;
+  if (btn) {
+    btn.disabled = !!st.running;
+    btn.textContent = st.running ? "更新中…" : "更新 HPO";
+  }
+  if (!label || !out) return;
   if (st.running) {
-    label.textContent = `更新中：${st.step || "準備中"}`;
+    label.textContent = `HPO 更新中：${st.step || "準備中"}`;
   } else if (st.state === "done") {
     const when = (st.finished_at || "").replace("T", " ").slice(0, 16);
-    label.textContent = `上次更新完成（${when} UTC）`;
+    label.textContent = `HPO 上次更新完成（${when} UTC）`;
   } else if (st.state === "failed") {
-    label.textContent = `上次更新失敗：${st.error || ""}`;
+    label.textContent = `HPO 上次更新失敗：${st.error || ""}`;
   } else {
     label.textContent = "";
   }
@@ -9051,7 +9058,7 @@ async function pollHpoUpdate() {
     const resp = await fetch(`${API_BASE}/references/hpo/update`, { cache: "no-store", credentials: "same-origin" });
     if (!resp.ok) return;              // not logged in: keep quiet on the home page
     const st = await resp.json();
-    const wasRunning = document.getElementById("btn-hpo-update")?.disabled;
+    const wasRunning = !!(_hpoUpdateState && _hpoUpdateState.running);
     renderHpoUpdateState(st);
     if (st.running) {
       _hpoUpdateTimer = setTimeout(pollHpoUpdate, 3000);
@@ -11242,7 +11249,9 @@ async function bootAfterAuth() {
   loadAnalysisFlow();
   loadReferenceVersions();
   pollHpoUpdate();
-  document.getElementById("btn-hpo-update")?.addEventListener("click", startHpoUpdate);
+  document.getElementById("reference-versions-content")?.addEventListener("click", (ev) => {
+    if (ev.target.closest("#btn-hpo-update")) startHpoUpdate();
+  });
   updateWelcomeVisibility();
   setupSnvDisplayFilters();
   setupOmimFilter();

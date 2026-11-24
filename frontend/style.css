@@ -336,17 +336,18 @@ body.titan-diagnostic-analysis-hidden #card-roh {
 .references-table tr.references-missing td {
   color: #8c959f;
 }
-.references-pipeline {
-  margin-top: 10px;
+.references-table {
+  max-width: 760px;
 }
-.references-pipeline summary {
-  cursor: pointer;
-  color: #57606a;
-  font-size: 13px;
+.references-table td {
+  vertical-align: middle;
+}
+.references-action {
+  padding: 2px 10px;
+  font-size: 12px;
 }
 @media (max-width: 720px) {
   .welcome-references { padding: 14px 16px; }
-  .references-table td:nth-child(3), .references-table th:nth-child(3) { display: none; }
   .references-table td:first-child, .references-table td:nth-child(2) { white-space: normal; }
 }
 .welcome-analysis-flow + .welcome-version-content h2:first-child,

@@ -30,8 +30,10 @@ from . import hpo_gene_table as H
 
 RELEASE_URL = "https://github.com/obophenotype/human-phenotype-ontology/releases/{part}/{name}"
 RELEASE_FILES = ("hp.obo", "phenotype.hpoa", "genes_to_disease.txt")
+# orphadata.com first; Orphanet's own GitHub copy (same product6 file, may lag
+# one release) when the server cannot reach orphadata.com.
 ORPHANET_URLS = ("https://www.orphadata.com/data/xml/en_product6.xml",
-                 "http://www.orphadata.org/data/xml/en_product6.xml")
+                 "https://raw.githubusercontent.com/Orphanet/orphanet_nomenclature_binder/main/xml/en_product6.xml")
 MONDO_URLS = ("https://github.com/monarch-initiative/mondo/releases/latest/download/mondo.obo",
               "https://purl.obolibrary.org/obo/mondo.obo")
 OPTIONAL_MAX_AGE_DAYS = 30
