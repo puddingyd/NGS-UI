@@ -9,15 +9,13 @@ and the same points drive tier 1C (points ≥ 4) and ``total_score``
 rule engine.  This module simulates, for every published case, what would
 change; nothing is written to any case.
 
-Two scenarios are reported:
-
-A. **Cascade replacement** — reviewer → GeneBe → *engine*.  Changes only the
-   variants that today fall through to the pipeline ACMG.  Class, tier and
-   total_score all follow the new effective points.
-B. **Ranking from the engine** (plan §5.2.8, V') — tier and displayed class as
-   in A, but the ranking points are reviewer → *engine* (GeneBe skipped).
-   PP4/BP5/PM3 subtraction is not applied here (the engine never gives them;
-   reviewer snapshots that do are rare).
+Scenario A is what step 7 adopted (2026-11-24): the engine becomes the
+"In-house" ACMG and moves ahead of GeneBe — reviewer → *In-house (engine)* →
+GeneBe.  Class, tier 1C and total_score (the ranking V) all follow these
+points, so every variant with an engine result can change, not only those
+that used to fall through to the pipeline.  Scenario B (ranking from
+reviewer → engine only, GeneBe never used) is kept in ``summary.json`` for
+reference; with engine results present it equals A.
 
 ``report.md`` / ``summary.json`` hold aggregate numbers only.
 ``marked_variants.tsv`` lists the reviewer-marked variants (status 1/2/C) *with
@@ -230,7 +228,7 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
             else:
                 stats["engine_missing"] += 1
             before = effective(manual, genebe, pipeline, "pipeline")
-            after = effective(manual, genebe, engine, "engine")
+            after = effective(manual, dict(engine, source="engine") if engine else None, genebe, "genebe")
             ranking_b = effective(manual, None, engine, "engine")
             base = base_tier(row)
             tier_before, tier_after = tier_with(base, before["points"]), tier_with(base, after["points"])
@@ -238,7 +236,7 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
             stats["occurrences"] += 1
             stats["source_before"][before["source"]] += 1
             stats["source_after"][after["source"]] += 1
-            if before["source"] == "pipeline" or after["source"] == "engine":
+            if True:  # every occurrence can change under the adopted cascade
                 stats["class_transition"][f"{before['class'] or '—'}→{after['class'] or '—'}"] += 1
                 stats["direction"][_direction(before["class"], after["class"])] += 1
             stats["tier_transition"][f"{tier_before}→{tier_after}"] += 1
@@ -336,8 +334,8 @@ def _write_tsv(path: Path, rows: list[dict]) -> None:
 
 # ── markdown ───────────────────────────────────────────────────────────────
 _SOURCE_NAMES = {"manual_sample": "判讀者（本個案）", "manual_global": "判讀者（跨個案共用）", "genebe": "GeneBe",
-                 "pipeline": "pipeline ACMG", "engine": "規則引擎", "none": "沒有分類"}
-_SCENARIOS = {"before": "取代前（平台現行）", "A": "A：規則引擎取代 pipeline", "B": "B：排序改用規則引擎（略過 GeneBe）"}
+                 "pipeline": "pipeline ACMG", "engine": "新 In-house", "none": "沒有分類"}
+_SCENARIOS = {"before": "取代前（GeneBe → pipeline）", "A": "取代後（新 In-house → GeneBe）", "B": "B（只用新 In-house）"}
 _STATUS = {"1": "Causative（1）", "2": "Other（2）", "C": "Candidate（C）"}
 _DIRECTION = {"same": "不變", "up": "往致病方向", "down": "往良性方向", "gained": "原本沒有分類",
               "lost": "變成沒有分類", "other": "其他"}
@@ -360,13 +358,13 @@ def render_markdown(report: dict) -> str:
     out = ["# ACMG 規則引擎取代 pipeline ACMG：前後差異（模擬）", ""]
     out.append(f"- 產生時間：{report['generated_at']}；耗時 {report['seconds']} 秒")
     out.append(f"- 個案：{report['cases']}；規則版本：{report['engine_versions']}")
-    out.append("- 取代前：判讀者 → GeneBe → pipeline ACMG。A：判讀者 → GeneBe → 規則引擎（分類、tier、排序都跟著變）。"
-               "B：分類與 tier 同 A，但排序點數用判讀者 → 規則引擎（計畫 §5.2.8 的 V'）。")
+    out.append("- 取代前：判讀者 → GeneBe → pipeline ACMG。取代後（步驟 7 採用）：判讀者 → 新 In-house（平台規則） → GeneBe，"
+               "分類、tier 1C 與排序分數都用這個點數。")
     out.append("")
 
     out.append("## 1. 有效分類的來源（變異次）")
     out.append("")
-    out.append("| 檢測 | 變異次 | 取代前來源 | A 的來源 | 沒有引擎結果 |")
+    out.append("| 檢測 | 變異次 | 取代前來源 | 取代後來源 | 沒有新 In-house 結果 |")
     out.append("|---|---|---|---|---|")
     for tt, s in sorted(report["by_test_type"].items()):
         total = s["occurrences"]
@@ -374,10 +372,10 @@ def render_markdown(report: dict) -> str:
         out.append(f"| {tt} | {total} | {_counter_line(names(s['source_before']), total)} | "
                    f"{_counter_line(names(s['source_after']), total)} | {s['engine_missing']} |")
     out.append("")
-    out.append("只有取代前落到 pipeline ACMG 的變異（沒有判讀者、沒有 GeneBe）會在 A 改變分類。")
+    out.append("取代後新 In-house 排在 GeneBe 前面，所以有結果的變異都改用新 In-house；判讀者手動判讀仍優先。")
     out.append("")
 
-    out.append("## 2. 分類改變（A，只看取代前用 pipeline 的變異次）")
+    out.append("## 2. 分類改變（全部變異次）")
     out.append("")
     for tt, s in sorted(report["by_test_type"].items()):
         total = sum(s["direction"].values())
@@ -388,7 +386,7 @@ def render_markdown(report: dict) -> str:
         out.append(f"- 分類轉換（取代前→A，前 15）：{_counter_line(s['class_transition'], None, 15)}")
         out.append("")
 
-    out.append("## 3. Tier 改變（A；1A／1B 不受影響）")
+    out.append("## 3. Tier 改變（1A／1B 不受影響）")
     out.append("")
     for tt, s in sorted(report["by_test_type"].items()):
         changed = {k: v for k, v in s["tier_transition"].items() if k.split("→")[0] != k.split("→")[1]}
@@ -414,7 +412,7 @@ def render_markdown(report: dict) -> str:
         out.append("")
         out.append("| 情境 | n | 中位名次 | 第 1 名 | 前 5 | 前 10 | 前 20 | MRR | 名次較好／相同／較差 |")
         out.append("|---|---|---|---|---|---|---|---|---|")
-        for s in ("before", "A", "B"):
+        for s in ("before", "A"):
             r = m["ranks"][s]
             if not r.get("n"):
                 continue
@@ -431,14 +429,14 @@ def render_markdown(report: dict) -> str:
     out.append("## 5. 每個個案前 20 名和取代前相同的比例（有標記變異的個案）")
     out.append("")
     for tt, d in sorted(report["top20_overlap"].items()):
-        out.append(f"- {tt}（{d['cases']} 例）：A {_pct(d['A'] or 0, 1)}、B {_pct(d['B'] or 0, 1)}")
+        out.append(f"- {tt}（{d['cases']} 例）：{_pct(d['A'] or 0, 1)}")
     out.append("")
 
     out.append("## 限制")
     out.append("")
     out.append("- 用三級後處理存好的規則引擎結果；規則或參考表版本已變更（過期）的個案略過，見個案統計的 skipped_stale。")
     out.append("- tier 依平台規則模擬（1A ClinVar、1B LOFTEE HC、1C 點數 ≥4 或預測工具），未含 Somatic 與 specialized caller 點位。")
-    out.append("- B 的 V' 未扣除 PP4／BP5／隱性成對的 PM3；規則引擎本身不給這些條目，只有判讀者手動判讀可能含有。")
+    out.append("- 排序點數未扣除 PP4／BP5／隱性成對的 PM3；新 In-house 不給這些條目，只有判讀者手動判讀可能含有。")
     out.append("- 只涵蓋 review TSV 內的變異。")
     if report.get("pheno_unavailable_cases"):
         out.append(f"- {report['pheno_unavailable_cases']} 個個案讀不到表型分數，名次只依 ACMG 分數。")

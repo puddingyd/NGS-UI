@@ -3195,6 +3195,13 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
   line-height: inherit;
   white-space: nowrap;
 }
+.acmg-genebe-alt {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: normal;
+  white-space: nowrap;
+}
 
 .acmg-modal-card { max-width: 1040px; width: min(96vw, 1040px); }
 .observed-modal-card { max-width: 720px; }

@@ -46,8 +46,9 @@ def test_run(tmp_path, monkeypatch):
     assert wes["occurrences"] == 4
     # OTHER has a GeneBe score but no GeneBe class: like the platform, it falls through to the pipeline
     assert wes["source_before"]["genebe"] == 2 and wes["source_before"]["pipeline"] == 2
-    assert wes["source_after"]["engine"] == 2 and wes["source_after"].get("pipeline", 0) == 0
-    assert sum(wes["direction"].values()) == 2
+    # adopted cascade: In-house (engine) ahead of GeneBe → every variant with a result uses it
+    assert wes["source_after"]["engine"] == 4 and wes["source_after"].get("pipeline", 0) == 0
+    assert sum(wes["direction"].values()) == 4
     assert wes["tier_transition"].get("1C→2") == 1           # pipeline 5 points → engine below 4
 
     marked = report["marked"]["WES"]
@@ -64,12 +65,12 @@ def test_run(tmp_path, monkeypatch):
     assert pipe["source_before"] == "pipeline" and pipe["source_after"] == "engine"
     assert pipe["tier_before"] == "1C" and pipe["tier_after"] == "2"
     lof = next(r for r in rows if r["variant"] == "chr1-1000-C-T")
-    assert lof["source_after"] == "genebe"                    # A keeps GeneBe; B ranks by the engine
+    assert lof["source_after"] == "engine"
     with open(out / "tier_changes.tsv", encoding="utf-8") as handle:
         tiers = list(csv.DictReader(handle, delimiter="\t"))
     assert len(tiers) == 1 and "sample" not in tiers[0]
     text = (out / "report.md").read_text(encoding="utf-8")
-    assert "24WE0001" not in text and "會出現在診斷報告" in text
+    assert "24WE0001" not in text and "會出現在診斷報告" in text and "新 In-house" in text
 
 
 def test_stale_results_are_skipped(tmp_path, monkeypatch):

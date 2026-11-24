@@ -210,6 +210,13 @@ def test_sample_loader_attaches_published_results(tmp_path, monkeypatch):
     sample_loader._attach_engine_acmg(variants, "24WE0001-nckuh", rows=[MISSENSE], test_type="WES")
     assert variants["chr1-1000-C-T"]["engine_acmg"]["status"] == "current"
     assert variants["chr1-2000-G-A"]["engine_acmg"]["status"] == "on_demand"
+    # step 7: the engine is the "In-house" ACMG slot
+    lof = variants["chr1-1000-C-T"]
+    assert lof["inhouse_acmg_source"] == "engine"
+    assert lof["ACMG_score"] == lof["engine_acmg"]["points"]
+    assert lof["ACMG_classification"] in ("Pathogenic", "Likely pathogenic", "Uncertain significance",
+                                          "Likely benign", "Benign")
+    assert lof["geno_score"] is not None
     broken = {"chr1-1000-C-T": {}}
     monkeypatch.setattr(runner, "shared_references", lambda: (_ for _ in ()).throw(OSError("boom")))
     sample_loader._attach_engine_acmg(broken, "24WE0001-nckuh")      # never raises into loading
@@ -221,3 +228,31 @@ def test_code_signature_ignores_tooling_files():
     assert {"engine.py", "rulebook_v1.json"} <= names
     hashed = {n for n in names if n in runner._RESULT_CODE_FILES or n.endswith((".json", ".tsv"))}
     assert "validation.py" not in hashed and "runner.py" not in hashed and "recurrence.py" not in hashed
+
+
+def test_effective_acmg_prefers_inhouse_engine_over_genebe(monkeypatch):
+    """Step 7: reviewer → In-house (rule engine) → GeneBe; ranking uses the same points."""
+    from app.services import manual_acmg, sample_loader
+
+    monkeypatch.setattr(manual_acmg, "bulk_current", lambda *a, **k: {})
+    monkeypatch.setattr(manual_acmg, "bulk_observed_counts", lambda *a, **k: {})
+    variants = {
+        "chr1-1-A-G": {"ACMG_classification": "Uncertain significance", "ACMG_score": 2, "tier": "2",
+                       "genebe_acmg_class": "Likely pathogenic", "genebe_acmg_score": 7, "pheno_score": 10,
+                       "engine_acmg": {"classification": "Likely pathogenic", "points": 8,
+                                       "criteria_text": "PVS1_Strong,PM2_Supporting,PP3_Supporting"}},
+        "chr1-2-A-G": {"ACMG_classification": "", "ACMG_score": None, "tier": "2",
+                       "genebe_acmg_class": "Likely benign", "genebe_acmg_score": -2},
+    }
+    sample_loader._promote_engine_to_inhouse(variants)
+    first = variants["chr1-1-A-G"]
+    assert first["pipeline_acmg_class"] == "Uncertain significance" and first["ACMG_score"] == 8
+    assert first["tier"] == "1C"
+    categories = {"1A": [], "1B": [], "1C": [], "2": list(variants)}
+    sample_loader._apply_effective_acmg(variants, categories, sample_id="S", genome_build="hg38", meta={})
+    assert variants["chr1-1-A-G"]["effective_acmg_source"] == "in-house"
+    assert variants["chr1-1-A-G"]["effective_acmg_score"] == 8
+    assert variants["chr1-1-A-G"]["total_score"] == manual_acmg.acmg_to_variant_score(8) + 10
+    assert variants["chr1-2-A-G"]["effective_acmg_source"] == "GeneBe"     # no in-house value → GeneBe
+    sample_loader._promote_engine_to_inhouse(variants)                      # idempotent
+    assert variants["chr1-1-A-G"]["pipeline_acmg_class"] == "Uncertain significance"

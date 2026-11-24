@@ -244,11 +244,15 @@ def _loftee_hc_call(row: dict) -> bool:
 
 
 def _effective_acmg_points(row: dict) -> float | int | None:
-    """ACMG score shown by the UI: GeneBe first, then pipeline/legacy."""
+    """Provisional ACMG score from the TSV row (pipeline first, then GeneBe).
+
+    The rule engine ("In-house") replaces the pipeline value after loading
+    (``sample_loader._promote_engine_to_inhouse``), which recomputes tier/score.
+    """
     points = _to_num(_coalesce(
-        row.get("GENEBE_ACMG_SCORE"),
         row.get("ACMG_SCORE"),
         row.get("ACMG_POINTS"),
+        row.get("GENEBE_ACMG_SCORE"),
     ))
     return points if isinstance(points, (int, float)) else None
 
@@ -1013,9 +1017,9 @@ def _row_to_variant(row: dict) -> dict:
         # Same GeneBe-first cascade as classify_tier above so the Score
         # pill on the card matches the tier the variant lands in.
         "geno_score":          _acmg_to_geno_score(_to_num(_coalesce(
-                                   row.get("GENEBE_ACMG_SCORE"),
                                    row.get("ACMG_SCORE"),
-                                   row.get("ACMG_POINTS")))),
+                                   row.get("ACMG_POINTS"),
+                                   row.get("GENEBE_ACMG_SCORE")))),
         # New display fields from the 65-col pipeline output.
         "rs_id":               (row.get("RS_ID") or "").strip(),
         "hgnc_id":             hgnc_id,

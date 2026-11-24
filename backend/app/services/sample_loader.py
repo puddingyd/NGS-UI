@@ -37,6 +37,7 @@ from ..adapters.snv_tsv import (
     _DP_LOW_FLAG_WES,
     _DP_LOW_FLAG_WGS,
     _is_mito_chrom,
+    _normalize_acmg_class,
     _row_to_variant,
     load_snv_tsv,
     merge_snv_variant_row,
@@ -465,8 +466,8 @@ def _case_variant_label(variant: dict, edits: dict) -> str:
         )
         or edits.get("ACMG_classification")
         or variant.get("effective_acmg_class")
-        or variant.get("genebe_acmg_class")
         or variant.get("ACMG_classification")
+        or variant.get("genebe_acmg_class")
         or ""
     ).strip()
     acmg_short = _ACMG_SHORT.get(acmg.lower().replace("_", " "), acmg)
@@ -1252,6 +1253,54 @@ def _attach_engine_acmg(variants: dict, sample_id: str, *, rows=None, test_type:
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[acmg-engine] attach failed sample={sample_id}: {type(exc).__name__}: {exc}", flush=True)
+    _promote_engine_to_inhouse(variants)
+
+
+def _promote_engine_to_inhouse(variants: dict) -> None:
+    """The rule engine is the platform's "In-house" ACMG (plan §5.2.2, step 7).
+
+    Where an engine result exists it replaces the pipeline ``ACMG_*`` slot
+    (the pipeline values are kept as ``pipeline_acmg_*`` for offline
+    comparison only) and score/tier are recomputed with the precedence
+    in-house → GeneBe; reviewer ACMG is layered on later by
+    ``_apply_effective_acmg``.  Variants without an engine result (Somatic,
+    GBA1 allele curation, specialized loci, cases not yet recomputed) keep
+    their existing values, which the adapter already ranked in-house first.
+    Idempotent (gene search attaches twice).
+    """
+    for variant in variants.values():
+        if not isinstance(variant, dict):
+            continue
+        engine = variant.get("engine_acmg")
+        if not (isinstance(engine, dict) and (engine.get("classification") or engine.get("points") is not None)):
+            if variant.get("ACMG_classification") and not variant.get("inhouse_acmg_source"):
+                variant["inhouse_acmg_source"] = (
+                    "curation" if (variant.get("gba") or variant.get("specialized")) else "pipeline")
+            continue
+        if variant.get("inhouse_acmg_source") != "engine":
+            variant["pipeline_acmg_class"] = variant.get("ACMG_classification") or ""
+            variant["pipeline_acmg_score"] = variant.get("ACMG_score")
+            variant["pipeline_acmg_criteria"] = variant.get("ACMG_criteria") or ""
+        variant["ACMG_classification"] = _normalize_acmg_class(engine.get("classification") or "")
+        variant["ACMG_score"] = engine.get("points")
+        variant["ACMG_criteria"] = engine.get("criteria_text") or ""
+        variant["ACMG_notes"] = ""
+        variant["inhouse_acmg_source"] = "engine"
+        points = variant.get("ACMG_score")
+        if points is None and variant.get("genebe_acmg_class"):
+            points = variant.get("genebe_acmg_score")
+        geno = manual_acmg.acmg_to_variant_score(points)
+        variant["geno_score"] = geno
+        pheno = variant.get("pheno_score")
+        if geno is not None or pheno is not None:
+            variant["total_score"] = (geno or 0) + (pheno or 0)
+        tier = str(variant.get("tier") or "2").upper()
+        if tier not in {"1A", "1B"}:
+            try:
+                points_trigger = float(points) >= 4
+            except (TypeError, ValueError):
+                points_trigger = False
+            variant["tier"] = "1C" if points_trigger or variant.get("predicted_suspect_non_acmg") else "2"
 
 
 def load_sample_roh(sample_id: str, version: str | None = None) -> dict | None:
@@ -1334,15 +1383,8 @@ def _apply_effective_acmg(
                 ),
             }
             source_scope = "global"
-        elif variant.get("genebe_acmg_class") not in (None, ""):
-            source = "GeneBe"
-            selected = {
-                "classification": variant.get("genebe_acmg_class") or "",
-                "score": variant.get("genebe_acmg_score"),
-                "criteria_text": variant.get("genebe_acmg_criteria") or "",
-            }
-            source_scope = "genebe"
-        else:
+        elif variant.get("ACMG_classification") not in (None, "") or variant.get("genebe_acmg_class") in (None, ""):
+            # In-house (the rule engine where it has a result) first, then GeneBe.
             source = "GBA1 allele curation" if (variant.get("gba") or {}).get("clinical_assertion") else "in-house"
             selected = {
                 "classification": variant.get("ACMG_classification") or "",
@@ -1350,6 +1392,14 @@ def _apply_effective_acmg(
                 "criteria_text": variant.get("ACMG_criteria") or "",
             }
             source_scope = "in_house"
+        else:
+            source = "GeneBe"
+            selected = {
+                "classification": variant.get("genebe_acmg_class") or "",
+                "score": variant.get("genebe_acmg_score"),
+                "criteria_text": variant.get("genebe_acmg_criteria") or "",
+            }
+            source_scope = "genebe"
 
         variant["sample_acmg_snapshot"] = sample_snapshot
         variant["manual_acmg_current"] = global_assertion

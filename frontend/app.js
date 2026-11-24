@@ -4601,8 +4601,8 @@ function _isNckuhCommonRescued(v, id, kind) {
   return _isPlpClass(
     getEdit(id, "ACMG_classification")
       || v?.effective_acmg_class
-      || v?.genebe_acmg_class
       || v?.ACMG_classification
+      || v?.genebe_acmg_class
   );
 }
 
@@ -4798,22 +4798,26 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
     urls.omim ? `<a href="${urls.omim}"     target="_blank" rel="noopener">OMIM</a>` : "",
   ].join("");
 
-  // Backend resolves per-sample manual > global manual > GeneBe > in-house,
-  // then recalculates score/tier/order. Keep a compatibility fallback for
-  // payloads loaded from an older backend during a rolling deployment.
+  // Backend resolves per-sample manual > global manual > In-house (rule
+  // engine) > GeneBe, then recalculates score/tier/order. Keep a compatibility
+  // fallback for payloads loaded from an older backend during a rolling deployment.
   const firstNonBlank = (...values) => values.find(x => x !== null && x !== undefined && x !== "") ?? "";
   const editAcmgClass = firstNonBlank(v.effective_acmg_class,
                                       getEdit(id, "ACMG_classification"),
-                                      v.genebe_acmg_class, v.ACMG_classification);
+                                      v.ACMG_classification, v.genebe_acmg_class);
   const editAcmgScore = firstNonBlank(v.effective_acmg_score,
                                       getEdit(id, "ACMG_score"),
-                                      v.genebe_acmg_score, v.ACMG_score);
+                                      v.ACMG_score, v.genebe_acmg_score);
   const editAcmgDisplayClass = acmgDisplayClassification(
     editAcmgClass, editAcmgScore, v.effective_acmg_vus_subclass,
   );
   const acmgSource = v.effective_acmg_source
     || (getEdit(id, "ACMG_classification") ? "manual"
-      : (v.genebe_acmg_class ? "GeneBe" : "in-house"));
+      : (v.ACMG_classification ? "in-house" : (v.genebe_acmg_class ? "GeneBe" : "in-house")));
+  // When the shown class is not GeneBe's, keep GeneBe visible beside the label.
+  const genebeAlt = acmgSource !== "GeneBe" && v.genebe_acmg_class
+    ? `<span class="acmg-genebe-alt" title="GeneBe：${escapeAttr(v.genebe_acmg_class)}${v.genebe_acmg_score == null || v.genebe_acmg_score === "" ? "" : ` (${escapeAttr(v.genebe_acmg_score)})`}">GeneBe: ${escapeHtml(acmgShortClass(v.genebe_acmg_class))}</span>`
+    : "";
   const hasErepo = !!(
     v.clingen_vcep_class || v.clingen_vcep_criteria || v.clingen_vcep_panel
   );
@@ -4973,7 +4977,7 @@ function renderVariantCard(v, id, dropdownKind, opts = {}) {
         <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 ACMG/AMP criteria；ERepo 為 ClinGen VCEP experts 評估">
           <span class="acmg-summary-value ${classifySignificance(erepoDisplayClass) || ""}">${escapeHtml(erepoDisplayClass || "—")} (${escapeHtml(v.clingen_vcep_score == null ? "—" : v.clingen_vcep_score)})</span>
         </button>` : ""}
-        <span class="k">ACMG</span>
+        <span class="k">ACMG${genebeAlt}</span>
         <button type="button" class="v acmg-summary-btn js-acmg-open" data-id="${escapeAttr(id)}" title="開啟 manual ACMG/AMP criteria">
           <span class="acmg-summary-value ${classifySignificance(editAcmgDisplayClass) || ""}">${escapeHtml(editAcmgDisplayClass || "—")} (${escapeHtml(editAcmgScore === "" ? "—" : editAcmgScore)})</span>
           <span class="acmg-summary-source">${escapeHtml(acmgSource)}</span>
@@ -5274,8 +5278,8 @@ function renderAcmgSourceSummaries() {
   const items = [
     ["manual", "Manual"],
     ...(_acmgEditor.sources.erepo ? [["erepo", "ERepo"]] : []),
-    ["genebe", "GeneBe"],
     ["inhouse", "In-house"],
+    ["genebe", "GeneBe"],
   ];
   host.classList.toggle("has-erepo", !!_acmgEditor.sources.erepo);
   host.innerHTML = items.map(([key, label]) => {
@@ -5292,6 +5296,8 @@ function renderAcmgSourceSummaries() {
       : "";
     const applyNote = key === "manual" && source.classification
       ? "Apply 不會帶入 case/family-specific criteria"
+      : key === "inhouse" && source.origin === "pipeline"
+        ? "本個案尚未以平台規則重新計算，暫時顯示 pipeline 分類"
       : key === "erepo"
         ? "ClinGen VCEP experts 評估；括號分數由 criteria 推導。僅供對照，Apply 後仍須儲存才成為 manual 判讀"
         : "";
@@ -5492,15 +5498,16 @@ async function openAcmgModal(id, trigger = null) {
             agreement: variant.clingen_vcep_agreement || "",
           } }
         : {}),
-      genebe: {
-        classification: variant.genebe_acmg_class || "",
-        score: variant.genebe_acmg_score,
-        criteria_text: variant.genebe_acmg_criteria || "",
-      },
       inhouse: {
         classification: variant.ACMG_classification || "",
         score: variant.ACMG_score,
         criteria_text: variant.ACMG_criteria || "",
+        origin: variant.inhouse_acmg_source || "",
+      },
+      genebe: {
+        classification: variant.genebe_acmg_class || "",
+        score: variant.genebe_acmg_score,
+        criteria_text: variant.genebe_acmg_criteria || "",
       },
     };
     const initial = detail.sample_snapshot
@@ -10260,8 +10267,18 @@ function clinvarText(v) {
   if (!sig) return "在疾病資料庫 (ClinVar) 中未被報導過。";
   return `在疾病資料庫 (ClinVar) 中此變異位點被報導為「${sig}」。`;
 }
+function effectiveAcmgClass(v) {
+  return (v?.effective_acmg_class || v?.ACMG_classification || v?.genebe_acmg_class || "");
+}
+
+function acmgShortClass(cls) {
+  const key = String(cls || "").trim().toLowerCase().replace(/_/g, " ");
+  return ({ "pathogenic": "P", "likely pathogenic": "LP", "uncertain significance": "VUS",
+            "vus": "VUS", "likely benign": "LB", "benign": "B" })[key] || String(cls || "");
+}
+
 function acmgGuidelineText(v) {
-  const cls = v.ACMG_classification;
+  const cls = effectiveAcmgClass(v);
   if (!cls) return "目前無 ACMG 評測。";
   return `根據美國醫學遺傳學暨基因體學學會 (American College of Medical Genetics and Genomics) 與分子病理學學會 (Association for Molecular Pathology) 於 2015 年發表之準則，評測此變異位點為「${cls}」。`;
 }
@@ -10333,13 +10350,13 @@ function renderVariantBlock(vid, v, kind) {
     hgvsCellText(v),
     ZYG_CH[v.zygosity] || v.zygosity || "—",
     variantClinSig(v) || "—",
-    v.ACMG_classification || "—",
+    effectiveAcmgClass(v) || "—",
   ]]);
   for (const ln of tableText.split("\n")) out.push("    " + ln);
 
   // Numbered remarks (use every user-picked Disease and phenotype MIM)
   const diseaseSummary = pickedDiseaseSummary(vid, v);
-  const acmgTxt = acmgClassCH(v.ACMG_classification) || "—";
+  const acmgTxt = acmgClassCH(effectiveAcmgClass(v)) || "—";
   const tail = kind === "causative"
     ? "與臨床症狀相關"
     : "建議比對臨床表徵";
@@ -10676,7 +10693,7 @@ function pdfWriteVariant(w, vid, v, kind) {
   const gene = v.gene_symbol || h.gene || "";
   const transcript = h.transcript || "";
   const diseaseSummary = pickedDiseaseSummary(vid, v);
-  const acmgTxt = acmgClassCH(v.ACMG_classification) || "—";
+  const acmgTxt = acmgClassCH(effectiveAcmgClass(v)) || "—";
 
   // Variant title — gene + transcript + HGVS (cdna+protein) all on the
   // subheading row, so the table doesn't need a separate "HGVS" line.
@@ -10692,7 +10709,7 @@ function pdfWriteVariant(w, vid, v, kind) {
   w.kv("結構",   v.exon_or_intron || "—");
   w.kv("基因型", ZYG_CH[v.zygosity] || v.zygosity || "—");
   w.kv("ClinVar", variantClinSig(v) || "—");
-  w.kv("ACMG",   v.ACMG_classification || "—");
+  w.kv("ACMG",   effectiveAcmgClass(v) || "—");
   w.gap(2);
 
   // The two clinical-style remarks. Second sentence mirrors the

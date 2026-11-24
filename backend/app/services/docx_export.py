@@ -901,10 +901,10 @@ def _acmg_label(variant: dict, edits_for_v: dict) -> str:
     cls = (variant.get("effective_acmg_class") or "").strip()
     if cls:
         return cls
-    cls = (variant.get("genebe_acmg_class") or "").strip()
+    cls = (variant.get("ACMG_classification") or "").strip()
     if cls:
         return cls
-    cls = (variant.get("ACMG_classification") or "").strip()
+    cls = (variant.get("genebe_acmg_class") or "").strip()
     if cls:
         return cls
     n = variant.get("acmg_class")
