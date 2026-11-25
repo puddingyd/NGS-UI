@@ -246,7 +246,7 @@ def test_diagnosis_recncii_uses_existing_table_bullets_and_reference():
     text = "\n".join(p.text for p in doc.paragraphs)
     table = next(p.text for p in doc.paragraphs if "RS ID" in p.text)
     row = next(line for p in doc.paragraphs for line in p.text.splitlines()
-               if line.startswith("     1    GBA1"))
+               if line.startswith("1    GBA1"))
     assert "－" in row and row.count("－") == 2
     assert docx_export._str_width(row) == docx_export._str_width(table.splitlines()[0])
     assert "RecNciI" in row

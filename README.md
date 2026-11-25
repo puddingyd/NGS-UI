@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.72：診斷 Word 報告「三、檢測結果」各列靠左，僅「檢體類別：血液」保留兩格縮排；綜合說明前空一行，檢體說明、綜合說明與參考資料標籤改為粗體。變異表格保留欄位對齊，健檢報告與其他章節沿用原格式。更新服務後重新匯出即可，不需重跑分析。
+
 v10.71：候選診斷樹狀圖：器官系統只顯示器官名、標籤最多兩行不再截斷關鍵字；★ 只標在旁系配對的交會處。
 
 v10.70：ACMG 規則 v1.9：修正 CSpec PM1 解析（Cys 編號、雙硫鍵配對、基因體座標）並以 `cspec.PM1_OVERRIDES` 人工修正 FBN1（失去／產生 Cys）、PAH、HNF4A、TNNT2、GP1BA、GP1BB、PAX6、MYO15A、OTOF；Manual ACMG modal 每個 criterion 下顯示 In-house 規則的判斷與理由（`/variants/{vid}/acmg` 的 `inhouse_evidence`）。部署後需 `build_engine_results.py --all` 重算。

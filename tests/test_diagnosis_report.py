@@ -60,16 +60,27 @@ def test_diagnosis_groups_same_gene_snvs_and_combines_acmg_wording():
     assert "此為致病性及疑似致病性之變異位點，與臨床症狀相關。" in text
 
     paragraphs = [paragraph.text for paragraph in doc.paragraphs]
+    assert paragraphs[:5] == [
+        "三、檢測結果", "檢體說明:", "  檢體類別：血液", "", "綜合說明:",
+    ]
+    for paragraph in doc.paragraphs:
+        if paragraph.text in {"檢體說明:", "綜合說明:", "參考資料:"}:
+            assert all(run.bold for run in paragraph.runs)
+        elif paragraph.text != "  檢體類別：血液":
+            # Table continuation rows retain empty cells for column alignment.
+            assert not paragraph.text.startswith(" ")
+    table = next(p.text for p in doc.paragraphs if p.text.startswith("=="))
+    assert len({docx_export._str_width(line) for line in table.splitlines()}) == 1
     patho_index = paragraphs.index(
-        "    2. 此為致病性及疑似致病性之變異位點，與臨床症狀相關。"
+        "2. 此為致病性及疑似致病性之變異位點，與臨床症狀相關。"
     )
     assert paragraphs[patho_index + 1:patho_index + 5] == [
         "",
-        "    第二類：其他變異位點",
-        "    未找到其他變異位點。",
+        "第二類：其他變異位點",
+        "未找到其他變異位點。",
         "",
     ]
-    assert paragraphs[patho_index + 5].startswith("    建議比對臨床表徵")
+    assert paragraphs[patho_index + 5].startswith("建議比對臨床表徵")
 
 
 def test_ploidy_finding_report_keeps_standard_headings_and_patient_wording():
@@ -97,8 +108,8 @@ def test_ploidy_finding_report_keeps_standard_headings_and_patient_wording():
     assert "與臨床症狀相關之變異或染色體劑量訊號" not in text
     assert "[GRCh38] chr21 trisomy" in text
     assert "拷貝數" in text and "3（疑似）" not in text
-    assert "     1    21" in text and " 3 " in text
-    assert "    1. 此為第 21 號染色體三體，與唐氏症相關。" in text
+    assert "1    21" in text and " 3 " in text
+    assert "1. 此為第 21 號染色體三體，與唐氏症相關。" in text
     assert "ACMG 分類" not in text
     assert "Ploidy VCF" not in text
     assert "NDC" not in text and "FILTER" not in text
@@ -141,7 +152,7 @@ def test_ploidy_loss_without_manual_edits_stays_unclassified():
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "[GRCh38] chr18 monosomy" in text
     assert "1（疑似）" not in text
-    assert "    1. 此為第 18 號染色體單體。" in text
+    assert "1. 此為第 18 號染色體單體。" in text
     assert "ACMG 分類" not in text
     assert "Ploidy VCF" not in text
 
@@ -158,7 +169,7 @@ def test_second_class_ploidy_keeps_original_second_class_heading():
     text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
     assert "第二類：其他變異位點" in text
     assert "第二類：其他變異或染色體劑量訊號" not in text
-    assert "    1. 此為第 21 號染色體三體，與唐氏症相關。" in text
+    assert "1. 此為第 21 號染色體三體，與唐氏症相關。" in text
 
 
 def test_diagnosis_joins_all_checked_snv_diseases_and_mim_numbers():
@@ -257,16 +268,20 @@ def test_diagnosis_without_first_or_second_category_uses_compact_negative_summar
     paragraphs = [paragraph.text for paragraph in doc.paragraphs]
     assert paragraphs == [
         "三、檢測結果",
-        "  檢體說明:",
-        "    檢體類別：血液",
-        "  綜合說明:",
-        "    在非特定 (Global developmental delay, Ventriculomegaly, 先天神經肌肉疾病) 檢驗套組中未找到已知致病性位點。",
-        "    建議持續追蹤。",
-        "  參考資料:",
-        "    依據疾病資料庫中目前記載，本次檢測套組所涵蓋的基因，未檢測到具有足夠疾病關連性的致病變異。",
-        "    此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。",
+        "檢體說明:",
+        "  檢體類別：血液",
+        "",
+        "綜合說明:",
+        "在非特定 (Global developmental delay, Ventriculomegaly, 先天神經肌肉疾病) 檢驗套組中未找到已知致病性位點。",
+        "建議持續追蹤。",
+        "參考資料:",
+        "依據疾病資料庫中目前記載，本次檢測套組所涵蓋的基因，未檢測到具有足夠疾病關連性的致病變異。",
+        "此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。",
         "",
     ]
+    for paragraph in doc.paragraphs:
+        if paragraph.text in {"檢體說明:", "綜合說明:", "參考資料:"}:
+            assert all(run.bold for run in paragraph.runs)
 
 
 def test_em_dash_uses_full_width_for_ascii_table_padding():
@@ -343,10 +358,10 @@ def test_wes_single_gene_cnv_uses_exon_range_and_cnv_wording():
 
     paragraphs = [paragraph.text for paragraph in doc.paragraphs]
     assert (
-        "    1. 此片段位於第 17 號染色體上 COL1A1 基因，"
+        "1. 此片段位於第 17 號染色體上 COL1A1 基因，"
         "涵蓋 Exon 1 至 Exon 28 區域。"
     ) in paragraphs
-    assert "    3. 此為致病性之變異，與臨床症狀相關。" in paragraphs
+    assert "3. 此為致病性之變異，與臨床症狀相關。" in paragraphs
     assert any("內含子(Intron)，則無法" in paragraph for paragraph in paragraphs)
     assert all("內含子(Intron) ，" not in paragraph for paragraph in paragraphs)
 
