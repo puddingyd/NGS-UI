@@ -5901,9 +5901,7 @@ function _acmgInhouseReasonHtml(code) {
 function _acmgInhouseHeaderHtml() {
   const info = _acmgEditor?.inhouseEvidence;
   if (!info) return "";
-  const pts = Number(info.points);
-  const own = `${info.classification || "—"}${Number.isFinite(pts) ? `（${pts}）` : ""}`;
-  const notes = [`下方各項的「In-house」小字是平台規則（${info.version || "—"}）的判斷與理由，結果 ${own}`];
+  const notes = [];
   if (info.status === "stale") notes.push("這是舊版規則的已存結果，重算後可能不同");
   if (info.status === "on_demand") notes.push("這個點位不在 review 清單，理由是開啟時當場計算");
   if (info.vcep?.vcep) notes.push(`套用 ClinGen ${info.vcep.vcep}（${info.vcep.svi || ""}）規格`);
@@ -5912,7 +5910,7 @@ function _acmgInhouseHeaderHtml() {
     notes.push(`排序改用 ${info.clinvar_source || "ClinVar"} 的 ${info.clinvar_category || info.rank_classification}`
       + `（${info.clinvar_stars || 0}★）`);
   }
-  return `<div class="acmg-inhouse-header">${notes.map(escapeHtml).join("；")}</div>`;
+  return notes.length ? `<div class="acmg-inhouse-header">${notes.map(escapeHtml).join("；")}</div>` : "";
 }
 
 function renderAcmgCriteriaEditor() {

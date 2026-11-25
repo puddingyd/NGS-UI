@@ -3359,7 +3359,7 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.acmg-source-audit { margin-top: 4px; font-size: 10px; color: var(--muted); }
+.acmg-source-audit { margin-top: 4px; font-size: 10px; color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
 .acmg-apply-source { padding: 3px 7px; font-size: 10px; }
 .acmg-live-summary {
   display: flex;

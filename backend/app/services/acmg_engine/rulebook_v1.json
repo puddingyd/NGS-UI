@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.9",
+  "version": "ngsui-acmg-v1.10",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -44,7 +44,7 @@
       "pm2_recessive_max",
       "pm2_xlinked_max"
     ],
-    "pm2_recessive_max": 0.0007,
+    "pm2_recessive_max": 0.0002,
     "pm2_xlinked_moi": [
       "XL",
       "XLR"
@@ -227,5 +227,12 @@
       "clinvar_strength"
     ],
     "note": "2026-11-24 v1.7: PM3 from ClinVar submissions that describe homozygous or compound-heterozygous / in-trans / biallelic patients (structured ObservedData counts or the submitter's comment text, clinvar_cases.sqlite). Genes with AR inheritance only; not when BA1/BS1 is met. The partner variant's classification and the phase cannot be checked and several submitters may describe the same published patients, so 1 submitter gives Supporting and >=2 give Moderate (ClinGen SVI PM3 would allow up to Very strong with verified cases). In a gene with both AD and AR inheritance PM3 and PS4 can describe the same patients: only the stronger is kept."
+  },
+  "pm2": {
+    "_note": "ACMG 2015: absent from controls (or extremely low frequency if recessive) = Moderate. Present at a low frequency otherwise = Supporting. With PVS1, PM2 counts as Supporting (ClinGen SVI 2020) so PVS1+PM2 alone stays Likely pathogenic. VCEP specs still cap the strength.",
+    "absent_strength": "moderate",
+    "recessive_low_strength": "moderate",
+    "rare_strength": "supporting",
+    "with_pvs1_strength": "supporting"
   }
 }

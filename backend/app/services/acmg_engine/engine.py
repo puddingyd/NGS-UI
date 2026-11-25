@@ -237,6 +237,19 @@ def _apply_vcep(evidence: list, spec: dict, rb: dict) -> None:
             e.strength, e.points = top, sign * int(rb["points"][top])
 
 
+def _pm2_with_pvs1(evidence: list, rb: dict) -> None:
+    """PVS1 + PM2_Moderate would reach Pathogenic (10 points) on its own; ClinGen
+    counts PM2 as Supporting next to PVS1 so that the pair stays Likely pathogenic."""
+    target = (rb.get("pm2") or {}).get("with_pvs1_strength")
+    if not target or not any(e.code == "PVS1" and e.status == "met" for e in evidence):
+        return
+    rank = {"supporting": 1, "moderate": 2, "strong": 3, "very_strong": 4}
+    for e in evidence:
+        if e.code == "PM2" and e.status == "met" and rank.get(e.strength, 0) > rank.get(target, 0):
+            e.reason += f"（與 PVS1 同時成立，以 {STRENGTH_LABEL[target]} 計，避免只靠這兩條就達致病）"
+            e.strength, e.points = target, int(rb["points"][target])
+
+
 def _fmt_af(value) -> str:
     return "缺值" if value is None else f"{value:.5g}"
 
@@ -740,7 +753,8 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         evidence.append(Evidence("PM2", "not_met", reason=f"{vlabel} 規格不使用 PM2"))
     else:
         limit = _vcep_threshold(spec, "pm2", ad_like, recessive)
-        pm2_from = f"（{vlabel}）" if limit is not None else ""
+        vcep_limit = limit is not None
+        pm2_from = f"（{vlabel}）" if vcep_limit else ""
         if limit is None:
             xlr = _xlinked_recessive(ctx, rb) and "pm2_xlinked_max" in cfg
             limit = (cfg["pm2_xlinked_max"] if xlr
@@ -749,10 +763,17 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
                      else cfg["pm2_other_max"])
             pm2_from = ("（X 性聯隱性，女性可帶因）" if xlr
                         else "（隱性遺傳）" if recessive and not ad_like else "")
-        if max_af is None:
-            evidence.append(_met("PM2", "supporting", "未在族群資料庫出現（可能也是覆蓋不足）", rb))
+        pm2cfg = rb.get("pm2") or {}
+        if not max_af:                                # missing or 0 in every large population database
+            evidence.append(_met("PM2", pm2cfg.get("absent_strength", "supporting"),
+                                 "未在族群資料庫出現（ACMG 2015 原文；也可能是覆蓋不足）", rb))
         elif max_af <= limit:
-            evidence.append(_met("PM2", "supporting", f"最大 AF {_fmt_af(max_af)} ≤ {limit}{pm2_from}", rb))
+            # an expert-panel threshold: its own strength applies (_apply_vcep caps to the spec)
+            low = (pm2cfg.get("absent_strength") if vcep_limit
+                   else pm2cfg.get("recessive_low_strength") if recessive and not ad_like else None)
+            strength = low or pm2cfg.get("rare_strength", "supporting")
+            note = "，隱性遺傳頻率極低（ACMG 2015 原文）" if low and not vcep_limit else ""
+            evidence.append(_met("PM2", strength, f"最大 AF {_fmt_af(max_af)} ≤ {limit}{pm2_from}{note}", rb))
         else:
             evidence.append(Evidence("PM2", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {limit}{pm2_from}"))
 
@@ -773,6 +794,7 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
             evidence.append(item)
 
     _apply_vcep(evidence, spec, rb)
+    _pm2_with_pvs1(evidence, rb)
 
     pm2_met = any(e.code == "PM2" and e.status == "met" for e in evidence)
     ps4, ps4_inhouse = _ps4(row, key, ctx, rb, pm2_met)

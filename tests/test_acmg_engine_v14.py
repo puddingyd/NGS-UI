@@ -23,11 +23,25 @@ def test_pm5_accepts_one_star_but_ps1_still_needs_two():
 
 # ── PM2 for recessive genes ───────────────────────────────────────────────
 def test_pm2_recessive_threshold():
-    variant = missense_row(GNOMAD_E_AF="0.0003")
-    assert met(evaluate_variant(variant, Context(moi={"AR"})), "PM2")
+    variant = missense_row(GNOMAD_E_AF="0.00015")
+    rec = met(evaluate_variant(variant, Context(moi={"AR"})), "PM2")
+    assert rec and rec[0]["strength"] == "moderate"                                   # ≤ 0.02%: extremely low (v1.10)
     assert not met(evaluate_variant(variant, Context(moi={"AD", "AR"})), "PM2")   # mixed → 0.0001
     assert not met(evaluate_variant(variant, Context()), "PM2")                     # unknown → 0.0001
-    assert not met(evaluate_variant(missense_row(GNOMAD_E_AF="0.0009"), Context(moi={"AR"})), "PM2")
+    assert not met(evaluate_variant(missense_row(GNOMAD_E_AF="0.0003"), Context(moi={"AR"})), "PM2")
+    low = met(evaluate_variant(missense_row(GNOMAD_E_AF="0.00005"), Context()), "PM2")
+    assert low and low[0]["strength"] == "supporting"                                 # present but low, not recessive
+
+
+def test_pm2_absent_is_moderate_but_supporting_next_to_pvs1():
+    absent = met(evaluate_variant(missense_row(), Context(moi={"AD"})), "PM2")
+    assert absent and absent[0]["strength"] == "moderate" and absent[0]["points"] == 2
+    lof = evaluate_variant(lof_row(), Context(refs=refs()))
+    pm2 = met(lof, "PM2")[0]
+    assert pm2["strength"] == "supporting" and "PVS1" in pm2["reason"]
+    assert lof["engine_points"] == 9 and lof["classification"] == "Likely pathogenic"
+    capped = met(evaluate_variant(missense_row(), _ctx()), "PM2")                     # VCEP caps to Supporting
+    assert capped and capped[0]["strength"] == "supporting"
 
 
 # ── ClinGen VCEP specs ────────────────────────────────────────────────────

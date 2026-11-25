@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.72：ACMG 規則 v1.10：PM2 照 ACMG 2015 原文，族群資料庫完全沒出現給 Moderate、只有隱性遺傳的基因 ≤0.02% 也給 Moderate，與 PVS1 同時成立時以 Supporting 計；Manual ACMG 視窗拿掉 In-house 說明句、灰色小字自動換行。部署後需 `build_engine_results.py --all` 重算。
+
 v10.71：候選診斷樹狀圖：器官系統只顯示器官名、標籤最多兩行不再截斷關鍵字；★ 只標在旁系配對的交會處。
 
 v10.70：ACMG 規則 v1.9：修正 CSpec PM1 解析（Cys 編號、雙硫鍵配對、基因體座標）並以 `cspec.PM1_OVERRIDES` 人工修正 FBN1（失去／產生 Cys）、PAH、HNF4A、TNNT2、GP1BA、GP1BB、PAX6、MYO15A、OTOF；Manual ACMG modal 每個 criterion 下顯示 In-house 規則的判斷與理由（`/variants/{vid}/acmg` 的 `inhouse_evidence`）。部署後需 `build_engine_results.py --all` 重算。

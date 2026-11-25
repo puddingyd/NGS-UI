@@ -31,10 +31,11 @@ test('In-house reasons render under each criterion, met first, with strength and
   assert.match(context._acmgInhouseReasonHtml('PS4'), /未評估<\/b><\/div>$/);
   assert.equal(context._acmgInhouseReasonHtml('PP5'), '');
   const header = context._acmgInhouseHeaderHtml();
-  assert.match(header, /ngsui-acmg-v1\.9/);
-  assert.match(header, /Likely benign（-2）/);
+  assert.doesNotMatch(header, /ngsui-acmg|下方各項/);
   assert.match(header, /舊版規則/);
   assert.match(header, /排序改用 ClinVar latest 的 VUS（2★）/);
+  context.setEditor({ inhouseEvidence: { status: 'current', evidence: [] } });
+  assert.equal(context._acmgInhouseHeaderHtml(), '');                 // nothing to say → no header
   context.setEditor({ inhouseEvidence: null });
   assert.equal(context._acmgInhouseReasonHtml('BS1'), '');
   assert.equal(context._acmgInhouseHeaderHtml(), '');

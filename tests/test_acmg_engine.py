@@ -297,7 +297,7 @@ def test_clinvar_adopt_and_floor():
     over = row(PKNN_EVIDENCE="PP3_Strong", CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="4")
     over_result = evaluate_variant(over, Context(refs=refs(missense_by_residue={("GENE1", 34): [
         {"alt_aa": "Trp", "variant_key": "chr1-1000-C-A", "stars": 3}]})))
-    assert over_result["engine_points"] == 9 and over_result["points"] == 9
+    assert over_result["engine_points"] == 10 and over_result["points"] == 9   # ClinVar LP caps at 9
     two_star = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2"), Context())
     assert two_star["points"] == 6 and two_star["clinvar_rule"]["action"] == "adopt"   # 2★ adopted (v1.1)
     assert two_star["classification"] == "Likely pathogenic"
