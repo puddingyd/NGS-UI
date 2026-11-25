@@ -1,6 +1,8 @@
 # NGS 分析平台 (NGS-UI)
 
-v10.72：ACMG 規則 v1.10：PM2 照 ACMG 2015 原文，族群資料庫完全沒出現給 Moderate、只有隱性遺傳的基因 ≤0.02% 也給 Moderate，與 PVS1 同時成立時以 Supporting 計；Manual ACMG 視窗拿掉 In-house 說明句、灰色小字自動換行。部署後需 `build_engine_results.py --all` 重算。
+v10.73：ACMG 規則 v1.10：PM2 照 ACMG 2015 原文，族群資料庫完全沒出現給 Moderate、只有隱性遺傳的基因 ≤0.02% 也給 Moderate，與 PVS1 同時成立時以 Supporting 計；Manual ACMG 視窗拿掉 In-house 說明句、灰色小字自動換行。部署後需 `build_engine_results.py --all` 重算。
+
+v10.72：診斷 Word 報告「三、檢測結果」各列靠左，僅「檢體類別：血液」保留兩格縮排；綜合說明前空一行，檢體說明、綜合說明與參考資料標籤改為粗體。變異表格保留欄位對齊，健檢報告與其他章節沿用原格式。更新服務後重新匯出即可，不需重跑分析。
 
 v10.71：候選診斷樹狀圖：器官系統只顯示器官名、標籤最多兩行不再截斷關鍵字；★ 只標在旁系配對的交會處。
 

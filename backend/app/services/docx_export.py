@@ -509,6 +509,7 @@ def _ascii_table(doc,
 
     With column widths summing to N and (k) columns, the data line is
     N+2 chars wide (1-space pad each side) and the sep is `=`*(N+2).
+    An empty indent omits both the outer margin and side-padding.
     fixed_tabs uses the same geometry with physical tab stops (half the
     MingLiU font size per display column), so mixed-script auto spacing
     cannot move the start of the next cell. Other callers retain spaces.
@@ -517,13 +518,14 @@ def _ascii_table(doc,
     cols = [(c[0], c[1], (c[2] if len(c) > 2 else "char")) for c in columns]
     widths = [w for _, w, _ in cols]
     modes  = [m for _, _, m in cols]
-    total  = sum(widths) + 2   # +1 pad on each side
+    padding = " " if indent else ""
+    total  = sum(widths) + 2 * len(padding)
     sep    = "=" * total
 
     def format_line(parts, row_widths):
         if fixed_tabs:
-            return f"{indent} " + '\t'.join(parts)
-        return f"{indent} {''.join(_pad_right(p, w) for p, w in zip(parts, row_widths))} "
+            return f"{indent}{padding}" + '\t'.join(parts)
+        return f"{indent}{padding}{''.join(_pad_right(p, w) for p, w in zip(parts, row_widths))}{padding}"
 
     def add_lines(lines):
         paragraph = _add_paragraph(doc, "\n".join(lines))
@@ -531,7 +533,7 @@ def _ascii_table(doc,
             # Word/LibreOffice add spacing at Chinese/digit boundaries (e.g.
             # 第35.1百分位 and 未來10年). Spaces alone therefore drift between
             # header and data. Explicit stops reset each column independently.
-            offset = _str_width(indent) + 1
+            offset = _str_width(indent) + len(padding)
             for width in widths[:-1]:
                 offset += width
                 paragraph.paragraph_format.tab_stops.add_tab_stop(Pt(offset * BODY_FONT_SIZE.pt / 2))
@@ -627,7 +629,7 @@ def _section_panel_set(doc) -> None:
 
 def _summary_line() -> str:
     """Fixed first-category negative statement for diagnostic reports."""
-    return "    未找到與臨床症狀相關基因之已知致病性變異位點。"
+    return "未找到與臨床症狀相關基因之已知致病性變異位點。"
 
 
 def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
@@ -639,9 +641,10 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     were template structure markers, not actual report headings.
     """
     _add_paragraph(doc, "三、檢測結果")
-    _add_paragraph(doc, "  檢體說明:")
-    _add_paragraph(doc, "    檢體類別：血液")
-    _add_paragraph(doc, "  綜合說明:")
+    _add_paragraph(doc, "檢體說明:", bold=True)
+    _add_paragraph(doc, "  檢體類別：血液")
+    _blank(doc)
+    _add_paragraph(doc, "綜合說明:", bold=True)
 
     statuses = report.get("status", {}) or {}
     edits    = report.get("edits", {})  or {}
@@ -728,24 +731,24 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
         scope = "非特定"
         if scope_names:
             scope += f" ({', '.join(scope_names)}) "
-        _add_paragraph(doc, f"    在{scope}檢驗套組中未找到已知致病性位點。")
-        _add_paragraph(doc, "    建議持續追蹤。")
-        _add_paragraph(doc, "  參考資料:")
+        _add_paragraph(doc, f"在{scope}檢驗套組中未找到已知致病性位點。")
+        _add_paragraph(doc, "建議持續追蹤。")
+        _add_paragraph(doc, "參考資料:", bold=True)
         _add_paragraph(
             doc,
-            "    依據疾病資料庫中目前記載，本次檢測套組所涵蓋的基因，"
+            "依據疾病資料庫中目前記載，本次檢測套組所涵蓋的基因，"
             "未檢測到具有足夠疾病關連性的致病變異。",
         )
         _add_paragraph(
             doc,
-            "    此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。",
+            "此報告僅供參考，臨床判斷仍應以病患的實際狀況為主。",
         )
         _blank(doc)
         return
 
     # — 第一類
     has_ploidy = any(kind == "ploidy" for kind, _ in bucket1 + bucket2)
-    _add_paragraph(doc, "    第一類：與臨床症狀相關基因之已知致病性變異位點")
+    _add_paragraph(doc, "第一類：與臨床症狀相關基因之已知致病性變異位點")
     if bucket1 or man1:
         rendered = _render_bucket(bucket1, "1")
         for m in man1:
@@ -758,7 +761,7 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
     _blank(doc)
 
     # — 第二類
-    _add_paragraph(doc, "    第二類：其他變異位點")
+    _add_paragraph(doc, "第二類：其他變異位點")
     if bucket2 or man2:
         rendered = _render_bucket(bucket2, "2")
         for m in man2:
@@ -767,25 +770,25 @@ def _section_results(doc, sample: dict, report: dict, test_type: str) -> None:
             _render_manual_variant(doc, m)
             rendered = True
     else:
-        _add_paragraph(doc, "    未找到其他變異位點。")
+        _add_paragraph(doc, "未找到其他變異位點。")
     _blank(doc)
 
     # Footer recommendation (always shown)
     if has_ploidy:
-        _add_paragraph(doc, "    建議比對臨床表徵，並以適當的獨立檢驗確認染色體劑量訊號；"
+        _add_paragraph(doc, "建議比對臨床表徵，並以適當的獨立檢驗確認染色體劑量訊號；"
                             "其他變異則依其類型與臨床狀況安排後續檢測及判讀。")
     else:
-        _add_paragraph(doc, "    建議比對臨床表徵並進行父母親與家族成員之變異位點檢測，"
+        _add_paragraph(doc, "建議比對臨床表徵並進行父母親與家族成員之變異位點檢測，"
                             "以釐清上述變異致病之可能性；根據家族成員變異位點檢測報告或"
                             "相關資料庫更新，可能影響變異位點ACMG判讀結果。")
     _blank(doc)
     referenced = [(kind, v) for kind, v in bucket1 + bucket2 if kind != "ploidy"]
     if referenced:
-        _add_paragraph(doc, "  參考資料:")
+        _add_paragraph(doc, "參考資料:", bold=True)
         for kind, v in referenced:
             _add_paragraph(doc, _variant_reference_text(
                 kind, v, edits=edits.get(v.get("id", ""), {}), is_wgs=is_wgs,
-            ))
+            ).lstrip())
             _blank(doc)
 
 
@@ -817,11 +820,11 @@ def _variant_reference_text(kind: str, v: dict, *, edits: dict,
 
 
 def _render_manual_variant(doc, m: dict) -> None:
-    _add_paragraph(doc, f"    {m.get('position', '')}", bold=True)
+    _add_paragraph(doc, f"{m.get('position', '')}", bold=True)
     if m.get("disease"):
-        _add_paragraph(doc, f"    {m['disease']}")
+        _add_paragraph(doc, f"{m['disease']}")
     if m.get("comment"):
-        _add_paragraph(doc, f"    {m['comment']}")
+        _add_paragraph(doc, f"{m['comment']}")
 
 
 def _ploidy_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
@@ -830,16 +833,16 @@ def _ploidy_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     is_gain = v.get("dosage_call") == "gain"
     call = "trisomy" if is_gain else "monosomy"
     copy_number = "3" if is_gain else "1"
-    _add_paragraph(doc, f"    [GRCh38] chr{chrom} {call}", bold=True)
+    _add_paragraph(doc, f"[GRCh38] chr{chrom} {call}", bold=True)
     _ascii_table(doc, columns=[
         ("類別", 5),
         ("染色體", 7),
         ("拷貝數", 12),
-    ], rows=[[tier, chrom, copy_number]])
+    ], indent="", rows=[[tier, chrom, copy_number]])
     disease = str(edits.get("disease") or "").strip()
     karyotype = "三體" if is_gain else "單體"
     relation = f"，與{disease}相關" if disease else ""
-    _add_paragraph(doc, f"    1. 此為第 {chrom} 號染色體{karyotype}{relation}。")
+    _add_paragraph(doc, f"1. 此為第 {chrom} 號染色體{karyotype}{relation}。")
 
 
 # ── Subsections: per variant type ─────────────────────────────────
@@ -1129,7 +1132,7 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
         for variant, variant_edits in rows
         if _snv_transcript_label(variant, variant_edits)
     ))
-    heading = f"    {gene}"
+    heading = f"{gene}"
     if tx_labels:
         heading += f" ({' / '.join(tx_labels)})"
     _add_paragraph(doc, heading, bold=True)
@@ -1175,7 +1178,7 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
         ("基因型",       13),
         ("ClinVar",      16, "token-buffered"),
         ("ACMG&AMP指引", 12, "token"),
-    ], rows=table_rows)
+    ], indent="", rows=table_rows)
 
     for variant, variant_edits in rows:
         if variant.get("somatic"):
@@ -1188,23 +1191,23 @@ def _snv_gene_block(doc, rows: list[tuple[dict, dict]], *, tier: str) -> None:
                 variant_edits.get("somatic_validation") or "未確認",
                 variant_edits.get("somatic_validation") or "未確認",
             )
-            _add_paragraph(doc, f"    {variant.get('id', '')}：Somatic pipeline (Mutect2)，"
+            _add_paragraph(doc, f"{variant.get('id', '')}：Somatic pipeline (Mutect2)，"
                            f"VAF {vaf_text}；FILTER {variant.get('somatic_filter', '')}；"
                            f"IGV 驗證：{validation}；"
                            f"ClinVar {variant.get('somatic_clinvar_release', '')}。")
 
     for index, disease_line in enumerate(disease_lines, start=1):
-        _add_paragraph(doc, f"    {index}. {disease_line}")
+        _add_paragraph(doc, f"{index}. {disease_line}")
     compositions = list(dict.fromkeys(
         text for variant, _edits in rows
         if (text := specialized.composition_text(variant))
     ))
     for index, text in enumerate(compositions, start=len(disease_lines) + 1):
-        _add_paragraph(doc, f"    {index}. {text}")
+        _add_paragraph(doc, f"{index}. {text}")
     patho_sentence = _tier_patho_sentence(_patho_sentence_for_classes(acmg_labels), tier)
     if any(v.get("specialized") for v, _ in rows):
         patho_sentence = patho_sentence.replace("變異位點", "變異")
-    _add_paragraph(doc, f"    {len(disease_lines) + len(compositions) + 1}. {patho_sentence}")
+    _add_paragraph(doc, f"{len(disease_lines) + len(compositions) + 1}. {patho_sentence}")
 
 
 def _snv_reference_text(v: dict, edits: dict, *, acmg_zh: bool = False) -> str:
@@ -1272,7 +1275,7 @@ def _snv_reference_text(v: dict, edits: dict, *, acmg_zh: bool = False) -> str:
 
 def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
     gene  = v.get("gene_symbol") or "?"
-    _add_paragraph(doc, f"    {gene} (NC_012920.1)", bold=True)
+    _add_paragraph(doc, f"{gene} (NC_012920.1)", bold=True)
     hgvs_m = v.get("HGVS_M") or v.get("id") or ""
     aa     = _mito_aa_to_hgvsp(v.get("aa_change") or "")
     nuc    = hgvs_m + (f"({aa})" if aa else "")
@@ -1294,19 +1297,19 @@ def _mito_variant_block(doc, v: dict, *, tier: str, edits: dict) -> None:
         ("異質性比例",   13),
         ("ClinVar",      13, "token"),
         ("ACMG&AMP指引", 13, "token"),
-    ], rows=[[tier, gene, nuc, het_s, clnsig, acmg]])
+    ], indent="", rows=[[tier, gene, nuc, het_s, clnsig, acmg]])
 
     mt_disease = _mito_disease_text(v, edits)
     # 1. 致病基因之一 — ClinVar disease name; 遺傳模式 fixed to 粒線體遺傳; no MIM
     if mt_disease:
-        _add_paragraph(doc, f"    1. {gene}為{mt_disease}的致病基因之一，其遺傳模式屬於粒線體遺傳。")
+        _add_paragraph(doc, f"1. {gene}為{mt_disease}的致病基因之一，其遺傳模式屬於粒線體遺傳。")
     else:
-        _add_paragraph(doc, f"    1. {gene}為粒線體疾病之相關基因，其遺傳模式屬於粒線體遺傳。")
-    _add_paragraph(doc, f"    2. {_patho_sentence(acmg)}")
-    _add_paragraph(doc, "    3. 此檢驗結果須由臨床醫師來分析粒線體DNA基因檢驗結果與受檢者臨床症狀的相關性"
+        _add_paragraph(doc, f"1. {gene}為粒線體疾病之相關基因，其遺傳模式屬於粒線體遺傳。")
+    _add_paragraph(doc, f"2. {_patho_sentence(acmg)}")
+    _add_paragraph(doc, "3. 此檢驗結果須由臨床醫師來分析粒線體DNA基因檢驗結果與受檢者臨床症狀的相關性"
                         "並考量家族史的關聯性。此外，粒線體DNA基因變異有組織的特異性，粒線體DNA基因致病變異的"
                         "異質性（heteroplasmy）在不同組織間會有差異。")
-    _add_paragraph(doc, "    4. 對於所有粒線體DNA基因變異所造成的臨床症狀表現的差異，可能取決於下列三項因素："
+    _add_paragraph(doc, "4. 對於所有粒線體DNA基因變異所造成的臨床症狀表現的差異，可能取決於下列三項因素："
                         "（1）異質性，即致病變異及正常粒線體 DNA 存在量的比例（2）變異的粒線體 DNA 於組織的"
                         "分布情形（3）限界效應（Threshold effect），即每種組織對於氧化壓力代謝影響的易受性。"
                         "由於患者情況各異，此檢驗結果須由臨床醫師判讀檢驗結果與受檢者臨床症狀的相關性。")
@@ -1547,7 +1550,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
     coords_disp = coords.split(":", 1)[1] if ":" in coords else coords
 
     sv_tag = "del" if sv_upper == "DEL" else ("dup" if sv_upper == "DUP" else "")
-    _add_paragraph(doc, f"    [GRCh38] {coords}{sv_tag}", bold=True)
+    _add_paragraph(doc, f"[GRCh38] {coords}{sv_tag}", bold=True)
     _ascii_table(doc, columns=[
         ("類別",          5),
         ("染色體",        7),
@@ -1555,7 +1558,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         ("拷貝數",        7),
         ("基因型",       13),
         ("ACMG&AMP指引", 13, "token"),
-    ], rows=[[tier, chrom, coords_disp, cn_s, zyg, acmg]])
+    ], indent="", rows=[[tier, chrom, coords_disp, cn_s, zyg, acmg]])
 
     # 1. 片段位置描述 — only surface OMIM-tagged genes (per spec);
     # decide single-gene vs multi-gene template by how many are left.
@@ -1588,7 +1591,7 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
             location_text = f"{gname} 基因，涵蓋 {exon_span}"
         else:
             location_text = _gene_loc_phrase(gname, loc_zh)
-        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上 {location_text}。")
+        _add_paragraph(doc, f"1. 此片段位於第 {chrom_num} 號染色體上 {location_text}。")
         # 2. OMIM phenotype + inheritance, per-gene
         selected_items = []
         if disease_override:
@@ -1621,27 +1624,27 @@ def _cnv_variant_block(doc, v: dict, *, tier: str, is_wgs: bool,
         bits.append(f"{ph}的致病基因之一" if ph else "此疾病的致病基因之一")
         if inh: bits.append(f"，其遺傳模式屬於{inh}")
         if mim: bits.append(f" (Phenotype MIM number: {mim})")
-        _add_paragraph(doc, f"    2. {''.join(bits)}。")
+        _add_paragraph(doc, f"2. {''.join(bits)}。")
         next_idx = 3
     elif len(omim_genes) > 1:
         names = [g.get("gene", "") for g in omim_genes[:10] if g.get("gene")]
         disease_suffix = f"，與 {disease_override} 相關" if disease_override else ""
-        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
+        _add_paragraph(doc, f"1. 此片段位於第 {chrom_num} 號染色體上，"
                             f"包含 {', '.join(names)} 等 OMIM 疾病基因"
                             f"{disease_suffix}。")
     else:
         disease_suffix = f"，與 {disease_override} 相關" if disease_override else ""
-        _add_paragraph(doc, f"    1. 此片段位於第 {chrom_num} 號染色體上，"
+        _add_paragraph(doc, f"1. 此片段位於第 {chrom_num} 號染色體上，"
                             "未涵蓋 OMIM 疾病相關基因"
                             f"{disease_suffix}。")
 
     patho_sentence = (
         _cnv_patho_sentence(acmg) if _is_cnv_record(v) else _patho_sentence(acmg)
     )
-    _add_paragraph(doc, f"    {next_idx}. {_tier_patho_sentence(patho_sentence, tier)}")
+    _add_paragraph(doc, f"{next_idx}. {_tier_patho_sentence(patho_sentence, tier)}")
     next_idx += 1
     if not is_wgs:
-        _add_paragraph(doc, f"    {next_idx}. 由於此檢驗技術為全外顯子定序，"
+        _add_paragraph(doc, f"{next_idx}. 由於此檢驗技術為全外顯子定序，"
                             "若缺失片段之斷點(Breakpoints)發生於內含子(Intron)，"
                             "則無法明確判別起始及末端位置。")
 
