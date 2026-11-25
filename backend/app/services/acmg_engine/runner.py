@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import re
 import json
 import os
 import sqlite3
@@ -31,9 +32,10 @@ from .ref_store import SqliteReferences, load_ba1_exceptions
 from .refs import References
 
 RESULTS_NAME = "snv_acmg_engine.sqlite"
-FORMAT_VERSION = 4          # 2: CaseRecurrence delegates the missense window / gene count lookups
+FORMAT_VERSION = 5          # 2: CaseRecurrence delegates the missense window / gene count lookups
                             # 3: CaseRecurrence delegates the collagen Gly-X-Y lookup
                             # 4: CaseRecurrence answers PS4 lookups (in-house probands, ClinVar cases)
+                            # 5: omim_moi also reads each OMIM disease line; CaseRecurrence.cds_exons
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
@@ -216,6 +218,9 @@ class CaseRecurrence(References):
     def exon_skip(self, transcript, exon_number):
         return self._refs.exon_skip(transcript, exon_number)
 
+    def cds_exons(self, transcript):
+        return self._refs.cds_exons(transcript)
+
     def ba1_exception(self, variant_key):
         return self._refs.ba1_exception(variant_key)
 
@@ -251,8 +256,30 @@ def omim_moi(gene: str) -> set | None:
         row = omim_store.lookup(gene=gene)
     except Exception:
         return None
-    codes = P.moi_codes((row or {}).get("Inheritance") or "")
+    row = row or {}
+    codes = P.moi_codes(row.get("Inheritance") or "") | disease_line_moi(row.get("OMIM_disease"))
     return codes or None
+
+
+_LINE_MIM = re.compile(r"\(\d{6}\)")
+_LINE_INH = re.compile(r"\(([^()]*)\)\s*$")
+
+
+def disease_line_moi(cell) -> set:
+    """Inheritance codes written at the end of each OMIM disease line.
+
+    ``Deafness, autosomal recessive 16 (603720)(AR)`` -> {"AR"}.  The
+    gene-level Inheritance column is often blank although every disease line
+    states its mode.  Lines in [brackets] (non-disease traits) are skipped."""
+    out: set = set()
+    for line in str(cell or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("[") or not _LINE_MIM.search(line):
+            continue
+        m = _LINE_INH.search(line)
+        if m and not m.group(1).strip().isdigit():
+            out |= P.moi_codes(m.group(1))
+    return out
 
 
 def omim_status() -> str:

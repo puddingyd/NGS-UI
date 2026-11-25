@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.78：In-house ACMG 規則 v1.12：PVS1 的 NMD 改依 MANE exon 結構自行判斷（只有最後一個 exon 或倒數第二個 exon 最後 50 nt 才逃過，不再沿用 VEP NMD plugin）；遺傳模式加讀 OMIM 每個疾病行末的遺傳模式；ClinVar ≥2★ 致病在族群 AF >5% 時不再豁免 BA1（ClinGen BA1 例外清單除外），院內常見扣分同。需重算 In-house 結果。
+
 v10.77：表型名次點數由 7 段區間改為平滑曲線（基因與疾病點數都改；第 1 名仍 +10.2，例如第 2 名 +8.2、第 10 名 +5.8、第 50 名 +3.0，最低基因 −6.1、疾病 −4.8）；原區間與 11 段區間列入院內再測。
 
 v10.76：變異類型先驗把 5′UTR、3′UTR 與深層內含子合併為「非編碼區」−3.3（同義 −5.1、近剪接位內含子 −1.6 不變）；表型知識庫對 Orphanet product6 尚未收錄的新 ORPHA 疾病（例如 PCDH19 clustering epilepsy）改用 HPO genes_to_disease 的基因，需重建知識庫。

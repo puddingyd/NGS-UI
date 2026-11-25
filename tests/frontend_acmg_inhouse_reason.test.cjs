@@ -34,6 +34,9 @@ test('In-house reasons render under each criterion, met first, with strength and
   assert.doesNotMatch(header, /ngsui-acmg|下方各項/);
   assert.match(header, /舊版規則/);
   assert.match(header, /排序改用 ClinVar latest 的 VUS（2★）/);
+  context.setEditor({ inhouseEvidence: { status: 'current', evidence: [], clinvar_action: 'overridden',
+    flags: [{ code: 'clinvar_overridden', message: 'ClinVar P（2★）但最大 AF 0.34 > 0.05' }] } });
+  assert.match(context._acmgInhouseHeaderHtml(), /ClinVar P（2★）但最大 AF 0\.34/);
   context.setEditor({ inhouseEvidence: { status: 'current', evidence: [] } });
   assert.equal(context._acmgInhouseHeaderHtml(), '');                 // nothing to say → no header
   context.setEditor({ inhouseEvidence: null });

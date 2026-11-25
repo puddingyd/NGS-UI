@@ -45,6 +45,10 @@ class References:
         """{"frameshift": bool, "fraction": float, "last_exon": bool} for skipping an exon."""
         return None
 
+    def cds_exons(self, transcript: str) -> list[int] | None:
+        """CDS length of every exon of the MANE transcript, 5'→3' (UTR-only exons are 0)."""
+        return None
+
     def ba1_exception(self, variant_key: str) -> bool:
         return False
 
@@ -146,6 +150,13 @@ class StaticReferences(References):
         if self.exons is None:
             return None
         return self.exons.get((transcript.split(".")[0], exon_number))
+
+    def cds_exons(self, transcript):
+        if self.exons is None or not transcript:
+            return None
+        tx = str(transcript).split(".")[0]
+        hits = sorted((n, v.get("cds_length", 0)) for (t, n), v in self.exons.items() if t == tx)
+        return [int(length) for _n, length in hits] or None
 
     def ba1_exception(self, variant_key):
         return variant_key in self.ba1_exceptions

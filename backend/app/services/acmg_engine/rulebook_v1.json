@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.11",
+  "version": "ngsui-acmg-v1.12",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -64,7 +64,9 @@
     ]
   },
   "pvs1": {
-    "truncation_fraction": 0.1
+    "truncation_fraction": 0.1,
+    "nmd_window": 50,
+    "_note": "2026-11-25 v1.12: NMD is predicted from the MANE exon structure (ClinGen SVI 2018: escape only in the last exon or the 3'-most 50 nt of the penultimate exon), before the VEP NMD plugin, which flags 52 nt, uses the variant position for frameshifts and treats the first 100 coding bases as escaping."
   },
   "missense": {
     "primary": "PKNN_EVIDENCE",
@@ -138,7 +140,8 @@
     "adopt_min_stars": 2,
     "floor_min_stars": 2,
     "floor_points": 6,
-    "note": "2026-11-23: 2★ adopted directly (was 3★); floor kept for adopt_min_stars > floor_min_stars"
+    "override_max_af": 0.05,
+    "note": "2026-11-23: 2★ adopted directly (was 3★); floor kept for adopt_min_stars > floor_min_stars. 2026-11-25 v1.12: above override_max_af (max AF, BA1 level) ClinVar P/LP no longer exempts BA1/BS1 and is not adopted, unless the variant is on the ClinGen BA1 exception list (ba1_exceptions.tsv, Ghosh 2018) or a VCEP call exists. In ClinVar 2026-11 only one P/LP variant with >=2 submitters has ExAC/1000G/ESP AF >= 5 % (PRSS1, a known artefact region)."
   },
   "classes": [
     {

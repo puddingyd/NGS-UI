@@ -5914,6 +5914,10 @@ function _acmgInhouseHeaderHtml() {
     notes.push(`排序改用 ${info.clinvar_source || "ClinVar"} 的 ${info.clinvar_category || info.rank_classification}`
       + `（${info.clinvar_stars || 0}★）`);
   }
+  if (info.clinvar_action === "overridden") {
+    const flag = (info.flags || []).find(f => f.code === "clinvar_overridden");
+    notes.push(flag?.message || "族群頻率超過 BA1，不採用 ClinVar");
+  }
   return notes.length ? `<div class="acmg-inhouse-header">${notes.map(escapeHtml).join("；")}</div>` : "";
 }
 

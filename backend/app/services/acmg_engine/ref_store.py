@@ -526,6 +526,13 @@ class SqliteReferences(References):
             return None
         return {"frameshift": bool(hit[0]), "fraction": float(hit[1]), "last_exon": bool(hit[2])}
 
+    def cds_exons(self, transcript):
+        if self._conn is None or "exons" not in self._tables or not transcript:
+            return None
+        rows = self._conn.execute("SELECT cds_length FROM exons WHERE transcript=? ORDER BY exon_number",
+                                  (str(transcript).split(".")[0],)).fetchall()
+        return [int(r[0]) for r in rows] or None
+
     def ba1_exception(self, variant_key):
         return variant_key in self._ba1
 

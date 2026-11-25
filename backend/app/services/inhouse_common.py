@@ -123,10 +123,35 @@ def frequency_deduction(criteria_text) -> int:
     return out
 
 
+CLINVAR_OVERRIDE_AF = 0.05      # same as the rule engine's clinvar.override_max_af (BA1 level)
+_POP_AF_KEYS = ("AF", "AF_eas", "AF_exome", "AF_exome_eas")
+_BA1_EXCEPTIONS: set | None = None
+
+
+def _ba1_exception(variant: dict) -> bool:
+    global _BA1_EXCEPTIONS
+    if _BA1_EXCEPTIONS is None:
+        try:
+            from .acmg_engine.ref_store import load_ba1_exceptions
+            _BA1_EXCEPTIONS = load_ba1_exceptions()
+        except Exception:  # noqa: BLE001
+            _BA1_EXCEPTIONS = set()
+    return str(variant.get("id") or "") in _BA1_EXCEPTIONS
+
+
 def _clinvar_protected(variant: dict) -> bool:
+    """ClinVar ≥2★ P/LP, unless the variant is common enough for BA1 (rule v1.12):
+    then only the ClinGen BA1 exception list keeps the exemption."""
     sig = str(variant.get("CLNSIG") or "").strip().lower().replace("_", " ")
     stars = _num(variant.get("clinvar_stars"))
-    return sig in _PLP and stars is not None and stars >= 2
+    if not (sig in _PLP and stars is not None and stars >= 2):
+        return False
+    if variant.get("inhouse_clinvar_action") == "overridden":
+        return False
+    afs = [a for a in (_num(variant.get(k)) for k in _POP_AF_KEYS) if a is not None]
+    if afs and max(afs) > CLINVAR_OVERRIDE_AF and not _ba1_exception(variant):
+        return False
+    return True
 
 
 def apply_penalty(variant: dict, *, scope: str, score, criteria_text) -> float | None:

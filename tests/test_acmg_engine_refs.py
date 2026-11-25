@@ -193,8 +193,9 @@ def test_missing_db_behaves_as_not_loaded(tmp_path):
     assert refs.lof_mechanism("GENE1") is None
 
 
-def test_ba1_exception_file_is_empty_by_default():
-    assert S.load_ba1_exceptions() == set()
+def test_ba1_exception_file_lists_the_clingen_variants():
+    listed = S.load_ba1_exceptions()
+    assert "chr13-20189473-C-T" in listed and len(listed) == 8      # GJB2 c.109G>A among Ghosh 2018
 
 
 # ── engine on real (synthetic) reference database ─────────────────────────
@@ -217,7 +218,8 @@ def test_engine_uses_sqlite_references(tmp_path, sources):
     ctx = Context(refs=S.SqliteReferences(db))
     nmd = evaluate_variant(variant(), ctx)
     assert [e["strength"] for e in nmd["evidence"] if e["code"] == "PVS1" and e["status"] == "met"] == ["very_strong"]
-    escape = evaluate_variant(variant(NMD="NMD_escaping_variant", PROTEIN_POSITION="20/300"), ctx)
+    # CDS 60 + 100 + 140 nt: codon 60 (c.178) lies in the last exon → escapes NMD
+    escape = evaluate_variant(variant(HGVS_P="ENSP00000000001.1:p.Arg60Ter", PROTEIN_POSITION="20/300"), ctx)
     pvs1 = [e for e in escape["evidence"] if e["code"] == "PVS1"][0]
     assert pvs1["strength"] == "strong" and "下游" in pvs1["reason"]
     splice = evaluate_variant(variant(CONSEQUENCE="splice_donor_variant", HGVS_C="ENST00000000001.1:c.456+1G>C",

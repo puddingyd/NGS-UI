@@ -332,7 +332,10 @@ def _pvs1(rows: list[dict], row: dict, ctx: Context, rb: dict, recurrent: str | 
     pos, length = P.fraction(row.get("PROTEIN_POSITION"))
     cut = rb["pvs1"]["truncation_fraction"]
     if lof & (P.NONSENSE | P.FRAMESHIFT):
-        if end_trunc:
+        nmd = _nmd_from_exons(row, ctx, rb)
+        if nmd is not None:
+            escape, why = nmd
+        elif end_trunc:
             escape, why = True, "LOFTEE END_TRUNC（截在尾端）"
         elif "NMD" in row:
             escape = bool(P.text(row.get("NMD")))
@@ -359,6 +362,37 @@ def _pvs1(rows: list[dict], row: dict, ctx: Context, rb: dict, recurrent: str | 
     fraction_removed = float(info.get("fraction") or 0.0)
     strength = "strong" if fraction_removed > cut else "moderate"
     return _met("PVS1", strength, "；".join([f"跳過 exon {skipped}（in-frame 或逃過 NMD），移除約 {fraction_removed:.0%} 蛋白質"] + basis), rb), False
+
+
+def _nmd_from_exons(row: dict, ctx: Context, rb: dict) -> tuple[bool, str] | None:
+    """(escapes NMD, reason) from the MANE exon structure (ClinGen SVI 2018 PVS1).
+
+    The premature stop escapes NMD in the last exon or within the 3'-most
+    ``nmd_window`` (50) nt of the penultimate exon; otherwise NMD is predicted.
+    Counted from the first base of the new stop codon to the last base of the
+    penultimate exon.  The VEP NMD plugin is not used first: it flags 52 nt
+    (inclusive ±51), uses the variant rather than the new stop of a frameshift
+    and treats the first 100 coding bases as escaping, which SVI does not.
+    None when the transcript or the stop position is unknown (caller falls back)."""
+    lengths = ctx.refs.cds_exons(P.text(row.get("TRANSCRIPT")))
+    codon = P.ptc_codon(row.get("HGVS_P"))
+    if not lengths or not codon:
+        return None
+    window = int(rb["pvs1"].get("nmd_window", 50))
+    if len(lengths) == 1:
+        return True, "單一 exon 轉錄本，預測逃過 NMD"
+    ptc = 3 * codon - 2
+    junction = sum(lengths[:-1])            # c. position of the last coding base before the last junction
+    if ptc > junction:
+        if not lengths[-1]:
+            return None                     # beyond the CDS: inconsistent with this transcript
+        return True, "新的終止密碼子在最後一個 exon，預測逃過 NMD"
+    distance = junction - ptc + 1
+    if distance > window:
+        return False, f"預測會被 NMD 降解（新的終止密碼子距最後一個 exon 交界 {distance} nt，>{window} nt）"
+    if not lengths[-1]:
+        return None                         # last exon is all UTR: distance also includes UTR not stored
+    return True, f"新的終止密碼子在倒數第二個 exon 最後 {distance} nt（≤{window} nt），預測逃過 NMD"
 
 
 def _truncation_strength(gene, pos, length, cut, basis, ctx, rb) -> Evidence:
@@ -705,9 +739,21 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
     clinvar = _clinvar(row, ctx)
     expert = P.clinvar_category(row.get("CLINGEN_VCEP_CLASS"))
     expert = None if expert == "CONFLICT" else expert
-    protected = _plp_supported(clinvar, expert)
     freq = _frequency(row, rb)
     flags: list[dict] = []
+    protected = _plp_supported(clinvar, expert)
+    # ClinVar P/LP above the BA1 level is trusted only on the ClinGen BA1 exception
+    # list or from a VCEP; otherwise BA1 applies and ClinVar is not adopted (rule v1.12)
+    clinvar_overridden = False
+    override_af = rb["clinvar"].get("override_max_af")
+    if (override_af is not None and expert is None and freq["max_af"] is not None
+            and freq["max_af"] > override_af and clinvar.get("category") in ("P", "LP")
+            and not ctx.refs.ba1_exception(key)):
+        protected, clinvar_overridden = False, True
+        flags.append({"code": "clinvar_overridden",
+                      "message": f"ClinVar {clinvar.get('category')}（{int(clinvar.get('stars') or 0)}★）但最大 AF "
+                                 f"{_fmt_af(freq['max_af'])} > {override_af}，且不在 ClinGen BA1 例外清單："
+                                 "不採用 ClinVar，依頻率判讀"})
     recurrent, recurrence_note = _recurrence(row, key, ctx, rb, freq, protected)
     if recurrent:
         flags.append({"code": "recurrent", "message": recurrent})
@@ -839,13 +885,17 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
     engine_points = sum(e.points for e in met)
     engine_class = "Benign" if ba1 else _class_for(engine_points)
     rank = _rank_points(evidence, row, rb, engine_points)
+    if ba1:                                  # stand-alone benign ranks as Benign, not as the point sum (v1.12)
+        rank = min(rank, float(CLASS_RANGES["B"][2]))
 
     # ClinVar: adopt (3–4★ / VCEP) or floor (2★ P/LP); never additive
     points, classification = engine_points, engine_class
     action = {"action": "none", "source": clinvar.get("source"),
               "category": clinvar.get("category"), "stars": clinvar.get("stars")}
     adopt = None
-    if expert in CLASS_RANGES:
+    if clinvar_overridden:
+        action["action"] = "overridden"
+    elif expert in CLASS_RANGES:
         adopt, action["source"], action["category"] = expert, "ClinGen VCEP", expert
     elif (clinvar.get("category") in CLASS_RANGES and not clinvar.get("conflict")
           and int(clinvar.get("stars") or 0) >= rb["clinvar"]["adopt_min_stars"]):
@@ -860,7 +910,7 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
             rank = min(rank, high)
         classification = name
         action["action"] = "adopt"
-    elif (clinvar.get("category") in ("P", "LP") and not clinvar.get("conflict")
+    elif (not clinvar_overridden and clinvar.get("category") in ("P", "LP") and not clinvar.get("conflict")
           and int(clinvar.get("stars") or 0) >= rb["clinvar"]["floor_min_stars"]
           and points < rb["clinvar"]["floor_points"]):
         points = rb["clinvar"]["floor_points"]

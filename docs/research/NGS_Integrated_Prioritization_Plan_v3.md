@@ -1177,7 +1177,7 @@ $$
 | **BA1**（單獨成立為 Benign） | 大型族群資料（見表下說明，含 allele 數足夠的院內 AF）的全體或東亞 AF 任一 > 5%。例外：ClinGen BA1 例外清單、院內例外清單、ClinVar ≥2★ P/LP；例外時不給 BA1，並標示「族群頻率與 ClinVar 衝突」 | `GNOMAD_*`、`GNOMAD41_JOINT_*`、`INHOUSE_AF`；例外清單 | Ghosh 2018 | 修正（現行規則只看全體 AF，沒有例外） |
 | **BS1**（−4） | AF 高於這個疾病可能的最大值。有 VCEP 規格的基因用規格的門檻；其他基因**暫定**：只有顯性或 X 性聯疾病的基因 > 0.1%，其他基因（隱性、兩者都有、遺傳模式未知）> 0.5%。例外同 BA1 | 同上；平台 OMIM 資料庫的遺傳模式 | Whiffin 2017（最大可信 AF） | 修正（現行規則一律 1%） |
 | **PM2_Supporting**（+1） | 取大型族群資料中的**最大** AF。只有顯性（含 X 性聯顯性）：完全沒出現；只有 X 性聯隱性（或未分型 X 性聯）：≤ 0.01%（v1.5，女性可帶因；註解沒有 gnomAD 男性半合子數，只能用整體 AF）；其他：≤ 0.01%（**暫定**）。BS1 或 BA1 成立時不給；院內重複出現（第 5.2.5 節第 0 步）時也不給 | 同上 | ClinGen SVI 2020 | 修正（現行規則隱性基因取各來源的最小值，任一個來源很低就成立） |
-| **PVS1**（8、4、2） | 先做假象檢查（院內重複出現、剪接位兩種寫法、MANE 轉錄本），再依 Abou Tayoun 決策樹（第 5.2.5 節）；基因層級的條件改為「功能喪失是已知的致病機轉」 | `CONSEQUENCE`、`HGVS_C`、`TRANSCRIPT_TYPE`、`NMD`、`PROTEIN_POSITION`、`EXON`、`LOFTEE`、`LOFTEE_FILTER`；WES 出現次數表、院內 AF、功能喪失機轉基因表、MANE exon 表、ClinVar 截斷變異位置表 | Abou Tayoun 2018 | 修正 |
+| **PVS1**（8、4、2） | 先做假象檢查（院內重複出現、剪接位兩種寫法、MANE 轉錄本），再依 Abou Tayoun 決策樹（第 5.2.5 節）；基因層級的條件改為「功能喪失是已知的致病機轉」 | `CONSEQUENCE`、`HGVS_C`、`HGVS_P`（終止密碼子位置，v1.12 依 MANE exon 自行判斷 NMD）、`TRANSCRIPT_TYPE`、`NMD`（只作備援）、`PROTEIN_POSITION`、`EXON`、`LOFTEE`、`LOFTEE_FILTER`；WES 出現次數表、院內 AF、功能喪失機轉基因表、MANE exon 表、ClinVar 截斷變異位置表 | Abou Tayoun 2018 | 修正 |
 | **PP3／BP4 missense**（±1 至 ±4） | 只用一個事先指定的工具：P-KNN；P-KNN 沒有值時才用 BayesDel_noAF。**工具有值但落在不確定區間時，不換下一個工具**。missense 要給 BP4，剪接預測也必須是無影響 | `PKNN_EVIDENCE`、`BAYESDEL_NOAF`、剪接分數 | Pejaver 2022、Bergquist 2025、Stenton 2024 | 修正（現行規則在不確定時改用下一個工具） |
 | **PP3／BP4 剪接**（+1／−1） | 不在 ±1、2 剪接位的變異：剪接分數 ≥0.2 給 PP3，≤0.1 給 BP4。有 SpliceAI 用 SpliceAI，沒有才用 Pangolin（**暫定**沿用同樣門檻，待驗證） | `SPLICEAI_MAX`、`PANGOLIN_SCORE` | Walker 2023 | 新增 |
 | **BP7**（−1） | 同義變異，或內含子 +7 以後、−21 以前的變異；剪接分數 ≤0.1；保守性條件沿用現行規則的 phyloP 參數，實作時依 Walker 2023 原文確認。phyloP 來自 dbNSFP、同義與內含子變異幾乎都沒有，缺 phyloP 時只依剪接預測給（2026-11-23） | 同上、`PHYLOP100` | Walker 2023 | 修正（擴大到內含子） |
@@ -2629,6 +2629,8 @@ $p_g=1-(1-p_{\min})^k$ 在實作上數值退化（基因 top-10 只剩 11%）；
 
 **規則 v1.11（2026-11-25，使用者決定）：** OMIM 只列 X 性聯隱性（XLR／XL）的基因，最大 AF ≤0.01%（`pm2_xlinked_max`）也比照隱性給 PM2_Moderate（ACMG 2015 原文「隱性遺傳頻率極低」）；族群資料只有整體 AF、沒有男性半合子數，所以門檻仍為 0.01%（約對應男性盛行率 1/10,000）。與 PVS1 同時成立仍以 Supporting 計，專家規格上限照舊。
 
+**規則 v1.12（2026-11-25）：** 三個問題一起修正。(1) **PVS1 的 NMD 改由 MANE exon 結構自行判斷**（ClinGen SVI 2018：只有在最後一個 exon，或倒數第二個 exon 的 3′ 端最後 50 nt 內才逃過 NMD），從新的終止密碼子第一個鹼基算到最後一個 exon 交界；frameshift 用 HGVS_P 的 fsTer 位置。原本採用 VEP NMD plugin，它實際標的是 52 nt（含端點 ±51）、frameshift 用變異位置而不是新的終止密碼子，且把前 100 個編碼鹼基也當成逃過 NMD，這些都不是 SVI 規則；STRC c.5188C>T（p.Arg1730Ter，距交界 52 nt）因此被判成逃過 NMD、只給 PVS1_Moderate，修正後為 Very strong。exon 表沒有該轉錄本、找不到終止位置，或最後一個 exon 全是 UTR 而距離在 50 nt 內時，才退回 VEP 欄位。(2) **遺傳模式改為「基因層級 Inheritance ∪ 每個 OMIM 疾病行末的遺傳模式」**（`runner.disease_line_moi`，略過 [ ] 非疾病特徵）；平台 OMIM 的基因層級欄常是空的，原本只讀這欄，使只有一個 AR 疾病的基因（如 STRC）被當成遺傳模式未知，PS4、PM3、PM2 隱性門檻都受影響。(3) **ClinVar ≥2★ P/LP 不再豁免 BA1 級頻率**：最大 AF >5%（`clinvar.override_max_af`）時，除非在 ClinGen BA1 例外清單（`ba1_exceptions.tsv`，本版填入 Ghosh 2018 的 8 個變異，如 GJB2 c.109G>A、HFE C282Y／H63D）或有專家小組分類，BA1 照常成立、不採用 ClinVar（`clinvar_action=overridden`）；BA1 成立時排序點數上限 −7（Benign）。院內常見扣分的 ClinVar 豁免同樣只到 5%。2026-11 ClinVar 中 ≥2 個提交者的 P/LP 只有 1 個 ExAC／1000G／ESP AF ≥5%（PRSS1，已知假象區），所以影響範圍很小；起因是 SLC9B1 frameshift（gnomAD AF 0.34、院內 WES 89.8% 帶有、ClinVar P 2★）被排在 V′=10。規則檔與程式變更使舊結果過期，部署後 `build_engine_results.py --all` 重算。
+
 **規則 v1.9（2026-11-25）：** 逐一核對 CSpec PM1 文字與解析結果，修正 9 個基因的熱點（FBN1、ENG、GUCY2D、HNF4A、PAH、TNNT2、GP1BA、GP1BB、PAX6），MYO15A／OTOF 改為不適用；起因是 FBN1 c.1841T>C 與 Franklin 的比較（FBN1 VCEP 的 PM2 <0.0005%、BS1 >0.005% 比一般門檻嚴，In-house 給 BS1、不給 PM2 符合規格）。
 
 **上線後依使用者決定調整的參數（2026-11-24，彙整）：**
@@ -2637,7 +2639,7 @@ $p_g=1-(1-p_{\min})^k$ 在實作上數值退化（基因 top-10 只剩 11%）；
 |---|---|---|---|
 | 排序用的變異點數 $V'$ | 判讀者覆寫優先 | 固定 In-house（含 ClinVar ≥2★／VCEP 採用、P-KNN LLR、院內常見扣分）→ GeneBe；判讀者只改顯示與報告 | 第 5.2.8 節 |
 | In-house 畫面分類 | 含 ClinVar 採用 | 規則自行計算；ClinVar 只影響排序；ClinGen 專家小組直接顯示 | 第 5.2.8 節 |
-| ACMG 規則 | v1.1 | v1.11：X 性聯隱性 ≤0.01% 也給 PM2_Moderate；v1.10：PM2 未出現給 Moderate（ACMG 2015 原文）、只有隱性遺傳 ≤0.02% 也給 Moderate、與 PVS1 同時成立時以 Supporting 計；v1.9：VCEP PM1 熱點人工修正；v1.8：PM5 ≥1★、隱性 PM2 0.07%、X 性聯隱性 PM2 0.01%、膠原蛋白 PM1、CSpec 規格、PS4（數病人）、PM3（ClinVar）、PM1 ≥1★、PP2 良性 ≤20% | 第 5.2 節 |
+| ACMG 規則 | v1.1 | v1.12：PVS1 的 NMD 依 MANE exon 自行判斷（50 nt）、遺傳模式加讀 OMIM 疾病行、ClinVar P/LP 在 AF >5% 時不豁免 BA1（ClinGen 例外清單除外）；v1.11：X 性聯隱性 ≤0.01% 也給 PM2_Moderate；v1.10：PM2 未出現給 Moderate（ACMG 2015 原文）、只有隱性遺傳 ≤0.02% 也給 Moderate、與 PVS1 同時成立時以 Supporting 計；v1.9：VCEP PM1 熱點人工修正；v1.8：PM5 ≥1★、隱性 PM2 0.07%、X 性聯隱性 PM2 0.01%、膠原蛋白 PM1、CSpec 規格、PS4（數病人）、PM3（ClinVar）、PM1 ≥1★、PP2 良性 ≤20% | 第 5.2 節 |
 | 表型基因點數 | 開發 396 例；7 段區間；下限 −3.1 | 平滑曲線（v10.77；開發＋第二組 877 例、正式引擎）；最低 −6.1；7 段與 11 段區間列入院內再測 | 第 4.8.3、13.18 節 |
 | 表型疾病點數（同基因內分配） | 開發資料；7 段區間；下限 −3.1 | 平滑曲線（v10.77；881 例合併、MONDO 同組名次）；最低 −4.8 | 第 4.8.3、4.8.7 節 |
 | 排序的變異類型先驗 | 無（所有變異同一起點） | 剪接預測陰性時：同義 −5.1、內含子 +3～+6／−3～−20 −1.6、非編碼區（5′UTR、3′UTR、內含子 ≥+7／≤−21 合併）−3.3（ClinVar 2026-11-22 估計，只影響排序；v10.75 曾分開估計） | 第 5.2.12 節 |

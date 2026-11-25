@@ -1,7 +1,16 @@
 # BA1/BS1 exception list for the NGS-UI ACMG rule engine (plan §5.2.4).
 # Variants listed here never receive BA1 or BS1 even when common; the engine
-# flags the frequency conflict instead. Most common-but-pathogenic variants
-# are already protected because ClinVar >=2-star P/LP is exempt.
+# flags the frequency conflict instead. ClinVar >=2-star P/LP protects a
+# variant only while its max AF is at most clinvar.override_max_af (5 %,
+# rule v1.12); above that only this list (or a VCEP call) keeps it.
 # Fill from Ghosh et al. 2018 (Hum Mutat 39:1525, Table) and in-house review;
 # one variant per line, key = chrN-POS-REF-ALT (GRCh38, VCF representation).
 variant_key	source	note
+chr3-128879647-C-CTAAG	Ghosh 2018 (ClinGen SVI BA1 exception list)	ACAD9 c.-44_-41dup
+chr3-15645186-G-C	Ghosh 2018 (ClinGen SVI BA1 exception list)	BTD c.1330G>C p.Asp444His (NM_000060; NM_001370658 c.1270G>C)
+chr13-20189473-C-T	Ghosh 2018 (ClinGen SVI BA1 exception list)	GJB2 c.109G>A p.Val37Ile
+chr6-26090951-C-G	Ghosh 2018 (ClinGen SVI BA1 exception list)	HFE c.187C>G p.His63Asp
+chr6-26092913-G-A	Ghosh 2018 (ClinGen SVI BA1 exception list)	HFE c.845G>A p.Cys282Tyr
+chr16-3249586-G-A	Ghosh 2018 (ClinGen SVI BA1 exception list)	MEFV c.1105C>T p.Pro369Ser
+chr16-3249468-C-T	Ghosh 2018 (ClinGen SVI BA1 exception list)	MEFV c.1223G>A p.Arg408Gln
+chr13-72835359-G-A	Ghosh 2018 (ClinGen SVI BA1 exception list)	PIBF1 c.1214G>A p.Arg405Gln

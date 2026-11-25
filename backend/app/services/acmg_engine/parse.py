@@ -83,6 +83,22 @@ def variant_key(row: dict) -> str:
     return f"{chrom}-{text(row.get('POS'))}-{text(row.get('REF'))}-{text(row.get('ALT'))}"
 
 
+_PTC_STOP_RE = re.compile(r"p\.\(?[A-Z][a-z]{2}(\d+)(?:Ter|\*)")
+_PTC_FS_RE = re.compile(r"p\.\(?[A-Z][a-z]{2}(\d+)(?:[A-Z][a-z]{2})?fs(?:Ter|\*)(\d+)")
+
+
+def ptc_codon(hgvs) -> int | None:
+    """Codon of the premature stop: ``p.Arg1730Ter`` -> 1730, ``p.Leu20ProfsTer5`` -> 24.
+
+    None when the stop is not written (``p.Leu20fs``, ``fsTer?``)."""
+    raw = unquote(text(hgvs))
+    m = _PTC_FS_RE.search(raw)
+    if m:
+        return int(m.group(1)) + int(m.group(2)) - 1
+    m = _PTC_STOP_RE.search(raw)
+    return int(m.group(1)) if m else None
+
+
 def is_snv(row: dict) -> bool:
     return len(text(row.get("REF"))) == 1 and len(text(row.get("ALT"))) == 1
 

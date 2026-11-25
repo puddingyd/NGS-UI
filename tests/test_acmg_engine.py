@@ -202,9 +202,14 @@ def test_ba1_and_clinvar_exception():
     common = row(GNOMAD41_JOINT_EAS_AF="0.08")
     assert evaluate_variant(common, Context())["classification"] == "Benign"
     known = row(GNOMAD41_JOINT_EAS_AF="0.08", CLINVAR_SIG="Pathogenic", CLINVAR_STARS="2")
-    result = evaluate_variant(known, Context())
+    # v1.12: ClinVar P/LP above 5 % protects only on the ClinGen BA1 exception list
+    assert met(evaluate_variant(known, Context()), "BA1")
+    listed = Context(refs=refs(ba1_exceptions={"chr1-1000-C-T"}))
+    result = evaluate_variant(known, listed)
     assert not met(result, "BA1")
     assert any(flag["code"] == "frequency_conflict" for flag in result["flags"])
+    below = evaluate_variant(row(GNOMAD41_JOINT_EAS_AF="0.03", CLINVAR_SIG="Pathogenic", CLINVAR_STARS="2"), Context())
+    assert not met(below, "BS1") and not met(below, "BA1")
 
 
 def test_bs1_and_pm2_depend_on_inheritance():
