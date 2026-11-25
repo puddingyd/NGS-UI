@@ -674,3 +674,46 @@ def annotate_mito(variants: dict, *, hpo, engine=None) -> dict:
     for vid, r in _competition(totals).items():
         variants[vid]["prio"]["rank"] = r
     return info
+
+
+# ── which patient HPO terms a candidate disease explains ───────────────────
+MATCH_RELATIONS = ("same", "patient_specific", "patient_broader")
+EXPLAIN_LIMIT = 300
+
+
+def match_class(relation: str, net: float) -> str:
+    """match = the disease is annotated with the term, a broader or a more specific one;
+    partial = only a related (collateral) term that still scores above the disease baseline."""
+    if relation in MATCH_RELATIONS:
+        return "match"
+    if relation == "collateral" and net > 0:
+        return "partial"
+    return "none"
+
+
+def explain_diseases(hpo, disease_ids, *, engine=None) -> dict:
+    """Per patient HPO term: the disease annotation it pairs with and how (plan §4.7)."""
+    from .pheno_engine import engine as E
+    engine, result = pheno_result(hpo, engine=engine)
+    if result is None or result.empty:
+        return {"terms": [], "diseases": {}, "snapshot": getattr(engine, "snapshot", "")}
+    kb = engine.kb
+    terms = [{"hpo_id": kb.terms[int(q)], "name": kb.names[int(q)], "weight": float(w)}
+             for q, w in zip(result.q, result.w)]
+    out = {}
+    seen = set()
+    for did in disease_ids:
+        if did in seen or did not in engine.did or len(seen) >= EXPLAIN_LIMIT:
+            continue
+        seen.add(did)
+        di = engine.did[did]
+        rows = []
+        for r in result.explain(di):
+            rows.append({"hpo_id": r["hpo_id"], "annotation": r["annotation"], "annotation_name": r["annotation_name"],
+                         "relation": r["relation"], "relation_zh": E.RELATION_ZH.get(r["relation"], r["relation"]),
+                         "ic_mica": round(float(r["ic_mica"]), 3), "net": round(float(r["net"]), 3),
+                         "match": match_class(r["relation"], float(r["net"]))})
+        out[did] = {"name": kb.disease_names[di], "n_annotations": int(kb.dir_ptr[di + 1] - kb.dir_ptr[di]),
+                    "matched": sum(r["match"] == "match" for r in rows),
+                    "partial": sum(r["match"] == "partial" for r in rows), "rows": rows}
+    return {"terms": terms, "diseases": out, "snapshot": engine.snapshot}

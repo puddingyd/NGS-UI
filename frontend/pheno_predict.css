@@ -102,3 +102,9 @@
   .ppred-table { display: block; overflow-x: auto; }
 }
 #phenotype-predict { margin-left: 8px; }
+
+/* 「候選診斷」copy next to 「預測基因／疾病」: same shape, teal colours. */
+#phenotype-candidates { margin-left: 6px; }
+.btn-pheno-candidates { border-color: #99f6e4; background: #f0fdfa; color: #0f766e; }
+.btn-pheno-candidates:hover { background: #ccfbf1; }
+.btn-pheno-candidates:disabled { opacity: 0.45; cursor: not-allowed; background: #f0fdfa; }

@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import time
 from urllib.parse import quote
@@ -380,6 +381,19 @@ def get_sample(sample_id: str, version: str | None = None):
 def get_sample_cnv_sv(sample_id: str, version: str | None = None):
     """CNV/SV side-channels for the staged loader."""
     payload = sample_loader.load_sample_cnv_sv(sample_id, version=version)
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    return payload
+
+
+@router.get("/samples/{sample_id}/prioritization/explain")
+def get_prioritization_explain(sample_id: str, disease: list[str] = Query(default=[]), version: str | None = None):
+    """Per-HPO matches of candidate diseases for the candidate list (read-only)."""
+    ids = [d for d in disease if re.fullmatch(r"(OMIM|ORPHA):\d{1,7}", d or "")][:300]
+    try:
+        payload = sample_loader.explain_candidates(sample_id, ids, version=version)
+    except ImportError as exc:
+        raise HTTPException(503, f"表型引擎無法載入（{exc}）") from exc
     if payload is None:
         raise HTTPException(404, f"sample not found: {sample_id}")
     return payload

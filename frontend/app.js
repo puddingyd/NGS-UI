@@ -3541,15 +3541,24 @@ const PRIO_CAND_PAGE = 20;
 let _prioCandShown = PRIO_CAND_PAGE;
 
 function updatePrioCandidatesButton() {
-  const btn = document.getElementById("btn-prio-candidates");
-  if (!btn) return;
+  // Same state for the SNV/Indel title-bar button and the copy next to 「預測基因／疾病」.
   const info = state.data?.prioritization || {};
   const ok = info.mode === "prio" && Array.isArray(info.candidates);
-  btn.disabled = !ok;
-  btn.title = ok
-    ? "In-house prioritization 候選診斷（一個基因一列，依總分排序）"
+  const title = ok
+    ? "In-house prioritization 候選診斷（一個基因一列，依總分排序；依已儲存的 HPO 計算）"
     : (info.reason || "需要 HPO 才能列出候選診斷");
+  for (const id of ["btn-prio-candidates", "phenotype-candidates"]) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.disabled = !ok;
+    btn.title = title;
+  }
 }
+
+document.addEventListener("click", (event) => {
+  const btn = event.target.closest("#phenotype-candidates");
+  if (btn && !btn.disabled) openPrioCandidatesModal();
+});
 
 function _prioDiseaseLink(id) {
   const m = String(id || "").match(/^(OMIM|ORPHA):(\d+)$/);
@@ -3708,7 +3717,8 @@ function renderPrioCandidates() {
     const others = (c.others || []).map(o => {
       const s = _prioCandidateSummary(o);
       const vars = (o.variants || []).map(_prioVariantLabel).join(" ＋ ");
-      return `<li><span class="prio-cand-score">${escapeHtml(s.score)}</span> ${escapeHtml(s.disease)} · ${escapeHtml(s.mode)} · <span class="muted">${escapeHtml(vars)}</span></li>`;
+      const hpo = o.disease_id ? `<span class="prio-cand-hpo-mini" data-disease="${escapeAttr(o.disease_id)}"></span>` : "";
+      return `<li><span class="prio-cand-score">${escapeHtml(s.score)}</span> ${escapeHtml(s.disease)} · ${escapeHtml(s.mode)}${hpo} · <span class="muted">${escapeHtml(vars)}</span></li>`;
     }).join("");
     const more = Number(c.n_combinations) - 1;
     box.innerHTML = `
@@ -3720,6 +3730,7 @@ function renderPrioCandidates() {
         <span class="prio-cand-mode">${escapeHtml(sum.mode)}</span>
         ${c.gene_rank ? `<span class="prio-cand-generank muted">表型排名第 ${escapeHtml(c.gene_rank)}</span>` : ""}
       </div>
+      ${c.disease_id && !c.no_disease ? `<div class="prio-cand-hpo" data-disease="${escapeAttr(c.disease_id)}"><span class="muted">HPO 符合：載入中…</span></div>` : ""}
       ${others ? `<details class="prio-cand-others"><summary>其他組合（${more}）</summary><ul>${others}</ul>${more > (c.others || []).length ? `<div class="muted">只列前 ${(c.others || []).length} 個</div>` : ""}</details>` : ""}
       <div class="prio-cand-cards"></div>`;
     const cards = box.querySelector(".prio-cand-cards");
@@ -3746,6 +3757,66 @@ function renderPrioCandidates() {
     tail.textContent = `只列出前 ${list.length} 個基因；其餘請用 tier 清單或搜尋基因。`;
     host.appendChild(tail);
   }
+  _prioLoadExplain(host);
+}
+
+// Which of the case's HPO terms each candidate disease explains (fetched for the rows shown).
+let _prioExplain = { key: null, terms: [], diseases: {}, pending: new Set() };
+
+function _prioExplainReset() {
+  const key = state.data?.prioritization || null;
+  if (_prioExplain.key !== key) _prioExplain = { key, terms: [], diseases: {}, pending: new Set() };
+}
+
+function _prioHpoChips(entry, terms) {
+  const names = Object.fromEntries((terms || []).map(t => [t.hpo_id, t.name]));
+  const order = { match: 0, partial: 1, none: 2 };
+  const rows = [...(entry.rows || [])].sort((a, b) => order[a.match] - order[b.match]);
+  const chips = rows.map(r => {
+    const name = names[r.hpo_id] || r.hpo_id;
+    const tip = [`病人：${name}（${r.hpo_id}）`,
+      r.match === "none" ? "疾病沒有相關註記" : `疾病註記：${r.annotation_name}（${r.annotation}）`,
+      `關係：${r.relation_zh}`, `淨貢獻 ${Number(r.net).toFixed(2)}（配對分扣掉這個疾病的基準分）`].join("\n");
+    return `<span class="prio-hpo-chip prio-hpo-${r.match}" title="${escapeAttr(tip)}">${escapeHtml(name)}</span>`;
+  }).join("");
+  const n = rows.length;
+  const partial = entry.partial ? `、部分 ${entry.partial}` : "";
+  return `<span class="prio-hpo-sum" title="符合：疾病有這個 HPO、或它的上層／下層；部分：只有相關但不同的 HPO（旁系），且分數高於這個疾病的基準">HPO 符合 ${entry.matched}／${n}${partial}</span>${chips}`;
+}
+
+function _prioFillExplain(host) {
+  host.querySelectorAll(".prio-cand-hpo[data-disease]").forEach(el => {
+    const entry = _prioExplain.diseases[el.dataset.disease];
+    if (entry) el.innerHTML = _prioHpoChips(entry, _prioExplain.terms);
+    else if (!_prioExplain.pending.has(el.dataset.disease)) el.innerHTML = `<span class="muted">HPO 符合：無資料</span>`;
+  });
+  host.querySelectorAll(".prio-cand-hpo-mini[data-disease]").forEach(el => {
+    const entry = _prioExplain.diseases[el.dataset.disease];
+    el.textContent = entry ? ` · HPO 符合 ${entry.matched}／${(entry.rows || []).length}` : "";
+  });
+}
+
+async function _prioLoadExplain(host) {
+  _prioExplainReset();
+  const sid = state.data?.sample_id || state.currentLIS;
+  const want = [...new Set([...host.querySelectorAll("[data-disease]")].map(el => el.dataset.disease))]
+    .filter(id => id && !(id in _prioExplain.diseases) && !_prioExplain.pending.has(id));
+  _prioFillExplain(host);
+  if (!sid || !want.length) return;
+  const key = _prioExplain.key;
+  want.forEach(id => _prioExplain.pending.add(id));
+  try {
+    const qs = want.slice(0, 300).map(id => `disease=${encodeURIComponent(id)}`).join("&");
+    const out = await apiFetch(`/samples/${encodeURIComponent(sid)}/prioritization/explain?${qs}`);
+    if (_prioExplain.key !== key) return;                       // another case or reload meanwhile
+    _prioExplain.terms = out?.terms || _prioExplain.terms;
+    Object.assign(_prioExplain.diseases, out?.diseases || {});
+  } catch (_e) {
+    // leave the rows as "無資料"; the list itself still works
+  } finally {
+    if (_prioExplain.key === key) want.forEach(id => _prioExplain.pending.delete(id));
+  }
+  if (_prioExplain.key === key) _prioFillExplain(document.getElementById("gene-search-results") || host);
 }
 
 function openPrioCandidatesModal() {

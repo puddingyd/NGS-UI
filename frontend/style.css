@@ -4825,3 +4825,12 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 /* In-house prioritization row on CNV/SV and mitochondrial cards (same text as SNV). */
 .cnv-sv-prio { font-size: 13px; margin: 0 0 4px; }
 .cnv-sv-prio .prio-score { white-space: nowrap; }
+
+/* Candidate list: which patient HPO terms the candidate disease explains. */
+.prio-cand-hpo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; margin: 0 0 6px; }
+.prio-hpo-sum { font-weight: 600; color: #374151; margin-right: 2px; cursor: help; }
+.prio-hpo-chip { display: inline-block; padding: 1px 7px; border-radius: 10px; border: 1px solid; line-height: 1.5; cursor: help; }
+.prio-hpo-match { background: #dcfce7; border-color: #86efac; color: #166534; }
+.prio-hpo-partial { background: #fef9c3; border-color: #fde047; color: #854d0e; }
+.prio-hpo-none { background: #f3f4f6; border-color: #e5e7eb; color: #9ca3af; text-decoration: line-through; }
+.prio-cand-hpo-mini { color: #166534; font-size: 12px; }

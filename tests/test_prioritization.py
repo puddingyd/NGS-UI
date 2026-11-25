@@ -289,3 +289,20 @@ def test_mito_points_and_scores(omim, eng):
     assert info["mode"] == "prio" and variants["m1"]["prio"]["c"] == 0
     assert variants["m1"]["prio"]["p"] == PR.P_FLOOR          # gene without a ranked disease
     assert variants["m1"]["prio"]["rank"] == 1 and cats["MITO-3"] == ["m1", "m2"]
+
+
+def test_explain_diseases(omim, eng):
+    out = PR.explain_diseases(["HP:0011153", "HP:0000316"], ["OMIM:100001", "OMIM:100004", "OMIM:404", "OMIM:100001"],
+                              engine=eng)
+    assert sorted(t["hpo_id"] for t in out["terms"]) == ["HP:0000316", "HP:0011153"]
+    assert set(out["diseases"]) == {"OMIM:100001", "OMIM:100004"}       # unknown and duplicate IDs dropped
+    focal = {r["hpo_id"]: r for r in out["diseases"]["OMIM:100001"]["rows"]}
+    # focal motor seizure under the disease's focal-onset seizure annotation: explained
+    assert focal["HP:0011153"]["relation"] == "patient_specific" and focal["HP:0011153"]["match"] == "match"
+    assert focal["HP:0011153"]["annotation"] == "HP:0007359"
+    eye = {r["hpo_id"]: r for r in out["diseases"]["OMIM:100004"]["rows"]}
+    assert eye["HP:0000316"]["relation"] == "same" and eye["HP:0000316"]["match"] == "match"
+    assert eye["HP:0011153"]["match"] != "match"
+    assert out["diseases"]["OMIM:100004"]["matched"] == 1
+    assert PR.match_class("collateral", 0.4) == "partial" and PR.match_class("collateral", -0.1) == "none"
+    assert PR.explain_diseases([], ["OMIM:100001"], engine=eng)["diseases"] == {}

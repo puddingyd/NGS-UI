@@ -139,3 +139,21 @@ test('candidate list: CNV deletion pairs with the strongest het SNV of a recessi
   data.cnv_variants = {};
   assert.equal(context._prioCandidateList().list, data.prioritization.candidates);
 });
+
+test('candidate HPO chips: matched first, partial, then unexplained terms', () => {
+  const context = vm.createContext({
+    escapeHtml: s => String(s).replace(/</g, '&lt;'), escapeAttr: s => String(s).replace(/"/g, '&quot;'),
+  });
+  vm.runInContext(fn('_prioHpoChips'), context);
+  const html = context._prioHpoChips({ matched: 1, partial: 1, rows: [
+    { hpo_id: 'HP:3', match: 'none', relation_zh: '無共同上層', net: -0.2 },
+    { hpo_id: 'HP:2', match: 'partial', annotation: 'HP:9', annotation_name: 'B', relation_zh: '旁系', net: 0.5 },
+    { hpo_id: 'HP:1', match: 'match', annotation: 'HP:1', annotation_name: 'A', relation_zh: '相同', net: 2 },
+  ] }, [{ hpo_id: 'HP:1', name: 'Seizure' }, { hpo_id: 'HP:2', name: 'Ataxia' }]);
+  assert.match(html, /HPO 符合 1／3、部分 1/);
+  const order = [...html.matchAll(/prio-hpo-(match|partial|none)"/g)].map(m => m[1]);
+  assert.deepEqual(order, ['match', 'partial', 'none']);
+  assert.match(html, />Seizure</);
+  assert.match(html, />HP:3</);                         // name missing → ID
+  assert.match(html, /疾病沒有相關註記/);
+});

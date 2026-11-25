@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.68：候選診斷清單逐項 HPO 配對：`GET /api/samples/{id}/prioritization/explain?disease=…`（`sample_loader.explain_candidates` → `prioritization.explain_diseases`，用個案已儲存的 HPO 與排序同一個快取結果，`match_class`：same／patient_specific／patient_broader＝符合、旁系且淨貢獻 >0＝部分、其餘＝不符合）；前端 `_prioLoadExplain`／`_prioHpoChips` 依顯示中的列批次取資料；Patient phenotype 標題新增 `#phenotype-candidates`（`.btn-pheno-candidates`），由 `updatePrioCandidatesButton()` 同步啟用狀態。
+
 v10.67：階段 6 文獻驗證：`backend/app/services/pheno_engine/benchmark.py`（病例讀取、time-split 合格判斷、鎖定抽樣、LOPO 單次掃描重算基準分、Resnik／不校正／平台舊查表對照、外部工具結果讀入、McNemar、基因群組 bootstrap、名次點數校準、報告）＋`scripts/benchmark_pheno.py run|select-test`（舊的單快照模式保留）；鎖定清單與第一次報告在 `research/pheno_benchmark/`；`GENE_POINTS`／`DISEASE_POINTS` 改用 881 例合併重算；修正 `Engine._set_links` 對重複疾病–基因列的錯誤。
 
 v10.66：表型基因名次點數改用 396＋481 例合併估計（`GENE_POINTS` +10.2／7.5／6.0／4.3／1.6／−1.3／−6.1，`P_MIN`＝`P_FLOOR`＝−6.1）；隱性兩個變異 `PAIR_PHASE_UNKNOWN`＝0；CNV／SV（`prioritization.annotate_events`：`annotsv_points` 分段換算、`_prio_genes` 受影響基因各算 P＋C 取最高、`event_zygosity`）與粒線體（`annotate_mito`、`mito_points`）In-house prioritization，staged `/cnv`、`/sv`、`/mito` 回 `{cnv,sv,mito}_prioritization` 並重排 tier；前端卡片分數列 `.cnv-sv-prio`、CNV 合併後事件名次 `_cnvSvPrioRank`、`_cnvSvCompareImpact` 在 prio 模式改用總分；候選清單 `_prioCandidateList()` 併入 CNV 缺失＋SNV 隱性配對（`ar_genes`、`_prioCnvPairs`）。

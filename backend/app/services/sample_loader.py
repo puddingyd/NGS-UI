@@ -1379,6 +1379,14 @@ def _case_hpo(sample_id: str, version: str | None, meta: dict) -> list:
     return meta.get("hpo") or meta.get("patient_phenotype") or []
 
 
+def explain_candidates(sample_id: str, disease_ids: list, version: str | None = None) -> dict | None:
+    """Which of the case's HPO terms each candidate disease explains (same HPO as the ranking)."""
+    if not sample_layout.state_dir(sample_id).is_dir():
+        return None
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
+    return prioritization.explain_diseases(_case_hpo(sample_id, version, meta), disease_ids)
+
+
 def load_sample_roh(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader for normalized ROH regions and provenance summary."""
     return roh.load_sample_roh(sample_id)
