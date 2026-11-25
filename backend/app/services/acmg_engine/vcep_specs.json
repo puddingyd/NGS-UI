@@ -4014,6 +4014,14 @@
       ],
       [
        350,
+       350
+      ],
+      [
+       363,
+       363
+      ],
+      [
+       382,
        382
       ],
       [
@@ -4560,16 +4568,12 @@
    "label": "ClinGen FBN1 Expert Panel Specifications to the ACMG/AMP Variant Interpretation Guidelines Version 1.0",
    "pm1": [
     {
-     "ranges": [
-      [
-       2,
-       4
-      ]
-     ],
+     "residue_change": "Cys",
      "strength": "moderate"
     }
    ],
    "pm1_other_gene": false,
+   "pm1_override": "規格以胺基酸種類定義（EGF／TB／hybrid 區域的 Cys、產生 Cys 的變異；cbEGF 的 Cys 為 Strong），平台只用「失去或產生 Cys」給 Moderate；鈣結合序列、羥化位置與 Cys 之間的關鍵 Gly 需人工判斷",
    "pm1_text": {
     "moderate": "* Cys in EGF-like domain, Cys in TB domain, Cys in hybrid domain, (D/N)-X-(D/N)-(E/Q)-Xm-(D/N)-Xn-(Y/F) substitution in cbEGF-like domain, invariant calcium-binding or hydroxylation residue in cbEGF-like domain, critical Gly between Cys2-Cys3 in cbEGF-like domain, Gly between Cys3-Cys4 if there is an upstream cbEGF domain, Cys-creating variants. * Add caveat: N to S substitution in the second N of",
     "strong": "* Cys residues in cbEGF-like domains * Add caveat: PM5/PS1 should not be used when this argument applies."
@@ -5860,12 +5864,47 @@
     ]
    },
    "label": "ClinGen Platelet Disorders Expert Panel Specifications to the ACMG/AMP Variant Interpretation Guidelines for GP1BA Version 1.1",
-   "pm1": [],
+   "pm1": [
+    {
+     "ranges": [
+      [
+       20,
+       20
+      ],
+      [
+       33,
+       33
+      ],
+      [
+       225,
+       225
+      ],
+      [
+       227,
+       227
+      ],
+      [
+       264,
+       264
+      ],
+      [
+       280,
+       280
+      ],
+      [
+       526,
+       527
+      ]
+     ],
+     "strength": "moderate"
+    }
+   ],
    "pm1_other_gene": false,
+   "pm1_override": "規格列出的 Cys 位置 20、33、225、227、264、280、526、527（只寫數字，解析器讀不到）",
    "pm1_text": {
     "moderate": "Disulfide bonds in GPIb are well-established as critical to function, both for interaction with GPIX (PMID: 12036872) and receptor binding to von Willebrand factor (PMID: 18647229). PM1 can be applied when the following cysteine residues (at which there are no known benign variants) are altered: 20, 33, 225, 227, 264, 280, 526, 527."
    },
-   "pm1_unparsed": true,
+   "pm1_unparsed": false,
    "rule_set_genes": [
     "GP1BA"
    ],
@@ -5978,12 +6017,39 @@
     ]
    },
    "label": "ClinGen Platelet Disorders Expert Panel Specifications to the ACMG/AMP Variant Interpretation Guidelines for GP1BB Version 1.1",
-   "pm1": [],
+   "pm1": [
+    {
+     "ranges": [
+      [
+       93,
+       93
+      ],
+      [
+       95,
+       95
+      ],
+      [
+       118,
+       118
+      ],
+      [
+       141,
+       141
+      ],
+      [
+       147,
+       147
+      ]
+     ],
+     "strength": "moderate"
+    }
+   ],
    "pm1_other_gene": false,
+   "pm1_override": "規格列出的 Cys 位置 93、95、118、141、147（只寫數字，解析器讀不到）",
    "pm1_text": {
     "moderate": "Disulfide bonds in GPIb are well-established as critical to function, both for interaction with GPIX (PMID: 12036872) and receptor binding to von Willebrand factor (PMID: 18647229). PM1 can be applied when the following cysteine residues (at which there are no known benign variants) are altered: 93, 95, 118, 141, and 147."
    },
-   "pm1_unparsed": true,
+   "pm1_unparsed": false,
    "rule_set_genes": [
     "GP1BB"
    ],
@@ -6213,10 +6279,6 @@
    "pm1": [
     {
      "ranges": [
-      [
-       17,
-       17
-      ],
       [
        873,
        951
@@ -6794,7 +6856,7 @@
     {
      "ranges": [
       [
-       33,
+       37,
        113
       ],
       [
@@ -6879,6 +6941,7 @@
     }
    ],
    "pm1_other_gene": false,
+   "pm1_override": "DNA 結合區從 Leu37 起算（規格註明 33–36 不結合 DNA）",
    "pm1_text": {
     "moderate": "Applicable to amino acids that directly bind DNA and are necessary for Zinc-finger or homodimer formation * Directly bind DNA: Asp43, His49, Tyr 50, Gly51, Asp56, Gly57, Lys59, Arg63, Arg64, Arg67, His70, Tyr72, Arg87, Asn88, Arg91, Arg94, Gln109, Arg112 * Homodimer: Arg75, Gln89, Glu111, Asp113 * Zinc finger: Cys38, Cys41, Cys55, Cys58, Cys74, Cys80, Cys90, Cys93 Applicable to variants within the",
     "supporting": "This criterion can be used for missense variants in well-conserved regions within the DNA and ligand-binding domains. It can also be used for variants within certain conserved transcription factor binding sites in the promoter (see below for details). * Promoter region: * c.-132 to c.-141 (HNF6/OC2 binding site) * c.-143 to c.-149, c.-151 (PDX1 (formerly IPF1) binding site) * c.-169, c.-174, c.-17"
@@ -9730,9 +9793,7 @@
     "BS4": [
      "strong"
     ],
-    "PM1": [
-     "moderate"
-    ],
+    "PM1": [],
     "PM2": [
      "supporting"
     ],
@@ -9792,10 +9853,11 @@
    "label": "ClinGen Hearing Loss Expert Panel Specifications to the ACMG/AMP Variant Interpretation Guidelines for OTOF and MYO15A Version 1.0",
    "pm1": [],
    "pm1_other_gene": false,
+   "pm1_override": "規格寫明 MYO15A 沒有定義 PM1 熱點，不改用 ClinVar 推算",
    "pm1_text": {
     "moderate": "Mutational hot spot or well-studied functional domain without benign variation (None defined for OTOF and MYO15A)."
    },
-   "pm1_unparsed": true,
+   "pm1_unparsed": false,
    "rule_set_genes": [
     "MYO15A",
     "OTOF"
@@ -10816,9 +10878,7 @@
     "BS4": [
      "strong"
     ],
-    "PM1": [
-     "moderate"
-    ],
+    "PM1": [],
     "PM2": [
      "supporting"
     ],
@@ -10878,10 +10938,11 @@
    "label": "ClinGen Hearing Loss Expert Panel Specifications to the ACMG/AMP Variant Interpretation Guidelines for OTOF and MYO15A Version 1.0",
    "pm1": [],
    "pm1_other_gene": false,
+   "pm1_override": "規格寫明 OTOF 沒有定義 PM1 熱點，不改用 ClinVar 推算",
    "pm1_text": {
     "moderate": "Mutational hot spot or well-studied functional domain without benign variation (None defined for OTOF and MYO15A)."
    },
-   "pm1_unparsed": true,
+   "pm1_unparsed": false,
    "rule_set_genes": [
     "MYO15A",
     "OTOF"
@@ -11009,7 +11070,7 @@
       ],
       [
        245,
-       245
+       266
       ],
       [
        268,
@@ -11017,7 +11078,7 @@
       ],
       [
        278,
-       279
+       283
       ],
       [
        285,
@@ -11036,6 +11097,10 @@
        315
       ],
       [
+       322,
+       326
+      ],
+      [
        330,
        331
       ],
@@ -11049,13 +11114,14 @@
       ],
       [
        377,
-       377
+       379
       ]
      ],
      "strength": "moderate"
     }
    ],
    "pm1_other_gene": false,
+   "pm1_override": "補上輔因子結合位置 246–266、280–283、322–326、377–379（文字列在 His285 等之後，解析器漏讀）",
    "pm1_text": {
     "moderate": "* Active site residues in PAH include: Tyr138, Arg158, Val245, Tyr268, Thr278, Pro279, Gly289, Ala300, Asp315, Phe331, Ala345, Gly346, Ser349, Tyr377 * Substrate binding residues in PAH are: 46-48, 63-69 * Cofactor binding residues in PAH are: His285, His290, Glu330, 246-266, 280-283, 322-326, 377-379 * Do not apply if PP3_Strong applies"
    },
@@ -11270,12 +11336,27 @@
     ]
    },
    "label": "ClinGen Ocular Anterior Segment Disorder Expert Panel Specifications to the ACMG/AMP Variant Interpretation Guidelines for PAX6 Version 1.0",
-   "pm1": [],
+   "pm1": [
+    {
+     "ranges": [
+      [
+       4,
+       143
+      ],
+      [
+       226,
+       281
+      ]
+     ],
+     "strength": "moderate"
+    }
+   ],
    "pm1_other_gene": false,
+   "pm1_override": "規格以 cDNA 位置寫成 paired domain c.10–c.427、homeodomain c.676–c.841，換算為 codons 4–143、226–281",
    "pm1_text": {
     "moderate": "This code can be applied to a missense variant that occurs in the homeodomain (c.676 to c.841) or paired domain (c.10 to c.427) * Do not apply this code if the variant meets BS1"
    },
-   "pm1_unparsed": true,
+   "pm1_unparsed": false,
    "rule_set_genes": [
     "PAX6"
    ],
@@ -16254,7 +16335,7 @@
     {
      "ranges": [
       [
-       79,
+       89,
        189
       ]
      ],
@@ -16262,6 +16343,7 @@
     }
    ],
    "pm1_other_gene": false,
+   "pm1_override": "用 MANE 轉錄本 NM_001276345.2 的 codons 89–189（ENST00000367318 的 79–179 是同一段）",
    "pm1_text": {
     "supporting": "Applicable to missense variants in _TNNT2_ in the specific regions listed below (Walsh _et al._ 2019 ). 1. Transcripts ENST00000367318 with codons 79-179 2. ENST00000656932.1 and NM_001276345.2 with codons 89-189 Data from HCM case cohorts was used to derive these cluster regions. Therefore, this rule should NOT be applied when additional evidence for the variant supports that the variant causes a"
    },
@@ -16908,6 +16990,7 @@
    "version": "1.1"
   }
  },
+ "pm1_override_stale": [],
  "skipped": {
   "ACTA1": "多個規格（GN147 Congenital Myopathies Variant Curation Expert Panel、GN169 Congenital Myopathies Variant Curation Expert Panel）",
   "ITGA2B": "多個規格（GN011 Platelet Disorders Variant Curation Expert Panel、GN221 Platelet Disorders Variant Curation Expert Panel）",
@@ -16918,7 +17001,7 @@
  "source": {
   "documents": 129,
   "name": "ClinGen Criteria Specification Registry",
-  "retrieved": "2026-11-24",
+  "retrieved": "2026-11-25",
   "url": "https://cspec.genome.network/cspec/api/svis?detail=high"
  }
 }

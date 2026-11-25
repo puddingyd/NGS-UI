@@ -45,6 +45,7 @@ def get_variant_acmg(sample_id: str, variant_id: str):
         "variant_id": normalized,
         "sample_snapshot": edit.get("manual_acmg"),
         "manual_current": current,
+        "inhouse_evidence": sample_loader.acmg_engine_detail(sample_id, variant_id),
     }
 
 

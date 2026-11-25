@@ -299,6 +299,49 @@ def summary(result: dict) -> dict:
     }
 
 
+def evidence_view(result: dict, status: str) -> dict:
+    """Per-criterion reasons of one variant for the manual ACMG modal."""
+    rule = result.get("clinvar_rule") or {}
+    own = own_call(summary(result))
+    return {
+        "status": status,
+        "version": result.get("version") or "",
+        "classification": own[0], "points": own[1],
+        "rank_classification": result.get("classification") or "", "rank_points": result.get("points"),
+        "clinvar_action": rule.get("action") or "none", "clinvar_source": rule.get("source") or "",
+        "clinvar_category": rule.get("category") or "", "clinvar_stars": rule.get("stars") or 0,
+        "vcep": {k: (result.get("vcep") or {}).get(k) for k in ("vcep", "svi", "version", "url")} if result.get("vcep") else None,
+        "evidence": [{k: ev.get(k) for k in ("code", "status", "strength", "points", "reason")}
+                     for ev in result.get("evidence") or [] if isinstance(ev, dict) and ev.get("code")],
+        "flags": [{"code": f.get("code"), "message": f.get("message")}
+                  for f in result.get("flags") or [] if isinstance(f, dict)],
+    }
+
+
+def evidence_detail(sample_id: str, variant_id: str, *, rows_loader=None) -> dict | None:
+    """Stored reasons for one variant (``current`` / ``stale``); variants outside the
+    review list are evaluated on demand from ``rows_loader(variant_id)``."""
+    case = case_inputs(sample_id)
+    path = case["existing"]
+    stored = lookup_many(path, [variant_id], detail=True).get(variant_id) if Path(path).is_file() else None
+    refs = shared_references()
+    if stored:
+        status = "current" if is_current(path, case["review"], refs) else "stale"
+        return evidence_view(stored, status)
+    rows = rows_loader(variant_id) if rows_loader else None
+    if not rows:
+        return None
+    groups = {vid: grp for vid, grp in group_variant_rows(rows).items() if vid == variant_id}
+    if not groups:
+        return None
+    recurrence = shared_recurrence() if case["test_type"] == "WES" else None
+    case_refs = CaseRecurrence(refs, recurrence, sample_id,
+                               case_patient(recurrence, sample_id, case["mrn"]), shared_probands())
+    for _, result in evaluate_rows(groups, test_type=case["test_type"], refs=case_refs):
+        return evidence_view(result, "on_demand")
+    return None
+
+
 def expert_adopted(engine: dict, vcep_class: str = "") -> bool:
     """The stored class was adopted from a ClinGen expert panel (VCEP) call.
 

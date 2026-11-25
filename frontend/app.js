@@ -5876,6 +5876,45 @@ function renderAcmgSourceSummaries() {
   }).join("");
 }
 
+const ACMG_INHOUSE_STATUS = { met: "符合", not_met: "不符合", not_evaluated: "未評估" };
+
+// In-house rule reasons for one criterion, shown under its description in the modal.
+function _acmgInhouseReasonHtml(code) {
+  const info = _acmgEditor?.inhouseEvidence;
+  if (!info) return "";
+  const items = (info.evidence || []).filter(ev => ev.code === code);
+  if (!items.length) return "";
+  const order = { met: 0, not_met: 1, not_evaluated: 2 };
+  return items.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3)).map(ev => {
+    const status = ACMG_INHOUSE_STATUS[ev.status] || ev.status || "";
+    let head = `In-house：${status}`;
+    if (ev.status === "met") {
+      const meta = (_acmgCatalog?.strengths || []).find(x => x.value === ev.strength) || {};
+      const pts = Number(ev.points);
+      head += ` ${meta.label || ev.strength || ""}${Number.isFinite(pts) ? `（${pts > 0 ? "+" : ""}${pts}）` : ""}`;
+    }
+    return `<div class="acmg-inhouse-reason acmg-inhouse-${escapeAttr(ev.status || "")}"><b>${escapeHtml(head)}</b>`
+      + `${ev.reason ? `：${escapeHtml(ev.reason)}` : ""}</div>`;
+  }).join("");
+}
+
+function _acmgInhouseHeaderHtml() {
+  const info = _acmgEditor?.inhouseEvidence;
+  if (!info) return "";
+  const pts = Number(info.points);
+  const own = `${info.classification || "—"}${Number.isFinite(pts) ? `（${pts}）` : ""}`;
+  const notes = [`下方各項的「In-house」小字是平台規則（${info.version || "—"}）的判斷與理由，結果 ${own}`];
+  if (info.status === "stale") notes.push("這是舊版規則的已存結果，重算後可能不同");
+  if (info.status === "on_demand") notes.push("這個點位不在 review 清單，理由是開啟時當場計算");
+  if (info.vcep?.vcep) notes.push(`套用 ClinGen ${info.vcep.vcep}（${info.vcep.svi || ""}）規格`);
+  if (info.clinvar_action === "adopt" && info.rank_classification
+      && info.rank_classification !== info.classification) {
+    notes.push(`排序改用 ${info.clinvar_source || "ClinVar"} 的 ${info.clinvar_category || info.rank_classification}`
+      + `（${info.clinvar_stars || 0}★）`);
+  }
+  return `<div class="acmg-inhouse-header">${notes.map(escapeHtml).join("；")}</div>`;
+}
+
 function renderAcmgCriteriaEditor() {
   const host = document.getElementById("acmg-criteria-list");
   if (!host || !_acmgEditor || !_acmgCatalog) return;
@@ -5905,6 +5944,7 @@ function renderAcmgCriteriaEditor() {
         ${escapeHtml(item.description)}
         <div class="acmg-criterion-refs">${refs}</div>
         ${item.scope_note ? `<div class="acmg-case-scope">只套用目前個案：${escapeHtml(item.scope_note)}</div>` : ""}
+        ${_acmgInhouseReasonHtml(item.code)}
         ${item.deprecated_warning ? `<div class="acmg-retired-warning">⚠ ${escapeHtml(item.deprecated_warning)}</div>` : ""}
       </div>
     </div>`;
@@ -5925,7 +5965,8 @@ function renderAcmgCriteriaEditor() {
       ${groupHtml}
     </section>`;
   };
-  host.innerHTML = renderColumn("pathogenic", "Pathogenic criteria")
+  host.innerHTML = _acmgInhouseHeaderHtml()
+    + renderColumn("pathogenic", "Pathogenic criteria")
     + renderColumn("benign", "Benign criteria");
   updateAcmgPreview();
 }
@@ -6070,6 +6111,7 @@ async function openAcmgModal(id, trigger = null) {
       sources,
       criteria: parsed.criteria,
       origin,
+      inhouseEvidence: detail.inhouse_evidence || null,
     };
     document.getElementById("acmg-modal-variant").textContent =
       `${displaySnvHgvs(variant, id)} · ${detail.genome_build || state.data?.genome_build || "hg38"} · ${id}`;

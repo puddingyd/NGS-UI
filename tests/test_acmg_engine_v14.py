@@ -161,3 +161,32 @@ def test_pm2_xlinked_recessive_allows_low_frequency():
     too_common = evaluate_variant(missense_row(GNOMAD_E_AF="0.0002"), Context(moi={"XLR"}))
     assert not met(too_common, "PM2")
     assert any("X 性聯隱性" in (e.get("reason") or "") for e in by_code(too_common, "PM2"))
+
+
+# ── PM1 parsing fixes and hand corrections (v1.9) ─────────────────────────
+def test_pm1_residues_skip_domain_cys_numbering_coordinates_and_disulfide_pairs():
+    assert cspec.residues("critical Gly between Cys2-Cys3 in cbEGF-like domain") == []
+    assert cspec.residues("C350 (C350-C382 disulfide in ZP-N domain)") == [[350, 350], [382, 382]]
+    assert cspec.residues("substitutions between positions p.873-951; CRX binding site at position "
+                          "17:8002593-8002598 (hg38)") == [[873, 951]]
+    assert cspec.residues("codons R391-S392 and aa 19-43") == [[19, 43], [391, 392]]
+
+
+def test_pm1_overrides_apply_only_to_their_version():
+    fbn1, note, stale = cspec._apply_pm1_override("FBN1", "1.0", [{"strength": "moderate", "ranges": [[2, 4]]}])
+    assert fbn1 == [{"strength": "moderate", "residue_change": "Cys"}] and note and not stale
+    kept, note, stale = cspec._apply_pm1_override("FBN1", "2.0", [{"strength": "moderate", "ranges": [[2, 4]]}])
+    assert kept == [{"strength": "moderate", "ranges": [[2, 4]]}] and note is None and stale
+    pah, _, _ = cspec._apply_pm1_override("PAH", "2.1", [{"strength": "moderate", "ranges": [[245, 245], [268, 268]]}])
+    assert pah[0]["ranges"] == [[245, 266], [268, 268], [280, 283], [322, 326], [377, 379]]
+    assert cspec._apply_pm1_override("OTOF", "1.0", [])[0] == []
+
+
+def test_vcep_pm1_cysteine_rule():
+    spec = dict(SPEC, pm1=[{"strength": "moderate", "residue_change": "Cys"}])
+    lost = evaluate_variant(missense_row(HGVS_P="ENSP1:p.Cys614Arg", PROTEIN_POSITION="614/2871"), _ctx(spec))
+    assert met(lost, "PM1")[0]["strength"] == "moderate" and "Cys" in met(lost, "PM1")[0]["reason"]
+    gained = evaluate_variant(missense_row(HGVS_P="ENSP1:p.Arg100Cys", PROTEIN_POSITION="100/2871"), _ctx(spec))
+    assert met(gained, "PM1")
+    other = evaluate_variant(missense_row(HGVS_P="ENSP1:p.Ile614Thr", PROTEIN_POSITION="614/2871"), _ctx(spec))
+    assert not met(other, "PM1") and "人工判斷" in by_code(other, "PM1")[0]["reason"]

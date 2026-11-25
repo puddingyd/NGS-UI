@@ -516,12 +516,16 @@ def _pm1(row: dict, ctx: Context, rb: dict) -> Evidence | None:
                                 if spec.get("pm1_regions") else [])
     if rules:                                     # VCEP hotspots win; outside them no PM1
         rank = {"supporting": 1, "moderate": 2, "strong": 3, "very_strong": 4}
-        hits = [(r["strength"], a, b) for r in rules for a, b in r["ranges"] if a <= pos <= b]
+        hits = [(r["strength"], f"p.{a}" if a == b else f"p.{a}–{b}")
+                for r in rules for a, b in r.get("ranges") or () if a <= pos <= b]
+        hits += [(r["strength"], f"p.{ref_aa}{pos}{alt}，失去或產生 Cys") for r in rules
+                 if r.get("residue_change") == "Cys" and "Cys" in (ref_aa, alt) and alt not in ("=", ref_aa)]
         if hits:
-            strength, a, b = max(hits, key=lambda h: rank.get(h[0], 0))
-            where = f"p.{a}" if a == b else f"p.{a}–{b}"
+            strength, where = max(hits, key=lambda h: rank.get(h[0], 0))
             return _met("PM1", strength, f"位於 {label} 定義的 PM1 熱點／重要區域（{where}）", rb)
-        return Evidence("PM1", "not_met", reason=f"不在 {label} 定義的 PM1 熱點／重要區域")
+        what = "（規格只列失去或產生 Cys 的變異，其他關鍵位置需人工判斷）" if any(
+            r.get("residue_change") for r in rules) else ""
+        return Evidence("PM1", "not_met", reason=f"不在 {label} 定義的 PM1 熱點／重要區域{what}")
     collagen = ctx.refs.collagen_gly(gene)
     cfg_col = rb.get("pm1_collagen")
     if collagen and cfg_col and ref_aa == "Gly" and alt not in ("=", "Gly") and pos in collagen["positions"]:

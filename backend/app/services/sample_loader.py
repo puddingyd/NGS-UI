@@ -1239,6 +1239,26 @@ def _enrich_snv_variants(
     return pheno_by_gene
 
 
+def acmg_engine_detail(sample_id: str, variant_id: str) -> dict | None:
+    """In-house per-criterion reasons for the manual ACMG modal (never raises)."""
+    def rows_for(vid: str):
+        raw_tsv = sample_layout.snv_raw_tsv(sample_id)
+        if not raw_tsv.is_file():
+            return None
+        rows = snv_gene_index.query_rows_by_ids(raw_tsv, {vid}, sample_layout.snv_gene_index_path(sample_id))
+        if not rows:
+            return None
+        with snv_overlay.OverlayReader(raw_tsv, sample_layout.snv_overlay_path(sample_id)) as overlay:
+            return overlay.apply_many(rows)
+    try:
+        from .acmg_engine import runner as acmg_engine_runner
+        return acmg_engine_runner.evidence_detail(sample_id, variant_id, rows_loader=rows_for)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[acmg-engine] detail failed sample={sample_id} variant={variant_id}: "
+              f"{type(exc).__name__}: {exc}", flush=True)
+        return None
+
+
 def _attach_engine_acmg(variants: dict, sample_id: str, *, rows=None, test_type: str = "WES") -> None:
     """ACMG rule engine results (plan §5.2); never blocks loading."""
     if not variants:

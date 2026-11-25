@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.8",
+  "version": "ngsui-acmg-v1.9",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,

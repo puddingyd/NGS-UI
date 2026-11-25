@@ -97,19 +97,20 @@ def write_review(path: Path, specs: dict) -> None:
     with open(path, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")
         writer.writerow(["gene", "svi", "version", "vcep", "not_applicable", "BA1", "BS1", "PM2",
-                         "PM1_rules", "PM1_unparsed", "threshold_notes", "pm1_text"])
+                         "PM1_rules", "PM1_unparsed", "PM1_override", "threshold_notes", "pm1_text"])
         for gene, s in sorted(specs["genes"].items()):
             na = ",".join(code for code, allowed in s["criteria"].items() if not allowed)
             thr = s["thresholds"]
-            pm1 = "; ".join(f"{r['strength']}:" + ",".join(f"{a}-{b}" if a != b else str(a) for a, b in r["ranges"])
+            pm1 = "; ".join(f"{r['strength']}:" + (f"{r['residue_change']} gained/lost" if r.get("residue_change") else
+                                                   ",".join(f"{a}-{b}" if a != b else str(a) for a, b in r["ranges"]))
                             for r in s["pm1"])
             writer.writerow([gene, s["svi"], s["version"], s["vcep"], na,
                              thr.get("ba1", ""), thr.get("bs1", ""), thr.get("pm2", ""), pm1,
-                             "yes" if s["pm1_unparsed"] else "",
+                             "yes" if s["pm1_unparsed"] else "", s.get("pm1_override", ""),
                              " | ".join(f"{k}: {v}" for k, v in s["threshold_notes"].items()),
                              " | ".join(f"{k}: {v}" for k, v in s["pm1_text"].items())])
         for gene, reason in sorted(specs["skipped"].items()):
-            writer.writerow([gene, "", "", f"略過：{reason}", "", "", "", "", "", "", "", ""])
+            writer.writerow([gene, "", "", f"略過：{reason}", "", "", "", "", "", "", "", "", ""])
 
 
 def main(argv=None) -> int:
@@ -131,6 +132,9 @@ def main(argv=None) -> int:
     write_review(args.review, specs)
     print(f"VCEP specs: {len(specs['genes'])} genes from {len(documents)} documents "
           f"(skipped {len(specs['skipped'])}); collagen genes: {len(collagen['genes'])}")
+    if specs.get("pm1_override_stale"):
+        print("PM1 hand corrections not applied (CSpec version changed; re-check the text and update "
+              "cspec.PM1_OVERRIDES): " + ", ".join(specs["pm1_override_stale"]))
     print(f"review table: {args.review}")
     return 0
 

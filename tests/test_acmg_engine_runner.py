@@ -319,3 +319,32 @@ def test_vcep_call_shown_and_manual_does_not_move_ranking(monkeypatch):
     assert manual["effective_rank_score"] == 2 and manual["geno_score"] == manual_acmg.acmg_to_variant_score(2)
     assert manual["tier"] == "1C"                        # tier follows the shown (manual) class
     assert runner.expert_adopted({"clinvar_action": "adopt", "clinvar_source": "ClinVar"}, "Pathogenic") is False
+
+
+def test_evidence_detail_for_acmg_modal(tmp_path, monkeypatch):
+    from app import config
+    from app.services import sample_loader
+
+    root = tmp_path / "root"
+    monkeypatch.setattr(config, "PIPELINE_OUT_ROOT", root)
+    monkeypatch.setattr(config, "LEGACY_TERTIARY_OUTPUT_ROOT", tmp_path / "legacy_ui")
+    monkeypatch.setattr(config, "LEGACY_PIPELINE_OUT_ROOT", tmp_path / "legacy_pipe")
+    post = _published_case(root, "24WE0002-nckuh", [LOF])
+    shared = refs()
+    monkeypatch.setattr(runner, "shared_references", lambda: shared)
+    monkeypatch.setattr(runner, "shared_recurrence", lambda: None)
+    monkeypatch.setattr(runner, "shared_probands", lambda: None)
+    runner.build_case(review_tsv=post / "24WE0002-nckuh.snv_indel.review.tsv",
+                      out=post / "24WE0002-nckuh.snv_acmg_engine.sqlite", sample_id="24WE0002-nckuh",
+                      test_type="WES", refs=shared, recurrence=None, moi_fn=None)
+    view = runner.evidence_detail("24WE0002-nckuh", "chr1-1000-C-T")
+    assert view["status"] == "current" and view["classification"]
+    pvs1 = [e for e in view["evidence"] if e["code"] == "PVS1"]
+    assert pvs1 and pvs1[0]["status"] == "met" and pvs1[0]["reason"]
+    assert set(pvs1[0]) == {"code", "status", "strength", "points", "reason"}
+    # outside the review list: evaluated from the rows the loader supplies
+    on_demand = runner.evidence_detail("24WE0002-nckuh", "chr1-2000-G-A", rows_loader=lambda vid: [MISSENSE])
+    assert on_demand["status"] == "on_demand" and on_demand["evidence"]
+    assert runner.evidence_detail("24WE0002-nckuh", "chr9-1-A-G", rows_loader=lambda vid: None) is None
+    monkeypatch.setattr(runner, "shared_references", lambda: (_ for _ in ()).throw(OSError("boom")))
+    assert sample_loader.acmg_engine_detail("24WE0002-nckuh", "chr1-1000-C-T") is None   # never raises

@@ -4839,3 +4839,12 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 .prio-hpo-graph-icon { color: #2563eb; font-weight: 500; margin-left: 4px; }
 .prio-hpo-mini-btn { font-size: 12px; color: #166534; padding: 0 6px; }
 .prio-hpo-sym { font-family: ui-monospace, monospace; font-weight: 700; margin-right: 1px; }
+
+/* In-house rule reasons under each criterion in the manual ACMG modal */
+.acmg-inhouse-header { grid-column: 1 / -1; font-size: 12px; color: #475569; background: #f8fafc;
+  border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
+.acmg-inhouse-reason { margin-top: 4px; font-size: 12px; line-height: 1.45; color: #64748b;
+  border-left: 3px solid #cbd5e1; padding-left: 6px; white-space: normal; overflow-wrap: anywhere; }
+.acmg-inhouse-reason b { font-weight: 600; }
+.acmg-inhouse-reason.acmg-inhouse-met { color: #1e3a8a; border-left-color: #3b82f6; background: #eff6ff; }
+.acmg-inhouse-reason.acmg-inhouse-not_evaluated { color: #92400e; border-left-color: #f59e0b; }

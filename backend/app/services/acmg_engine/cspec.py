@@ -23,6 +23,11 @@ CSpec rules are free text.  Only what can be read reliably is used:
   ``codons 167-931``, ``Tyr138``, ``R391-S392`` …).  Tables only attached as
   files, exon-level and cDNA-level definitions cannot be read; such genes are
   marked ``pm1_unparsed`` and keep the generic ClinVar hotspot rule.
+  Genomic coordinates (``17:8002593-8002598``), intra-domain cysteine
+  numbering (``Cys2-Cys3``) and disulfide pairs (``C350-C382 disulfide``)
+  are not residue ranges.  A few rules the text parser gets wrong are fixed
+  in ``PM1_OVERRIDES`` (checked by hand against the CSpec text, applied only
+  to the spec version they were written for).
 
 Genes with more than one rule set (different diseases, e.g. RYR1, VWF) are
 skipped: the right one cannot be chosen per variant.
@@ -92,7 +97,10 @@ def frequencies(text: str | None) -> list[float]:
 # ── PM1 residues ───────────────────────────────────────────────────────────
 _STRIP_FOR_RESIDUES = re.compile(
     r"N[MP]_\d+(?:\.\d+)?|ENS[TP]\d+(?:\.\d+)?|PMIDs?:?\s*[\d,\s]+|\b[cn]\.-?\d+(?:[+-]\d+)?"
-    r"|exons?\s+\d+(?:\s*(?:,|and|or|-)\s*\d+)*|\bv\d+(?:\.\d+)*|gnomAD\s*v?\d[\d.]*", re.I)
+    r"|exons?\s+\d+(?:\s*(?:,|and|or|-)\s*\d+)*|\bv\d+(?:\.\d+)*|gnomAD\s*v?\d[\d.]*"
+    r"|\b(?:chr)?(?:\d{1,2}|X|Y):\d{4,}(?:\s*[-–]\s*\d+)?(?:\s*\((?:hg|GRCh)\d+\))?", re.I)
+_PAIR_WORDS = re.compile(r"^\W{0,3}(?:disulfide|disulphide|bond)", re.I)
+_DOMAIN_CYS_MAX = 8          # EGF-like domains number their cysteines Cys1–Cys8
 _AA_RANGE = re.compile(r"(?:p\.)?" + _AA + r"-?(\d{1,4})\s*(?:-|–|—|to)\s*(?:p\.)?" + _AA + r"-?(\d{1,4})")
 _ITEM = r"(?:p\.)?\d{1,4}(?:\s*(?:-|–|—|to)\s*\d{1,4})?"
 _KEY_LIST = re.compile(r"(?:codons?|residues?|amino acids?|positions?|motifs?|\baa(?=[\s\d\[:]))"
@@ -108,6 +116,11 @@ def residues(text: str | None) -> list[list[int]]:
     spans: list[tuple[int, int]] = []
     for m in _AA_RANGE.finditer(t):
         a, b = int(m.group(1)), int(m.group(2))
+        if max(a, b) <= _DOMAIN_CYS_MAX:          # "between Cys2-Cys3 in cbEGF-like domain"
+            continue
+        if _PAIR_WORDS.match(t[m.end():]):         # "C350-C382 disulfide": two residues, not a range
+            spans.extend([(a, a), (b, b)])
+            continue
         spans.append((min(a, b), max(a, b)))
     t2 = _AA_RANGE.sub(" ", t)
     for m in _KEY_LIST.finditer(t2):
@@ -262,6 +275,62 @@ def pm1_rules(criteria: dict, gene: str | None = None, genes: list[str] | None =
     return [], "unparsed" if unparsed else ("other_gene" if other else "")
 
 
+# Hand-checked corrections to PM1 rules the text parser reads wrongly.  Each
+# entry applies only to the CSpec version it was written for; a newer version
+# keeps the parsed rule and is listed in ``pm1_override_stale`` so it gets
+# re-checked.  ``replace``: strength -> rule (ranges, or residue_change "Cys" =
+# the reference or the new amino acid is cysteine); ``add``: extra ranges;
+# ``not_applicable``: the VCEP defines no PM1 hotspot for the gene.
+PM1_OVERRIDES = {
+    "FBN1": {"version": "1.0", "replace": {"moderate": {"residue_change": "Cys"}},
+             "note": "規格以胺基酸種類定義（EGF／TB／hybrid 區域的 Cys、產生 Cys 的變異；cbEGF 的 Cys 為 Strong），"
+                     "平台只用「失去或產生 Cys」給 Moderate；鈣結合序列、羥化位置與 Cys 之間的關鍵 Gly 需人工判斷"},
+    "PAH": {"version": "2.1", "add": {"moderate": [[246, 266], [280, 283], [322, 326], [377, 379]]},
+            "note": "補上輔因子結合位置 246–266、280–283、322–326、377–379（文字列在 His285 等之後，解析器漏讀）"},
+    "HNF4A": {"version": "4.0", "replace": {"supporting": {"ranges": [[37, 113], [180, 220], [300, 350]]}},
+              "note": "DNA 結合區從 Leu37 起算（規格註明 33–36 不結合 DNA）"},
+    "TNNT2": {"version": "1.0", "replace": {"supporting": {"ranges": [[89, 189]]}},
+              "note": "用 MANE 轉錄本 NM_001276345.2 的 codons 89–189（ENST00000367318 的 79–179 是同一段）"},
+    "GP1BA": {"version": "1.1", "replace": {"moderate": {"ranges": [[20, 20], [33, 33], [225, 225], [227, 227],
+                                                                    [264, 264], [280, 280], [526, 527]]}},
+              "note": "規格列出的 Cys 位置 20、33、225、227、264、280、526、527（只寫數字，解析器讀不到）"},
+    "GP1BB": {"version": "1.1", "replace": {"moderate": {"ranges": [[93, 93], [95, 95], [118, 118], [141, 141],
+                                                                    [147, 147]]}},
+              "note": "規格列出的 Cys 位置 93、95、118、141、147（只寫數字，解析器讀不到）"},
+    "PAX6": {"version": "1.0", "replace": {"moderate": {"ranges": [[4, 143], [226, 281]]}},
+             "note": "規格以 cDNA 位置寫成 paired domain c.10–c.427、homeodomain c.676–c.841，換算為 codons 4–143、226–281"},
+    "MYO15A": {"version": "1.0", "not_applicable": True,
+               "note": "規格寫明 MYO15A 沒有定義 PM1 熱點，不改用 ClinVar 推算"},
+    "OTOF": {"version": "1.0", "not_applicable": True,
+             "note": "規格寫明 OTOF 沒有定義 PM1 熱點，不改用 ClinVar 推算"},
+}
+
+
+def _apply_pm1_override(gene: str, version: str, rules: list[dict]) -> tuple[list[dict], str | None, bool]:
+    """(rules, note, stale) after the hand-checked override for ``gene``."""
+    fix = PM1_OVERRIDES.get(gene)
+    if not fix:
+        return rules, None, False
+    if str(version) != fix["version"]:
+        return rules, None, True
+    if fix.get("not_applicable"):
+        return [], fix["note"], False
+    by = {r["strength"]: dict(r) for r in rules}
+    for strength, rule in (fix.get("replace") or {}).items():
+        by[strength] = {"strength": strength, **rule}
+    for strength, extra in (fix.get("add") or {}).items():
+        merged = sorted({tuple(x) for x in (by.get(strength, {}).get("ranges") or [])} | {tuple(x) for x in extra})
+        out: list[list[int]] = []
+        for a, b in merged:
+            if out and a <= out[-1][1] + 1:
+                out[-1][1] = max(out[-1][1], b)
+            else:
+                out.append([a, b])
+        by[strength] = {**by.get(strength, {}), "strength": strength, "ranges": out}
+    order = {k: i for i, k in enumerate(STRENGTH_RANK)}
+    return sorted(by.values(), key=lambda r: order.get(r["strength"], 9)), fix["note"], False
+
+
 def build_vcep_specs(documents) -> dict:
     by_gene: dict[str, list[dict]] = {}
     for doc in documents:
@@ -271,7 +340,7 @@ def build_vcep_specs(documents) -> dict:
         for rs in rule_sets(doc):
             for gene in rs["genes"]:
                 by_gene.setdefault(gene, []).append(rs)
-    genes, skipped = {}, {}
+    genes, skipped, stale = {}, {}, []
     for gene, sets in sorted(by_gene.items()):
         if len(sets) > 1:
             skipped[gene] = "多個規格（" + "、".join(f"{s['svi']} {s['vcep']}" for s in sets) + "）"
@@ -279,6 +348,11 @@ def build_vcep_specs(documents) -> dict:
         rs = sets[0]
         values, notes = thresholds(rs["criteria"])
         pm1, state = pm1_rules(rs["criteria"], gene, rs["genes"])
+        pm1, override, is_stale = _apply_pm1_override(gene, rs["version"], pm1)
+        if is_stale:
+            stale.append(gene)
+        if override:
+            state = ""
         genes[gene] = {
             "svi": rs["svi"], "version": rs["version"], "status": rs["status"], "vcep": rs["vcep"],
             "label": rs["label"], "url": rs["url"], "rule_set_genes": rs["genes"],
@@ -287,7 +361,11 @@ def build_vcep_specs(documents) -> dict:
             "pm1": pm1, "pm1_unparsed": state == "unparsed", "pm1_other_gene": state == "other_gene",
             "pm1_text": {k: short(v, 400) for k, v in (rs["criteria"].get("PM1") or {}).get("texts", {}).items()},
         }
-    return {"genes": genes, "skipped": skipped}
+        if override:
+            genes[gene]["pm1_override"] = override
+            if PM1_OVERRIDES[gene].get("not_applicable"):
+                genes[gene]["criteria"]["PM1"] = []
+    return {"genes": genes, "skipped": skipped, "pm1_override_stale": stale}
 
 
 # ── collagen Gly-X-Y ──────────────────────────────────────────────────────
