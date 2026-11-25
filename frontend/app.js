@@ -5095,7 +5095,11 @@ function _prioHintLines(v, kind = "snv") {
     const label = partner ? displaySnvHgvs(partner, p.partner) : p.partner;
     lines.push(`變異 V′ ${_prioNum(p.v)}：與 ${label} 配成隱性一對的合成點數（本變異 ${_prioNum(p.v_single)}、另一個 ${_prioNum(p.partner_v)}）`);
   } else {
-    lines.push(`變異 V′ ${_prioNum(p.v)}：In-house 排序點數（含 ClinVar 規則、P-KNN LLR、院內常見扣分；無 In-house 時用 GeneBe）${p.v_missing ? "；沒有 ACMG 點數，以 0 計" : ""}`);
+    lines.push(`變異 V′ ${_prioNum(p.v)}：In-house 排序點數（含 ClinVar 規則、P-KNN LLR、院內常見扣分；無 In-house 時用 GeneBe）${p.v_missing ? "；沒有 ACMG 點數，以 0 計" : ""}${p.type_prior ? "，含變異類型先驗" : ""}`);
+  }
+  const tp = (kind === "snv" || !kind) ? p.type_prior : null;
+  if (tp) {
+    lines.push(`變異類型先驗 ${_prioNum(tp.points)}：${tp.label}，剪接預測 ${Number(tp.splice).toFixed(2)} ≤ 0.1（陰性）；這類罕見變異在 ${tp.source || "ClinVar"} 中為 P/LP 的比例比 missense 低，排序時先扣分（不改 ACMG 分類）`);
   }
   if (!p.pheno_counted) {
     lines.push(`表型 P —：${info.reason || "表型分數不計"}`);

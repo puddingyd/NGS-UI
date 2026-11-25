@@ -43,6 +43,17 @@ test('hint lines explain pair partner, disease and inheritance', () => {
   assert.match(text, /tier 內依此總分排序/);
 });
 
+test('hint lines explain the variant-type prior', () => {
+  const c = setup({ prioritization: { mode: 'prio' } });
+  const text = c._prioHintLines({ prio: { total: 10.5, v: 0.3, p: 10.2, c: 0, mode: 'dominant', pheno_counted: true,
+    gene: 'KCNQ2', moi: ['dominant'], type_prior: { class: '5utr', label: '5′UTR', points: -1.7, splice: 0.02,
+    source: 'ClinVar 2026-11-22' } } }).join('\n');
+  assert.match(text, /含變異類型先驗/);
+  assert.match(text, /變異類型先驗 -1\.7：5′UTR，剪接預測 0\.02/);
+  const none = c._prioHintLines({ prio: { v: 2, p: 1, c: 0, mode: 'dominant', pheno_counted: true, moi: [] } }).join('\n');
+  assert.doesNotMatch(none, /變異類型先驗/);
+});
+
 test('panel-only cases sort by Score (old)', () => {
   const old = setup({ prioritization: { mode: 'old', reason: '沒有 HPO' } });
   assert.equal(old._snvSortScore({ total_score: 80, prio: {}, prio_total: 12 }), 80);

@@ -5,8 +5,10 @@ For every SNV/Indel candidate of a case::
     Total = V′ + P(g, d) + C
 
 * V′ — the ranking points the loader already uses (In-house incl. the ClinVar
-  ≥2★ / VCEP adopt and the P-KNN LLR → GeneBe, minus the 院內常見 penalty);
-  a recessive pair uses the combined points of plan §5.3.
+  ≥2★ / VCEP adopt and the P-KNN LLR → GeneBe, minus the 院內常見 penalty),
+  plus the variant-type prior (``type_prior``: synonymous, UTR and intronic
+  variants with a negative splice prediction start lower than a missense,
+  estimated from ClinVar); a recessive pair uses the combined points of plan §5.3.
 * P(g, d) — phenotype points of disease d in gene g from the phenotype engine
   (plan §4.8.7).  Genes without a ranked disease get the lowest value −6.1.  With no
   usable HPO term (panel only, no knowledge base) P is not counted and the
@@ -39,8 +41,32 @@ SINGLE_HET = {"WES": -3.0, "WGS": -4.0}
 PAIR_PHASE_UNKNOWN = 0.0       # two variants, phase unknown: no deduction (2026-11-24)
 XLR_FEMALE_HET = -3.0
 P_FLOOR = -6.1                 # = pheno_engine.engine.P_MIN (lowest phenotype points)
-VERSION = "prio-v1"
+VERSION = "prio-v2"
 CANDIDATE_LIMIT = 200          # candidate rows sent to the browser (20 shown, "顯示更多")
+
+# Variant-type prior (2026-11-25, user decision): ranking points added to V′ for
+# variant types that are far less often pathogenic than a missense, applied only
+# when the splice prediction is negative (max(SpliceAI, |Pangolin|) ≤ 0.1, the
+# BP4 cut-off); a missing prediction, or any protein-coding transcript where the
+# variant changes the protein, adds nothing.  Values = log_2.08 of the odds of
+# P/LP vs (VUS + B/LB) relative to missense, ClinVar 2026-11-22, rare (AF < 0.001)
+# germline ≥1★ small variants in 4,321 genes with a P/LP (gene bootstrap 95% CI in
+# the plan §5.3).  It is a prior, so BP4 / BP7 still count on top of it.
+TYPE_PRIOR = {"synonymous": -5.1, "5utr": -1.7, "3utr": -4.9, "intron_near": -1.6, "intron_deep": -3.3}
+TYPE_PRIOR_LABEL = {"synonymous": "同義變異", "5utr": "5′UTR", "3utr": "3′UTR",
+                    "intron_near": "近剪接位內含子（+3～+6／−3～−20）", "intron_deep": "深層內含子（≥+7／≤−21）"}
+TYPE_PRIOR_SPLICE_MAX = 0.1
+TYPE_PRIOR_SOURCE = "ClinVar 2026-11-22"
+_PROTEIN_TERMS = {
+    "transcript_ablation", "splice_acceptor_variant", "splice_donor_variant", "stop_gained",
+    "frameshift_variant", "stop_lost", "start_lost", "transcript_amplification", "feature_elongation",
+    "feature_truncation", "inframe_insertion", "inframe_deletion", "missense_variant",
+    "protein_altering_variant", "incomplete_terminal_codon_variant", "coding_sequence_variant",
+}
+_SYNONYMOUS_TERMS = {"synonymous_variant", "stop_retained_variant", "start_retained_variant"}
+_INTRONIC_TERMS = {"intron_variant", "splice_region_variant", "splice_polypyrimidine_tract_variant",
+                   "splice_donor_region_variant", "splice_donor_5th_base_variant"}
+_INTRON_OFFSET = re.compile(r"c\.[*-]?\d+([+-])(\d+)")
 
 _MIM = re.compile(r"\((\d{6})\)")
 _INH = re.compile(r"\(([^()]*)\)\s*$")
@@ -53,6 +79,64 @@ def pair_points(v1: float, v2: float) -> float:
     p2 = 1.0 / (1.0 + math.exp(-(L0 + K * v2)))
     p = min(max(p1 * p2, 1e-300), 1 - 1e-15)
     return (math.log(p / (1.0 - p)) - L0) / K
+
+
+def _type_class(consequence: str, hgvs_c: str) -> str:
+    """'coding' / 'synonymous' / '5utr' / '3utr' / 'intron_near' / 'intron_deep' / '' for one transcript."""
+    terms = {t.strip() for t in re.split(r"[&,|]", str(consequence or "")) if t.strip()}
+    if not terms:
+        return ""
+    if terms & _PROTEIN_TERMS:
+        return "coding"
+    if terms & _SYNONYMOUS_TERMS:
+        return "synonymous"
+    if "5_prime_UTR_variant" in terms:
+        return "5utr"
+    if "3_prime_UTR_variant" in terms:
+        return "3utr"
+    if terms & _INTRONIC_TERMS:
+        m = _INTRON_OFFSET.search(str(hgvs_c or ""))
+        if not m:
+            return ""
+        k = int(m.group(2))
+        if m.group(1) == "+":
+            return "intron_deep" if k >= 7 else "intron_near" if k >= 3 else "coding"
+        return "intron_deep" if k >= 21 else "intron_near" if k >= 3 else "coding"
+    return ""
+
+
+def _number(value):
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    return x if math.isfinite(x) else None
+
+
+def type_prior(variant: dict) -> dict | None:
+    """Variant-type prior for one loaded SNV/Indel, or None when it does not apply.
+
+    Every protein-coding transcript is looked at (other transcripts only when
+    there is none); the class with the smallest deduction wins, so a variant that
+    changes the protein in any transcript gets nothing."""
+    options = [o for o in (variant.get("transcript_options") or []) if isinstance(o, dict)]
+    if not options:
+        options = [variant]
+    coding = [o for o in options if str(o.get("transcript_type") or "").lower() == "protein_coding"]
+    classes = [_type_class(o.get("Consequence") or o.get("consequence") or "",
+                           o.get("HGVS_C") or o.get("hgvs_c") or "") for o in (coding or options)]
+    if not classes or any(c not in TYPE_PRIOR for c in classes):
+        return None
+    cls = max(classes, key=lambda c: TYPE_PRIOR[c])
+    scores = [x for x in (_number(variant.get("SpliceAI_score")), _number(variant.get("Pangolin_score")))
+              if x is not None]
+    if not scores:
+        return None
+    splice = max(abs(x) for x in scores)
+    if splice > TYPE_PRIOR_SPLICE_MAX:
+        return None
+    return {"class": cls, "label": TYPE_PRIOR_LABEL[cls], "points": TYPE_PRIOR[cls],
+            "splice": round(splice, 4), "source": TYPE_PRIOR_SOURCE}
 
 
 def norm_zygosity(value) -> str:
@@ -219,6 +303,7 @@ class Var:
     zygosity: str = ""
     somatic: bool = False
     v_missing: bool = False
+    type_prior: dict | None = None
 
 
 @dataclass
@@ -273,7 +358,7 @@ def _enumerate(variants: list[Var], diseases: list[Disease], *, sex: str, test_t
                             "moi": sorted(dis.moi), "moi_source": dis.moi_source,
                             "partner": partner_id,
                             "partner_v": by_id[partner_id].v if partner_id else None,
-                            "v_single": var.v, "v_missing": var.v_missing}
+                            "v_single": var.v, "v_missing": var.v_missing, "type_prior": var.type_prior}
                     yield var, key, cand
 
 
@@ -402,10 +487,13 @@ def annotate(variants: dict, *, hpo, sex: str = "", test_type: str = "WES", rank
         if not isinstance(variant, dict):
             continue
         v, missing = ranking_points(variant)
+        tp = type_prior(variant)
+        if tp is not None:
+            v += tp["points"]
         gene = canonical_gene(variant.get("gene_symbol") or "")
         by_gene.setdefault(gene, []).append(
             Var(id=vid, v=v, zygosity=norm_zygosity(variant.get("zygosity")),
-                somatic=bool(variant.get("somatic")), v_missing=missing))
+                somatic=bool(variant.get("somatic")), v_missing=missing, type_prior=tp))
     genes = []
     for gene in sorted(by_gene):
         diseases, ginfo = _gene_diseases(gene, engine, result)

@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.75：In-house prioritization 加入變異類型先驗：同義、UTR、內含子變異在剪接預測陰性時，排序點數依 ClinVar 估計扣分（同義 −5.1、5′UTR −1.7、3′UTR −4.9、近剪接位內含子 −1.6、深層內含子 −3.3），ACMG 分類不變。
+
 v10.74：ACMG 規則 v1.11：OMIM 只列 X 性聯隱性的基因，最大 AF ≤0.01% 也比照隱性給 PM2_Moderate（與 PVS1 同時成立仍以 Supporting 計）。部署後需 `build_engine_results.py --all` 重算。
 
 v10.73：ACMG 規則 v1.10：PM2 照 ACMG 2015 原文，族群資料庫完全沒出現給 Moderate、只有隱性遺傳的基因 ≤0.02% 也給 Moderate，與 PVS1 同時成立時以 Supporting 計；Manual ACMG 視窗拿掉 In-house 說明句、灰色小字自動換行。部署後需 `build_engine_results.py --all` 重算。
