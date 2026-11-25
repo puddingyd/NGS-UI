@@ -195,7 +195,7 @@ def test_missing_db_behaves_as_not_loaded(tmp_path):
 
 def test_ba1_exception_file_lists_the_clingen_variants():
     listed = S.load_ba1_exceptions()
-    assert "chr13-20189473-C-T" in listed and len(listed) == 8      # GJB2 c.109G>A among Ghosh 2018
+    assert "chr13-20189473-C-T" in listed and len(listed) == 9      # ClinGen SVI 2018 Table 1
 
 
 # ── engine on real (synthetic) reference database ─────────────────────────

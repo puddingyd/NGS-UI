@@ -3,14 +3,16 @@
 # flags the frequency conflict instead. ClinVar >=2-star P/LP protects a
 # variant only while its max AF is at most clinvar.override_max_af (5 %,
 # rule v1.12); above that only this list (or a VCEP call) keeps it.
-# Fill from Ghosh et al. 2018 (Hum Mutat 39:1525, Table) and in-house review;
+# 9 variants of ClinGen SVI Table 1 (ba1_exception_list_07_30_2018.pdf, GRCh37 positions
+# checked against ClinVar VariationIDs and lifted to GRCh38); add in-house reviewed ones below;
 # one variant per line, key = chrN-POS-REF-ALT (GRCh38, VCF representation).
 variant_key	source	note
-chr3-128879647-C-CTAAG	Ghosh 2018 (ClinGen SVI BA1 exception list)	ACAD9 c.-44_-41dup
-chr3-15645186-G-C	Ghosh 2018 (ClinGen SVI BA1 exception list)	BTD c.1330G>C p.Asp444His (NM_000060; NM_001370658 c.1270G>C)
-chr13-20189473-C-T	Ghosh 2018 (ClinGen SVI BA1 exception list)	GJB2 c.109G>A p.Val37Ile
-chr6-26090951-C-G	Ghosh 2018 (ClinGen SVI BA1 exception list)	HFE c.187C>G p.His63Asp
-chr6-26092913-G-A	Ghosh 2018 (ClinGen SVI BA1 exception list)	HFE c.845G>A p.Cys282Tyr
-chr16-3249586-G-A	Ghosh 2018 (ClinGen SVI BA1 exception list)	MEFV c.1105C>T p.Pro369Ser
-chr16-3249468-C-T	Ghosh 2018 (ClinGen SVI BA1 exception list)	MEFV c.1223G>A p.Arg408Gln
-chr13-72835359-G-A	Ghosh 2018 (ClinGen SVI BA1 exception list)	PIBF1 c.1214G>A p.Arg405Gln
+chr3-128879647-C-CTAAG	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	ACAD9 c.-44_-41dup; ClinVar VariationID 1018
+chr3-15645186-G-C	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	BTD c.1330G>C p.Asp444His (NM_000060; NM_001370658 c.1270G>C); ClinVar VariationID 1900
+chr13-20189473-C-T	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	GJB2 c.109G>A p.Val37Ile; ClinVar VariationID 17023
+chr6-26090951-C-G	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	HFE c.187C>G p.His63Asp; ClinVar VariationID 10
+chr6-26092913-G-A	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	HFE c.845G>A p.Cys282Tyr; ClinVar VariationID 9
+chr16-3249586-G-A	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	MEFV c.1105C>T p.Pro369Ser; ClinVar VariationID 2551
+chr16-3249468-C-T	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	MEFV c.1223G>A p.Arg408Gln; ClinVar VariationID 2552
+chr13-72835359-G-A	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	PIBF1 c.1214G>A p.Arg405Gln; ClinVar VariationID 217689
+chr12-120737875-C-T	ClinGen SVI BA1 exception list 2018-07-30 (Ghosh 2018)	ACADS c.511C>T p.Arg171Trp; ClinVar VariationID 3830
