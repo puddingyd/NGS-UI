@@ -92,6 +92,11 @@ def test_omim_and_orphanet_links(tmp_path):
                                  {"ORPHA:3": {"GENEC": "3", "GENEX": "9"}, "OMIM:100001": {"GENEA": "1"}},
                                  {"ORPHA:3", "OMIM:100001"}, canonical=lambda g: g)
     assert stats["ORPHA"]["both"] == 1 and ("ORPHA:3", "GENEX", 0, 1) in rows and stats["OMIM"]["both"] == 1
+    # ORPHA diseases newer than product6 take their genes from genes_to_disease; listed ones do not
+    newer = DG.orphanet_links_from_g2d({"ORPHA:3": {"GENEX": "9"}, "ORPHA:714652": {"PCDH19": "57526"}},
+                                       canonical=lambda g: g, skip={r["disease_id"] for r in orpha})
+    assert [(r["disease_id"], r["gene_symbol"], r["use"]) for r in newer] == [("ORPHA:714652", "PCDH19", 1)]
+    assert newer[0]["flags"] == "via_genes_to_disease,not_in_product6"
 
 
 def test_mondo_groups(tmp_path):
@@ -157,6 +162,17 @@ def test_build_script_end_to_end_and_reproducible(src, tmp_path, monkeypatch, ca
     assert "## 知識庫" in (s1 / "build_qc.md").read_text(encoding="utf-8")
     kb, mu = K.load_kb(s1)
     assert kb.N == 4 and len(mu) == 4
+    # a product6 that does not list ORPHA:3 yet: its genes still come from genes_to_disease
+    p6 = src / "p6.xml"
+    p6.write_text('<?xml version="1.0"?><JDBOR date="2025-06-24" version="1.3.42"><DisorderList>'
+                  '<Disorder><OrphaCode>99</OrphaCode><DisorderGeneAssociationList/></Disorder>'
+                  '</DisorderList></JDBOR>', encoding="utf-8")
+    with_p6 = [a if a != str(src / "none.xml") else str(p6) for a in args]
+    assert module.main(with_p6 + ["--kb-root", str(tmp_path / "r4")]) == 0
+    s4 = next((tmp_path / "r4").glob("2026-*"))
+    m4 = json.loads((s4 / "manifest.json").read_text(encoding="utf-8"))
+    assert m4["kb"]["sources"]["orphanet"]["added_from_genes_to_disease"] == 1
+    assert "not_in_product6" in (s4 / "disease_gene.tsv").read_text(encoding="utf-8")
     # MONDO missing and not allowed → refuse, nothing half-written
     no_mondo = args[:-2] + ["--mondo", str(src / "absent.obo"), "--kb-root", str(tmp_path / "r3")]
     monkeypatch.setattr(B, "default_mondo", lambda: None)

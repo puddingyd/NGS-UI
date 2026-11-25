@@ -67,8 +67,16 @@ def make_extra(result: dict, *, omim_rows, omim_info, orphanet: Path | None, mon
             raise KBBuildError("讀不到平台 OMIM 資料；若確定要略過，加 --allow-missing omim")
         if orphanet and Path(orphanet).is_file():
             orpha, info = DG.orphanet_links(Path(orphanet))
-            links += orpha
-            sources["orphanet"] = {"path": str(orphanet), "sha256": KBM._sha(orphanet), **info}
+            # ORPHA diseases newer than this product6 (e.g. ORPHA:714652 PCDH19 clustering
+            # epilepsy): HPO already annotates them, so take their genes from genes_to_disease.
+            newer = DG.orphanet_links_from_g2d(result["disease_genes"], skip={r["disease_id"] for r in orpha})
+            links += orpha + newer
+            added = sorted({r["disease_id"] for r in newer} & universe)
+            sources["orphanet"] = {"path": str(orphanet), "sha256": KBM._sha(orphanet), **info,
+                                   "added_from_genes_to_disease": len(added)}
+            if added:
+                progress(f"Orphanet product6 沒有的 {len(added)} 個 ORPHA 疾病（HPO 已有表型註記），"
+                         f"基因改用 HPO genes_to_disease.txt")
         elif "orphanet" not in allow_missing:
             # Server cannot reach orphadata.com: the ORPHA rows of HPO's
             # genes_to_disease.txt come from the same product6 file.

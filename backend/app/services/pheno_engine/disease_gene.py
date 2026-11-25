@@ -119,20 +119,26 @@ def orphanet_links(path: Path, canonical=_canonical) -> tuple[list[dict], dict]:
     return [out[k] for k in sorted(out)], info
 
 
-def orphanet_links_from_g2d(g2d: dict[str, dict[str, str]], canonical=_canonical) -> list[dict]:
-    """Orphanet links taken from HPO genes_to_disease.txt (fallback when product6 is unavailable).
+def orphanet_links_from_g2d(g2d: dict[str, dict[str, str]], canonical=_canonical,
+                            skip: set[str] | None = None) -> list[dict]:
+    """Orphanet links taken from HPO genes_to_disease.txt.
 
-    HPO copies these rows from product6 but drops the association type, so
-    every row is used and flagged ``via_genes_to_disease``."""
+    Used for every ORPHA disease when product6 is unavailable, and (``skip`` =
+    the diseases product6 lists) for ORPHA diseases newer than the local
+    product6 — HPO reads a more recent product6 than the copy the server can
+    download.  HPO drops the association type, so every row is used and
+    flagged ``via_genes_to_disease`` (plus ``not_in_product6`` in the second case)."""
+    flags = "via_genes_to_disease" if skip is None else "via_genes_to_disease,not_in_product6"
+    skip = skip or set()
     out = {}
     for disease, genes in g2d.items():
-        if not disease.startswith("ORPHA:"):
+        if not disease.startswith("ORPHA:") or disease in skip:
             continue
         for symbol in genes:
             gene = canonical(symbol)
             out[(disease, gene)] = {"disease_id": disease, "gene_symbol": gene, "source": "Orphanet",
                                     "association_type": "unknown (HPO genes_to_disease)", "use": 1,
-                                    "flags": "via_genes_to_disease", "status": "", "source_gene": symbol}
+                                    "flags": flags, "status": "", "source_gene": symbol}
     return [out[k] for k in sorted(out)]
 
 

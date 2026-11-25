@@ -219,10 +219,10 @@ def _tx(csq, hgvs, ttype="protein_coding"):
 def test_type_prior_classes():
     utr = {"transcript_options": [_tx("5_prime_UTR_variant", "NM_1:c.-22G>T")], "SpliceAI_score": 0.02}
     tp = PR.type_prior(utr)
-    assert tp["class"] == "5utr" and tp["points"] == PR.TYPE_PRIOR["5utr"] < 0
+    assert tp["class"] == "noncoding" and tp["points"] == PR.TYPE_PRIOR["noncoding"] < 0
     assert PR.type_prior(dict(utr, SpliceAI_score=0.3)) is None            # splicing predicted: no prior
     assert PR.type_prior({"transcript_options": utr["transcript_options"]}) is None   # no prediction
-    assert PR.type_prior(dict(utr, SpliceAI_score=None, Pangolin_score=-0.05))["class"] == "5utr"
+    assert PR.type_prior(dict(utr, SpliceAI_score=None, Pangolin_score=-0.05))["class"] == "noncoding"
     assert PR.type_prior(dict(utr, Pangolin_score=-0.4)) is None           # |Pangolin| counts
     miss = {"transcript_options": [_tx("missense_variant", "NM_1:c.23G>T")], "SpliceAI_score": 0}
     assert PR.type_prior(miss) is None
@@ -233,17 +233,18 @@ def test_type_prior_classes():
     lnc = {"transcript_options": [_tx("3_prime_UTR_variant", "NM_1:c.*40A>G"),
                                   _tx("non_coding_transcript_exon_variant", "NR_1:n.40A>G", "lncRNA")],
            "Pangolin_score": 0}
-    assert PR.type_prior(lnc)["class"] == "3utr"
+    assert PR.type_prior(lnc)["class"] == "noncoding"
     syn = {"Consequence": "splice_region_variant&synonymous_variant", "HGVS_C": "c.300G>A", "SpliceAI_score": 0.01}
     assert PR.type_prior(syn)["class"] == "synonymous"
     near = {"Consequence": "splice_region_variant&intron_variant", "HGVS_C": "c.123-5T>C", "SpliceAI_score": 0.0}
     deep = {"Consequence": "intron_variant", "HGVS_C": "c.123+40T>C", "SpliceAI_score": 0.0}
-    assert PR.type_prior(near)["class"] == "intron_near" and PR.type_prior(deep)["class"] == "intron_deep"
+    assert PR.type_prior(near)["class"] == "intron_near" and PR.type_prior(deep)["class"] == "noncoding"
     assert PR.type_prior({"Consequence": "intron_variant", "HGVS_C": "c.123+2T>C", "SpliceAI_score": 0}) is None
     # several transcripts: the smallest deduction wins
-    two = {"transcript_options": [_tx("intron_variant", "NM_1:c.-40+30A>G"), _tx("5_prime_UTR_variant", "NM_2:c.-12A>G")],
+    two = {"transcript_options": [_tx("intron_variant", "NM_1:c.200-8A>G"), _tx("5_prime_UTR_variant", "NM_2:c.-12A>G")],
            "SpliceAI_score": 0}
-    assert PR.type_prior(two)["class"] == "5utr"
+    assert PR.type_prior(two)["class"] == "intron_near"
+    assert set(PR.TYPE_PRIOR) == {"synonymous", "intron_near", "noncoding"}       # UTR + deep intron pooled
 
 
 def test_type_prior_breaks_the_kcnq2_tie(omim, eng):
@@ -255,8 +256,8 @@ def test_type_prior_breaks_the_kcnq2_tie(omim, eng):
                 "transcript_options": [_tx("5_prime_UTR_variant", "NM_1:c.-22G>T")]},
     }
     info = PR.annotate(variants, hpo=["HP:0007359"], sex="F", test_type="WES", engine=eng)
-    assert variants["utr"]["prio"]["type_prior"]["class"] == "5utr"
-    assert variants["utr"]["prio"]["v"] == pytest.approx(2 + PR.TYPE_PRIOR["5utr"])
+    assert variants["utr"]["prio"]["type_prior"]["class"] == "noncoding"
+    assert variants["utr"]["prio"]["v"] == pytest.approx(2 + PR.TYPE_PRIOR["noncoding"])
     assert variants["mis"]["prio"]["type_prior"] is None
     assert variants["mis"]["prio"]["v"] == pytest.approx(1.984)
     cand = next(c for c in info["candidates"] if c["gene"] == "GENEA")

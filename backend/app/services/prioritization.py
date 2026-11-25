@@ -41,7 +41,7 @@ SINGLE_HET = {"WES": -3.0, "WGS": -4.0}
 PAIR_PHASE_UNKNOWN = 0.0       # two variants, phase unknown: no deduction (2026-11-24)
 XLR_FEMALE_HET = -3.0
 P_FLOOR = -6.1                 # = pheno_engine.engine.P_MIN (lowest phenotype points)
-VERSION = "prio-v2"
+VERSION = "prio-v3"
 CANDIDATE_LIMIT = 200          # candidate rows sent to the browser (20 shown, "顯示更多")
 
 # Variant-type prior (2026-11-25, user decision): ranking points added to V′ for
@@ -51,10 +51,13 @@ CANDIDATE_LIMIT = 200          # candidate rows sent to the browser (20 shown, "
 # variant changes the protein, adds nothing.  Values = log_2.08 of the odds of
 # P/LP vs (VUS + B/LB) relative to missense, ClinVar 2026-11-22, rare (AF < 0.001)
 # germline ≥1★ small variants in 4,321 genes with a P/LP (gene bootstrap 95% CI in
-# the plan §5.3).  It is a prior, so BP4 / BP7 still count on top of it.
-TYPE_PRIOR = {"synonymous": -5.1, "5utr": -1.7, "3utr": -4.9, "intron_near": -1.6, "intron_deep": -3.3}
-TYPE_PRIOR_LABEL = {"synonymous": "同義變異", "5utr": "5′UTR", "3utr": "3′UTR",
-                    "intron_near": "近剪接位內含子（+3～+6／−3～−20）", "intron_deep": "深層內含子（≥+7／≤−21）"}
+# the plan §5.2.12).  5′UTR, 3′UTR and deep intronic variants (away from the coding
+# region and its splice junctions) are pooled into one class (v10.76, user decision:
+# the UTR classes alone have few P/LP).  It is a prior, so BP4 / BP7 still count on top of it.
+TYPE_PRIOR = {"synonymous": -5.1, "intron_near": -1.6, "noncoding": -3.3}
+TYPE_PRIOR_LABEL = {"synonymous": "同義變異", "intron_near": "近剪接位內含子（+3～+6／−3～−20）",
+                    "noncoding": "非編碼區（UTR、內含子 ≥+7／≤−21）"}
+_TYPE_POOL = {"5utr": "noncoding", "3utr": "noncoding", "intron_deep": "noncoding"}
 TYPE_PRIOR_SPLICE_MAX = 0.1
 TYPE_PRIOR_SOURCE = "ClinVar 2026-11-22"
 _PROTEIN_TERMS = {
@@ -123,8 +126,9 @@ def type_prior(variant: dict) -> dict | None:
     if not options:
         options = [variant]
     coding = [o for o in options if str(o.get("transcript_type") or "").lower() == "protein_coding"]
-    classes = [_type_class(o.get("Consequence") or o.get("consequence") or "",
-                           o.get("HGVS_C") or o.get("hgvs_c") or "") for o in (coding or options)]
+    classes = [_TYPE_POOL.get(c, c) for c in (
+        _type_class(o.get("Consequence") or o.get("consequence") or "", o.get("HGVS_C") or o.get("hgvs_c") or "")
+        for o in (coding or options))]
     if not classes or any(c not in TYPE_PRIOR for c in classes):
         return None
     cls = max(classes, key=lambda c: TYPE_PRIOR[c])

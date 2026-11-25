@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.76：變異類型先驗把 5′UTR、3′UTR 與深層內含子合併為「非編碼區」−3.3（同義 −5.1、近剪接位內含子 −1.6 不變）；表型知識庫對 Orphanet product6 尚未收錄的新 ORPHA 疾病（例如 PCDH19 clustering epilepsy）改用 HPO genes_to_disease 的基因，需重建知識庫。
+
 v10.75：In-house prioritization 加入變異類型先驗：同義、UTR、內含子變異在剪接預測陰性時，排序點數依 ClinVar 估計扣分（同義 −5.1、5′UTR −1.7、3′UTR −4.9、近剪接位內含子 −1.6、深層內含子 −3.3），ACMG 分類不變。
 
 v10.74：ACMG 規則 v1.11：OMIM 只列 X 性聯隱性的基因，最大 AF ≤0.01% 也比照隱性給 PM2_Moderate（與 PVS1 同時成立仍以 Supporting 計）。部署後需 `build_engine_results.py --all` 重算。
