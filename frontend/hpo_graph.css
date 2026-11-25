@@ -1,0 +1,53 @@
+/* HPO tree picture for a candidate disease (frontend/hpo_graph.js). */
+.hpog-modal { position: fixed; inset: 0; z-index: 1300; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; overflow-y: auto; }
+.hpog-modal[hidden] { display: none; }
+.hpog-card { background: #fff; border-radius: 10px; width: 96%; max-width: 1500px; padding: 16px 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); }
+.hpog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.hpog-title { font-size: 16px; font-weight: 700; }
+.hpog-sub { font-size: 12px; margin-top: 2px; }
+.hpog-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.hpog-legend { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.hpog-key { padding: 1px 8px; border-radius: 6px; border: 1px solid; }
+.hpog-others { font-size: 12px; white-space: nowrap; cursor: pointer; }
+.hpog-note { font-size: 12px; margin-bottom: 8px; }
+.hpog-msg { padding: 24px; text-align: center; }
+.hpog-canvas { overflow: auto; max-height: 62vh; border: 1px solid #e5e7eb; border-radius: 8px; background: #fcfcfd; }
+.hpog-canvas svg { display: block; margin: 0 auto; font-family: inherit; }
+
+.hpog-edge { fill: none; stroke: #cbd5e1; stroke-width: 1.4; }
+.hpog-node rect { stroke-width: 1.4; }
+.hpog-node text { font-size: 11.5px; fill: #1f2937; pointer-events: none; }
+.hpog-node { cursor: default; }
+
+/* node colours (also used by the legend keys) */
+.hpog-patient rect, .hpog-key.hpog-patient { fill: #dbeafe; background: #dbeafe; stroke: #3b82f6; border-color: #3b82f6; color: #1e40af; }
+.hpog-annotation rect, .hpog-key.hpog-annotation { fill: #ffedd5; background: #ffedd5; stroke: #f97316; border-color: #f97316; color: #9a3412; }
+.hpog-both rect, .hpog-key.hpog-both { fill: #dcfce7; background: #dcfce7; stroke: #16a34a; border-color: #16a34a; color: #166534; }
+.hpog-meet rect, .hpog-key.hpog-meet { fill: #fef9c3; background: #fef9c3; stroke: #ca8a04; border-color: #ca8a04; color: #854d0e; }
+.hpog-organ rect, .hpog-key.hpog-organ { fill: #475569; background: #475569; stroke: #334155; border-color: #334155; color: #fff; }
+.hpog-organ text { fill: #fff; font-weight: 600; }
+.hpog-other rect { fill: #fff; stroke: #fb923c; stroke-dasharray: 4 3; }
+.hpog-plain rect { fill: #f3f4f6; stroke: #d1d5db; }
+.hpog-plain text { fill: #6b7280; }
+.hpog-chain rect { fill: #fff; stroke: #9ca3af; stroke-dasharray: 2 3; }
+.hpog-chain text { fill: #6b7280; }
+.hpog-unmatched rect, .hpog-key.hpog-unmatched { stroke: #dc2626; stroke-dasharray: 5 3; border-style: dashed; border-color: #dc2626; }
+
+/* hover: show one pairing */
+svg.hpog-dim .hpog-node { opacity: 0.25; }
+svg.hpog-dim .hpog-edge { opacity: 0.15; }
+svg.hpog-dim .hpog-node.hpog-hl { opacity: 1; }
+svg.hpog-dim .hpog-edge.hpog-hl { opacity: 1; stroke: #2563eb; stroke-width: 2.6; }
+
+.hpog-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 12px; }
+.hpog-table th, .hpog-table td { border-bottom: 1px solid #eef0f3; padding: 5px 8px; text-align: left; vertical-align: top; }
+.hpog-table th { background: #f8fafc; font-weight: 600; }
+.hpog-table tr[data-hpo] { cursor: default; }
+.hpog-table tr.hpog-active td { background: #eff6ff; }
+.hpog-table tr.hpog-row-none td { color: #9ca3af; }
+.hpog-num { text-align: right; white-space: nowrap; }
+.hpog-id { color: #9ca3af; font-size: 11px; white-space: nowrap; }
+.hpog-sym { display: inline-block; min-width: 34px; font-family: ui-monospace, monospace; font-weight: 600; }
+@media (max-width: 720px) { .hpog-card { width: 100%; padding: 12px; } .hpog-table { font-size: 11.5px; } }

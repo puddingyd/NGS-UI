@@ -131,7 +131,7 @@
         </tr>
         <tr class="ppred-explain" data-for="${id}" hidden><td colspan="6">
           <table class="ppred-subtable"><thead><tr><th>病人 HPO</th><th>疾病最吻合的註記</th><th>關係</th>
-            <th>配對分</th><th title="配對分扣掉這個疾病的基準分">淨貢獻</th></tr></thead><tbody>${explain}</tbody></table>
+            <th>配對分</th><th>淨貢獻</th></tr></thead><tbody>${explain}</tbody></table>
         </td></tr>`;
     }).join("");
     return `<table class="ppred-table">

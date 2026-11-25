@@ -144,16 +144,52 @@ test('candidate HPO chips: matched first, partial, then unexplained terms', () =
   const context = vm.createContext({
     escapeHtml: s => String(s).replace(/</g, '&lt;'), escapeAttr: s => String(s).replace(/"/g, '&quot;'),
   });
-  vm.runInContext(fn('_prioHpoChips'), context);
+  vm.runInContext(fn('_prioHpoSymbol') + fn('_prioHpoChips'), context);
   const html = context._prioHpoChips({ matched: 1, partial: 1, rows: [
     { hpo_id: 'HP:3', match: 'none', relation_zh: '無共同上層', net: -0.2 },
-    { hpo_id: 'HP:2', match: 'partial', annotation: 'HP:9', annotation_name: 'B', relation_zh: '旁系', net: 0.5 },
-    { hpo_id: 'HP:1', match: 'match', annotation: 'HP:1', annotation_name: 'A', relation_zh: '相同', net: 2 },
+    { hpo_id: 'HP:2', match: 'partial', annotation: 'HP:9', annotation_name: 'B', relation: 'collateral', relation_zh: '旁系',
+      net: 0.5, steps_patient: 2, steps_annotation: 1, mica_name: 'Root-ish' },
+    { hpo_id: 'HP:1', match: 'match', annotation: 'HP:1', annotation_name: 'A', relation: 'same', relation_zh: '相同', net: 2 },
   ] }, [{ hpo_id: 'HP:1', name: 'Seizure' }, { hpo_id: 'HP:2', name: 'Ataxia' }]);
   assert.match(html, /HPO 符合 1／3、部分 1/);
   const order = [...html.matchAll(/prio-hpo-(match|partial|none)"/g)].map(m => m[1]);
   assert.deepEqual(order, ['match', 'partial', 'none']);
-  assert.match(html, />Seizure</);
-  assert.match(html, />HP:3</);                         // name missing → ID
+  assert.match(html, /<\/b> HP:3</);                    // name missing → ID
   assert.match(html, /疾病沒有相關註記/);
+  assert.match(html, />⋀2\+1<\/b> Ataxia/);
+  assert.match(html, />＝<\/b> Seizure/);
+  assert.match(html, /在「Root-ish」相遇/);
+  assert.doesNotMatch(html, /基準分）/);
+  assert.equal(context._prioHpoSymbol({ relation: 'patient_specific', steps_patient: 3 }), '↑3');
+  assert.equal(context._prioHpoSymbol({ relation: 'patient_broader', steps_annotation: 1 }), '↓1');
+});
+
+test('HPO graph: chains collapse, parents always drawn above children', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../frontend/hpo_graph.js'), 'utf8');
+  const context = vm.createContext({ window: {}, document: {}, CSS: { escape: s => s } });
+  vm.runInContext(src, context);
+  const G = context.window.HpoGraph;
+  const graph = {
+    nodes: [
+      { id: 'O', name: 'Organ', roles: ['organ'] }, { id: 'A', name: 'a', roles: [] }, { id: 'B', name: 'b', roles: [] },
+      { id: 'C', name: 'c', roles: [] }, { id: 'M', name: 'Meet', roles: ['meet'] },
+      { id: 'P', name: 'Patient', roles: ['patient'] }, { id: 'D', name: 'Disease', roles: ['annotation'] },
+      { id: 'Q', name: 'Patient2', roles: ['patient'] },
+    ],
+    // O ← A ← B ← C ← M ;  M ← P ; M ← D ; O ← Q
+    edges: [['A', 'O'], ['B', 'A'], ['C', 'B'], ['M', 'C'], ['P', 'M'], ['D', 'M'], ['Q', 'O']],
+    pairs: [{ hpo_id: 'P', path_patient: ['P', 'M'], path_annotation: ['D', 'M'], relation: 'collateral' }],
+  };
+  const L = G.layout(graph);
+  const chain = [...L.nodes.values()].find(n => n.roles.includes('chain'));
+  assert.ok(chain && chain.chain.length === 3, 'A-B-C collapse into one chain node');
+  assert.equal(L.alias('B'), chain.id);
+  for (const [c, p] of L.edges) assert.ok(L.xy.get(p).y < L.xy.get(c).y, `${p} above ${c}`);
+  assert.equal(L.xy.get('O').y, Math.min(...[...L.xy.values()].map(v => v.y)));
+  assert.equal(G.symbol({ relation: 'collateral', steps_patient: 1, steps_annotation: 2 }), '⋀1+2');
+  assert.equal(G.symbol({ relation: 'none' }), '✕');
+  // a single plain node is kept (only chains of ≥2 collapse)
+  const L2 = G.layout({ nodes: [{ id: 'O', name: 'o', roles: ['organ'] }, { id: 'X', name: 'x', roles: [] },
+    { id: 'P', name: 'p', roles: ['patient'] }], edges: [['X', 'O'], ['P', 'X']] });
+  assert.ok(L2.nodes.has('X'));
 });

@@ -700,6 +700,9 @@ def explain_diseases(hpo, disease_ids, *, engine=None) -> dict:
     kb = engine.kb
     terms = [{"hpo_id": kb.terms[int(q)], "name": kb.names[int(q)], "weight": float(w)}
              for q, w in zip(result.q, result.w)]
+    from .pheno_engine import lineage as L
+    lin = L.lineage(engine)
+    tid = engine.tid
     out = {}
     seen = set()
     for did in disease_ids:
@@ -709,11 +712,38 @@ def explain_diseases(hpo, disease_ids, *, engine=None) -> dict:
         di = engine.did[did]
         rows = []
         for r in result.explain(di):
+            steps = L.pair_steps(lin, tid[r["hpo_id"]], tid[r["annotation"]], r["relation"], tid[r["mica"]])
+            none = r["relation"] == "none"
             rows.append({"hpo_id": r["hpo_id"], "annotation": r["annotation"], "annotation_name": r["annotation_name"],
                          "relation": r["relation"], "relation_zh": E.RELATION_ZH.get(r["relation"], r["relation"]),
-                         "ic_mica": round(float(r["ic_mica"]), 3), "net": round(float(r["net"]), 3),
+                         "mica": "" if none else r["mica"], "mica_name": "" if none else r["mica_name"],
+                         "ic_mica": round(float(r["ic_mica"]), 3), "s": round(float(r["s"]), 3),
+                         "net": round(float(r["net"]), 3),
+                         "steps_patient": steps["steps_patient"], "steps_annotation": steps["steps_annotation"],
                          "match": match_class(r["relation"], float(r["net"]))})
         out[did] = {"name": kb.disease_names[di], "n_annotations": int(kb.dir_ptr[di + 1] - kb.dir_ptr[di]),
                     "matched": sum(r["match"] == "match" for r in rows),
                     "partial": sum(r["match"] == "partial" for r in rows), "rows": rows}
     return {"terms": terms, "diseases": out, "snapshot": engine.snapshot}
+
+
+def disease_graph(hpo, disease_id: str, *, all_annotations: bool = False, engine=None) -> dict | None:
+    """HPO sub-graph linking the patient terms to one disease (plan: candidate list picture)."""
+    from .pheno_engine import engine as E
+    from .pheno_engine import lineage as L
+    engine, result = pheno_result(hpo, engine=engine)
+    if result is None or result.empty or disease_id not in engine.did:
+        return None
+    kb = engine.kb
+    di = engine.did[disease_id]
+    graph = L.disease_graph(engine, result, di, all_annotations=all_annotations)
+    rows = {r["hpo_id"]: r for r in explain_diseases(hpo, [disease_id], engine=engine)["diseases"][disease_id]["rows"]}
+    for pair in graph["pairs"]:
+        r = rows.get(pair["hpo_id"], {})
+        pair.update(relation_zh=E.RELATION_ZH.get(pair["relation"], pair["relation"]), match=r.get("match", "none"),
+                    ic_mica=r.get("ic_mica"), s=r.get("s"), net=r.get("net"),
+                    annotation_name=r.get("annotation_name", ""), mica_name=r.get("mica_name", ""))
+    graph["terms"] = [{"hpo_id": kb.terms[int(q)], "name": kb.names[int(q)], "weight": float(w)}
+                      for q, w in zip(result.q, result.w)]
+    graph["snapshot"] = engine.snapshot
+    return graph

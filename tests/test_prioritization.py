@@ -306,3 +306,42 @@ def test_explain_diseases(omim, eng):
     assert out["diseases"]["OMIM:100004"]["matched"] == 1
     assert PR.match_class("collateral", 0.4) == "partial" and PR.match_class("collateral", -0.1) == "none"
     assert PR.explain_diseases([], ["OMIM:100001"], engine=eng)["diseases"] == {}
+
+
+def test_lineage_steps_and_graph(omim, eng):
+    from app.services.pheno_engine import lineage as L
+    lin = L.lineage(eng)
+    t = eng.tid
+    assert lin.parents(t["HP:0011153"]) == (t["HP:0007359"],)
+    assert lin.path_up(t["HP:0011153"], t["HP:0001250"]) == [t["HP:0011153"], t["HP:0007359"], t["HP:0001250"]]
+    assert lin.path_to_organ(t["HP:0011153"])[-1] == t["HP:0000707"] and lin.is_organ(t["HP:0000478"])
+    out = PR.explain_diseases(["HP:0011153", "HP:0002197", "HP:0000316"], ["OMIM:100001"], engine=eng)
+    rows = {r["hpo_id"]: r for r in out["diseases"]["OMIM:100001"]["rows"]}
+    focal = rows["HP:0011153"]                       # disease annotated with the parent term: up 1
+    assert (focal["relation"], focal["steps_patient"], focal["steps_annotation"]) == ("patient_specific", 1, 0)
+    gen = rows["HP:0002197"]                         # collateral: both sides climb to the meeting term
+    assert gen["relation"] == "collateral" and gen["mica"]
+    assert gen["steps_patient"] == len(lin.path_up(t["HP:0002197"], t[gen["mica"]])) - 1 >= 1
+    assert gen["steps_annotation"] == len(lin.path_up(t[gen["annotation"]], t[gen["mica"]])) - 1 >= 1
+    eye = rows["HP:0000316"]
+    assert eye["relation"] == "none" and eye["steps_patient"] is None and eye["mica"] == ""
+    broad = PR.explain_diseases(["HP:0001250"], ["OMIM:100001"], engine=eng)["diseases"]["OMIM:100001"]["rows"][0]
+    assert (broad["relation"], broad["steps_patient"], broad["steps_annotation"]) == ("patient_broader", 0, 1)
+
+    g = PR.disease_graph(["HP:0011153", "HP:0002197", "HP:0000316"], "OMIM:100001", engine=eng)
+    nodes = {n["id"]: n for n in g["nodes"]}
+    assert "patient" in nodes["HP:0011153"]["roles"] and "annotation" in nodes["HP:0007359"]["roles"]
+    assert "organ" in nodes["HP:0000707"]["roles"]
+    assert "organ" in nodes["HP:0000478"]["roles"]                   # unmatched term still drawn up to its organ
+    assert ["HP:0011153", "HP:0007359"] in g["edges"] and ["HP:0001250", "HP:0000707"] in g["edges"]
+    assert all(e[0] in nodes and e[1] in nodes for e in g["edges"])
+    pair = next(p for p in g["pairs"] if p["hpo_id"] == "HP:0002197")
+    assert pair["path_patient"][0] == "HP:0002197" and pair["path_patient"][-1] == pair["mica"] == gen["mica"]
+    assert pair["path_annotation"][0] == gen["annotation"] and pair["path_annotation"][-1] == pair["mica"]
+    assert "meet" in nodes[pair["mica"]]["roles"]
+    assert pair["relation_zh"] and pair["match"] in ("match", "partial", "none")
+    g2 = PR.disease_graph(["HP:0011153"], "OMIM:100001", engine=eng)
+    assert "HP:0001249" not in {n["id"] for n in g2["nodes"]} and g2["others_total"] == 1   # hidden by default
+    g2 = PR.disease_graph(["HP:0011153"], "OMIM:100001", all_annotations=True, engine=eng)
+    assert "other_annotation" in {r for n in g2["nodes"] for r in n["roles"]} and g2["others_shown"] == 1
+    assert PR.disease_graph(["HP:0011153"], "OMIM:999", engine=eng) is None

@@ -399,6 +399,22 @@ def get_prioritization_explain(sample_id: str, disease: list[str] = Query(defaul
     return payload
 
 
+@router.get("/samples/{sample_id}/prioritization/graph")
+def get_prioritization_graph(sample_id: str, disease: str, all: bool = False, version: str | None = None):
+    """HPO tree linking the case's HPO terms to one candidate disease (read-only)."""
+    if not re.fullmatch(r"(OMIM|ORPHA):\d{1,7}", disease or ""):
+        raise HTTPException(400, "disease 格式應為 OMIM:數字 或 ORPHA:數字")
+    try:
+        payload = sample_loader.candidate_graph(sample_id, disease, all_annotations=all, version=version)
+    except ImportError as exc:
+        raise HTTPException(503, f"表型引擎無法載入（{exc}）") from exc
+    if payload is None:
+        raise HTTPException(404, f"sample not found: {sample_id}")
+    if not payload:
+        raise HTTPException(404, "這個疾病不在知識庫，或個案沒有可用的 HPO")
+    return payload
+
+
 @router.get("/samples/{sample_id}/cnv")
 def get_sample_cnv(sample_id: str, version: str | None = None):
     """CNV side-channel for the staged loader."""

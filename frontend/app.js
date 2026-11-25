@@ -3560,6 +3560,22 @@ document.addEventListener("click", (event) => {
   if (btn && !btn.disabled) openPrioCandidatesModal();
 });
 
+// Candidate list → HPO tree picture of one disease against the case's saved HPO terms.
+document.addEventListener("click", (event) => {
+  const btn = event.target.closest(".prio-hpo-graph[data-graph-disease]");
+  if (!btn || !window.HpoGraph) return;
+  const disease = btn.dataset.graphDisease;
+  const sid = state.data?.sample_id || state.currentLIS;
+  if (!disease || !sid) return;
+  const entry = _prioExplain.diseases[disease] || {};
+  const gene = btn.closest(".prio-cand")?.querySelector(".prio-cand-gene")?.textContent || "";
+  window.HpoGraph.open({
+    title: `${gene ? `${gene} · ` : ""}${entry.name || disease}`,
+    subtitle: `${disease} · 病人的 HPO 與這個疾病的註記在 HPO 樹上的位置（依已儲存的 HPO）`,
+    load: all => apiFetch(`/samples/${encodeURIComponent(sid)}/prioritization/graph?disease=${encodeURIComponent(disease)}&all=${all ? "true" : "false"}`),
+  });
+});
+
 function _prioDiseaseLink(id) {
   const m = String(id || "").match(/^(OMIM|ORPHA):(\d+)$/);
   if (!m) return "";
@@ -3768,31 +3784,49 @@ function _prioExplainReset() {
   if (_prioExplain.key !== key) _prioExplain = { key, terms: [], diseases: {}, pending: new Set() };
 }
 
-function _prioHpoChips(entry, terms) {
+function _prioHpoSymbol(r) {
+  switch (r && r.relation) {
+    case "same": return "＝";
+    case "patient_specific": return `↑${r.steps_patient}`;
+    case "patient_broader": return `↓${r.steps_annotation}`;
+    case "collateral": return `⋀${r.steps_patient}+${r.steps_annotation}`;
+    default: return "✕";
+  }
+}
+
+function _prioHpoChips(entry, terms, disease = "") {
   const names = Object.fromEntries((terms || []).map(t => [t.hpo_id, t.name]));
   const order = { match: 0, partial: 1, none: 2 };
   const rows = [...(entry.rows || [])].sort((a, b) => order[a.match] - order[b.match]);
   const chips = rows.map(r => {
     const name = names[r.hpo_id] || r.hpo_id;
+    const where = {
+      same: "疾病有同一個 HPO",
+      patient_specific: `病人較具體：往上 ${r.steps_patient} 層就是疾病註記`,
+      patient_broader: `病人較籠統：疾病註記在下面 ${r.steps_annotation} 層`,
+      collateral: `旁系：病人往上 ${r.steps_patient} 層、疾病註記往上 ${r.steps_annotation} 層，在「${r.mica_name}」相遇`,
+    }[r.relation] || "疾病沒有相關註記";
     const tip = [`病人：${name}（${r.hpo_id}）`,
-      r.match === "none" ? "疾病沒有相關註記" : `疾病註記：${r.annotation_name}（${r.annotation}）`,
-      `關係：${r.relation_zh}`, `淨貢獻 ${Number(r.net).toFixed(2)}（配對分扣掉這個疾病的基準分）`].join("\n");
-    return `<span class="prio-hpo-chip prio-hpo-${r.match}" title="${escapeAttr(tip)}">${escapeHtml(name)}</span>`;
+      r.match === "none" ? "" : `疾病註記：${r.annotation_name}（${r.annotation}）`,
+      where, `淨貢獻 ${Number(r.net).toFixed(2)}`].filter(Boolean).join("\n");
+    return `<span class="prio-hpo-chip prio-hpo-${r.match}" title="${escapeAttr(tip)}"><b class="prio-hpo-sym">${escapeHtml(_prioHpoSymbol(r))}</b> ${escapeHtml(name)}</span>`;
   }).join("");
   const n = rows.length;
   const partial = entry.partial ? `、部分 ${entry.partial}` : "";
-  return `<span class="prio-hpo-sum" title="符合：疾病有這個 HPO、或它的上層／下層；部分：只有相關但不同的 HPO（旁系），且分數高於這個疾病的基準">HPO 符合 ${entry.matched}／${n}${partial}</span>${chips}`;
+  return `<button type="button" class="prio-hpo-sum prio-hpo-graph" data-graph-disease="${escapeAttr(disease)}" title="開啟 HPO 樹狀圖。符合：疾病有這個 HPO、或它的上層／下層；部分：只有相關但不同的 HPO（旁系），且分數高於這個疾病的基準。＝ 相同；↑n 病人較具體；↓n 病人較籠統；⋀a+b 旁系；✕ 沒有相關註記">HPO 符合 ${entry.matched}／${n}${partial} <span class="prio-hpo-graph-icon">看樹狀圖 ›</span></button>${chips}`;
 }
 
 function _prioFillExplain(host) {
   host.querySelectorAll(".prio-cand-hpo[data-disease]").forEach(el => {
     const entry = _prioExplain.diseases[el.dataset.disease];
-    if (entry) el.innerHTML = _prioHpoChips(entry, _prioExplain.terms);
+    if (entry) el.innerHTML = _prioHpoChips(entry, _prioExplain.terms, el.dataset.disease);
     else if (!_prioExplain.pending.has(el.dataset.disease)) el.innerHTML = `<span class="muted">HPO 符合：無資料</span>`;
   });
   host.querySelectorAll(".prio-cand-hpo-mini[data-disease]").forEach(el => {
     const entry = _prioExplain.diseases[el.dataset.disease];
-    el.textContent = entry ? ` · HPO 符合 ${entry.matched}／${(entry.rows || []).length}` : "";
+    el.innerHTML = entry
+      ? ` · <button type="button" class="prio-hpo-graph prio-hpo-mini-btn" data-graph-disease="${escapeAttr(el.dataset.disease)}" title="開啟 HPO 樹狀圖">HPO 符合 ${entry.matched}／${(entry.rows || []).length}</button>`
+      : "";
   });
 }
 

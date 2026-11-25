@@ -4834,3 +4834,8 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 .prio-hpo-partial { background: #fef9c3; border-color: #fde047; color: #854d0e; }
 .prio-hpo-none { background: #f3f4f6; border-color: #e5e7eb; color: #9ca3af; text-decoration: line-through; }
 .prio-cand-hpo-mini { color: #166534; font-size: 12px; }
+.prio-hpo-graph { font: inherit; border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 1px 8px; cursor: pointer; }
+.prio-hpo-graph:hover { background: #f1f5f9; }
+.prio-hpo-graph-icon { color: #2563eb; font-weight: 500; margin-left: 4px; }
+.prio-hpo-mini-btn { font-size: 12px; color: #166534; padding: 0 6px; }
+.prio-hpo-sym { font-family: ui-monospace, monospace; font-weight: 700; margin-right: 1px; }

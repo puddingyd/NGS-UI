@@ -1387,6 +1387,16 @@ def explain_candidates(sample_id: str, disease_ids: list, version: str | None = 
     return prioritization.explain_diseases(_case_hpo(sample_id, version, meta), disease_ids)
 
 
+def candidate_graph(sample_id: str, disease_id: str, *, all_annotations: bool = False,
+                    version: str | None = None) -> dict | None:
+    """HPO sub-graph of one candidate disease against the case's saved HPO terms."""
+    if not sample_layout.state_dir(sample_id).is_dir():
+        return None
+    meta = _read_json_or(sample_layout.state_file(sample_id, "sample_metadata.json"), {}) or {}
+    return prioritization.disease_graph(_case_hpo(sample_id, version, meta), disease_id,
+                                        all_annotations=all_annotations) or {}
+
+
 def load_sample_roh(sample_id: str, version: str | None = None) -> dict | None:
     """Staged loader for normalized ROH regions and provenance summary."""
     return roh.load_sample_roh(sample_id)
