@@ -2558,7 +2558,9 @@ $p_g=1-(1-p_{\min})^k$ 在實作上數值退化（基因 top-10 只剩 11%）；
 
 **規則 v1.8（2026-11-24）：** ClinVar 標籤比較後採用 PM1 ≥1★、PP2 良性 ≤20%（PM1 LR+ 102→137、PP2 LR+ 25→16，AUC 不變、良性 ≥6 點仍 0%）。
 
-**規則 v1.10（2026-11-25，使用者決定）：** PM2 照 ACMG 2015 原文：所有大型族群資料庫都沒有出現給 Moderate；OMIM 只列隱性遺傳的基因，最大 AF ≤0.02%（原 0.07%，改用 PAH 專家小組這一級；原本註明參考的聽損專家小組實際是 0.007%）也給 Moderate；其他有出現但低於門檻者（X 性聯隱性、遺傳模式未知 ≤0.01%）維持 Supporting。與 PVS1 同時成立時 PM2 以 Supporting 計，避免新的功能喪失變異只靠 PVS1＋PM2 就達 Pathogenic（10 點；2015 合併規則下為 Likely pathogenic）。有 ClinGen 專家規格的基因仍照規格強度（133 個中 127 個上限 Supporting）。
+**規則 v1.10（2026-11-25，使用者決定）：** PM2 照 ACMG 2015 原文：所有大型族群資料庫都沒有出現給 Moderate；OMIM 只列隱性遺傳的基因，最大 AF ≤0.02%（原 0.07%，改用 PAH 專家小組這一級；原本註明參考的聽損專家小組實際是 0.007%）也給 Moderate；其他有出現但低於門檻者（遺傳模式未知 ≤0.01%）維持 Supporting（X 性聯隱性 v1.11 起改 Moderate）。與 PVS1 同時成立時 PM2 以 Supporting 計，避免新的功能喪失變異只靠 PVS1＋PM2 就達 Pathogenic（10 點；2015 合併規則下為 Likely pathogenic）。有 ClinGen 專家規格的基因仍照規格強度（133 個中 127 個上限 Supporting）。
+
+**規則 v1.11（2026-11-25，使用者決定）：** OMIM 只列 X 性聯隱性（XLR／XL）的基因，最大 AF ≤0.01%（`pm2_xlinked_max`）也比照隱性給 PM2_Moderate（ACMG 2015 原文「隱性遺傳頻率極低」）；族群資料只有整體 AF、沒有男性半合子數，所以門檻仍為 0.01%（約對應男性盛行率 1/10,000）。與 PVS1 同時成立仍以 Supporting 計，專家規格上限照舊。
 
 **規則 v1.9（2026-11-25）：** 逐一核對 CSpec PM1 文字與解析結果，修正 9 個基因的熱點（FBN1、ENG、GUCY2D、HNF4A、PAH、TNNT2、GP1BA、GP1BB、PAX6），MYO15A／OTOF 改為不適用；起因是 FBN1 c.1841T>C 與 Franklin 的比較（FBN1 VCEP 的 PM2 <0.0005%、BS1 >0.005% 比一般門檻嚴，In-house 給 BS1、不給 PM2 符合規格）。
 
@@ -2568,7 +2570,7 @@ $p_g=1-(1-p_{\min})^k$ 在實作上數值退化（基因 top-10 只剩 11%）；
 |---|---|---|---|
 | 排序用的變異點數 $V'$ | 判讀者覆寫優先 | 固定 In-house（含 ClinVar ≥2★／VCEP 採用、P-KNN LLR、院內常見扣分）→ GeneBe；判讀者只改顯示與報告 | 第 5.2.8 節 |
 | In-house 畫面分類 | 含 ClinVar 採用 | 規則自行計算；ClinVar 只影響排序；ClinGen 專家小組直接顯示 | 第 5.2.8 節 |
-| ACMG 規則 | v1.1 | v1.10：PM2 未出現給 Moderate（ACMG 2015 原文）、只有隱性遺傳 ≤0.02% 也給 Moderate、與 PVS1 同時成立時以 Supporting 計；v1.9：VCEP PM1 熱點人工修正；v1.8：PM5 ≥1★、隱性 PM2 0.07%、X 性聯隱性 PM2 0.01%、膠原蛋白 PM1、CSpec 規格、PS4（數病人）、PM3（ClinVar）、PM1 ≥1★、PP2 良性 ≤20% | 第 5.2 節 |
+| ACMG 規則 | v1.1 | v1.11：X 性聯隱性 ≤0.01% 也給 PM2_Moderate；v1.10：PM2 未出現給 Moderate（ACMG 2015 原文）、只有隱性遺傳 ≤0.02% 也給 Moderate、與 PVS1 同時成立時以 Supporting 計；v1.9：VCEP PM1 熱點人工修正；v1.8：PM5 ≥1★、隱性 PM2 0.07%、X 性聯隱性 PM2 0.01%、膠原蛋白 PM1、CSpec 規格、PS4（數病人）、PM3（ClinVar）、PM1 ≥1★、PP2 良性 ≤20% | 第 5.2 節 |
 | 表型基因點數 | 開發 396 例；下限 −3.1 | 開發＋第二組 877 例合併（v10.67 改用正式引擎重算）；最低 −6.1 | 第 4.8.3、4.8.4 節 |
 | 表型疾病點數（同基因內分配） | 開發資料；下限 −3.1 | 881 例合併、MONDO 同組名次；最低 −4.8 | 第 4.8.7 節 |
 | 隱性兩個變異（phase 未知） | $C=-1$ | $C=0$ | 第 6.3 節 |

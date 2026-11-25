@@ -10,6 +10,8 @@
 
 ## 0. 一句話總覽
 
+**X 性聯隱性 PM2 Moderate（v10.74，2026-11-25）**：規則 `ngsui-acmg-v1.11`（依使用者決定）：`engine` PM2 對 OMIM 只列 XLR／XL 的基因（`_xlinked_recessive`），最大 AF ≤ `pm2_xlinked_max`（0.0001）時改給 `pm2.recessive_low_strength`（Moderate，理由「X 性聯隱性頻率極低（ACMG 2015 原文）」）；`xlr` 預設 False（有 VCEP 門檻時不判斷）。門檻不變：註解沒有 gnomAD 男性半合子數，只能用整體 AF，0.01% 約對應男性盛行率 1/10,000。`_pm2_with_pvs1` 與 `_apply_vcep` 照舊。規則檔變更使舊結果過期，部署後 `build_engine_results.py --all` 重算。測試 `tests/test_acmg_engine_v14.py`。
+
 **PM2 照原文、Manual ACMG 小調整（v10.73，2026-11-25）**：規則 `ngsui-acmg-v1.10`（依使用者決定）：`rulebook_v1.json` 新增 `pm2`（`absent_strength`／`recessive_low_strength`＝moderate、`rare_strength`／`with_pvs1_strength`＝supporting），`frequency.pm2_recessive_max` 0.0007→0.0002。`engine` PM2：所有大型族群來源都缺值或 0 → Moderate（理由「ACMG 2015 原文；也可能是覆蓋不足」）；OMIM 只列 AR 的基因 AF ≤0.02% → Moderate；其他低頻 → Supporting；門檻來自 ClinGen 規格時給 Moderate 再由 `_apply_vcep` 依規格上限降級（127 個基因上限 Supporting，ETHE1／GAA／LDLR／PDHA1／POLG／SLC19A3 為 Moderate）。`_pm2_with_pvs1()` 在 `_apply_vcep` 之後：PVS1 成立時 PM2 降為 Supporting（PVS1＋PM2 維持 9 點 LP）。原註明 0.07% 參考聽損專家小組，但其規格實為 0.007%，故改用 PAH 0.02%。規則檔變更使舊結果過期，部署後 `build_engine_results.py --all` 重算。Manual ACMG modal：criteria 上方說明拿掉「下方各項的 In-house 小字是平台規則…結果…」整句，只在有已過期／當場計算／VCEP／排序改用 ClinVar 時顯示；`.acmg-source-audit`（reviewer、Global reusable 等灰字）加 `overflow-wrap: anywhere` 不再超出來源卡。測試 `tests/test_acmg_engine.py`、`tests/test_acmg_engine_v14.py`、`tests/frontend_acmg_inhouse_reason.test.cjs`。
 
 **診斷報告結果格式（v10.72，2026-11-25）**：診斷 DOCX 的第三節移除標題、說明、列點及變異表格的外側前置空白，僅「檢體類別：血液」保留兩個半形空格；「綜合說明:」前空一行，「檢體說明:／綜合說明:／參考資料:」使用粗體。表格保留欄間與換行空儲存格的對齊空白；健檢 DOCX 及其他章節格式不變。更新服務後重新匯出即可，不需重跑分析。

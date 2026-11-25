@@ -755,6 +755,7 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         limit = _vcep_threshold(spec, "pm2", ad_like, recessive)
         vcep_limit = limit is not None
         pm2_from = f"（{vlabel}）" if vcep_limit else ""
+        xlr = False
         if limit is None:
             xlr = _xlinked_recessive(ctx, rb) and "pm2_xlinked_max" in cfg
             limit = (cfg["pm2_xlinked_max"] if xlr
@@ -770,9 +771,10 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
         elif max_af <= limit:
             # an expert-panel threshold: its own strength applies (_apply_vcep caps to the spec)
             low = (pm2cfg.get("absent_strength") if vcep_limit
-                   else pm2cfg.get("recessive_low_strength") if recessive and not ad_like else None)
+                   else pm2cfg.get("recessive_low_strength") if xlr or (recessive and not ad_like) else None)
             strength = low or pm2cfg.get("rare_strength", "supporting")
-            note = "，隱性遺傳頻率極低（ACMG 2015 原文）" if low and not vcep_limit else ""
+            note = (("，X 性聯隱性頻率極低（ACMG 2015 原文）" if xlr
+                     else "，隱性遺傳頻率極低（ACMG 2015 原文）") if low and not vcep_limit else "")
             evidence.append(_met("PM2", strength, f"最大 AF {_fmt_af(max_af)} ≤ {limit}{pm2_from}{note}", rb))
         else:
             evidence.append(Evidence("PM2", "not_met", reason=f"最大 AF {_fmt_af(max_af)} > {limit}{pm2_from}"))
