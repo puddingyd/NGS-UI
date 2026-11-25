@@ -192,4 +192,13 @@ test('HPO graph: chains collapse, parents always drawn above children', () => {
   const L2 = G.layout({ nodes: [{ id: 'O', name: 'o', roles: ['organ'] }, { id: 'X', name: 'x', roles: [] },
     { id: 'P', name: 'p', roles: ['patient'] }], edges: [['X', 'O'], ['P', 'X']] });
   assert.ok(L2.nodes.has('X'));
+  // organ systems drop "Abnormality of (the)" and wrap instead of cutting the key words
+  const lab = n => [...G.label(n)];
+  assert.deepEqual(lab({ name: 'Abnormality of the musculoskeletal system', roles: ['organ'] }), ['Musculoskeletal system']);
+  assert.deepEqual(lab({ name: 'Abnormality of blood and blood-forming tissues', roles: ['organ'] }),
+    ['Blood and blood-forming', 'tissues']);
+  assert.deepEqual(lab({ name: 'Growth abnormality', roles: ['organ'] }), ['Growth abnormality']);
+  assert.deepEqual(lab({ name: 'Multiple cafe-au-lait spots', roles: ['annotation'] }), ['Multiple cafe-au-lait', 'spots']);
+  assert.deepEqual(lab({ name: 'Scoliosis', roles: ['annotation', 'meet'] }), ['★ Scoliosis']);
+  assert.equal(lab({ name: 'a b c d e f g h i j k l m n o p q r s t u v w x y z a b c d e f', roles: [] }).length, 2);
 });

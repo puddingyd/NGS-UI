@@ -339,6 +339,7 @@ def test_lineage_steps_and_graph(omim, eng):
     assert pair["path_patient"][0] == "HP:0002197" and pair["path_patient"][-1] == pair["mica"] == gen["mica"]
     assert pair["path_annotation"][0] == gen["annotation"] and pair["path_annotation"][-1] == pair["mica"]
     assert "meet" in nodes[pair["mica"]]["roles"]
+    assert "meet" not in nodes["HP:0007359"]["roles"]             # direct parent/child pair: no meeting star
     assert pair["relation_zh"] and pair["match"] in ("match", "partial", "none")
     g2 = PR.disease_graph(["HP:0011153"], "OMIM:100001", engine=eng)
     assert "HP:0001249" not in {n["id"] for n in g2["nodes"]} and g2["others_total"] == 1   # hidden by default

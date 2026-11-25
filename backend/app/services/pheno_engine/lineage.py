@@ -132,7 +132,8 @@ def disease_graph(engine, result, disease: int, *, all_annotations: bool = False
             add(steps["path_annotation"], "annotation")
             paired.add(d)
             mica = int(p["mica"])
-            roles.setdefault(mica, set()).add("meet")
+            if rel == "collateral":          # only side branches meet at a third term
+                roles.setdefault(mica, set()).add("meet")
             add(lin.path_to_organ(mica))
         pairs.append({"hpo_id": kb.terms[q], "annotation": kb.terms[d] if rel != "none" else "",
                       "relation": rel, "mica": kb.terms[int(p["mica"])] if rel != "none" else "",

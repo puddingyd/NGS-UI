@@ -9,7 +9,7 @@
 (function () {
   "use strict";
 
-  const NODE_W = 168, CHAIN_W = 96, NODE_H = 34, GAP_X = 16, GAP_Y = 64, PAD = 16;
+  const NODE_W = 168, CHAIN_W = 96, NODE_H = 40, GAP_X = 16, GAP_Y = 64, PAD = 16;
   const ROLE_ZH = { patient: "病人的 HPO", annotation: "疾病註記（有配對）", other_annotation: "疾病其他註記",
     meet: "交會的 term（兩邊往上相遇處）", organ: "器官系統" };
 
@@ -140,12 +140,46 @@
     return "hpog-plain";
   }
 
+  const LINE_CHARS = 25, MAX_LINES = 2;
+
+  // Organ systems are all "Abnormality of (the) X": show X so the meaningful word fits.
+  function organName(name) {
+    const short = String(name || "").replace(/^Abnormality of (the )?/i, "");
+    return short ? short[0].toUpperCase() + short.slice(1) : String(name || "");
+  }
+
+  // Up to two lines broken at spaces; only a third line's worth is cut with "…".
+  function wrap(text, width = LINE_CHARS, maxLines = MAX_LINES) {
+    const words = String(text).split(/\s+/).filter(Boolean);
+    const lines = [];
+    let cur = "";
+    for (const w of words) {
+      if (!cur) cur = w;
+      else if ((cur + " " + w).length <= width) cur += " " + w;
+      else { lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    const out = lines.slice(0, maxLines).map((l) => (l.length > width ? `${l.slice(0, width - 1)}…` : l));
+    if (lines.length > maxLines) {
+      const last = out[maxLines - 1];
+      out[maxLines - 1] = `${last.slice(0, width - 1).replace(/\s+$/, "")}…`;
+    }
+    return out;
+  }
+
   function label(n) {
-    if (n.roles.includes("chain")) return n.name;
-    const text = String(n.name || n.id);
-    const star = n.roles.includes("meet") && !n.roles.includes("patient") ? "★ " : "";
-    const max = 24 - star.length;
-    return star + (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+    if (n.roles.includes("chain")) return [n.name];
+    const r = n.roles;
+    const text = r.includes("organ") && !r.includes("patient") && !r.includes("annotation")
+      ? organName(n.name || n.id) : String(n.name || n.id);
+    const star = r.includes("meet") && !r.includes("patient") ? "★ " : "";
+    return wrap(star + text);
+  }
+
+  function textSvg(lines, cx, cy) {
+    const lh = 13, top = cy + 4 - ((lines.length - 1) * lh) / 2;
+    return `<text text-anchor="middle">${lines.map((l, i) =>
+      `<tspan x="${cx}" y="${top + i * lh}">${esc(l)}</tspan>`).join("")}</text>`;
   }
 
   function tooltip(n) {
@@ -184,7 +218,7 @@
       return `<g class="hpog-node ${nodeClass(n)}${unmatched ? " hpog-unmatched" : ""}" data-id="${esc(n.id)}">
         <title>${esc(tooltip(n))}</title>
         <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${n.roles.includes("chain") ? h / 2 : 6}"/>
-        <text x="${x + w / 2}" y="${y + h / 2 + 4}" text-anchor="middle">${esc(label(n))}</text></g>`;
+        ${textSvg(label(n), x + w / 2, y + h / 2)}</g>`;
     }).join("");
     const order = { match: 0, partial: 1, none: 2 };
     const rows = [...(graph.pairs || [])].sort((a, b) => (order[a.match] ?? 3) - (order[b.match] ?? 3));
@@ -299,5 +333,5 @@
     load(false);
   }
 
-  window.HpoGraph = { open, close, render, layout, collapse, symbol, symbolText };
+  window.HpoGraph = { open, close, render, layout, collapse, symbol, symbolText, label, wrap };
 })();
