@@ -237,10 +237,15 @@ def test_rankings_points_and_explanation(eng):
     assert sum(r["net"] for r in rows) == pytest.approx(res.S_star[i1])
 
 
-def test_points_tables():
-    assert E.gene_points(1) == 10.2 and E.gene_points(1.5) == 7.5 and E.gene_points(10) == 6.1
-    assert E.gene_points(11) == 4.3 and E.gene_points(5000) == -6.1
-    assert E.disease_points(3) == 8.5 and E.disease_points(2000) == -4.8
+def test_points_curves():
+    # smooth curves (plan §4.8.3, 2026-11-25): spot values of the fitted curves
+    assert [E.gene_points(r) for r in (1, 2, 5, 10, 50, 200, 1000)] == [10.2, 8.2, 6.9, 5.8, 3.0, 0.2, -3.4]
+    assert E.gene_points(1.5) == 8.6                     # shared mid rank: no rank-1 term
+    assert E.gene_points(5000) == E.P_MIN == -6.1        # floor = old >1000 estimate
+    assert [E.disease_points(r) for r in (1, 3, 10, 100)] == [11.1, 8.5, 6.8, 2.9]
+    assert E.disease_points(20000) == E.DISEASE_MIN == -4.8
+    pts = [E.gene_points(r) for r in range(1, 4889)]
+    assert all(a >= b for a, b in zip(pts, pts[1:]))      # never increases with rank
 
 
 def test_weights_scale_contributions(eng):

@@ -39,18 +39,23 @@ import numpy as np
 
 from . import kb as K
 
-ENGINE_VERSION = "pheno-engine-v1"
+ENGINE_VERSION = "pheno-engine-v2"
 LEAD_NATS = 3.0          # §4.8.5 "rank 1 and clearly ahead"
 NEAR_TIE_NATS = 1.0      # §4.8.6 near-tie group
-# 2026-11-24 (user decision): no −3.1 floor; both tables are estimated with this
-# engine on the development (400) and second (481) time-split case sets pooled
-# (stage 6, ``scripts/benchmark_pheno.py run``; plan §4.8.3, §4.8.7): genes over
-# 4,888 genes, diseases by MONDO-group rank over 10,308 groups.  The gene >1000
-# bin −6.1 is also the lowest P.
+# 2026-11-25 (user decision, plan §4.8.3): rank → points is a smooth curve instead of
+# 7 rank bins.  points(r) = a0 + c1·ln r + c2·(ln r)² + c3·[r = 1], fitted by maximum
+# likelihood (an exponential-family pmf over ranks 1..N) on the development (396/400)
+# and second (481) time-split case sets pooled, production engine, 2023-10-09 KB;
+# genes over N = 4,888 genes, diseases by MONDO-group rank over 10,308 groups.  A
+# shared mid rank (r > 1) gets no rank-1 term.  Both analyses (calibration bits and
+# the candidate-ranking simulation) and the locked 152-case test set favoured it
+# over the bins; the bins and an 11-bin table stay on the in-house validation list.
+# Floors = the old >1000 estimates (genes −6.1, the lowest P; diseases −4.8).
 P_MIN, P_MAX = -6.1, 13.0
+DISEASE_MIN = -4.8
 INF = float("inf")
-GENE_POINTS = ((1, 10.2), (5, 7.5), (10, 6.1), (50, 4.3), (200, 1.6), (1000, -1.5), (INF, -6.1))
-DISEASE_POINTS = ((1, 11.1), (5, 8.5), (10, 7.3), (50, 5.2), (200, 2.8), (1000, -0.1), (INF, -4.8))
+GENE_CURVE = (9.087, -1.2461, -0.0819, 1.118)
+DISEASE_CURVE = (9.921, -1.1761, -0.0767, 1.132)
 CALIBRATION = "provisional (plan §4.8.3, phenopacket-store time-split development set)"
 EXPLAIN_TOP = 50
 ROUND = 9                # S*, G rounded for tie detection only
@@ -67,19 +72,19 @@ FILES = ("pheno_engine_diseases.tsv", "pheno_engine_genes.tsv", "pheno_engine_ex
          "pheno_engine_run.json")
 
 
-def _points(rank: float, table) -> float:
-    for upper, pts in table:
-        if rank <= upper:
-            return pts
-    return table[-1][1]
+def _curve(rank: float, curve) -> float:
+    r = max(1.0, float(rank))
+    a0, c1, c2, c3 = curve
+    lr = math.log(r)
+    return round(a0 + c1 * lr + c2 * lr * lr + (c3 if r < 1.25 else 0.0), 1)
 
 
 def gene_points(rank: float) -> float:
-    return min(P_MAX, max(P_MIN, _points(rank, GENE_POINTS)))
+    return min(P_MAX, max(P_MIN, _curve(rank, GENE_CURVE)))
 
 
 def disease_points(rank: float) -> float:
-    return min(P_MAX, max(P_MIN, _points(rank, DISEASE_POINTS)))
+    return min(P_MAX, max(DISEASE_MIN, _curve(rank, DISEASE_CURVE)))
 
 
 def _mid_ranks(sorted_values: np.ndarray) -> np.ndarray:
@@ -548,8 +553,8 @@ def run_info(result: Result, extra: dict | None = None) -> dict:
         "kb_version": (eng.manifest.get("kb") or {}).get("kb_version", ""),
         "manifest_sha256": eng.manifest_sha256,
         "params": {"lambda": K.LAMBDA, "lead_nats": LEAD_NATS, "near_tie_nats": NEAR_TIE_NATS,
-                   "p_min": P_MIN, "p_max": P_MAX, "gene_points": [[u if u != INF else "inf", p] for u, p in GENE_POINTS],
-                   "disease_points": [[u if u != INF else "inf", p] for u, p in DISEASE_POINTS],
+                   "p_min": P_MIN, "p_max": P_MAX, "disease_min": DISEASE_MIN,
+                   "gene_curve": list(GENE_CURVE), "disease_curve": list(DISEASE_CURVE),
                    "calibration": CALIBRATION},
         "input": result.pre["raw"],
         "terms": [{k: t[k] for k in ("hpo_id", "name", "input_id", "how", "input_weight", "weight", "ic_star")}
