@@ -107,3 +107,16 @@ def test_inhouse_common_penalty_not_exempt_when_common():
     assert inhouse_common.apply_penalty(rare, scope="in_house", score=10, criteria_text="") == 10
     v37i = dict(variant, id="chr13-20189473-C-T", AF=0.08, inhouse_common={"level": 2, "target": 8})
     assert inhouse_common.apply_penalty(v37i, scope="in_house", score=10, criteria_text="") == 10
+
+
+def test_inheritance_uses_the_primary_row_gene():
+    lnc = lof_row(GENE="LNC1", TRANSCRIPT="ENST00000000009.1", TRANSCRIPT_TYPE="", IMPACT="MODIFIER",
+                  CONSEQUENCE="non_coding_transcript_exon_variant")
+    mane = lof_row(GENE="GENE1")
+    seen = []
+    def moi(gene):
+        seen.append(gene)
+        return {"AR"} if gene == "GENE1" else None
+    [(vid, result)] = list(runner.evaluate_rows({"v": [lnc, mane]}, test_type="WES", refs=refs(), moi_fn=moi))
+    assert seen == ["GENE1"]
+    assert by_code(result, "PS4")[0]["reason"] != "遺傳模式未知"

@@ -27,15 +27,16 @@ from functools import lru_cache
 from pathlib import Path
 
 from . import parse as P
-from .engine import Context, evaluate_variant, load_rulebook
+from .engine import Context, _primary_row, evaluate_variant, load_rulebook
 from .ref_store import SqliteReferences, load_ba1_exceptions
 from .refs import References
 
 RESULTS_NAME = "snv_acmg_engine.sqlite"
-FORMAT_VERSION = 5          # 2: CaseRecurrence delegates the missense window / gene count lookups
+FORMAT_VERSION = 6          # 2: CaseRecurrence delegates the missense window / gene count lookups
                             # 3: CaseRecurrence delegates the collagen Gly-X-Y lookup
                             # 4: CaseRecurrence answers PS4 lookups (in-house probands, ClinVar cases)
                             # 5: omim_moi also reads each OMIM disease line; CaseRecurrence.cds_exons
+                            # 6: inheritance looked up for the primary (MANE) row's gene, not rows[0]
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
@@ -302,7 +303,9 @@ def evaluate_rows(groups: dict[str, list[dict]], *, test_type: str, refs: Refere
     rb = rulebook or load_rulebook()
     moi_cache: dict[str, set | None] = {}
     for vid, rows in groups.items():
-        gene = P.text(rows[0].get("GENE"))
+        # the gene the engine evaluates (MANE row), not whichever transcript row came first:
+        # rows of an overlapping lncRNA / neighbouring gene would give the wrong inheritance
+        gene = P.text(_primary_row(rows).get("GENE"))
         if gene not in moi_cache:
             moi_cache[gene] = moi_fn(gene) if moi_fn else None
         ctx = Context(test_type=test_type, moi=moi_cache[gene], refs=refs)
