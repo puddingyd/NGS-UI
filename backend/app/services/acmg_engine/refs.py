@@ -78,8 +78,10 @@ class References:
 
     def clinvar_biallelic(self, variation_id: str) -> dict | None:
         """ClinVar submitters describing homozygous / compound-heterozygous patients (PM3):
-        {"submitters", "hom", "comphet", "trans", "detail": [{"scv", "snippet", "trans"}]};
-        ``trans`` counts submitters that state the trans phase explicitly; ``{}`` when none."""
+        {"submitters", "hom", "comphet", "trans", "independent", "detail": [{"scv", "snippet",
+        "trans", "pmids"}]}; ``independent`` counts submitter groups (submitters quoting a
+        common PMID merged) and ``trans`` the groups that state the trans phase with a
+        P/LP partner explicitly; ``{}`` when none."""
         return None
 
     def clinvar_functional(self, variation_id: str) -> dict | None:
@@ -106,7 +108,7 @@ class StaticReferences(References):
     collagen: dict = field(default_factory=dict)     # gene -> {"length", "positions"}
     probands: dict | None = None             # variant_key -> other unrelated Causative patients
     clinvar_cases: dict | None = None        # variation_id -> {"submitters", "individuals"}
-    biallelic: dict | None = None            # variation_id -> {"submitters", "hom", "comphet", "trans", "detail"}
+    biallelic: dict | None = None            # variation_id -> {"submitters", "hom", "comphet", "trans", "independent", "detail"}
     functional: dict | None = None           # variation_id -> {"submitters", "detail"}
     version: dict = field(default_factory=dict)
 

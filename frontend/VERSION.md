@@ -6,6 +6,12 @@
 
 ## 版本紀錄
 
+### v10.80 — 2026-11-26
+
+- PM3 改用 ClinGen 的計分方式，取代上一版「一個提交者明確寫 in trans 就給 Strong」：ClinVar 提交者明確寫這個變異和致病或疑似致病變異 in trans，每組算 1 分；只寫同型合子或複合異型合子（相位不明）的每組算 0.5 分；引用同一篇文獻（相同 PMID）的提交者視為同一批病人，只算一組。0.5 分給 Supporting、1 分 Moderate、2 分以上 Strong；因為無法確認是不同病人，最高只到 Strong。
+- 「明確 in trans」現在必須寫明另一個變異是致病或疑似致病；只寫位置（例如 c.1234A>G）、寫成 VUS 或良性的都不算，改以 0.5 分計。
+- 需重建 ClinVar 病例表並重算 In-house 結果後生效。
+
 ### v10.79 — 2026-11-26
 
 - In-house prioritization 的排序改為只用 In-house 規則自行計算的點數，和畫面上的 In-house 分類一致；ClinVar ≥2★ 的分級不再取代排序點數（ClinVar 仍顯示在卡片上）。ClinGen 專家小組的分類照舊直接採用。「ClinVar 只當下限」與原本的做法留待舊個案補完後一起驗證。

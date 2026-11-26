@@ -20,8 +20,11 @@ patterns; sentences about population databases, controls, unaffected people
 or negations are skipped).  Up to three quoted snippets are kept so the
 reviewer can check them.  A sentence that states the trans phase explicitly
 ("in trans" / "on the opposite allele"), not hedged ("presumed", "phase
-unknown", "whether", "in cis") and not with a variant of uncertain
-significance, marks the submitter as ``trans`` (schema 3).
+unknown", "whether", "in cis"), with a partner named pathogenic or likely
+pathogenic, marks the submitter as ``trans`` (schema 3; the partner condition
+and ``pm3_independent`` from schema 4).  Submitters whose biallelic sentences
+quote a common PMID describe the same published patients and are merged
+(``pm3_independent`` groups, ``pm3_trans`` groups with an in-trans report).
 
 PS3 (schema 3): submissions whose comment text reports a functional study
 (experimental / in vitro / RNA / enzyme assays …) with an abnormal result for
@@ -32,10 +35,11 @@ the sentence are kept.
 
 Output ``clinvar_cases.sqlite`` (``cases``: variation_id, submitters,
 individuals, submitter_ids, pm3_submitters, pm3_hom, pm3_comphet, pm3_detail,
-pm3_trans, ps3_submitters, ps3_detail; ``meta``).  The engine caps PS4 from
-this table at Supporting, PM3 at Moderate (Strong when the trans phase is
-stated explicitly) and PS3 at Supporting, because case details, phase,
-independence and assay validation cannot be checked.
+pm3_trans, ps3_submitters, ps3_detail, pm3_independent; ``meta``).  The engine
+caps PS4 from this table at Supporting, scores PM3 with the ClinGen SVI points
+(explicit in trans 1, other biallelic reports 0.5 per group, at most Strong)
+and caps PS3 at Supporting, because case details, independence and assay
+validation cannot be checked.
 """
 from __future__ import annotations
 
@@ -162,12 +166,15 @@ _TRANS_HEDGE = re.compile(
     r"|\bwhether\b|\bif\s+(?:the|these|they)\b.{0,40}\bin[\s-]+trans|could\s+not|unable|\bin\s+cis\b"
     r"|parental\s+(?:testing|studies|samples|segregation)\s+(?:was\s+|were\s+)?(?:not|un)", re.I)
 _UNCERTAIN_PARTNER = re.compile(r"uncertain\s+(?:clinical\s+)?significance|unknown\s+significance|"
-                                r"\bVO?US\b|\bbenign\b", re.I)
+                                r"\bVO?US\b|\bbenign\b|\bnot\s+(?:\w+\s+){0,2}pathogenic", re.I)
+# the partner must be named pathogenic or likely pathogenic (rule v1.14)
+_PLP_PARTNER = re.compile(r"(?<!non-)(?<!non )(?<!\w)pathogenic\b", re.I)
 
 
 def explicit_trans(sentence: str, context: str = ""):
     """The match when ``sentence`` states the trans phase explicitly with a
-    (likely) pathogenic partner; None when hedged, in cis or with a VUS partner.
+    partner named pathogenic or likely pathogenic; None when hedged, in cis,
+    with a VUS / benign partner or a partner whose class is not stated.
     ``context`` (the full stop-delimited sentence around a ``;`` clause) is also
     checked for hedges such as "parental testing was not performed; …"."""
     match = _TRANS.search(sentence or "")
@@ -176,6 +183,8 @@ def explicit_trans(sentence: str, context: str = ""):
     for text in (sentence, context):
         if text and (_TRANS_HEDGE.search(text) or _UNCERTAIN_PARTNER.search(text)):
             return None
+    if not any(text and _PLP_PARTNER.search(text) for text in (sentence, context)):
+        return None
     return match
 
 
@@ -185,6 +194,9 @@ def _full_sentence(text: str, clause: str) -> str:
     if at < 0:
         return clause
     start = max(text.rfind(c, 0, at) for c in ".!?") + 1
+    stripped = clause.rstrip()
+    if stripped.endswith((".", "!", "?")):              # the clause already ends the sentence
+        return text[start:at + len(stripped)].strip()
     ends = [i for i in (text.find(c, at + len(clause)) for c in ".!?") if i >= 0]
     return text[start:(min(ends) + 1 if ends else len(text))].strip()
 
@@ -222,6 +234,14 @@ _FUNCTIONAL_SKIP = re.compile(
 _PMID = re.compile(r"\bPMIDs?[:\s]*((?:\d{5,9}[,;\s]*(?:and\s+)?)+)", re.I)
 
 
+def pmids_in(text: str) -> list[str]:
+    """PMIDs quoted as "PMID: 123, 456" in ``text``, in order, without repeats."""
+    out: list[str] = []
+    for group in _PMID.findall(text or ""):
+        out += [p for p in re.findall(r"\d{5,9}", group) if p not in out]
+    return out
+
+
 def functional_sentences(text: str) -> list[tuple[str, re.Match, list[str]]]:
     """[(sentence, functional-term match, PMIDs)] reporting an abnormal functional result for this variant."""
     found = []
@@ -229,10 +249,7 @@ def functional_sentences(text: str) -> list[tuple[str, re.Match, list[str]]]:
         match = _FUNCTIONAL.search(sentence)
         if not match or not _ABNORMAL.search(sentence) or _FUNCTIONAL_SKIP.search(sentence):
             continue
-        pmids = []
-        for group in _PMID.findall(sentence):
-            pmids += [p for p in re.findall(r"\d{5,9}", group) if p not in pmids]
-        found.append((sentence.strip(), match, pmids))
+        found.append((sentence.strip(), match, pmids_in(sentence)))
     return found
 
 
@@ -268,14 +285,18 @@ def _structured_biallelic(assertion) -> dict[str, int]:
 
 
 def _assertion_biallelic(assertion) -> dict | None:
-    """{"hom", "comphet", "trans", "snippet"} when the submission reports biallelic patients;
-    the snippet quotes the explicit in-trans sentence when there is one."""
+    """{"hom", "comphet", "trans", "snippet", "pmids"} when the submission reports biallelic
+    patients; the snippet quotes the explicit in-trans sentence when there is one and
+    ``pmids`` are the PMIDs quoted in the biallelic sentences (used to merge submitters
+    that describe the same published patients)."""
     counts = _structured_biallelic(assertion)
-    snippet, trans_snippet, text_kinds = "", "", set()
+    snippet, trans_snippet, text_kinds, pmids = "", "", set(), []
     for text in _texts(assertion):
         for kind, sentence in biallelic_sentences(text):
             text_kinds.add(kind)
-            trans = explicit_trans(sentence, _full_sentence(text, sentence)) if kind == "comphet" else None
+            context = _full_sentence(text, sentence)
+            pmids += [p for p in pmids_in(context) if p not in pmids]
+            trans = explicit_trans(sentence, context) if kind == "comphet" else None
             if trans and not trans_snippet:
                 trans_snippet = _snippet(sentence, trans.start(), trans.end())
             if not snippet:
@@ -290,7 +311,33 @@ def _assertion_biallelic(assertion) -> dict | None:
                  f"{counts['comphet']} compound heterozygote(s)" if counts["comphet"] else ""]
         snippet = "ClinVar observation counts: " + ", ".join(p for p in parts if p)
     return {"hom": int(bool(hom)), "comphet": int(bool(comphet)), "trans": int(bool(trans_snippet)),
-            "snippet": trans_snippet or snippet}
+            "snippet": trans_snippet or snippet, "pmids": pmids[:20]}
+
+
+def independent_groups(biallelic: dict) -> tuple[int, int]:
+    """(groups, groups with an explicit in-trans report): submitters whose biallelic
+    sentences quote a common PMID describe the same published patients and count once;
+    submitters without a PMID count on their own."""
+    parent = {who: who for who in biallelic}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    by_pmid: dict[str, str] = {}
+    for who, info in sorted(biallelic.items()):
+        for pmid in info.get("pmids") or ():
+            if pmid in by_pmid:
+                parent[find(who)] = find(by_pmid[pmid])
+            else:
+                by_pmid[pmid] = who
+    groups: dict[str, int] = {}
+    for who, info in biallelic.items():
+        root = find(who)
+        groups[root] = max(groups.get(root, 0), int(info.get("trans") or 0))
+    return len(groups), sum(groups.values())
 
 
 def _assertion_cases(assertion, methods: set) -> int | None:
@@ -343,8 +390,14 @@ def iter_records(stream, methods=DEFAULT_METHODS):
                     found[who] = max(found.get(who, 0), cases)
                 pm3 = _assertion_biallelic(elem)
                 scv = acc[0].get("Accession", "") if acc else ""
-                if pm3 and (who not in biallelic or pm3["trans"] > biallelic[who]["trans"]):
+                if pm3:
                     pm3["scv"] = scv
+                    old = biallelic.get(who)
+                    if old is not None:      # several submissions by one submitter: one entry
+                        pmids = old["pmids"] + [p for p in pm3["pmids"] if p not in old["pmids"]]
+                        if pm3["trans"] <= old["trans"]:
+                            pm3 = old
+                        pm3["pmids"] = pmids
                     biallelic[who] = pm3
                 ps3 = _assertion_functional(elem)
                 if ps3 and who not in functional:
@@ -397,23 +450,24 @@ def build(xml_path: Path, out: Path, *, release: str = "", methods=DEFAULT_METHO
                                 pm3_submitters INTEGER NOT NULL DEFAULT 0, pm3_hom INTEGER NOT NULL DEFAULT 0,
                                 pm3_comphet INTEGER NOT NULL DEFAULT 0, pm3_detail TEXT NOT NULL DEFAULT '[]',
                                 pm3_trans INTEGER NOT NULL DEFAULT 0, ps3_submitters INTEGER NOT NULL DEFAULT 0,
-                                ps3_detail TEXT NOT NULL DEFAULT '[]')
+                                ps3_detail TEXT NOT NULL DEFAULT '[]', pm3_independent INTEGER NOT NULL DEFAULT 0)
                                 WITHOUT ROWID;
         """)
         batch = []
         pm3_variants = ps3_variants = 0
-        sql = "INSERT OR REPLACE INTO cases VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+        sql = "INSERT OR REPLACE INTO cases VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
         for variation, found, biallelic, functional in iter_records(stream, methods):
             ordered = sorted(biallelic.items(), key=lambda kv: (-kv[1]["trans"], kv[0]))
-            detail = [{"scv": b["scv"], "snippet": b["snippet"], "trans": bool(b["trans"])}
-                      for _, b in ordered][:3]
+            detail = [{"scv": b["scv"], "snippet": b["snippet"], "trans": bool(b["trans"]),
+                       "pmids": b["pmids"][:5]} for _, b in ordered][:3]
+            groups, trans_groups = independent_groups(biallelic)
             ps3_detail = [{"scv": f["scv"], "snippet": f["snippet"], "pmids": f["pmids"]}
                           for _, f in sorted(functional.items())][:3]
             batch.append((variation, len(found), sum(found.values()), ",".join(sorted(found)),
                           len(biallelic), sum(b["hom"] for b in biallelic.values()),
                           sum(b["comphet"] for b in biallelic.values()),
-                          json.dumps(detail, ensure_ascii=False), sum(b["trans"] for b in biallelic.values()),
-                          len(functional), json.dumps(ps3_detail, ensure_ascii=False)))
+                          json.dumps(detail, ensure_ascii=False), trans_groups,
+                          len(functional), json.dumps(ps3_detail, ensure_ascii=False), groups))
             variants += 1
             pm3_variants += bool(biallelic)
             ps3_variants += bool(functional)
@@ -422,7 +476,7 @@ def build(xml_path: Path, out: Path, *, release: str = "", methods=DEFAULT_METHO
                 batch.clear()
                 progress(f"  ClinVar 個案資料：{variants:,} 個變異")
         conn.executemany(sql, batch)
-        meta = {"schema_version": "3", "release": release, "source": str(xml_path),
+        meta = {"schema_version": "4", "release": release, "source": str(xml_path),
                 "methods": ",".join(methods), "variants": str(variants), "pm3_variants": str(pm3_variants),
                 "ps3_variants": str(ps3_variants),
                 "built_at": time.strftime("%Y-%m-%dT%H:%M:%S")}

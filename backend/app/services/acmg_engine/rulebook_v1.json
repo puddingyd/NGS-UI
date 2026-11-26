@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.13",
+  "version": "ngsui-acmg-v1.14",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -217,27 +217,28 @@
     "recessive_moi": [
       "AR"
     ],
-    "clinvar_strength": [
+    "trans_points": 1.0,
+    "other_points": 0.5,
+    "strength_points": [
       [
-        2,
+        2.0,
+        "strong"
+      ],
+      [
+        1.0,
         "moderate"
       ],
       [
-        1,
+        0.5,
         "supporting"
       ]
     ],
-    "trans_strength": [
-      [
-        1,
-        "strong"
-      ]
-    ],
     "provisional": [
-      "clinvar_strength",
-      "trans_strength"
+      "trans_points",
+      "other_points",
+      "strength_points"
     ],
-    "note": "2026-11-24 v1.7: PM3 from ClinVar submissions that describe homozygous or compound-heterozygous / in-trans / biallelic patients (structured ObservedData counts or the submitter's comment text, clinvar_cases.sqlite). Genes with AR inheritance only; not when BA1/BS1 is met. The partner variant's classification and the phase cannot be checked and several submitters may describe the same published patients, so 1 submitter gives Supporting and >=2 give Moderate (ClinGen SVI PM3 would allow up to Very strong with verified cases). In a gene with both AD and AR inheritance PM3 and PS4 can describe the same patients: only the stronger is kept. 2026-11-26 v1.13 (user decision): a submitter that states the trans phase explicitly (\"in trans\", \"on the opposite allele\") with a pathogenic / likely pathogenic partner gives Strong; hedged phrases (presumed, phase unknown, whether, parental testing not performed), in cis and partners of uncertain significance do not count. ClinGen SVI would need >=2 points (e.g. two probands in trans with a P variant) for Strong; one submitter may describe a single proband, so this is provisional and listed for validation."
+    "note": "2026-11-24 v1.7: PM3 from ClinVar submissions that describe homozygous or compound-heterozygous / in-trans / biallelic patients (structured ObservedData counts or the submitter's comment text, clinvar_cases.sqlite). Genes with AR inheritance only; not when BA1/BS1 is met. The partner variant's classification and the phase cannot be checked and several submitters may describe the same published patients, so 1 submitter gives Supporting and >=2 give Moderate (ClinGen SVI PM3 would allow up to Very strong with verified cases). In a gene with both AD and AR inheritance PM3 and PS4 can describe the same patients: only the stronger is kept. 2026-11-26 v1.13 (user decision): a submitter that states the trans phase explicitly (\"in trans\", \"on the opposite allele\") with a pathogenic / likely pathogenic partner gives Strong; hedged phrases (presumed, phase unknown, whether, parental testing not performed), in cis and partners of uncertain significance do not count. ClinGen SVI would need >=2 points (e.g. two probands in trans with a P variant) for Strong; one submitter may describe a single proband, so this is provisional and listed for validation. 2026-11-26 v1.14 (user decision, replaces v1.13 trans_strength and clinvar_strength): ClinGen SVI PM3 points. Each submitter group counts 1 point when it states the trans phase explicitly with a partner named pathogenic or likely pathogenic (one proband in trans with a P/LP variant), otherwise 0.5 (phase unknown / homozygous); submitters whose biallelic sentences quote a common PMID describe the same published patients and form one group (clinvar_cases.sqlite schema 4). 0.5 Supporting, 1 Moderate, 2 Strong; capped at Strong because ClinVar text cannot show the patients are independent, and one submitter is counted as one proband even when it reports several (conservative). Without explicit in-trans text the result is the same as v1.7 (1 submitter Supporting, 2 Moderate)."
   },
   "ps3": {
     "clinvar_strength": "supporting",

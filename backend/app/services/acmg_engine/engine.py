@@ -676,10 +676,12 @@ def _variation_id(row: dict) -> str:
 def _pm3(row: dict, ctx: Context, rb: dict, too_common: bool) -> Evidence | None:
     """PM3 from ClinVar submissions describing homozygous / compound-heterozygous patients.
 
-    Recessive (AR) genes only.  The partner variant and the phase cannot be
-    verified from ClinVar text, so the strength is capped (rulebook ``pm3``);
-    a submitter that states the trans phase explicitly with a (likely)
-    pathogenic partner gives ``pm3.trans_strength`` (Strong, rule v1.13)."""
+    Recessive (AR) genes only.  ClinGen SVI PM3 points (rule v1.14): a submitter
+    group that states the trans phase explicitly with a P/LP partner counts
+    ``pm3.trans_points`` (1), any other biallelic report ``pm3.other_points``
+    (0.5); submitters quoting a common PMID form one group.  Strength from
+    ``pm3.strength_points`` (0.5 Supporting, 1 Moderate, 2 Strong); capped at
+    Strong because ClinVar text cannot show the patients are different."""
     cfg = rb.get("pm3")
     if not cfg:
         return None
@@ -695,18 +697,25 @@ def _pm3(row: dict, ctx: Context, rb: dict, too_common: bool) -> Evidence | None
     n = int(found.get("submitters") or 0)
     if not n:
         return Evidence("PM3", "not_met", reason="ClinVar 沒有提交者描述同型合子或複合異型合子病人")
-    trans = int(found.get("trans") or 0)
-    strength = next((st for k, st in cfg.get("trans_strength") or [] if trans >= k), None)
-    if strength:
-        detail = sorted(found.get("detail") or [], key=lambda d: not d.get("trans"))
-        reason = (f"ClinVar {trans} 個提交者明確寫與（疑似）致病變異 in trans"
-                  f"（共 {n} 個提交者描述雙等位病人；另一個變異的分類請核對）")
-    else:
-        strength = next((st for k, st in cfg["clinvar_strength"] if n >= k), None)
-        detail = found.get("detail") or []
+    groups = max(1, min(n, int(found.get("independent") or n)))
+    trans = min(int(found.get("trans") or 0), groups)
+    trans_pts, other_pts = float(cfg["trans_points"]), float(cfg["other_points"])
+    points = trans * trans_pts + (groups - trans) * other_pts
+    strength = next((st for k, st in cfg["strength_points"] if points >= float(k) - 1e-9), None)
+    parts = []
+    if trans:
+        parts.append(f"明確寫與致病／疑似致病變異 in trans {trans} 組（各 {trans_pts:g} 分）")
+    if groups - trans:
         kinds = "、".join(x for x, on in (("同型合子", found.get("hom")),
-                                         ("複合異型合子／in trans", found.get("comphet"))) if on)
-        reason = f"ClinVar {n} 個提交者描述{kinds}病人（另一個變異的分類與相位無法確認，請核對）"
+                                         ("複合異型合子", found.get("comphet"))) if on) or "雙等位"
+        parts.append(f"其他描述{kinds}病人 {groups - trans} 組（各 {other_pts:g} 分）")
+    reason = f"ClinVar：{'；'.join(parts)}，共 {points:g} 分"
+    if groups < n:
+        reason += f"（{n} 個提交者中引用相同 PMID 者合併，算 {groups} 組）"
+    reason += "；ClinGen 0.5 分 Supporting、1 分 Moderate、2 分 Strong，無法確認是否為不同病人，最高 Strong"
+    if not trans:
+        reason += "；另一個變異的分類與相位請核對"
+    detail = sorted(found.get("detail") or [], key=lambda d: not d.get("trans"))
     quotes = "；".join(f"{d.get('scv') or 'SCV'}：「{d.get('snippet')}」" for d in detail[:2])
     if quotes:
         reason += f"；{quotes}"

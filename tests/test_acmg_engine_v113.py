@@ -1,5 +1,7 @@
-"""ACMG rule v1.13: ranking by the rule's own call, PM3 Strong on explicit
-in-trans text, PS3 Supporting from ClinVar functional-study text."""
+"""ACMG rule v1.13–v1.14: ranking by the rule's own call, PM3 with the ClinGen
+SVI points (explicit in trans with a P/LP partner 1, other biallelic reports
+0.5, submitters quoting one PMID merged), PS3 Supporting from ClinVar
+functional-study text."""
 import io
 import sqlite3
 
@@ -25,6 +27,9 @@ def test_explicit_trans_sentences():
         "It is not known whether these variants were in trans in this patient.",
         "This variant has been observed in the compound heterozygous state in individuals with Usher syndrome.",
         "The two variants were found in cis in the proband.",
+        "This variant was observed in trans with c.1234A>G in an affected individual.",   # partner class unstated
+        "It was found in trans with a non-pathogenic variant in a patient.",
+        "It was observed in trans with a variant not considered pathogenic in a patient.",
     ]
     assert all(CC.explicit_trans(t) for t in yes)
     assert not any(CC.explicit_trans(t) for t in no)
@@ -75,13 +80,19 @@ XML = """<ClinVarVariationRelease>
    <ClinicalAssertion ID="1">
     <ClinVarAccession Accession="SCV000200470" OrgID="500031"/>
     <Classification><GermlineClassification>Pathogenic</GermlineClassification>
-     <Comment>This variant has been observed in the compound heterozygous state in individuals with deafness. It was observed in trans with a pathogenic variant in one affected individual. Experimental studies have shown that this missense change affects STRC function (PMID: 12345678).</Comment>
+     <Comment>This variant has been observed in the compound heterozygous state in individuals with deafness. It was observed in trans with a pathogenic variant in one affected individual (PMID: 11112222). Experimental studies have shown that this missense change affects STRC function (PMID: 12345678).</Comment>
     </Classification>
    </ClinicalAssertion>
    <ClinicalAssertion ID="2">
     <ClinVarAccession Accession="SCV2" OrgID="77"/>
     <Classification><GermlineClassification>Likely pathogenic</GermlineClassification>
      <Comment>This variant was identified in a compound heterozygous patient; phase unknown. Functional studies have not been performed.</Comment>
+    </Classification>
+   </ClinicalAssertion>
+   <ClinicalAssertion ID="4">
+    <ClinVarAccession Accession="SCV4" OrgID="99"/>
+    <Classification><GermlineClassification>Pathogenic</GermlineClassification>
+     <Comment>Reported in a compound heterozygous affected individual (PMID: 11112222).</Comment>
     </Classification>
    </ClinicalAssertion>
    <ClinicalAssertion ID="3">
@@ -97,9 +108,10 @@ XML = """<ClinVarVariationRelease>
 
 def test_parser_and_references_schema3(tmp_path):
     (vid, _cases, biallelic, functional), = list(CC.iter_records(io.BytesIO(XML.encode())))
-    assert vid == "165298" and set(biallelic) == {"500031", "77"}            # benign submitter dropped
+    assert vid == "165298" and set(biallelic) == {"500031", "77", "99"}      # benign submitter dropped
     assert biallelic["500031"]["trans"] == 1 and "in trans" in biallelic["500031"]["snippet"]
-    assert biallelic["77"]["trans"] == 0
+    assert biallelic["500031"]["pmids"] == ["11112222"] and biallelic["77"]["trans"] == 0
+    assert CC.independent_groups(biallelic) == (2, 1)           # 500031 and 99 quote the same paper
     assert set(functional) == {"500031"} and functional["500031"]["pmids"] == ["12345678"]
     xml = tmp_path / "v.xml"
     xml.write_text(XML, encoding="utf-8")
@@ -108,7 +120,7 @@ def test_parser_and_references_schema3(tmp_path):
     assert stats["pm3_variants"] == 1 and stats["ps3_variants"] == 1
     r = ref_store.SqliteReferences(tmp_path / ref_store.REFS_DB_NAME, cases_db=out, ba1_exceptions=set())
     got = r.clinvar_biallelic("165298")
-    assert got["submitters"] == 2 and got["trans"] == 1 and got["detail"][0]["trans"]
+    assert got["submitters"] == 3 and got["independent"] == 2 and got["trans"] == 1 and got["detail"][0]["trans"]
     assert got["detail"][0]["scv"] == "SCV000200470"                          # trans submitter listed first
     ps3 = r.clinvar_functional("165298")
     assert ps3["submitters"] == 1 and ps3["detail"][0]["pmids"] == ["12345678"]
@@ -129,26 +141,66 @@ def test_schema2_table_still_reads_pm3_and_reports_ps3_not_evaluated(tmp_path):
     con.commit()
     con.close()
     r = ref_store.SqliteReferences(tmp_path / ref_store.REFS_DB_NAME, cases_db=out, ba1_exceptions=set())
-    assert r.clinvar_biallelic("5") == {"submitters": 2, "hom": 0, "comphet": 2, "trans": 0, "detail": []}
+    assert r.clinvar_biallelic("5") == {"submitters": 2, "hom": 0, "comphet": 2, "trans": 0,
+                                        "independent": 2, "detail": []}
     assert r.clinvar_functional("5") is None
 
 
+def test_schema3_trans_counts_are_not_used(tmp_path):
+    """A schema-3 table counted in-trans without the P/LP-partner rule or PMID merging."""
+    out = tmp_path / CC.CASES_DB_NAME
+    con = sqlite3.connect(out)
+    con.executescript("""
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE cases (variation_id TEXT PRIMARY KEY, submitters INTEGER NOT NULL,
+            individuals INTEGER NOT NULL, submitter_ids TEXT NOT NULL, pm3_submitters INTEGER NOT NULL DEFAULT 0,
+            pm3_hom INTEGER NOT NULL DEFAULT 0, pm3_comphet INTEGER NOT NULL DEFAULT 0,
+            pm3_detail TEXT NOT NULL DEFAULT '[]', pm3_trans INTEGER NOT NULL DEFAULT 0,
+            ps3_submitters INTEGER NOT NULL DEFAULT 0, ps3_detail TEXT NOT NULL DEFAULT '[]') WITHOUT ROWID;
+        INSERT INTO cases VALUES ('5', 0, 0, '', 2, 0, 2, '[{"scv": "S", "snippet": "x", "trans": true}]', 2, 0, '[]');
+    """)
+    con.commit()
+    con.close()
+    r = ref_store.SqliteReferences(tmp_path / ref_store.REFS_DB_NAME, cases_db=out, ba1_exceptions=set())
+    got = r.clinvar_biallelic("5")
+    assert got["trans"] == 0 and got["independent"] == 2 and got["detail"][0]["trans"] is False
+    assert r.clinvar_functional("5") == {}
+
+
 # ── engine ─────────────────────────────────────────────────────────────────
-def _bi(n, trans=0):
+def _bi(n, trans=0, independent=None):
     detail = [{"scv": "SCV2", "snippet": "compound heterozygous patient", "trans": False},
               {"scv": "SCV000200470", "snippet": "observed in trans with a pathogenic variant", "trans": True}]
-    return {"123": {"submitters": n, "hom": 0, "comphet": 1, "trans": trans, "detail": detail}}
+    return {"123": {"submitters": n, "hom": 0, "comphet": 1, "trans": trans,
+                    "independent": n if independent is None else independent, "detail": detail}}
 
 
-def test_pm3_strong_on_explicit_trans():
-    variant = missense_row(CLINVAR_VARIATION_ID="123")
-    strong = met(evaluate_variant(variant, Context(moi={"AR"}, refs=refs(biallelic=_bi(1, trans=1)))), "PM3")
-    assert strong and strong[0]["strength"] == "strong" and strong[0]["points"] == 4
-    assert "明確寫" in strong[0]["reason"] and strong[0]["reason"].index("SCV000200470") < strong[0]["reason"].index("SCV2")
-    plain = met(evaluate_variant(variant, Context(moi={"AR"}, refs=refs(biallelic=_bi(2)))), "PM3")
-    assert plain[0]["strength"] == "moderate"
+def _pm3(biallelic):
+    result = evaluate_variant(missense_row(CLINVAR_VARIATION_ID="123"), Context(moi={"AR"}, refs=refs(biallelic=biallelic)))
+    return by_code(result, "PM3")[0]
+
+
+def test_pm3_clingen_points():
+    one = _pm3(_bi(1, trans=1))                                     # 1 point: one proband in trans
+    assert one["strength"] == "moderate" and one["points"] == 2 and "共 1 分" in one["reason"]
+    assert one["reason"].index("SCV000200470") < one["reason"].index("SCV2")
+    assert _pm3(_bi(2, trans=2))["strength"] == "strong"            # 2 points
+    assert _pm3(_bi(3, trans=1))["strength"] == "strong"            # 1 + 0.5 + 0.5
+    assert _pm3(_bi(2, trans=1))["strength"] == "moderate"          # 1.5
+    capped = _pm3(_bi(6, trans=6))
+    assert capped["strength"] == "strong" and capped["points"] == 4 # never Very strong
+    assert _pm3(_bi(1))["strength"] == "supporting"                 # 0.5, same as v1.7
+    assert _pm3(_bi(2))["strength"] == "moderate"
+    merged = _pm3(_bi(3, trans=0, independent=1))                   # three submitters, one paper
+    assert merged["strength"] == "supporting" and "算 1 組" in merged["reason"]
+    old = _bi(2)
+    del old["123"]["independent"], old["123"]["trans"]              # refs without the new keys
+    assert _pm3(old)["strength"] == "moderate"
+
+
+def test_pm3_not_when_common():
     common = evaluate_variant(missense_row(CLINVAR_VARIATION_ID="123", GNOMAD_E_AF="0.02"),
-                              Context(moi={"AR"}, refs=refs(biallelic=_bi(1, trans=1))))
+                              Context(moi={"AR"}, refs=refs(biallelic=_bi(2, trans=2))))
     assert by_code(common, "PM3")[0]["status"] == "not_met"
 
 
