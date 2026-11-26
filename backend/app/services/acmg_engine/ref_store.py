@@ -404,10 +404,12 @@ class SqliteReferences(References):
             cases_db = self.refs_db.with_name(CASES_DB_NAME)
         self.cases_db = Path(cases_db) if cases_db else None
         self._cases = None
-        self._cases_pm3 = False
+        self._cases_pm3 = self._cases_v3 = False
         if self.cases_db and self.cases_db.is_file():
             self._cases = sqlite3.connect(f"file:{self.cases_db}?mode=ro", uri=True, check_same_thread=False)
-            self._cases_pm3 = "pm3_submitters" in {r[1] for r in self._cases.execute("PRAGMA table_info(cases)")}
+            columns = {r[1] for r in self._cases.execute("PRAGMA table_info(cases)")}
+            self._cases_pm3 = "pm3_submitters" in columns
+            self._cases_v3 = {"pm3_trans", "ps3_submitters", "ps3_detail"} <= columns
         self.recurrence = recurrence
         self._ba1 = load_ba1_exceptions() if ba1_exceptions is None else set(ba1_exceptions)
         self._vcep = load_vcep_specs()
@@ -462,7 +464,8 @@ class SqliteReferences(References):
             return None
         if not variation_id:
             return {}
-        hit = self._cases.execute("SELECT pm3_submitters, pm3_hom, pm3_comphet, pm3_detail FROM cases "
+        trans = ", pm3_trans" if self._cases_v3 else ""
+        hit = self._cases.execute(f"SELECT pm3_submitters, pm3_hom, pm3_comphet, pm3_detail{trans} FROM cases "
                                   "WHERE variation_id=?", (str(variation_id),)).fetchone()
         if not hit or not hit[0]:
             return {}
@@ -470,7 +473,23 @@ class SqliteReferences(References):
             detail = json.loads(hit[3] or "[]")
         except ValueError:
             detail = []
-        return {"submitters": int(hit[0]), "hom": int(hit[1]), "comphet": int(hit[2]), "detail": detail}
+        return {"submitters": int(hit[0]), "hom": int(hit[1]), "comphet": int(hit[2]),
+                "trans": int(hit[4]) if self._cases_v3 else 0, "detail": detail}
+
+    def clinvar_functional(self, variation_id):
+        if self._cases is None or not self._cases_v3:
+            return None
+        if not variation_id:
+            return {}
+        hit = self._cases.execute("SELECT ps3_submitters, ps3_detail FROM cases WHERE variation_id=?",
+                                  (str(variation_id),)).fetchone()
+        if not hit or not hit[0]:
+            return {}
+        try:
+            detail = json.loads(hit[1] or "[]")
+        except ValueError:
+            detail = []
+        return {"submitters": int(hit[0]), "detail": detail}
 
     def _lof_mechanism(self, gene):
         if self._conn is None or not gene:

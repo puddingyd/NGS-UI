@@ -5,6 +5,7 @@ import sqlite3
 
 from app.services.acmg_engine import Context, evaluate_variant
 from app.services.acmg_engine import clinvar_cases as CC, ref_store, runner
+from app.services.acmg_engine.engine import load_rulebook
 
 from test_acmg_engine import by_code, met, missense_row, refs
 
@@ -253,7 +254,7 @@ XML_PM3 = """<ClinVarVariationRelease>
 def test_parser_collects_biallelic_text_and_counts(tmp_path):
     records = list(CC.iter_records(io.BytesIO(XML_PM3.encode())))
     assert len(records) == 1
-    vid, ps4_found, biallelic = records[0]
+    vid, ps4_found, biallelic, functional = records[0]
     assert vid == "225368" and ps4_found == {"77": 1}                 # literature-only is not a PS4 case
     assert set(biallelic) == {"500031", "77"}                          # SCV3 only negations / population text
     assert biallelic["500031"]["hom"] and biallelic["500031"]["comphet"]
@@ -281,7 +282,11 @@ def test_rank_points_use_pknn_llr():
     assert met(bp4, "BP4") and bp4["rank_points"] == bp4["engine_points"] + 1 - 1.5
     no_llr = evaluate_variant(missense_row(PKNN_EVIDENCE="PP3_Moderate"), Context(refs=refs()))
     assert no_llr["rank_points"] == no_llr["engine_points"]
-    adopted = evaluate_variant(missense_row(PKNN_EVIDENCE="PP3_Moderate", PKNN_LLR="3.442",
-                                            CLINVAR_SIG="Pathogenic", CLINVAR_STARS="2"), Context(refs=refs()))
+    clinvar_p = missense_row(PKNN_EVIDENCE="PP3_Moderate", PKNN_LLR="3.442", CLINVAR_SIG="Pathogenic", CLINVAR_STARS="2")
+    own = evaluate_variant(clinvar_p, Context(refs=refs()))                 # v1.13: ClinVar does not move ranking
+    assert own["rank_points"] == pp3["rank_points"] and own["points"] == own["engine_points"]
+    adopt = load_rulebook().copy()
+    adopt["clinvar"] = dict(adopt["clinvar"], rank_mode="adopt")
+    adopted = evaluate_variant(clinvar_p, Context(refs=refs()), adopt)
     assert adopted["points"] >= 10 and adopted["rank_points"] >= 10
     assert runner.summary(pp3)["rank_points"] == pp3["rank_points"]

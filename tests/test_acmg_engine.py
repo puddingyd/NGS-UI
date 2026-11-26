@@ -4,6 +4,7 @@ import pytest
 from app.services import manual_acmg
 from app.services.acmg_engine import Context, StaticReferences, evaluate_variant
 from app.services.acmg_engine import parse as P
+from app.services.acmg_engine.engine import load_rulebook
 
 
 def row(**overrides):
@@ -294,24 +295,67 @@ def test_ps1_and_pm5_from_clinvar_residues():
 
 
 # ── ClinVar rule ───────────────────────────────────────────────────────────
+def _mode(mode):
+    import copy
+    rb = copy.deepcopy(load_rulebook())
+    rb["clinvar"]["rank_mode"] = mode
+    return rb
+
+
+def test_clinvar_rank_mode_own_keeps_the_rule_call():
+    """Rule v1.13: a ClinVar ≥2★ call no longer moves points or ranking."""
+    own = evaluate_variant(lof_row(CLINVAR_SIG="Pathogenic", CLINVAR_STARS="3"), Context(refs=refs()))
+    assert own["points"] == own["engine_points"] == 9 and own["classification"] == "Likely pathogenic"
+    assert own["clinvar_rule"]["action"] == "none" and own["clinvar_rule"]["eligible"] == "adopt"
+    assert own["clinvar_rule"]["mode"] == "own" and own["rank_points"] == 9
+    benign = evaluate_variant(lof_row(CLINVAR_SIG="Benign", CLINVAR_STARS="2"), Context(refs=refs()))
+    assert benign["points"] == 9 and benign["clinvar_rule"]["eligible"] == "adopt"
+    vcep = evaluate_variant(lof_row(CLINGEN_VCEP_CLASS="Benign"), Context(refs=refs()))
+    assert vcep["clinvar_rule"]["action"] == "adopt" and vcep["points"] <= -7   # VCEP still adopted
+
+
 def test_clinvar_adopt_and_floor():
+    adopt = _mode("adopt")
     lp_engine = lof_row()  # engine 9 points
-    adopt_p = evaluate_variant(lof_row(CLINVAR_SIG="Pathogenic", CLINVAR_STARS="3"), Context(refs=refs()))
+    adopt_p = evaluate_variant(lof_row(CLINVAR_SIG="Pathogenic", CLINVAR_STARS="3"), Context(refs=refs()), adopt)
     assert adopt_p["points"] == 10 and adopt_p["classification"] == "Pathogenic"
     assert adopt_p["clinvar_rule"]["action"] == "adopt"
     over = row(PKNN_EVIDENCE="PP3_Strong", CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="4")
     over_result = evaluate_variant(over, Context(refs=refs(missense_by_residue={("GENE1", 34): [
-        {"alt_aa": "Trp", "variant_key": "chr1-1000-C-A", "stars": 3}]})))
+        {"alt_aa": "Trp", "variant_key": "chr1-1000-C-A", "stars": 3}]})), adopt)
     assert over_result["engine_points"] == 10 and over_result["points"] == 9   # ClinVar LP caps at 9
-    two_star = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2"), Context())
+    two_star = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2"), Context(), adopt)
     assert two_star["points"] == 6 and two_star["clinvar_rule"]["action"] == "adopt"   # 2★ adopted (v1.1)
     assert two_star["classification"] == "Likely pathogenic"
-    one_star = evaluate_variant(row(CLINVAR_SIG="Pathogenic", CLINVAR_STARS="1"), Context())
-    assert one_star["clinvar_rule"]["action"] == "none"
+    one_star = evaluate_variant(row(CLINVAR_SIG="Pathogenic", CLINVAR_STARS="1"), Context(), adopt)
+    assert one_star["clinvar_rule"]["action"] == "none" and one_star["clinvar_rule"]["eligible"] is None
     conflict = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2",
-                                    CLINVAR_SIGCONF="Pathogenic(1)|Uncertain_significance(1)"), Context())
-    assert conflict["clinvar_rule"]["action"] == "none"
-    assert evaluate_variant(lp_engine, Context(refs=refs()))["clinvar_rule"]["action"] == "none"
+                                    CLINVAR_SIGCONF="Pathogenic(1)|Uncertain_significance(1)"), Context(), adopt)
+    assert conflict["clinvar_rule"]["action"] == "none" and conflict["clinvar_rule"]["conflict"]
+    assert evaluate_variant(lp_engine, Context(refs=refs()), adopt)["clinvar_rule"]["action"] == "none"
+    # floor (validation option B): P/LP ≥2★ raises to 6 one-way, never lowers
+    floor = _mode("floor")
+    low = evaluate_variant(row(CLINVAR_SIG="Pathogenic", CLINVAR_STARS="2"), Context(), floor)
+    assert low["points"] == 6 and low["rank_points"] == 6 and low["clinvar_rule"]["action"] == "floor"
+    high = evaluate_variant(over, Context(refs=refs(missense_by_residue={("GENE1", 34): [
+        {"alt_aa": "Trp", "variant_key": "chr1-1000-C-A", "stars": 3}]})), floor)
+    assert high["points"] == 10 and high["clinvar_rule"]["action"] == "none"
+    benign = evaluate_variant(lof_row(CLINVAR_SIG="Benign", CLINVAR_STARS="3"), Context(refs=refs()), floor)
+    assert benign["points"] == 9
+
+
+def test_clinvar_adjust_reranks_stored_results():
+    from app.services.acmg_engine.engine import clinvar_adjust
+    rb = load_rulebook()
+    stored = evaluate_variant(row(CLINVAR_SIG="Likely_pathogenic", CLINVAR_STARS="2"), Context())
+    rule, rank = stored["clinvar_rule"], stored["rank_points"]
+    assert clinvar_adjust(rank, rule, "own", rb) == rank
+    assert clinvar_adjust(rank, rule, "floor", rb) == max(rank, 6)
+    assert clinvar_adjust(12.0, rule, "adopt", rb) == 9 and clinvar_adjust(12.0, rule, "floor", rb) == 12.0
+    old = {"action": "adopt", "source": "ClinVar", "category": "P", "stars": 2}      # stored before v1.13
+    assert clinvar_adjust(3.0, old, "adopt", rb) == 10
+    vcep = {"action": "adopt", "source": "ClinGen VCEP", "category": "B", "stars": 0}
+    assert clinvar_adjust(-8.0, vcep, "floor", rb) == -8.0
 
 
 def test_latest_clinvar_preferred_and_vcep_adopted():

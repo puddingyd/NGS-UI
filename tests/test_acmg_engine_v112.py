@@ -94,9 +94,16 @@ def test_clinvar_plp_above_ba1_is_not_adopted():
 def test_clinvar_plp_on_ba1_exception_list_stays_protected():
     key = "chr1-1000-C-T"
     result = evaluate_variant(_common_plp(), Context(refs=refs(ba1_exceptions={key})))
-    assert not met(result, "BA1") and result["clinvar_rule"]["action"] == "adopt"
+    assert not met(result, "BA1") and result["clinvar_rule"]["action"] == "none"     # v1.13: ranked by own call
+    assert result["clinvar_rule"]["eligible"] == "adopt"
     low = evaluate_variant(_common_plp(GNOMAD_G_AF="0.03"), Context(refs=refs()))
-    assert result["rank_points"] >= 10 and low["clinvar_rule"]["action"] == "adopt"
+    assert not met(low, "BA1") and low["clinvar_rule"]["eligible"] == "adopt"           # still exempt from BA1 ≤5%
+    import copy
+    from app.services.acmg_engine.engine import load_rulebook
+    adopt = copy.deepcopy(load_rulebook())
+    adopt["clinvar"]["rank_mode"] = "adopt"
+    old = evaluate_variant(_common_plp(), Context(refs=refs(ba1_exceptions={key})), adopt)
+    assert old["clinvar_rule"]["action"] == "adopt" and old["rank_points"] >= 10
 
 
 def test_inhouse_common_penalty_not_exempt_when_common():

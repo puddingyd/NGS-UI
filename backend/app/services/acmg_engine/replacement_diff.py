@@ -222,7 +222,8 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, meta_fn=_load_meta, manual
                       if first_value(rows, "GENEBE_ACMG_CLASS") else None)
             pipeline = {"class": class_code(first_value(rows, "ACMG_CLASS")),
                         "points": _num(first_value(rows, "ACMG_SCORE") or first_value(rows, "ACMG_POINTS"))}
-            # shown class/points = the rule's own call; ranking = with the ClinVar ≥2★ adopt
+            # shown class/points = the rule's own call; ranking = ``points`` (own call + VCEP adoption
+            # since v1.13; results of rule ≤v1.12 carry the ClinVar ≥2★ adopt)
             own_class, own_points = runner.own_call(result) if result else ("", None)
             engine = ({"class": class_code(own_class), "points": _num(own_points),
                        "rank": _num(result.get("points"))} if result else None)

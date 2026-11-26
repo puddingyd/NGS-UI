@@ -1186,9 +1186,10 @@ $$
 | **PS1**（+4） | 和一個 ClinVar ≥2★ P/LP 的 missense 造成相同的胺基酸改變、但核苷酸改變不同；已知變異的致病機轉不能是剪接 | ClinVar 蛋白質位置表 | Richards 2015 | 新增 |
 | **PM5**（+2／+1） | 同一個胺基酸位置上，另有一個不同的 ClinVar ≥1★ P/LP missense（v1.4 由 ≥2★ 放寬，PS1 仍要 ≥2★）；參考變異是 P 給 Moderate，只有 LP 給 Supporting（2026-11-23） | 同上 | Richards 2015 | 新增 |
 | **PM1**（+1／+2／+4） | 有 VCEP 規格的基因用 CSpec 的熱點或關鍵區域，強度照規格（區域外不給；熱點表無法自動讀取的基因改用 ClinVar 推算；v1.9 起解析錯誤的規格以人工核對表修正，例如 FBN1 改為失去或產生 Cys 給 Moderate，MYO15A／OTOF 規格無熱點則不給）；膠原蛋白基因三股螺旋 Gly-X-Y 的甘胺酸被取代給 Moderate（v1.4，UniProt 序列）；其他基因用 ClinVar 推算：前後 10 個胺基酸內，除本位置外有 ≥3 個位置有 ≥1★ P/LP missense（v1.8，原 ≥2★）給 Supporting、≥6 個給 Moderate，窗口內有任何 ≥1★ B/LB missense 就不給（**暫定**；v1.2 曾收緊為 ≥6 個且只給 Supporting，致病變異名次略降，v1.3 改回）。PM1 與 PP3 合計不超過 4 點 | VCEP 區域；ClinVar 蛋白質位置表、良性 missense 表 | ClinGen 的 PM1 + PP3 上限（Pejaver 2022 的建議） | 新增 |
-| **PS2、PM6、PP1、BS4、BP2、PS3、BS3** | 需要家族、功能實驗或病例對照資料，由判讀者在 `manual_acmg` 填寫 | — | — | 不自動給 |
+| **PS2、PM6、PP1、BS4、BP2、BS3** | 需要家族、功能實驗或病例對照資料，由判讀者在 `manual_acmg` 填寫 | — | — | 不自動給 |
+| **PS3**（v1.13，ClinVar 文字，最多 Supporting） | ClinVar 提交（非 B/LB、current，任何方法）的文字逐句比對：提到功能研究（experimental／functional studies、in vitro、RNA／minigene／RT-PCR、酵素活性、病人細胞等），且結果異常（damaging、reduced、loss、aberrant splicing、affects function…）。略過 in silico／modeling／predicted、其他變異（不同取代、同一 codon）、結果正常／衝突／證據不足、未做研究的句子；保留 PMID。實驗是否經過驗證（對照、OddsPath；Brnich 2019）無法確認，所以只給 Supporting；PVS1 成立時不給（多半只是確認功能喪失）、BA1／BS1 成立時不給。BS3 不做 | `clinvar_cases.sqlite`（schema 3，ps3 欄） | 強度 | 病例表未載入或舊版時「未評估」 |
 | **PS4**（v1.6，取代 PP5） | 數病人（ClinGen 專家小組做法，SVI 2018 建議以實際證據取代 PP5）：只用於 OMIM 列有顯性（AD／XLD）且 PM2 成立的變異（隱性以 PM3 評估）。A＝本平台其他無親緣病人（MRN 或檢體編號去重、不含本人）把此變異判為致病（Causative）：1 位 Supporting、2–3 位 Moderate、≥4 位 Strong。B＝ClinVar VCV XML 中在受影響個案報告的提交者（clinical testing／research／provider interpretation／case-control；排除 literature only、curation、B/LB 提交與體細胞樣本），最多 Supporting。A、B 取較強者，不相加 | `manual_acmg.sqlite` observations；`clinvar_cases.sqlite` | 院內門檻、ClinVar 最少提交者數 | 院內判讀紀錄與 ClinVar 病例表都未載入時「未評估」 |
-| **PM3**（v1.7，ClinVar） | 只用於 OMIM 列有 AR 的基因、且未達 BA1／BS1：ClinVar 提交（非 B/LB、current，任何方法含 literature only）以結構化計數（ObservedData `Homozygote`／`CompoundHeterozygote`）或提交者文字描述同型合子、複合異型合子、in trans、biallelic 的病人（逐句比對；提到族群資料庫、對照、未發病、帶因者或否定句者略過），依提交者去重：1 個 Supporting、≥2 個 Moderate；理由附原文片段供核對。另一個變異的分類與相位無法確認，且不同提交者可能描述同一批文獻病人，所以不比照 SVI 給到 Very strong。同時符合 PS4 時只計較強者 | `clinvar_cases.sqlite`（pm3 欄） | 提交者數門檻 | 病例表未載入或舊版時「未評估」 |
+| **PM3**（v1.7，ClinVar） | 只用於 OMIM 列有 AR 的基因、且未達 BA1／BS1：ClinVar 提交（非 B/LB、current，任何方法含 literature only）以結構化計數（ObservedData `Homozygote`／`CompoundHeterozygote`）或提交者文字描述同型合子、複合異型合子、in trans、biallelic 的病人（逐句比對；提到族群資料庫、對照、未發病、帶因者或否定句者略過），依提交者去重：1 個 Supporting、≥2 個 Moderate；理由附原文片段供核對。另一個變異的分類與相位無法確認，且不同提交者可能描述同一批文獻病人，所以不比照 SVI 給到 Very strong。同時符合 PS4 時只計較強者。**v1.13（使用者決定）**：提交者文字明確寫與（疑似）致病變異 in trans（「in trans」「on the opposite allele」）時給 Strong；含推測語氣（presumed、phase unknown、whether、parental testing not performed）、in cis、或另一個變異為 VUS 者不算 | `clinvar_cases.sqlite`（pm3 欄；schema 3 加 pm3_trans） | 提交者數門檻、明確 in trans 的強度 | 病例表未載入或舊版時「未評估」 |
 | **排序點數**（v1.7） | 只影響排序，不改分類：P-KNN 給的 PP3／BP4 點數改用 P-KNN LLR 實際數值（同一點數尺度，±1／2／4）；P-KNN 不確定（−1～1）且沒有其他 PP3／BP4、PVS1 時加上 LLR；ClinVar 採用／下限同樣套用 | review TSV `PKNN_LLR` | — | 缺 LLR 時用原點數 |
 | **PM3** | 只計入**其他病人**的證據，由判讀者填寫。以這位病人自己的另一個變異為依據的 PM3 不計入 $V'$，因為隱性成對（第 5.3 節）與遺傳模式（第 6 章）已經處理了這件事 | — | — | 不自動給 |
 | **BS2** | 需要 gnomAD 健康同型合子的人數；目前 TSV 沒有這個欄位 | — | — | 不自動給（缺欄位） |
@@ -1280,12 +1281,12 @@ pipeline 現行規則只接受第 1 項，所以隱性基因的功能喪失變�
 
 | ClinVar | 處理 |
 |---|---|
-| 3★、4★（專家小組、實務指引），或 TSV 的 ClinGen 專家判讀 `CLINGEN_VCEP_CLASS` | **直接採用分類**：點數夾到該分類的範圍內。例如規則引擎算出 7 點、專家小組判 P → 10 點；算出 12 點、專家小組判 LP → 9 點。良性方向也一樣 |
-| 2★（多位提交者、沒有衝突） | **直接採用分類**（2026-11-23 起；原為 P/LP 下限 6 點、B/LB 只顯示）。第一次院內驗證中，引擎名次輸給平台現行的 WES 致病變異有 9 個是 ClinVar 2★ P/LP |
+| TSV 的 ClinGen 專家判讀 `CLINGEN_VCEP_CLASS` | **直接採用分類**（顯示與排序都用）：點數夾到該分類的範圍內。例如規則引擎算出 7 點、專家小組判 P → 10 點；算出 12 點、專家小組判 LP → 9 點。良性方向也一樣 |
+| ≥2★（多位提交者、專家小組、實務指引，沒有衝突） | **v1.13 起只顯示、不改點數與排序**（使用者決定；v1.1–v1.12 直接採用分類，原因是第一次院內驗證中，引擎名次輸給平台現行的 WES 致病變異有 9 個是 ClinVar 2★ P/LP）。仍保留：P/LP 在最大 AF ≤5% 時豁免 BA1／BS1，以及院內常見扣分豁免 |
 | 0–1★，或有衝突（`CLINVAR_SIGCONF`） | 只顯示 |
 | 低外顯、risk factor、drug response 等 | 不採用 |
 
-**顯示與排序分開（2026-11-24 定案）。** ClinVar ≥2★ 的採用只用在排序的 $V'$；卡片與 ACMG 視窗上的「In-house」顯示規則引擎依條目自行算出的分類、點數與 criteria，ClinVar 分級另在 ClinVar 欄顯示。ClinGen 專家小組（`CLINGEN_VCEP_CLASS`）的分級則直接當作 In-house 顯示，來源標明「ClinGen 專家小組」。排序固定為 In-house（含上述採用）→ GeneBe，判讀者手動判讀只改變顯示與報告的分類，不改變排序，讓同一個個案的候選清單順序穩定；tier 1C 的「點數 ≥4」看畫面上的點數。
+**排序也改用規則自算（v1.13，2026-11-26 使用者決定）。** 顯示與排序一致，都用規則依條目自行算出的點數（排序再以 P-KNN LLR 取代 PP3／BP4 點數），ClinVar 只在卡片的 ClinVar 欄顯示。理由：ClinVar ≥2★ 的分類本身大多是提交者依同樣的 ACMG 條目判讀的結果，直接採用等於把別人的結論當成證據；改為自算後，排序的依據都看得到、可以逐條修正，舊個案回填時也比較容易發現規則問題。規則檔 `clinvar.rank_mode` 保留 "floor"（B：P/LP ≥2★ 單向下限 6 點）與 "adopt"（v1.12 以前的做法），列入院內驗證（第 5.2.10 節第 7 項）。以下為 2026-11-24 的舊定案，保留作紀錄：**顯示與排序分開（2026-11-24 定案）。** ClinVar ≥2★ 的採用只用在排序的 $V'$；卡片與 ACMG 視窗上的「In-house」顯示規則引擎依條目自行算出的分類、點數與 criteria，ClinVar 分級另在 ClinVar 欄顯示。ClinGen 專家小組（`CLINGEN_VCEP_CLASS`）的分級則直接當作 In-house 顯示，來源標明「ClinGen 專家小組」。排序固定為 In-house（含上述採用）→ GeneBe，判讀者手動判讀只改變顯示與報告的分類，不改變排序，讓同一個個案的候選清單順序穩定；tier 1C 的「點數 ≥4」看畫面上的點數。
 
 即時使用時，ClinVar 用平台每週更新的快照，反映最新知識；卡片上的 ClinVar 仍顯示固定版（2026-07-20），並以箭頭標出最新版的升降，報告也照舊使用固定版。回溯驗證時，用個案簽收日之前的 ClinVar 版本（第 5.2.10 節）。
 
@@ -1393,6 +1394,8 @@ $$
 | 4. 對排序的影響 | 院內已解個案中，以規則引擎、pipeline 現行規則、GeneBe 三種 $V'$ 分別計算致病變異的候選名次（第 11.4 節） | 換成規則引擎後，排序有沒有變好？ |
 | 5. 覆蓋率 | 隱性基因中 LOFTEE HC 的功能喪失變異拿到 PVS1 的比例；各條目「無法評估」的比例 | 「常沒被評到」的問題改善多少？ |
 | 6. 假象檢查 | 對被第 0 步擋下的變異抽樣，以 IGV、gnomAD 原始位點與 ClinVar 人工核對；比較 3%、5%、10% 門檻下被擋下的變異中真正致病者的比例 | 5% 門檻會不會誤擋真的致病變異？ |
+| 7. 排序要不要用 ClinVar（v1.13 加入，舊個案回填後一次做） | 院內已解個案中比較三種排序點數的致病變異名次：自算（v1.13 現行）、B：自算＋ClinVar ≥2★ P/LP 單向下限 6 點、舊：自算＋ClinVar ≥2★ 直接採用（v1.12 以前）；`validate_engine.py` 的排序表已多列 `engine_clinvar_floor`、`engine_clinvar_adopt` 兩個來源，用已存結果的 `clinvar_rule` 換算，不必重算 | ClinVar 有沒有額外幫助？單向下限是否就夠？ |
+| 8. ClinVar 文字推得的條目（v1.13 加入） | PS3：與 ClinGen Evidence Repository／VCEP 實際套用的 PS3 比較 precision／recall，並人工核對 50 段原文片段（不能用 ClinVar 分類當標準答案，因為兩者來自同一批提交，會循環）；PM3 明確 in trans 給 Strong：同樣與 ERepo 的 PM3 強度比較，並核對片段是否描述不同病人、另一個變異是否為 P/LP | 文字比對的誤判率多少？Strong／Supporting 是否合適？ |
 
 **實作（2026-11-23，實作步驟 5）**：`scripts/acmg_engine/validate_engine.py`（核心 `validation.py`）一次讀完所有個案的 review TSV 與規則引擎結果，輸出 `report.md`、`summary.json` 與三份變異表（ClinVar 已定論變異、被院內重複出現擋下的變異、WES 門檻候選），只寫彙總數字與變異座標／基因，不含檢體編號、病人或判讀者名稱；不改任何個案檔案。
 
@@ -2631,15 +2634,17 @@ $p_g=1-(1-p_{\min})^k$ 在實作上數值退化（基因 top-10 只剩 11%）；
 
 **規則 v1.12（2026-11-25）：** 三個問題一起修正。(1) **PVS1 的 NMD 改由 MANE exon 結構自行判斷**（ClinGen SVI 2018：只有在最後一個 exon，或倒數第二個 exon 的 3′ 端最後 50 nt 內才逃過 NMD），從新的終止密碼子第一個鹼基算到最後一個 exon 交界；frameshift 用 HGVS_P 的 fsTer 位置。原本採用 VEP NMD plugin，它實際標的是 52 nt（含端點 ±51）、frameshift 用變異位置而不是新的終止密碼子，且把前 100 個編碼鹼基也當成逃過 NMD，這些都不是 SVI 規則；STRC c.5188C>T（p.Arg1730Ter，距交界 52 nt）因此被判成逃過 NMD、只給 PVS1_Moderate，修正後為 Very strong。exon 表沒有該轉錄本、找不到終止位置，或最後一個 exon 全是 UTR 而距離在 50 nt 內時，才退回 VEP 欄位。(2) **遺傳模式改為「基因層級 Inheritance ∪ 每個 OMIM 疾病行末的遺傳模式」**（`runner.disease_line_moi`，略過 [ ] 非疾病特徵）；平台 OMIM 的基因層級欄常是空的，原本只讀這欄，使只有一個 AR 疾病的基因（如 STRC）被當成遺傳模式未知，PS4、PM3、PM2 隱性門檻都受影響。(3) **ClinVar ≥2★ P/LP 不再豁免 BA1 級頻率**：最大 AF >5%（`clinvar.override_max_af`）時，除非在 ClinGen BA1 例外清單（`ba1_exceptions.tsv`，本版填入 ClinGen SVI 2018-07-30 Table 1 全部 9 個變異，如 GJB2 c.109G>A、HFE C282Y／H63D、ACADS c.511C>T，GRCh37 位置已依 ClinVar VariationID 核對）或有專家小組分類，BA1 照常成立、不採用 ClinVar（`clinvar_action=overridden`）；BA1 成立時排序點數上限 −7（Benign）。院內常見扣分的 ClinVar 豁免同樣只到 5%。2026-11 ClinVar 中 ≥2 個提交者的 P/LP 只有 1 個 ExAC／1000G／ESP AF ≥5%（PRSS1，已知假象區），所以影響範圍很小；起因是 SLC9B1 frameshift（gnomAD AF 0.34、院內 WES 89.8% 帶有、ClinVar P 2★）被排在 V′=10。規則檔與程式變更使舊結果過期，部署後 `build_engine_results.py --all` 重算。
 
+**規則 v1.13（2026-11-26，使用者決定）：** 三項一起改。(1) **排序只用規則自算**：`clinvar.rank_mode="own"`，ClinVar ≥2★ 不再改變點數與排序（ClinGen 專家小組分類照舊採用）；B（單向下限）與舊做法保留在規則檔，列入第 5.2.10 節第 7 項驗證；ClinVar P/LP 在 AF ≤5% 豁免 BA1／BS1、院內常見扣分豁免照舊。(2) **PM3 明確 in trans 給 Strong**：ClinVar 提交者文字明確寫與（疑似）致病變異 in trans（排除推測語氣、in cis、另一個變異為 VUS）；ClinGen SVI 需要 ≥2 分（例如兩位 in trans 病人）才給 Strong，一個提交者可能只描述一位病人，所以列為暫定、待第 8 項驗證。(3) **PS3 從 ClinVar 文字給 Supporting**：提交者文字提到功能研究且結果異常；實驗驗證無法確認，所以只給 Supporting；PVS1 成立或 BA1／BS1 成立時不給；BS3 不做。PM3／PS3 需重建 ClinVar 病例表（`build_clinvar_cases.py`，schema 3）；規則檔與程式變更使舊結果過期，部署後 `build_engine_results.py --all --force` 重算。
+
 **規則 v1.9（2026-11-25）：** 逐一核對 CSpec PM1 文字與解析結果，修正 9 個基因的熱點（FBN1、ENG、GUCY2D、HNF4A、PAH、TNNT2、GP1BA、GP1BB、PAX6），MYO15A／OTOF 改為不適用；起因是 FBN1 c.1841T>C 與 Franklin 的比較（FBN1 VCEP 的 PM2 <0.0005%、BS1 >0.005% 比一般門檻嚴，In-house 給 BS1、不給 PM2 符合規格）。
 
 **上線後依使用者決定調整的參數（2026-11-24，彙整）：**
 
 | 項目 | 原設計 | 現行 | 出處 |
 |---|---|---|---|
-| 排序用的變異點數 $V'$ | 判讀者覆寫優先 | 固定 In-house（含 ClinVar ≥2★／VCEP 採用、P-KNN LLR、院內常見扣分）→ GeneBe；判讀者只改顯示與報告 | 第 5.2.8 節 |
-| In-house 畫面分類 | 含 ClinVar 採用 | 規則自行計算；ClinVar 只影響排序；ClinGen 專家小組直接顯示 | 第 5.2.8 節 |
-| ACMG 規則 | v1.1 | v1.12：PVS1 的 NMD 依 MANE exon 自行判斷（50 nt）、遺傳模式加讀 OMIM 疾病行、ClinVar P/LP 在 AF >5% 時不豁免 BA1（ClinGen 例外清單除外）；v1.11：X 性聯隱性 ≤0.01% 也給 PM2_Moderate；v1.10：PM2 未出現給 Moderate（ACMG 2015 原文）、只有隱性遺傳 ≤0.02% 也給 Moderate、與 PVS1 同時成立時以 Supporting 計；v1.9：VCEP PM1 熱點人工修正；v1.8：PM5 ≥1★、隱性 PM2 0.07%、X 性聯隱性 PM2 0.01%、膠原蛋白 PM1、CSpec 規格、PS4（數病人）、PM3（ClinVar）、PM1 ≥1★、PP2 良性 ≤20% | 第 5.2 節 |
+| 排序用的變異點數 $V'$ | 判讀者覆寫優先 | 固定 In-house（規則自算＋ClinGen 專家小組採用、P-KNN LLR、院內常見扣分）→ GeneBe；判讀者只改顯示與報告；v1.13 起 ClinVar ≥2★ 不再影響排序（B 與舊做法列入驗證） | 第 5.2.8、5.2.10 節 |
+| In-house 畫面分類 | 含 ClinVar 採用 | 規則自行計算（v1.13 起排序也相同）；ClinGen 專家小組直接顯示 | 第 5.2.8 節 |
+| ACMG 規則 | v1.1 | v1.13：排序只用自算、PM3 明確 in trans 給 Strong、PS3 從 ClinVar 文字給 Supporting；v1.12：PVS1 的 NMD 依 MANE exon 自行判斷（50 nt）、遺傳模式加讀 OMIM 疾病行、ClinVar P/LP 在 AF >5% 時不豁免 BA1（ClinGen 例外清單除外）；v1.11：X 性聯隱性 ≤0.01% 也給 PM2_Moderate；v1.10：PM2 未出現給 Moderate（ACMG 2015 原文）、只有隱性遺傳 ≤0.02% 也給 Moderate、與 PVS1 同時成立時以 Supporting 計；v1.9：VCEP PM1 熱點人工修正；v1.8：PM5 ≥1★、隱性 PM2 0.07%、X 性聯隱性 PM2 0.01%、膠原蛋白 PM1、CSpec 規格、PS4（數病人）、PM3（ClinVar）、PM1 ≥1★、PP2 良性 ≤20% | 第 5.2 節 |
 | 表型基因點數 | 開發 396 例；7 段區間；下限 −3.1 | 平滑曲線（v10.77；開發＋第二組 877 例、正式引擎）；最低 −6.1；7 段與 11 段區間列入院內再測 | 第 4.8.3、13.18 節 |
 | 表型疾病點數（同基因內分配） | 開發資料；7 段區間；下限 −3.1 | 平滑曲線（v10.77；881 例合併、MONDO 同組名次）；最低 −4.8 | 第 4.8.3、4.8.7 節 |
 | 排序的變異類型先驗 | 無（所有變異同一起點） | 剪接預測陰性時：同義 −5.1、內含子 +3～+6／−3～−20 −1.6、非編碼區（5′UTR、3′UTR、內含子 ≥+7／≤−21 合併）−3.3（ClinVar 2026-11-22 估計，只影響排序；v10.75 曾分開估計） | 第 5.2.12 節 |

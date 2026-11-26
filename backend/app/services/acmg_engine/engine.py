@@ -677,7 +677,9 @@ def _pm3(row: dict, ctx: Context, rb: dict, too_common: bool) -> Evidence | None
     """PM3 from ClinVar submissions describing homozygous / compound-heterozygous patients.
 
     Recessive (AR) genes only.  The partner variant and the phase cannot be
-    verified from ClinVar text, so the strength is capped (rulebook ``pm3``)."""
+    verified from ClinVar text, so the strength is capped (rulebook ``pm3``);
+    a submitter that states the trans phase explicitly with a (likely)
+    pathogenic partner gives ``pm3.trans_strength`` (Strong, rule v1.13)."""
     cfg = rb.get("pm3")
     if not cfg:
         return None
@@ -693,16 +695,56 @@ def _pm3(row: dict, ctx: Context, rb: dict, too_common: bool) -> Evidence | None
     n = int(found.get("submitters") or 0)
     if not n:
         return Evidence("PM3", "not_met", reason="ClinVar 沒有提交者描述同型合子或複合異型合子病人")
-    strength = next((st for k, st in cfg["clinvar_strength"] if n >= k), None)
-    kinds = "、".join(x for x, on in (("同型合子", found.get("hom")), ("複合異型合子／in trans", found.get("comphet")))
-                     if on)
-    quotes = "；".join(f"{d.get('scv') or 'SCV'}：「{d.get('snippet')}」" for d in (found.get("detail") or [])[:2])
-    reason = f"ClinVar {n} 個提交者描述{kinds}病人（另一個變異的分類與相位無法確認，請核對）"
+    trans = int(found.get("trans") or 0)
+    strength = next((st for k, st in cfg.get("trans_strength") or [] if trans >= k), None)
+    if strength:
+        detail = sorted(found.get("detail") or [], key=lambda d: not d.get("trans"))
+        reason = (f"ClinVar {trans} 個提交者明確寫與（疑似）致病變異 in trans"
+                  f"（共 {n} 個提交者描述雙等位病人；另一個變異的分類請核對）")
+    else:
+        strength = next((st for k, st in cfg["clinvar_strength"] if n >= k), None)
+        detail = found.get("detail") or []
+        kinds = "、".join(x for x, on in (("同型合子", found.get("hom")),
+                                         ("複合異型合子／in trans", found.get("comphet"))) if on)
+        reason = f"ClinVar {n} 個提交者描述{kinds}病人（另一個變異的分類與相位無法確認，請核對）"
+    quotes = "；".join(f"{d.get('scv') or 'SCV'}：「{d.get('snippet')}」" for d in detail[:2])
     if quotes:
         reason += f"；{quotes}"
     if not strength:
         return Evidence("PM3", "not_met", reason=reason)
     return _met("PM3", strength, reason, rb)
+
+
+def _ps3(row: dict, ctx: Context, rb: dict, pvs1_met: bool, too_common: bool) -> Evidence | None:
+    """PS3 from ClinVar submissions whose text reports an abnormal functional study.
+
+    Whether the assay was validated (controls, OddsPath; Brnich 2019) cannot be
+    checked from ClinVar text, so the strength is capped at ``ps3.clinvar_strength``
+    (Supporting).  Not with PVS1 (the assay usually confirms the predicted loss
+    of function) or when BA1/BS1 is met.  BS3 is not evaluated."""
+    cfg = rb.get("ps3")
+    if not cfg:
+        return None
+    found = ctx.refs.clinvar_functional(_variation_id(row))
+    if found is None:
+        return Evidence("PS3", "not_evaluated", reason="ClinVar 病例資料未載入（或為舊版，未含功能研究描述）")
+    n = int(found.get("submitters") or 0)
+    if not n:
+        return Evidence("PS3", "not_met", reason="ClinVar 提交者文字沒有提到這個變異的異常功能研究")
+    pmids: list[str] = []
+    for d in found.get("detail") or []:
+        pmids += [p for p in d.get("pmids") or [] if p not in pmids]
+    quotes = "；".join(f"{d.get('scv') or 'SCV'}：「{d.get('snippet')}」" for d in (found.get("detail") or [])[:2])
+    reason = (f"ClinVar {n} 個提交者寫到功能研究結果異常"
+              + (f"（PMID {'、'.join(pmids[:5])}{' 等' if len(pmids) > 5 else ''}）" if pmids else "")
+              + "；實驗是否經過驗證無法確認，請核對原文")
+    if quotes:
+        reason += f"；{quotes}"
+    if too_common:
+        return Evidence("PS3", "not_met", reason="族群頻率過高（BA1／BS1）；" + reason)
+    if pvs1_met:
+        return Evidence("PS3", "not_met", reason="PVS1 成立，功能研究多半只是確認功能喪失，不重複計分；" + reason)
+    return _met("PS3", cfg.get("clinvar_strength", "supporting"), reason, rb)
 
 
 def _rank_points(evidence: list, row: dict, rb: dict, engine_points: int) -> float:
@@ -726,6 +768,52 @@ def _rank_points(evidence: list, row: dict, rb: dict, engine_points: int) -> flo
     if indeterminate and not others:
         return float(engine_points + llr)
     return float(engine_points)
+
+
+def _clamp(value, low, high):
+    if low is not None:
+        value = max(value, low)
+    if high is not None:
+        value = min(value, high)
+    return value
+
+
+def clinvar_eligible(clinvar: dict, rb: dict) -> str | None:
+    """What a ClinVar call could do to the points: "adopt" (≥ adopt_min_stars, any
+    of the five classes), "floor" (P/LP ≥ floor_min_stars) or None (conflicting, too
+    few stars, no class)."""
+    category = clinvar.get("category")
+    if category not in CLASS_RANGES or clinvar.get("conflict"):
+        return None
+    stars = int(clinvar.get("stars") or 0)
+    if stars >= rb["clinvar"]["adopt_min_stars"]:
+        return "adopt"
+    if category in ("P", "LP") and stars >= rb["clinvar"]["floor_min_stars"]:
+        return "floor"
+    return None
+
+
+def clinvar_adjust(value, rule: dict, mode: str, rb: dict):
+    """``value`` (points or ranking points) with the stored ClinVar call applied
+    under ``mode``: "own" leaves it, "floor" raises a P/LP ≥2★ variant to
+    ``clinvar.floor_points`` (one-way), "adopt" clamps it into the ClinVar class
+    (rule ≤ v1.12).  Values already adopted from a VCEP or overridden by BA1 are
+    left alone, so validation can re-rank stored results under each mode."""
+    rule = rule or {}
+    if mode == "own" or rule.get("action") == "overridden" or rule.get("source") == "ClinGen VCEP":
+        return value
+    eligible = rule.get("eligible")
+    if eligible is None and "eligible" not in rule:     # results stored before v1.13
+        eligible = clinvar_eligible(rule, rb)
+    category = rule.get("category")
+    if not eligible or category not in CLASS_RANGES:
+        return value
+    if mode == "adopt" and eligible == "adopt":
+        _name, low, high = CLASS_RANGES[category]
+        return _clamp(value, low, high)
+    if category in ("P", "LP") and int(rule.get("stars") or 0) >= rb["clinvar"]["floor_min_stars"]:
+        return max(value, type(value)(rb["clinvar"]["floor_points"]))
+    return value
 
 
 def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None = None) -> dict:
@@ -857,6 +945,10 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
             weaker = min((ps4, pm3), key=lambda e: (e.points, e.code == "PS4"))
             weaker.reason += "（PS4 與 PM3 可能描述同一批病人，只計較強者）"
             weaker.status, weaker.points = "not_met", 0
+    ps3 = _ps3(row, ctx, rb, pvs1_met, ba1 or bs1)
+    if ps3 is not None:
+        _apply_vcep([ps3], spec, rb)
+        evidence.append(ps3)
 
     # double counting
     met = [e for e in evidence if e.status == "met"]
@@ -888,35 +980,30 @@ def evaluate_variant(rows, context: Context | None = None, rulebook: dict | None
     if ba1:                                  # stand-alone benign ranks as Benign, not as the point sum (v1.12)
         rank = min(rank, float(CLASS_RANGES["B"][2]))
 
-    # ClinVar: adopt (3–4★ / VCEP) or floor (2★ P/LP); never additive
-    points, classification = engine_points, engine_class
+    # ClinVar never adds points.  A ClinGen VCEP call is adopted (shown and ranked);
+    # a ClinVar ≥2★ call moves points/ranking only under ``clinvar.rank_mode``
+    # "floor" / "adopt" — the default "own" keeps the rule's own call (rule v1.13)
+    mode = rb["clinvar"].get("rank_mode", "adopt")
     action = {"action": "none", "source": clinvar.get("source"),
-              "category": clinvar.get("category"), "stars": clinvar.get("stars")}
-    adopt = None
+              "category": clinvar.get("category"), "stars": clinvar.get("stars"),
+              "conflict": bool(clinvar.get("conflict")), "mode": mode,
+              "eligible": None if clinvar_overridden else clinvar_eligible(clinvar, rb)}
+    points, classification = engine_points, engine_class
     if clinvar_overridden:
         action["action"] = "overridden"
     elif expert in CLASS_RANGES:
-        adopt, action["source"], action["category"] = expert, "ClinGen VCEP", expert
-    elif (clinvar.get("category") in CLASS_RANGES and not clinvar.get("conflict")
-          and int(clinvar.get("stars") or 0) >= rb["clinvar"]["adopt_min_stars"]):
-        adopt = clinvar["category"]
-    if adopt:
-        name, low, high = CLASS_RANGES[adopt]
-        if low is not None:
-            points = max(points, low)
-            rank = max(rank, low)
-        if high is not None:
-            points = min(points, high)
-            rank = min(rank, high)
+        action.update(source="ClinGen VCEP", category=expert, action="adopt", conflict=False)
+        name, low, high = CLASS_RANGES[expert]
+        points, rank = _clamp(points, low, high), _clamp(rank, low, high)
         classification = name
-        action["action"] = "adopt"
-    elif (not clinvar_overridden and clinvar.get("category") in ("P", "LP") and not clinvar.get("conflict")
-          and int(clinvar.get("stars") or 0) >= rb["clinvar"]["floor_min_stars"]
-          and points < rb["clinvar"]["floor_points"]):
-        points = rb["clinvar"]["floor_points"]
-        rank = max(rank, float(points))
-        classification = _class_for(points)
-        action["action"] = "floor"
+    elif action["eligible"] and mode != "own":
+        adjusted = clinvar_adjust(points, action, mode, rb)
+        rank = clinvar_adjust(rank, action, mode, rb)
+        if mode == "adopt" and action["eligible"] == "adopt":
+            action["action"], classification = "adopt", CLASS_RANGES[clinvar["category"]][0]
+        elif adjusted != points:
+            action["action"], classification = "floor", _class_for(int(adjusted))
+        points = adjusted
 
     criteria = {e.code: {"enabled": True, "strength": e.strength} for e in met}
     text = ",".join(_token(code, criteria[code]["strength"]) for code in CRITERIA_ORDER if code in criteria)

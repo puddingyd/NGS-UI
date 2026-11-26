@@ -1303,9 +1303,10 @@ def _promote_engine_to_inhouse(variants: dict) -> None:
             variant["pipeline_acmg_class"] = variant.get("ACMG_classification") or ""
             variant["pipeline_acmg_score"] = variant.get("ACMG_score")
             variant["pipeline_acmg_criteria"] = variant.get("ACMG_criteria") or ""
-        # Shown: a ClinGen expert panel (VCEP) call as is; otherwise the rule's
-        # own call (a ClinVar ≥2★ adopt moves ranking only).  Ranked: with the
-        # adopt applied (``inhouse_rank_score``; plan §5.2.2).
+        # Shown and ranked: a ClinGen expert panel (VCEP) call as is; otherwise the
+        # rule's own call.  Rule v1.13 no longer lets a ClinVar ≥2★ call move the
+        # ranking (``clinvar.rank_mode`` "own"); results of older rules still
+        # carry that adopt in ``rank_points`` until recomputed (plan §5.2.2).
         from .acmg_engine import runner as acmg_engine_runner
         expert = acmg_engine_runner.expert_adopted(engine, variant.get("clingen_vcep_class") or "")
         if expert:
@@ -1318,8 +1319,8 @@ def _promote_engine_to_inhouse(variants: dict) -> None:
         variant["ACMG_criteria"] = engine.get("criteria_text") or ""
         variant["ACMG_notes"] = ""
         variant["inhouse_acmg_source"] = "engine"
-        # ranking: the ClinVar adopt applied and the P-KNN PP3/BP4 strength replaced
-        # by its LLR (``rank_points``, rule v1.7); older results fall back to points
+        # ranking: the P-KNN PP3/BP4 strength replaced by its LLR (``rank_points``,
+        # rule v1.7); older results fall back to points
         variant["inhouse_rank_score"] = (engine.get("rank_points") if engine.get("rank_points") is not None
                                          else engine.get("points"))
         variant["inhouse_clinvar_action"] = engine.get("clinvar_action") or "none"

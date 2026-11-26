@@ -33,7 +33,11 @@ test('In-house reasons render under each criterion, met first, with strength and
   const header = context._acmgInhouseHeaderHtml();
   assert.doesNotMatch(header, /ngsui-acmg|下方各項/);
   assert.match(header, /舊版規則/);
-  assert.match(header, /排序改用 ClinVar latest 的 VUS（2★）/);
+  assert.match(header, /排序改用（舊版規則） ClinVar latest 的 VUS（2★）/);
+  context.setEditor({ inhouseEvidence: { status: 'current', evidence: [], classification: 'Likely pathogenic',
+    rank_classification: 'Benign', clinvar_action: 'adopt', clinvar_source: 'ClinGen VCEP', clinvar_category: 'B' } });
+  assert.match(context._acmgInhouseHeaderHtml(), /分類與排序採用 ClinGen VCEP 的 B/);
+  assert.doesNotMatch(context._acmgInhouseHeaderHtml(), /★/);
   context.setEditor({ inhouseEvidence: { status: 'current', evidence: [], clinvar_action: 'overridden',
     flags: [{ code: 'clinvar_overridden', message: 'ClinVar P（2★）但最大 AF 0.34 > 0.05' }] } });
   assert.match(context._acmgInhouseHeaderHtml(), /ClinVar P（2★）但最大 AF 0\.34/);

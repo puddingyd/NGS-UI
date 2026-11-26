@@ -6,6 +6,13 @@
 
 ## 版本紀錄
 
+### v10.79 — 2026-11-26
+
+- In-house prioritization 的排序改為只用 In-house 規則自行計算的點數，和畫面上的 In-house 分類一致；ClinVar ≥2★ 的分級不再取代排序點數（ClinVar 仍顯示在卡片上）。ClinGen 專家小組的分類照舊直接採用。「ClinVar 只當下限」與原本的做法留待舊個案補完後一起驗證。
+- PM3：ClinVar 提交者明確寫這個變異和另一個致病／疑似致病變異「in trans」（位於不同染色體）時給 Strong；只寫複合異型合子、相位未知、推測，或另一個變異是 VUS 的，照舊 Supporting／Moderate。理由會引用原文。
+- PS3：ClinVar 提交者寫到這個變異的功能研究結果異常（例如酵素活性下降、RNA 研究顯示 exon skipping）時給 Supporting，理由附原文與 PMID；只是電腦預測、其他變異的研究或結果正常的不算。PVS1 已成立時不另外給。BS3 不做。
+- 需重建 ClinVar 病例表並重算 In-house 結果後生效。
+
 ### v10.78 — 2026-11-25
 
 - In-house ACMG 的 PVS1：是否會被 NMD 降解改依 MANE 轉錄本的 exon 結構自行判斷（ClinGen 規則：只有在最後一個 exon，或倒數第二個 exon 最後 50 個鹼基內才逃過 NMD）。原本沿用的 VEP 工具實際用 52 個鹼基、frameshift 看變異位置而非新的終止密碼子，且把開頭 100 個鹼基也當成逃過；例如 STRC p.Arg1730Ter 由 PVS1 Moderate 改為 Very strong。

@@ -32,12 +32,13 @@ from pathlib import Path
 
 from . import parse as P
 from . import runner
-from .engine import Context, _clinvar, _primary_row, evaluate_variant, load_rulebook
+from .engine import Context, _clinvar, _primary_row, clinvar_adjust, evaluate_variant, load_rulebook
 
 ENGINE_CODES = ("PVS1", "PS1", "PM1", "PM2", "PM4", "PM5", "PP2", "PP3", "BA1", "BS1", "BP3", "BP4", "BP7")
 CLASSES = ("P", "LP", "VUS", "LB", "B")
 SOURCES = ("engine", "pipeline", "genebe")
-RANK_SOURCES = ("engine", "engine_evidence", "pipeline", "genebe", "platform_current")
+RANK_SOURCES = ("engine", "engine_evidence", "engine_clinvar_floor", "engine_clinvar_adopt",
+                "pipeline", "genebe", "platform_current")
 RECURRENCE_THRESHOLDS = (0.03, 0.05, 0.10)
 MASKED_CLINVAR = {"category": None, "stars": 0, "conflict": False, "source": "masked"}
 
@@ -140,6 +141,18 @@ def first_value(rows: list[dict], column: str) -> str:
         if value:
             return value
     return ""
+
+
+_CLINVAR_RB = load_rulebook()
+
+
+def own_points(result: dict):
+    """The rule's own points (with a ClinGen VCEP adoption, which every mode keeps);
+    results stored before v1.13 carry the ClinVar adopt in ``points``."""
+    rule = result.get("clinvar_rule") or {}
+    if rule.get("action") == "adopt" and rule.get("source") == "ClinGen VCEP":
+        return result.get("points")
+    return result.get("engine_points", result.get("points"))
 
 
 def geno_score(points) -> int:
@@ -547,7 +560,11 @@ def run(*, out_dir: Path, sample_ids=None, refs=None, recurrence=None, recurrenc
             # 4. ranking inputs
             if want_rank:
                 pheno_score = float(pheno.get(_canonical(gene), 0) or 0)
+                own = own_points(result)
+                rule = result.get("clinvar_rule") or {}
                 points = {"engine": result.get("points"), "engine_evidence": result.get("engine_points"),
+                          "engine_clinvar_floor": None if own is None else clinvar_adjust(own, rule, "floor", _CLINVAR_RB),
+                          "engine_clinvar_adopt": None if own is None else clinvar_adjust(own, rule, "adopt", _CLINVAR_RB),
                           "pipeline": pipe_pts, "genebe": gb_pts,
                           "platform_current": gb_pts if gb_pts is not None else pipe_pts}
                 for source, pts in points.items():
@@ -806,7 +823,10 @@ def _write_tsv(path: Path, rows: list[dict]) -> None:
 
 
 # ── report ─────────────────────────────────────────────────────────────────
-_SOURCE_NAMES = {"engine": "規則引擎", "engine_evidence": "規則引擎（不含 ClinVar 採用）",
+_SOURCE_NAMES = {"engine": "規則引擎（自算＋專家小組採用，v1.13 起排序）",
+                 "engine_evidence": "規則引擎（只有自算，不含專家小組採用）",
+                 "engine_clinvar_floor": "B：自算＋ClinVar ≥2★ P/LP 單向下限 6 點",
+                 "engine_clinvar_adopt": "舊：自算＋ClinVar ≥2★ 直接採用（≤v1.12）",
                  "pipeline": "pipeline ACMG", "genebe": "GeneBe", "platform_current": "平台現行（GeneBe→pipeline）"}
 
 

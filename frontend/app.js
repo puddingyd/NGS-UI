@@ -5013,19 +5013,21 @@ function _inhouseCommonScoreLines(v) {
 }
 
 function _clinvarRankScoreLines(v) {
-  // Ranking is fixed (In-house incl. the ClinVar ≥2★ / VCEP adopt → GeneBe);
-  // reviewer ACMG and the shown In-house class do not move it.
+  // Ranking is fixed (In-house: the rule's own call, or a ClinGen VCEP call → GeneBe);
+  // reviewer ACMG does not move it.  Since rule v1.13 a ClinVar ≥2★ call no longer
+  // moves it either; results of older rules may still carry that adopt until recomputed.
   const rank = _numericValue(v?.effective_rank_score);
   const shown = _numericValue(v?.effective_acmg_score);
   if (rank == null || rank === shown) return [];
-  const adopted = ["adopt", "floor"].includes(v?.inhouse_clinvar_action);
+  const adopted = ["adopt", "floor"].includes(v?.inhouse_clinvar_action) && !v?.inhouse_from_vcep;
   const src = v?.effective_rank_source === "genebe" ? "GeneBe"
-    : (adopted ? "In-house（含 ClinVar ≥2★ 分級）" : "In-house");
+    : (adopted ? "In-house（舊版規則，含 ClinVar ≥2★ 分級）" : "In-house");
   if (["sample", "global"].includes(v?.effective_acmg_scope)) {
     return [`排序固定採用 ${src} 的 ${rank} 點，不隨手動判讀改變；畫面 ACMG 為手動判讀的 ${shown ?? "—"} 點`];
   }
   if (v?.effective_acmg_scope === "in_house" && adopted) {
-    return [`排序採用 ClinVar ≥2★ 分級換算的 ${rank} 點；畫面 ACMG 為 In-house 規則自行計算的 ${shown ?? "—"} 點`];
+    return [`排序採用 ClinVar ≥2★ 分級換算的 ${rank} 點（舊版規則的結果，重算後改用規則自算）；`
+      + `畫面 ACMG 為 In-house 規則自行計算的 ${shown ?? "—"} 點`];
   }
   if (v?.effective_rank_source !== "genebe") {
     return [`排序以 P-KNN LLR 實際數值取代 PP3／BP4 點數：排序 ${rank} 點；畫面 ACMG ${shown ?? "—"} 點`];
@@ -5911,8 +5913,9 @@ function _acmgInhouseHeaderHtml() {
   if (info.vcep?.vcep) notes.push(`套用 ClinGen ${info.vcep.vcep}（${info.vcep.svi || ""}）規格`);
   if (info.clinvar_action === "adopt" && info.rank_classification
       && info.rank_classification !== info.classification) {
-    notes.push(`排序改用 ${info.clinvar_source || "ClinVar"} 的 ${info.clinvar_category || info.rank_classification}`
-      + `（${info.clinvar_stars || 0}★）`);
+    const vcep = info.clinvar_source === "ClinGen VCEP";
+    notes.push(`${vcep ? "分類與排序採用" : "排序改用（舊版規則）"} ${info.clinvar_source || "ClinVar"} 的 `
+      + `${info.clinvar_category || info.rank_classification}${vcep ? "" : `（${info.clinvar_stars || 0}★）`}`);
   }
   if (info.clinvar_action === "overridden") {
     const flag = (info.flags || []).find(f => f.code === "clinvar_overridden");

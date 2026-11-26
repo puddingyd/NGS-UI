@@ -32,11 +32,12 @@ from .ref_store import SqliteReferences, load_ba1_exceptions
 from .refs import References
 
 RESULTS_NAME = "snv_acmg_engine.sqlite"
-FORMAT_VERSION = 6          # 2: CaseRecurrence delegates the missense window / gene count lookups
+FORMAT_VERSION = 7          # 2: CaseRecurrence delegates the missense window / gene count lookups
                             # 3: CaseRecurrence delegates the collagen Gly-X-Y lookup
                             # 4: CaseRecurrence answers PS4 lookups (in-house probands, ClinVar cases)
                             # 5: omim_moi also reads each OMIM disease line; CaseRecurrence.cds_exons
                             # 6: inheritance looked up for the primary (MANE) row's gene, not rows[0]
+                            # 7: CaseRecurrence answers the ClinVar functional-study (PS3) lookup
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
 
@@ -247,6 +248,9 @@ class CaseRecurrence(References):
     def clinvar_biallelic(self, variation_id):
         return self._refs.clinvar_biallelic(variation_id)
 
+    def clinvar_functional(self, variation_id):
+        return self._refs.clinvar_functional(variation_id)
+
 
 def omim_moi(gene: str) -> set | None:
     """Gene-level OMIM inheritance codes, or None when unknown."""
@@ -388,12 +392,12 @@ def expert_adopted(engine: dict, vcep_class: str = "") -> bool:
 
 
 def own_call(engine: dict) -> tuple[str, object]:
-    """(class, points) from the rule's own criteria, before the ClinVar adopt/floor.
+    """(class, points) from the rule's own criteria, before any adoption.
 
-    ``classification``/``points`` already carry the ClinVar ≥2★ (or ClinGen
-    VCEP) call; the platform ranks with those but shows this one.  Results
-    stored before ``engine_classification`` was kept are derived the same way
-    as the engine: BA1 met → Benign, otherwise the Tavtigian bins.
+    ``classification``/``points`` carry a ClinGen VCEP adoption (and, in
+    results of rule ≤v1.12, the ClinVar ≥2★ adopt).  Results stored before
+    ``engine_classification`` was kept are derived the same way as the engine:
+    BA1 met → Benign, otherwise the Tavtigian bins.
     """
     engine = engine or {}
     points = engine.get("engine_points")

@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO / "backend"))
 
 from app.services.acmg_engine import parse as P  # noqa: E402
 from app.services.acmg_engine import runner  # noqa: E402
+from app.services.acmg_engine.engine import _primary_row  # noqa: E402
 from app.services.acmg_engine.validation import normalize_variant_id  # noqa: E402
 
 FREQ_COLUMNS = ("GNOMAD_E_AF", "GNOMAD_E_EAS_AF", "GNOMAD_E_AF_DBNSFP", "GNOMAD_E_EAS_AF_DBNSFP", "GNOMAD_G_AF",
@@ -43,10 +44,13 @@ def _print_result(title: str, result: dict) -> None:
     rule = result.get("clinvar_rule") or {}
     own = runner.own_call(runner.summary(result))
     print(f"== {title}（規則版本 {result.get('version')}）")
-    print(f"  排序用分類／點數：{result.get('classification')}（{result.get('points')}）")
+    print(f"  分類／點數（含專家小組採用）：{result.get('classification')}（{result.get('points')}）；"
+          f"排序點數 {result.get('rank_points')}")
     print(f"  規則自算分類／點數：{own[0]}（{own[1]}）")
+    eligible = {"adopt": "可採用", "floor": "可當下限"}.get(rule.get("eligible"), "不符條件")
     print(f"  ClinVar／專家規則：{rule.get('action')}（來源 {rule.get('source') or '—'}，"
-          f"分類 {rule.get('category') or '—'}，{rule.get('stars') or 0}★）")
+          f"分類 {rule.get('category') or '—'}，{rule.get('stars') or 0}★"
+          + (f"；模式 {rule['mode']}，ClinVar {eligible}" if rule.get("mode") else "") + "）")
     if result.get("vcep"):
         print(f"  套用 ClinGen 規格：{result['vcep'].get('vcep')} {result['vcep'].get('svi')}")
     freq = result.get("frequency") or {}
@@ -77,7 +81,7 @@ def main(argv=None) -> int:
     if not rows:
         print("這個變異不在 review TSV（主畫面篩選後的清單）裡。", file=sys.stderr)
         return 1
-    row = rows[0]
+    row = _primary_row(rows)            # the transcript row the rule evaluates (MANE first)
     print(f"{args.sample} {vid} {P.text(row.get('GENE'))} {P.text(row.get('HGVS_C')).split(':')[-1]} "
           f"{P.text(row.get('CONSEQUENCE'))}（{case['test_type']}）")
     print("  review TSV 頻率欄：" + "，".join(f"{c}={P.text(row.get(c)) or '.'}" for c in FREQ_COLUMNS if c in row))
@@ -92,7 +96,8 @@ def main(argv=None) -> int:
     if args.recompute:
         recurrence = runner.shared_recurrence() if case["test_type"] == "WES" else None
         case_refs = runner.CaseRecurrence(refs, recurrence, args.sample,
-                                          runner.case_patient(recurrence, args.sample, case["mrn"]))
+                                          runner.case_patient(recurrence, args.sample, case["mrn"]),
+                                          runner.shared_probands())
         for _, result in runner.evaluate_rows({vid: rows}, test_type=case["test_type"], refs=case_refs):
             _print_result("目前程式重算", result)
     return 0

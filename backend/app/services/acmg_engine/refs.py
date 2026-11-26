@@ -78,7 +78,14 @@ class References:
 
     def clinvar_biallelic(self, variation_id: str) -> dict | None:
         """ClinVar submitters describing homozygous / compound-heterozygous patients (PM3):
-        {"submitters", "hom", "comphet", "detail": [{"scv", "snippet"}]}; ``{}`` when none."""
+        {"submitters", "hom", "comphet", "trans", "detail": [{"scv", "snippet", "trans"}]};
+        ``trans`` counts submitters that state the trans phase explicitly; ``{}`` when none."""
+        return None
+
+    def clinvar_functional(self, variation_id: str) -> dict | None:
+        """ClinVar submitters whose text reports an abnormal functional study (PS3):
+        {"submitters", "detail": [{"scv", "snippet", "pmids"}]}; ``{}`` when none;
+        None when the table (schema ≥3) is not loaded."""
         return None
 
 
@@ -99,7 +106,8 @@ class StaticReferences(References):
     collagen: dict = field(default_factory=dict)     # gene -> {"length", "positions"}
     probands: dict | None = None             # variant_key -> other unrelated Causative patients
     clinvar_cases: dict | None = None        # variation_id -> {"submitters", "individuals"}
-    biallelic: dict | None = None            # variation_id -> {"submitters", "hom", "comphet", "detail"}
+    biallelic: dict | None = None            # variation_id -> {"submitters", "hom", "comphet", "trans", "detail"}
+    functional: dict | None = None           # variation_id -> {"submitters", "detail"}
     version: dict = field(default_factory=dict)
 
     @property
@@ -190,3 +198,10 @@ class StaticReferences(References):
         if not variation_id:
             return {}
         return dict(self.biallelic.get(str(variation_id), {}))
+
+    def clinvar_functional(self, variation_id):
+        if self.functional is None:
+            return None
+        if not variation_id:
+            return {}
+        return dict(self.functional.get(str(variation_id), {}))

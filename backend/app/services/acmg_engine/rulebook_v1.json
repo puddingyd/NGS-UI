@@ -1,5 +1,5 @@
 {
-  "version": "ngsui-acmg-v1.12",
+  "version": "ngsui-acmg-v1.13",
   "description": "NGS-UI ACMG rule engine thresholds (plan docs/research/NGS_Integrated_Prioritization_Plan_v3.md section 5.2). Values marked provisional must be validated (section 5.2.10).",
   "points": {
     "supporting": 1,
@@ -141,7 +141,8 @@
     "floor_min_stars": 2,
     "floor_points": 6,
     "override_max_af": 0.05,
-    "note": "2026-11-23: 2★ adopted directly (was 3★); floor kept for adopt_min_stars > floor_min_stars. 2026-11-25 v1.12: above override_max_af (max AF, BA1 level) ClinVar P/LP no longer exempts BA1/BS1 and is not adopted, unless the variant is on the ClinGen BA1 exception list (ba1_exceptions.tsv, Ghosh 2018) or a VCEP call exists. In ClinVar 2026-11 only one P/LP variant with >=2 submitters has ExAC/1000G/ESP AF >= 5 % (PRSS1, a known artefact region)."
+    "rank_mode": "own",
+    "note": "2026-11-23: 2★ adopted directly (was 3★); floor kept for adopt_min_stars > floor_min_stars. 2026-11-25 v1.12: above override_max_af (max AF, BA1 level) ClinVar P/LP no longer exempts BA1/BS1 and is not adopted, unless the variant is on the ClinGen BA1 exception list (ba1_exceptions.tsv, Ghosh 2018) or a VCEP call exists. In ClinVar 2026-11 only one P/LP variant with >=2 submitters has ExAC/1000G/ESP AF >= 5 % (PRSS1, a known artefact region). 2026-11-26 v1.13: rank_mode 'own' (user decision): a ClinVar >=2★ call no longer adopts or floors the points or the ranking; the rule's own call is shown and ranked, ClinVar stays a separate reference on the card. A ClinGen VCEP call is still adopted. 'floor' (P/LP >=2★ raises ranking and points to floor_points, one-way) and 'adopt' (rule <=v1.12) are kept for the validation (plan §5.2.10). The P/LP >=2★ exemption from BA1/BS1 below override_max_af and from the in-house common penalty is unchanged."
   },
   "classes": [
     {
@@ -226,10 +227,24 @@
         "supporting"
       ]
     ],
+    "trans_strength": [
+      [
+        1,
+        "strong"
+      ]
+    ],
+    "provisional": [
+      "clinvar_strength",
+      "trans_strength"
+    ],
+    "note": "2026-11-24 v1.7: PM3 from ClinVar submissions that describe homozygous or compound-heterozygous / in-trans / biallelic patients (structured ObservedData counts or the submitter's comment text, clinvar_cases.sqlite). Genes with AR inheritance only; not when BA1/BS1 is met. The partner variant's classification and the phase cannot be checked and several submitters may describe the same published patients, so 1 submitter gives Supporting and >=2 give Moderate (ClinGen SVI PM3 would allow up to Very strong with verified cases). In a gene with both AD and AR inheritance PM3 and PS4 can describe the same patients: only the stronger is kept. 2026-11-26 v1.13 (user decision): a submitter that states the trans phase explicitly (\"in trans\", \"on the opposite allele\") with a pathogenic / likely pathogenic partner gives Strong; hedged phrases (presumed, phase unknown, whether, parental testing not performed), in cis and partners of uncertain significance do not count. ClinGen SVI would need >=2 points (e.g. two probands in trans with a P variant) for Strong; one submitter may describe a single proband, so this is provisional and listed for validation."
+  },
+  "ps3": {
+    "clinvar_strength": "supporting",
     "provisional": [
       "clinvar_strength"
     ],
-    "note": "2026-11-24 v1.7: PM3 from ClinVar submissions that describe homozygous or compound-heterozygous / in-trans / biallelic patients (structured ObservedData counts or the submitter's comment text, clinvar_cases.sqlite). Genes with AR inheritance only; not when BA1/BS1 is met. The partner variant's classification and the phase cannot be checked and several submitters may describe the same published patients, so 1 submitter gives Supporting and >=2 give Moderate (ClinGen SVI PM3 would allow up to Very strong with verified cases). In a gene with both AD and AR inheritance PM3 and PS4 can describe the same patients: only the stronger is kept."
+    "note": "2026-11-26 v1.13 (user decision): PS3 from ClinVar submissions (any method, not B/LB, current) whose comment text reports a functional study (experimental, in vitro, RNA / minigene, enzyme activity, patient cells) with an abnormal result for this variant (clinvar_cases.sqlite schema 3). In-silico predictions and modelling, other variants (different substitution, same codon), normal / conflicting / insufficient results and studies not performed are skipped. Assay validation (controls, OddsPath; Brnich 2019) cannot be checked, so Supporting only. Not with PVS1 (the assay usually confirms the predicted loss of function) or BA1/BS1. BS3 not evaluated. Validate against ClinGen ERepo / VCEP-applied PS3 and a manual review of 50 snippets; ClinVar-label validation would be circular."
   },
   "pm2": {
     "_note": "ACMG 2015: absent from controls (or extremely low frequency if recessive, incl. X-linked recessive) = Moderate. Present at a low frequency otherwise = Supporting. With PVS1, PM2 counts as Supporting (ClinGen SVI 2020) so PVS1+PM2 alone stays Likely pathogenic. VCEP specs still cap the strength.",

@@ -66,7 +66,8 @@ def main(argv=None) -> int:
     stats = CC.build(args.xml, args.out, release=release, progress=progress)
     print("\n" + "=" * 60)
     print(f"完成：{stats['variants']:,} 個 ClinVar 變異有病例資料（其中 {stats['pm3_variants']:,} 個有同型合子／"
-          f"複合異型合子病人的描述，供 PM3），耗時 {stats['seconds'] / 60:.0f} 分鐘")
+          f"複合異型合子病人的描述，供 PM3；{stats.get('ps3_variants', 0):,} 個有功能研究異常的描述，供 PS3），"
+          f"耗時 {stats['seconds'] / 60:.0f} 分鐘")
     print(f"寫入 {stats['path']}")
     print("接著重算 In-house 結果：.venv/bin/python scripts/acmg_engine/build_engine_results.py --all --force")
     print("=" * 60)
