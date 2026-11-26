@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import sqlite3
 import sys
 import zipfile
@@ -152,7 +153,7 @@ def test_download_all_streams_zip_with_display_names(document_store):
     assert archived_ids == [first["id"], second["id"]]
 
 
-def test_pdf_is_downloadable_but_not_previewable(document_store):
+def test_pdf_preview_preserves_original_file(document_store):
     _documents, _phenotype = document_store
     saved = _upload(
         "record.pdf",
@@ -160,9 +161,13 @@ def test_pdf_is_downloadable_but_not_previewable(document_store):
         display_name="病歷摘要.pdf",
     )
 
-    assert saved["previewable"] is False
-    with pytest.raises(store.PreviewUnavailable):
-        store.render_preview(saved["id"])
+    assert saved["previewable"] is True
+    path, info = store.render_preview(saved["id"])
+    assert isinstance(path, Path)
+    assert path.read_bytes().startswith(b"%PDF-1.4")
+    assert info["content_type"] == "application/pdf"
+    with pytest.raises(store.InvalidDocument, match="頁碼"):
+        store.render_preview(saved["id"], page=1)
 
 
 def test_duplicate_content_and_mismatched_extension_are_rejected(document_store):
@@ -313,3 +318,110 @@ def test_text_preview_api_streams_plain_text_and_records_preview(document_store)
             (saved["id"],),
         )]
     assert actions == ["upload", "preview"]
+
+
+def _edit(saved, content="更新後的內容\n第二行 🧬\n", display_name="更新摘要.txt", **kwargs):
+    return store.update_text_document(
+        saved["id"], mrn=saved["mrn"], content=content, display_name=display_name,
+        expected_sha256=saved["sha256"], expected_display_name=saved["display_name"],
+        user={"id": 8, "username": "editor"}, **kwargs,
+    )
+
+
+def test_edit_text_keeps_identity_and_archives_previous_content(document_store):
+    documents, _ = document_store
+    saved = _upload("original.txt", b"original text", display_name="原始摘要.txt")
+    old_path, _ = store.document_file(saved["id"])
+    loaded = store.text_document(saved["id"], mrn=saved["mrn"])
+    assert loaded == {"document": saved, "content": "original text"}
+    updated = _edit(saved)
+    for field in ("id", "mrn", "created_at", "created_by_username", "source_sample_id", "original_name"):
+        assert updated[field] == saved[field]
+    assert updated["updated_by_username"] == "editor"
+    assert updated["sha256"] != saved["sha256"]
+    assert updated["display_name"] == "更新摘要.txt"
+    assert store.list_documents(saved["mrn"]) == [updated]
+    new_path, _ = store.document_file(saved["id"])
+    assert new_path.read_text(encoding="utf-8") == "更新後的內容\n第二行 🧬\n"
+    assert updated["size_bytes"] == new_path.stat().st_size
+    assert (documents / "trash" / old_path.name).read_bytes() == b"original text"
+    chunks, _ = store.stream_archive(saved["mrn"])
+    with zipfile.ZipFile(io.BytesIO(b"".join(chunks))) as archive:
+        assert archive.namelist() == ["更新摘要.txt"]
+        assert archive.read("更新摘要.txt") == new_path.read_bytes()
+    with sqlite3.connect(documents / "documents.sqlite") as conn:
+        details = json.loads(conn.execute("SELECT details FROM document_events WHERE action='edit'").fetchone()[0])
+    assert details["old_sha256"] == saved["sha256"]
+    assert details["sha256"] == updated["sha256"]
+
+
+def test_text_edit_rejects_stale_content_and_rename(document_store):
+    saved = _upload("original.txt", b"original text")
+    updated = _edit(saved)
+    with pytest.raises(store.DocumentConflict, match="已被修改"):
+        _edit(saved, content="過期的覆寫")
+    renamed = store.rename_document(updated["id"], "其他人改名.txt")
+    with pytest.raises(store.DocumentConflict, match="改名"):
+        _edit(updated)
+    assert store.text_document(saved["id"], mrn=saved["mrn"])["document"] == renamed
+
+
+@pytest.mark.parametrize("content,name", [(" ", "new.txt"), ("bad\x00text", "new.txt"), ("valid", "wrong.pdf")])
+def test_invalid_text_edit_preserves_original(document_store, content, name):
+    saved = _upload("original.txt", b"original text")
+    with pytest.raises(store.InvalidDocument):
+        _edit(saved, content=content, display_name=name)
+    assert store.text_document(saved["id"], mrn=saved["mrn"])["content"] == "original text"
+    assert store.list_documents(saved["mrn"]) == [saved]
+
+
+def test_edit_conflicts_and_transaction_failure_preserve_original(document_store, monkeypatch):
+    documents, _ = document_store
+    saved = _upload("original.txt", b"original text")
+    _upload("other.txt", b"other text")
+    for content, name in [("other text", "unique.txt"), ("unique text", "other.txt")]:
+        with pytest.raises(store.DocumentConflict):
+            _edit(saved, content=content, display_name=name)
+    def fail_event(*args, **kwargs):
+        raise sqlite3.OperationalError("synthetic audit failure")
+    monkeypatch.setattr(store, "_event", fail_event)
+    with pytest.raises(sqlite3.OperationalError):
+        _edit(saved)
+    assert next(row for row in store.list_documents(saved["mrn"]) if row["id"] == saved["id"]) == saved
+    assert len(list((documents / "files" / saved["mrn"]).iterdir())) == 2
+    assert not list((documents / ".incoming").iterdir())
+
+
+def test_edit_and_pdf_preview_routes_with_auth_and_patient_checks(document_store):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from starlette.middleware.sessions import SessionMiddleware
+    from app.auth import current_user
+    from app.routers.documents import router
+
+    saved = _upload("original.txt", b"original text")
+    pdf = _upload("record.pdf", b"%PDF-1.4\nfixture\n%%EOF")
+    app = FastAPI()
+    app.add_middleware(SessionMiddleware, secret_key="synthetic-test")
+    app.include_router(router)
+    with TestClient(app) as client:
+        assert client.get(f"/api/documents/{saved['id']}/text", params={"mrn": saved["mrn"]}).status_code == 401
+        app.dependency_overrides[current_user] = lambda: {"id": 8, "username": "editor"}
+        response = client.get(f"/api/documents/{saved['id']}/text", params={"mrn": saved["mrn"]})
+        assert response.status_code == 200
+        assert response.json()["content"] == "original text"
+        assert response.headers["cache-control"] == "private, no-store"
+        assert client.get(f"/api/documents/{saved['id']}/text", params={"mrn": "WRONG"}).status_code == 409
+        payload = {"mrn": saved["mrn"], "display_name": "new.txt", "content": "new text",
+                   "expected_sha256": saved["sha256"], "expected_display_name": saved["display_name"]}
+        assert client.put(f"/api/documents/{saved['id']}/text", json=payload).status_code == 200
+        assert client.put(f"/api/documents/{saved['id']}/text", json=payload).status_code == 409
+        assert client.get(f"/api/documents/{pdf['id']}/text", params={"mrn": saved["mrn"]}).status_code == 400
+        response = client.get(f"/api/documents/{pdf['id']}/preview")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["cache-control"] == "private, no-store"
+        assert response.content.startswith(b"%PDF-")
+        store.delete_document(saved["id"])
+        assert client.put(f"/api/documents/{saved['id']}/text", json=payload).status_code == 404

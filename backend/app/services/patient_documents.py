@@ -263,7 +263,7 @@ def _public(row: sqlite3.Row | dict) -> dict:
         "file_format": data["file_format"],
         "size_bytes": int(data["size_bytes"] or 0),
         "sha256": data["sha256"],
-        "previewable": data["file_format"] == "TXT" or bool(
+        "previewable": data["file_format"] in {"TXT", "PDF"} or bool(
             _FORMATS.get(data["file_format"], {}).get("image")
         ),
         "image_width": data.get("image_width"),
@@ -497,6 +497,7 @@ async def save_upload(
         }
         with _WRITE_LOCK:
             with _conn() as conn:
+                conn.execute("BEGIN IMMEDIATE")
                 duplicate = conn.execute(
                     "SELECT display_name FROM documents WHERE mrn=? AND sha256=? AND deleted_at IS NULL",
                     (mrn, digest),
@@ -627,6 +628,99 @@ def stream_archive(
     return _generate(), len(members)
 
 
+def text_document(document_id: str, *, mrn: str, user: dict | None = None) -> dict:
+    mrn = validate_mrn(mrn)
+    with _WRITE_LOCK, _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = _active_row(conn, document_id)
+        if row["mrn"] != mrn:
+            raise DocumentConflict("文件病歷號已變更，請重新開啟 Documents")
+        if row["file_format"] != "TXT":
+            raise InvalidDocument("只有 TXT 文件可以修改文字")
+        try:
+            content = _stored_path(row).read_text(encoding="utf-8-sig")
+        except FileNotFoundError as exc:
+            raise DocumentNotFound("文件內容不存在") from exc
+        _event(conn, document_id, "edit_load", user)
+        return {"document": _public(row), "content": content}
+
+
+def update_text_document(
+    document_id: str,
+    *,
+    mrn: str,
+    display_name: str,
+    content: str,
+    expected_sha256: str,
+    expected_display_name: str,
+    user: dict | None = None,
+) -> dict:
+    mrn = validate_mrn(mrn)
+    if not content.strip():
+        raise InvalidDocument("文字內容不可為空白")
+    try:
+        body = content.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise InvalidDocument("TXT 檔案須為 UTF-8 純文字") from exc
+    _check_disk_reserve(len(body))
+    _mkdir(_incoming_root())
+    incoming = _incoming_root() / f"{uuid.uuid4().hex}.txt"
+    final_path = None
+    committed = False
+    try:
+        with incoming.open("xb") as out:
+            incoming.chmod(0o600)
+            out.write(body)
+        _detect(incoming, filename="edit.txt")
+        digest = hashlib.sha256(body).hexdigest()
+        with _WRITE_LOCK, _conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = _active_row(conn, document_id)
+            if row["mrn"] != mrn:
+                raise DocumentConflict("文件病歷號已變更，請重新開啟 Documents")
+            if row["file_format"] != "TXT":
+                raise InvalidDocument("只有 TXT 文件可以修改文字")
+            if row["sha256"] != expected_sha256 or row["display_name"] != expected_display_name:
+                raise DocumentConflict("文件已被修改或改名，請先保留目前文字，再取消修改並重新載入")
+            name = normalize_display_name(display_name, original_name=row["display_name"], file_format="TXT")
+            old_path = _stored_path(row)
+            if not old_path.is_file():
+                raise DocumentNotFound("文件內容不存在")
+            # Publish a new immutable file and atomically switch the catalog.
+            # A failed transaction leaves the original file and row intact.
+            final_path = old_path.with_name(f"{uuid.uuid4()}.txt")
+            os.replace(incoming, final_path)
+            try:
+                conn.execute(
+                    """UPDATE documents SET display_name=?, stored_name=?, size_bytes=?, sha256=?,
+                       updated_at=?, updated_by_user_id=?, updated_by_username=? WHERE id=?""",
+                    (name, final_path.name, len(body), digest, _now(), (user or {}).get("id"),
+                     str((user or {}).get("username") or ""), document_id),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise DocumentConflict("同名或相同內容的文件已存在") from exc
+            _event(conn, document_id, "edit", user, {
+                "old_name": row["display_name"], "new_name": name,
+                "old_sha256": row["sha256"], "sha256": digest,
+                "previous_stored_name": row["stored_name"], "size_bytes": len(body),
+            })
+            updated = _public(_active_row(conn, document_id))
+            conn.commit()
+            committed = True
+            # Keep the previous content alongside deleted documents for audit.
+            # Failure to archive it must not undo a committed successful edit.
+            try:
+                _mkdir(_trash_root())
+                os.replace(old_path, _trash_root() / row["stored_name"])
+            except OSError:
+                pass
+        return updated
+    finally:
+        incoming.unlink(missing_ok=True)
+        if final_path is not None and not committed:
+            final_path.unlink(missing_ok=True)
+
+
 def rename_document(
     document_id: str,
     display_name: str,
@@ -635,6 +729,7 @@ def rename_document(
 ) -> dict:
     with _WRITE_LOCK:
         with _conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             row = _active_row(conn, document_id)
             new_name = normalize_display_name(
                 display_name,
@@ -671,6 +766,7 @@ def rename_document(
 def delete_document(document_id: str, *, user: dict | None = None) -> dict:
     with _WRITE_LOCK:
         with _conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             row = _active_row(conn, document_id)
             source = _stored_path(row)
             if not source.is_file():
@@ -734,11 +830,11 @@ def render_preview(
     page: int = 0,
     user: dict | None = None,
 ) -> tuple[bytes | Path, dict]:
-    """Return rendered image bytes or the original TXT path for streaming."""
+    """Return rendered image bytes or the original TXT/PDF path for streaming."""
     if page < 0:
         raise InvalidDocument("預覽頁碼不合法")
     path, info = document_file(document_id, user=user, action="preview")
-    if info["file_format"] == "TXT":
+    if info["file_format"] in {"TXT", "PDF"}:
         if page != 0:
             raise InvalidDocument("預覽頁碼不合法")
         return path, info
@@ -835,6 +931,7 @@ def move_mrn(
     moved_paths: list[tuple[Path, Path]] = []
     with _WRITE_LOCK:
         with _conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             source_rows = conn.execute(
                 "SELECT * FROM documents WHERE mrn=?",
                 (old_mrn,),

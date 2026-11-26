@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.81：Documents 已儲存的 TXT 新增「修改」，會把內容與檔名帶回上方文字欄位；按「儲存修改」更新原文件，或按「取消修改」回到新增模式。修改失敗保留輸入，同時編輯衝突會提示重新載入；舊內容保留供稽核。PDF 新增視窗內預覽，可使用瀏覽器 PDF 檢視器的分頁與縮放，也能切換其他文件。主畫面與 phenotype 分頁共用，更新服務並重新載入即可，不需重跑分析。
+
 v10.80：In-house ACMG 規則 v1.14：PM3 改用 ClinGen 計分——ClinVar 提交者明確寫與致病／疑似致病變異 in trans 每組 1 分、其他描述同型合子或複合異型合子每組 0.5 分（引用相同 PMID 的提交者合併為一組），0.5 分 Supporting、1 分 Moderate、2 分以上 Strong（最高 Strong）。需重建 ClinVar 病例表並重算 In-house 結果。
 
 v10.79：In-house ACMG 規則 v1.13：排序只用規則自算，ClinVar ≥2★ 不再改變排序（ClinGen 專家小組分類照舊採用；ClinVar 單向下限與舊做法列入之後的院內驗證）；PM3 在 ClinVar 提交者明確寫與致病變異 in trans 時給 Strong；PS3 從 ClinVar 提交者描述的異常功能研究給 Supporting（BS3 不做）。需重建 ClinVar 病例表並重算 In-house 結果。
