@@ -3668,7 +3668,7 @@ function _prioCnvPairs() {
         const cand = {
           gene: ag.gene, total: pairV + p, v: pairV, p, c: 0, mode: "pair", moi_class: d.moi_class,
           disease_id: d.disease_id, disease_name: d.disease_name, disease_rank: d.disease_rank,
-          moi: d.moi, moi_source: d.moi_source, variants: [snv.id, eid], v_each: { [snv.id]: snv.v, [eid]: vc },
+          moi: d.moi, moi_source: d.moi_source, variants: vc > snv.v ? [eid, snv.id] : [snv.id, eid], v_each: { [snv.id]: snv.v, [eid]: vc },
           cnv_pair: true, gene_rank: ag.gene_rank, gene_points: ag.gene_points, others: [], n_combinations: 1,
         };
         const cur = best[ag.gene];

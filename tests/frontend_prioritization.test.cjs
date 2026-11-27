@@ -142,7 +142,7 @@ test('candidate list: CNV deletion pairs with the strongest het SNV of a recessi
   assert.ok(Math.abs(context._prioPairPoints(8, 3.2, -3) - 6.0) < 0.05);
   assert.equal(context._prioPairPoints(3.2, 8, -3), context._prioPairPoints(8, 3.2, -3));
   assert.equal(list[0].gene, 'GENED');                          // 6.x + 5 > 9 → new top row
-  assert.deepEqual(Array.from(list[0].variants), ['d', 'e1']);
+  assert.deepEqual(Array.from(list[0].variants), ['e1', 'd']);  // stronger (CNV V′ 10) first
   assert.equal(list[0].cnv_pair, true);
   assert.equal(list[0].c, 0);
   assert.equal(list[0].others[0].mode, 'single');              // the old best moves to 其他組合

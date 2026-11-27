@@ -216,7 +216,9 @@ def test_gene_candidates_list_other_hets_of_recessive_gene():
     lp, vus, lb, ref = PR.Var("lp", 8, "het"), PR.Var("vus", 3.2, "het"), PR.Var("lb", -4, "het"), PR.Var("r", 9, "ref")
     ar = [PR.Disease(id="OMIM:1", name="AR disease", P=-0.3, moi={"ar"})]
     cand = PR.gene_candidates([lp, vus, lb, ref], ar, sex="XX", test_type="WES")
-    assert cand["mode"] == "pair" and sorted(cand["variants"]) == ["lp", "vus"]
+    assert cand["mode"] == "pair" and cand["variants"] == ["lp", "vus"]          # stronger first
+    # whichever variant was enumerated first, the stronger one leads
+    assert PR.gene_candidates([vus, lp], ar, sex="XX", test_type="WES")["variants"] == ["lp", "vus"]
     assert cand["total"] == pytest.approx(5.7, abs=0.05)
     assert cand["same_gene"] == ["lb"]                   # the third het still shows, ref never
     # LP + benign only: the single het stays the row and the benign one is listed

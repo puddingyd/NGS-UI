@@ -412,9 +412,11 @@ def gene_candidates(variants: list[Var], diseases: list[Disease], *, sex: str, t
         ids = tuple(sorted(filter(None, (var.id, cand["partner"]))))
         ident = (cand["disease_id"], cand["moi_class"], cand["mode"], ids)
         if ident not in seen:
-            item = dict(cand, variants=[var.id] + ([cand["partner"]] if cand["partner"] else []))
+            item = dict(cand)
             item.pop("partner", None)
             item["v_each"] = {var.id: var.v, **({cand["partner"]: cand["partner_v"]} if cand["partner"] else {})}
+            # stronger variant (higher V′) first, so a pair reads LP + VUS
+            item["variants"] = sorted(item["v_each"], key=lambda i: (-item["v_each"][i], i))
             seen[ident] = (key, item)
     if not seen:
         return None
