@@ -137,8 +137,10 @@ test('candidate list: CNV deletion pairs with the strongest het SNV of a recessi
   vm.runInContext(fn('_prioPairPoints') + fn('_prioCnvPairs') + fn('_prioSameGeneHets') + fn('_prioCandidateList'), context);
   const { list, total } = context._prioCandidateList();
   assert.equal(total, 2);                                      // GENEQ has no het SNV → no row
-  const pairV = context._prioPairPoints(6, 10);
-  assert.ok(Math.abs(pairV - 6.0) < 0.2);
+  const pairV = context._prioPairPoints(6, 10, -3);
+  assert.ok(Math.abs(pairV - 9.3) < 0.1);                      // between 10 − 3 and 10
+  assert.ok(Math.abs(context._prioPairPoints(8, 3.2, -3) - 6.0) < 0.05);
+  assert.equal(context._prioPairPoints(3.2, 8, -3), context._prioPairPoints(8, 3.2, -3));
   assert.equal(list[0].gene, 'GENED');                          // 6.x + 5 > 9 → new top row
   assert.deepEqual(Array.from(list[0].variants), ['d', 'e1']);
   assert.equal(list[0].cnv_pair, true);

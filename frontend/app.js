@@ -3625,10 +3625,15 @@ function _prioVariantLabel(id) {
   return id;
 }
 
-// Combined points of two recessive alleles (plan §5.3; same as prioritization.pair_points).
-function _prioPairPoints(v1, v2) {
+// Combined points of two recessive alleles, phase unknown (plan §5.3; same as
+// prioritization.pair_points): the weaker one is the second allele (points of the
+// stronger), or benign with the second allele missed (stronger + single-het C),
+// weighted by the weaker one's probability.
+function _prioPairPoints(v1, v2, singleC) {
   const L0 = Math.log(0.1 / 0.9), K = 0.733;
-  const p = Math.min(Math.max((1 / (1 + Math.exp(-(L0 + K * v1)))) * (1 / (1 + Math.exp(-(L0 + K * v2)))), 1e-300), 1 - 1e-15);
+  const prob = v => 1 / (1 + Math.exp(-(L0 + K * v)));
+  const a = Math.max(v1, v2), pb = prob(Math.min(v1, v2));
+  const p = Math.min(Math.max(pb * prob(a) + (1 - pb) * prob(a + singleC), 1e-300), 1 - 1e-15);
   return (Math.log(p / (1 - p)) - L0) / K;
 }
 
@@ -3653,10 +3658,13 @@ function _prioCnvPairs() {
       const snv = hets[ag.gene];
       if (!snv) continue;
       const vc = Number(ep.v) || 0;
-      const pairV = _prioPairPoints(snv.v, vc);
       for (const d of ag.diseases || []) {
         const p = Number(d.p);
         if (!Number.isFinite(p)) continue;
+        const info = state.data?.prioritization || {};
+        const singleC = Number(d.moi_class === "xlr" ? (info.xlr_female_het ?? -3) : (info.single_het ?? -3));
+        const pairV = _prioPairPoints(snv.v, vc, singleC);
+        if (pairV - (Math.max(snv.v, vc) + singleC) < 0.05) continue;   // a benign partner adds nothing
         const cand = {
           gene: ag.gene, total: pairV + p, v: pairV, p, c: 0, mode: "pair", moi_class: d.moi_class,
           disease_id: d.disease_id, disease_name: d.disease_name, disease_rank: d.disease_rank,
@@ -5067,7 +5075,7 @@ const PRIO_MODE_ZH = {
   unknown: "遺傳模式未知，不扣分",
   hom: "隱性，同型合子",
   hemi: "X 性聯隱性，男性半合子",
-  pair: "隱性，與同基因另一個變異配成一對（phase 未知，不扣分）",
+  pair: "隱性，與同基因另一個變異配成一對（phase 未知不扣分；另一個若是良性，就當成只找到一個）",
   single: "隱性，只找到一個異合子；需找第二個變異（CNV、深層內含子、低覆蓋區、dead zone）",
   xlr_female_single: "X 性聯隱性，女性異合子（保留 skewed X-inactivation 的可能）",
   somatic: "Somatic 點位，不套遺傳模式",
@@ -5120,7 +5128,7 @@ function _prioHintLines(v, kind = "snv") {
   } else if (p.mode === "pair") {
     const partner = state.data?.variants?.[p.partner] || state.snvSearchVariants?.[p.partner];
     const label = partner ? displaySnvHgvs(partner, p.partner) : p.partner;
-    lines.push(`變異 V′ ${_prioNum(p.v)}：與 ${label} 配成隱性一對的合成點數（本變異 ${_prioNum(p.v_single)}、另一個 ${_prioNum(p.partner_v)}）`);
+    lines.push(`變異 V′ ${_prioNum(p.v)}：與 ${label} 配成隱性一對的合成點數（本變異 ${_prioNum(p.v_single)}、另一個 ${_prioNum(p.partner_v)}；較弱的那個若是致病，等於兩個都找到，若是良性，等於只找到較強的一個並扣分，依它致病的機率合併）`);
   } else {
     lines.push(`變異 V′ ${_prioNum(p.v)}：In-house 排序點數（含 ClinVar 規則、P-KNN LLR、院內常見扣分；無 In-house 時用 GeneBe）${p.v_missing ? "；沒有 ACMG 點數，以 0 計" : ""}${p.type_prior ? "，含變異類型先驗" : ""}`);
   }

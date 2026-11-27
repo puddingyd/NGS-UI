@@ -8,7 +8,8 @@ For every SNV/Indel candidate of a case::
   ≥2★ / VCEP adopt and the P-KNN LLR → GeneBe, minus the 院內常見 penalty),
   plus the variant-type prior (``type_prior``: synonymous, UTR and intronic
   variants with a negative splice prediction start lower than a missense,
-  estimated from ClinVar); a recessive pair uses the combined points of plan §5.3.
+  estimated from ClinVar); a recessive pair uses the combined points of plan §5.3
+  (the weaker variant is the second allele, or benign with the second allele missed).
 * P(g, d) — phenotype points of disease d in gene g from the phenotype engine
   (plan §4.8.7).  Genes without a ranked disease get the lowest value −6.1.  With no
   usable HPO term (panel only, no knowledge base) P is not counted and the
@@ -39,9 +40,10 @@ L0 = math.log(0.1 / 0.9)
 K = 0.733                       # ln 2.08 — one ACMG point
 SINGLE_HET = {"WES": -3.0, "WGS": -4.0}
 PAIR_PHASE_UNKNOWN = 0.0       # two variants, phase unknown: no deduction (2026-11-24)
+PAIR_MIN_GAIN = 0.05           # a pair must beat the single het by half a shown digit
 XLR_FEMALE_HET = -3.0
 P_FLOOR = -6.1                 # = pheno_engine.engine.P_MIN (lowest phenotype points)
-VERSION = "prio-v3"
+VERSION = "prio-v4"
 CANDIDATE_LIMIT = 200          # candidate rows sent to the browser (20 shown, "顯示更多")
 
 # Variant-type prior (2026-11-25, user decision): ranking points added to V′ for
@@ -76,12 +78,30 @@ _INH = re.compile(r"\(([^()]*)\)\s*$")
 
 
 # ── small helpers ──────────────────────────────────────────────────────────
-def pair_points(v1: float, v2: float) -> float:
-    """Combined points of two recessive alleles (plan §5.3)."""
-    p1 = 1.0 / (1.0 + math.exp(-(L0 + K * v1)))
-    p2 = 1.0 / (1.0 + math.exp(-(L0 + K * v2)))
-    p = min(max(p1 * p2, 1e-300), 1 - 1e-15)
+def _prob(v: float) -> float:
+    """ACMG-scale points → probability (0 points ≈ 10%, one point = odds ×2.08)."""
+    x = L0 + K * v
+    return 1.0 / (1.0 + math.exp(-x)) if x >= 0 else math.exp(x) / (1.0 + math.exp(x))
+
+
+def _points(p: float) -> float:
+    p = min(max(p, 1e-300), 1 - 1e-15)
     return (math.log(p / (1.0 - p)) - L0) / K
+
+
+def pair_points(v1: float, v2: float, *, single_c: float) -> float:
+    """Combined points of two recessive heterozygotes, phase unknown (plan §5.3).
+
+    Call the stronger variant a and the weaker b.  Either b is the second
+    pathogenic allele — both alleles found, the points of a — or b is benign
+    and the second allele was missed — a alone with the single-het deduction
+    ``single_c``.  The two are weighted by the probability that b is
+    pathogenic (user decision 2026-11-27), so a second het never lowers the
+    gene below the single het, and a benign one adds almost nothing.
+    """
+    a, b = max(v1, v2), min(v1, v2)
+    pb = _prob(b)
+    return _points(pb * _prob(a) + (1.0 - pb) * _prob(a + single_c))
 
 
 def _type_class(consequence: str, hgvs_c: str) -> str:
@@ -334,7 +354,11 @@ def _options(var: Var, cls: str, *, sex: str, test_type: str, partner: Var | Non
     single_c = SINGLE_HET[test_type] if cls == "ar" else XLR_FEMALE_HET
     out = [(var.v, single_c, "single" if cls == "ar" else "xlr_female_single", "")]
     if partner is not None:
-        out.append((pair_points(var.v, partner.v), PAIR_PHASE_UNKNOWN, "pair", partner.id))
+        v_pair = pair_points(var.v, partner.v, single_c=single_c)
+        # a benign partner barely moves the score: keep the single het (the
+        # partner still shows under the candidate row as 同基因另一個變異)
+        if v_pair + PAIR_PHASE_UNKNOWN - (max(var.v, partner.v) + single_c) >= PAIR_MIN_GAIN:
+            out.append((v_pair, PAIR_PHASE_UNKNOWN, "pair", partner.id))
     return out
 
 
@@ -502,6 +526,8 @@ def annotate(variants: dict, *, hpo, sex: str = "", test_type: str = "WES", rank
     info, engine, result = _context(hpo, engine)
     sex = norm_sex(sex)
     test_type = norm_test_type(test_type)
+    # the browser pairs CNV deletions with SNVs (plan §5.4) using the same deductions
+    info["single_het"], info["xlr_female_het"] = SINGLE_HET[test_type], XLR_FEMALE_HET
     by_gene: dict[str, list[Var]] = {}
     for vid, variant in variants.items():
         if not isinstance(variant, dict):

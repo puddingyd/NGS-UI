@@ -26,12 +26,20 @@ def eng(snap):  # noqa: F811
     return E.Engine(snap)
 
 
-def test_pair_points_match_plan_table():
-    assert PR.pair_points(10, 10) == pytest.approx(9.0, abs=0.1)
-    assert PR.pair_points(7, 7) == pytest.approx(6.0, abs=0.1)
-    assert PR.pair_points(10, 4) == pytest.approx(4.0, abs=0.1)
-    assert PR.pair_points(4, 4) == pytest.approx(2.8, abs=0.1)
-    assert PR.pair_points(3, 8) == PR.pair_points(8, 3)
+def test_pair_points_merge_second_allele_or_missed():
+    pp = lambda a, b, c=-3.0: PR.pair_points(a, b, single_c=c)
+    # WDR73 example: LP 8 + VUS 3.2 → 54% × 97.5% + 46% × 81% ≈ 90% → 6.0
+    assert pp(8, 3.2) == pytest.approx(6.0, abs=0.05)
+    assert pp(8, 6) == pytest.approx(7.3, abs=0.05)
+    assert pp(8, 8) == pytest.approx(7.8, abs=0.05)
+    assert pp(3.2, 8) == pp(8, 3.2)                              # symmetric
+    # between the single het (a − 3) and a certain second allele (a)
+    for b in (-7, -1, 0, 1, 4, 6, 8):
+        assert 8 - 3 <= pp(8, b) <= 8 + 1e-9
+    assert pp(8, -7) == pytest.approx(5.0, abs=0.01)             # benign adds nothing
+    assert pp(8, 3.2) > pp(8, 1) > pp(8, -1)                     # the more pathogenic, the more it adds
+    # WGS deducts more for a missed allele, so a second het helps more
+    assert pp(8, 3.2, -4.0) < pp(8, 3.2) and pp(8, 3.2, -4.0) - 4 > pp(8, 3.2) - 5
 
 
 def _one(var, moi, *, sex="XX", test="WES", P=5.0, others=()):
@@ -63,16 +71,27 @@ def test_inheritance_compatibility_points():
 def test_recessive_pair_and_best_partner():
     a, b, c = PR.Var("a", 10, "het"), PR.Var("b", 4, "het"), PR.Var("c", 1, "het")
     res = PR.evaluate_gene([a, b, c], [PR.Disease(id="OMIM:1", P=5, moi={"ar"})], sex="XX", test_type="WGS")
-    # a: pair with b (≈4.0, C 0) vs single (10 − 4 = 6) → single
-    assert res["a"]["mode"] == "single" and res["a"]["total"] == pytest.approx(11)
-    # b pairs with the strongest other het (a): 4.0 + 0 > 4 − 4
+    # a pairs with the strongest other het (b): never below the single het 10 − 4
+    assert res["a"]["mode"] == "pair" and res["a"]["partner"] == "b" and res["a"]["c"] == 0
+    assert res["a"]["v"] == pytest.approx(PR.pair_points(10, 4, single_c=-4))
+    assert res["a"]["total"] > 10 - 4 + 5
+    # b pairs with a and gets the same combined points
     assert res["b"]["mode"] == "pair" and res["b"]["partner"] == "a"
-    assert res["b"]["v"] == pytest.approx(PR.pair_points(4, 10))
+    assert res["b"]["v"] == pytest.approx(res["a"]["v"])
     assert res["c"]["partner"] == "a"
     two_lp = PR.evaluate_gene([PR.Var("x", 7, "het"), PR.Var("y", 7, "het")],
                               [PR.Disease(id="d", P=0, moi={"ar"})], sex="XX", test_type="WGS")
     assert two_lp["x"]["mode"] == "pair" and two_lp["x"]["c"] == 0
-    assert two_lp["x"]["total"] == pytest.approx(PR.pair_points(7, 7))
+    assert two_lp["x"]["total"] == pytest.approx(PR.pair_points(7, 7, single_c=-4))
+    # a benign partner does not form a pair: the single het stays, the benign one alone ranks low
+    lb = PR.evaluate_gene([PR.Var("p", 8, "het"), PR.Var("q", -7, "het")],
+                          [PR.Disease(id="d", P=0, moi={"ar"})], sex="XX", test_type="WES")
+    assert lb["p"]["mode"] == "single" and lb["p"]["total"] == pytest.approx(5)
+    assert lb["q"]["mode"] == "single" and lb["q"]["total"] == pytest.approx(-10)
+    # X-linked recessive female: same merge with the −3 deduction
+    xf = PR.evaluate_gene([PR.Var("m", 8, "het"), PR.Var("n", 3.2, "het")],
+                          [PR.Disease(id="d", P=0, moi={"xlr"})], sex="XX", test_type="WGS")
+    assert xf["m"]["mode"] == "pair" and xf["m"]["v"] == pytest.approx(PR.pair_points(8, 3.2, single_c=-3))
 
 
 def test_best_disease_by_total(omim, eng):
@@ -181,7 +200,7 @@ def test_gene_candidates_one_row_per_gene_and_pairs_once():
            PR.Disease(id="OMIM:2", name="AD disease", P=2, moi={"dominant"})]
     cand = PR.gene_candidates([a, b, r], dis, sex="XX", test_type="WES")
     assert cand["mode"] == "pair" and cand["variants"] in (["a", "b"], ["b", "a"])
-    assert cand["total"] == pytest.approx(PR.pair_points(7, 7) + 8)
+    assert cand["total"] == pytest.approx(PR.pair_points(7, 7, single_c=-3) + 8)
     assert set(cand["v_each"]) == {"a", "b"}
     # the pair appears once; ref calls never form a candidate
     idents = [(o["disease_id"], o["mode"], tuple(sorted(o["variants"]))) for o in [cand, *cand["others"]]]
@@ -193,15 +212,16 @@ def test_gene_candidates_one_row_per_gene_and_pairs_once():
 
 
 def test_gene_candidates_list_other_hets_of_recessive_gene():
-    # LP + VUS: the single het (8 − 3) beats the pair, but the VUS is still listed
+    # WDR73 example: LP + VUS now form the row (≈ 6.0 − 0.3 = 5.7 > single 4.7)
     lp, vus, lb, ref = PR.Var("lp", 8, "het"), PR.Var("vus", 3.2, "het"), PR.Var("lb", -4, "het"), PR.Var("r", 9, "ref")
     ar = [PR.Disease(id="OMIM:1", name="AR disease", P=-0.3, moi={"ar"})]
     cand = PR.gene_candidates([lp, vus, lb, ref], ar, sex="XX", test_type="WES")
-    assert cand["mode"] == "single" and cand["variants"] == ["lp"]
-    assert cand["same_gene"] == ["vus", "lb"]            # strongest first, benign kept, ref never
-    # a pair row lists the third variant only
-    two = PR.gene_candidates([PR.Var("x", 8, "het"), PR.Var("y", 8, "het"), lb], ar, sex="XX", test_type="WES")
-    assert two["mode"] == "pair" and two["same_gene"] == ["lb"]
+    assert cand["mode"] == "pair" and sorted(cand["variants"]) == ["lp", "vus"]
+    assert cand["total"] == pytest.approx(5.7, abs=0.05)
+    assert cand["same_gene"] == ["lb"]                   # the third het still shows, ref never
+    # LP + benign only: the single het stays the row and the benign one is listed
+    single = PR.gene_candidates([lp, lb, ref], ar, sex="XX", test_type="WES")
+    assert single["mode"] == "single" and single["variants"] == ["lp"] and single["same_gene"] == ["lb"]
     # dominant and homozygous rows do not list other variants
     ad = [PR.Disease(id="OMIM:2", name="AD disease", P=1, moi={"dominant"})]
     assert PR.gene_candidates([lp, vus], ad, sex="XX", test_type="WES")["same_gene"] == []
