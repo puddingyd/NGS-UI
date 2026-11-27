@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel
 
 from ..auth import current_user
 from ..services import patient_documents
@@ -80,6 +81,33 @@ def download_patient_document_archive(
         _raise(exc)
 
 
+class TextDocumentUpdate(BaseModel):
+    mrn: str
+    display_name: str
+    content: str
+    expected_sha256: str
+    expected_display_name: str
+
+
+@router.get("/{document_id}/text")
+def load_text_document(document_id: str, mrn: str = Query(...), user: dict = Depends(current_user)):
+    try:
+        return JSONResponse(
+            content=patient_documents.text_document(document_id, mrn=mrn, user=user),
+            headers={"Cache-Control": "private, no-store"},
+        )
+    except Exception as exc:
+        _raise(exc)
+
+
+@router.put("/{document_id}/text")
+def update_text_document(document_id: str, payload: TextDocumentUpdate, user: dict = Depends(current_user)):
+    try:
+        return patient_documents.update_text_document(document_id, **payload.model_dump(), user=user)
+    except Exception as exc:
+        _raise(exc)
+
+
 @router.patch("/{document_id}")
 def rename_patient_document(
     document_id: str,
@@ -143,7 +171,7 @@ def preview_patient_document(
             page=page,
             user=user,
         )
-        if info["file_format"] == "TXT":
+        if info["file_format"] in {"TXT", "PDF"}:
             return FileResponse(
                 content,
                 media_type=info["content_type"],

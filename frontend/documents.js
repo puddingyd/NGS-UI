@@ -11,6 +11,9 @@
   let options = {};
   let context = null;
   let pending = [];
+  let editingText = null;
+  let textRequest = 0;
+  let textController = null;
   let previewUrl = "";
   let previewDocument = null;
   let previewPage = 0;
@@ -130,7 +133,7 @@
             </section>
 
             <section class="pdoc-section pdoc-text-section">
-              <div class="pdoc-section-head"><h3>貼上文字，儲存為 TXT</h3></div>
+              <div class="pdoc-section-head"><h3 id="pdoc-text-heading">貼上文字，儲存為 TXT</h3></div>
               <form id="pdoc-text-form">
                 <label class="pdoc-name-field" for="pdoc-text-name">
                   <span>檔名</span>
@@ -142,6 +145,7 @@
                 </label>
                 <div class="pdoc-upload-actions">
                   <span id="pdoc-text-status" class="pdoc-muted" aria-live="polite"></span>
+                  <button id="pdoc-cancel-text" type="button" class="btn btn-secondary" hidden>取消修改</button>
                   <button id="pdoc-save-text" type="submit" class="btn btn-primary">儲存 TXT</button>
                 </div>
               </form>
@@ -343,6 +347,8 @@
     event.preventDefault();
     if (!context) return;
     const currentContext = context;
+    const currentEdit = editingText;
+    const request = textRequest;
     const name = document.getElementById("pdoc-text-name");
     const content = document.getElementById("pdoc-text-content");
     const button = document.getElementById("pdoc-save-text");
@@ -353,33 +359,100 @@
       return;
     }
     const filename = `${base}.txt`;
-    const data = new FormData();
-    data.append("mrn", currentContext.mrn);
-    data.append("source_sample_id", currentContext.sourceSampleId || "");
-    data.append("display_name", filename);
-    data.append("file", new Blob([content.value], { type: "text/plain;charset=utf-8" }), filename);
-    name.disabled = content.disabled = button.disabled = true;
+    let url = API;
+    let init;
+    if (currentEdit) {
+      url = `${API}/${encodeURIComponent(currentEdit.id)}/text`;
+      init = {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mrn: currentContext.mrn, display_name: filename, content: content.value,
+          expected_sha256: currentEdit.sha256, expected_display_name: currentEdit.display_name }),
+      };
+    } else {
+      const data = new FormData();
+      data.append("mrn", currentContext.mrn);
+      data.append("source_sample_id", currentContext.sourceSampleId || "");
+      data.append("display_name", filename);
+      data.append("file", new Blob([content.value], { type: "text/plain;charset=utf-8" }), filename);
+      init = { method: "POST", body: data };
+    }
+    setTextBusy(true);
     setStatus("pdoc-text-status", "儲存中…");
     try {
-      await jsonRequest(API, { method: "POST", body: data });
-      if (context !== currentContext) return;
-      name.value = content.value = "";
-      setStatus("pdoc-text-status", `已儲存 ${filename}，可在下方清單修改檔名`);
+      await jsonRequest(url, init);
+      if (context !== currentContext || request !== textRequest) return;
+      resetTextForm();
+      setStatus("pdoc-text-status", currentEdit ? `已更新 ${filename}` : `已儲存 ${filename}，可在下方清單修改檔名`);
       await loadList();
     } catch (error) {
-      if (context === currentContext) setStatus("pdoc-text-status", `儲存失敗：${error.message || error}`, true);
+      if (context === currentContext && request === textRequest) setStatus("pdoc-text-status", `儲存失敗：${error.message || error}`, true);
     } finally {
-      if (context === currentContext) name.disabled = content.disabled = button.disabled = false;
+      if (context === currentContext && request === textRequest) setTextBusy(false);
+    }
+  }
+
+  function setTextBusy(busy) {
+    for (const id of ["pdoc-text-name", "pdoc-text-content", "pdoc-save-text", "pdoc-cancel-text"]) {
+      const element = document.getElementById(id);
+      if (element) element.disabled = busy;
     }
   }
 
   function resetTextForm() {
+    textRequest += 1;
+    textController?.abort();
+    textController = null;
+    editingText = null;
     document.getElementById("pdoc-text-form")?.reset();
-    for (const id of ["pdoc-text-name", "pdoc-text-content", "pdoc-save-text"]) {
-      const element = document.getElementById(id);
-      if (element) element.disabled = false;
-    }
+    setTextBusy(false);
+    const heading = document.getElementById("pdoc-text-heading");
+    if (heading) heading.textContent = "貼上文字，儲存為 TXT";
+    const save = document.getElementById("pdoc-save-text");
+    if (save) save.textContent = "儲存 TXT";
+    const cancel = document.getElementById("pdoc-cancel-text");
+    if (cancel) cancel.hidden = true;
+    document.querySelectorAll(".pdoc-row.is-editing-text").forEach(row => row.classList.remove("is-editing-text"));
     setStatus("pdoc-text-status", "");
+  }
+
+  async function editText(rowElement) {
+    if (!context || document.getElementById("pdoc-save-text").disabled) return;
+    const name = document.getElementById("pdoc-text-name");
+    const content = document.getElementById("pdoc-text-content");
+    const originalName = editingText ? splitName(editingText.display_name, ".txt").base : "";
+    const originalContent = editingText?.originalContent || "";
+    if ((name.value !== originalName || content.value !== originalContent)
+        && !confirm("要放棄目前未儲存的文字，載入這份 TXT 嗎？")) return;
+    const info = JSON.parse(rowElement.dataset.document || "{}");
+    const currentContext = context;
+    const request = ++textRequest;
+    textController?.abort();
+    textController = new AbortController();
+    setTextBusy(true);
+    setStatus("pdoc-text-status", "載入文字中…");
+    try {
+      const body = await jsonRequest(`${API}/${encodeURIComponent(info.id)}/text?mrn=${encodeURIComponent(context.mrn)}`,
+        { signal: textController.signal });
+      if (context !== currentContext || request !== textRequest) return;
+      editingText = { ...body.document, originalContent: body.content };
+      name.value = splitName(editingText.display_name, ".txt").base;
+      content.value = body.content;
+      document.getElementById("pdoc-text-heading").textContent = "修改 TXT";
+      document.getElementById("pdoc-save-text").textContent = "儲存修改";
+      document.getElementById("pdoc-cancel-text").hidden = false;
+      document.querySelectorAll(".pdoc-row").forEach(row => row.classList.toggle("is-editing-text", row.dataset.documentId === info.id));
+      setStatus("pdoc-text-status", `正在修改：${editingText.display_name}`);
+      document.getElementById("pdoc-text-form").scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (error) {
+      if (context === currentContext && request === textRequest && error.name !== "AbortError") {
+        setStatus("pdoc-text-status", `載入失敗：${error.message || error}`, true);
+      }
+    } finally {
+      if (context === currentContext && request === textRequest) {
+        setTextBusy(false);
+        content.focus({ preventScroll: true });
+      }
+    }
   }
 
   function existingExtension(documentInfo) {
@@ -406,7 +479,7 @@
       const preview = row.previewable
         ? `<button type="button" class="btn btn-secondary" data-pdoc-preview>預覽</button>`
         : "";
-      return `<article class="pdoc-row" data-document-id="${esc(row.id)}" data-document='${esc(JSON.stringify(row))}'>
+      return `<article class="pdoc-row${editingText?.id === row.id ? " is-editing-text" : ""}" data-document-id="${esc(row.id)}" data-document='${esc(JSON.stringify(row))}'>
         <div class="pdoc-row-main">
           <div class="pdoc-existing-name">
             <input type="text" value="${esc(parts.base)}" maxlength="180" disabled>
@@ -419,6 +492,7 @@
         </div>
         <div class="pdoc-row-actions">
           ${preview}
+          ${row.file_format === "TXT" ? '<button type="button" class="btn btn-secondary" data-pdoc-edit-text>修改</button>' : ""}
           <a class="btn btn-secondary" href="${API}/${encodeURIComponent(row.id)}/download" target="_blank" rel="noopener">下載</a>
           <button type="button" class="btn btn-secondary" data-pdoc-rename>修改檔名</button>
           <button type="button" class="btn pdoc-delete-btn" data-pdoc-delete>刪除</button>
@@ -576,11 +650,13 @@
     previewController = new AbortController();
     const currentDocument = previewDocument;
     const isText = currentDocument.file_format === "TXT";
+    const isPdf = currentDocument.file_format === "PDF";
     previewPage = page;
     resetPreviewViewport();
     renderPreviewControls();
     const body = document.getElementById("pdoc-preview-body");
     body.classList.toggle("is-text", isText);
+    body.classList.toggle("is-pdf", isPdf);
     body.innerHTML = `<span class="pdoc-muted">載入中…</span>`;
     renderPreviewViewportControls();
     releasePreviewUrl();
@@ -612,6 +688,14 @@
       const blob = await response.blob();
       if (request !== previewRequest) return;
       previewUrl = URL.createObjectURL(blob);
+      if (isPdf) {
+        const frame = document.createElement("iframe");
+        frame.className = "pdoc-pdf-preview";
+        frame.title = currentDocument.display_name || "PDF 預覽";
+        frame.src = previewUrl;
+        body.replaceChildren(frame);
+        return;
+      }
       body.innerHTML = `<img src="${esc(previewUrl)}" alt="${esc(currentDocument.display_name)}" draggable="false">`;
       const image = body.querySelector("img");
       image?.addEventListener("load", applyPreviewViewport, { once: true });
@@ -628,7 +712,7 @@
     const controls = document.getElementById("pdoc-preview-controls");
     const label = document.getElementById("pdoc-preview-page-label");
     const index = previewDocuments.findIndex(row => row.id === previewDocument?.id);
-    document.getElementById("pdoc-view-controls").hidden = previewDocument?.file_format === "TXT";
+    document.getElementById("pdoc-view-controls").hidden = ["TXT", "PDF"].includes(previewDocument?.file_format);
     controls.hidden = pages <= 1;
     label.textContent = [
       index >= 0 ? `檔案 ${index + 1} / ${previewDocuments.length}` : "",
@@ -713,6 +797,7 @@
     document.getElementById("pdoc-file-input")?.addEventListener("change", event => addFiles(event.target.files));
     document.getElementById("pdoc-upload-all")?.addEventListener("click", uploadAll);
     document.getElementById("pdoc-text-form")?.addEventListener("submit", saveText);
+    document.getElementById("pdoc-cancel-text")?.addEventListener("click", resetTextForm);
     document.getElementById("pdoc-refresh")?.addEventListener("click", loadList);
 
     const pasteZone = document.getElementById("pdoc-paste-zone");
@@ -769,6 +854,7 @@
       const row = event.target.closest(".pdoc-row");
       if (!row) return;
       if (event.target.closest("[data-pdoc-preview]")) openPreview(row);
+      else if (event.target.closest("[data-pdoc-edit-text]")) editText(row);
       else if (event.target.closest("[data-pdoc-rename]")) toggleRename(row);
       else if (event.target.closest("[data-pdoc-delete]")) deleteDocument(row);
     });
@@ -829,7 +915,7 @@
     document.addEventListener("keydown", event => {
       const previewIsOpen = !document.getElementById("patient-document-preview")?.hidden;
       const isTyping = !!event.target.closest("input, textarea, select, [contenteditable]");
-      if (previewIsOpen && previewDocument?.file_format !== "TXT" && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (previewIsOpen && !["TXT", "PDF"].includes(previewDocument?.file_format) && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
         if (event.shiftKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
           event.preventDefault();
           const movement = {
