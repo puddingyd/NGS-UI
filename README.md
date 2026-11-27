@@ -1,5 +1,7 @@
 # NGS 分析平台 (NGS-UI)
 
+v10.81：修正載入新個案變慢（院內常見的 WES 帶有人數查詢改查預先算好的每個變異病人數表）；部署後執行一次 `update_wes_recurrence.py --rebuild-counts`。
+
 v10.80：In-house ACMG 規則 v1.14：PM3 改用 ClinGen 計分——ClinVar 提交者明確寫與致病／疑似致病變異 in trans 每組 1 分、其他描述同型合子或複合異型合子每組 0.5 分（引用相同 PMID 的提交者合併為一組），0.5 分 Supporting、1 分 Moderate、2 分以上 Strong（最高 Strong）。需重建 ClinVar 病例表並重算 In-house 結果。
 
 v10.79：In-house ACMG 規則 v1.13：排序只用規則自算，ClinVar ≥2★ 不再改變排序（ClinGen 專家小組分類照舊採用；ClinVar 單向下限與舊做法列入之後的院內驗證）；PM3 在 ClinVar 提交者明確寫與致病變異 in trans 時給 Strong；PS3 從 ClinVar 提交者描述的異常功能研究給 Supporting（BS3 不做）。需重建 ClinVar 病例表並重算 In-house 結果。

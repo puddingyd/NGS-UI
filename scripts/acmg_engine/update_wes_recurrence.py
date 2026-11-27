@@ -42,7 +42,15 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--list", action="store_true", help="print the cases in the table (TSV) and exit")
     ap.add_argument("--verbose", action="store_true", help="list skipped cases and their reasons")
+    ap.add_argument("--rebuild-counts", action="store_true",
+                    help="recompute the per-variant patient counts used when loading a case, then exit")
     args = ap.parse_args(argv)
+    if args.rebuild_counts:
+        store = WesRecurrence(args.db)          # a writer builds the counts when they are missing
+        n = store.rebuild_counts()
+        print(f"每個變異的病人數已重算：{n:,} 個變異（{args.db}）")
+        store.close()
+        return 0
     if args.list:
         store = WesRecurrence(args.db, readonly=True)
         try:

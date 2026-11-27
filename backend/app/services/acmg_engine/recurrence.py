@@ -84,9 +84,45 @@ class WesRecurrence:
                     sample_id TEXT NOT NULL, variant_key TEXT NOT NULL,
                     PRIMARY KEY (sample_id, variant_key)) WITHOUT ROWID;
                 CREATE INDEX IF NOT EXISTS sample_variants_key ON sample_variants(variant_key);
+                CREATE TABLE IF NOT EXISTS variant_patients (
+                    variant_key TEXT PRIMARY KEY, patients INTEGER NOT NULL) WITHOUT ROWID;
+                CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 """
             )
+            if not self._counts_ready():
+                self.rebuild_counts()
         self._patients: int | None = None
+
+    # per-variant patient counts: one indexed row per variant instead of reading every
+    # carrier of common variants at load time (slow on a cold disk, v10.81)
+    def _counts_ready(self) -> bool:
+        try:
+            hit = self.conn.execute("SELECT value FROM meta WHERE key='variant_patients'").fetchone()
+        except sqlite3.Error:
+            return False
+        return bool(hit and hit[0] == "ready")
+
+    def rebuild_counts(self) -> int:
+        """Recompute ``variant_patients`` from ``sample_variants`` (writers only)."""
+        with self.conn:
+            self.conn.execute("DELETE FROM variant_patients")
+            self.conn.execute(
+                "INSERT INTO variant_patients SELECT v.variant_key, COUNT(DISTINCT s.patient_key) "
+                "FROM sample_variants v JOIN samples s USING (sample_id) GROUP BY v.variant_key")
+            self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('variant_patients', 'ready')")
+        return self.conn.execute("SELECT COUNT(*) FROM variant_patients").fetchone()[0]
+
+    def _refresh_counts(self, keys) -> None:
+        """Recount the given variants inside the caller's transaction."""
+        keys = sorted(set(keys))
+        for start in range(0, len(keys), 500):
+            chunk = keys[start:start + 500]
+            marks = ",".join("?" * len(chunk))
+            self.conn.execute(f"DELETE FROM variant_patients WHERE variant_key IN ({marks})", chunk)
+            self.conn.execute(
+                "INSERT INTO variant_patients SELECT v.variant_key, COUNT(DISTINCT s.patient_key) "
+                f"FROM sample_variants v JOIN samples s USING (sample_id) WHERE v.variant_key IN ({marks}) "
+                "GROUP BY v.variant_key", chunk)
 
     def close(self) -> None:
         self.conn.close()
@@ -96,6 +132,8 @@ class WesRecurrence:
         keys = sorted(set(variant_keys))
         sig = json.dumps(signature, sort_keys=True)
         with self.conn:
+            old = [r[0] for r in self.conn.execute(
+                "SELECT variant_key FROM sample_variants WHERE sample_id=?", (sample_id,))]
             self.conn.execute("DELETE FROM sample_variants WHERE sample_id=?", (sample_id,))
             self.conn.executemany("INSERT INTO sample_variants VALUES (?,?)", [(sample_id, k) for k in keys])
             self.conn.execute(
@@ -103,13 +141,17 @@ class WesRecurrence:
                 "patient_key=excluded.patient_key, signature=excluded.signature, "
                 "variant_count=excluded.variant_count, updated_at=excluded.updated_at",
                 (sample_id, patient, sig, len(keys), time.strftime("%Y-%m-%dT%H:%M:%S%z")))
+            self._refresh_counts(set(old) | set(keys))
         self._patients = None
         return len(keys)
 
     def remove_sample(self, sample_id: str) -> bool:
         with self.conn:
+            old = [r[0] for r in self.conn.execute(
+                "SELECT variant_key FROM sample_variants WHERE sample_id=?", (sample_id,))]
             self.conn.execute("DELETE FROM sample_variants WHERE sample_id=?", (sample_id,))
             removed = self.conn.execute("DELETE FROM samples WHERE sample_id=?", (sample_id,)).rowcount
+            self._refresh_counts(old)
         self._patients = None
         return bool(removed)
 
@@ -153,6 +195,8 @@ class WesRecurrence:
     def lookup_many(self, variant_keys, exclude_patient: str | None = None) -> dict[str, int]:
         """{variant_key: patients carrying it} for many keys (keys never seen are left out)."""
         keys = sorted(set(variant_keys))
+        if self._counts_ready():
+            return self._lookup_counts(keys, exclude_patient)
         out: dict[str, int] = {}
         for start in range(0, len(keys), 500):
             chunk = keys[start:start + 500]
@@ -166,6 +210,23 @@ class WesRecurrence:
             for key, count in self.conn.execute(sql + " GROUP BY v.variant_key", params):
                 out[key] = int(count or 0)
         return out
+
+    def _lookup_counts(self, keys: list[str], exclude_patient: str | None) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for start in range(0, len(keys), 500):
+            chunk = keys[start:start + 500]
+            marks = ",".join("?" * len(chunk))
+            out.update(self.conn.execute(
+                f"SELECT variant_key, patients FROM variant_patients WHERE variant_key IN ({marks})", chunk))
+        if exclude_patient and out:
+            # IN (subquery) seeks the primary key; a JOIN here scans the whole variant index
+            own = {r[0] for r in self.conn.execute(
+                "SELECT variant_key FROM sample_variants WHERE sample_id IN "
+                "(SELECT sample_id FROM samples WHERE patient_key=?)", (exclude_patient,))}
+            for key in own & out.keys():
+                out[key] -= 1
+            out = {k: v for k, v in out.items() if v > 0}
+        return {k: int(v) for k, v in out.items()}
 
     def listing(self) -> list[tuple[str, str, int, str]]:
         return list(self.conn.execute(

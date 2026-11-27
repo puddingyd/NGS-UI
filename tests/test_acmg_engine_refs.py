@@ -415,3 +415,43 @@ def test_only_wes_sample_ids_are_kept(tmp_path):
         assert summary["skipped"][sid].startswith("檢體編號不在納入範圍"), sid
     assert [r[0] for r in store.listing()] == ["24WE0001-nckuh"]
     store.close()
+
+
+def test_recurrence_variant_counts_match_carrier_query(tmp_path):
+    """v10.81: per-variant patient counts give the same numbers as counting carriers."""
+    import sqlite3 as _sq
+    from app.services.acmg_engine.recurrence import WesRecurrence
+    db = tmp_path / "rec.sqlite"
+    store = WesRecurrence(db)
+    store.upsert_sample("A1", "P1", {}, ["chr1-1-A-G", "chr1-2-A-G"])
+    store.upsert_sample("A2", "P1", {}, ["chr1-1-A-G"])               # same patient, second sample
+    store.upsert_sample("B1", "P2", {}, ["chr1-1-A-G", "chr1-3-A-G"])
+    store.upsert_sample("C1", "P3", {}, ["chr1-2-A-G"])
+    keys = ["chr1-1-A-G", "chr1-2-A-G", "chr1-3-A-G", "chr1-9-A-G"]
+
+    def carriers(exclude=None):
+        store._counts_ready = lambda: False
+        try:
+            return store.lookup_many(keys, exclude_patient=exclude)
+        finally:
+            del store._counts_ready
+
+    for exclude in (None, "P1", "P2", "P9"):
+        assert store.lookup_many(keys, exclude_patient=exclude) == carriers(exclude)
+    assert store.lookup_many(keys) == {"chr1-1-A-G": 2, "chr1-2-A-G": 2, "chr1-3-A-G": 1}
+    store.upsert_sample("B1", "P2", {}, ["chr1-2-A-G"])               # re-run replaces the case
+    store.remove_sample("C1")
+    assert store.lookup_many(keys) == carriers() == {"chr1-1-A-G": 1, "chr1-2-A-G": 2}
+    store.close()
+    # a table written before v10.81 gets its counts when a writer opens it; readers fall back
+    con = _sq.connect(db)
+    con.execute("DROP TABLE variant_patients")
+    con.execute("DELETE FROM meta")
+    con.commit()
+    con.close()
+    reader = WesRecurrence(db, readonly=True)
+    assert reader.lookup_many(keys) == {"chr1-1-A-G": 1, "chr1-2-A-G": 2}
+    reader.close()
+    WesRecurrence(db).close()
+    reader = WesRecurrence(db, readonly=True)
+    assert reader._counts_ready() and reader.lookup_many(keys) == {"chr1-1-A-G": 1, "chr1-2-A-G": 2}

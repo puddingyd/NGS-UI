@@ -1472,15 +1472,18 @@ def _apply_effective_acmg(
     except (OSError, ValueError, sqlite3.Error):
         current = {}
         observed = {}
+    manual_elapsed = time.perf_counter() - started
     edits = meta.get("edits") if isinstance(meta.get("edits"), dict) else {}
     for variant_id in list(variants):
         variants[variant_id] = dict(variants[variant_id])
+    common_started = time.perf_counter()
     inhouse_common.annotate(
         variants,
         sample_id=sample_id,
         test_type=_effective_test_type(meta, sample_id, default="WES"),
         mrn=meta.get("mrn") or "",
     )
+    common_elapsed = time.perf_counter() - common_started
     for variant_id, variant in list(variants.items()):
         sample_snapshot = _legacy_manual_snapshot(edits.get(variant_id) or {})
         global_assertion = current.get(manual_acmg.normalize_variant_id(variant_id))
@@ -1598,6 +1601,8 @@ def _apply_effective_acmg(
         started,
         sample=sample_id,
         variants=len(variants),
+        manual_db=f"{manual_elapsed:.3f}s",
+        inhouse_common=f"{common_elapsed:.3f}s",
         manual_matches=len(current),
         observed_matches=sum(1 for count in observed.values() if count),
     )
