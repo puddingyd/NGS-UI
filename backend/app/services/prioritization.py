@@ -400,7 +400,23 @@ def gene_candidates(variants: list[Var], diseases: list[Disease], *, sex: str, t
     best = dict(ranked[0])
     best["others"] = ranked[1:1 + others]
     best["n_combinations"] = len(ranked)
+    best["same_gene"] = same_gene_hets(variants, best)
     return best
+
+
+SECOND_ALLELE_MODES = {"single", "pair", "xlr_female_single"}
+SAME_GENE_LIMIT = 5
+
+
+def same_gene_hets(variants: list[Var], cand: dict, limit: int = SAME_GENE_LIMIT) -> list[str]:
+    """Other heterozygous variants of the gene, strongest first, for a recessive row.
+
+    Shown under the candidate so a possible second allele is never hidden,
+    whatever its score (a benign one included).  Empty for dominant / hom rows."""
+    if cand.get("mode") not in SECOND_ALLELE_MODES:
+        return []
+    used = set(cand.get("variants") or [])
+    return [x.id for x in _hets(variants) if x.id not in used][:limit]
 
 
 # ── case level ─────────────────────────────────────────────────────────────

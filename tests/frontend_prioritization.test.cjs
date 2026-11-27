@@ -134,7 +134,7 @@ test('candidate list: CNV deletion pairs with the strongest het SNV of a recessi
     },
   };
   const context = vm.createContext({ state: { data } });
-  vm.runInContext(fn('_prioPairPoints') + fn('_prioCnvPairs') + fn('_prioCandidateList'), context);
+  vm.runInContext(fn('_prioPairPoints') + fn('_prioCnvPairs') + fn('_prioSameGeneHets') + fn('_prioCandidateList'), context);
   const { list, total } = context._prioCandidateList();
   assert.equal(total, 2);                                      // GENEQ has no het SNV → no row
   const pairV = context._prioPairPoints(6, 10);
@@ -145,6 +145,7 @@ test('candidate list: CNV deletion pairs with the strongest het SNV of a recessi
   assert.equal(list[0].c, 0);
   assert.equal(list[0].others[0].mode, 'single');              // the old best moves to 其他組合
   assert.equal(list[0].n_combinations, 3);
+  assert.deepEqual(Array.from(list[0].same_gene), ['d2']);         // the other het SNV stays visible
   assert.deepEqual(list.map(c => c.rank), [1, 2]);
   assert.equal(data.prioritization.candidates[1].gene, 'GENED'); // payload not mutated
   data.cnv_variants = {};

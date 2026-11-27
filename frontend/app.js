@@ -3671,6 +3671,20 @@ function _prioCnvPairs() {
   return best;
 }
 
+// Other heterozygous SNVs of a recessive gene, strongest first, shown under its candidate row.
+function _prioSameGeneHets(gene, exclude = []) {
+  const skip = new Set(exclude);
+  const out = [];
+  for (const [id, v] of Object.entries(state.data?.variants || {})) {
+    const p = v?.prio;
+    if (!p || p.gene !== gene || skip.has(id) || v.somatic || p.mode === "somatic") continue;
+    if (!String(v.zygosity || "").toLowerCase().startsWith("het")) continue;
+    const val = Number(p.v_single ?? p.v);
+    out.push({ id, v: Number.isFinite(val) ? val : -1e9 });
+  }
+  return out.sort((a, b) => b.v - a.v || (a.id < b.id ? -1 : 1)).slice(0, 5).map(x => x.id);
+}
+
 function _prioCandidateList() {
   const info = state.data?.prioritization || {};
   const base = Array.isArray(info.candidates) ? info.candidates : [];
@@ -3681,7 +3695,7 @@ function _prioCandidateList() {
   for (const [gene, pc] of Object.entries(pairs)) {
     const i = list.findIndex(c => c.gene === gene);
     if (i < 0) {
-      list.push(pc);
+      list.push({ ...pc, same_gene: _prioSameGeneHets(gene, pc.variants) });
       total += 1;
       continue;
     }
@@ -3689,7 +3703,8 @@ function _prioCandidateList() {
     const n = (Number(row.n_combinations) || 1) + 1;
     if (pc.total > row.total + 1e-9) {
       const { others = [], ...prev } = row;
-      list[i] = { ...pc, others: [prev, ...others].slice(0, 5), n_combinations: n };
+      list[i] = { ...pc, others: [prev, ...others].slice(0, 5), n_combinations: n,
+        same_gene: _prioSameGeneHets(gene, pc.variants) };
     } else {
       const others = [...(row.others || []), pc].sort((a, b) => b.total - a.total).slice(0, 5);
       list[i] = { ...row, others, n_combinations: n };
@@ -3758,6 +3773,16 @@ function renderPrioCandidates() {
       }
       const ev = state.data?.cnv_variants?.[id];
       if (ev) cards.appendChild(renderCnvSvCard(ev, id, { index: c.rank }));
+    }
+    // a possible second allele of a recessive gene is shown even when its combination scores lower
+    for (const id of c.same_gene || []) {
+      const v = state.data?.variants?.[id];
+      if (!v || (c.variants || []).includes(id)) continue;
+      const label = document.createElement("div");
+      label.className = "prio-cand-same-label";
+      label.textContent = "同基因另一個變異";
+      cards.appendChild(label);
+      cards.appendChild(renderVariantCard(v, id, "candidate", { index: c.rank, diseaseCheckbox: true }));
     }
     host.appendChild(box);
   }

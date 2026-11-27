@@ -2651,6 +2651,7 @@ a.disease-needs-description-star:hover { background: #fff8c5; text-decoration: u
 .prio-cand-others ul { margin: 4px 0 0 18px; padding: 0; }
 .prio-cand-others .prio-cand-score { font-weight: 400; }
 .prio-cand-cards > .variant-card:last-child { margin-bottom: 0; }
+.prio-cand-same-label { font-size: 12px; font-weight: 600; color: var(--muted); margin: 10px 0 4px; padding-top: 6px; border-top: 1px dashed var(--border); }
 .prio-cand-more { display: block; margin: 4px auto 12px; }
 .analysis-card-empty {
   padding: 14px 14px 18px;

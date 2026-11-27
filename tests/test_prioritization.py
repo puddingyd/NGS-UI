@@ -189,6 +189,24 @@ def test_gene_candidates_one_row_per_gene_and_pairs_once():
     assert all("r" not in o["variants"] for o in [cand, *cand["others"]])
     assert PR.gene_candidates([r], dis, sex="XX", test_type="WES") is None
     assert PR.gene_candidates([a, b, r], dis, sex="XX", test_type="WES") == cand      # deterministic
+    assert cand["same_gene"] == []
+
+
+def test_gene_candidates_list_other_hets_of_recessive_gene():
+    # LP + VUS: the single het (8 − 3) beats the pair, but the VUS is still listed
+    lp, vus, lb, ref = PR.Var("lp", 8, "het"), PR.Var("vus", 3.2, "het"), PR.Var("lb", -4, "het"), PR.Var("r", 9, "ref")
+    ar = [PR.Disease(id="OMIM:1", name="AR disease", P=-0.3, moi={"ar"})]
+    cand = PR.gene_candidates([lp, vus, lb, ref], ar, sex="XX", test_type="WES")
+    assert cand["mode"] == "single" and cand["variants"] == ["lp"]
+    assert cand["same_gene"] == ["vus", "lb"]            # strongest first, benign kept, ref never
+    # a pair row lists the third variant only
+    two = PR.gene_candidates([PR.Var("x", 8, "het"), PR.Var("y", 8, "het"), lb], ar, sex="XX", test_type="WES")
+    assert two["mode"] == "pair" and two["same_gene"] == ["lb"]
+    # dominant and homozygous rows do not list other variants
+    ad = [PR.Disease(id="OMIM:2", name="AD disease", P=1, moi={"dominant"})]
+    assert PR.gene_candidates([lp, vus], ad, sex="XX", test_type="WES")["same_gene"] == []
+    hom = PR.gene_candidates([PR.Var("h", 8, "hom"), vus], ar, sex="XX", test_type="WES")
+    assert hom["mode"] == "hom" and hom["same_gene"] == []
 
 
 def test_case_candidate_list(omim, eng):
